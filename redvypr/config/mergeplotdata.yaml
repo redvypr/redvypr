@@ -1,0 +1,60 @@
+# A test configuration file
+hostname: redvyprrand
+
+devices:
+- deviceconfig:
+    name: lon
+    loglevel: info
+    config:
+      dt: 1.0
+      functions:
+        - name: sin
+          f: 0.01
+          amp: 25
+          phase: 0
+  devicemodulename: randdata
+- deviceconfig:
+    name: lat
+    loglevel: info
+    config:
+      dt: 1.0
+      functions:
+        - name: sin
+          f: 0.01
+          amp: 10
+          phase: 0
+  devicemodulename: randdata  
+- deviceconfig:
+    name: temp
+    loglevel: info
+  devicemodulename: randdata
+- deviceconfig:
+    name: lonlattemp
+    loglevel: info
+    config:
+      devicenames:
+        - lon
+        - lat
+        - temp
+  devicemodulename: mergedata
+- devicemodulename: textlogger
+  loglevel: info
+  deviceconfig:
+    name: lonlattemplogger
+    config:
+      filename: lonlattemp.txt
+      dt_newfile: 300
+      log_keys:
+        - data
+
+connections:
+- publish: lonlattemp
+  receive: lonlattemplogger
+  
+  
+start:
+- lon
+- lat
+- temp
+- lonlattemp
+

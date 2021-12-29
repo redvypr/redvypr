@@ -1,0 +1,36 @@
+	-0.3.0: - github.com upload
+	-0.2.9: - Added statuswidget, changed path into extra widget that can be shown, can change hostname now
+	-0.2.8: - Added first implementation of numeric display in plot
+	-0.2.7: - Added view/info into the device widget, added first implementation of numeric display in plot
+	-0.2.6: - Added statistics to inspect data (device.statistics), added view/info into the device widget
+	-0.2.5: - Possible to add now devices from user defined pathes
+	-0.2.4: - -p option in in the command line
+	-0.2.3: - usability work on the gui (netcdf, gps, nmea_logbook)
+	-0.2.2: - alot of work in the netcdflogger (qtreewidget to create an ncfile)
+	-0.2.0: - GUI improvements (init, configuration)
+	-0.1.9: - Several improvements in heatflow, netcdflogger, statusdisplay (standard status widget)
+	-0.1.8: - separated redvypr main functionality from the gui widget
+	-0.1.7:
+	        - Added deviceinfowidget, a sumarywdiget that allows to control all devices (remove, rename, connections) 
+	-0.1.6:
+	        - replaced nomencalture "sensor" with "device", to make it more general
+	-0.1.5:
+	        - nogui option
+	-0.1.4:
+		- Rawdatadisp nicer
+	-0.1.3:
+		- Improved network device massively
+	-0.1.2:
+		- Added network_device
+		- Added statusqueue, that allows threads/multiprocesses to send status messages to redvypr main task. 
+	-0.1.1: 
+		- Added autostart and datainqueue stop functionality to sensors. Added another timer to update thread status of the devices self.sensorthreadtimer.timeout.connect(self.update_sensors_thread_status)
+        self.sensorthreadtimer.start(500) does essentially for all sensors sensor.thread_status({'threadalive':running2})
+        - Added plot module based on pyqtgraph, configuration of the plotting module with yaml possible
+	-0.1.0: Configuration with a yaml file works on the basis of adding/connecting/starting devices
+	-0.0.7: redesigned add_sensor to be able to have a configuration file 
+	-0.0.6: Added device connectivity, rawdatadisp and 'gui', 'guiqueue''
+	-0.0.5: Added functionality to have thread or multiprocessing functionality
+	-0.0.4: Renamed to redvypr
+	-0.0.3: Sensor objects better defined, random data sensor as an example works with a init and display widget as well as an start/stop button functionality
+	-0.0.2: Rudimentary device handling

@@ -1,0 +1,57 @@
+# A test configuration file
+hostname: serialgps1
+
+devices:
+- devicemodulename: serial_device
+  deviceconfig:
+    name: serial1
+    serial_name: /dev/ttyUSB1
+    baud: 4800
+- devicemodulename: gps_device
+  deviceconfig:
+    name: gps1
+
+- devicemodulename: network_device  
+  deviceconfig:
+    name: tcpserial1
+    config:
+       address: <ip> # Address IP, localhost. <broadcast> for UDP broadcast in local network. <ip> for local ip
+       port: 10001
+       serialize: str # yaml,str default yaml
+       protocol: tcp # tcp, udp default tcp
+       direction: publish # publish, receive default receive
+       data: nmea # dictionary keys, default all
+
+- devicemodulename: netcdflogger  
+  deviceconfig:
+    name: gpsnclogger
+    config:
+      filename: 'gps1.nc'
+      zlib: True
+      dt_newfile: 3600
+      groups:
+        - name: gps1
+          devices:
+            - gps1
+          keys:
+            - varname: lon
+              key: lon
+              type: float
+            - varname: lat
+              key: lat
+              type: float
+
+connections:
+- publish: serial1
+  receive: gps1
+- publish: gps1
+  receive: gpsnclogger
+- publish: serial1
+  receive: tcpserial1
+  
+  
+start:
+- serial1
+- gpsnclogger
+- tcpserial1
+

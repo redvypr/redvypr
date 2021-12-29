@@ -1,0 +1,97 @@
+# A test configuration file
+hostname: redvyprtest
+
+devices:
+# Random data test 1
+- deviceconfig:
+    name: testranddata
+    config: 
+       dt: 0.2
+       functions:
+          - name: rand
+            range: [-0.5,0.5]
+          - name: sin
+            amp: 5
+            f: .5
+            phase: 0
+          - name: sin
+            amp: 2
+            f: 2.0
+            phase: 0
+  devicemodulename: randdata
+# Random data test 2  
+- deviceconfig:
+    name: testranddata2
+    config: 
+       dt: 1.0
+       functions:
+          - name: rand
+            range: [-5,5]
+  devicemodulename: randdata
+# Plot the data
+- deviceconfig: # The plotting device
+    name: testplot
+    config:
+       - title: Plot A
+         location: [0,0] # The location as in QgridBoxLayout
+         xlabel: time
+         ylabel: Voltage
+         datetick: True
+         lines: 
+            - device: testranddata
+              name: Testdata1
+              x: t
+              y: data
+              linewidth: 2
+              color: [255,0,0]
+              buffersize: 200
+            - device: testranddata2
+              name: Testdata2
+              x: t
+              y: data
+              linewidth: 1
+              color: [0,255,0]
+              buffersize: 200
+       - title: Plot B
+         location: [1,0] # The location as in QgridBoxLayout
+         xlabel: time
+         ylabel: Voltage
+         datetick: True
+         lines: 
+            - device: testranddata2
+              name: Testdata2
+              x: t
+              y: data
+              linewidth: 2
+              color: [255,0,255]
+              buffersize: 200
+       - title: Plot C
+         location: [0,1] # The location as in QgridBoxLayout
+         xlabel: time
+         ylabel: Voltage
+         datetick: True
+         lines: 
+            - device: testranddata2
+              name: Testdata2
+              x: t
+              y: data
+              linewidth: 2
+              color: [255,0,255]
+              buffersize: 200              
+         
+              
+  devicemodulename: plot
+  
+connections:
+- publish: testranddata
+  receive: testplot
+- publish: testranddata2
+  receive: testplot  
+
+  
+  
+start:
+- testranddata
+- testranddata2
+- testplot
+#- textlogger

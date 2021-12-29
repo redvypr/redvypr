@@ -1,0 +1,26 @@
+# A test configuration file
+hostname: redvyprtest
+
+devices:
+- sensorconfig:
+    name: testranddata
+  sensormodulename: randdata
+- sensorconfig:
+    name: testranddata2
+  sensormodulename: randdata
+- sensorconfig:
+    filename: text.txt
+    name: textlogger
+  sensormodulename: textlogger
+  
+connections:
+- publish: testranddata
+  receive: textlogger
+- publish: testranddata2
+  receive: textlogger
+  
+  
+start:
+#- testranddata
+#- testranddata2
+#- textlogger
