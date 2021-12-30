@@ -18,3 +18,8 @@ are arbitrarily complex in handling and reading, it is left to the user
 to implement custom sensors into redvypr using the common interfaces
 provided.
 
+Documentation
+-------------
+Find the [here](https://redvypr.readthedocs.io) the documentation.
+
+
