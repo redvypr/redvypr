@@ -37,7 +37,7 @@ extensions = ['sphinx.ext.napoleon','sphinx.ext.autosectionlabel','sphinx.ext.au
 
 autosummary_generate = True
 
-autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","queue","yaml","PyQt5","pkg_resources","pyqtgraph","numpy","inspect","threading","multiprocessing","socket","argparse","importlib","glob","pathlib","signal","QtWidgets", "QtCore", "QtGui","redvyprdevices","standard_device_widgets","redvypr.devices","redvypr.standard_device_widgets"]
+autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","queue","yaml","PyQt5","pkg_resources","pyqtgraph","numpy","inspect","threading","multiprocessing","socket","argparse","importlib","glob","pathlib","signal","QtWidgets", "QtCore", "QtGui","redvyprdevices","standard_device_widgets","redvypr.devices"]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
