@@ -90,6 +90,7 @@ API
    redvypr      
    redvypr.redvypr
    redvypr.standard_device_widgets
+   redvypr.devices
 
 
 
