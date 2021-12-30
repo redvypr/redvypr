@@ -70,15 +70,15 @@ allowing to transport more data by one packet.
 API
 ---
 
-TODO: Autopackagesummary does not work as it should, the automoduletemplate is crashing ... for all package add :recursive:
-
-.. autopackagesummary:: redvypr
+.. toctree::
+   
+.. autosummary::
    :toctree: _autosummary
-   :template: autosummary/package.rst
+   :recursive:
 
-
-
-
+   redvypr      
+   redvypr.redvypr
+   redvypr.standard_device_widgets
 
 
 
