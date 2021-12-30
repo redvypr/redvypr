@@ -33,6 +33,7 @@ devices:
     name: testplot
     config:
        - title: Plot A
+         type: graph
          location: [0,0] # The location as in QgridBoxLayout
          xlabel: time
          ylabel: Voltage
@@ -54,6 +55,7 @@ devices:
               buffersize: 200
        - title: Plot B
          location: [1,0] # The location as in QgridBoxLayout
+         type: graph
          xlabel: time
          ylabel: Voltage
          datetick: True
@@ -66,6 +68,7 @@ devices:
               color: [255,0,255]
               buffersize: 200
        - title: Plot C
+         type: graph
          location: [0,1] # The location as in QgridBoxLayout
          xlabel: time
          ylabel: Voltage
@@ -77,9 +80,14 @@ devices:
               y: data
               linewidth: 2
               color: [255,0,255]
-              buffersize: 200              
+              buffersize: 200
+
+       - title: Some data
+         type: numdisp
+         location: [1,1] # The location as in QgridBoxLayout
+         device: testranddata2
+         data: data
          
-              
   devicemodulename: plot
   
 connections:
@@ -93,5 +101,5 @@ connections:
 start:
 - testranddata
 - testranddata2
-- testplot
+#- testplot
 #- textlogger

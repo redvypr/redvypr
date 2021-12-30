@@ -517,12 +517,6 @@ class redvypr(QtCore.QObject):
               except Exception as e:            
                   logger.debug(funcname + ': NA logger module loglevel {:s}'.format(str(e)))
 
-              # Finalize the initialization by calling a helper function (if exist)
-              try:
-                  deviceinitwidget.finalize_init()
-              except:
-                  pass
-
 
               if(autostart):
                   logger.debug(funcname + ': Starting device')
@@ -1540,6 +1534,7 @@ class redvyprWidget(QtWidgets.QWidget):
         except Exception as e:
             logger.debug('Widget does not have connect signal:' + str(e))
 
+
         #
         # Check if we have a widget to display the data
         # Create the displaywidget
@@ -1602,6 +1597,13 @@ class redvyprWidget(QtWidgets.QWidget):
             
         self.devicetabs.addTab(devicewidget,device.name)
         self.devicetabs.setCurrentWidget(devicewidget)
+
+        # All set, now call finalizing functions
+        # Finalize the initialization by calling a helper function (if exist)
+        try:
+            deviceinitwidget.finalize_init()
+        except Exception as e:
+            logger.debug(funcname + ':finalize_init():' + str(e))        
 
         # Update the summary
         self.update_devicewidgetsummary()        

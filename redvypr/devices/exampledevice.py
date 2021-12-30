@@ -87,6 +87,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addRow(self.conbtn)
         layout.addRow(self.startbtn)
 
+    def finalize_init(self):
+        """ This function is called after the configuration is parsed
+        """
+        print('Finalize init')
+
     def info_clicked(self):
         # This is the entry of the redvypr devicelist, giving full
         # access to all widgets related to this device

@@ -145,6 +145,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.configwidget  = QtWidgets.QWidget()
         self.configlayout        = QtWidgets.QGridLayout(self.configwidget) # The layout
         layout.addRow(self.configwidget)
+        #
+
+    def finalize_init(self):
+        """ This function is called after the configuration is parsed
+        """        
+        self.add_allwidgets()
         
 
     def add_clicked(self):
@@ -667,7 +673,7 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
                 child = QtWidgets.QTreeWidgetItem([key,''])                
                 parent.addChild(child)
                 lineparent = child
-                for iline,line in enumerate(sorted(config['lines'])):
+                for iline,line in enumerate(config['lines']):
                     for linekey in sorted(line.keys()):
                         value = config['lines'][iline][linekey]
                         data = configdata(value)
@@ -712,7 +718,7 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
 #
 #
 #
-class numdispWidget(QtWidgets.QWidget):
+class numdispWidget(QtWidgets.QFrame):
     """ Widget is plotting realtimedata on a display
     """
     def __init__(self,config):
@@ -742,8 +748,8 @@ class numdispWidget(QtWidgets.QWidget):
             except:
                 unit = ""
 
+            self.unit = unit                
             if(len(unit)>0):
-                self.unit = unit
                 self.unitdisp = QtWidgets.QLabel(unit)
                 self.layout.addWidget(self.unitdisp,1,1)                                
 
