@@ -67,6 +67,17 @@ well above 100 Hz which need to be processed fast. The distribution is
 on frequency scales of 100 Hz. The datapackets can be large though,
 allowing to transport more data by one packet.
 
+TEST
+----
+
+.. toctree::
+   
+.. autosummary::
+   :toctree: _autosummary
+   :recursive:
+
+   os      
+
 API
 ---
 
