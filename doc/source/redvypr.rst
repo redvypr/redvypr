@@ -76,7 +76,7 @@ TEST
    :toctree: _autosummary
    :recursive:
 
-   os      
+   redvypr.data_packets      
 
 API
 ---
