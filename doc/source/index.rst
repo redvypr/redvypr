@@ -11,7 +11,9 @@ Welcome to redvypr's documentation!
    :caption: Contents:
 
    redvypr.rst
-   redvypr_devices.rst	     
+   redvypr_devices.rst
+   api.rst   
+   installation.rst   
 
 Indices and tables
 ==================

@@ -1,7 +1,9 @@
 .. _python: https://www.python.org
 
-Realtime data viewer and processor (in Python): redvypr
-=======================================================
+redvypr
+=======
+
+redvypr stands for: Realtime data viewer and processor (in Python)
 
 Introduction
 ------------
@@ -67,16 +69,6 @@ well above 100 Hz which need to be processed fast. The distribution is
 on frequency scales of 100 Hz. The datapackets can be large though,
 allowing to transport more data by one packet.
 
-TEST
-----
-
-.. toctree::
-   
-.. autosummary::
-   :toctree: _autosummary
-   :recursive:
-
-   redvypr.data_packets      
 
 API
 ---
@@ -105,20 +97,5 @@ redvypr can be configured by one or several yaml configuration files. The struct
     name: nclogger
     
 
-Installation
-------------
 
-Raspberry Pi4 
-^^^^^^^^^^^^^^
-Installed on a Raspberry PI4
-
-sudo apt-get install python3-pyqt5 python3-pyqtgraph python3-netcdf4 python3-yaml
-
-Windows 10 with Anaconda
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-Conda packages to install
-
-Conda 2.1.0
-conda install pyaml pyserial pyqtgraph netcdf4
 
