@@ -70,31 +70,9 @@ on frequency scales of 100 Hz. The datapackets can be large though,
 allowing to transport more data by one packet.
 
 
-API
----
-
-.. toctree::
-   
-.. autosummary::
-   :toctree: _autosummary
-   :recursive:
-
-   redvypr      
-   redvypr.redvypr
-   redvypr.standard_device_widgets
-   redvypr.devices.__init__
 
 
 
-YAML configuration
-------------------
-
-redvypr can be configured by one or several yaml configuration files. The structure of the yaml file is
-
-.. code-block::
-
-    - deviceconfig:
-    name: nclogger
     
 
 

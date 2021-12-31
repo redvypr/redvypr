@@ -1,30 +1,39 @@
-Redvypr devices
-===============
+Design
+======
 
 
+YAML configuration
+------------------
+
+redvypr can be configured by one or several yaml configuration files. The structure of the yaml file is
+
+.. code-block::
+
+    - deviceconfig:
+    name: nclogger
 
    
 Structure of the redvypr device modules
 ---------------------------------------
 
 
-Sensors are python modules in the subfolder `sensors`.
+Devices are python modules in the subfolder `devices`.
 
-A sensor needs to be able to initialized with a data queue and a command queue::
+A device needs to be able to initialized with a data queue and a command queue::
 
         dataqueue        = queue.Queue()
         datainqueue      = queue.Queue()
         comqueue         = queue.Queue()        
-        sensor           = sensormodule.Sensor(dataqueue = dataqueue,comqueue = comqueue)
+        device           = devicemodule.Device(dataqueue = dataqueue,comqueue = comqueue)
         
         
-The basis functionality each sensor needs to have is::
+The basis functionality each device needs to have is::
 
-		class Sensor():
+		class Device():
 		    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None):
 		        """
 		        """
-		        self.publish     = True # publishes data, a typical sensor is doing this
+		        self.publish     = True # publishes data, a typical device is doing this
 		        self.subscribe   = False  # subscribing data, a typical datalogger is doing this
 		        self.datainqueue = datainqueue
 		        self.dataqueue   = dataqueue        
@@ -40,16 +49,16 @@ The basis functionality each sensor needs to have is::
 		        
 		
 		    def __str__(self):
-		        sstr = 'serial sensor'
+		        sstr = 'serial device'
 		        return sstr
 
-The dataqueue is used by the sensor to push data do dsdv, the command queue is mainly used to stop the sensor from collecting data.
+The dataqueue is used by the device to push data do dsdv, the command queue is mainly used to stop the device from collecting data.
 
-Sensor data is gathered by creating a thread with the function::
+Device data is gathered by creating a thread with the function::
 
-        sensorthread = threading.Thread(target=sensor.start, args=(), daemon=True)
-        sensorthread.start()
-        sensordict = {'sensor':sensor,'thread':sensorthread,'procqueues':[]}
+        devicethread = threading.Thread(target=device.start, args=(), daemon=True)
+        devicethread.start()
+        devicedict = {'device':device,'thread':devicethread,'procqueues':[]}
 
 
 Optional features
