@@ -18,14 +18,12 @@ Sampling data does always require the similar tasks.
 - Plotting data for a quicklook
 - Do a first dataanalysis
 
-
 Before the development of digital sensors these tasks have been
-performed mainly by reading scales and writing data onto paper. 
+performed mainly by reading scales and documenting the data onto paper. 
 By the still continuing digitalisation of sensors, the number of sensors
 and the amount of data output is increasing drastically, which creates
-challenges in performing the above mentioned tasks, espescially if
+challenges in performing the above mentioned tasks, especially if
 several sensor need to be fusioned.
-
 
 
 Digital sensors have an non overseeable amount of interfaces like
@@ -36,8 +34,8 @@ several sensors in realtime. This tasks does generally requires a
 custom implementation for each sensor, which is a time consuming task.
 
 Redvypr is a tool to help to work with digital sensors by providing a
-`python`_ based infrastructure which allows to add sensors,
-interconnect sensors and to process the data gathered by the
+`python`_ based infrastructure allowing to add sensors,
+interconnect sensors, process and save the data gathered by the
 sensors. Python is choosen as the language as it provides a rich
 infrastructure of packets to deal with digital data and its
 interfaces, i.e. using network devices, databases or serial
