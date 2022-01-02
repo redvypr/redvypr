@@ -3,6 +3,10 @@
 redvypr
 =======
 
+.. image:: figures/redvypr_logo_v02.png
+  :width: 1200
+  :alt: redvypr Logo
+
 redvypr stands for: Realtime data viewer and processor (in Python)
 
 .. image:: figures/redvypr_overview_merged_v01_small.png
