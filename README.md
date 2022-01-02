@@ -1,7 +1,7 @@
 redvypr: Realtimedata viewer and processor (in python)
 ======================================================
 
-[Artistic view of redvyprs general structure](doc/source/figures/redvypr_overview_merged_v01_small.png)
+![Artistic view of redvyprs general structure](doc/source/figures/redvypr_overview_merged_v01_small.png)
 
 
 Sampling data from sensors does always require similar tasks:
