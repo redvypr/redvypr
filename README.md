@@ -1,7 +1,7 @@
+![Redvypr logo](doc/source/figures/redvypr_logo_v02.png)
+
 redvypr: Realtimedata viewer and processor (in python)
 ======================================================
-
-![Redvypr logo](doc/source/figures/redvypr_logo_v02.png)
 
 Overview
 --------
