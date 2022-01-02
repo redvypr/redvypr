@@ -29,6 +29,6 @@ provided.
 
 Documentation
 -------------
-Find the [here](https://redvypr.readthedocs.io) the documentation.
+Find [here](https://redvypr.readthedocs.io) the documentation of redvypr.
 
 
