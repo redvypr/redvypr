@@ -747,7 +747,12 @@ class numdispWidget(QtWidgets.QFrame):
         except:
             self.config['dataformat'] = "+2.5f"
 
-        self.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(backcolor,bordercolor))                        
+        try:
+            self.config['devicelabel']
+        except:
+            self.config['devicelabel'] = False
+
+        self.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(backcolor,bordercolor))
         self.layout = QtWidgets.QGridLayout(self)
         self.config = config
         if True:
@@ -760,9 +765,15 @@ class numdispWidget(QtWidgets.QFrame):
 
             if(len(title)>0):
                 self.titledisp = QtWidgets.QLabel(title)
-                self.titledisp.setStyleSheet("border : 1px solid {:s};".format(backcolor))
+                self.titledisp.setStyleSheet("font-weight: bold;border : 1px solid {:s};".format(backcolor))
                 self.titledisp.setAlignment(QtCore.Qt.AlignCenter)
-                self.layout.addWidget(self.titledisp,0,0)                                
+                self.layout.addWidget(self.titledisp,0,0,1,2)
+
+            if(self.config['devicelabel']):
+                self.devicedisp = QtWidgets.QLabel(self.config['device'])
+                self.devicedisp.setStyleSheet("border : 1px solid {:s};".format(backcolor))
+                self.devicedisp.setAlignment(QtCore.Qt.AlignCenter)
+                self.layout.addWidget(self.devicedisp,1,0,1,2)
 
             # Unit
             try:
@@ -774,14 +785,16 @@ class numdispWidget(QtWidgets.QFrame):
             if(len(unit)>0):
                 self.unitdisp = QtWidgets.QLabel(unit)
                 self.unitdisp.setStyleSheet("border : 1px solid {:s};".format(backcolor))            
-                self.layout.addWidget(self.unitdisp,1,1)
+                self.layout.addWidget(self.unitdisp,2,1)
 
             
             self.numdisp = QtWidgets.QLabel("#")
             self.numdisp.setStyleSheet("border : 1px solid {:s};font-weight: bold; font-size: {:d}pt".format(backcolor,fontsize))            
             #
-            self.layout.addWidget(self.numdisp,1,0)
-
+            if(len(unit)>0):            
+                self.layout.addWidget(self.numdisp,2,0)
+            else:
+                self.layout.addWidget(self.numdisp,2,0,1,2)
 
                 
     def update_plot(self,data):
@@ -795,6 +808,7 @@ class numdispWidget(QtWidgets.QFrame):
         if(devicename in self.config['device']):
             dataformat = self.config['dataformat']
             datastr = "{0:{dformat}}".format(data[datakey],dformat=dataformat)
+            print(dataformat,data[datakey],datastr)            
             self.numdisp.setText(datastr)
             #self.resize_font(self.numdisp)
             if(self.unit == '[auto]'):
