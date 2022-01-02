@@ -49,7 +49,7 @@ What does it provide?
 ---------------------
 
 Redvypr provides the infrastructure to distribute, save, display and
-plot for datastream produced by digital sensors. New sensors can be
+plot for datastreams produced by digital sensors. New sensors can be
 integrated by creating an own device (Link to the device page here),
 example devices are provided with redvypr. By solely using Python it
 gives the user the flexibility to use the almost infinite number of
@@ -65,11 +65,13 @@ What it is not?
 Redvypr provides the infrastructure for sensor but does not provide
 out of the box interfaces to the almost infinite number of different
 sensor realizations. The user needs to write their own interface using
-the API provided by redvypr. Since redvypr is written in Python it is not
-well designed for "fast" sensors, i.e. sensors with sampling rates
-well above 100 Hz which need to be processed fast. The distribution is
-on frequency scales of 100 Hz. The datapackets can be large though,
-allowing to transport more data by one packet.
+the API provided by redvypr. Since redvypr is written in Python it is
+not well designed for "fast" sensors, i.e. sensors with sampling rates
+well above 100 Hz and need to be processed at the same
+frequency. Despite this redvypr is principally capable to buffer the
+data and transport larger packets, avoiding a data loss. This data can
+then be processed on lower frequencies by downstream devices.
+
 
 
 
