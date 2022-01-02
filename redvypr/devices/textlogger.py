@@ -73,7 +73,7 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
                 for f in fs:
                     f.write(datastr)
                     f.flush()
-                    
+                    os.fsync(f.fileno())
                     
                 data_new = data
                 data_new['data'] = datastr

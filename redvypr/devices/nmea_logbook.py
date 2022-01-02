@@ -110,7 +110,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         self.device = device
         layout        = QtWidgets.QVBoxLayout(self)
-        hlayout       = QtWidgets.QHBoxLayout()
+        hlayout       = QtWidgets.QGridLayout()
         flayout        = QtWidgets.QFormLayout()
         self.loperator=QtWidgets.QLabel("Operator")
         self.operator = QtWidgets.QLineEdit()
@@ -129,6 +129,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.logheader.setReadOnly(True)
         self.logheadercheck = QtWidgets.QCheckBox('Add header')
         self.logheadercheck.setChecked(True)
+        self.logheadercheck.setToolTip('Check/Unchecking will update the header, the commit time will be updated, not the one shown here.')
+        self.logheadercheck.stateChanged.connect(self.update_logheader)
         flayout.addRow(self.logheadercheck,self.logheader)
         #self.logstr = ''
         self.logcommitbutton=QtWidgets.QPushButton("Commit log entry")
@@ -138,23 +140,47 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.text     = QtWidgets.QPlainTextEdit(self)
         self.text.setReadOnly(True)
         self.text.setMaximumBlockCount(10000)
-        self.posstatus= QtWidgets.QPushButton('Position')
-        self.posstatus.setStyleSheet("background-color: red")
+        self.lonstatus= QtWidgets.QPushButton('Lon')
+        self.lonstatus.setStyleSheet("background-color: red")
+        self.loninput = QtWidgets.QLineEdit()
+        self.loninput.setText("0.0")
+        self.latstatus= QtWidgets.QPushButton('Lat')
+        self.latstatus.setStyleSheet("background-color: red")
+        self.latinput = QtWidgets.QLineEdit()
+        self.latinput.setText("0.0")        
         self.datestatus= QtWidgets.QPushButton('Date')
         self.datestatus.setStyleSheet("background-color: red")
+        self.dateinput = QtWidgets.QLineEdit()                
         self.timestatus= QtWidgets.QPushButton('Time')
+
         self.timestatus.setStyleSheet("background-color: red")
-        hlayout.addWidget(self.posstatus)
-        hlayout.addWidget(self.timestatus)
-        hlayout.addWidget(self.datestatus)
+        self.timeinput = QtWidgets.QLineEdit()
+        tnow = datetime.datetime.now()
+        nowtimestr = tnow.strftime("%H:%M:%S")        
+        nowdatestr = tnow.strftime("%d.%m.%Y")
+        self.dateinput.setText(nowtimestr)        
+        self.timeinput.setText(nowdatestr)
+        hlayout.addWidget(self.latstatus,0,0)        
+        hlayout.addWidget(self.lonstatus,0,1)
+        hlayout.addWidget(self.timestatus,0,2)
+        hlayout.addWidget(self.datestatus,0,3)
+        hlayout.addWidget(self.latinput,1,0)        
+        hlayout.addWidget(self.loninput,1,1)
+        hlayout.addWidget(self.dateinput,1,2)
+        hlayout.addWidget(self.timeinput,1,3)
+        self.logposcheck = QtWidgets.QCheckBox('Use GPS Position/Time')
+        self.logposcheck.setChecked(True)
+        hlayout.addWidget(self.logposcheck,2,0,1,3)        
+        layout.addLayout(hlayout)        
         layout.addLayout(flayout)
-        layout.addLayout(hlayout)
         layout.addWidget(self.text)
         self.goodpos = -1
+        # Create a first header
+        self.update_logheader()
         
     def commit_logentry(self):
         text = self.logtextedit.toPlainText()
-        text = '\n"""\n' + text + '\n"""'
+        text = '"' + text + '"'
         self.logtextedit.clear()
         
         # Update the logheader
@@ -171,16 +197,23 @@ class displayDeviceWidget(QtWidgets.QWidget):
             
     def update_logheader(self):
         hosttime = datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')
-        try:
-            self.timestr
-        except:
-            self.timestr = "?.?.? ?:?:?"
-        try:
-            self.posstrheader
-        except:
-            self.posstrheader = "?N,?E"
+        if(self.logposcheck.isChecked()):
+            try:
+                self.timestr
+            except:
+                self.timestr = "?.?.? ?:?:?"
+            try:
+                self.posstrheader
+            except:
+                self.posstrheader = "?N,?E"
+        else:
+            self.timestr = self.dateinput.text() + ' ' + self.timeinput.text()
+            self.posstrheader = self.latinput.text() + ',N,' + self.loninput.text()+ ',E'
             
+                
+        
         self.logheaderstr = '$NMEALOG,' + hosttime + ',' + self.timestr + ',' + self.posstrheader + ',' + self.operator.text() + ',' + self.location.text() + ',log,'
+        print(self.logheaderstr)   
         self.logheader.setText(self.logheaderstr)
 
     def update(self,data):
