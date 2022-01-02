@@ -68,7 +68,7 @@ sensor realizations. The user needs to write their own interface using
 the API provided by redvypr. Since redvypr is written in Python it is
 not well designed for "fast" sensors, i.e. sensors with sampling rates
 well above 100 Hz and need to be processed at the same
-frequency. Despite this redvypr is principally capable to buffer the
+frequency. Despite this, redvypr is principally capable to buffer the
 data and transport larger packets, avoiding a data loss. This data can
 then be processed on lower frequencies by downstream devices.
 
