@@ -9,6 +9,7 @@ import sys
 import yaml
 import copy
 import pyqtgraph
+from redvypr.data_packets import redvypr_isin_data
 
 pyqtgraph.setConfigOption('background', 'w')
 pyqtgraph.setConfigOption('foreground', 'k')
@@ -288,11 +289,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         #print('Hallonewnew',button.config)
         if True:
             for i,dc in enumerate(self.device.config):
-                print(dc)
-                print(button.config)
-                print(confignew)            
                 if(dc == button.config):
-                    print('Found config')
+                    logger.debug('Found config')
                     self.device.config[i] = confignew
                     button.config = confignew
                     break
@@ -349,7 +347,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.layout        = QtWidgets.QGridLayout(self)
         self.device = device
         self.buffersizestd = buffersize
-        self.plots = []        
+        self.plots = []
+        self.databuf = [] # A buffer of data
 
             
         config = {'dt_update':dt_update,'last_update':time.time()}
@@ -365,7 +364,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
             plot.close()
             
         # Add axes to the widget
-        print('Config',self.device.config)
         for i,config in enumerate(self.device.config):
 
             if(config['type'] == 'graph'):
@@ -405,23 +403,27 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 config = line_dict['config'] 
         
     def update(self,data):
-        funcname = __name__ + '.update()'
+        funcname = __name__ + '.update():'
         tnow = time.time()
+        self.databuf.append(data)
         #print('got data',data)
-        print('statistics',self.device.statistics)
+        #print('statistics',self.device.statistics)
         devicename = data['device']
         # Only plot the data in intervals of dt_update length, this prevents high CPU loads for fast devices
         update = (tnow - self.config['last_update']) > self.config['dt_update']
-        print('update update',update)
+        #print('update update',update)
         if(update):
             self.config['last_update'] = tnow
             
             try:
-                for plot in self.plots:
-                    plot.update_plot(data)
+                for data in self.databuf:
+                    for plot in self.plots:
+                        plot.update_plot(data)
+
+                self.databuf = []
     
             except Exception as e:
-                print('Exception:' + str(e))
+                logger.debug(funcname + 'Exception:' + str(e))
 
 #
 #                
@@ -528,12 +530,8 @@ class plotWidget(QtWidgets.QWidget):
                 #lineconfig = {'device':testranddata,'x':'t','y':'data','linewidth':2,'color':QtGui.QColor(255,0,0)}
                 # Add the line and the configuration to the lines list
                 line_dict = {'line':lineplot,'config':lineconfig,'x':xdata,'y':ydata}
-                print('Line dict',line_dict)
                 # The lines are sorted according to the devicenames, each device has a list of lines attached to it
                 plot_dict['lines'][lineconfig['device']].append(line_dict)
-                print('Lines:',len(plot_dict['lines'][lineconfig['device']]))
-                print('Lines:',len(plot_dict['lines'][lineconfig['device']]))
-                print('Lines:',len(plot_dict['lines'][lineconfig['device']]))
                 plot.addItem(lineplot)
                 # Configuration 
                 
@@ -547,8 +545,6 @@ class plotWidget(QtWidgets.QWidget):
         funcname = __name__ + '.update()'
         tnow = time.time()
         #print('got data',data)
-
-        devicename = data['device']
         # Always update
         update = True
         try:
@@ -556,21 +552,22 @@ class plotWidget(QtWidgets.QWidget):
             if True:
                 plot_dict = self.plot_dict
                 # Check if the device is to be plotted
-                if(devicename in plot_dict['lines'].keys()):
-                    pw        = plot_dict['widget'] # The plot widget
-                    for ind,line_dict in enumerate(plot_dict['lines'][devicename]): # Loop over all lines of the devices to plot
-                        line      = line_dict['line'] # The line to plot
-                        config    = line_dict['config'] # The line to plot
-                        x         = line_dict['x'] # The line to plot
-                        y         = line_dict['y'] # The line to plot   
-                        x         = np.roll(x,-1)       
-                        y         = np.roll(y,-1)
-                        x[-1]    = float(data[config['x']])
-                        y[-1]    = float(data[config['y']])                
-                        line_dict['x']  = x
-                        line_dict['y']  = y
+                for devicename_plot in plot_dict['lines'].keys(): # Loop over all lines of the devices to plot
+                    if(redvypr_isin_data(devicename_plot,data)):
+                        pw        = plot_dict['widget'] # The plot widget
+                        for ind,line_dict in enumerate(plot_dict['lines'][devicename_plot]): # Loop over all lines of the device to plot
+                            line      = line_dict['line'] # The line to plot
+                            config    = line_dict['config'] # The line to plot
+                            x         = line_dict['x'] # The line to plot
+                            y         = line_dict['y'] # The line to plot   
+                            x         = np.roll(x,-1)       
+                            y         = np.roll(y,-1)
+                            x[-1]    = float(data[config['x']])
+                            y[-1]    = float(data[config['y']])                
+                            line_dict['x']  = x
+                            line_dict['y']  = y
             if(update):
-                print('Hallo!')
+                #print('Hallo!')
                 if True:
                     for devicename in plot_dict['lines'].keys():
                         if True:
@@ -584,8 +581,8 @@ class plotWidget(QtWidgets.QWidget):
                                 #pw.setXRange(min(x[:ind]),max(x[:ind]))        
     
         except Exception as e:
-            print(funcname + 'Excpetion:' + str(e))
-            logger.debug(funcname + 'Excpetion:' + str(e))
+            #print(funcname + 'Exception:' + str(e))
+            logger.debug(funcname + 'Exception:' + str(e))
 
 
 #
@@ -636,7 +633,7 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
             yparse = yaml.safe_load(pstring)
             newdata = yparse['a']
             item.setText(1,self.backup_data)
-            print('ohno',e)            
+            logger.warning(funcname + ':bad:' + str(e))
 
         # Change the dictionary 
         try:
@@ -805,10 +802,9 @@ class numdispWidget(QtWidgets.QFrame):
         #print('got data',data)
         devicename = data['device']
         datakey = self.config['data']
-        if(devicename in self.config['device']):
+        if(redvypr_isin_data(self.config['device'],data)):
             dataformat = self.config['dataformat']
             datastr = "{0:{dformat}}".format(data[datakey],dformat=dataformat)
-            print(dataformat,data[datakey],datastr)            
             self.numdisp.setText(datastr)
             #self.resize_font(self.numdisp)
             if(self.unit == '[auto]'):
@@ -824,8 +820,6 @@ class numdispWidget(QtWidgets.QFrame):
     def resize_font(self,label):
         # Does not work!
         fsize         = label.fontMetrics().size(0, label.text())
-        print(fsize.height())
-        print(label.height())
         lsize = label.size()
         font = QtGui.QFont('Arial')
         font.setPixelSize(label.height())
@@ -953,7 +947,6 @@ class configdata():
     def __init__(self, value):
         self.value = value
     def __reduce__(self):
-        print('Hallo',self.value)
         return (type(self.value), (self.value, ))
 
 

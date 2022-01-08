@@ -40,6 +40,7 @@ class Device():
             self.logger.info('\t {:s}'.format(fstr))
                         
         rng = np.random.default_rng()
+        xold = 0
         while True:
             try:
                 com = self.comqueue.get(block=False)
@@ -59,16 +60,28 @@ class Device():
                     xoff = func['range'][0]
                     x += rng.random() * dx - xoff
                     
-                if(func['name']=='sin'):
+                elif(func['name']=='sin'):
                     try:
                         x += func['amp'] * np.sin(func['f'] * t + func['phase'])
                     except Exception as e:
                         self.logger.debug(str(e))
-                    
-            data = {'t':t,'data':float(x),'data_unit':'randomunit'}
+
+                elif(func['name']=='count'):
+                    try:
+                        x += func['count'] + xold
+                    except Exception as e:
+                        self.logger.debug(str(e))                        
+                        
+            try:
+                data_unit = self.config['unit']
+            except:
+                data_unit = 'randomunit'
+
+            xold = x
+            data = {'t':t,'data':float(x),'data_unit':data_unit}
             #print('data',data)
             self.dataqueue.put(data)
-
+            
     def __str__(self):
         sstr = 'Random data device'
         return sstr

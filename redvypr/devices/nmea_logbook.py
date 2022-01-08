@@ -233,14 +233,18 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.goodpos = time.time()
             if(data['lon'] == None):
                 self.posstatus.setStyleSheet("background-color: yellow")
-                posstr = "Position, Lat: NA Lon: NA"
-                self.posstatus.setText(posstr)
+                lonstr = "Lon: NA"
+                latstr = "Lat: NA"                
+                self.lonstatus.setText(lonstr)
+                self.latstatus.setText(latstr)                
             else:
-                posstr = "Position, Lat: {:.4f} Lon: {:.4f}".format(data['lat'],data['lon'])
+                lonstr = "Lon: {:.4f}".format(data['lon'])
+                latstr = "Lat: {:.4f}".format(data['lat'])
                 lon = data['lon']
                 lat = data['lat']
                 #print(posstr) 
-                self.posstatus.setText(posstr)
+                self.lonstatus.setText(lonstr)
+                self.latstatus.setText(latstr)                                
                 self.posstatus.setStyleSheet("background-color: green")
                 
                 
@@ -278,6 +282,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.posstatus.setStyleSheet("background-color: red")
         
         self.timestr = "{:s}.{:s}.{:s} {:s}:{:s}:{:s}".format(dd,mm,yy,hh,mm,ss)    
-        self.posstrheader = "{:2.4f}N,{:3.4f}E".format(lat,lon)
+        self.posstrheader = "{:2.4f},N,{:3.4f},E".format(lat,lon)
         self.update_logheader()
         

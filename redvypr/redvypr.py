@@ -22,6 +22,7 @@ import importlib.util
 import glob
 import pathlib
 import signal
+import uuid
 
 
 
@@ -56,7 +57,7 @@ def get_ip():
     return IP
 
 # The hostinfo, to distinguish between different redvypr instances
-hostinfo = {'name':'redvypr','tstart':time.time(),'addr':get_ip()}
+hostinfo = {'name':'redvypr','tstart':time.time(),'addr':get_ip(),'uuid':str(uuid.uuid1())}
 
 def distribute_data(devices,infoqueue,dt=0.01):
     """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
@@ -78,10 +79,6 @@ def distribute_data(devices,infoqueue,dt=0.01):
                 try:
                     data = device.dataqueue.get(block=False)
                     devicedict['numdata'] += 1
-                    if devicedict['statistics']['inspect']:
-                        devicedict['statistics']['numpackets'] += 1
-                        # Create a unique list of datakeys
-                        devicedict['statistics']['datakeys'] = list(set(devicedict['statistics']['datakeys'] + list(data.keys())))
                         
                 except Exception as e:
                     break
@@ -89,10 +86,22 @@ def distribute_data(devices,infoqueue,dt=0.01):
                 # Add deviceinformation to the data package
                 if('device' not in data.keys()):
                     data['device']   = str(device.name)
-                    data['host']     = hostinfo                
+                    data['host']     = hostinfo
+
+                try:
+                    if devicedict['statistics']['inspect']:
+                        devicedict['statistics']['numpackets'] += 1
+                        # Create a unique list of datakeys
+                        devicedict['statistics']['datakeys'] = list(set(devicedict['statistics']['datakeys'] + list(data.keys())))
+                        # Create a unqiue list of devices, device can
+                        # be different from the transporting device,
+                        # i.e. network devices do not change the name
+                        # of the transporting dictionary
+                        devicedict['statistics']['devices'] = list(set(devicedict['statistics']['devices'] + [data['device']]))
+                except Exception as e:
+                    print('e')
 
                 if True:
-                    #print('Read from device',device,'data',data)
                     # Feed the data into the modules/functions/objects and
                     # let them treat the data
                     for dataout in devicedict['dataout']:
@@ -272,6 +281,16 @@ class redvypr(QtCore.QObject):
         self.datadistthread.start()
         self.populate_device_path()
 
+        # Configurating redvypr
+        if(config is not None):
+            logger.debug(funcname + ':Configuration: ' + str(config))            
+            if(type(config) == str):
+                config = [config]
+
+            for c in config:
+                logger.debug(funcname + ':Parsing configuration: ' + str(c))                            
+                self.parse_configuration(c)        
+
     def print_status(self):
         funcname = __name__ + '.print_status():'
         print(funcname + self.status())
@@ -321,7 +340,10 @@ class redvypr(QtCore.QObject):
                     pass
 
                 # Tell it deviceinfos
-                sendict['infowidget'].thread_status({'threadalive':running2})
+                try: # GUI?
+                    sendict['infowidget'].thread_status({'threadalive':running2})
+                except Exception as e:
+                    pass                    
                 # Go tell it to the widgets
                 try: # If the device has a thread_status function
                     sendict['initwidget'].thread_status({'threadalive':running2})
@@ -413,6 +435,7 @@ class redvypr(QtCore.QObject):
 
         # Add the hostname
         try:
+            logger.info(funcname + ': Setting hostname to {:s}'.format(config['hostname']))
             hostinfo['name'] = config['hostname']
         except:
             pass
@@ -572,7 +595,7 @@ class redvypr(QtCore.QObject):
         device.data_receiver = []
         device.data_provider = []        
         
-        statistics = {'inspect':True,'numpackets':0,'datakeys':[]} # A dictionary for gathering useful information about the packages
+        statistics = {'inspect':True,'numpackets':0,'datakeys':[],'devices':[]} # A dictionary for gathering useful information about the packages
         devicedict = {'device':device,'thread':None,'dataout':[],'gui':[],'guiqueue':[guiqueue],'statistics':statistics}
         # Add some statistics
         devicedict['numdata'] = 0
@@ -1197,7 +1220,12 @@ class deviceinfoWidget(QtWidgets.QWidget):
     def get_info(self):        
         self.infowidget       = QtWidgets.QPlainTextEdit()
         self.infowidget.setReadOnly(True)
-        statstr = yaml.dump(self.devicedict['statistics'])
+        sortstat ={}
+        for i in sorted(self.devicedict['statistics']):
+            sortstat[i]=self.devicedict['statistics'][i]
+
+        sortstat['datakeys'] = sorted(sortstat['datakeys'])
+        statstr = yaml.dump(sortstat)
         self.infowidget.insertPlainText(statstr + '\n')
         self.infowidget.show()
         
@@ -1286,7 +1314,8 @@ class redvyprWidget(QtWidgets.QWidget):
         super(redvyprWidget, self).__init__()
         self.setGeometry(50, 50, 500, 300)
         # Lets create the heart of redvypr
-        self.redvypr = redvypr()
+        self.redvypr = redvypr() # Configuration comes later after all widgets are initialized
+        
         self.redvypr.device_path_changed.connect(self.__populate_devicepathlistWidget)
         self.redvypr.device_added.connect(self._add_device)
         # Fill the layout
@@ -1326,14 +1355,14 @@ class redvyprWidget(QtWidgets.QWidget):
         if((width is not None) and (height is not None)):
             self.resize(int(width), int(height))
             
-            
-        # Configurating redvypr
-        if(config is not None):
-            if(type(config) == str):
-                config = [config]
+        if True:    
+            # Configurating redvypr
+            if(config is not None):
+                if(type(config) == str):
+                    config = [config]
 
-            for c in config:
-                self.redvypr.parse_configuration(c)
+                for c in config:
+                    self.redvypr.parse_configuration(c)
 
 
         self.__populate_devicepathlistWidget()
@@ -1772,12 +1801,14 @@ def redvypr_main():
     redvypr_help      = 'redvypr'
     config_help       = 'Using a yaml config file'
     config_help_nogui = 'start redvypr without a gui'
-    config_help_path  = 'add path to search for redvypr modules'        
+    config_help_path  = 'add path to search for redvypr modules'
+    config_help_hostname  = 'hostname of redvypr, overwrites the hostname in a possible configuration '            
     parser = argparse.ArgumentParser()
     parser.add_argument('--verbose', '-v', action='count')
     parser.add_argument('--config', '-c',help=config_help)
     parser.add_argument('--nogui', '-ng',help=config_help_nogui,action='store_true')
-    parser.add_argument('--add_path', '-p',help=config_help_path)    
+    parser.add_argument('--add_path', '-p',help=config_help_path)
+    parser.add_argument('--hostname', '-hn',help=config_help_hostname)        
     parser.set_defaults(nogui=False)
     args = parser.parse_args()
 
@@ -1791,15 +1822,22 @@ def redvypr_main():
 
     logger.setLevel(logging_level)
     
-    config = args.config
     # Check if we have a redvypr.yaml, TODO, add also default path
+    config_all = []
     if(os.path.exists('redvypr.yaml')):
-        if(config == None):
-            config = ['redvypr.yaml']
-        else:
-            config = ['redvypr.yaml', config]
+        config_all.append('redvypr.yaml')
+
+    # Add the configuration
+    config = args.config
+    if(config is not None):
+        config_all.append(config)    
+
+    # Add hostname
+    if(args.hostname is not None):
+        hostconfig = {'hostname':args.hostname}
+        config_all.append(hostconfig)
         
-    print('Config',config)
+    print('Config',config_all)
     print('Flag nogui',args.nogui)
 
     # Adding device module pathes
@@ -1823,7 +1861,7 @@ def redvypr_main():
             
         signal.signal(signal.SIGINT, handleIntSignal)        
         app = QtCore.QCoreApplication(sys.argv)
-        redvypr_obj = redvypr(config=config,nogui=True)
+        redvypr_obj = redvypr(config=config_all,nogui=True)
         sys.exit(app.exec_())
     else:
         app = QtWidgets.QApplication(sys.argv)
@@ -1833,7 +1871,7 @@ def redvypr_main():
         print('Size: %d x %d' % (size.width(), size.height()))
         rect = screen.availableGeometry()
         print('Available: %d x %d' % (rect.width(), rect.height()))
-        ex = redvyprMainWidget(width=rect.width()/2,height=rect.height()*2/3,config=config)
+        ex = redvyprMainWidget(width=rect.width()/2,height=rect.height()*2/3,config=config_all)
         sys.exit(app.exec_())
 
 

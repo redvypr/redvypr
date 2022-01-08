@@ -1,79 +1,87 @@
 # A test configuration file
-hostname: redvyprrand
+hostname: redvyprrand1
 
 devices:
 - deviceconfig:
-    name: testranddata
+    name: rand1
     loglevel: info
+    config:
+      dt: .5
+      functions:
+        - name: sin
+          f: 0.05
+          amp: 25
+          phase: 0      
   devicemodulename: randdata
 - deviceconfig:
-    name: networkpublish
+    name: rand2
     loglevel: info
-  devicemodulename: network_device
+    config:
+      dt: .5
+      functions:
+        - name: count
+          count: 0.1
+  devicemodulename: randdata
 - deviceconfig:
-    name: networkpublish_udp
+    name: rand3
+    loglevel: info
+    config:
+      dt: .5
+      functions:
+        - name: rand
+          range: [-1,1]
+  devicemodulename: randdata
+- deviceconfig:
+    name: rand4
+    loglevel: info
+    config:
+      dt: .5
+      functions:
+        - name: sin
+          f: 0.01
+          amp: 2
+          phase: 0              
+        - name: rand
+          range: [-1,1]
+  devicemodulename: randdata
+- deviceconfig:
+    name: rand5
+    loglevel: info
+    config:
+      dt: .5
+      functions:
+        - name: count
+          count: 0.1 
+        - name: rand
+          range: [-1,1]
+  devicemodulename: randdata
+  
+- deviceconfig:
+    name: udp
     loglevel: info
     config:
       address: <broadcast>
-      port: 18197
+      port: 18196
       protocol: udp
       direction: publish
-  devicemodulename: network_device
-- deviceconfig:
-    name: networkreceive_udp
-    loglevel: debug
-    config:
-      address: <broadcast>
-      port: 18197
-      protocol: udp
-      direction: receive
-  devicemodulename: network_device    
-- devicemodulename: textlogger
-  loglevel: info  
-  deviceconfig:
-    name: randlogger
-    config:
-      filename: randdata.txt
-      dt_newfile: 20    
-      log_keys:
-        - data
-- deviceconfig:
-    name: nclogger
-    config:
-      filename: 'randdata_test.nc'
-      zlib: True
-      dt_newfile: 5
-      file_timestamp: True      
-      attributes: # Add attributes to the variables
-      - name: 'serialnumber'
-        key: sn # The 'key' key is used to dynamically add the data of data[key]
-      - name: 'experiment'
-        value: 'testexperiment' # The value key is used to statically write the attribute      
-      groups:
-        - name: randdata
-          devices:
-            - testranddata
-          variables:
-            - name: randdata
-              key: data
-              type: float
-              attributes: # Add attributes to the variables
-              - name: 'long_name'
-                value: 'Random data'
-              
-  devicemodulename: netcdflogger
-  
+  devicemodulename: network_device  
+
 connections:
-- publish: testranddata
-  receive: networkpublish
-- publish: testranddata
-  receive: networkpublish_udp  
-- publish: testranddata
-  receive: nclogger
-  
+- publish: rand1
+  receive: udp
+- publish: rand2
+  receive: udp
+- publish: rand3
+  receive: udp
+- publish: rand4
+  receive: udp
+- publish: rand5
+  receive: udp          
   
 start:
-- testranddata
-- networkpublish
-#- networkpublish_udp
-#- nclogger
+- rand1
+- rand2
+- rand3
+- rand4
+- rand5
+- udp

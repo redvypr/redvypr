@@ -47,6 +47,7 @@ import netCDF4
 import copy
 import pkg_resources
 import yaml
+from redvypr.data_packets import redvypr_isin_data
 
 # Get the version of redvypr
 _version_file = pkg_resources.resource_filename('redvypr','VERSION')
@@ -230,7 +231,8 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                 # Check if the devices is in the group
                 for igroup,group in enumerate(config['groups']):
                     flag_saved_data = False
-                    if((data['device'] in group['devices']) or (len(group['devices']) == 0)): # If devices is empty take all
+                    flag_data_save = redvypr_isin_data(group['devices'],data) # Check i
+                    if((flag_data_save) or (len(group['devices']) == 0)): # If devices is empty take all
                         #print('Device in group')
                         ind = len(group['__nc__'].variables['tu'])
                         # Get the data with the given keys

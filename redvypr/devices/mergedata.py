@@ -36,8 +36,8 @@ def start(datainqueue,dataqueue,comqueue,config):
             try:
                 data = datainqueue.get(block=False)
                 for i,d in enumerate(config['devicenames']):
-                    devices_updated[i] = True
                     if(data['device'] == d):
+                        devices_updated[i] = True                        
                         for k in data.keys():
                             k_new = k + '_{:d}'.format(i)
                             mergeddata[k_new] = data[k]
@@ -50,14 +50,14 @@ def start(datainqueue,dataqueue,comqueue,config):
                     
                 # Publishing the merged data
                 if(publish_merged):
-                    print('mergeddata',mergeddata)
                     dataqueue.put(mergeddata)
                     mergeddata = {}
                     mergeddata['devicenames'] = config['devicenames']
                     publish_merged = False
-                    for i,d in devices_updated:
+                    for i in range(len(devices_updated)):
                         devices_updated[i] = False
-
+                        
+                    
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))            
 
