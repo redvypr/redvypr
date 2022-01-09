@@ -1,3 +1,4 @@
+	-0.3.2: - netCDF automatic group creation, massive device example added
 	-0.3.1: - hostname command line, randdata counter, massive randdata example
 	-0.3.0: - github.com upload
 	-0.2.9: - Added statuswidget, changed path into extra widget that can be shown, can change hostname now

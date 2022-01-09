@@ -1,0 +1,41 @@
+# A test configuration file
+hostname: netcdftest
+
+devices:
+- deviceconfig:
+    name: rand1
+    loglevel: info
+  devicemodulename: randdata
+- deviceconfig:
+    name: rand2
+    loglevel: info
+  devicemodulename: randdata  
+# NetCDF logger
+- deviceconfig:
+    name: nc
+    config:
+      filename: 'randdata_test.nc'
+      zlib: True
+      dt_newfile: 360
+      file_timestamp: True      
+      attributes: # Add attributes to the variables
+      - name: 'experiment'
+        value: 'Multiple data streams into one netCDF file' 
+      groups:
+        #- name: "*@netcdftest" # Creates a group netcdftest1 and adds automatic variables of all devices received
+        - name: "*@*" # Creates a group netcdftest1 and adds automatic variables of all devices received         
+
+  devicemodulename: netcdflogger
+  
+connections:
+- publish: rand1
+  receive: nc
+- publish: rand2
+  receive: nc  
+
+  
+  
+start:
+- rand1
+- rand2
+- nc

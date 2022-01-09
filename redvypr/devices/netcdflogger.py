@@ -47,7 +47,7 @@ import netCDF4
 import copy
 import pkg_resources
 import yaml
-from redvypr.data_packets import redvypr_isin_data
+from redvypr.data_packets import redvypr_isin_data, redvypr_get_devicename, redvypr_get_keys
 
 # Get the version of redvypr
 _version_file = pkg_resources.resource_filename('redvypr','VERSION')
@@ -85,13 +85,16 @@ standard_variable['key'] = 'key'
 
 standard_attribute = {'name':'newattribute','value':'attvalue','key':'attribute key'}
 
-def create_ncfile(config):
+def create_ncfile(config,update=False,nc=None):
     """ Creates a netcdf file
     Args:
        config (dict): The configuration dictionary, see the Device class documentation for the structure of the dict
     """
     funcname = __name__ + '.create_ncfile()'
-    logger.debug(funcname + ':Creating file')    
+    if(update):
+        logger.debug(funcname + ':Modifying file')
+    else:
+        logger.debug(funcname + ':Creating file')
     # Create the file
     tfile = time.time()
     filename = config['filename']
@@ -105,31 +108,51 @@ def create_ncfile(config):
        tstr = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
        (filebase,fileext)=os.path.splitext(filename)
        filename = filebase + '_' + tstr + fileext
-    try:
-        nc = netCDF4.Dataset(filename,'w')
-        logger.debug(funcname + 'Opened file: {:s}'.format(filename))            
-    except Exception as e:
-        logger.warning(funcname + ': Error opening file:' + str(filename) + ':' + str(e))
-        return
+
+    if(update):
+        pass # Use the ncfile in nc
+    else:
+        try:
+            nc = netCDF4.Dataset(filename,'w')
+            logger.debug(funcname + 'Opened file: {:s}'.format(filename))            
+        except Exception as e:
+            logger.warning(funcname + ': Error opening file:' + str(filename) + ':' + str(e))
+            return
 
     # Create the groups
     for igroup,group in enumerate(confignc['groups']):
-        ncg = nc.createGroup(group['name'])
-        group['__nc__'] = ncg # Save the group in the config dictionary
-        # Create unix time as the unlimited dimension, here the time of the redvypr host is saved
-        ncg.createDimension('tu',size=None)
-        ncg.createVariable('tu',np.float,('tu'),zlib=config['zlib'])
-        for ikey,key in enumerate(group['variables']):
-            if('name' in key.keys()):
-                ncvar = ncg.createVariable(key['name'],key['type'],('tu'),zlib=config['zlib'])
-                key['nwritten'] = 0
-                config['groups'][igroup]['variables'][ikey]['nwritten'] = key['nwritten'] # Put it also in the original config
-                try:
-                    ncvar.units = key['units']
-                except:
-                    pass
+        if('*' in group['name']): # Check if we have a expansion, if yes, skip that
+            logger.debug(funcname + ':Skipping group {:s}'.format(group['name']))
+        else:
+            if(group['name'] not in nc.groups.keys()): # Check if the nc file has already the group
+                logger.debug(funcname + ':Creating group {:s}'.format(group['name']))                
+                ncg = nc.createGroup(group['name'])
+                group['__nc__'] = ncg # Save the group in the config dictionary
+                # Create unix time as the unlimited dimension, here the time of the redvypr host is saved
+                tdim = ncg.createDimension('tu',size=None)
+                tvar = ncg.createVariable('tu',np.float,('tu'),zlib=config['zlib'])
+                tvar.units = 'seconds since 1970-01-01 00:00:00' # Unix time                
             else:
-                logger.warning(funcname + ': Variable does not have a name key, will not create it')
+                logger.debug(funcname + ':Group {:s} exists already'.format(group['name']))
+                ncg = nc.groups[group['name']]
+                group['__nc__'] = ncg # Save the group in the config dictionary                
+
+
+            for ikey,key in enumerate(group['variables']):
+                if('name' in key.keys()):
+                    if(key['name'] not in ncg.variables.keys()):                    
+                        logger.debug(funcname + ':Creating variable {:s}'.format(key['name']))                    
+                        ncvar = ncg.createVariable(key['name'],key['type'],('tu'),zlib=config['zlib'])
+                        key['nwritten'] = 0
+                        config['groups'][igroup]['variables'][ikey]['nwritten'] = key['nwritten'] # Put it also in the original config
+                        try:
+                            ncvar.units = key['units']
+                        except:
+                            pass
+                    else:
+                        logger.debug(funcname + ':Variable {:s} exists already'.format(key['name']))                                                
+                else:
+                    logger.warning(funcname + ': Variable does not have a name key, will not create it')
                     
 
     # This could be replaced by configdata object
@@ -227,46 +250,74 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
         while(datainqueue.empty() == False):
             try:
                 data = datainqueue.get(block=False)
-                #print('Got data for netcdf',data)
-                # Check if the devices is in the group
+                # Check if the devices are in the group
                 for igroup,group in enumerate(config['groups']):
-                    flag_saved_data = False
-                    flag_data_save = redvypr_isin_data(group['devices'],data) # Check i
-                    if((flag_data_save) or (len(group['devices']) == 0)): # If devices is empty take all
-                        #print('Device in group')
-                        ind = len(group['__nc__'].variables['tu'])
-                        # Get the data with the given keys
-                        for ikey,key in enumerate(group['variables']):
-                            # Check if the structure has the key
-                            flag_saved_data = True                            
-                            if(key['key'] in data):                                
-                                variable = group['__nc__'].variables[key['name']]
-                                variable[ind] = data[key['key']]
-                                key['nwritten'] += 1
-                                configstatus['groups'][igroup]['variables'][ikey]['nwritten'] = key['nwritten']
-                                # Check if we set attributes as well
-                                if('attributes' in key.keys()):
-                                    for attribute in key['attributes']:
-                                        if(('key' in attribute.keys()) and ('name' in attribute.keys())): # Does the attribute has a key, then use it as a key in the data packet
-                                            setattr(variable,attribute['name'],data[attribute['key']])
-                                        elif(('value' in attribute.keys()) and ('name' in attribute.keys())): # This can also be done in create netcdf as it is static
-                                            setattr(variable,attribute['name'],attribute['value'])
-                                        else:
-                                            pass
+                    # Check first if we have an automatic group, that needs to be expanded
+                    if('*' in group['name']):
+                        # Found an expansion, here a "real" group will be created based on the data packet.
+                        groupname = data['host']['name']
+                        devicename_exp = redvypr_get_devicename(data) # This will be the groupname
+                        # Check if the group is already existing
+                        flag_group_exists = False
+                        for group_test in config['groups']:
+                            if(group_test['name'] == devicename_exp):
+                                flag_group_exists = True
+                                #logger.debug(funcname + 'Group exists, saving it')
+                        if(flag_group_exists == False): # Does not exist, create new group entry (the '*' entry will be kept as well)
+                            logger.debug(funcname + 'Found expansion {:s} for device: {:s}'.format(group['name'],devicename_exp))
+                            logger.debug(funcname + ': Will create group:' + devicename_exp)
+                            newgroup     = {'name':devicename_exp,'devices':[],'variables':[]}
+                            newgroup['devices'].append(devicename_exp)
+                            # Create variables based on the data packet
+                            newvariables = redvypr_get_keys(data)
+                            
+                            for nvar in newvariables:
+                                newvar = {'name':nvar,'key':nvar,'type':float}
 
-                        # If any data was saved, save time as well
-                        if flag_saved_data:
-                            group['__nc__'].variables['tu'][ind] = data['t']
-                            packets_written += 1
-                            # Check if we want to sync
-                            if(packets_written%config['nsync'] == 0):
-                                logger.debug(funcname + ': Syncing nc file (ndatasets {})'.format(packets_written))
-                                nc.sync()
+                            newgroup['variables'].append(newvar)
+                            configstatus['groups'].append(newgroup)
+                            # Update the nc file with the new group
+                            [nc,config,configstatus] = create_ncfile(configstatus,update=True,nc=nc) # The original config is with the netcdf object, so a backup is created as configstatus
+                    else:
+                        flag_saved_data = False
+                        [flag_data_save,devicename,expanded] = redvypr_isin_data(group['devices'],data,get_devicename=True) # Check i
+                        if((flag_data_save) or (len(group['devices']) == 0)): # If devices is empty take all
+                            # Check if the devicename was expanded, if yes variables need to be created automically
+                            if(expanded):
+                                pass
+
+                            ind = len(group['__nc__'].variables['tu'])
+                            # Get the data with the given keys
+                            for ikey,key in enumerate(group['variables']):
+                                # Check if the structure has the key
+                                flag_saved_data = True                            
+                                if(key['key'] in data):                                
+                                    variable = group['__nc__'].variables[key['name']]
+                                    variable[ind] = data[key['key']]
+                                    key['nwritten'] += 1
+                                    configstatus['groups'][igroup]['variables'][ikey]['nwritten'] = key['nwritten']
+                                    # Check if we set attributes as well
+                                    if('attributes' in key.keys()):
+                                        for attribute in key['attributes']:
+                                            if(('key' in attribute.keys()) and ('name' in attribute.keys())): # Does the attribute has a key, then use it as a key in the data packet
+                                                setattr(variable,attribute['name'],data[attribute['key']])
+                                            elif(('value' in attribute.keys()) and ('name' in attribute.keys())): # This can also be done in create netcdf as it is static
+                                                setattr(variable,attribute['name'],attribute['value'])
+                                            else:
+                                                pass
+
+                            # If any data was saved, save time as well
+                            if flag_saved_data:
+                                group['__nc__'].variables['tu'][ind] = data['t']
+                                packets_written += 1
+                                # Check if we want to sync
+                                if(packets_written%config['nsync'] == 0):
+                                    logger.debug(funcname + ': Syncing nc file (ndatasets {})'.format(packets_written))
+                                    nc.sync()
 
 
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))
-                #print(data)
 
 class Device():
     """This is a netCDF4 logger. It reads the dictionary packets from
@@ -305,7 +356,6 @@ class Device():
         if('status' in self.statusdata.keys()):
             self.statusstr = self.statusdata['status']
         elif('filename' in self.statusdata.keys()):
-            #print('statusfile',self.statusdata)
             self.statusfile = copy.deepcopy(self.statusdata)
 
         return self.statusstr        
@@ -385,7 +435,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         except:
             newtext = 'None'
             
-        print(funcname + 'changed from',oldtext,'to',newtext)
+        logger.debug(funcname + 'changed from ' + str(oldtext)  + ' to ' + str(newtext))
         self.selected_item = new
         # Get the parent topic
         try:
@@ -553,7 +603,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
         
     def update(self,data):
         pass
-        #print('data',data)
         #self.byteslab.setText("Bytes written: {:d}".format(data['bytes_written']))
         #self.packetslab.setText("Packets written: {:d}".format(data['packets_written']))
         #self.text.insertPlainText(str(data['data']) + '\n')
@@ -582,7 +631,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
                 
         except Exception as e:
-            print(funcname + str(e))
+            logger.debug(funcname + str(e))
 
 #
 # Custom object to store optional data as i.e. qitem, but does not
@@ -743,9 +792,7 @@ class ncViewTree(QtWidgets.QTreeWidget):
             parent.addChild(child)                                    
 
             attrdict = copy.deepcopy(standard_attribute)
-            #print('NCconfig',item._ncconfig_)
             item._ncconfig_.append(attrdict)
-            #print('NCconfig',item._ncconfig_)
             parent.setExpanded(True)
 
     def rem_attribute(self,item):
@@ -754,8 +801,6 @@ class ncViewTree(QtWidgets.QTreeWidget):
         """
         funcname = __name__ + '.rem_atribute():'
         logger.debug(funcname)
-        #print(funcname,item)
-        #print(funcname,item.text(0))
         item.parent()._ncconfig_.remove(item._ncconfig_) # Remove the dictionary from the attributes list
         item.parent().removeChild(item)
         # Remove
@@ -879,7 +924,7 @@ class ncViewTree(QtWidgets.QTreeWidget):
             # Loop through all groups
             if('groups' in config.keys()):
                 logger.debug(funcname + 'adding group')
-                for igroup,group in enumerate(sorted(config['groups'])):
+                for igroup,group in enumerate(config['groups']):
                     data = configdata(group['name'])
                     child = QtWidgets.QTreeWidgetItem([data.value,''])
                     child._ncconfig_ = config['groups'][igroup]
@@ -980,10 +1025,9 @@ class ncViewTree(QtWidgets.QTreeWidget):
         """
         """
         funcname = __name__ + '.update():'
-        #print('Update')
         # Check if the filename has changed
         if(config['ncfilename'] == self.config['ncfilename']):
-            for igroup,group in enumerate(sorted(config['groups'])):            
+            for igroup,group in enumerate(config['groups']):
                 for key in sorted(group.keys()):
                     # Update the keyitems
                     if(key == 'variables'):

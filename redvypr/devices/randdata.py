@@ -78,7 +78,7 @@ class Device():
                 data_unit = 'randomunit'
 
             xold = x
-            data = {'t':t,'data':float(x),'data_unit':data_unit}
+            data = {'t':t,'data':float(x),'props@data':{'unit':data_unit}}
             #print('data',data)
             self.dataqueue.put(data)
             

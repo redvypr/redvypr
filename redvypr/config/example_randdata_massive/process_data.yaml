@@ -62,29 +62,22 @@ devices:
          dataformat: +3.1f
          
   devicemodulename: plot
+# NetCDF logger
 - deviceconfig:
     name: nc
     config:
+      mp: process
       filename: 'randdata_test.nc'
       zlib: True
-      dt_newfile: 360
+      dt_newfile: 3600
       file_timestamp: True      
       attributes: # Add attributes to the variables
       - name: 'experiment'
         value: 'Multiple data streams into one netCDF file' 
       groups:
-        - name: randdata
-          devices:
-            - rand1@redvyprrand1
-          variables:
-            - name: rand1
-              key: data
-              type: float
-              attributes: # Add attributes to the variables
-              - name: 'long_name'
-                value: 'Random data'
-              
-  devicemodulename: netcdflogger  
+        - name: "*@*" # Creates a group redvyprrand1 and adds automatic variables of all devices received 
+
+  devicemodulename: netcdflogger
   
 connections:
 - publish: udp

@@ -16,6 +16,7 @@ import threading
 import multiprocessing
 import redvypr.devices as redvyprdevices
 import redvypr.standard_device_widgets as standard_device_widgets
+from redvypr.data_packets import redvypr_isin_data, redvypr_get_devicename
 import socket
 import argparse
 import importlib.util
@@ -78,8 +79,7 @@ def distribute_data(devices,infoqueue,dt=0.01):
             while True:
                 try:
                     data = device.dataqueue.get(block=False)
-                    devicedict['numdata'] += 1
-                        
+                    devicedict['numpacket'] += 1
                 except Exception as e:
                     break
 
@@ -87,6 +87,12 @@ def distribute_data(devices,infoqueue,dt=0.01):
                 if('device' not in data.keys()):
                     data['device']   = str(device.name)
                     data['host']     = hostinfo
+
+                # Add the packetnumber to the datadict
+                if('numpacket' not in data.keys()):
+                    data['numpacket'] = 0
+                else:
+                    data['numpacket'] = devicedict['numpacket']
 
                 try:
                     if devicedict['statistics']['inspect']:
@@ -97,15 +103,16 @@ def distribute_data(devices,infoqueue,dt=0.01):
                         # be different from the transporting device,
                         # i.e. network devices do not change the name
                         # of the transporting dictionary
-                        devicedict['statistics']['devices'] = list(set(devicedict['statistics']['devices'] + [data['device']]))
+                        devicename_stat = redvypr_get_devicename(data)
+                        devicedict['statistics']['devices'] = list(set(devicedict['statistics']['devices'] + [devicename_stat]))
                 except Exception as e:
-                    print('e')
+                    logger.debug(funcname + ':' + str(e))
 
                 if True:
                     # Feed the data into the modules/functions/objects and
                     # let them treat the data
                     for dataout in devicedict['dataout']:
-                        devicedict['numdataout'] += 1
+                        devicedict['numpacketout'] += 1
                         try:
                             dataout.put_nowait(data)
                         except Exception as e:
@@ -309,8 +316,8 @@ class redvypr(QtCore.QObject):
                 running = False
                 runstr = 'stopped'    
 
-            statusstr += '\n\t' + sendict['device'].name + ':' + runstr + ': data packets: {:d}'.format(sendict['numdata'])
-            #statusstr += ': data packets published: {:d}'.format(sendict['numdataout'])
+            statusstr += '\n\t' + sendict['device'].name + ':' + runstr + ': data packets: {:d}'.format(sendict['numpacket'])
+            #statusstr += ': data packets received: {:d}'.format(sendict['numpacketout'])
 
         return statusstr
 
@@ -498,7 +505,19 @@ class redvypr(QtCore.QObject):
               print(smod)
               devicemodule     = smod['module']
               #devicemodule     = getattr(redvyprdevices, devicemodulename)
-              thread = True
+              # Check for multiprocess options
+              try:
+                  multiprocess = deviceconfig['config']['mp'].lower()
+              except:
+                  multiprocess = 'thread'
+
+              if(multiprocess == 'thread'):
+                  thread = True
+              elif(multiprocess == 'process'):
+                  thread = False
+              else:
+                  thread = True
+                  
               [devicedict,ind_devices] = self.create_devicedict(devicemodule,thread=thread,deviceconfig=deviceconfig)
               device = devicedict['device']
               # If the device does not have a name, add a standard but unique one
@@ -598,8 +617,8 @@ class redvypr(QtCore.QObject):
         statistics = {'inspect':True,'numpackets':0,'datakeys':[],'devices':[]} # A dictionary for gathering useful information about the packages
         devicedict = {'device':device,'thread':None,'dataout':[],'gui':[],'guiqueue':[guiqueue],'statistics':statistics}
         # Add some statistics
-        devicedict['numdata'] = 0
-        devicedict['numdataout'] = 0        
+        devicedict['numpacket'] = 0
+        devicedict['numpacketout'] = 0        
         # The displaywidget, to be filled by redvyprWidget.add_device (optional)
         devicedict['devicedisplaywidget'] = None
         
@@ -623,10 +642,10 @@ class redvypr(QtCore.QObject):
            device: Device is either a Device class defined in the device module or a dictionary containing the device class (when called from infodevicewidget in redvypr.py)
 
         """
-        funcname = __name__ + '.start_device_thread()'
+        funcname = __name__ + '.start_device_thread():'
         if(type(device) == dict): # If called from devicewidget
             device = device['device']        
-        logger.debug(funcname + ':Starting device: ' + device.name)
+        logger.debug(funcname + 'Starting device: ' + device.name)
         # Find the right thread to start
         for sendict in self.devices:
             if(sendict['device'] == device):
@@ -636,18 +655,20 @@ class redvypr(QtCore.QObject):
                     running = False
 
                 if(running):
-                    logger.info(funcname + 'thread/process is already running, doing nothing')
+                    logger.info(funcname + ':thread/process is already running, doing nothing')
                     
                 else:
                     if device.mp == 'thread':
+                        
                         devicethread     = threading.Thread(target=device.start, args=(), daemon=True)
                         sendict['thread']= devicethread
                         sendict['thread'].start()
+                        logger.info(funcname + 'started {:s} as thread'.format(device.name))
                     else:
                         deviceprocess    = multiprocessing.Process(target=device.start, args=())
                         sendict['thread']= deviceprocess
                         sendict['thread'].start()
-                        print('PID',deviceprocess.pid)
+                        logger.info(funcname + 'started {:s} as process with PID {:d}'.format(device.name, deviceprocess.pid))              
                     print('started')
                     
                     # Update the device and the devicewidgets about the thread status

@@ -1,6 +1,29 @@
 import time
 
-def redvypr_isin_data(devicestring,data):
+def redvypr_get_keys(data):
+    """Returns the keys of a redvypr data dictionar without the standard
+    keys ('t', 'host','device','numpacket') as well as keys with an
+    '@' in it.
+
+    """
+    keys = list(data.keys())
+    keys.remove('t')
+    keys.remove('host')
+    keys.remove('device')
+    keys.remove('numpacket')
+    for k in keys:
+        if('@' in k):
+            keys.remove(k)
+            
+    return keys
+
+def redvypr_get_devicename(data):
+    """ Returns a devicename including the hostname, ip or uuid.
+    """
+    devicename = data['device'] + '@' + data['host']['name']
+    return devicename
+
+def redvypr_isin_data(devicestring, data, get_devicename = False):
     """ Checks if the devicestring is in the datapacket.
     Arguments:
     devicestring: String or list of strings consisting the devicename and, optionally, the hostname/respectively IP-Adress
@@ -14,14 +37,32 @@ def redvypr_isin_data(devicestring,data):
         if('@' in devstring):
             devicename = devstring.split('@')[0]
             hostname   = devstring.split('@')[1]
-            hostflag = (hostname in data['host']['name']) or (hostname in data['host']['addr'])
-            if((devicename in data['device']) and hostflag):
-                return True        
+            hostexpanded = (hostname == '*')
+            if(hostexpanded):
+                hostname = data['host']['name']
+                
+            expanded   = (devicename == '*')
+            deviceflag = (devicename in data['device']) or expanded
+            hostflag = (hostname == data['host']['name']) or (hostname == data['host']['addr'])
+            if(deviceflag and hostflag):
+                devicename = data['device'] + '@' + hostname                
+                if(get_devicename):
+                    return [True,devicename,expanded or hostexpanded]
+                else:
+                    return True
         else:
-            if(devstring in data['device']):
-                return True
+            expanded   = (devstring == '*')
+            if((devstring in data['device']) or expanded):
+                if(get_devicename):
+                    return [True,data['device'],expanded]                    
+                else:
+                    return True                
 
-    return False
+    if(get_devicename):
+        return [False,None,False]
+    else:
+        return False
+
 
 
 def redvypr_datadict(data,datakey=None,tu=None):

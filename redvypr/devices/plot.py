@@ -432,13 +432,24 @@ class displayDeviceWidget(QtWidgets.QWidget):
 #
 #
 #
-class plotWidget(QtWidgets.QWidget):
+class plotWidget(QtWidgets.QFrame):
     """ Widget is plotting realtimedata using the pyqtgraph functionality
     This widget can be configured with a configuration dictionary 
     """
     def __init__(self,config):
         funcname = __name__ + '.init()'
-        super(QtWidgets.QWidget, self).__init__()
+        super(QtWidgets.QFrame, self).__init__()
+        try:
+            backcolor = config['background']
+        except:
+            backcolor = 'lightgray'
+            
+        try:
+            bordercolor = config['background']
+        except:
+            bordercolor = 'black'
+            
+        self.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(backcolor,bordercolor))        
         self.layout = QtWidgets.QVBoxLayout(self)
         self.config = config
         if True:
@@ -720,7 +731,7 @@ class numdispWidget(QtWidgets.QFrame):
     """
     def __init__(self,config):
         funcname = __name__ + '.init()'
-        super(QtWidgets.QWidget, self).__init__()
+        super(QtWidgets.QFrame, self).__init__()
         #self.setStyleSheet("border : 1px solid lightgray;background-color : lightgray")
         #self.setStyleSheet("background-color : red")
         self.config = config
