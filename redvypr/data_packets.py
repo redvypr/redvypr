@@ -42,7 +42,7 @@ def redvypr_isin_data(devicestring, data, get_devicename = False):
                 hostname = data['host']['name']
                 
             expanded   = (devicename == '*')
-            deviceflag = (devicename in data['device']) or expanded
+            deviceflag = (devicename == data['device']) or expanded
             hostflag = (hostname == data['host']['name']) or (hostname == data['host']['addr'])
             if(deviceflag and hostflag):
                 devicename = data['device'] + '@' + hostname                

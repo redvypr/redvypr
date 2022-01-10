@@ -132,7 +132,7 @@ def create_ncfile(config,update=False,nc=None):
                 tdim = ncg.createDimension('tu',size=None)
                 tvar = ncg.createVariable('tu',np.float,('tu'),zlib=config['zlib'])
                 tvar.units = 'seconds since 1970-01-01 00:00:00' # Unix time                                
-                #nvar = ncg.createVariable('numpacket',np.int,('tu'),zlib=config['zlib'])                
+                nvar = ncg.createVariable('numpacket',np.int,('tu'),zlib=config['zlib'])                
                 
             else:
                 logger.debug(funcname + ': Group {:s} exists already'.format(group['name']))
@@ -252,7 +252,6 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
         while(datainqueue.empty() == False):
             try:
                 data = datainqueue.get(block=False)
-                print('data',data)
                 # Check if the devices are in the group
                 for igroup,group in enumerate(config['groups']):
                     # Check first if we have an automatic group, that needs to be expanded
@@ -312,7 +311,7 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                             # If any data was saved, save time and numpacket as well
                             if flag_saved_data:
                                 group['__nc__'].variables['tu'][ind]        = data['t']
-                                #group['__nc__'].variables['numpacket'][ind] = data['numpacket']
+                                group['__nc__'].variables['numpacket'][ind] = data['numpacket']
                                 packets_written += 1
                                 # Check if we want to sync
                                 if(packets_written%config['nsync'] == 0):
@@ -624,10 +623,18 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 statusfile = self.device.statusfile
                 if(self.nctree is not None):
                     logger.debug(funcname + 'update tree')
-                    self.nctree.update(statusfile)
+                    try:
+                        self.nctree.update(statusfile)
+                    except: # This is a lazy version of creating a whole new tree if the update fails
+                        logger.debug(funcname + ' Update failed, creating a new tree')                        
+                        self.layout.removeWidget(self.nctree)
+                        self.nctree.close()
+                        self.nctree = ncViewTree(statusfile,editable=False)
+                        self.layout.addWidget(self.nctree)                        
+                        
                 else:
                     self.nctree = ncViewTree(statusfile,editable=False)
-                    self.layout.addWidget(self.nctree)                
+                    self.layout.addWidget(self.nctree)
 
                 if(statusdata is not self.oldstatusstr):
                     self.oldstatusstr = statusdata

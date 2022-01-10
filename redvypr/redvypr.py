@@ -90,9 +90,8 @@ def distribute_data(devices,infoqueue,dt=0.01):
 
                 # Add the packetnumber to the datadict
                 if('numpacket' not in data.keys()):
-                    data['numpacket'] = 0
-                else:
                     data['numpacket'] = devicedict['numpacket']
+
 
                 try:
                     if devicedict['statistics']['inspect']:

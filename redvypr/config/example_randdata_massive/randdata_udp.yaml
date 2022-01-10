@@ -23,15 +23,6 @@ devices:
           count: 0.1
   devicemodulename: randdata
 - deviceconfig:
-    name: randfast
-    loglevel: info
-    config:
-      dt: .1
-      functions:
-        - name: rand
-          range: [-1,1]
-  devicemodulename: randdata
-- deviceconfig:
     name: sinrand
     loglevel: info
     config:
@@ -71,8 +62,6 @@ connections:
   receive: udp
 - publish: count
   receive: udp
-- publish: randfast
-  receive: udp
 - publish: sinrand
   receive: udp
 - publish: sincount
@@ -81,7 +70,6 @@ connections:
 start:
 - sin
 - count
-- randfast
 - sinrand
 - sincount
 - udp

@@ -1,0 +1,35 @@
+# A test configuration file
+hostname: redvyprrand1
+
+devices:
+- deviceconfig:
+    name: sinrandfast
+    loglevel: info
+    config:
+      dt: .05
+      functions:
+        - name: sin
+          f: 0.1
+          amp: 5
+          phase: 0              
+        - name: rand
+          range: [-1,1]
+  devicemodulename: randdata
+- deviceconfig:
+    name: udp
+    loglevel: info
+    config:
+      address: <broadcast>
+      port: 18196
+      protocol: udp
+      direction: publish
+  devicemodulename: network_device  
+
+connections:
+- publish: sinrandfast
+  receive: udp
+
+  
+start:
+- sinrandfast
+- udp
