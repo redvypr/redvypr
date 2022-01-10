@@ -3,7 +3,7 @@ hostname: redvyprrand1
 
 devices:
 - deviceconfig:
-    name: rand1
+    name: sin
     loglevel: info
     config:
       dt: .5
@@ -14,7 +14,7 @@ devices:
           phase: 0      
   devicemodulename: randdata
 - deviceconfig:
-    name: rand2
+    name: count
     loglevel: info
     config:
       dt: .5
@@ -23,16 +23,16 @@ devices:
           count: 0.1
   devicemodulename: randdata
 - deviceconfig:
-    name: rand3
+    name: randfast
     loglevel: info
     config:
-      dt: .5
+      dt: .1
       functions:
         - name: rand
           range: [-1,1]
   devicemodulename: randdata
 - deviceconfig:
-    name: rand4
+    name: sinrand
     loglevel: info
     config:
       dt: .5
@@ -45,7 +45,7 @@ devices:
           range: [-1,1]
   devicemodulename: randdata
 - deviceconfig:
-    name: rand5
+    name: sincount
     loglevel: info
     config:
       dt: .5
@@ -67,21 +67,21 @@ devices:
   devicemodulename: network_device  
 
 connections:
-- publish: rand1
+- publish: sin
   receive: udp
-- publish: rand2
+- publish: count
   receive: udp
-- publish: rand3
+- publish: randfast
   receive: udp
-- publish: rand4
+- publish: sinrand
   receive: udp
-- publish: rand5
+- publish: sincount
   receive: udp          
   
 start:
-- rand1
-- rand2
-- rand3
-- rand4
-- rand5
+- sin
+- count
+- randfast
+- sinrand
+- sincount
 - udp

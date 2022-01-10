@@ -17,7 +17,7 @@ devices:
     config:
        - title: Plot A
          type: graph
-         location: [0,0] # The location as in QgridBoxLayout
+         location: [0,0] # The location as in QGridBoxLayout
          xlabel: time
          ylabel: Voltage
          datetick: True

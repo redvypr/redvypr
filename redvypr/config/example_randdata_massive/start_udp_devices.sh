@@ -1,4 +1,4 @@
-nprocesses=50
+nprocesses=1
 for i in $(seq 1 $nprocesses); do
     hostname=r$i
     echo $hostname

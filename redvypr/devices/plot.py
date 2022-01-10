@@ -24,7 +24,7 @@ def start(datainqueue,dataqueue,comqueue):
     while True:
         try:
             com = comqueue.get(block=False)
-            logger.info(funcname + 'received command:' + com)
+            logger.info(funcname + ': received command:' + com)
             break
         except:
             pass
@@ -35,9 +35,8 @@ def start(datainqueue,dataqueue,comqueue):
             try:
                 data = datainqueue.get(block=False)
                 dataqueue.put(data)
-
             except Exception as e:
-                logger.debug(funcname + ':Exception:' + str(e))            
+                logger.debug(funcname + ': Exception:' + str(e))            
 
 class Device():
     def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = []):
@@ -49,12 +48,14 @@ class Device():
         self.dataqueue   = dataqueue        
         self.comqueue    = comqueue
         self.config      = config # Please note that this is typically a placeholder, the config structure will be written by redvypr and the yaml
-                
-    def start(self):
-        """ Starting the logger
+
+    def finalize_init(self):
+        """This function is called after the configuration has been read and
+        parsed
+
         """
-        funcname = self.name + ':' + __name__ +':'
-        logger.debug(funcname + 'Starting now')
+        funcname = self.name + ':' + __name__ +':'        
+        logger.debug(funcname)
         # Check of devices have not been added
         devices = self.redvypr.get_devices() # Get all devices
         dataprovider = self.redvypr.get_data_providing_devices(self) # Get already connected publisher
@@ -68,19 +69,24 @@ class Device():
                 for l in plot['lines']: # Loop over all lines in a plot
                     name = l['device']
                     plot_devices.append(name)                    
-
+                    
         # Add the device if not already done so
-        for name in plot_devices:
-            logger.info(funcname + 'Connecting device {:s}'.format(name))
-            ret = self.redvypr.addrm_device_as_data_provider(name,self,remove=False)
-            if(ret == None):
-                logger.info(funcname + 'Device was not found')
-            elif(ret == False):
-                logger.info(funcname + 'Device was already connected')
-            elif(ret == True):
-                logger.info(funcname + 'Device was successfully connected')                                                    
-            
-                
+        if True:
+            for name in plot_devices:
+                logger.info(funcname + 'Connecting device {:s}'.format(name))
+                ret = self.redvypr.addrm_device_as_data_provider(name,self,remove=False)
+                if(ret == None):
+                    logger.info(funcname + 'Device was not found')
+                elif(ret == False):
+                    logger.info(funcname + 'Device was already connected')
+                elif(ret == True):
+                    logger.info(funcname + 'Device was successfully connected')                                                            
+    def start(self):
+        """ Starting the plot
+        """
+        funcname = self.name + ':' + __name__ +':'
+        logger.debug(funcname + 'Starting now')
+
         # And now start
         start(self.datainqueue,self.dataqueue,self.comqueue)
         

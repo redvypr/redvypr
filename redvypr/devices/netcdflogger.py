@@ -114,7 +114,7 @@ def create_ncfile(config,update=False,nc=None):
     else:
         try:
             nc = netCDF4.Dataset(filename,'w')
-            logger.debug(funcname + 'Opened file: {:s}'.format(filename))            
+            logger.debug(funcname + ': Opened file: {:s}'.format(filename))            
         except Exception as e:
             logger.warning(funcname + ': Error opening file:' + str(filename) + ':' + str(e))
             return
@@ -122,18 +122,20 @@ def create_ncfile(config,update=False,nc=None):
     # Create the groups
     for igroup,group in enumerate(confignc['groups']):
         if('*' in group['name']): # Check if we have a expansion, if yes, skip that
-            logger.debug(funcname + ':Skipping group {:s}'.format(group['name']))
+            logger.debug(funcname + ': Skipping group {:s}'.format(group['name']))
         else:
             if(group['name'] not in nc.groups.keys()): # Check if the nc file has already the group
-                logger.debug(funcname + ':Creating group {:s}'.format(group['name']))                
+                logger.debug(funcname + ': Creating group {:s}'.format(group['name']))                
                 ncg = nc.createGroup(group['name'])
                 group['__nc__'] = ncg # Save the group in the config dictionary
                 # Create unix time as the unlimited dimension, here the time of the redvypr host is saved
                 tdim = ncg.createDimension('tu',size=None)
                 tvar = ncg.createVariable('tu',np.float,('tu'),zlib=config['zlib'])
-                tvar.units = 'seconds since 1970-01-01 00:00:00' # Unix time                
+                tvar.units = 'seconds since 1970-01-01 00:00:00' # Unix time                                
+                #nvar = ncg.createVariable('numpacket',np.int,('tu'),zlib=config['zlib'])                
+                
             else:
-                logger.debug(funcname + ':Group {:s} exists already'.format(group['name']))
+                logger.debug(funcname + ': Group {:s} exists already'.format(group['name']))
                 ncg = nc.groups[group['name']]
                 group['__nc__'] = ncg # Save the group in the config dictionary                
 
@@ -141,7 +143,7 @@ def create_ncfile(config,update=False,nc=None):
             for ikey,key in enumerate(group['variables']):
                 if('name' in key.keys()):
                     if(key['name'] not in ncg.variables.keys()):                    
-                        logger.debug(funcname + ':Creating variable {:s}'.format(key['name']))                    
+                        logger.debug(funcname + ': Creating variable {:s}'.format(key['name']))                    
                         ncvar = ncg.createVariable(key['name'],key['type'],('tu'),zlib=config['zlib'])
                         key['nwritten'] = 0
                         config['groups'][igroup]['variables'][ikey]['nwritten'] = key['nwritten'] # Put it also in the original config
@@ -150,7 +152,7 @@ def create_ncfile(config,update=False,nc=None):
                         except:
                             pass
                     else:
-                        logger.debug(funcname + ':Variable {:s} exists already'.format(key['name']))                                                
+                        logger.debug(funcname + ': Variable {:s} exists already'.format(key['name']))                                                
                 else:
                     logger.warning(funcname + ': Variable does not have a name key, will not create it')
                     
@@ -165,7 +167,6 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
           config=None):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
-
     dt_status = 5 # Send every 5 seconds a status packet
     
     # Keys: list of the keys used in the data dictionary
@@ -181,11 +182,12 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
     [nc,config,configstatus] = create_ncfile(config)
     configstatus2 = {'status':'{:s}: Created new file: '.format(str(datetime.datetime.now())) + config['ncfilename'] + '\n'}    
     # Send a status about the newly created file
-    try:                
+    try:
         statusqueue.put_nowait(configstatus)
         statusqueue.put_nowait(configstatus2)        
     except Exception as e:
-        pass    
+        pass
+
     tfile   = time.time() # Save the time the file was created
     tstatus = time.time() # Save the time for status
     packets_written = 0
@@ -250,6 +252,7 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
         while(datainqueue.empty() == False):
             try:
                 data = datainqueue.get(block=False)
+                print('data',data)
                 # Check if the devices are in the group
                 for igroup,group in enumerate(config['groups']):
                     # Check first if we have an automatic group, that needs to be expanded
@@ -264,7 +267,7 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                                 flag_group_exists = True
                                 #logger.debug(funcname + 'Group exists, saving it')
                         if(flag_group_exists == False): # Does not exist, create new group entry (the '*' entry will be kept as well)
-                            logger.debug(funcname + 'Found expansion {:s} for device: {:s}'.format(group['name'],devicename_exp))
+                            logger.debug(funcname + ':Found expansion {:s} for device: {:s}'.format(group['name'],devicename_exp))
                             logger.debug(funcname + ': Will create group:' + devicename_exp)
                             newgroup     = {'name':devicename_exp,'devices':[],'variables':[]}
                             newgroup['devices'].append(devicename_exp)
@@ -306,9 +309,10 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                                             else:
                                                 pass
 
-                            # If any data was saved, save time as well
+                            # If any data was saved, save time and numpacket as well
                             if flag_saved_data:
-                                group['__nc__'].variables['tu'][ind] = data['t']
+                                group['__nc__'].variables['tu'][ind]        = data['t']
+                                #group['__nc__'].variables['numpacket'][ind] = data['numpacket']
                                 packets_written += 1
                                 # Check if we want to sync
                                 if(packets_written%config['nsync'] == 0):
@@ -1035,7 +1039,7 @@ class ncViewTree(QtWidgets.QTreeWidget):
                             for key2 in sorted(keydict.keys()):
                                 if(key2 == 'nwritten'):
                                     # update the nwritten key only
-                                    #self.config['groups'][igroup][key]
+                                    #[ikey]
                                     itm = self.config['groups'][igroup]['variables'][ikey][key2]
                                     try:
                                        keyitem = self.config['groups'][igroup]['variables'][ikey][key2].qitem

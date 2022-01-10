@@ -115,8 +115,9 @@ def distribute_data(devices,infoqueue,dt=0.01):
                         devicedict['numpacketout'] += 1
                         try:
                             dataout.put_nowait(data)
+                            #print('Sent',len(devicedict['dataout']),type(dataout))
                         except Exception as e:
-                            logger.debug(funcname + ':dataout of :' + devicedict['device'].name + ' full')
+                            logger.debug(funcname + ':dataout of :' + devicedict['device'].name + ' full: ' + str(e))
                     for guiqueue in devicedict['guiqueue']: # Put data into the guiqueue, this queue does always exist
                         #print('putting into guiqueue',data)
                         try:                        
@@ -148,7 +149,8 @@ def addrm_device_as_data_provider(devices,deviceprovider,devicereceiver,remove=F
     devicerecevier: Device object
     Returns: None if device could not been found, True for success, False if device was already connected
     """
-    print('addrm_device_as_data_provider():')
+    funcname = "addrm_device_as_data_provider():"
+    logger.debug(funcname)
     # Find the device first in self.devices and save the index
     inddeviceprovider = -1
     inddevicereceiver = -1    
@@ -159,7 +161,7 @@ def addrm_device_as_data_provider(devices,deviceprovider,devicereceiver,remove=F
             inddevicereceiver = i     
 
     if(inddeviceprovider < 0 or inddevicereceiver < 0):
-        logger.debug('addrm_device_as_data_provider(): Could not find devices, doing nothing')
+        logger.debug(funcname + ': Could not find devices, doing nothing')
         return None
 
     datainqueue       = devices[inddevicereceiver]['device'].datainqueue
@@ -168,7 +170,7 @@ def addrm_device_as_data_provider(devices,deviceprovider,devicereceiver,remove=F
     
     if(remove):
         if(datainqueue in dataoutlist):
-            logger.debug('addrm_device_as_data_provider():removed device')
+            logger.debug(funcname + ': Removed device')
             dataoutlist.remove(datainqueue)
             # Remove the receiver name from the list
             devices[inddevicereceiver]['device'].data_receiver.remove(devices[inddeviceprovider]['device'].name)
@@ -644,8 +646,11 @@ class redvypr(QtCore.QObject):
         """
         funcname = __name__ + '.start_device_thread():'
         if(type(device) == dict): # If called from devicewidget
-            device = device['device']        
-        logger.debug(funcname + 'Starting device: ' + device.name)
+            device = device['device']
+
+        #logger.debug(funcname + 'Starting device: ' + str(device.name))
+        print(funcname + 'Starting device: ' + str(device.name))
+
         # Find the right thread to start
         for sendict in self.devices:
             if(sendict['device'] == device):
@@ -656,39 +661,39 @@ class redvypr(QtCore.QObject):
 
                 if(running):
                     logger.info(funcname + ':thread/process is already running, doing nothing')
-                    
                 else:
-                    if device.mp == 'thread':
-                        
-                        devicethread     = threading.Thread(target=device.start, args=(), daemon=True)
-                        sendict['thread']= devicethread
-                        sendict['thread'].start()
-                        logger.info(funcname + 'started {:s} as thread'.format(device.name))
-                    else:
-                        deviceprocess    = multiprocessing.Process(target=device.start, args=())
-                        sendict['thread']= deviceprocess
-                        sendict['thread'].start()
-                        logger.info(funcname + 'started {:s} as process with PID {:d}'.format(device.name, deviceprocess.pid))              
-                    print('started')
-                    
-                    # Update the device and the devicewidgets about the thread status
-                    running2 = sendict['thread'].is_alive()
-                    try: # If the device has a thread_status function
-                        device.thread_status({'threadalive':running2})
-                    except:
-                        pass
-                    
-                    try: # If the device has a thread_status function
-                        sendict['initwidget'].thread_status({'threadalive':running2})
-                    except Exception as e:
-                        pass
-                    
-                    for guiwidget in sendict['gui']:
+                    try:
+                        if device.mp == 'thread':
+                            devicethread     = threading.Thread(target=device.start, args=(), daemon=True)
+                            sendict['thread']= devicethread
+                            sendict['thread'].start()
+                            logger.info(funcname + 'started {:s} as thread'.format(device.name))
+                        else:
+                            deviceprocess    = multiprocessing.Process(target=device.start, args=())
+                            sendict['thread']= deviceprocess
+                            sendict['thread'].start()
+                            logger.info(funcname + 'started {:s} as process with PID {:d}'.format(device.name, deviceprocess.pid))
+
+                        # Update the device and the devicewidgets about the thread status
+                        running2 = sendict['thread'].is_alive()
                         try: # If the device has a thread_status function
-                            guiwidget.thread_status({'threadalive':running2})
+                            device.thread_status({'threadalive':running2})
+                        except:
+                            pass
+
+                        try: # If the device has a thread_status function
+                            sendict['initwidget'].thread_status({'threadalive':running2})
                         except Exception as e:
                             pass
-                            #print('Start thread exception:' + str(e))
+
+                        for guiwidget in sendict['gui']:
+                            try: # If the device has a thread_status function
+                                guiwidget.thread_status({'threadalive':running2})
+                            except Exception as e:
+                                pass
+                                #print('Start thread exception:' + str(e))
+                    except Exception as e:
+                        logger.warning(funcname + 'Could not start device {:s}'.format(str(e)))
                     
 
     def stop_device_thread(self,device):
@@ -1361,7 +1366,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.logwidget_handler.add_widget(self.logwidget)
         self.devicetabs.addTab(self.logwidget,'Log') # Add a logwidget
         # Connect the logwidget to the logging
-        logger.addHandler(self.logwidget_handler)
+        #logger.addHandler(self.logwidget_handler)
         #self.logwidget.append("Hallo!")
 
         # A timer to gather all the data from the devices
@@ -1787,7 +1792,8 @@ class redvyprWidget(QtWidgets.QWidget):
         self.update_devicewidgetsummary()
         
     def close_application(self):
-        print('Closing!')
+        funcname = __name__ +'.close_application():'        
+        logger.debug(funcname + ' Closing ...')
         try:
             self.add_device_widget.close()
         except:
