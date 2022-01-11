@@ -22,8 +22,8 @@ devices:
          ylabel: Voltage
          datetick: True
          lines: 
-            - device: rand1@redvyprrand1
-              name: rand1@redvyprrand1
+            - device: sin@r1
+              name: sin@r1
               x: t
               y: data
               linewidth: 2
@@ -44,8 +44,8 @@ devices:
          ylabel: Voltage
          datetick: True
          lines: 
-            - device: rand1@redvyprrand2
-              name: rand1@redvyprrand1
+            - device: sinrand@r1
+              name: sinrand@r1
               x: t
               y: data
               linewidth: 2
@@ -67,7 +67,7 @@ devices:
     name: nc
     config:
       mp: process
-      filename: 'randdata_test.nc'
+      filename: 'randdata_udp.nc'
       zlib: True
       dt_newfile: 3600
       file_timestamp: True      

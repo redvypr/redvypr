@@ -834,15 +834,7 @@ class numdispWidget(QtWidgets.QFrame):
                 self.unitdisp.setText(unitstr)
                 #self.resize_font(self.unitdisp)                
 
-    def resize_font(self,label):
-        # Does not work!
-        fsize         = label.fontMetrics().size(0, label.text())
-        lsize = label.size()
-        font = QtGui.QFont('Arial')
-        font.setPixelSize(label.height())
-        #label.setFont(QtGui.QFont('Arial', fsize.height()))
-        label.setFont(font)
-        #label.resize(lsize)        
+
 
 
 

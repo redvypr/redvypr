@@ -108,6 +108,9 @@ def create_ncfile(config,update=False,nc=None):
        tstr = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
        (filebase,fileext)=os.path.splitext(filename)
        filename = filebase + '_' + tstr + fileext
+       if(update):
+            filename = config['ncfilename']
+           
 
     if(update):
         pass # Use the ncfile in nc
@@ -218,6 +221,7 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
         try:
             dt = tcheck - tfile
             if((config['dt_newfile'] > 0) and (config['dt_newfile'] <= dt)):
+                logger.info(funcname + ': Will create a new file')
                 newfile = True
                 tfile = tcheck
         except:
@@ -248,10 +252,17 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                 statusqueue.put_nowait(configstatus)
             except Exception as e:
                 pass            
-        # Read the data
+        # First read all the data
+        data_all = []
         while(datainqueue.empty() == False):
+            data_all.append(datainqueue.get(block=False))
+            if(len(data_all) > 100):
+                if(datainqueue.empty() == False):
+                    logger.warning(funcname + ': Could not empty datainqueue (overflow ...)')
+                break
+
+        for data in data_all:
             try:
-                data = datainqueue.get(block=False)
                 # Check if the devices are in the group
                 for igroup,group in enumerate(config['groups']):
                     # Check first if we have an automatic group, that needs to be expanded

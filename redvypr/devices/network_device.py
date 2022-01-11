@@ -195,7 +195,6 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     logger.debug(funcname + ': Connecting to '+ str(config))
     client.connect((config['address'],config['port']))
     client.settimeout(0.05) # timeout for listening
-    #client.settimeout(0.05) # timeout for listening
 
     while True:
         try:
@@ -211,28 +210,30 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
             t = time.time()
             # Check what data we are expecting and convert it accordingly
             if(config['serialize'] == 'yaml'):
-                try:
-                    data = yaml.safe_load(datab)
-                except Exception as e:
-                    logger.debug(funcname + ': Could not decode message {:s}'.format(str(data)))
-                    logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(config['data']))
-                    pass
-                if(config['data'][0] == 'all'): # Forward the whole message
-                    dataqueue.put(data)
-                else:
-                    datan = {'t':t}
-                    for k in config['data']: # List of keys
-                        datan[k] = data[k]
-                        
-                    dataqueue.put(datan)
+                for databs in datab.split(b'...\n'): # Split the text into single subpackets
+                    try:
+                        data = yaml.safe_load(databs)
+                        #print(datab)
+                        #print(data)
+                    except Exception as e:
+                        logger.debug(funcname + ': Could not decode message {:s}'.format(str(datab)))
+                        logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(str(config['data'])))
+                        data = None
+
+                    if(data is not None):
+                        if(config['data'][0] == 'all'): # Forward the whole message
+                            dataqueue.put(data)
+                        else:
+                            datan = {'t':t}
+                            for k in config['data']: # List of keys
+                                datan[k] = data[k]
+
+                            dataqueue.put(datan)
             else: # Put the "str" data into the packet with the key in "data"
                 data = datab.decode('utf-8')
                 datan = {'t':t}
                 datan[config['data']] = data
                 dataqueue.put(datan)
-            
-            #print('Received',datab)
-            #print('Converted to',data)
             
         except socket.timeout as e:
             pass
@@ -344,20 +345,21 @@ def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
             t = time.time()
             # Check what data we are expecting and convert it accordingly
             if(config['serialize'] == 'yaml'):
-                try:
-                    data = yaml.safe_load(datab)
-                except Exception as e:
-                    logger.debug(funcname + ': Could not decode message {:s}'.format(str(data)))
-                    logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(config['data']))
-                    pass
-                if(config['data'][0] == 'all'): # Forward the whole message
-                    dataqueue.put(data)
-                else:
-                    datan = {'t':t}
-                    for k in config['data']: # List of keys
-                        datan[k] = data[k]
-                        
-                    dataqueue.put(datan)
+                for databs in datab.split(b'...\n'): # Split the text into single subpackets                
+                    try:
+                        data = yaml.safe_load(databs)
+                    except Exception as e:
+                        logger.debug(funcname + ': Could not decode message {:s}'.format(str(data)))
+                        logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(config['data']))
+                        pass
+                    if(config['data'][0] == 'all'): # Forward the whole message
+                        dataqueue.put(data)
+                    else:
+                        datan = {'t':t}
+                        for k in config['data']: # List of keys
+                            datan[k] = data[k]
+
+                        dataqueue.put(datan)
             else: # Put the "str" data into the packet with the key in "data"
                 data = datab.decode('utf-8')
                 datan = {'t':t}

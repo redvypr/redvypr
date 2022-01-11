@@ -15,7 +15,7 @@ for i in $(seq 1 $nprocesses); do
     sleep 1
 done
 echo "Done"
-echo "Will start $nprocesses of redvypr fast"
+echo "Will start $nprocesses_fast of redvypr fast"
 sleep 2
 for i in $(seq 1 $nprocesses_fast); do
     hostname=r${i}_fast

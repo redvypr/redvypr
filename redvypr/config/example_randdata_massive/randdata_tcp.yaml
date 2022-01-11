@@ -1,5 +1,5 @@
 # A test configuration file
-hostname: redvyprrand1
+hostname: r1_tcp
 
 devices:
 - deviceconfig:
