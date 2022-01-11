@@ -1,0 +1,75 @@
+# A test configuration file
+hostname: redvyprrand1
+
+devices:
+- deviceconfig:
+    name: sin
+    loglevel: info
+    config:
+      dt: .5
+      functions:
+        - name: sin
+          f: 0.05
+          amp: 25
+          phase: 0      
+  devicemodulename: randdata
+- deviceconfig:
+    name: count
+    loglevel: info
+    config:
+      dt: .5
+      functions:
+        - name: count
+          count: 0.1
+  devicemodulename: randdata
+- deviceconfig:
+    name: sinrand
+    loglevel: info
+    config:
+      dt: .5
+      functions:
+        - name: sin
+          f: 0.01
+          amp: 2
+          phase: 0              
+        - name: rand
+          range: [-1,1]
+  devicemodulename: randdata
+- deviceconfig:
+    name: sincount
+    loglevel: info
+    config:
+      dt: .5
+      functions:
+        - name: count
+          count: 0.1 
+        - name: rand
+          range: [-1,1]
+  devicemodulename: randdata
+  
+- deviceconfig:
+    name: tcp
+    loglevel: info
+    config:
+      address: <ip>
+      port: 18197
+      protocol: tcp
+      direction: publish
+  devicemodulename: network_device
+
+connections:
+- publish: sin
+  receive: tcp
+- publish: count
+  receive: tcp
+- publish: sinrand
+  receive: tcp
+- publish: sincount
+  receive: tcp          
+  
+start:
+- sin
+- count
+- sinrand
+- sincount
+- tcp
