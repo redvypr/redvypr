@@ -1,0 +1,93 @@
+# A test configuration file
+hostname: plotdata
+
+devices:
+- deviceconfig:
+    name: tcp
+    loglevel: info
+    config:
+      address: <ip>
+      port: 18197
+      protocol: tcp
+      direction: receive
+  devicemodulename: network_device    
+# Plot the data
+- deviceconfig: # The plotting device
+    name: plot
+    config:
+       - title: Plot A
+         type: graph
+         location: [0,0] # The location as in QGridBoxLayout
+         xlabel: time
+         ylabel: Voltage
+         datetick: True
+         lines: 
+            - device: sin@r1
+              name: sin@r1
+              x: t
+              y: data
+              linewidth: 2
+              color: [0,255,0]
+              buffersize: 200
+            - device: rand4@redvyprrand2
+              name: rand1@redvyprrand2
+              x: t
+              y: data
+              linewidth: 2
+              color: [255,0,0]
+              buffersize: 200
+
+       - title: Plot B
+         type: graph
+         location: [0,1] # The location as in QgridBoxLayout
+         xlabel: time
+         ylabel: Voltage
+         datetick: True
+         lines: 
+            - device: sinrand@r1
+              name: sinrand@r1
+              x: t
+              y: data
+              linewidth: 2
+              color: [0,255,0]
+              buffersize: 200
+
+       - title: Some data
+         type: numdisp
+         location: [1,1] # The location as in QgridBoxLayout
+         device: rand3@redvyprrand1
+         devicelabel: False
+         data: data
+         unit: rand. unit
+         dataformat: +3.1f
+         
+  devicemodulename: plot
+# NetCDF logger
+- deviceconfig:
+    name: nc
+    config:
+      mp: process
+      filename: 'randdata_tcp.nc'
+      zlib: True
+      dt_newfile: 3600
+      file_timestamp: True      
+      attributes: # Add attributes to the variables
+      - name: 'experiment'
+        value: 'Multiple data streams into one netCDF file' 
+      groups:
+        - name: "*@*" # Creates a group redvyprrand1 and adds automatic variables of all devices received 
+
+  devicemodulename: netcdflogger
+  
+connections:
+- publish: tcp
+  receive: plot
+- publish: tcp
+  receive: nc
+
+  
+  
+start:
+- tcp
+- plot
+- nc
