@@ -10,6 +10,7 @@ import yaml
 import copy
 import pyqtgraph
 from redvypr.data_packets import redvypr_isin_data
+from redvypr.standard_device_widgets import redvypr_devicelist_widget
 
 pyqtgraph.setConfigOption('background', 'w')
 pyqtgraph.setConfigOption('foreground', 'k')
@@ -34,7 +35,7 @@ def start(datainqueue,dataqueue,comqueue):
         while(datainqueue.empty() == False):
             try:
                 data = datainqueue.get(block=False)
-                dataqueue.put(data)
+                dataqueue.put(data) # This has to be done, otherwise the gui does not get any data ...
             except Exception as e:
                 logger.debug(funcname + ': Exception:' + str(e))            
 
@@ -260,16 +261,21 @@ class initDeviceWidget(QtWidgets.QWidget):
                     location.append(1)
                     location.append(1)                    
                 # Add the configurationwidget to the initwidget
+                # Add a button wich is opening the configuration widget
+                button = QtWidgets.QPushButton(config['type'])
+                button.clicked.connect(self.config_clicked)
                 if(config['type'].lower() == 'graph'):
                     configtree = configTreePlotWidget(config=config)
+                    button.configwidget = configtree
                 elif(config['type'].lower() == 'numdisp'):
                     configtree = configTreeNumDispWidget(config=config)
+                    button.configwidget = configtree                    
                 else:
                     return None
 
                 configwidget = QtWidgets.QWidget()
                 tmplayout = QtWidgets.QGridLayout(configwidget)
-                tmplayout.addWidget(configtree,0,0,1,2)
+                tmplayout.addWidget(button,0,0,1,2)
                 configupdate = QtWidgets.QPushButton('Update')
                 configupdate.config = config # Add the configuration dictionary to the button
                 configupdate.configtree = configtree # A modified config with updates
@@ -278,7 +284,14 @@ class initDeviceWidget(QtWidgets.QWidget):
                 removebtn.clicked.connect(self.rem_clicked)
                 tmplayout.addWidget(removebtn,1,1)                
                 tmplayout.addWidget(configupdate,1,0)
-                self.configlayout.addWidget(configwidget,location[0],location[1],location[2],location[3])        
+                self.configlayout.addWidget(configwidget,location[0],location[1],location[2],location[3])
+
+    def config_clicked(self):
+        """ Open the configurationwidget of the clicked button
+        """
+        self.sender().configwidget.redvypr = self.redvypr
+        self.sender().configwidget.device = self.device
+        self.sender().configwidget.show()
 
     def rem_clicked(self):
         print('Removing')
@@ -618,6 +631,7 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
         
         # make only the first column editable        
         self.setEditTriggers(self.NoEditTriggers)
+        self.itemDoubleClicked.connect(self.edititem)
         #self.header().setVisible(False)
         self.create_qtree(self.config,editable=True)
 
@@ -673,6 +687,7 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
         replace with a qviewitem?
 
         """
+
         funcname = __name__ + ':create_qtree():'
         logger.debug(funcname)
         if True:
@@ -680,8 +695,8 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
             parent = self.invisibleRootItem()
 
             self.setColumnCount(2)
-            
-        
+
+        #parent.setEditTriggers(QtGui.QAbstractItemView.DoubleClicked)        
         for key in sorted(config.keys()):
             if(key == 'lines'):
                 child = QtWidgets.QTreeWidgetItem([key,''])                
@@ -698,7 +713,12 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
                         child._ncconfig_    = config['lines'][iline]
                         child._ncconfig_key = linekey
                         if(editable):
-                            child.setFlags(child.flags() | QtCore.Qt.ItemIsEditable)                        
+                            child.setFlags(child.flags() | QtCore.Qt.ItemIsEditable)
+                            # Check for autocomplete
+                            if(linekey == 'device'):
+                                pass
+
+                                
                         lineparent.addChild(child)
                     
             else:
@@ -719,7 +739,39 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
         self.itemChanged.connect(self.item_changed) # If an item is changed
         self.currentItemChanged.connect(self.current_item_changed) # If an item is changed
 
+    def edititem(self,item,colno):
+        print('Hallo!',item,colno)
+        print(item.text(0),item.text(1))
+        self.item_change = item
+        if(item.text(0) == 'device'):
+            self.devicechoose = redvypr_devicelist_widget(self.redvypr,self.device) # Peter test
+            self.devicechoose.device_name_changed.connect(self.devicechanged)
+            self.devicechoose.show()
 
+        if((item.text(0) == 'x') or (item.text(0) == 'y')):
+            # Get the devicename first
+            parent = item.parent()
+            devicename = ''
+            print('Childcount',parent.childCount())
+            for i in range(parent.childCount()):
+                child = parent.child(i)
+                keystring = child.text(0)
+                print('keystrin',keystring)
+                if(keystring == 'device'):
+                    devicename = child.text(1)
+                    print('Devicename',devicename)
+                    break
+                    
+            self.devicechoose = redvypr_devicelist_widget(self.redvypr,self.device,devicename = devicename) # Peter test
+            self.devicechoose.datakey_name_changed.connect(self.devicechanged)
+            self.devicechoose.show()
+
+            
+    def devicechanged(self,devicename):
+        """ Changes the current item text
+        """
+        #print('Devicename',devicename)
+        self.item_change.setText(1,devicename)
 
 
 

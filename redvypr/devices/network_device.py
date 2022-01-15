@@ -86,8 +86,11 @@ def handle_tcp_client_send(client,threadqueue,statusqueue):
     address = client[1]
     client = client[0]
     statusstr = 'Sending data to (TCP):' + str(address)
-    statusqueue.put_nowait(statusstr)
-    logger.info(funcname + ':' + statusstr)
+    try:
+        statusqueue.put_nowait(statusstr)
+        logger.info(funcname + ':' + statusstr)
+    except Exception as e:
+        logger.warning(funcname + ':' + str(e))
     
     while True:
         data = threadqueue.get()
@@ -351,15 +354,15 @@ def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
                     except Exception as e:
                         logger.debug(funcname + ': Could not decode message {:s}'.format(str(data)))
                         logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(config['data']))
-                        pass
-                    if(config['data'][0] == 'all'): # Forward the whole message
-                        dataqueue.put(data)
-                    else:
-                        datan = {'t':t}
-                        for k in config['data']: # List of keys
-                            datan[k] = data[k]
+                    if(data is not None):                    
+                        if(config['data'][0] == 'all'): # Forward the whole message
+                            dataqueue.put(data)
+                        else:
+                            datan = {'t':t}
+                            for k in config['data']: # List of keys
+                                datan[k] = data[k]
 
-                        dataqueue.put(datan)
+                            dataqueue.put(datan)
             else: # Put the "str" data into the packet with the key in "data"
                 data = datab.decode('utf-8')
                 datan = {'t':t}

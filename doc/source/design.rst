@@ -39,10 +39,10 @@ The basis functionality each device needs to have is::
 		        self.dataqueue   = dataqueue        
 		        self.comqueue    = comqueue
 		        
-			def thread_status(self,status):
-			        """ Function that is called by redvypr, allowing to update the status of the widget according to the thread 
-			        """
-			        pass
+		    def thread_status(self,status):
+			""" Function that is called by redvypr, allowing to update the status of the widget according to the thread 
+			"""
+			pass
 			
 		    def start(self):
 		        start(self.dataqueue,self.comqueue,self.serial_name,self.baud)
@@ -60,6 +60,18 @@ Device data is gathered by creating a thread with the function::
         devicethread.start()
         devicedict = {'device':device,'thread':devicethread,'procqueues':[]}
 
+
+Overview of device properties
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+After initialization each device has a number of attributes::
+        device.name  
+        device.data_receiver
+        device.data_provider
+        device.statistics
+        device.mp
+	device.numdevice
+	device.redvypr
+	device.thread_status	
 
 Optional features
 ^^^^^^^^^^^^^^^^^

@@ -103,6 +103,12 @@ def distribute_data(devices,infoqueue,dt=0.01):
                         # i.e. network devices do not change the name
                         # of the transporting dictionary
                         devicename_stat = redvypr_get_devicename(data)
+                        try:
+                            devicedict['statistics']['devicekeys'][devicename_stat]
+                        except:
+                            devicedict['statistics']['devicekeys'][devicename_stat] = []
+
+                        devicedict['statistics']['devicekeys'][devicename_stat] = list(set(devicedict['statistics']['devicekeys'][devicename_stat] + list(data.keys())))
                         devicedict['statistics']['devices'] = list(set(devicedict['statistics']['devices'] + [devicename_stat]))
                 except Exception as e:
                     logger.debug(funcname + ':' + str(e))
@@ -615,7 +621,7 @@ class redvypr(QtCore.QObject):
         device.data_receiver = []
         device.data_provider = []        
         
-        statistics = {'inspect':True,'numpackets':0,'datakeys':[],'devices':[]} # A dictionary for gathering useful information about the packages
+        statistics = {'inspect':True,'numpackets':0,'datakeys':[],'devices':[],'devicekeys':{}} # A dictionary for gathering useful information about the packages
         devicedict = {'device':device,'thread':None,'dataout':[],'gui':[],'guiqueue':[guiqueue],'statistics':statistics}
         # Add some statistics
         devicedict['numpacket'] = 0
