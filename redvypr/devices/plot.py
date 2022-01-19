@@ -9,7 +9,7 @@ import sys
 import yaml
 import copy
 import pyqtgraph
-from redvypr.data_packets import redvypr_isin_data
+from redvypr.data_packets import redvypr_isin_data, redvypr_get_keys
 from redvypr.standard_device_widgets import redvypr_devicelist_widget
 
 pyqtgraph.setConfigOption('background', 'w')
@@ -357,7 +357,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
 class displayDeviceWidget(QtWidgets.QWidget):
-    """ Widget is plotting realtimedata using the pyqtgraph functionality
+    """ Widget is a wrapper for several plotting widgets (numdisp, graph) 
     This widget can be configured with a configuration dictionary 
     """
     def __init__(self,dt_update = 0.5,device=None,buffersize=100):
@@ -444,6 +444,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
             except Exception as e:
                 logger.debug(funcname + 'Exception:' + str(e))
 
+
+
 #
 #                
 #
@@ -479,6 +481,9 @@ class plotWidget(QtWidgets.QFrame):
                 title = "Plot {:d}".format(i)
             
             plot = pyqtgraph.PlotWidget(title=title)
+            
+            # Add a legend
+            plot.addLegend()
 
             self.layout.addWidget(plot)
                 
@@ -518,8 +523,11 @@ class plotWidget(QtWidgets.QFrame):
                 try:
                     name = line['name']
                 except:
-                    name = "Line {:d}".format(iline)
+                    name = line['device']
+                    
                 lineplot = pyqtgraph.PlotDataItem( name = name)
+                
+                
                 
                 try:
                     device = line['device']
@@ -596,8 +604,20 @@ class plotWidget(QtWidgets.QFrame):
                             y[-1]    = float(data[config['y']])                
                             line_dict['x']  = x
                             line_dict['y']  = y
+                            if(ind==0): # Use the first line for the ylabel
+                                
+                                if('useprops' in self.config.keys()):
+                                    if(self.config['useprops']):
+                                        propkey = 'props@' + config['y']
+                                        try:
+                                            unitstr ='[' + data[propkey]['unit'] + ']'
+                                            pw.setLabel('left', unitstr)
+                                        except:
+                                            pass
+                                            
+                                        
+                                        
             if(update):
-                #print('Hallo!')
                 if True:
                     for devicename in plot_dict['lines'].keys():
                         if True:
@@ -740,8 +760,9 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
         self.currentItemChanged.connect(self.current_item_changed) # If an item is changed
 
     def edititem(self,item,colno):
-        print('Hallo!',item,colno)
-        print(item.text(0),item.text(1))
+        funcname = __name__ + 'edititem()'
+        #print('Hallo!',item,colno)
+        logger.debug(funcname + str(item.text(0)) + ' ' + str(item.text(1)))
         self.item_change = item
         if(item.text(0) == 'device'):
             self.devicechoose = redvypr_devicelist_widget(self.redvypr,self.device) # Peter test
@@ -809,6 +830,11 @@ class numdispWidget(QtWidgets.QFrame):
             fontsize = 50
 
         try:
+            self.config['showtime']
+        except:
+            self.config['showtime'] = True
+            
+        try:
             self.config['dataformat']
         except:
             self.config['dataformat'] = "+2.5f"
@@ -816,7 +842,13 @@ class numdispWidget(QtWidgets.QFrame):
         try:
             self.config['devicelabel']
         except:
-            self.config['devicelabel'] = False
+            self.config['devicelabel'] = True
+            
+        # Using the properties key in the data
+        try:
+            self.config['useprops']
+        except:
+            self.config['useprops'] = False
 
         self.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(backcolor,bordercolor))
         self.layout = QtWidgets.QGridLayout(self)
@@ -840,6 +872,12 @@ class numdispWidget(QtWidgets.QFrame):
                 self.devicedisp.setStyleSheet("border : 1px solid {:s};".format(backcolor))
                 self.devicedisp.setAlignment(QtCore.Qt.AlignCenter)
                 self.layout.addWidget(self.devicedisp,1,0,1,2)
+                
+            if(self.config['showtime']):
+                self.timedisp = QtWidgets.QLabel(self.get_timestr(0))
+                self.timedisp.setStyleSheet("border : 1px solid {:s};".format(backcolor))
+                self.timedisp.setAlignment(QtCore.Qt.AlignCenter)
+                self.layout.addWidget(self.timedisp,2,0,1,2)
 
             # Unit
             try:
@@ -848,20 +886,26 @@ class numdispWidget(QtWidgets.QFrame):
                 unit = ""
 
             self.unit = unit                
-            if(len(unit)>0):
+            #if((len(unit)>0) or (self.config['useprops'])):
+            if True:
                 self.unitdisp = QtWidgets.QLabel(unit)
                 self.unitdisp.setStyleSheet("border : 1px solid {:s};".format(backcolor))            
-                self.layout.addWidget(self.unitdisp,2,1)
+                self.layout.addWidget(self.unitdisp,3,1)
 
             
             self.numdisp = QtWidgets.QLabel("#")
             self.numdisp.setStyleSheet("border : 1px solid {:s};font-weight: bold; font-size: {:d}pt".format(backcolor,fontsize))            
             #
-            if(len(unit)>0):            
-                self.layout.addWidget(self.numdisp,2,0)
-            else:
-                self.layout.addWidget(self.numdisp,2,0,1,2)
+            self.layout.addWidget(self.numdisp,3,0)
 
+    def get_timestr(self,unixtime,format=None):
+        """ Returns a time string
+        """
+        if(format == None):
+            tstr = datetime.datetime.fromtimestamp(unixtime).isoformat(timespec='milliseconds')
+        else:
+            tstr = datetime.datetime.fromtimestamp(unixtime).strftime(format)
+        return tstr
                 
     def update_plot(self,data):
         """ Updates the plot based on the given data
@@ -875,15 +919,27 @@ class numdispWidget(QtWidgets.QFrame):
             dataformat = self.config['dataformat']
             datastr = "{0:{dformat}}".format(data[datakey],dformat=dataformat)
             self.numdisp.setText(datastr)
-            #self.resize_font(self.numdisp)
-            if(self.unit == '[auto]'):
-                unitkey = datakey + '_unit'
+            
+            if(self.config['showtime']):
+                self.timedisp.setText(self.get_timestr(data['t']))
+            
+            if(self.config['useprops']):
+                # Get the propertykey 
+                propkey = 'props@' + datakey 
                 try:
-                    unitstr = str(data[unitkey])
+                    props = data[propkey]
                 except:
-                    unitstr = 'NA'
+                    props = None
                     
-                self.unitdisp.setText(unitstr)
+            if(props is not None):
+                try:
+                    unitstr = str(data[propkey]['unit'])
+                    self.unit = unitstr
+                except Eception as e:
+                    pass
+
+                
+                self.unitdisp.setText(self.unit)
                 #self.resize_font(self.unitdisp)                
 
 

@@ -1,7 +1,7 @@
 import time
 
 def redvypr_get_keys(data):
-    """Returns the keys of a redvypr data dictionar without the standard
+    """Returns the keys of a redvypr data dictionary without the standard
     keys ('t', 'host','device','numpacket') as well as keys with an
     '@' in it.
 

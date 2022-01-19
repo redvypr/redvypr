@@ -364,8 +364,11 @@ class Device():
         """ Function that reads the statusqueue and returns the read data
         """
         funcname = __name__ + '.status()'
-        logger.debug(funcname)
-        self.statusdata = self.statusqueue.get_nowait()
+        #logger.debug(funcname)
+        try:
+            self.statusdata = self.statusqueue.get_nowait()
+        except:
+            return None
 
         if('status' in self.statusdata.keys()):
             self.statusstr = self.statusdata['status']
@@ -449,7 +452,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         except:
             newtext = 'None'
             
-        logger.debug(funcname + 'changed from ' + str(oldtext)  + ' to ' + str(newtext))
+        #logger.debug(funcname + 'changed from ' + str(oldtext)  + ' to ' + str(newtext))
         self.selected_item = new
         # Get the parent topic
         try:
@@ -625,7 +628,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         """
         """
         funcname = __name__ + '.update_status():'
-        try:
+        if True:
             while True:
                 statusdata = self.device.status() # A string showing the status
                 if((statusdata == None) or (len(statusdata) == 0)):
@@ -633,7 +636,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
                 statusfile = self.device.statusfile
                 if(self.nctree is not None):
-                    logger.debug(funcname + 'update tree')
+                    #logger.debug(funcname + 'update tree')
                     try:
                         self.nctree.update(statusfile)
                     except: # This is a lazy version of creating a whole new tree if the update fails
@@ -651,9 +654,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     self.oldstatusstr = statusdata
                     self.text.insertPlainText(statusdata)
 
-                
-        except Exception as e:
-            logger.debug(funcname + str(e))
 
 #
 # Custom object to store optional data as i.e. qitem, but does not
@@ -703,7 +703,7 @@ class ncViewTree(QtWidgets.QTreeWidget):
         """ Updates the dictionary with the changed data
         """
         funcname = __name__ + '.item_changed():'
-        logger.debug(funcname + 'Changed {:s} {:d} to {:s}'.format(item.text(0),column,item.text(1)))
+        #logger.debug(funcname + 'Changed {:s} {:d} to {:s}'.format(item.text(0),column,item.text(1)))
         # Parse the string given by the changed item using yaml
         try:
             pstring = "a: {:s}".format(item.text(1))

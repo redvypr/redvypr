@@ -1,3 +1,4 @@
+	-0.3.4: - props option in the plotting routines available
 	-0.3.3: - redvypr_devicelist_widget added and improved device/data selection in plot
 	-0.3.2: - netCDF automatic group creation, massive device example added
 	-0.3.1: - hostname command line, randdata counter, massive randdata example

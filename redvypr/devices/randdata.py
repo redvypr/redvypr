@@ -42,6 +42,7 @@ class Device():
         rng = np.random.default_rng()
         xold = 0
         while True:
+            t = time.time()
             try:
                 com = self.comqueue.get(block=False)
                 print('received',com)
@@ -49,8 +50,6 @@ class Device():
             except:
                 pass
             
-            time.sleep(self.config['dt'])
-            t = time.time()
             #x = np.random.rand(1)[0] * 100 + 50
             x = 0
             for func in self.config['functions']:
@@ -78,9 +77,12 @@ class Device():
                 data_unit = 'randomunit'
 
             xold = x
-            data = {'t':t,'data':float(x),'props@data':{'unit':data_unit}}
+            data = {'t':t,'data':float(x),'props@data':{'unit':data_unit,'type':'f'}}
             #print('data',data)
             self.dataqueue.put(data)
+            tend = time.time()
+            # Sleep 'dt' minus the time needed for processing
+            time.sleep(self.config['dt']- (tend-t))
             
     def __str__(self):
         sstr = 'Random data device'
