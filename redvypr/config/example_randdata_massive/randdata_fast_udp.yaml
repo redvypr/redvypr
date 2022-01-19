@@ -16,6 +16,20 @@ devices:
           range: [-1,1]
   devicemodulename: randdata
 - deviceconfig:
+    name: sinn
+    loglevel: info
+    config:
+      dt: .001
+      n: 100
+      functions:
+        - name: sin
+          f: 5
+          amp: 5
+          phase: 0              
+        - name: rand
+          range: [-1,1]
+  devicemodulename: randdata  
+- deviceconfig:
     name: udp
     loglevel: info
     config:
@@ -28,8 +42,11 @@ devices:
 connections:
 - publish: sinrandfast
   receive: udp
+- publish: sinn
+  receive: udp  
 
   
 start:
 - sinrandfast
+- sinn
 - udp

@@ -304,9 +304,14 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                             for ikey,key in enumerate(group['variables']):
                                 # Check if the structure has the key
                                 flag_saved_data = True                            
-                                if(key['key'] in data):                                
+                                if(key['key'] in data):
+                                    # Check if its a single variable or a list
+                                    if(type(data[key['key']]) == list):
+                                        indsave = [ind + i for i in range(len(data[key['key']]))]
+                                    else:
+                                        indsave = ind                                                     
                                     variable = group['__nc__'].variables[key['name']]
-                                    variable[ind] = data[key['key']]
+                                    variable[indsave] = data[key['key']]
                                     key['nwritten'] += 1
                                     configstatus['groups'][igroup]['variables'][ikey]['nwritten'] = key['nwritten']
                                     # Check if we set attributes as well
@@ -321,8 +326,8 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
 
                             # If any data was saved, save time and numpacket as well
                             if flag_saved_data:
-                                group['__nc__'].variables['tu'][ind]        = data['t']
-                                group['__nc__'].variables['numpacket'][ind] = data['numpacket']
+                                group['__nc__'].variables['tu'][indsave]        = data['t']
+                                group['__nc__'].variables['numpacket'][indsave] = data['numpacket']
                                 packets_written += 1
                                 # Check if we want to sync
                                 if(packets_written%config['nsync'] == 0):

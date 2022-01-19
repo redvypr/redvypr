@@ -360,7 +360,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
     """ Widget is a wrapper for several plotting widgets (numdisp, graph) 
     This widget can be configured with a configuration dictionary 
     """
-    def __init__(self,dt_update = 0.5,device=None,buffersize=100):
+    def __init__(self,dt_update = 0.25,device=None,buffersize=100):
         funcname = __name__ + '.init()'
         super(QtWidgets.QWidget, self).__init__()
         self.layout        = QtWidgets.QGridLayout(self)
@@ -597,13 +597,21 @@ class plotWidget(QtWidgets.QFrame):
                             line      = line_dict['line'] # The line to plot
                             config    = line_dict['config'] # The line to plot
                             x         = line_dict['x'] # The line to plot
-                            y         = line_dict['y'] # The line to plot   
-                            x         = np.roll(x,-1)       
-                            y         = np.roll(y,-1)
-                            x[-1]    = float(data[config['x']])
-                            y[-1]    = float(data[config['y']])                
-                            line_dict['x']  = x
-                            line_dict['y']  = y
+                            y         = line_dict['y'] # The line to plot 
+                            # data can be a single float or a list
+                            newx = data[config['x']]
+                            newy = data[config['y']]
+                            if(type(newx) is not list):
+                                newx = [newx]
+                                newy = [newy]
+                            
+                            for inew in range(len(newx)):
+                                x         = np.roll(x,-1)       
+                                y         = np.roll(y,-1)
+                                x[-1]    = float(newx[inew])
+                                y[-1]    = float(newy[inew])
+                                line_dict['x']  = x
+                                line_dict['y']  = y
                             if(ind==0): # Use the first line for the ylabel
                                 
                                 if('useprops' in self.config.keys()):
@@ -917,11 +925,18 @@ class numdispWidget(QtWidgets.QFrame):
         datakey = self.config['data']
         if(redvypr_isin_data(self.config['device'],data)):
             dataformat = self.config['dataformat']
-            datastr = "{0:{dformat}}".format(data[datakey],dformat=dataformat)
+            # data can be a single float or a list
+            newdata = data[datakey]
+            newt    = data['t']
+            if(type(newdata) == list):
+                newdata = newdata[0]
+                newt = newt[0]
+
+            datastr = "{0:{dformat}}".format(newdata,dformat=dataformat)
             self.numdisp.setText(datastr)
             
             if(self.config['showtime']):
-                self.timedisp.setText(self.get_timestr(data['t']))
+                self.timedisp.setText(self.get_timestr(newt))
             
             if(self.config['useprops']):
                 # Get the propertykey 
