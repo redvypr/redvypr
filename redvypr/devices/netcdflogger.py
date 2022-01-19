@@ -48,14 +48,7 @@ import copy
 import pkg_resources
 import yaml
 from redvypr.data_packets import redvypr_isin_data, redvypr_get_devicename, redvypr_get_keys
-
-# Get the version of redvypr
-_version_file = pkg_resources.resource_filename('redvypr','VERSION')
-with open(_version_file) as _version_f:
-   version = _version_f.read().strip()
-
-_version_f.close()
-
+from redvypr.version import version
 
 
 logging.basicConfig(stream=sys.stderr)

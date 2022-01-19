@@ -23,7 +23,7 @@ setup(name='redvypr',
       packages=find_packages(),
       scripts = [],
       entry_points={ 'console_scripts': ['redvypr=redvypr:redvypr_main']},
-      package_data = {'':['VERSION']},
+      package_data = {'':['VERSION','icon/*']},
       install_requires=[ 'pyaml' ],
       classifiers=[
         'Development Status :: 4 - Beta',

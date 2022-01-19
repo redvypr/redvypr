@@ -24,17 +24,16 @@ import glob
 import pathlib
 import signal
 import uuid
+from redvypr.version import version
 
 
-
-
-# Get the version
-_version_file = pkg_resources.resource_filename('redvypr','VERSION')
-with open(_version_file) as _version_f:
-   version = _version_f.read().strip()
-
-_version_f.close()
-
+# Get the version of redvypr
+_icon_file = pkg_resources.resource_filename('redvypr','icon/redvypr_logo_v02.png')
+# This is a workaround to read the VERSION file in a pyinstaller environment in linux (redvypr exectuable and redvypr directory cannot life together)
+if(os.path.exists(_icon_file)):
+    pass
+else:
+    _icon_file = 'redvypr_logo_v02.png'
 # The maximum size the dataqueues have, this should be more than
 # enough for a "normal" usage case
 queuesize = 10000
@@ -1179,6 +1178,10 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         label1 = QtWidgets.QLabel("Version: {:s}".format(str(version)))
         layout.addWidget(label)
         layout.addWidget(label1)
+        icon = QtGui.QPixmap(_icon_file)
+        iconlabel = QtWidgets.QLabel()
+        iconlabel.setPixmap(icon)
+        layout.addWidget(iconlabel)
         self._about_widget.show()
 
     def open_add_device_widget(self):
@@ -1726,6 +1729,11 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__statuswidget_pathbtn = QtWidgets.QPushButton('Edit device path')
         self.__statuswidget_pathbtn.clicked.connect(self.show_devicepathwidget)
         layout.addRow(self.__statuswidget_pathbtn)
+        
+        icon = QtGui.QPixmap(_icon_file)
+        iconlabel = QtWidgets.QLabel()
+        iconlabel.setPixmap(icon)
+        layout.addRow(iconlabel)        
 
 
     def show_devicepathwidget(self):
