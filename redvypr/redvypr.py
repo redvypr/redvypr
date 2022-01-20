@@ -27,13 +27,23 @@ import uuid
 from redvypr.version import version
 
 
-# Get the version of redvypr
-_icon_file = pkg_resources.resource_filename('redvypr','icon/redvypr_logo_v02.png')
+# Get the logo pixmap of redvypr
+_logo_file = pkg_resources.resource_filename('redvypr','icon/redvypr_logo_v02.png')
+# This is a workaround to read the VERSION file in a pyinstaller environment in linux (redvypr exectuable and redvypr directory cannot life together)
+if(os.path.exists(_logo_file)):
+    pass
+else:
+    _logo_file = 'redvypr_logo_v02.png'
+    
+# Get the logo pixmap of redvypr
+_icon_file = pkg_resources.resource_filename('redvypr','icon/icon_v02.png')
 # This is a workaround to read the VERSION file in a pyinstaller environment in linux (redvypr exectuable and redvypr directory cannot life together)
 if(os.path.exists(_icon_file)):
     pass
 else:
-    _icon_file = 'redvypr_logo_v02.png'
+    _icon_file = 'icon_v02.png'
+    
+    
 # The maximum size the dataqueues have, this should be more than
 # enough for a "normal" usage case
 queuesize = 10000
@@ -831,6 +841,8 @@ the devives with each other
             if(device == None): # Take the first one
                 device = devices[0]['device']
 
+        # Set icon
+        self.setWindowIcon(QtGui.QIcon(_icon_file))
         self.devices = devices
         layout = QtWidgets.QVBoxLayout(self)
         lab = QtWidgets.QLabel('Connect datastreams to device:')
@@ -1107,7 +1119,9 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         super(redvyprMainWidget, self).__init__()
         self.setGeometry(50, 50, 500, 300)
         self.setWindowTitle("redvypr")
-        #self.setWindowIcon(QtGui.QIcon('pythonlogo.png'))
+        # Add the icon
+        self.setWindowIcon(QtGui.QIcon(_icon_file))           
+        
         self.redvypr = redvyprWidget(config=config)
         self.setCentralWidget(self.redvypr)
         quitAction = QtWidgets.QAction("&Quit", self)
@@ -1178,7 +1192,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         label1 = QtWidgets.QLabel("Version: {:s}".format(str(version)))
         layout.addWidget(label)
         layout.addWidget(label1)
-        icon = QtGui.QPixmap(_icon_file)
+        icon = QtGui.QPixmap(_logo_file)
         iconlabel = QtWidgets.QLabel()
         iconlabel.setPixmap(icon)
         layout.addWidget(iconlabel)
@@ -1347,6 +1361,7 @@ class redvyprWidget(QtWidgets.QWidget):
         """
         super(redvyprWidget, self).__init__()
         self.setGeometry(50, 50, 500, 300)
+        
         # Lets create the heart of redvypr
         self.redvypr = redvypr() # Configuration comes later after all widgets are initialized
         
@@ -1488,6 +1503,8 @@ class redvyprWidget(QtWidgets.QWidget):
 
         """
         self.add_device_widget = QtWidgets.QWidget()
+        # Set icon    
+        self.add_device_widget.setWindowIcon(QtGui.QIcon(_icon_file))        
         layout = QtWidgets.QFormLayout(self.add_device_widget)
         self.__devices_list    = QtWidgets.QListWidget()
         self.__devices_list.itemClicked.connect(self.__device_name)
@@ -1730,10 +1747,10 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__statuswidget_pathbtn.clicked.connect(self.show_devicepathwidget)
         layout.addRow(self.__statuswidget_pathbtn)
         
-        icon = QtGui.QPixmap(_icon_file)
-        iconlabel = QtWidgets.QLabel()
-        iconlabel.setPixmap(icon)
-        layout.addRow(iconlabel)        
+        logo = QtGui.QPixmap(_logo_file)
+        logolabel = QtWidgets.QLabel()
+        logolabel.setPixmap(logo)
+        layout.addRow(logolabel)        
 
 
     def show_devicepathwidget(self):
