@@ -10,7 +10,7 @@ import yaml
 import copy
 import pyqtgraph
 from redvypr.data_packets import redvypr_isin_data, redvypr_get_keys
-from redvypr.standard_device_widgets import redvypr_devicelist_widget
+from redvypr.gui import redvypr_devicelist_widget
 
 pyqtgraph.setConfigOption('background', 'w')
 pyqtgraph.setConfigOption('foreground', 'k')

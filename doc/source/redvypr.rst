@@ -49,6 +49,13 @@ infrastructure of packets to deal with digital data and its
 interfaces, i.e. using network devices, databases or serial
 connections. 
 
+Redvypr was designed with the following goals in mind:
+- Runs on small embedded systems
+- Scalable by using several redvypr instances either on one computer or on a network
+- Can be easily extended by users
+
+
+
 What does it provide?
 ---------------------
 

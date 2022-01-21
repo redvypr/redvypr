@@ -1,3 +1,4 @@
+	-0.3.6: - created files.py and gui.py to standardize widgets and files
 	-0.3.5: - list option in the packet data, works with netcdf, plot and randdata 
 	-0.3.4: - props option in the plotting routines available
 	-0.3.3: - redvypr_devicelist_widget added and improved device/data selection in plot

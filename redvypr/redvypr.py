@@ -15,8 +15,8 @@ import inspect
 import threading
 import multiprocessing
 import redvypr.devices as redvyprdevices
-import redvypr.standard_device_widgets as standard_device_widgets
 from redvypr.data_packets import redvypr_isin_data, redvypr_get_devicename
+from redvypr.gui import redvyprConnectWidget,QPlainTextEditLogger,displayDeviceWidget_standard,deviceinfoWidget
 import socket
 import argparse
 import importlib.util
@@ -25,23 +25,10 @@ import pathlib
 import signal
 import uuid
 from redvypr.version import version
+import redvypr.files as files
 
-
-# Get the logo pixmap of redvypr
-_logo_file = pkg_resources.resource_filename('redvypr','icon/redvypr_logo_v02.png')
-# This is a workaround to read the VERSION file in a pyinstaller environment in linux (redvypr exectuable and redvypr directory cannot life together)
-if(os.path.exists(_logo_file)):
-    pass
-else:
-    _logo_file = 'redvypr_logo_v02.png'
-    
-# Get the logo pixmap of redvypr
-_icon_file = pkg_resources.resource_filename('redvypr','icon/icon_v02.png')
-# This is a workaround to read the VERSION file in a pyinstaller environment in linux (redvypr exectuable and redvypr directory cannot life together)
-if(os.path.exists(_icon_file)):
-    pass
-else:
-    _icon_file = 'icon_v02.png'
+_logo_file = files.logo_file
+_icon_file = files.icon_file
     
     
 # The maximum size the dataqueues have, this should be more than
@@ -830,519 +817,6 @@ class redvypr(QtCore.QObject):
 #
     
 
-class redvyprConnectWidget(QtWidgets.QWidget):
-    """A widget that lets the user connect the input and output queues of
-the devives with each other
-
-    """
-    def __init__(self,devices=None,device=None):
-        super(redvyprConnectWidget, self).__init__()
-        if(len(devices) > 0):    
-            if(device == None): # Take the first one
-                device = devices[0]['device']
-
-        # Set icon
-        self.setWindowIcon(QtGui.QIcon(_icon_file))
-        self.devices = devices
-        layout = QtWidgets.QVBoxLayout(self)
-        lab = QtWidgets.QLabel('Connect datastreams to device:')
-
-        lablayout = QtWidgets.QHBoxLayout()
-        lablayout.addStretch()
-        lablayout.addWidget(lab)
-        lablayout.addStretch()
-
-
-        self.device_label = QtWidgets.QLabel('Device')
-        devlablayout = QtWidgets.QHBoxLayout()
-        devlablayout.addStretch()
-        devlablayout.addWidget(self.device_label)
-        devlablayout.addStretch()                        
-        font = QtGui.QFont('Arial', 20)
-        font.setBold(True)
-        self.device_label.setFont(font)
-        layout.addLayout(lablayout)
-        layout.addLayout(devlablayout)
-
-        conwidget  = QtWidgets.QWidget(self)
-        conlayout = QtWidgets.QHBoxLayout(conwidget)
-        self.devices_listallout= QtWidgets.QListWidget() # All dataproviding devices
-        self.devices_listallin = QtWidgets.QListWidget() # All datareceiving devices
-        self.devices_listin    = QtWidgets.QListWidget() # All connected datareceiving devices
-        self.devices_listout   = QtWidgets.QListWidget() # All connected dataproviding devices
-        self.devices_listcon   = QtWidgets.QListWidget() # The devices a connection is to be defined
-        self.devices_listcon.itemClicked.connect(self.itemcon_clicked)
-        self.devices_listcon.itemDoubleClicked.connect(self.itemcon_dclicked)                
-
-        self.__commitbtn  = QtWidgets.QPushButton('Commit')
-        self.__commitbtn.clicked.connect(self.commit_clicked)
-
-        self.arroutleft = QtWidgets.QToolButton()
-        self.arroutleft.setArrowType(QtCore.Qt.LeftArrow)
-        self.arroutleft.clicked.connect(self.addrm_out)
-        self.arroutright = QtWidgets.QToolButton()
-        self.arroutright.setArrowType(QtCore.Qt.RightArrow)
-        self.arroutright.clicked.connect(self.addrm_out)        
-        self.arrinleft = QtWidgets.QToolButton()
-        self.arrinleft.setArrowType(QtCore.Qt.LeftArrow)
-        self.arrinleft.clicked.connect(self.addrm_in)                
-        self.arrinright = QtWidgets.QToolButton()
-        self.arrinright.setArrowType(QtCore.Qt.RightArrow)
-        self.arrinright.clicked.connect(self.addrm_in)                        
-        arroutlayout = QtWidgets.QVBoxLayout()
-        arroutlayout.addWidget(self.arroutleft)
-        arroutlayout.addWidget(self.arroutright)
-        arrinlayout = QtWidgets.QVBoxLayout()
-        arrinlayout.addWidget(self.arrinleft)
-        arrinlayout.addWidget(self.arrinright)                
-
-        # Subscribe devices all
-        devicesoutlayout = QtWidgets.QVBoxLayout()
-        devicesoutlayout.addWidget(QtWidgets.QLabel('Subscribable devices'))
-        devicesoutlayout.addWidget(self.devices_listallout)
-        conlayout.addLayout(devicesoutlayout)
-        conlayout.addLayout(arroutlayout)
-        # Subscribed devices of the choosen device
-        devicessubscribedlayout = QtWidgets.QVBoxLayout()
-        devicessubscribedlayout.addWidget(QtWidgets.QLabel('Subscribed devices'))        
-        devicessubscribedlayout.addWidget(self.devices_listout)
-        conlayout.addLayout(devicessubscribedlayout)
-        # The device to choose
-        convlayout = QtWidgets.QVBoxLayout()
-        convlayout.addWidget(QtWidgets.QLabel('Device'))        
-        convlayout.addWidget(self.devices_listcon)     
-        #conlayout.addWidget(self.devices_listcon)
-        conlayout.addLayout(convlayout)
-        # Published devices
-        devicespublishedlayout = QtWidgets.QVBoxLayout()
-        devicespublishedlayout.addWidget(QtWidgets.QLabel('Publishing to devices'))        
-        devicespublishedlayout.addWidget(self.devices_listin)
-        conlayout.addLayout(devicespublishedlayout)
-        conlayout.addLayout(arrinlayout)
-        # All devices data can be published to
-        devicespublishablelayout = QtWidgets.QVBoxLayout()
-        devicespublishablelayout.addWidget(QtWidgets.QLabel('Data receivable devices'))        
-        devicespublishablelayout.addWidget(self.devices_listallin)
-        conlayout.addLayout(devicespublishablelayout)
-        
-        layout.addWidget(conwidget)
-        layout.addWidget(self.__commitbtn)
-
-
-        if(len(devices) > 0):    
-            self.update_list(device)
-        
-        
-    def addrm_out(self):
-        """ Connecting publishing devices with device
-        """
-        funcname = 'addrm_in'
-        logger.debug(funcname)        
-        button = self.sender()
-        if(button == self.arroutleft):
-            #print('remove')
-            ind = self.devices_listout.currentRow()
-            self.devices_listout.takeItem(ind)
-            
-        if(button == self.arroutright):
-            #print('add')
-            itmadd = self.devices_listallout.currentItem()
-            sen = itmadd.device
-            itm = QtWidgets.QListWidgetItem(sen.name)
-            itm.device = sen
-            self.devices_listout.addItem(itm)            
-            #print('add',itmadd.device)
-            #self.devices_listout.addItem(itmadd.text())
-            
-    def addrm_in(self):
-        """ Connecting receiving devices with dataqueue of this device
-        """
-        funcname = 'addrm_in'
-        logger.debug(funcname)
-        button = self.sender()
-        if(button == self.arrinright):
-            logger.debug(funcname + ': remove')
-            ind = self.devices_listin.currentRow()
-            self.devices_listin.takeItem(ind)
-            
-        elif(button == self.arrinleft):
-            logger.debug(funcname + ': add')            
-            itmadd = self.devices_listallin.currentItem()
-            sen = itmadd.device
-            itm = QtWidgets.QListWidgetItem(sen.name)
-            itm.device = sen
-            self.devices_listin.addItem(itm)
-            
-
-    def commit_clicked(self):
-        """ Apply changes to the publishing/receiving devices
-        """
-        funcname = 'commit_clicked'
-        logger.debug(funcname)
-        outdevices = []
-        # Add device as receiver for publishing devices
-        for inditm in range(self.devices_listout.count()):
-            itm = self.devices_listout.item(inditm)
-            sen = itm.device
-            outdevices.append(sen)
-            logger.debug(funcname + ':' + 'add as publisher:' + str(sen))            
-            addrm_device_as_data_provider(self.devices,sen,self.device,remove=False)
-
-        # Check if there are devices to be removed
-        data_provider = get_data_providing_devices(self.devices,self.device)
-        for sen in data_provider:
-            device = sen['device']
-            if(device in outdevices):
-                pass
-            else:
-                logger.debug(funcname + ': Removing device {:s} as a data publisher for {:s} '.format(self.device.name,device.name))
-                addrm_device_as_data_provider(self.devices,device,self.device,remove=True)
-                
-
-        # Add device as publisher for receiving devices
-        indevices = []        
-        for inditm in range(self.devices_listin.count()):
-            itm = self.devices_listin.item(inditm)
-            sen = itm.device
-            indevices.append(sen)
-            logger.debug(funcname + ':' + 'add as receiver:' + str(sen))            
-            addrm_device_as_data_provider(self.devices,self.device,sen,remove=False)
-
-        # Check if there are devices to be removed
-        data_receiver = get_data_receiving_devices(self.devices,self.device)
-        for sen in data_receiver:
-            device = sen['device']
-            if(device in indevices):
-                pass
-            else:
-                logger.debug(funcname + ': Removing device {:s} as a data receiver from {:s} '.format(self.device.name,device.name))                
-                addrm_device_as_data_provider(self.devices,self.device,device,remove=True)            
-            
-            
-    def update_list(self,device):
-        """ Update the list
-        """
-        
-        funcname = __name__ + '.update_list()'
-        logger.debug(funcname + ':update_list:' + str(device))                        
-        self.devices_listallin.clear()
-        self.devices_listallout.clear()        
-        self.devices_listin.clear()
-        self.devices_listout.clear()
-        self.devices_listcon.clear()
-        self.device = device
-        self.device_label.setText(device.name)
-        
-        if(len(self.devices) > 0):
-            #self.devices_listcon.addItem(str(device))
-            data_provider = get_data_providing_devices(self.devices,device)
-            data_receiver = get_data_receiving_devices(self.devices,device)
-            if(data_provider is not None):
-                for s in data_provider:
-                    sen = s['device']
-                    itm = QtWidgets.QListWidgetItem(sen.name)
-                    itm.device = sen            
-                    self.devices_listout.addItem(itm)
-
-            if(data_receiver is not None):                    
-                for s in data_receiver:
-                    sen = s['device']
-                    itm = QtWidgets.QListWidgetItem(sen.name)
-                    itm.device = sen
-                    self.devices_listin.addItem(itm)
-
-
-            # connecting devices
-            for s in self.devices:
-                sen = s['device']
-                itm = QtWidgets.QListWidgetItem(sen.name)
-                itm.device = sen            
-                self.devices_listcon.addItem(itm)
-                if(sen == device):
-                    self.devices_listcon.setCurrentItem(itm)
-
-            # data receiving devices
-            if(device.publish):
-                self.devices_listin.setEnabled(True)
-                self.devices_listallin.setEnabled(True)
-                for s in self.devices:
-                    sen = s['device']
-                    if(sen.subscribe == False):
-                        continue
-                    if(device == sen): # Dont list the device itself
-                        continue                    
-                           
-                    itm = QtWidgets.QListWidgetItem(sen.name)
-                    itm.device = sen            
-                    self.devices_listallin.addItem(itm)
-                
-            else:
-                self.devices_listin.setEnabled(False)                
-                self.devices_listallin.setEnabled(False)
-                
-            # data providing devices
-            if(device.subscribe):
-                self.devices_listout.setEnabled(True)
-                self.devices_listallout.setEnabled(True)
-                for s in self.devices:
-                    sen = s['device']
-                    if(sen.publish == False):
-                        continue
-                    if(device == sen): # Dont list the device itself
-                        continue
-                    
-                    itm = QtWidgets.QListWidgetItem(sen.name)
-                    itm.device = sen            
-                    self.devices_listallout.addItem(itm)
-            else:
-                self.devices_listout.setEnabled(False)                
-                self.devices_listallout.setEnabled(False)                    
-                    
-            
-    def disconnect_clicked(self):
-        print('Disconnect')
-
-    def itemcon_clicked(self,item):
-        # Update the connection list 
-        self.update_list(item.device)
-
-    def itemcon_dclicked(self,item):
-        if(item.isSelected()):
-            item.setSelected(False)
-
-
-#
-# The main widget
-#
-class redvyprMainWidget(QtWidgets.QMainWindow):
-    def __init__(self,width=None,height=None,config=None):
-        super(redvyprMainWidget, self).__init__()
-        self.setGeometry(50, 50, 500, 300)
-        self.setWindowTitle("redvypr")
-        # Add the icon
-        self.setWindowIcon(QtGui.QIcon(_icon_file))           
-        
-        self.redvypr = redvyprWidget(config=config)
-        self.setCentralWidget(self.redvypr)
-        quitAction = QtWidgets.QAction("&Quit", self)
-        quitAction.setShortcut("Ctrl+Q")
-        quitAction.setStatusTip('Close the program')
-        quitAction.triggered.connect(self.close_application)
-
-        loadcfgAction = QtWidgets.QAction("&Load", self)
-        loadcfgAction.setShortcut("Ctrl+O")
-        loadcfgAction.setStatusTip('Load a configuration file')
-        loadcfgAction.triggered.connect(self.load_config)
-
-        pathAction = QtWidgets.QAction("&Devicepath", self)
-        pathAction.setShortcut("Ctrl+L")
-        pathAction.setStatusTip('Edit the device path')
-        pathAction.triggered.connect(self.redvypr.show_devicepathwidget)                
-
-        deviceAction = QtWidgets.QAction("&Add device", self)
-        deviceAction.setShortcut("Ctrl+A")
-        deviceAction.setStatusTip('Add a device')
-        deviceAction.triggered.connect(self.open_add_device_widget)
-
-        devcurAction = QtWidgets.QAction("&Go to device tab", self)
-        devcurAction.setShortcut("Ctrl+D")
-        devcurAction.setStatusTip('Go to the device tab')
-        devcurAction.triggered.connect(self.gotodevicetab)        
-
-        conAction = QtWidgets.QAction("&Connect devices", self)
-        conAction.setShortcut("Ctrl+C")
-        conAction.setStatusTip('Connect the input/output datastreams of the devices')
-        conAction.triggered.connect(self.connect_device_gui)
-
-        self.statusBar()
-
-        mainMenu = self.menuBar()
-        fileMenu = mainMenu.addMenu('&File')
-        fileMenu.addAction(loadcfgAction)
-        fileMenu.addAction(pathAction)
-        fileMenu.addAction(quitAction)
-
-        deviceMenu = mainMenu.addMenu('&Devices')
-        deviceMenu.addAction(devcurAction)        
-        deviceMenu.addAction(deviceAction)
-        deviceMenu.addAction(conAction) 
-        
-        
-        # Help and About menu
-        helpAction = QtWidgets.QAction("&About", self)
-        helpAction.setStatusTip('Information about the software version')
-        helpAction.triggered.connect(self.about)
-        
-        helpMenu = mainMenu.addMenu('&Help')
-        helpMenu.addAction(helpAction)
-
-        self.show()
-
-    def gotodevicetab(self):
-        self.redvypr.devicetabs.setCurrentWidget(self.redvypr.devicesummarywidget)
-
-
-    def connect_device_gui(self):
-        self.redvypr.connect_device_gui()
-
-    def about(self):
-        self._about_widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(self._about_widget)
-        label = QtWidgets.QLabel("Python based Realtime Data Viewer and Processor (redvypr)")
-        label1 = QtWidgets.QLabel("Version: {:s}".format(str(version)))
-        layout.addWidget(label)
-        layout.addWidget(label1)
-        icon = QtGui.QPixmap(_logo_file)
-        iconlabel = QtWidgets.QLabel()
-        iconlabel.setPixmap(icon)
-        layout.addWidget(iconlabel)
-        self._about_widget.show()
-
-    def open_add_device_widget(self):
-        self.redvypr.open_add_device_widget()
-
-    def load_config(self):
-        self.redvypr.load_config()
-
-    def close_application(self):
-        self.redvypr.close_application()
-            
-        sys.exit()
-        
-    def closeEvent(self,event):
-        self.close_application()
-
-
-class deviceinfoWidget(QtWidgets.QWidget):
-    """ A widget to display the general info of a device
-    """
-    device_start = QtCore.pyqtSignal(dict) # Signal requesting a start of the device (starting the thread)
-    device_stop  = QtCore.pyqtSignal(dict) # Signal requesting a stop of device
-    connect      = QtCore.pyqtSignal(dict) # Signal requesting a change of the connection
-
-    def __init__(self,devicedict,redvyprwidget):
-        super(deviceinfoWidget, self).__init__()
-        self.devicedict = devicedict
-        self.redvyprwidget = redvyprwidget
-        self.devicetab = self.redvyprwidget.devicetabs # The parent tab with all devices listed
-        self.namelabel = QtWidgets.QLabel(devicedict['device'].name)
-        label = self.namelabel
-        fsize         = label.fontMetrics().size(0, label.text())
-        label.setFont(QtGui.QFont('Arial', fsize.height()+4))        
-        #self.numlabel = QtWidgets.QLabel(str(devicedict['device'].numdevice))
-        #label = self.numlabel
-        #fsize         = label.fontMetrics().size(0, label.text())
-        #label.setFont(QtGui.QFont('Arial', fsize.height()+4))                
-        self.layout = QtWidgets.QHBoxLayout(self)
-        self.layout2 = QtWidgets.QGridLayout()
-        self.viewbtn = QtWidgets.QPushButton("View")
-        self.viewbtn.clicked.connect(self.viewclicked)
-        self.viewbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)        
-        self.conbtn = QtWidgets.QPushButton("Connections")
-        self.conbtn.clicked.connect(self.conclicked)
-        self.conbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
-        self.rembtn = QtWidgets.QPushButton("Remove")
-        self.rembtn.clicked.connect(self.remdevice)
-        self.rembtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)        
-        self.renbtn = QtWidgets.QPushButton("Rename")
-        self.renbtn.clicked.connect(self.rendevice)
-        self.renbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)        
-        self.startbtn = QtWidgets.QPushButton("Start")
-        self.startbtn.setCheckable(True)
-        self.startbtn.clicked.connect(self.startstopclicked)
-        self.startbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
-        self.infobtn = QtWidgets.QPushButton("Info")
-        self.infobtn.clicked.connect(self.get_info)
-        self.infobtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)                
-        self.layout2.addWidget(QtWidgets.QLabel('Name' + ' Device #' + str(devicedict['device'].numdevice)),0,0)        
-        self.layout2.addWidget(self.namelabel,1,0)
-        self.layout.addLayout(self.layout2)
-        self.layout.addStretch()
-        self.layout.addWidget(self.viewbtn)
-        self.layout.addWidget(self.infobtn)         
-        self.layout.addWidget(self.renbtn)
-        self.layout.addWidget(self.conbtn)
-        self.layout.addWidget(self.rembtn)
-        self.layout.addWidget(self.startbtn)
-
-    def get_info(self):        
-        self.infowidget       = QtWidgets.QPlainTextEdit()
-        self.infowidget.setReadOnly(True)
-        sortstat ={}
-        for i in sorted(self.devicedict['statistics']):
-            sortstat[i]=self.devicedict['statistics'][i]
-
-        sortstat['datakeys'] = sorted(sortstat['datakeys'])
-        statstr = yaml.dump(sortstat)
-        self.infowidget.insertPlainText(statstr + '\n')
-        self.infowidget.show()
-        
-        
-    def viewclicked(self):
-        self.redvyprwidget.devicetabs.setCurrentWidget(self.devicedict['widget'])        
-
-    def conclicked(self):
-        self.connect.emit(self.devicedict)
-
-    def startstopclicked(self):
-        funcname = __name__ + '.startstopclicked()'
-        logger.debug(funcname)
-        if(self.startbtn.text() == 'Stop'):
-            self.device_stop.emit(self.devicedict)
-        else:
-            self.device_start.emit(self.devicedict)
-
-    def thread_status(self,statusdict):
-        """ Function regularly called by redvypr to update the thread status
-        """
-        status = statusdict['threadalive']
-        if(status):
-            self.startbtn.setText('Stop')
-            self.startbtn.setChecked(True)            
-        else:
-            self.startbtn.setText('Start')
-            self.startbtn.setChecked(False)                        
-
-    def remdevice(self):
-        """ Removing the device
-        """
-        ret = QtWidgets.QMessageBox.question(self,'', "Are you sure to remove the device?", QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-        if ret == QtWidgets.QMessageBox.Yes:
-            widget = self.devicedict['widget']
-            for i in range(self.devicetab.count()):
-                if(self.devicetab.widget(i) == widget):
-                    self.redvyprwidget.closeTab(i)
-
-    def rendevice(self):
-        """ Renaming a device
-        """
-        oldname = self.devicedict['device'].name
-        name, okPressed = QtWidgets.QInputDialog.getText(self, "Enter new name","Device name:", QtWidgets.QLineEdit.Normal, oldname)
-        if okPressed and name != '':
-            renamed = self.redvyprwidget.renamedevice(oldname,name)
-
-#
-#
-#
-# A logging handler for qplaintext
-#
-#
-#
-class QPlainTextEditLogger(logging.Handler):
-    def __init__(self):
-        super(QPlainTextEditLogger, self).__init__()
-
-    def add_widget(self,widget):        
-        self.widget = widget
-
-    def emit(self, record):
-        msg = self.format(record)
-        self.widget.appendPlainText(msg)
-
-    def write(self, m):
-        pass            
-
-
 #
 #
 #
@@ -1624,7 +1098,7 @@ class redvyprWidget(QtWidgets.QWidget):
         except Exception as e:
             logger.debug(funcname + ': No displaywidget found for {:s}'.format(str(devicemodule)))
             # Using the standard display widget
-            devicedisplaywidget = standard_device_widgets.displayDeviceWidget_standard
+            devicedisplaywidget = displayDeviceWidget_standard
 
         devicewidget = QtWidgets.QWidget()
         devicelayout = QtWidgets.QVBoxLayout(devicewidget)
@@ -1843,7 +1317,113 @@ class redvyprWidget(QtWidgets.QWidget):
         
     def closeEvent(self,event):
         self.close_application()
-                
+        
+#        
+#
+# The main widget
+#
+#
+class redvyprMainWidget(QtWidgets.QMainWindow):
+    def __init__(self,width=None,height=None,config=None):
+        super(redvyprMainWidget, self).__init__()
+        self.setGeometry(50, 50, 500, 300)
+        self.setWindowTitle("redvypr")
+        # Add the icon
+        self.setWindowIcon(QtGui.QIcon(_icon_file))           
+        
+        self.redvypr = redvyprWidget(config=config)
+        self.setCentralWidget(self.redvypr)
+        quitAction = QtWidgets.QAction("&Quit", self)
+        quitAction.setShortcut("Ctrl+Q")
+        quitAction.setStatusTip('Close the program')
+        quitAction.triggered.connect(self.close_application)
+
+        loadcfgAction = QtWidgets.QAction("&Load", self)
+        loadcfgAction.setShortcut("Ctrl+O")
+        loadcfgAction.setStatusTip('Load a configuration file')
+        loadcfgAction.triggered.connect(self.load_config)
+
+        pathAction = QtWidgets.QAction("&Devicepath", self)
+        pathAction.setShortcut("Ctrl+L")
+        pathAction.setStatusTip('Edit the device path')
+        pathAction.triggered.connect(self.redvypr.show_devicepathwidget)                
+
+        deviceAction = QtWidgets.QAction("&Add device", self)
+        deviceAction.setShortcut("Ctrl+A")
+        deviceAction.setStatusTip('Add a device')
+        deviceAction.triggered.connect(self.open_add_device_widget)
+
+        devcurAction = QtWidgets.QAction("&Go to device tab", self)
+        devcurAction.setShortcut("Ctrl+D")
+        devcurAction.setStatusTip('Go to the device tab')
+        devcurAction.triggered.connect(self.gotodevicetab)        
+
+        conAction = QtWidgets.QAction("&Connect devices", self)
+        conAction.setShortcut("Ctrl+C")
+        conAction.setStatusTip('Connect the input/output datastreams of the devices')
+        conAction.triggered.connect(self.connect_device_gui)
+
+        self.statusBar()
+
+        mainMenu = self.menuBar()
+        fileMenu = mainMenu.addMenu('&File')
+        fileMenu.addAction(loadcfgAction)
+        fileMenu.addAction(pathAction)
+        fileMenu.addAction(quitAction)
+
+        deviceMenu = mainMenu.addMenu('&Devices')
+        deviceMenu.addAction(devcurAction)        
+        deviceMenu.addAction(deviceAction)
+        deviceMenu.addAction(conAction) 
+        
+        
+        # Help and About menu
+        helpAction = QtWidgets.QAction("&About", self)
+        helpAction.setStatusTip('Information about the software version')
+        helpAction.triggered.connect(self.about)
+        
+        helpMenu = mainMenu.addMenu('&Help')
+        helpMenu.addAction(helpAction)
+
+        self.show()
+
+    def gotodevicetab(self):
+        self.redvypr.devicetabs.setCurrentWidget(self.redvypr.devicesummarywidget)
+
+
+    def connect_device_gui(self):
+        self.redvypr.connect_device_gui()
+
+    def about(self):
+        self._about_widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(self._about_widget)
+        label = QtWidgets.QLabel("Python based Realtime Data Viewer and Processor (redvypr)")
+        label1 = QtWidgets.QLabel("Version: {:s}".format(str(version)))
+        layout.addWidget(label)
+        layout.addWidget(label1)
+        icon = QtGui.QPixmap(_logo_file)
+        iconlabel = QtWidgets.QLabel()
+        iconlabel.setPixmap(icon)
+        layout.addWidget(iconlabel)
+        self._about_widget.show()
+
+    def open_add_device_widget(self):
+        self.redvypr.open_add_device_widget()
+
+    def load_config(self):
+        self.redvypr.load_config()
+
+    def close_application(self):
+        self.redvypr.close_application()
+            
+        sys.exit()
+        
+    def closeEvent(self,event):
+        self.close_application()
+
+
+
+
 
 #
 #

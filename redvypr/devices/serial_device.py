@@ -17,7 +17,7 @@ logger = logging.getLogger('serial_device')
 logger.setLevel(logging.DEBUG)
 
 
-def start(dataqueue,comqueue,serial_name,baud,max_size=10000,dt = 0.05):
+def start(dataqueue,comqueue,serial_name,baud,parity=serial.PARITY_NONE,stopbits=serial.STOPBITS_ONE,bytesize=serial.EIGHTBITS,max_size=10000,dt = 0.05):
     """
     dt: time.sleep(dt) parameter
     """
@@ -31,7 +31,7 @@ def start(dataqueue,comqueue,serial_name,baud,max_size=10000,dt = 0.05):
     serial_device = False
     if True:
         try:
-            serial_device = serial.Serial(serial_name,baud,timeout=0.05)
+            serial_device = serial.Serial(serial_name,baud,parity=parity,stopbits=stopbits,bytesize=bytesize,timeout=0.05)
             #print('Serial device 0',serial_device)            
             #serial_device.timeout(0.05)
             #print('Serial device 1',serial_device)                        
@@ -107,7 +107,9 @@ class Device():
         self.serial_name = ''
         self.baud = 0
         self.sentences = 0
-        
+        self.parity = serial.PARITY_NONE
+        self.stopbits = serial.STOPBITS_ONE
+        self.bytesize = serial.EIGHTBITS
         
         
     def thread_status(self,status):
@@ -119,7 +121,7 @@ class Device():
     def start(self):
         funcname = __name__ + '.start()'                                
         logger.debug(funcname)
-        start(self.dataqueue,self.comqueue,self.serial_name,self.baud)
+        start(self.dataqueue,self.comqueue,self.serial_name,self.baud,self.parity,self.stopbits,self.bytesize)
         
 
     def __str__(self):
@@ -137,7 +139,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.device   = device
         self.serialwidget = QtWidgets.QWidget()
         self.init_serialwidget()
-        self.label    = QtWidgets.QLabel("Serial device device")
+        self.label    = QtWidgets.QLabel("Serial device")
         #self.startbtn = QtWidgets.QPushButton("Open device")
         #self.startbtn.clicked.connect(self.start_clicked)
         #self.stopbtn = QtWidgets.QPushButton("Close device")
@@ -163,6 +165,24 @@ class initDeviceWidget(QtWidgets.QWidget):
             self._combo_serial_baud.addItem(str(b))
 
         self._combo_serial_baud.setCurrentIndex(4)
+        # creating a line edit
+        edit = QtWidgets.QLineEdit(self)
+  
+        # setting line edit
+        self._combo_serial_baud.setLineEdit(edit)
+        
+        self._combo_parity = QtWidgets.QComboBox()
+        self._combo_parity.addItem('None')
+        self._combo_parity.addItem('Odd')
+        self._combo_parity.addItem('Even')
+        self._combo_parity.addItem('Mark')
+        self._combo_parity.addItem('Space')
+        
+        self._combo_stopbits = QtWidgets.QComboBox()
+        self._combo_stopbits.addItem('1')
+        self._combo_stopbits.addItem('1.5')
+        self._combo_stopbits.addItem('2')
+        
         self._button_serial_openclose = QtWidgets.QPushButton('Open')
         self._button_serial_openclose.clicked.connect(self.start_clicked)
 
@@ -190,10 +210,16 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self._packet_ident,0,1)
         layout.addWidget(self._packet_ident_lab,0,0)
         layout.addWidget(self._packet_size_lab,0,2)
-        layout.addWidget(self._packet_size,0,3)        
-        layout.addWidget(self._combo_serial_devices,1,0)
-        layout.addWidget(self._combo_serial_baud,1,1)
-        layout.addWidget(self._button_serial_openclose,1,2)
+        layout.addWidget(self._packet_size,0,3)
+        layout.addWidget(QtWidgets.QLabel('Serial device'),1,0)
+        layout.addWidget(self._combo_serial_devices,2,0)
+        layout.addWidget(QtWidgets.QLabel('Baud'),1,1)
+        layout.addWidget(self._combo_serial_baud,2,1)
+        layout.addWidget(QtWidgets.QLabel('Parity'),1,2)  
+        layout.addWidget(self._combo_parity,2,2)  
+        layout.addWidget(QtWidgets.QLabel('Stopbits'),1,3)  
+        layout.addWidget(self._combo_stopbits,2,3) 
+        layout.addWidget(self._button_serial_openclose,2,4)
         
     
     def update_buttons(self,thread_status):
@@ -217,6 +243,25 @@ class initDeviceWidget(QtWidgets.QWidget):
             button.setText('Close')
             serial_name = str(self._combo_serial_devices.currentText())
             serial_baud = int(self._combo_serial_baud.currentText())
+            stopbits = self._combo_stopbits.currentText()
+            if(stopbits=='1'):
+                self.device.stopbits =  serial.STOPBITS_ONE
+            elif(stopbits=='1.5'):
+                self.device.stopbits =  serial.STOPBITS_ONE_POINT_FIVE
+            elif(stopbits=='2'):
+                self.device.stopbits =  serial.STOPBITS_TWO
+                
+            if(parity=='None'):
+                self.device.parity = serial.PARITY_NONE
+            elif(parity=='Even'):                
+                self.device.parity = serial.PARITY_EVEN
+            elif(parity=='Odd'):                
+                self.device.parity = serial.PARITY_ODD
+            elif(parity=='Mark'):                
+                self.device.parity = serial.PARITY_MARK
+            elif(parity=='Space'):                
+                self.device.parity = serial.PARITY_SPACE
+                
             self.device.serial_name = serial_name
             self.device.baud = serial_baud
             self.device_start.emit(self.device)
