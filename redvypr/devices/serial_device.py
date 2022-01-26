@@ -167,6 +167,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         self._combo_serial_baud.setCurrentIndex(4)
         # creating a line edit
         edit = QtWidgets.QLineEdit(self)
+        onlyInt = QtGui.QIntValidator()
+        edit.setValidator(onlyInt)
   
         # setting line edit
         self._combo_serial_baud.setLineEdit(edit)
@@ -182,6 +184,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         self._combo_stopbits.addItem('1')
         self._combo_stopbits.addItem('1.5')
         self._combo_stopbits.addItem('2')
+        
+        self._combo_databits = QtWidgets.QComboBox()
+        self._combo_databits.addItem('8')
+        self._combo_databits.addItem('7')
+        self._combo_databits.addItem('6')
+        self._combo_databits.addItem('5')
         
         self._button_serial_openclose = QtWidgets.QPushButton('Open')
         self._button_serial_openclose.clicked.connect(self.start_clicked)
@@ -216,10 +224,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel('Baud'),1,1)
         layout.addWidget(self._combo_serial_baud,2,1)
         layout.addWidget(QtWidgets.QLabel('Parity'),1,2)  
-        layout.addWidget(self._combo_parity,2,2)  
-        layout.addWidget(QtWidgets.QLabel('Stopbits'),1,3)  
-        layout.addWidget(self._combo_stopbits,2,3) 
-        layout.addWidget(self._button_serial_openclose,2,4)
+        layout.addWidget(self._combo_parity,2,2) 
+        layout.addWidget(QtWidgets.QLabel('Databits'),1,3)  
+        layout.addWidget(self._combo_databits,2,3) 
+        layout.addWidget(QtWidgets.QLabel('Stopbits'),1,4)  
+        layout.addWidget(self._combo_stopbits,2,4) 
+        layout.addWidget(self._button_serial_openclose,2,5)
         
     
     def update_buttons(self,thread_status):
@@ -250,6 +260,9 @@ class initDeviceWidget(QtWidgets.QWidget):
                 self.device.stopbits =  serial.STOPBITS_ONE_POINT_FIVE
             elif(stopbits=='2'):
                 self.device.stopbits =  serial.STOPBITS_TWO
+                
+            databits = int(self._combo_databits.currentText())
+            self.device.bytesize = databits
                 
             if(parity=='None'):
                 self.device.parity = serial.PARITY_NONE

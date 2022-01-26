@@ -1035,8 +1035,8 @@ class redvyprWidget(QtWidgets.QWidget):
         infotxt2 = self.redvypr.device_modules[ind]['source']
         self.__devices_info_sourcelabel4.setText(infotxt2)
         try:
-            desctxt = self.relf.redvypr.device_modules[ind]['module'].description
-        except:
+            desctxt = self.redvypr.device_modules[ind]['module'].description
+        except Exception as e:
             desctxt = ''
 
         self.__devices_info_sourcelabel6.setText(desctxt)        
