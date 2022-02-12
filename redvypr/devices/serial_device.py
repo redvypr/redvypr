@@ -263,7 +263,8 @@ class initDeviceWidget(QtWidgets.QWidget):
                 
             databits = int(self._combo_databits.currentText())
             self.device.bytesize = databits
-                
+
+            parity = self._combo_parity.currentText()
             if(parity=='None'):
                 self.device.parity = serial.PARITY_NONE
             elif(parity=='Even'):                

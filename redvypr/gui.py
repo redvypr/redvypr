@@ -16,6 +16,7 @@ import threading
 import multiprocessing
 import redvypr.devices as redvyprdevices
 from redvypr.data_packets import redvypr_isin_data, redvypr_get_devicename
+from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices
 import socket
 import argparse
 import importlib.util
@@ -30,7 +31,9 @@ _logo_file = files.logo_file
 _icon_file = files.icon_file
 
 
-
+logging.basicConfig(stream=sys.stderr)
+logger = logging.getLogger('redvypr')
+logger.setLevel(logging.DEBUG)
 
 
 class redvyprConnectWidget(QtWidgets.QWidget):

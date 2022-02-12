@@ -21,20 +21,20 @@ devices:
          xlabel: time
          ylabel: Voltage [V]
          datetick: True
-         lines: 
-            - device: sin@r1
-              name: sin@r1
+         lines:
+            - device: sinrandfast@*
+              name: sinrandfast@*
               x: t
               y: data
               linewidth: 2
               color: [0,255,0]
               buffersize: 200
-            - device: sinrand@r1
+            - device: sinn@*
               x: t
               y: data
               linewidth: 2
               color: [255,0,0]
-              buffersize: 500
+              buffersize: 1000
 
        - title: Plot B
          type: graph
@@ -43,12 +43,12 @@ devices:
          xlabel: time
          datetick: True
          lines: 
-            - device: sinn@*
+            - device: sinrandfast@*
               x: t
               y: data
               linewidth: 2
               color: [0,255,0]
-              buffersize: 10000
+              buffersize: 1000
 
        - title: Some data
          type: numdisp

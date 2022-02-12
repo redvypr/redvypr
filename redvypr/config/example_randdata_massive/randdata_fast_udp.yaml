@@ -6,7 +6,7 @@ devices:
     name: sinrandfast
     loglevel: info
     config:
-      dt: .05
+      dt: .1
       functions:
         - name: sin
           f: 0.1
@@ -42,11 +42,11 @@ devices:
 connections:
 - publish: sinrandfast
   receive: udp
-- publish: sinn
-  receive: udp  
+#- publish: sinn
+#  receive: udp  
 
   
 start:
 - sinrandfast
-- sinn
+#- sinn
 - udp

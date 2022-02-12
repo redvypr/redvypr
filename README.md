@@ -12,22 +12,52 @@ redvypr offers a python based framework to connect sensors and devices providing
 Introduction
 ------------
 
-Sampling data from sensors does always require similar tasks:
 
-- storing the data
-- adding metadata like position, time, experiment (logbook)
-- inspecting the data to determine faulty data
-- visualizing data for first interpretations
+Sampling data does always require the similar tasks.
 
-Sensors are more and more equipped with a direct digital output, that
-makes it possible to fulfill the above defined tasks directly on a
-computer.
+- Reading data from sensors
+- Saving the data 
+- Adding metainformation to the dataset, that typically includes
+  information like time, location, experiment, responsible person(s),
+  project ...
+- Plotting data for a quicklook
+- Do a first dataanalysis
 
-redvypr aims to unifiy these tasks by creating a framework that allows
-to store, visualize and transfer data from various sensors. As sensors
-are arbitrarily complex in handling and reading, it is left to the user
-to implement custom sensors into redvypr using the common interfaces
-provided.
+Before the development of digital sensors these tasks have been
+performed mainly by reading scales and documenting the data onto
+paper. By the still continuing digitalisation of sensors, the number
+of sensors and the amount of data output is increasing drastically,
+which creates challenges in performing the above mentioned tasks,
+especially if several sensor need to be fusioned, as they provide data
+at transferred via different physical interfaces, different
+frequencies, times and data formats:
+
+Digital sensors have an non overseeable amount of interfaces like
+UART, SPI, I2C, ethernet, to name a few, and their own data
+format. Sensors are generally shipped with their own software for
+sampling. The complexity starts if a user wants to fuse data from
+several sensors in realtime. An often used approach is to merge the
+data after the measurement. The data is typically located in several
+files with different data formats. The users needs to read each data
+format containing most likely different time stamps and data with the
+complex task to synchronize the data and create a usable dataset.
+
+Redvypr is a tool to help to work with digital sensors by providing a
+`python`_ based infrastructure allowing to add sensors, interconnect
+sensors, process and save the data gathered by the sensors. Python is
+choosen as the language as it provides a rich infrastructure of
+packets to deal with digital data and its interfaces, i.e. using
+network devices, databases or serial connections. The extensive usage
+of threads and multiprocesses allows to work with data received from
+various sensors at different times and frequencies (asynchrone).
+
+Redvypr was designed with the following goals in mind:
+- Runs on small embedded systems
+- Allows to work with asynchronously received data from multiple sensors
+- Scalable by using several redvypr instances either on one computer or on a network
+- Can be easily extended by users
+- Setup via a configuration file and an optional GUI
+
 
 Documentation
 -------------

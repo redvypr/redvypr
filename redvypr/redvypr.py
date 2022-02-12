@@ -17,6 +17,7 @@ import multiprocessing
 import redvypr.devices as redvyprdevices
 from redvypr.data_packets import redvypr_isin_data, redvypr_get_devicename
 from redvypr.gui import redvyprConnectWidget,QPlainTextEditLogger,displayDeviceWidget_standard,deviceinfoWidget
+from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices
 import socket
 import argparse
 import importlib.util
@@ -71,7 +72,6 @@ def distribute_data(devices,infoqueue,dt=0.01):
         tstart = time.time()
         for devicedict in devices:
             device = devicedict['device']
-            #print('device',devicedict)
             while True:
                 try:
                     data = device.dataqueue.get(block=False)
@@ -87,7 +87,6 @@ def distribute_data(devices,infoqueue,dt=0.01):
                 # Add the packetnumber to the datadict
                 if('numpacket' not in data.keys()):
                     data['numpacket'] = devicedict['numpacket']
-
 
                 try:
                     if devicedict['statistics']['inspect']:
@@ -116,11 +115,9 @@ def distribute_data(devices,infoqueue,dt=0.01):
                         devicedict['numpacketout'] += 1
                         try:
                             dataout.put_nowait(data)
-                            #print('Sent',len(devicedict['dataout']),type(dataout))
                         except Exception as e:
                             logger.debug(funcname + ':dataout of :' + devicedict['device'].name + ' full: ' + str(e))
                     for guiqueue in devicedict['guiqueue']: # Put data into the guiqueue, this queue does always exist
-                        #print('putting into guiqueue',data)
                         try:                        
                             guiqueue.put_nowait(data)
                         except Exception as e:
@@ -140,116 +137,6 @@ def distribute_data(devices,infoqueue,dt=0.01):
             
             
 
-
-
-def addrm_device_as_data_provider(devices,deviceprovider,devicereceiver,remove=False):
-    """ Adds or remove deviceprovider as a datasource to devicereceiver
-    Arguments:
-    devices: list of dictionary including device and dataout lists
-    deviceprovider: Device object 
-    devicerecevier: Device object
-    Returns: None if device could not been found, True for success, False if device was already connected
-    """
-    funcname = "addrm_device_as_data_provider():"
-    logger.debug(funcname)
-    # Find the device first in self.devices and save the index
-    inddeviceprovider = -1
-    inddevicereceiver = -1    
-    for i,s in enumerate(devices):
-        if(s['device'] == deviceprovider):
-            inddeviceprovider = i
-        if(s['device'] == devicereceiver):
-            inddevicereceiver = i     
-
-    if(inddeviceprovider < 0 or inddevicereceiver < 0):
-        logger.debug(funcname + ': Could not find devices, doing nothing')
-        return None
-
-    datainqueue       = devices[inddevicereceiver]['device'].datainqueue
-    datareceivernames = devices[inddevicereceiver]['device'].data_receiver
-    dataoutlist       = devices[inddeviceprovider]['dataout']
-    
-    if(remove):
-        if(datainqueue in dataoutlist):
-            logger.debug(funcname + ': Removed device')
-            dataoutlist.remove(datainqueue)
-            # Remove the receiver name from the list
-            devices[inddevicereceiver]['device'].data_receiver.remove(devices[inddeviceprovider]['device'].name)
-            devices[inddeviceprovider]['device'].data_provider.remove(devices[inddevicereceiver]['device'].name)
-            return True
-        else:
-            return False
-    else:
-        if(datainqueue in dataoutlist):
-            return False
-        else:
-            logger.debug('addrm_device_as_data_provider():added device')
-            dataoutlist.append(datainqueue)
-            # Add the receiver and provider names to the device
-            devices[inddevicereceiver]['device'].data_receiver.append(devices[inddeviceprovider]['device'].name)
-            devices[inddeviceprovider]['device'].data_provider.append(devices[inddevicereceiver]['device'].name)
-            return True
-
-
-def get_data_receiving_devices(devices,device):
-    """ Returns a list of devices that are receiving data from device
-    """
-    funcname = __name__ + 'get_data_receiving_devices():'
-    devicesin = []
-    # Find the device first in self.devices and save the index
-    inddevice = -1
-    for i,s in enumerate(devices):
-        if(s['device'] == device):
-            inddevice = i
-
-    if(inddevice < 0):
-        return None
-
-    # Look if the devices are connected as input to the choosen device
-    #  device -> data -> s in self.devices
-    try:
-        dataout = device.dataqueue
-    except Exception as e:
-        logger.debug(funcname + 'Device has no dataqueue for data output')
-        return devicesin
-    
-    for dataout in devices[inddevice]['dataout']: # Loop through all dataoutqueues
-        for s in devices:
-            sen = s['device']
-            datain = sen.datainqueue
-            if True:
-                if(dataout == datain):
-                    devicesin.append(s)
-            
-    return devicesin
-
-def get_data_providing_devices(devices,device):
-    """ Returns a list of devices that are providing their data to device, i.e. device.datain is in the 'dataout' list of the device
-    devices = list of dictionaries 
-    """
-    # Find the device first in self.devices and save the index
-    inddevice = -1
-    for i,s in enumerate(devices):
-        if(s['device'] == device):
-            inddevice = i
-
-    if(inddevice < 0):
-        return None
-    
-    devicesout = []
-    # Look if the devices are connected as input to the chosen device
-    # s in self.devices-> data -> device
-    datain = device.datainqueue
-    for s in devices:
-        sen = s['device']
-        try:
-            for dataout in s['dataout']:
-                if(dataout == datain):
-                    devicesout.append(s)
-        except Exception as e:
-            print('dataqueue',s,device,str(e))
-            
-    return devicesout
 
 
 
@@ -470,7 +357,9 @@ class redvypr(QtCore.QObject):
         # Add all devices from additional folders
         for dpath in self.device_paths:
             python_files = glob.glob(dpath + "/*.py")
+            logger.debug(funcname + ' will search in path for files: {:s}'.format(dpath))
             for pfile in python_files:
+                logger.debug(funcname + ' opening {:s}'.format(pfile))
                 module_name = pathlib.Path(pfile).stem
                 spec = importlib.util.spec_from_file_location(module_name, pfile)
                 module = importlib.util.module_from_spec(spec)
@@ -481,6 +370,7 @@ class redvypr(QtCore.QObject):
                     module.Device
                     hasdevice = True      
                 except:
+                    logger.debug(funcname + ' did not find Device class, will skip.')
                     pass
 
                 if(hasdevice):
@@ -880,11 +770,13 @@ class redvyprWidget(QtWidgets.QWidget):
             
         if True:    
             # Configurating redvypr
+            print('Hallo',config)
             if(config is not None):
                 if(type(config) == str):
                     config = [config]
 
                 for c in config:
+                    print(c)
                     self.redvypr.parse_configuration(c)
 
 
@@ -1474,21 +1366,17 @@ def redvypr_main():
         hostconfig = {'hostname':args.hostname}
         config_all.append(hostconfig)
         
-    print('Config',config_all)
-    print('Flag nogui',args.nogui)
-
+    
     # Adding device module pathes
     if(args.add_path is not None):
-        print('devicepath',args.add_path)        
+        #print('devicepath',args.add_path)        
         modpath = os.path.abspath(args.add_path)
-        print('devicepath',args.add_path,modpath)
+        #print('devicepath',args.add_path,modpath)
         configp = {'devicepath':modpath}
-        print('Modpath',modpath)
-        if(config == None):
-            config = []
+        #print('Modpath',modpath)
+        config_all.append(configp)
 
-        config.append(configp)
-        
+    logger.debug('Configuration:\n {:s}\n'.format(str(config_all)))
     # GUI oder command line?
     if(args.nogui):
         def handleIntSignal(signum, frame):
@@ -1503,11 +1391,11 @@ def redvypr_main():
     else:
         app = QtWidgets.QApplication(sys.argv)
         screen = app.primaryScreen()
-        print('Screen: %s' % screen.name())
+        #print('Screen: %s' % screen.name())
         size = screen.size()
-        print('Size: %d x %d' % (size.width(), size.height()))
+        #print('Size: %d x %d' % (size.width(), size.height()))
         rect = screen.availableGeometry()
-        print('Available: %d x %d' % (rect.width(), rect.height()))
+        #print('Available: %d x %d' % (rect.width(), rect.height()))
         ex = redvyprMainWidget(width=rect.width()/2,height=rect.height()*2/3,config=config_all)
         sys.exit(app.exec_())
 

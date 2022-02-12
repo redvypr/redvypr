@@ -1,19 +1,19 @@
 # A test configuration file
-hostname: serialgps1
+hostname: gps
 
 devices:
 - devicemodulename: serial_device
   deviceconfig:
-    name: serial1
+    name: serial
     serial_name: /dev/ttyUSB1
     baud: 4800
 - devicemodulename: gps_device
   deviceconfig:
-    name: gps1
+    name: gps
 
 - devicemodulename: network_device  
   deviceconfig:
-    name: tcpserial1
+    name: tcp
     config:
        address: <ip> # Address IP, localhost. <broadcast> for UDP broadcast in local network. <ip> for local ip
        port: 10001
@@ -24,34 +24,26 @@ devices:
 
 - devicemodulename: netcdflogger  
   deviceconfig:
-    name: gpsnclogger
+    name: nclog
     config:
       filename: 'gps1.nc'
       zlib: True
       dt_newfile: 3600
       groups:
-        - name: gps1
-          devices:
-            - gps1
-          keys:
-            - varname: lon
-              key: lon
-              type: float
-            - varname: lat
-              key: lat
-              type: float
+        - name: "gps@gps" # Creates a group redvyprrand1 and adds automatic variables of all devices received         
+
 
 connections:
-- publish: serial1
-  receive: gps1
-- publish: gps1
-  receive: gpsnclogger
-- publish: serial1
-  receive: tcpserial1
+- publish: serial
+  receive: gps
+- publish: gps
+  receive: nclog
+- publish: gps
+  receive: tcp
   
   
 start:
-- serial1
-- gpsnclogger
-- tcpserial1
+- serial
+- gps
+- tcp
 
