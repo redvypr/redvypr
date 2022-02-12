@@ -59,6 +59,7 @@ def parse_nmea(data):
     """ Parses a NMEA type heatflow data string
     $noSN,00000315.1035,HFS,-0.000196,V,-0.000392,W/m2,NTC,+0.028857,V,+33.926881,degC,VIN,+0.114332,V,+1.257654,VCC
     """
+
     datas = data.split(',')
     datadict = {}
     datadict['sn']       = datas[0][1:] # Serialnumber
@@ -124,7 +125,7 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
                 logger.debug(funcname + ':Exception:' + str(e))            
 
 class Device():
-    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = []):
+    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = {}):
         """
         """
         self.publish     = True # publishes data, a typical device is doing this

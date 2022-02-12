@@ -770,7 +770,6 @@ class redvyprWidget(QtWidgets.QWidget):
             
         if True:    
             # Configurating redvypr
-            print('Hallo',config)
             if(config is not None):
                 if(type(config) == str):
                     config = [config]
