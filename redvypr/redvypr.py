@@ -363,7 +363,11 @@ class redvypr(QtCore.QObject):
                 module_name = pathlib.Path(pfile).stem
                 spec = importlib.util.spec_from_file_location(module_name, pfile)
                 module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
+                try:
+                    spec.loader.exec_module(module)
+                except Exception as e:
+                    logger.warning(funcname + ' could not import module: {:s} \nError: {:s}'.format(pfile,str(e)))
+                    
                 module_members = inspect.getmembers(module,inspect.isclass)
                 hasdevice = False
                 try:
