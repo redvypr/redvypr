@@ -399,6 +399,7 @@ class redvypr(QtCore.QObject):
         # Loop over all modules and check of we find the name
         for smod in self.device_modules:
            if(devicemodulename == smod['name']):
+              logger.debug('Trying to import device {:s}'.format(smod['name']))
               print(smod)
               devicemodule     = smod['module']
               #devicemodule     = getattr(redvyprdevices, devicemodulename)
@@ -467,11 +468,9 @@ class redvypr(QtCore.QObject):
               break
 
         if(device_found == False):
-           logger.warning(funcname + ': Could not add device (not found): {:s}',format(devicemodulename))
+            logger.warning(funcname + ': Could not add device (not found): {:s}'.format(str(devicemodulename)))
            
         return devicelist
-
-
 
 
     def create_devicedict(self,devicemodule,devicename = None,thread=False,deviceconfig=None):

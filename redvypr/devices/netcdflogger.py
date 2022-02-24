@@ -135,8 +135,9 @@ def create_ncfile(config,update=False,nc=None):
                 ncg = nc.groups[group['name']]
                 group['__nc__'] = ncg # Save the group in the config dictionary                
 
-
+            print('Hallo0',group['variables'])
             for ikey,key in enumerate(group['variables']):
+                print('Hallo',key)
                 if('name' in key.keys()):
                     if(key['name'] not in ncg.variables.keys()):                    
                         logger.debug(funcname + ': Creating variable {:s}'.format(key['name']))                    
@@ -278,10 +279,30 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                             newvariables = redvypr_get_keys(data)
                             
                             for nvar in newvariables:
+                                print('Hallo',nvar)
+                                # Check if data can be converted to a float
+                                if(type(data[nvar]) == list):
+                                    if(len(data[nvar])>0):
+                                        testdata = data[nvar][0]
+                                    else:
+                                        testdata= 'somestring'
+                                else:
+                                    testdata = data[nvar]
+                                 
+                                if(type(testdata)==str):
+                                    continue   
+                                try:
+                                    float(testdata)
+                                except:
+                                    continue
+                                
+                                logger.debug(funcname + ': Will add variable:' + nvar)
                                 newvar = {'name':nvar,'key':nvar,'type':float}
 
-                            newgroup['variables'].append(newvar)
+                                newgroup['variables'].append(newvar)
+                                
                             configstatus['groups'].append(newgroup)
+                            print('newgroup ...',newgroup)
                             # Update the nc file with the new group
                             [nc,config,configstatus] = create_ncfile(configstatus,update=True,nc=nc) # The original config is with the netcdf object, so a backup is created as configstatus
                     else:

@@ -182,6 +182,7 @@ def start_tcp_send(dataqueue, datainqueue, comqueue, statusqueue, config=None):
                 statusqueue.put_nowait(statusdata)
             except: # If the queue is full
                 pass                
+
             
         
         
@@ -198,6 +199,11 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     logger.debug(funcname + ': Connecting to '+ str(config))
     client.connect((config['address'],config['port']))
     client.settimeout(0.05) # timeout for listening
+    
+    # Some variables for status
+    tstatus = time.time()
+    dtstatus = 5 # Send a status message every dtstatus seconds
+    npackets = 0 # Number packets received via the datainqueue
 
     while True:
         try:
@@ -211,6 +217,7 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
         try:
             datab = client.recv(10000000000)
             t = time.time()
+            bytes_read += len(datab)
             # Check what data we are expecting and convert it accordingly
             if(config['serialize'] == 'yaml'):
                 for databs in datab.split(b'...\n'): # Split the text into single subpackets
@@ -235,7 +242,7 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
             else: # Put the "str" data into the packet with the key in "data"
                 data = datab.decode('utf-8')
                 datan = {'t':t}
-                datan[config['data']] = data
+                datan['data'] = data
                 dataqueue.put(datan)
             
         except socket.timeout as e:
@@ -243,6 +250,21 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
         except Exception as e:
             logger.info(funcname + ':' + str(e))
             return
+
+        # Sending a status message
+        if((time.time() - tstatus) > dtstatus):
+            statusdata = {}
+            statusdata['bytes_read'] = bytes_read
+            statusdata['time'] = str(datetime.datetime.now())            
+            tstatus = time.time()
+            #statusdata['clients'] = []
+            statusdata['config'] = copy.deepcopy(config)
+                
+            try:
+                statusqueue.put_nowait(statusdata)
+            except: # If the queue is full
+                pass
+        
 
 
 
@@ -366,7 +388,7 @@ def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
             else: # Put the "str" data into the packet with the key in "data"
                 data = datab.decode('utf-8')
                 datan = {'t':t}
-                datan[config['data']] = data
+                datan['data'] = data
                 dataqueue.put(datan)
             
             #print('UDP Received',datab)
@@ -379,7 +401,7 @@ def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
             return
 
 
-                # Sending a status message
+        # Sending a status message
         if((time.time() - tstatus) > dtstatus):
             statusdata = {}
             statusdata['bytes_read'] = bytes_read

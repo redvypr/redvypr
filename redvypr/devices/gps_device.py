@@ -1,3 +1,30 @@
+"""
+.
+
+The gps device converts stadard nmea messages used in marine navigation into redvypr format 
+
+
+Configuration options for the gps device:
+
+.. code-block::
+
+    - deviceconfig:
+    name: gps
+    config:
+      key: 'data' # The dictionary key of the raw NMEA string, defaults to 'data'
+      append: True # If the raw message is tranported in pieces, append data until a valid message was found
+      maxlen: 10000 # The maximum length of text buffer to search for NMEA messages
+      #sentences: all Set sentences to all, or a list of sentences (see next line)
+      sentences: # Filter for the NMEA sentences 
+          - RMC
+          - GGA
+                     
+
+  devicemodulename: gps_device
+
+
+"""
+
 import datetime
 import logging
 import queue
@@ -8,18 +35,71 @@ import serial
 import serial.tools.list_ports
 import logging
 import sys
+import pynmea2
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('gps_device')
 logger.setLevel(logging.DEBUG)
 
+def parse_nmea(nmea_data):
+    try:
+        msg = pynmea2.parse(nmea_data)
+        print('Valid nmea')
+        print('Message',msg)
+        data_nmea = {'valid_nmea':True}
+        data_nmea['nmea'] = str(msg) + '\n'
+        data_nmea['lat'] = msg.latitude
+        data_nmea['lon'] = msg.longitude
+        if(data_nmea['lat'] == 0):
+            print('ZERO')
+            print('ZERO')
+            print('ZERO')
+            print('ZERO')
+            print('ZERO')
+            print(data_nmea)
+        try: # If there is a date
+            data_nmea['date'] = msg.datestamp.strftime("%m%d%y")
+        except:
+            pass
+        try: # If there is a date
+            data_nmea['time'] = msg.timestamp.strftime("%H%M%S.%f")[:-4]
+        except:
+            pass    
+        
+        data_nmea['sentence_type'] = msg.sentence_type
+        return data_nmea
+    except Exception as e:
+        data_nmea = {'valid_nmea':False}
+        return data_nmea
 
-def start(dataqueue,comqueue,datainqueue,devicename):
+    
+def start(dataqueue,comqueue,datainqueue,devicename,config):
     funcname = __name__ + '.start()'        
-    logger.debug(funcname + ':Starting reading nmea data')        
+    logger.debug(funcname + ':Starting reading NMEA data')        
     nmea_sentence = ''
     sentences = 0
-   
+    try:
+        nmea_key = config['key']
+    except:
+        nmea_key = 'data'
+        
+    try:
+        config['append']
+    except:
+        config['append'] = False
+        
+    try:
+        config['sentences']
+    except:
+        config['sentences'] = 'all'
+        
+    try:
+        config['maxlen']
+    except:
+        config['maxlen'] = 10000
+        
+    logger.debug(funcname + ': config {:s}'.format(str(config)))
+    nmea_sentence_append = '' # Only used for append
     while True:
         data = datainqueue.get() # This is a blocking read
         if('command' in data.keys()):
@@ -27,101 +107,46 @@ def start(dataqueue,comqueue,datainqueue,devicename):
                 logger.info(funcname + ': received stop command, stopping now')
                 break    
         if True:
-            if True:
-                if('nmea' in data.keys()):
-                    nmea_sentence = data['nmea']
-                    # Interprete the data
-                    nmea_sentence_split = nmea_sentence.split(',')
-                    if('GLL' in nmea_sentence):
-                        #print('GLL',nmea_sentence_split)
-                        try:
-                            lat = float(nmea_sentence_split[1][0:2]) + float(nmea_sentence_split[1][2:])/60
-                            if(nmea_sentence_split[2] == 'S'):
-                                lat = -lat
-                        except Exception as e:
-                            logger.debug(funcname + ':' +str(e))
-                            lat = None
+            if(nmea_key in data.keys()):
+                nmea_sentence_raw = data[nmea_key]
+                if(config['append']):
+                    #print('appending')
+                    nmea_sentence_append += nmea_sentence_raw
+                    # Precheck if there is at all valid data
+                    if(('\n' in nmea_sentence_append) and ('$' in nmea_sentence_append)):
+                        nmea_sentence_all = nmea_sentence_append.split('\n')
+                        nmea_last = nmea_sentence_all[-1]
+                    else:
+                        nmea_sentence_all = []
+                else:
+                    nmea_sentence_all = [nmea_sentence_raw]
+                    nmea_last = nmea_sentence_all[-1]
+                # save the last sentence 
+                
+                if(len(nmea_sentence_all)>0):
+                    if(len(nmea_sentence_all[-1])>0): # This happens if the last character is not a \n
+                        nmea_sentence_append = nmea_sentence_all[-1]
                         
-                        try:
-                            lon = float(nmea_sentence_split[3][0:3]) + float(nmea_sentence_split[3][3:])/60
-                            if(nmea_sentence_split[4] == 'W'):
-                                lon = -lon
-                        except:
-                            lon = None
-
-                        data['lat']  = lat
-                        data['lon']  = lon
-                        data['time'] = nmea_sentence_split[5]
-                        data['nmea_packet'] = 'GLL'
-                        #print(data)
-                    elif('GGA' in nmea_sentence):
-                        data['time'] = nmea_sentence_split[1]
-                        try:
-                            lat = float(nmea_sentence_split[2][0:2]) + float(nmea_sentence_split[2][2:])/60
-                            if(nmea_sentence_split[3] == 'S'):
-                                lat = -lat
-                        except:
-                            lat = None
-                        
-                        try:
-                            lon = float(nmea_sentence_split[4][0:3]) + float(nmea_sentence_split[4][3:])/60
-                            if(nmea_sentence_split[5] == 'W'):
-                                lon = -lon
-                        except:
-                            lon = None
-                        
-                        data['lat']  = lat
-                        data['lon']  = lon
-                        try:
-                            data['gpsquality']  = int(nmea_sentence_split[6])
-                        except:
-                            data['gpsquality']  = None
-                            
-                        try:
-                            data['numsat']  = int(nmea_sentence_split[7])
-                        except:
-                            data['numsat']  = None
-                            
-                        try:
-                            data['hordil']  = float(nmea_sentence_split[8])
-                        except:
-                            data['hordil']  = None
-                            
-                        try:
-                            data['geosep']  = float(nmea_sentence_split[11])
-                        except:
-                            data['geosep']  = None
-                            
-                        data['nmea_packet'] = 'GGA'
-                        #print(data)
-                    elif('GSA' in nmea_sentence):
-                        pass
-                    elif('GSV' in nmea_sentence):
-                        pass
-                    elif('VTG' in nmea_sentence):
-                        pass
-                    elif('RMC' in nmea_sentence):
-                        data['time'] = nmea_sentence_split[1]
-                        data['date'] = nmea_sentence_split[9]
-                        try:
-                            lat = float(nmea_sentence_split[2][0:2]) + float(nmea_sentence_split[2][2:])/60
-                            if(nmea_sentence_split[3] == 'S'):
-                                lat = -lat
-                        except:
-                            lat = None
-                        
-                        try:
-                            lon = float(nmea_sentence_split[4][0:3]) + float(nmea_sentence_split[4][3:])/60
-                            if(nmea_sentence_split[5] == 'W'):
-                                lon = -lon
-                        except:
-                            lon = None
+                    nmea_sentence_all.pop(-1) # Remove last sentence (either '' or rest)
                     
-                    logger.debug(funcname + ':Read sentence:' + nmea_sentence)
-                    nmea_sentence = ''
-                    sentences += 1
-                    data['device']  = devicename
-                    dataqueue.put(data)
+                # loop over all NMEA sentences 
+                for nmea_sentence in nmea_sentence_all:  
+                    data_parse = parse_nmea(nmea_sentence)  
+                    #print(data_parse)
+                    #print(nmea_sentence_all)
+                    
+                    data_parse['device']  = devicename
+                    if(data_parse['valid_nmea']):
+                        nmea_sentence_all.remove(nmea_sentence)
+                        sentence_right = config['sentences'] == 'all'
+                        sentence_right = sentence_right or (data_parse['sentence_type'] in config['sentences'])
+                        if(sentence_right): # Which message shall be used?
+                            dataqueue.put(data_parse)
+                            data_parse['host'] = data['host']
+                            data_parse['t'] = data['t']
+                            sentences += 1
+                                
+                            
 
 
 class Device():
@@ -135,9 +160,10 @@ class Device():
         self.datainqueue = datainqueue
         self.dataqueue   = dataqueue        
         self.comqueue    = comqueue
+        self.config = {}
 
     def start(self):
-        start(self.dataqueue,self.comqueue,self.datainqueue,devicename=self.name)
+        start(self.dataqueue,self.comqueue,self.datainqueue,devicename=self.name,config=self.config)
         
 
     def __str__(self):
