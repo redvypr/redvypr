@@ -213,9 +213,11 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
             break
         except:
             pass
-        
+
         try:
-            datab = client.recv(10000000000)
+            datab = client.recv(1000000)
+            if(datab == b''): # Connection closed
+                break
             t = time.time()
             bytes_read += len(datab)
             # Check what data we are expecting and convert it accordingly

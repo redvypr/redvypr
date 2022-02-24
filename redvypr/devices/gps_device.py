@@ -248,6 +248,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.text     = QtWidgets.QPlainTextEdit(self)
         self.text.setReadOnly(True)
         self.text.setMaximumBlockCount(10000)
+        self.scrollchk= QtWidgets.QCheckBox('Scroll to end')        
         self.posstatus= QtWidgets.QPushButton('Position')
         self.posstatus.setStyleSheet("background-color: red")
         self.datestatus= QtWidgets.QPushButton('Date')
@@ -258,12 +259,20 @@ class displayDeviceWidget(QtWidgets.QWidget):
         hlayout.addWidget(self.timestatus)
         hlayout.addWidget(self.datestatus)
         layout.addLayout(hlayout)
+        hlayout.addWidget(self.scrollchk)        
         layout.addWidget(self.text)
         self.goodpos = -1
 
     def update(self,data):
         #print('data',data)
+        prev_cursor = self.text.textCursor()
+        pos = self.text.verticalScrollBar().value()
+        self.text.moveCursor(QtGui.QTextCursor.End)        
         self.text.insertPlainText(str(data['nmea']))
+        if(self.scrollchk.isChecked()):
+            self.text.verticalScrollBar().setValue(self.text.verticalScrollBar().maximum())
+        else:
+            self.text.verticalScrollBar().setValue(pos)        
         if('lon' in data.keys()):
             self.goodpos = time.time()
             if(data['lon'] == None):
