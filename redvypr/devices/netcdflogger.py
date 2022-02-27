@@ -279,7 +279,6 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                             newvariables = redvypr_get_keys(data)
                             
                             for nvar in newvariables:
-                                print('Hallo',nvar)
                                 # Check if data can be converted to a float
                                 if(type(data[nvar]) == list):
                                     if(len(data[nvar])>0):

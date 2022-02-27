@@ -8,36 +8,74 @@ import logging
 import sys
 import yaml
 import copy
+import os
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('textlogger')
 logger.setLevel(logging.DEBUG)
 
 
+def create_logfile(config):
+    funcname = __name__ + '.create_logfile()'
+    if((config['dt_newfile'] > 0)):
+       tstr = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+       (filebase,fileext)=os.path.splitext(config['filename'])
+       filename = filebase + '_' + tstr + fileext
+    else:
+       filename = config['filename']
+       
+    logger.info(funcname + ': Will create a new file: {:s}'.format(filename))
+    if True:
+        try:
+            f = open(filename,'w+')
+            logger.debug(funcname + 'Opened file: {:s}'.format(filename))
+        except Exception as e:
+            logger.warning(funcname + ': Error opening file:' + filename + ':' + str(e))
+            return None
+       
+    return [f,filename]
+
+
+
 def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host':True,'device':True,'newline':False,'pcktcnt':False,'keys':['data']}):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
     filename = config['filename']
-    fs = []
-    if True:
-        try:
-            f = open(filename,'w+')
-            fs.append(f)
-            logger.debug(funcname + 'Opened file: {:s}'.format(filename))            
-        except Exception as e:
-            logger.warning(funcname + ': Error opening file:' + filename + ':' + str(e))
-            return
+    try:
+        logger.info(funcname + ' Will create new file every {:d}s.'.format(config['dt_newfile']))
+    except:
+        config['dt_newfile'] = 0
+
+    try:
+        config['dt_sync']
+    except:
+        config['dt_sync'] = 5
+        
+    [f,filename] = create_logfile(config)
+    if(f == None):
+       return None
     
     bytes_written   = 0
     packets_written = 0
+    tfile   = time.time() # Save the time the file was created
+    tflush  = time.time() # Save the time the file was created    
     while True:
+        tcheck = time.time()
+        try:
+            dt = tcheck - tfile
+            if((config['dt_newfile'] > 0) and (config['dt_newfile'] <= dt)):
+                f.close()
+                [f,filename] = create_logfile(config)
+                tfile = tcheck                
+        except:
+            pass
+       
         try:
             com = comqueue.get(block=False)
             logger.debug(funcname + ': received:' + str(com))
             # Closing all open files
             try:
-                for f in fs:
-                    f.close()
+                f.close()
             except Exception as e:
                 logger.debug(funcname + ': could not close:' + str(f))
                 
@@ -52,7 +90,7 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
             try:
                 data = datainqueue.get(block=False)
                 datastr = ''
-                if(config['pcktcnt']):
+                if(config['packetcount']):
                     datastr += '{:d},'.format(packets_written)
                 if(config['time']):
                     tstr = datetime.datetime.fromtimestamp(data['t']).strftime('%Y-%m-%d %H:%M:%S.%f')
@@ -63,20 +101,26 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
                     datastr += ',' + data['device']
 
                 for key in config['keys']:
-                    datastr +=  ',' + key + ',' + str(data[key])
-
+                    if(config['add_key']):
+                        datastr +=  ',' + key + ',' + str(data[key])
+                    else:
+                        datastr += str(data[key])
+                        
                 if(config['newline']):                    
                     datastr += '\n'
-                print('Datastr',datastr)
+                    
+                #print('Datastr',datastr)
                 bytes_written += len(datastr)
                 packets_written += 1
-                for f in fs:
-                    f.write(datastr)
+                f.write(datastr)
+                if((time.time() - tflush) > config['dt_sync']):
                     f.flush()
                     os.fsync(f.fileno())
+                    tflush = time.time()
                     
                 data_new = data
-                data_new['data'] = datastr
+                data_new['data']     = datastr
+                data_new['filename'] = filename
                 data_new['bytes_written']   = bytes_written
                 data_new['packets_written'] = packets_written                
                 dataqueue.put(data_new)
@@ -96,12 +140,13 @@ class Device():
         self.dataqueue   = dataqueue        
         self.comqueue    = comqueue
         self.config      = {}
-        self.config['filename']    = ''
+        self.config['filename']= ''
         self.config['host']    = True
         self.config['time']    = True
         self.config['device']  = True
         self.config['newline'] = False
         self.config['keys']    = ['data']
+        self.config['add_key'] = True
                 
     def start(self):
         config=copy.deepcopy(self.config)
@@ -148,7 +193,14 @@ class initDeviceWidget(QtWidgets.QWidget):
         # The output tree widget
         voutlayout    = QtWidgets.QFormLayout()
         self.outlabel = QtWidgets.QLabel("Logfile")
-        self.outfilename = QtWidgets.QLineEdit()        
+        self.outfilename = QtWidgets.QLineEdit()
+        try:
+            filename = self.device.config['filename']
+        except:
+            filename = ''
+
+        self.outfilename.setText(filename)
+        
         voutlayout.addRow(self.outlabel)
         voutlayout.addRow(self.outfilename)
         self.addfilebtn   = QtWidgets.QPushButton("Add file")
@@ -165,21 +217,63 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.startbtn = QtWidgets.QPushButton("Start logging")
         self.startbtn.clicked.connect(self.start_clicked)
         self.startbtn.setCheckable(True)
-
+        # Add time
         self.timecheck     = QtWidgets.QCheckBox("Add time")
-        self.timecheck.setChecked(True)
-        self.config_widgets.append(self.timecheck)               
+        try:
+            self.timecheck.setChecked(self.device.config['time'])
+        except:
+            self.timecheck.setChecked(True)
+
+        self.config_widgets.append(self.timecheck)
+        # Add devicename
         self.devicecheck   = QtWidgets.QCheckBox("Add devicename")
-        self.devicecheck.setChecked(True)
-        self.config_widgets.append(self.devicecheck)               
+        try:
+            self.devicecheck.setChecked(self.device.config['device'])
+        except:
+            self.devicecheck.setChecked(True)
+
+        self.config_widgets.append(self.devicecheck)
+        # Add redvypr hostname
         self.hostcheck     = QtWidgets.QCheckBox("Add hostname")
-        self.hostcheck.setChecked(True)
-        self.config_widgets.append(self.hostcheck)               
+        try:
+            self.hostcheck.setChecked(self.device.config['host'])
+        except:
+            self.hostcheck.setChecked(True)
+        self.config_widgets.append(self.hostcheck)
+        # Add newline
         self.newlinecheck  = QtWidgets.QCheckBox("Add newline")
         self.config_widgets.append(self.newlinecheck)
-        self.newlinecheck.setChecked(True)        
+        try:
+            self.newlinecheck.setChecked(self.device.config['newline'])
+        except:
+            self.newlinecheck.setChecked(True)
+        # Add packet count
         self.packetcntcheck= QtWidgets.QCheckBox("Add packet count")
-        self.config_widgets.append(self.packetcntcheck)        
+        try:
+            self.newlinecheck.setChecked(self.device.config['packetcount'])
+        except:
+            self.newlinecheck.setChecked(True)
+        self.config_widgets.append(self.packetcntcheck)
+        # Add data key        
+        self.addkeycheck= QtWidgets.QCheckBox("Add key")
+        try:        
+            self.addkeycheck.setChecked(self.device.config['add_key'])
+        except:
+            self.addkeycheck.setChecked(True)
+        self.config_widgets.append(self.addkeycheck)
+
+        # Delta t for new file
+        edit = QtWidgets.QLineEdit(self)
+        onlyInt = QtGui.QIntValidator()
+        edit.setValidator(onlyInt)
+        self.dt_newfile = edit
+        self.dt_newfile.setToolTip('Create a new file every N seconds.\nFilename is "filenamebase"_yyyymmdd_HHMMSS."ext".\nUse 0 to disable feature.')
+        try:
+            self.dt_newfile.setText(str(self.device.config['dt_newfile']))
+        except Exception as e:
+            self.dt_newfile.setText('0')
+            
+        # Data keys to log
         self.fdataentry    = QtWidgets.QLabel("Data keys to log")        
         self.dataentry     = QtWidgets.QLineEdit()
         self.dataentry.setText('data')
@@ -196,20 +290,17 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.inout,1,0,1,4) 
         layout.addWidget(self.timecheck,2,0)
         layout.addWidget(self.devicecheck,2,1)
+        layout.addWidget(self.addkeycheck,2,2)                
         layout.addWidget(self.hostcheck,3,0)
         layout.addWidget(self.newlinecheck,3,1)
-        layout.addWidget(self.packetcntcheck,3,2)        
+        layout.addWidget(self.packetcntcheck,3,2)
+        layout.addWidget(QtWidgets.QLabel('dt newfile'),2,3)                
+        layout.addWidget(self.dt_newfile,3,3)        
         layout.addWidget(self.fdataentry,4,0)
         layout.addWidget(self.dataentry,4,1,1,3)
         layout.addWidget(self.startbtn,5,0,1,4)
         
-        #layout.addRow(self.label)               
-        #layout.addRow(self.inout)               
-        #layout.addRow(self.timecheck,self.devicecheck)
-        #layout.addRow(self.hostcheck,self.newlinecheck)
-        #layout.addRow(self.fdataentry,self.dataentry)                
-        #layout.addRow(self.startbtn)
-
+        
     def finalize_init(self):
         """ Util function that is called by redvypr after initializing all config (i.e. the configuration from a yaml file)
         """
@@ -269,11 +360,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if button.isChecked():
             logger.debug("button pressed")
-            self.device.config['time']   = self.timecheck.isChecked()
-            self.device.config['host']   = self.hostcheck.isChecked()
-            self.device.config['device'] = self.devicecheck.isChecked()
-            self.device.config['newline']= self.newlinecheck.isChecked()
-            self.device.config['pcktcnt']= self.packetcntcheck.isChecked()  
+            self.device.config['time']       = self.timecheck.isChecked()
+            self.device.config['host']       = self.hostcheck.isChecked()
+            self.device.config['device']     = self.devicecheck.isChecked()
+            self.device.config['newline']    = self.newlinecheck.isChecked()
+            self.device.config['packetcount']= self.packetcntcheck.isChecked()
+            self.device.config['add_key']    = self.addkeycheck.isChecked()
+            self.device.config['dt_filename']= int(self.dt_newfile.text())
             log_keys = str(self.dataentry.text()).split(',')
             self.device.config['keys']   = log_keys
             self.device_start.emit(self.device)
@@ -314,18 +407,21 @@ class displayDeviceWidget(QtWidgets.QWidget):
         hlayout         = QtWidgets.QHBoxLayout()        
         self.text       = QtWidgets.QPlainTextEdit(self)
         self.text.setReadOnly(True)
+        self.filelab= QtWidgets.QLabel("File: ")
         self.byteslab   = QtWidgets.QLabel("Bytes written: ")
         self.packetslab = QtWidgets.QLabel("Packets written: ")
         self.text.setMaximumBlockCount(10000)
         hlayout.addWidget(self.byteslab)
         hlayout.addWidget(self.packetslab)
+        layout.addWidget(self.filelab)        
         layout.addLayout(hlayout)
         layout.addWidget(self.text)
         #self.text.insertPlainText("hallo!")        
 
     def update(self,data):
         #print('data',data)
+        self.filelab.setText("File: {:s}".format(data['filename']))        
         self.byteslab.setText("Bytes written: {:d}".format(data['bytes_written']))
         self.packetslab.setText("Packets written: {:d}".format(data['packets_written']))
-        self.text.insertPlainText(str(data['data']) + '\n')
+        self.text.insertPlainText(str(data['data']))
         

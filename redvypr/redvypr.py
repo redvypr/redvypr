@@ -1119,7 +1119,7 @@ class redvyprWidget(QtWidgets.QWidget):
         logo = QtGui.QPixmap(_logo_file)
         logolabel = QtWidgets.QLabel()
         logolabel.setPixmap(logo)
-        layout.addRow(logolabel)        
+        #layout.addRow(logolabel)        
 
 
     def show_devicepathwidget(self):
