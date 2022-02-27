@@ -1,3 +1,4 @@
+# TODO, improve keys!
 import datetime
 import logging
 import queue
@@ -50,6 +51,12 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
         config['dt_sync']
     except:
         config['dt_sync'] = 5
+
+    try:
+        config['keys']
+    except:
+        logger.warning(funcname + ': Need to specify data keys, aborting')
+        return None
         
     [f,filename] = create_logfile(config)
     if(f == None):
@@ -150,6 +157,12 @@ class Device():
                 
     def start(self):
         config=copy.deepcopy(self.config)
+        try:
+            config['keys']
+        except:
+            config['keys'] = ['data']
+
+        
         start(self.datainqueue,self.dataqueue,self.comqueue,config=config)
         
     def __str__(self):

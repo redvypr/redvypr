@@ -1,3 +1,4 @@
+	-0.3.10:- textlogger bugfix
 	-0.3.9: - Improved text logger with dt_filename (create new file every dt_filename seconds) and gui
 	-0.3.8: - small changes for stability
 	-0.3.7: - changed own nmea parser to pynmea2, improved nmea parsing stability, more nmea setup options
