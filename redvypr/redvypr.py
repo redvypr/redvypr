@@ -121,7 +121,8 @@ def distribute_data(devices,infoqueue,dt=0.01):
                         try:                        
                             guiqueue.put_nowait(data)
                         except Exception as e:
-                            logger.debug(funcname + ':guiqueue of :' + devicedict['device'].name + ' full')
+                            pass
+                            #logger.debug(funcname + ':guiqueue of :' + devicedict['device'].name + ' full')
 
         # Calculate the sleeping time
         tstop = time.time()        

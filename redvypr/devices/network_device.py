@@ -202,9 +202,12 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     
     # Some variables for status
     tstatus = time.time()
-    dtstatus = 5 # Send a status message every dtstatus seconds
+    try:
+        dtstatus = config['dtstatus']
+    except:
+        dtstatus = 2 # Send a status message every dtstatus seconds
+        
     npackets = 0 # Number packets received via the datainqueue
-
     while True:
         try:
             com = comqueue.get(block=False)
@@ -217,7 +220,9 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
         try:
             datab = client.recv(1000000)
             if(datab == b''): # Connection closed
+                logger.warning(funcname + ': Connection closed by host')
                 break
+            
             t = time.time()
             bytes_read += len(datab)
             # Check what data we are expecting and convert it accordingly

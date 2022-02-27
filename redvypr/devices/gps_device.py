@@ -44,19 +44,11 @@ logger.setLevel(logging.DEBUG)
 def parse_nmea(nmea_data):
     try:
         msg = pynmea2.parse(nmea_data)
-        print('Valid nmea')
-        print('Message',msg)
+        logger.debug('Valid message:' + str(msg))
         data_nmea = {'valid_nmea':True}
         data_nmea['nmea'] = str(msg) + '\n'
         data_nmea['lat'] = msg.latitude
         data_nmea['lon'] = msg.longitude
-        if(data_nmea['lat'] == 0):
-            print('ZERO')
-            print('ZERO')
-            print('ZERO')
-            print('ZERO')
-            print('ZERO')
-            print(data_nmea)
         try: # If there is a date
             data_nmea['date'] = msg.datestamp.strftime("%m%d%y")
         except:
