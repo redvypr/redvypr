@@ -243,7 +243,7 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
                 if(config['tcp_reconnect']): # Try to reconnect
                     logger.warning(funcname + ': Reconnecting')
                     i = 0
-                    while i < config['tcp_numreconnect'] # a couple of times with a 1 second interval
+                    while i < config['tcp_numreconnect']: # a couple of times with a 1 second interval
                         i = i + 1
                         try:
                             client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
