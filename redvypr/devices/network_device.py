@@ -16,6 +16,7 @@ Configuration options for a network device:
        protocol: tcp # tcp, udp default tcp
        direction: publish # publish, receive default receive
        data: nmea # dictionary keys, default all
+       tcp_reconnect: True
 
 """
 
@@ -194,11 +195,16 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     logger.debug(funcname + ':Starting network thread')        
     sentences = 0
     bytes_read = 0
+    reconnections = 0
     threadqueues = []
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     logger.debug(funcname + ': Connecting to '+ str(config))
-    client.connect((config['address'],config['port']))
     client.settimeout(0.05) # timeout for listening
+    try:
+        client.connect((config['address'],config['port']))
+    except:
+        logger.warning(funcname + ': Could not connect to host.')
+        return
     
     # Some variables for status
     tstatus = time.time()
@@ -207,6 +213,19 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     except:
         dtstatus = 2 # Send a status message every dtstatus seconds
         
+    # Reconnecting to TCP Port if connection was closed by host
+    try:
+        config['tcp_reconnect']
+    except:
+        config['tcp_reconnect'] = True
+        
+    # The number of reconnection attempts before giving up
+    try:
+        config['tcp_numreconnect']
+    except:
+        config['tcp_numreconnect'] = 10
+        
+    # 
     npackets = 0 # Number packets received via the datainqueue
     while True:
         try:
@@ -221,7 +240,27 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
             datab = client.recv(1000000)
             if(datab == b''): # Connection closed
                 logger.warning(funcname + ': Connection closed by host')
-                break
+                if(config['tcp_reconnect']): # Try to reconnect
+                    logger.warning(funcname + ': Reconnecting')
+                    i = 0
+                    while i < config['tcp_numreconnect'] # a couple of times with a 1 second interval
+                        i = i + 1
+                        try:
+                            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            client.settimeout(1.0) # timeout for listening
+                            client.connect((config['address'],config['port']))
+                            reconnections += 1
+                        except:
+                            logger.warning(funcname + ': Could not connect to host.')
+                            
+                    return
+                    
+                    logger.info(funcname + ': Connected to '+ str(config))
+                    client.settimeout(0.05) # timeout for listening
+                else:
+                    logger.warning(funcname + ': Stopping thread')
+                    client.close()
+                    break
             
             t = time.time()
             bytes_read += len(datab)
@@ -262,7 +301,8 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
         if((time.time() - tstatus) > dtstatus):
             statusdata = {}
             statusdata['bytes_read'] = bytes_read
-            statusdata['time'] = str(datetime.datetime.now())            
+            statusdata['time'] = str(datetime.datetime.now())
+            statusdata['reconnections'] = reconnections
             tstatus = time.time()
             #statusdata['clients'] = []
             statusdata['config'] = copy.deepcopy(config)
