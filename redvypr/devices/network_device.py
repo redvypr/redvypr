@@ -199,12 +199,14 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     threadqueues = []
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     logger.debug(funcname + ': Connecting to '+ str(config))
-    client.settimeout(0.05) # timeout for listening
+    client.settimeout(1.0) # timeout for listening
     try:
         client.connect((config['address'],config['port']))
-    except:
+    except Exception as e:
         logger.warning(funcname + ': Could not connect to host.')
         return
+    
+    client.settimeout(0.05) # timeout for listening
     
     # Some variables for status
     tstatus = time.time()
