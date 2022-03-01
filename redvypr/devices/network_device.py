@@ -203,7 +203,7 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     try:
         client.connect((config['address'],config['port']))
     except Exception as e:
-        logger.warning(funcname + ': Could not connect to host.')
+        logger.warning(funcname + ': Could not connect to host. {:s}'.format(str(e)))
         return
     
     client.settimeout(0.05) # timeout for listening
