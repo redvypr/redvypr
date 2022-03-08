@@ -8,7 +8,7 @@ import serial
 import serial.tools.list_ports
 import logging
 import sys
-from redvypr.data_packets import redvypr_datadict
+from redvypr.data_packets import datadict
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('nmea_logbook')
@@ -192,7 +192,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             
         if(len(text)>0):   
             self.text.insertPlainText(textcommit + '\n')
-            datadict = redvypr_datadict(textcommit)
+            datadict = datadict(textcommit)
             self.device.datainqueue.put(datadict)
             
     def update_logheader(self):

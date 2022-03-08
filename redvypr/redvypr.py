@@ -15,7 +15,7 @@ import inspect
 import threading
 import multiprocessing
 import redvypr.devices as redvyprdevices
-from redvypr.data_packets import redvypr_isin_data, redvypr_get_devicename
+from redvypr.data_packets import device_in_data, get_devicename
 from redvypr.gui import redvyprConnectWidget,QPlainTextEditLogger,displayDeviceWidget_standard,deviceinfoWidget
 from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices
 import socket
@@ -97,7 +97,7 @@ def distribute_data(devices,infoqueue,dt=0.01):
                         # be different from the transporting device,
                         # i.e. network devices do not change the name
                         # of the transporting dictionary
-                        devicename_stat = redvypr_get_devicename(data)
+                        devicename_stat = get_devicename(data)
                         try:
                             devicedict['statistics']['devicekeys'][devicename_stat]
                         except:

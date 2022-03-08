@@ -16,8 +16,8 @@ Configuration options for a network device:
        protocol: tcp # tcp, udp default tcp
        direction: publish # publish, receive default receive
        data: nmea # dictionary keys, default all
-       tcp_reconnect: True
-
+       tcp_reconnect: True # Try to reconnect to host if connection was closed
+       tcp_numreconnect: 10 # The number of reconnection attempts
 """
 
 

@@ -47,7 +47,7 @@ import netCDF4
 import copy
 import pkg_resources
 import yaml
-from redvypr.data_packets import redvypr_isin_data, redvypr_get_devicename, redvypr_get_keys
+from redvypr.data_packets import device_in_data, get_devicename, get_keys
 from redvypr.version import version
 
 
@@ -263,7 +263,7 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                     if('*' in group['name']):
                         # Found an expansion, here a "real" group will be created based on the data packet.
                         groupname = data['host']['name']
-                        devicename_exp = redvypr_get_devicename(data) # This will be the groupname
+                        devicename_exp = get_devicename(data) # This will be the groupname
                         # Check if the group is already existing
                         flag_group_exists = False
                         for group_test in config['groups']:
@@ -276,7 +276,7 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                             newgroup     = {'name':devicename_exp,'devices':[],'variables':[]}
                             newgroup['devices'].append(devicename_exp)
                             # Create variables based on the data packet
-                            newvariables = redvypr_get_keys(data)
+                            newvariables = get_keys(data)
                             
                             for nvar in newvariables:
                                 # Check if data can be converted to a float
@@ -306,7 +306,7 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                             [nc,config,configstatus] = create_ncfile(configstatus,update=True,nc=nc) # The original config is with the netcdf object, so a backup is created as configstatus
                     else:
                         flag_saved_data = False
-                        [flag_data_save,devicename,expanded] = redvypr_isin_data(group['devices'],data,get_devicename=True) # Check i
+                        [flag_data_save,devicename,expanded] = device_in_data(group['devices'],data,get_devicename=True) # Check i
                         if((flag_data_save) or (len(group['devices']) == 0)): # If devices is empty take all
                             # Check if the devicename was expanded, if yes variables need to be created automically
                             if(expanded):

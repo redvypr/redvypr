@@ -9,7 +9,7 @@ import sys
 import yaml
 import copy
 import pyqtgraph
-from redvypr.data_packets import redvypr_isin_data, redvypr_get_keys
+from redvypr.data_packets import device_in_data, get_keys
 from redvypr.gui import redvypr_devicelist_widget
 
 pyqtgraph.setConfigOption('background', 'w')
@@ -591,7 +591,7 @@ class plotWidget(QtWidgets.QFrame):
                 plot_dict = self.plot_dict
                 # Check if the device is to be plotted
                 for devicename_plot in plot_dict['lines'].keys(): # Loop over all lines of the devices to plot
-                    if(redvypr_isin_data(devicename_plot,data)):
+                    if(device_in_data(devicename_plot,data)):
                         pw        = plot_dict['widget'] # The plot widget
                         for ind,line_dict in enumerate(plot_dict['lines'][devicename_plot]): # Loop over all lines of the device to plot
                             line      = line_dict['line'] # The line to plot
@@ -923,7 +923,7 @@ class numdispWidget(QtWidgets.QFrame):
         #print('got data',data)
         devicename = data['device']
         datakey = self.config['data']
-        if(redvypr_isin_data(self.config['device'],data)):
+        if(device_in_data(self.config['device'],data)):
             dataformat = self.config['dataformat']
             # data can be a single float or a list
             newdata = data[datakey]

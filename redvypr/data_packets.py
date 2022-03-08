@@ -1,6 +1,6 @@
 import time
 
-def redvypr_get_keys(data):
+def get_keys(data):
     """Returns the keys of a redvypr data dictionary without the standard
     keys ('t', 'host','device','numpacket') as well as keys with an
     '@' in it.
@@ -17,13 +17,13 @@ def redvypr_get_keys(data):
             
     return keys
 
-def redvypr_get_devicename(data):
+def get_devicename(data):
     """ Returns a devicename including the hostname, ip or uuid.
     """
     devicename = data['device'] + '@' + data['host']['name']
     return devicename
 
-def redvypr_isin_data(devicestring, data, get_devicename = False):
+def device_in_data(devicestring, data, get_devicename = False):
     """ Checks if the devicestring is in the datapacket.
     Arguments:
     devicestring: String or list of strings consisting the devicename and, optionally, the hostname/respectively IP-Adress
@@ -52,7 +52,7 @@ def redvypr_isin_data(devicestring, data, get_devicename = False):
                     return True
         else:
             expanded   = (devstring == '*')
-            if((devstring in data['device']) or expanded):
+            if((devstring == data['device']) or expanded):
                 if(get_devicename):
                     return [True,data['device'],expanded]                    
                 else:
@@ -65,7 +65,7 @@ def redvypr_isin_data(devicestring, data, get_devicename = False):
 
 
 
-def redvypr_datadict(data,datakey=None,tu=None):
+def datadict(data,datakey=None,tu=None):
     """ A datadictionary used as internal datastructure in redvypr
     """
     if(tu == None):

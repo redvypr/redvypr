@@ -1,0 +1,67 @@
+# A test configuration file
+hostname: redvyprtest
+devicepath: .
+
+devices:
+# Random data test 1
+- deviceconfig:
+    name: testranddata
+    config: 
+       dt: 0.2
+       functions:
+          - name: rand
+            range: [-0.5,0.5]
+          - name: sin
+            amp: 5
+            f: .5
+            phase: 0
+          - name: sin
+            amp: 2
+            f: 2.0
+            phase: 0
+  devicemodulename: randdata
+# Random data test 2  
+- deviceconfig:
+    name: testranddata2
+    config: 
+       dt: 1.0
+       functions:
+          - name: rand
+            range: [-5,5]
+  devicemodulename: randdata
+# Plot the data
+- deviceconfig: # The plotting device
+    name: cal
+    loglevel: debug
+    config:
+       title: Calibration Test
+       datetick: True
+       devices:
+         - device: testranddata
+           x: t
+           y: data
+           linewidth: 2
+           color: [255,0,0]
+           #buffersize: 200
+         - device: testranddata2
+           x: t
+           y: data
+           linewidth: 1
+           color: [0,255,0]
+           #buffersize: 200
+         
+  devicemodulename: calibration
+  
+connections:
+#- publish: testranddata
+#  receive: cal
+- publish: testranddata2
+  receive: cal
+
+  
+  
+start:
+- testranddata
+- testranddata2
+- cal
+#- textlogger
