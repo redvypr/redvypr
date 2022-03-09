@@ -11,4 +11,5 @@ from . import heatflow_sensor
 from . import mergedata
 from . import exampledevice
 from . import exampledevice_bare
+from . import calibration
 

@@ -605,7 +605,7 @@ class plotWidget(QtWidgets.QFrame):
                                 newx = [newx]
                                 newy = [newy]
                             
-                            for inew in range(len(newx)):
+                            for inew in range(len(newx)): # TODO this can be optimized using indices instead of a loop
                                 x         = np.roll(x,-1)       
                                 y         = np.roll(y,-1)
                                 x[-1]    = float(newx[inew])

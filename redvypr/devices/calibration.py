@@ -49,6 +49,12 @@ class Device():
         self.dataqueue   = dataqueue        
         self.comqueue    = comqueue
         self.config      = config # Please note that this is typically a placeholder, the config structure will be written by redvypr and the yaml
+        
+        # The mininum and maximum times, used for making the time axis the same between different sensors
+        self.tmin = []
+        self.tmax = []
+        # Variable to save interval for averaging/cutting by user choice
+        self.user_interval = []
                 
     def start(self):
         start(self.datainqueue,self.dataqueue,self.comqueue)
@@ -126,17 +132,30 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
     """ Widget is plotting realtimedata using the pyqtgraph functionality
     This widget can be configured with a configuration dictionary 
     """
-    def __init__(self,config = None, dt_update = 0.5,device=None,buffersize=100):
+    sig_mouse_moved = QtCore.pyqtSignal(float,float) # Signal that is emitted whenever a mouse was moved
+    sig_tminmax_changed = QtCore.pyqtSignal() # Signal that is emitted whenever the minimum and maximum time interval changed
+    sig_mouse_clicked = QtCore.pyqtSignal()
+    def __init__(self,config = None, dt_update = 0.5,device=None,buffersize=100,numdisp=None):
+        """
+        Args:
+        config:
+        numdisp: The display number used to identify the widget
+        """
         funcname = __name__ + '.start()'
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)
         self.device = device
+        self.numdisp = numdisp
         self.buffersizestd = buffersize
         self.plots = []        
         # Add axes to the widget
         #config = device.config
         print('Hallo',config)
         i = 0
+        
+        self.vlines = []
+        self.vLine_interactive = pyqtgraph.InfiniteLine(angle=90, movable=False)
+         
         if True:
             logger.debug(funcname + ': Adding plot' + str(config))
             title = config['device']
@@ -145,6 +164,10 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
             layout.addWidget(plot,i,0)
 
             graph = plot
+            
+            if True:
+                graph.addItem(self.vLine_interactive, ignoreBounds=True)
+                        
             # Get the mouse move events to draw a line 
             graph.scene().sigMouseMoved.connect(self.mouseMoved)
             graph.scene().sigMouseClicked.connect(self.mouseClicked)
@@ -163,6 +186,7 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
             if(datetick):
                 axis = pyqtgraph.DateAxisItem(orientation='bottom')
                 plot.setAxisItems({"bottom": axis})
+                
                 
             # If a xlabel is defined                
             try:
@@ -215,7 +239,7 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
             # Configuration of the line plot
             lineconfig = {'device':name,'x':x,'y':y,'linewidth':linewidth,'color':color}
             # Add the line and the configuration to the lines list
-            line_dict = {'line':lineplot,'config':lineconfig,'x':xdata,'y':ydata,'widget':plot}
+            line_dict = {'line':lineplot,'config':lineconfig,'x':xdata,'y':ydata,'widget':plot,'newdata':False}
             print('Line dict',line_dict)
             plot.addItem(lineplot)
             # Configuration 
@@ -229,41 +253,73 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
         """
         pos = (evt.x(),evt.y())
         mousePoint = self.viewbox.mapSceneToView(evt)
-        print(mousePoint.x())
-        #for vline in self.vlines:
-        #    vline.setPos(mousePoint.x())
-
-    def mouseClicked(self,evt):
-        """ If the mouse was clicked in a pyqtgraph
+        self.mouse_moved_proc(mousePoint.x(), mousePoint.y())
+        self.sig_mouse_moved.emit(mousePoint.x(),mousePoint.y())
+        
+    def mouse_moved_proc(self,x,y):
+        """ Function is process the mouse movement, this can be local or by a signal call from another widget 
         """
-        if False:
+        if True:
+            self.vLine_interactive.setPos(x)
+            
+            
+    def mouse_clicked_proc(self):
+        """ Function that is called by signals from other widgets if a mouse was clicked
+        """
+        print('User Interval',self.device.user_interval)
+        for vline in self.vlines:
+            self.plots[0]['widget'].removeItem(vline)
+            
+        self.vlines = []
+        for x in self.device.user_interval:
+            vLine = pyqtgraph.InfiniteLine(angle=90, movable=False)
+            vLine.setPos(x)       
+            self.plots[0]['widget'].addItem(vLine, ignoreBounds=True)
+            self.vlines.append(vLine)
+            
+        print(self.vlines)
+        
+    def mouseClicked(self,evt):
+        """ If the mouse was clicked in this pyqtgraph widget
+        """
+        
+        if evt.button() == QtCore.Qt.LeftButton:
             #col = 
             col = pyqtgraph.mkPen(0.5,width=3)
             colsymbol = pyqtgraph.mkPen(color=QtGui.QColor(150,150,150),width=4)         
             print('Clicked: ' + str(evt.scenePos()))
-            mousePoint = self.vb.mapSceneToView(evt.scenePos())
-            click = {}
-
-            if len(self.avg_interval)==2:
+            mousePoint = self.viewbox.mapSceneToView(evt.scenePos())
+            x = mousePoint.x()
+            self.device.user_interval.append(x)
+            while(len(self.device.user_interval)>2):
+                self.device.user_interval.pop(0)
+                
+            self.mouse_clicked_proc()
+             
+            if False:
+                click = {}
+    
+                if len(self.avg_interval)==2:
+                    for ax in self.pyqtgraph_axes:
+                        for vline in self.avg_interval[0]['vline']:
+                            ax['graph'].removeItem(vline)
+                        for vline in self.avg_interval[1]['vline']:
+                            ax['graph'].removeItem(vline)                    
+    
+    
+                    self.avg_interval.pop()
+                    self.avg_interval.pop()            
+    
+                click['vline'] = []
                 for ax in self.pyqtgraph_axes:
-                    for vline in self.avg_interval[0]['vline']:
-                        ax['graph'].removeItem(vline)
-                    for vline in self.avg_interval[1]['vline']:
-                        ax['graph'].removeItem(vline)                    
-
-
-                self.avg_interval.pop()
-                self.avg_interval.pop()            
-
-            click['vline'] = []
-            for ax in self.pyqtgraph_axes:
-                vLine = pyqtgraph.InfiniteLine(angle=90, movable=False)
-                vLine.setPos(mousePoint.x())            
-                ax['graph'].addItem(vLine, ignoreBounds=True)        
-                click['vline'].append(vLine)
-
-            click['x'] = mousePoint.x()
-            self.avg_interval.append(click)        
+                    vLine = pyqtgraph.InfiniteLine(angle=90, movable=False)
+                    vLine.setPos(mousePoint.x())            
+                    ax['graph'].addItem(vLine, ignoreBounds=True)        
+                    click['vline'].append(vLine)
+    
+                click['x'] = mousePoint.x()
+                self.avg_interval.append(click) 
+            self.sig_mouse_clicked.emit() # Emitting the signal    
                 
     def config_widget(self):
         """
@@ -281,18 +337,27 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
         for plot_dict in self.plot_dicts:
             for line_dict in plot_dict['lines']:
                 config = line_dict['config'] 
+                
+    def update_tminmax(self):
+        """ Functions changes xlimits based on a global value found in device.tmin device.tmax
+        """
+        print('Update! tminmax')
+        pw            = self.plots[0]['widget'] # The plot widget
+        pw.setXRange(min(self.device.tmin),max(self.device.tmax))
+            
         
     def update(self,data):
         funcname = __name__ + '.update()'
         tnow = time.time()
-        print('got data',data)
-
+        #print('got data',data)
+        
         devicename = data['device']
         # Only plot the data in intervals of dt_update length, this prevents high CPU loads for fast devices
         update = (tnow - self.config['last_update']) > self.config['dt_update']
         
-        print('update')
+        
         if(update):
+            print('update')
             self.config['last_update'] = tnow
         
         try:
@@ -301,31 +366,48 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
                 # Check if the device is to be plotted
                 #lineconfig = {'device':name,'x':x,'y':y,'linewidth':linewidth,'color':color}
                 #line_dict = {'line':lineplot,'config':lineconfig,'x':xdata,'y':ydata}
-                print(devicename,line_dict['config']['device'])                
+                print('test1',devicename,line_dict['config']['device'],update,self.config['dt_update'])                
                 if(device_in_data(line_dict['config']['device'],data)): 
-                    print('Good')
-                    pw        = line_dict['widget'] # The plot widget
                     if True:
                         line      = line_dict['line'] # The line to plot
                         config    = line_dict['config'] # The line to plot
                         x         = line_dict['x'] # The line to plot
-                        y         = line_dict['y'] # The line to plot   
-                        x         = np.roll(x,-1)       
-                        y         = np.roll(y,-1)
-                        x[-1]    = float(data[config['x']])
-                        y[-1]    = float(data[config['y']])                
-                        line_dict['x']  = x
-                        line_dict['y']  = y
+                        y         = line_dict['y'] # The line to plot 
+                        
+                        # data can be a single float or a list
+                        newx = data[config['x']]
+                        newy = data[config['y']]
+                        if(type(newx) is not list):
+                            newx = [newx]
+                            newy = [newy]
+                            
+                        for inew in range(len(newx)): # TODO this can be optimized using indices instead of a loop
+                            x        = np.roll(x,-1)
+                            y        = np.roll(y,-1)
+                            x[-1]    = float(newx[inew])
+                            y[-1]    = float(newy[inew])
+                            line_dict['x']  = x
+                            line_dict['y']  = y
+                            
+                        line_dict['newdata']  = True
+                        self.device.tmin[self.numdisp] = np.nanmin(x)
+                        self.device.tmax[self.numdisp] = np.nanmax(x)  
             if(update):
-                for line_dict in self.plots:    
-                    if(device_in_data(line_dict['config']['device'],data)): 
-                        if True:
-                            line      = line_dict['line'] # The line to plot
-                            config    = line_dict['config'] # The line to plot
-                            x         = line_dict['x'] # The line to plot
-                            y         = line_dict['y'] # The line to plot  
-                            line.setData(x=x,y=y,pen = pyqtgraph.mkPen(config['color'], width=config['linewidth']))
-                            #pw.setXRange(min(x[:ind]),max(x[:ind]))
+                print('HALLOHALLOHALLO')
+                for line_dict in self.plots:
+                    if(line_dict['newdata']):
+                        line      = line_dict['line'] # The line to plot
+                        config    = line_dict['config'] # The line to plot
+                        x         = line_dict['x'] # The line to plot
+                        y         = line_dict['y'] # The line to plot  
+                        line.setData(x=x,y=y,pen = pyqtgraph.mkPen(config['color'], width=config['linewidth']))
+                        line_dict['newdata']  = False
+                        
+                    # Use the same time axes for all
+                    pw            = line_dict['widget'] # The plot widget
+                    if(True):
+                        pw.setXRange(min(self.device.tmin),max(self.device.tmax))
+                        self.sig_tminmax_changed.emit()
     
         except Exception as e:
             print(e)
@@ -359,18 +441,33 @@ class displayDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.update_widgets():'
         logger.debug(funcname)
+        self.device.tmin = []
+        self.device.tmax = []
         # Remove all plots (thats brute but easy to bookeep
         for plot in self.plots:
             plot.close()
             
         # Add axes to the widget
         config=self.device.config
-        print('Hallo2',config['devices'])
+        #print('Hallo2',config['devices'])
         for i,config_device in enumerate(config['devices']):
             logger.debug(funcname + ': Adding device ' + str(config_device))                
-            plot = displayDeviceCalibrationWidget(config_device,device=self.device)
+            plot = displayDeviceCalibrationWidget(config_device,device=self.device,numdisp=i)
             self.layout.addWidget(plot,i,0)
             self.plots.append(plot)
+            # Add the tmin/tmax functionality
+            self.device.tmin.append(1e30)
+            self.device.tmax.append(-1e30)
+            
+        # Connect all mouse moved signals
+        for plot in self.plots:
+            for plot2 in self.plots:
+                if(plot == plot2):
+                    continue
+                else:
+                    plot.sig_mouse_moved.connect(plot2.mouse_moved_proc)
+                    plot.sig_tminmax_changed.connect(plot2.update_tminmax)
+                    plot.sig_mouse_clicked.connect(plot2.mouse_clicked_proc)
                 
     def config_widget(self):
         """

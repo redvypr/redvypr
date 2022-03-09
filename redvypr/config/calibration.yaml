@@ -53,10 +53,10 @@ devices:
   devicemodulename: calibration
   
 connections:
-#- publish: testranddata
-#  receive: cal
-- publish: testranddata2
+- publish: testranddata
   receive: cal
+#- publish: testranddata2
+#  receive: cal
 
   
   
