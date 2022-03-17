@@ -1,4 +1,13 @@
-<img src="doc/source/figures/logo_v03.1.png" alt="Redvypr logo" width="200"/>
+<p class="aligncenter">
+    <img src="doc/source/figures/logo_v03.1.png" alt="Redvypr logo" width="300"/>
+</p>
+
+<style>
+.aligncenter {
+    text-align: center;
+}
+</style>
+
 
 redvypr: Realtimedata viewer and processor (in python)
 ======================================================
