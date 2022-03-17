@@ -1,5 +1,5 @@
 
-<h1 align="center"> <img src="doc/source/figures/logo_v03.1.png" alt="Redvypr logo" width="100"/></h1>
+<h1 align="center"> <img src="doc/source/figures/logo_v03.1.png" alt="Redvypr logo" width="150"/></h1>
 
 
 redvypr: Realtimedata viewer and processor (in python)
