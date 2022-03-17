@@ -1,4 +1,4 @@
-![Redvypr logo](doc/source/figures/logo_v03.1.png)
+<img src="doc/source/figures/logo_v03.1.png" alt="Redvypr logo" width="200"/>
 
 redvypr: Realtimedata viewer and processor (in python)
 ======================================================
