@@ -737,6 +737,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.redvypr.device_added.connect(self._add_device)
         # Fill the layout
         self.devicetabs = QtWidgets.QTabWidget()
+        self.devicetabs.setMovable(True)
         self.devicetabs.setTabsClosable(True)
         self.devicetabs.tabCloseRequested.connect(self.closeTab)
 
@@ -998,6 +999,7 @@ class redvyprWidget(QtWidgets.QWidget):
         devicewidget = QtWidgets.QWidget()
         devicelayout = QtWidgets.QVBoxLayout(devicewidget)
         devicetab = QtWidgets.QTabWidget()
+        devicetab.setMovable(True)
         devicelayout.addWidget(devicetab)
         
         devicetab.addTab(deviceinitwidget,'Init') 
@@ -1020,8 +1022,10 @@ class redvyprWidget(QtWidgets.QWidget):
                 tabname = devicedisplaywidget_called.tabname
             except:
                 tabname = 'Display data'
-                
-            devicetab.addTab(devicedisplaywidget_called,tabname)            
+            
+            # Check if the widget has included itself, otherwise add the displaytab
+            if(devicetab.indexOf(devicedisplaywidget_called)) < 0:   
+                devicetab.addTab(devicedisplaywidget_called,tabname)            
             # Append the widget to the processing queue
             self.redvypr.devices[ind_devices]['gui'].append(devicedisplaywidget_called)
             self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
@@ -1221,7 +1225,7 @@ class redvyprWidget(QtWidgets.QWidget):
 class redvyprMainWidget(QtWidgets.QMainWindow):
     def __init__(self,width=None,height=None,config=None):
         super(redvyprMainWidget, self).__init__()
-        self.setGeometry(50, 50, 500, 300)
+        self.setGeometry(0, 0, width, height)
         self.setWindowTitle("redvypr")
         # Add the icon
         self.setWindowIcon(QtGui.QIcon(_icon_file))           
@@ -1399,7 +1403,7 @@ def redvypr_main():
         #print('Size: %d x %d' % (size.width(), size.height()))
         rect = screen.availableGeometry()
         #print('Available: %d x %d' % (rect.width(), rect.height()))
-        ex = redvyprMainWidget(width=rect.width()/2,height=rect.height()*2/3,config=config_all)
+        ex = redvyprMainWidget(width=rect.width()*4/5,height=rect.height()*2/3,config=config_all)
         sys.exit(app.exec_())
 
 

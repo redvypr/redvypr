@@ -289,9 +289,16 @@ class initDeviceWidget(QtWidgets.QWidget):
         # Data keys to log
         self.fdataentry    = QtWidgets.QLabel("Data keys to log")        
         self.dataentry     = QtWidgets.QLineEdit()
-        self.dataentry.setText('data')
+        dstr = ''
+        for d in self.device.config['keys']:
+            print(d)
+            dstr += d + ','
+            
+        dstr = dstr[:-1] # remove the last ','
+        print('dstr',dstr)
+        self.dataentry.setText(dstr)
         self.config_widgets.append(self.dataentry)
-
+        
         # Do a regular check of the input channels and update the list if changed
         self.inputchecktimer = QtCore.QTimer()
         self.inputchecktimer.timeout.connect(self.update_device_list)
@@ -380,7 +387,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.device.config['packetcount']= self.packetcntcheck.isChecked()
             self.device.config['add_key']    = self.addkeycheck.isChecked()
             self.device.config['dt_filename']= int(self.dt_newfile.text())
-            log_keys = str(self.dataentry.text()).split(',')
+            log_keys = list(str(self.dataentry.text()).split(','))
             self.device.config['keys']   = log_keys
             self.device_start.emit(self.device)
         else:

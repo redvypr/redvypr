@@ -36,6 +36,12 @@ devices:
     config:
        title: Calibration Test
        datetick: True
+       comments: # Extra columns for additional information like comments, serial numbers, remarks
+          - name: Comment
+            unit: gen. comment
+       manual:
+          - name: T extern
+            unit: degC
        devices:
          - device: testranddata
            x: t

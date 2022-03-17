@@ -1,3 +1,4 @@
+	-0.3.12:- new icon/logo v0.3.1, started calibration device 
 	-0.3.11:- netcdf tcp reconnection feature added, lets redvypr reconnect to a tcp host after the connection was closed 
 	-0.3.10:- textlogger bugfix
 	-0.3.9: - Improved text logger with dt_filename (create new file every dt_filename seconds) and gui

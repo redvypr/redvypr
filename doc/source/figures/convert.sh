@@ -1,1 +1,0 @@
-convert -resize 1000 redvypr_overview_merged_v01.png redvypr_overview_merged_v01_small.png
