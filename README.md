@@ -1,6 +1,6 @@
-<p style="text-align: center;"><img src="doc/source/figures/logo_v03.1.png" alt="Redvypr logo" width="300"/></p>
+<p style="text-align: center;">Hallo<img src="doc/source/figures/logo_v03.1.png" alt="Redvypr logo" width="300"/></p>
 
-
+<h1 align="center"> Title  <img src="doc/source/figures/logo_v03.1.png" alt="Redvypr logo" width="300"/></h1>
 redvypr: Realtimedata viewer and processor (in python)
 ======================================================
 
