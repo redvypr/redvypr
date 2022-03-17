@@ -15,7 +15,7 @@ Introduction
 ------------
 
 
-Sampling data does always require the similar tasks.
+Sampling data from sensors does always require the similar tasks.
 
 - Reading data from sensors
 - Saving the data 
