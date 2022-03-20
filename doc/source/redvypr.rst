@@ -9,7 +9,7 @@ redvypr
 
 redvypr stands for: Realtime data viewer and processor (in Python)
 
-.. image:: figures/redvypr_overview_merged_v01_small.png
+.. image:: figures/redvypr_v02.png
   :width: 1200
   :alt: Artistic view of redvyprs general structure
 

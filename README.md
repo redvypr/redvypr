@@ -9,7 +9,7 @@ Overview
 --------
 redvypr offers a python based framework to connect sensors and devices providing digital data and the possibilities to merge/process/save the data. See figure below for an artistic overview of the general structure of redvypr:
 
-![Artistic view of redvyprs general structure](doc/source/figures/redvypr_overview_merged_v01_small.png)
+![Artistic view of redvyprs general structure](doc/source/figures/redvypr_v02.png)
 
 Introduction
 ------------
