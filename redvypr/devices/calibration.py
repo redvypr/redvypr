@@ -9,13 +9,16 @@ import sys
 import yaml
 import pyqtgraph
 from redvypr.data_packets import device_in_data, get_keys
+import redvypr.files as files
+
+_icon_file = files.icon_file
 
 pyqtgraph.setConfigOption('background', 'w')
 pyqtgraph.setConfigOption('foreground', 'k')
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('calibration')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 def start(datainqueue,dataqueue,comqueue):
@@ -23,7 +26,7 @@ def start(datainqueue,dataqueue,comqueue):
     while True:
         try:
             com = comqueue.get(block=False)
-            print('received',com)
+            logger.debug('Received {:s}'.format(str(com)))
             break
         except:
             pass
@@ -54,7 +57,7 @@ class Device():
         self.tmin = []
         self.tmax = []
         
-        self.tmin_old = np.NaN
+        self.tmin_old = 0#np.NaN
         self.tmax_old = 0
         
         self.dt_allowoff = 20 # The offset allowed before a new range is used
@@ -72,10 +75,11 @@ class Device():
     def get_trange(self):
         """ Create a x axis range for
         """
-        
-        tmin = min(self.tmin)# - self.dt_allowoff
-        tmax = max(self.tmax)# + self.dt_allowoff
-        print(self.tmax,self.tmax_old)
+        tmin = np.nanmin(self.tmin)# - self.dt_allowoff
+        tmax = np.nanmax(self.tmax)# + self.dt_allowoff
+        #print(self.tmax,self.tmax_old)
+        if((tmin - self.tmin_old) > self.dt_allowoff):
+            self.tmin_old = tmin
         if((tmax-self.tmax_old) > 0):
             tmax = tmax + self.dt_allowoff
             self.tmax_old = tmax
@@ -163,7 +167,7 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
     sig_tminmax_changed = QtCore.pyqtSignal(float,float) # Signal that is emitted whenever the minimum and maximum time interval changed
     sig_mouse_clicked = QtCore.pyqtSignal()
     sig_new_user_data = QtCore.pyqtSignal(int) # Signal emitted when the user choose a data interval
-    def __init__(self,config = None, dt_update = 0.5,device=None,buffersize=100,numdisp=None):
+    def __init__(self,config = None, dt_update = 0.5,device=None,buffersize=1000,numdisp=None):
         """
         Args:
         config:
@@ -237,8 +241,8 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
             except:
                 buffersize = self.buffersizestd
                     
-                xdata = np.zeros(buffersize) * np.NaN
-                ydata = np.zeros(buffersize) * np.NaN
+            xdata = np.zeros(buffersize) * np.NaN
+            ydata = np.zeros(buffersize) * np.NaN
                 
                 
             name = config['device']
@@ -260,7 +264,7 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
                 linewidth = 1
                     
             try:
-                colors = line['color']
+                colors = config['color']
                 color = QtGui.QColor(colors[0],colors[1],colors[2])
             except Exception as e:
                 logger.debug('No color found:' + str(e))
@@ -404,7 +408,7 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
         
         
         if(update):
-            print('update')
+            #print('update')
             self.config['last_update'] = tnow
         
         try:
@@ -425,16 +429,18 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
                         newx = data[config['x']]
                         newy = data[config['y']]
                         # Try to get the unit
-                        propskeyy = 'props@' + config['y']
+                        propskeyy = '?' + config['y']
+                        
                         try:
                             unitstry = data[propskeyy]['unit']
                             self.device.units[self.numdisp] = {'x':'time','y':unitstry}
-                        except:
+                        except Exception as e:
                             self.device.units[self.numdisp] = {'x':'time','y':'NA'}
                         if(type(newx) is not list):
                             newx = [newx]
                             newy = [newy]
                             
+                        #print('Self numdisp',self.numdisp,self.device.units[self.numdisp])
                         for inew in range(len(newx)): # TODO this can be optimized using indices instead of a loop
                             x        = np.roll(x,-1)
                             y        = np.roll(y,-1)
@@ -446,7 +452,8 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
                         line_dict['newdata']  = True
                         self.device.tmin[self.numdisp] = np.nanmin(x)
                         self.device.tmax[self.numdisp] = np.nanmax(x)  
-            if(update):
+            #if(update):
+            if True:
                 for line_dict in self.plots:
                     if(line_dict['newdata']):
                         line      = line_dict['line'] # The line to plot
@@ -460,9 +467,11 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
                     pw            = line_dict['widget'] # The plot widget
                     if(True):
                         [tmin,tmax] = self.device.get_trange()
+                        #print('tmin',tmin,tmax)
                         pw.setXRange(tmin,tmax)
                         self.sig_tminmax_changed.emit(tmin,tmax)
                         ylabel = '[{:s}]'.format(self.device.units[self.numdisp]['y'])
+                        #print('hallo',self.numdisp,ylabel)
                         pw.setLabel('left', ylabel)
     
         except Exception as e:
@@ -471,33 +480,64 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
             
 #
 #
-# The widgets shows average data values together with some statistics and fitting
+# 
 #
 #
 class displayTableWidget(QtWidgets.QWidget):
+    """ The widgets shows average data values together with some statistics and fitting
+    """
     def __init__(self,device=None):
         funcname = __name__ + '.init()'
         super(QtWidgets.QWidget, self).__init__()
-        self.layout        = QtWidgets.QGridLayout(self)
-        self.device = device
-        self.datatable = QtWidgets.QTableWidget()
-        self.layout.addWidget(self.datatable,0,0)
+        self.layout           = QtWidgets.QGridLayout(self)
+        self.device           = device
+        self.datatable        = QtWidgets.QTableWidget()
+        self.datatable.horizontalHeader().hide()
+        self.datatable.verticalHeader().hide()
+        self.datatable_widget = QtWidgets.QWidget()
+        
         # Buttons to add/remove datapoints
         self.init_table_buttons()
         # The fit widget
         self.init_fitwidget()
-        self.layout.addWidget(self.fitwidget['widget'],0,1)
-        self.rowstart = 2
+        
+        
+        
+        splitter1 = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter1.addWidget(self.datatable_widget)
+        splitter1.addWidget(self.fitwidget['widget'])
+        self.layout.addWidget(splitter1)
+        
+        self.headerrows = 2
+        self.coloffset  = 1
         
     def init_table_buttons(self):
-        self.btnlayout = QtWidgets.QGridLayout()
-        self.layout.addLayout(self.btnlayout,1,0)
+        self.btnlayout = QtWidgets.QGridLayout(self.datatable_widget)
+        
+        self.layout.addLayout(self.btnlayout,1,0,1,4)
+        self.btn_addhdr = QtWidgets.QPushButton('Add header')
+        self.btn_addhdr.clicked.connect(self.add_headerrow)
         self.btn_addrow = QtWidgets.QPushButton('Add row')
         self.btn_addrow.clicked.connect(self.add_row)
         self.btn_remrow = QtWidgets.QPushButton('Rem row(s)')
         self.btn_remrow.clicked.connect(self.rem_row)
-        self.btnlayout.addWidget(self.btn_addrow,0,0)
-        self.btnlayout.addWidget(self.btn_remrow,0,1)
+        self.btnlayout.addWidget(self.datatable,1,0,1,3)
+        self.btnlayout.addWidget(self.btn_addhdr,2,0)
+        self.btnlayout.addWidget(self.btn_addrow,2,1)
+        self.btnlayout.addWidget(self.btn_remrow,2,2)
+        datalabel = QtWidgets.QLabel('Data')
+        datalabel.setAlignment(QtCore.Qt.AlignCenter)
+        datalabel.setStyleSheet("font-weight: bold")
+        self.btnlayout.addWidget(datalabel,0,0,1,3)
+        
+    def add_headerrow(self):
+        """ Adds a new headerrow to the table
+        """
+        self.datatable.insertRow(self.headerrows)
+        self.headerrows += 1   
+        item = QtWidgets.QTableWidgetItem('Header')
+        self.datatable.setItem(self.headerrows-1,0,item)
+        self.datatable.resizeColumnsToContents()     
         
     def add_row(self):
         """ Adds a new row in the table (manually)
@@ -524,9 +564,12 @@ class displayTableWidget(QtWidgets.QWidget):
         print('Rows',rows)
                 
         for row in rows:
-            if(row >= self.rowstart):
+            #if(row >= self.headerrows): # Check if its an header
+            if(row >= 2): # Check if its an header
                 print('Removing row',row)                        
                 self.datatable.removeRow(row)
+                if(row<self.headerrows):
+                    self.headerrows -= 1
             else:
                 print('Will not remove the first rows',row) 
         
@@ -535,14 +578,19 @@ class displayTableWidget(QtWidgets.QWidget):
         """
         # Check if config has necessary entries
         try:
-            self.device.config['manual']
+            self.device.config['table']
         except:
-            self.device.config['manual'] = []
+            self.device.config['table'] = {}
+        
+        try:
+            self.device.config['table']['manual']
+        except:
+            self.device.config['table']['manual'] = []
             
         try:
-            self.device.config['comments']
+            self.device.config['table']['comments']
         except:
-            self.device.config['comments'] = []
+            self.device.config['table']['comments'] = []
             
             
         try:
@@ -550,21 +598,34 @@ class displayTableWidget(QtWidgets.QWidget):
         except:
             self.device.config['devices'] = []
             
-        numcols = len(self.device.config['devices']) + len(self.device.config['manual']) + len(self.device.config['comments'])
-        self.datatable.setColumnCount(numcols+2)
-        self.datatable.setRowCount(self.rowstart)
+        try:
+            self.device.config['table']['headers']
+        except:
+            self.device.config['table']['headers'] = []
+            
+        numcols = len(self.device.config['devices']) + len(self.device.config['table']['manual']) + len(self.device.config['table']['comments'])
+        self.numdevices = len(self.device.config['devices']) + len(self.device.config['table']['manual'])
+        self.numcols = numcols
+        self.datatable.setColumnCount(numcols+2 + self.coloffset)
+        self.headerrows += len(self.device.config['table']['headers'])
+        self.datatable.setRowCount(self.headerrows)
+        # Add the custom headers
+        for i,header in enumerate(self.device.config['table']['headers']):
+            item = QtWidgets.QTableWidgetItem(header)
+            self.datatable.setItem(2 + i,0,item)
+        
         
         #item = QtWidgets.QTableWidgetItem('#')
         #self.datatable.setItem(0,0,item)
         
         item = QtWidgets.QTableWidgetItem('t start')
-        self.datatable.setItem(0,0,item)
+        self.datatable.setItem(0,0+self.coloffset,item)
         
         item = QtWidgets.QTableWidgetItem('t end')
-        self.datatable.setItem(0,1,item)
+        self.datatable.setItem(0,1+self.coloffset,item)
         
         # Add the devices
-        colnum = 2
+        colnum = 2 + self.coloffset
         for i,dev in enumerate(self.device.config['devices']):
             item = QtWidgets.QTableWidgetItem(dev['device'])
             self.datatable.setItem(0,colnum+i,item)
@@ -572,8 +633,8 @@ class displayTableWidget(QtWidgets.QWidget):
         colnum = colnum +i + 1
         
          
-        print('Manual',self.device.config['manual'])    
-        for i,dev in enumerate(self.device.config['manual']):
+        print('Manual',self.device.config['table']['manual'])    
+        for i,dev in enumerate(self.device.config['table']['manual']):
             devname = dev['name']
             try:
                 devunit = dev['unit']
@@ -590,8 +651,8 @@ class displayTableWidget(QtWidgets.QWidget):
             
         colnum = colnum + i + 1
         # Adding comment rows to the table
-        print('Comments',self.device.config['comments'])    
-        for i,dev in enumerate(self.device.config['comments']):
+        print('Comments',self.device.config['table']['comments'])    
+        for i,dev in enumerate(self.device.config['table']['comments']):
             devname = dev['name']
             try:
                 devunit = dev['unit']
@@ -606,33 +667,53 @@ class displayTableWidget(QtWidgets.QWidget):
             item = QtWidgets.QTableWidgetItem(devunit)
             self.datatable.setItem(1,colnum + i,item)
             
+        # Add time unit
+        xunit = self.device.units[0]['x']
+        item = QtWidgets.QTableWidgetItem(xunit)
+        self.datatable.setItem(1,0+self.coloffset,item)
+        item = QtWidgets.QTableWidgetItem(xunit)
+        self.datatable.setItem(1,1+self.coloffset,item)
         
+        # Add header description
+        item = QtWidgets.QTableWidgetItem('Device')
+        self.datatable.setItem(0,0,item)
+        item = QtWidgets.QTableWidgetItem('Unit')
+        self.datatable.setItem(1,0,item)
         #self.device.redvypr.get_data_providing_devices(self.device)        
         self.datatable.resizeColumnsToContents()
         
         # this is done to call reference sensor_changed for the first time
         reference_sensor = self.fitwidget['refcombo'].currentText()
+        
+        # Init the fittable
+        self.update_fittable()
+        # update the reference sensor
         self.reference_sensor_changed(reference_sensor)
         
     def update_table(self,numdisp=None):
         """ This is called when new data from the realtimedataplot is available, please note that every subscribed device is calling this
         """
         print('Updating',numdisp)
-        numrows = self.datatable.rowCount()
+        numrows = self.datatable.rowCount() - self.headerrows
         print(self.device.data_interval[numdisp])
-        numintervals = len(self.device.data_interval[numdisp]) + self.rowstart
-        print('numrows',numrows,'numintervals',numintervals)
-        if((numintervals+1) > numrows):
-            self.datatable.setRowCount(numrows + 1)#numintervals+self.rowstart)
+        numintervals = len(self.device.data_interval[numdisp])
         
+        if((numintervals) > numrows):
+            self.datatable.setRowCount(numrows + 1 + self.headerrows)#numintervals+self.rowstart)
+        
+        numrow = numintervals + self.headerrows - 1
+        numrowsnew = self.datatable.rowCount() - self.headerrows
+        print('fdf',self.device.data_interval[numdisp])
+        print('numrows',numrows,'numintervals',numintervals,'numrow',numrow,'numrowsnew',numrowsnew)
         # Unitstr
         xunit = self.device.units[numdisp]['x']
         yunit = self.device.units[numdisp]['y']
         xunititem = QtWidgets.QTableWidgetItem(xunit)
         yunititem = QtWidgets.QTableWidgetItem(yunit)
-        self.datatable.setItem(1,1,xunititem)
-        self.datatable.setItem(1,2,xunititem)
-        self.datatable.setItem(1,numdisp+3,yunititem)
+        #self.datatable.item(1,0).setText(xunit)
+        #self.datatable.item(1,1).setText(xunit)
+        #self.datatable.setItem(1,2,xunititem)
+        self.datatable.setItem(1,numdisp+2 + self.coloffset,yunititem)
         
         # The averaged data
         xdata = self.device.data_interval[numdisp][-1]['x']
@@ -650,56 +731,159 @@ class displayTableWidget(QtWidgets.QWidget):
         yitem = QtWidgets.QTableWidgetItem(strformat.format(ymean))
         
         #self.datatable.setItem(numintervals+1,0,nitem)
-        self.datatable.setItem(numintervals,0,t1item)
-        self.datatable.setItem(numintervals,1,t2item)
-        self.datatable.setItem(numintervals,numdisp+2,yitem)
+        self.datatable.setItem(numrow,0+self.coloffset,t1item)
+        self.datatable.setItem(numrow,1+self.coloffset,t2item)
+        self.datatable.setItem(numrow,numdisp+2+self.coloffset,yitem)
         
         self.datatable.resizeColumnsToContents()
         
     def init_fitwidget(self):
-        """
+        """ The fitwidget
         """
         self.fitwidget = {}
         self.fitwidget['widget'] = QtWidgets.QWidget(self)
+        self.fitwidget['fitbutton'] = QtWidgets.QPushButton('Fit data')
+        self.fitwidget['fitbutton'].clicked.connect(self.fitdata)
+        self.fitwidget['savebutton'] = QtWidgets.QPushButton('Save')
+        self.fitwidget['savebutton'].clicked.connect(self.savedata)
         self.fitwidget['layout'] = QtWidgets.QGridLayout(self.fitwidget['widget'])
         self.fitwidget['refcombo'] = QtWidgets.QComboBox(self)
+        self.fitwidget['fittable'] = QtWidgets.QTableWidget(self)
+        self.fitwidget['fittable'].horizontalHeader().hide()
+        self.fitwidget['fittable'].verticalHeader().hide()
         self.fitwidget['refcombo'].currentTextChanged.connect(self.reference_sensor_changed)
         for i,dev in enumerate(self.device.config['devices']):
             self.fitwidget['refcombo'].addItem(dev['device'])
             
-        for i,dev in enumerate(self.device.config['manual']):
+        for i,dev in enumerate(self.device.config['table']['manual']):
             self.fitwidget['refcombo'].addItem(dev['name'])
             
-        self.fitwidget['layout'].addWidget(QtWidgets.QLabel('Reference Sensor'),0,0)
-        self.fitwidget['layout'].addWidget(self.fitwidget['refcombo'],1,0)
+            
+        self.fitwidget['fitcombo'] = QtWidgets.QComboBox(self)
+        self.fitwidget['fitcombo'].addItem('Linear fit')
         
+        
+        
+        
+        
+        self.fitwidget['layout'].addWidget(QtWidgets.QLabel('Fit type'),1,0)
+        self.fitwidget['layout'].addWidget(self.fitwidget['fitcombo'],1,1)
+        self.fitwidget['layout'].addWidget(self.fitwidget['fittable'],2,0,1,2)   
+        self.fitwidget['layout'].addWidget(QtWidgets.QLabel('Reference Sensor'),3,0)
+        self.fitwidget['layout'].addWidget(self.fitwidget['refcombo'],3,1)
+        self.fitwidget['layout'].addWidget(self.fitwidget['fitbutton'],4,0,1,1)
+        self.fitwidget['layout'].addWidget(self.fitwidget['savebutton'],4,1,1,1)
+        fitlabel = QtWidgets.QLabel('Data fit')
+        fitlabel.setStyleSheet("font-weight: bold")
+        fitlabel.setAlignment(QtCore.Qt.AlignCenter)
+        self.fitwidget['layout'].addWidget(fitlabel,0,0,1,2)
+        self.fitwidget['fittable'].resizeColumnsToContents()
+        
+    def savedata(self):
+        """ Save the data found in datatable and fittable into a file format to be choosen by the save widget
+        """
+        self.savewidget = QtWidgets.QWidget()
+        self.savewidget.setWindowIcon(QtGui.QIcon(_icon_file)) 
+        self.savewidget.setWindowTitle("Save")
+        
+        # Create a dictionary with the data to be saved
+        
+        #data/testrandata:redvypr@IP
+        #data/testrandata:redvypr@IP
+        data = {}
+        
+        self.savewidget.show()
+        
+    def fitdata(self):
+        """ Here the data in self.datatable is read and processed according to the fit type
+        """
+        # Get all data
+        ndevices = self.numdevices # Get the number of devices
+        print('Fit',ndevices)
+        if( ndevices > 0): # If we have devices
+            nrec = len(self.device.data_interval[0])
+            data = np.zeros((nrec,ndevices)) # Fill a numpy array
+            for i in range(ndevices):
+                for j in range(nrec):
+                    ydata = self.datatable.item(self.headerrows + j,self.coloffset + 2 + i)
+                    try:
+                        ydata = float(ydata.text())
+                    except:
+                        ydata = np.NaN
+                        
+                    print('ydata',i,j,ydata)
+                    data[j,i] = ydata
+                        
+                    print('ydata',i,j,ydata)
+                    print('data',data)
+                    
+            # Fit the data
+            for i in range(ndevices):
+                fit = np.nanmean(data[:,self.refsensor_fittableindex] / data[:,i])
+                print(fit)
+                fitstr = "{:2.3f}".format(fit) # TODO, here once could choose a format
+                if(self.fitwidget['fittable'].item(1,i) == None):
+                    fititem = QtWidgets.QTableWidgetItem(fitstr)
+                    self.fitwidget['fittable'].setItem(1,i,fititem)
+                else:
+                    self.fitwidget['fittable'].item(1,i).setText(fitstr)
+                     
 
+    def update_fittable(self):
+        """
+        """
+        # Populate the fittable
+        self.fitwidget['fittable'].setColumnCount(self.numcols)
+        self.fitwidget['fittable'].setRowCount(2)
+        for i in range(self.numcols):
+            sensor = self.datatable.item(0,self.coloffset+i+2).text()
+            item = QtWidgets.QTableWidgetItem(sensor)
+            self.fitwidget['fittable'].setItem(0,i,item)
+            
+            
+        self.fitwidget['fittable'].resizeColumnsToContents()
      
     def reference_sensor_changed(self,reference_sensor):
         """ Is called whenever the reference sensor was changed
         """   
         # Get the column number of the reference sensor
         numcols = self.datatable.columnCount()
+        refcolor = QtGui.QColor(200,200,200)
+        white = QtGui.QColor(255,255,255)
         for i in range(numcols):
             item = self.datatable.item(0,i)
-            itemtext = item.text()
-            if(itemtext  == reference_sensor):
-                item.setBackground(QtGui.QColor(200,200,200))
+            if(item is not None):
+                itemtext = item.text()
+                if(itemtext == reference_sensor):
+                    item.setBackground(refcolor)
+                    self.refsensor_datatableindex = i
+                    self.refsensor_fittableindex  = i - 2 - self.coloffset
+                else:
+                    item.setBackground(white)
+                    
+        numcols = self.fitwidget['fittable'].columnCount()
+        for i in range(numcols):
+            item = self.fitwidget['fittable'].item(0,i)
+            if(i == self.refsensor_fittableindex):
+                item.setBackground(refcolor)
             else:
-                item.setBackground(QtGui.QColor(255,255,255))
+                item.setBackground(white)
 #
 #
 # The display widget
 #
 #
 class displayDeviceWidget(QtWidgets.QWidget):
-    """ Widget is a wrapper for several plotting widgets (numdisp, graph) 
+    """ Widget is a wrapper for several calibration widgets (average table, response time, ...) 
     This widget can be configured with a configuration dictionary
     Args: 
     tabwidget:
+    device:
+    buffersize:
+    dt_update:
     """
     
-    def __init__(self,dt_update = 0.25,device=None,buffersize=100,tabwidget = None):
+    def __init__(self,dt_update = 0.25,device=None,buffersize=1000,tabwidget = None):
         funcname = __name__ + '.init()'
         super(QtWidgets.QWidget, self).__init__()
         self.layout        = QtWidgets.QGridLayout(self)
@@ -713,7 +897,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.tabwidget.addTab(self,'Data')   
         config = {'dt_update':dt_update,'last_update':time.time()}
         self.config = config
-        if True: # Here one could check if we want to have a table 
+        if 'table' in self.device.config.keys(): # If the user wants to have a table
             self.widgets['table'] = displayTableWidget(device = self.device)
             
             i1 = self.tabwidget.addTab(self.widgets['table'],'Table')
@@ -740,8 +924,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
         config=self.device.config
         #print('Hallo2',config['devices'])
         for i,config_device in enumerate(config['devices']):
-            logger.debug(funcname + ': Adding device ' + str(config_device))                
-            plot = displayDeviceCalibrationWidget(config_device,device=self.device,numdisp=i)
+            logger.debug(funcname + ': Adding device ' + str(config_device))
+                                                
+            plot = displayDeviceCalibrationWidget(config_device,device=self.device,numdisp=i,buffersize=self.buffersizestd)
             self.btn_add_interval.clicked.connect(plot.get_data_clicked)
             self.layout.addWidget(plot,i,0)
             self.plots.append(plot)
@@ -749,7 +934,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.device.tmin.append(1e30)
             self.device.tmax.append(-1e30)
             self.device.data_interval.append([])
-            self.device.units.append({'x':'time','y':'NA'})
+            self.device.units.append({'x':'s','y':'NA'})
             
         # Connect all mouse moved signals
         for plot in self.plots:
@@ -764,7 +949,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
          
         self.layout.addWidget(self.btn_add_interval,i+1,0)
         # Update the average data table
-        self.widgets['table'].init_table()
+        if 'table' in self.device.config.keys(): # If the user wants to have a table
+            self.widgets['table'].init_table()
         
         
     def new_user_data(self,numdisp):
@@ -780,7 +966,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def thread_status(self,status):
         """ This function is regularly called by redvypr whenever the thread is started/stopped
         """
-        print('Thread',status)
+        pass
+        #print('Thread',status)
         #self.update_buttons(status['threadalive'])
         
     def update_line_styles(self):

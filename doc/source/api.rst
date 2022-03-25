@@ -8,6 +8,9 @@ API
    :recursive:
 
    redvypr      
-   redvypr.redvypr
-   redvypr.standard_device_widgets
-   redvypr.devices.__init__
+   
+   
+   
+   
+   
+   

@@ -83,6 +83,10 @@ def distribute_data(devices,infoqueue,dt=0.01):
                 if('device' not in data.keys()):
                     data['device']   = str(device.name)
                     data['host']     = hostinfo
+                    
+                # Add the time to the datadict if its not already in
+                if('t' not in data.keys()):
+                    data['t'] = tstart
 
                 # Add the packetnumber to the datadict
                 if('numpacket' not in data.keys()):
@@ -1109,11 +1113,27 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__hostname_label = QtWidgets.QLabel('Hostname:')
         self.__hostname_line  = QtWidgets.QLabel('')
         self.__hostname_line.setAlignment(QtCore.Qt.AlignRight)
+        self.__hostname_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         self.__hostname_line.setText(hostinfo['name'])
+        # UUID
+        self.__uuid_label = QtWidgets.QLabel('UUID:')
+        self.__uuid_line  = QtWidgets.QLabel('')
+        self.__uuid_line.setAlignment(QtCore.Qt.AlignRight)
+        self.__uuid_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.__uuid_line.setText(hostinfo['uuid'])
+        # IP
+        self.__ip_label = QtWidgets.QLabel('IP:')
+        self.__ip_line  = QtWidgets.QLabel('')
+        self.__ip_line.setAlignment(QtCore.Qt.AlignRight)
+        self.__ip_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.__ip_line.setText(hostinfo['addr'])
+        # Change the hostname
         self.__hostname_btn = QtWidgets.QPushButton('Change hostname')
         self.__hostname_btn.clicked.connect(self.__hostname_changed)
 
         layout.addRow(self.__hostname_label,self.__hostname_line)
+        layout.addRow(self.__uuid_label,self.__uuid_line)
+        layout.addRow(self.__ip_label,self.__ip_line)
         layout.addRow(self.__hostname_btn)
 
         self.__statuswidget_pathbtn = QtWidgets.QPushButton('Edit device path')

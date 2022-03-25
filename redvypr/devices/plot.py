@@ -616,7 +616,7 @@ class plotWidget(QtWidgets.QFrame):
                                 
                                 if('useprops' in self.config.keys()):
                                     if(self.config['useprops']):
-                                        propkey = 'props@' + config['y']
+                                        propkey = '?' + config['y']
                                         try:
                                             unitstr ='[' + data[propkey]['unit'] + ']'
                                             pw.setLabel('left', unitstr)

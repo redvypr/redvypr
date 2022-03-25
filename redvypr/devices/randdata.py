@@ -7,6 +7,8 @@ import numpy as np
 import sys
 
 logging.basicConfig(stream=sys.stderr)
+logger = logging.getLogger('randdata')
+logger.setLevel(logging.DEBUG)
 
 description = 'Publishes random data.'
 
@@ -45,16 +47,15 @@ class Device():
         except:
             n = 1 
             
-        print('n',n)               
+        #print('n',n)               
         rng = np.random.default_rng()
         xold = 0
         while True:
-            
             try:
                 com = self.comqueue.get(block=False)
-                print('received',com)
+                logger.debug('Received {:s}'.format(str(com)))
                 break
-            except:
+            except Exception as e:
                 pass
             
             #x = np.random.rand(1)[0] * 100 + 50
@@ -95,7 +96,7 @@ class Device():
             if(n==1):
                 tall = tall[0]
                 xall = xall[0]
-            data = {'t':tall,'data':xall,'props@data':{'unit':data_unit,'type':'f'}}
+            data = {'t':tall,'data':xall,'?data':{'unit':data_unit,'type':'f'}}
             #print('data',data)
             self.dataqueue.put(data)
             tend = time.time()

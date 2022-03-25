@@ -19,6 +19,9 @@ def get_keys(data):
 
 def get_devicename(data):
     """ Returns a devicename including the hostname, ip or uuid.
+    Arguments:
+        data: Data Dictionary
+    Returns:
     """
     devicename = data['device'] + '@' + data['host']['name']
     return devicename
@@ -26,15 +29,29 @@ def get_devicename(data):
 def device_in_data(devicestring, data, get_devicename = False):
     """ Checks if the devicestring is in the datapacket.
     Arguments:
-    devicestring: String or list of strings consisting the devicename and, optionally, the hostname/respectively IP-Adress
-    Examples : Devicename: rand1, Devicename with hostname: rand1@randredvypr, Devicename with ip: rand1@192.168.178.33, Devicename with uuid: rand1@5c9295ee-6f8e-11ec-9f01-f7ad581789cc
-    data: a redvypr data dictionary
+        devicestring: String or list of strings consisting the devicename and, optionally, the hostname/respectively IP-Adress
+        Examples : Devicename: rand1, Devicename with hostname: rand1@randredvypr, Devicename with ip: rand1@192.168.178.33, Devicename with uuid: rand1@5c9295ee-6f8e-11ec-9f01-f7ad581789cc
+        data: a redvypr data dictionary
+    Returns:
+    
     """
     if(type(devicestring) == str):
         devicestring = [devicestring]
 
     for devstring in devicestring:
-        if('@' in devstring):
+        # TODO: add datastream strings
+        if('::' in devstring): # UUID
+            s = devstring.split('::')
+            devicename = s[0]
+            UUID = s[1]
+        elif(':' in devstring): # hostname
+            s = devstring.split(':')
+            devicename = s[0]
+            rest       = s[1]
+        else:
+            devicename = devstring
+            
+        if('@' in devstring): # Return the IP address
             devicename = devstring.split('@')[0]
             hostname   = devstring.split('@')[1]
             hostexpanded = (hostname == '*')
@@ -50,6 +67,55 @@ def device_in_data(devicestring, data, get_devicename = False):
                     return [True,devicename,expanded or hostexpanded]
                 else:
                     return True
+        elif(':' in devstring): # Return the IP address
+            pass
+        else:
+            expanded   = (devstring == '*')
+            if((devstring == data['device']) or expanded):
+                if(get_devicename):
+                    return [True,data['device'],expanded]                    
+                else:
+                    return True                
+
+    if(get_devicename):
+        return [False,None,False]
+    else:
+        return False
+    
+    
+def device_in_data_old(devicestring, data, get_devicename = False):
+    """ Checks if the devicestring is in the datapacket.
+    Arguments:
+        :param str devicestr: The person sending the message
+        :devicestring: String or list of strings consisting the devicename and, optionally, the hostname/respectively IP-Adress
+        Examples : Devicename: rand1, Devicename with hostname: rand1@randredvypr, Devicename with ip: rand1@192.168.178.33, Devicename with uuid: rand1@5c9295ee-6f8e-11ec-9f01-f7ad581789cc
+        :data: a redvypr data dictionary
+    Returns:
+    
+    """
+    if(type(devicestring) == str):
+        devicestring = [devicestring]
+
+    for devstring in devicestring:
+
+        if('@' in devstring): # Return the IP address
+            devicename = devstring.split('@')[0]
+            hostname   = devstring.split('@')[1]
+            hostexpanded = (hostname == '*')
+            if(hostexpanded):
+                hostname = data['host']['name']
+                
+            expanded   = (devicename == '*')
+            deviceflag = (devicename == data['device']) or expanded
+            hostflag = (hostname == data['host']['name']) or (hostname == data['host']['addr'])
+            if(deviceflag and hostflag):
+                devicename = data['device'] + '@' + hostname                
+                if(get_devicename):
+                    return [True,devicename,expanded or hostexpanded]
+                else:
+                    return True
+        elif(':' in devstring): # Return the IP address
+            pass
         else:
             expanded   = (devstring == '*')
             if((devstring == data['device']) or expanded):
