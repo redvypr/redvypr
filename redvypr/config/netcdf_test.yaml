@@ -23,7 +23,7 @@ devices:
         value: 'Multiple data streams into one netCDF file' 
       groups:
         #- name: "*@netcdftest" # Creates a group netcdftest1 and adds automatic variables of all devices received
-        - name: "*@*" # Creates a group netcdftest1 and adds automatic variables of all devices received         
+        - name: "*" # Creates a automatically groups of all found devices and adds variables of all devices received         
 
   devicemodulename: netcdflogger
   

@@ -38,7 +38,9 @@ devices:
     config:
        title: Calibration Test
        datetick: True
-       table:
+       responsetime: # A responsetimewidget
+          device: testranddata # The device for the responsetime
+       polyfit:
           headers: # Extra rows with a custom header, if the headername is in a props@['y'] of the device it is automatically filled
              - 'Serialnumber'
           comments: # Extra columns for additional information like comments, serial numbers, remarks

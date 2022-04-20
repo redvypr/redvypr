@@ -1411,7 +1411,7 @@ def redvypr_main():
             print('Received CTRL-C: Closing now')
             sys.exit()
             
-        signal.signal(signal.SIGINT, handleIntSignal)        
+        signal.signal(signal.SIGINT, handleIntSignal)
         app = QtCore.QCoreApplication(sys.argv)
         redvypr_obj = redvypr(config=config_all,nogui=True)
         sys.exit(app.exec_())
@@ -1422,8 +1422,10 @@ def redvypr_main():
         size = screen.size()
         #print('Size: %d x %d' % (size.width(), size.height()))
         rect = screen.availableGeometry()
+        width = int(rect.width()*4/5)
+        height = int(rect.height()*2/3)
         #print('Available: %d x %d' % (rect.width(), rect.height()))
-        ex = redvyprMainWidget(width=rect.width()*4/5,height=rect.height()*2/3,config=config_all)
+        ex = redvyprMainWidget(width=width,height=height,config=config_all)
         sys.exit(app.exec_())
 
 

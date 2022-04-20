@@ -1,3 +1,5 @@
+""" Utility to have the version in redvypr available
+"""
 import pkg_resources
 import os
 

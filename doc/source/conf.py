@@ -14,7 +14,9 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath('.'))
 
-
+redvypr_versionfile = '../../redvypr/VERSION'
+redvypr_version_f = open(redvypr_versionfile)
+redvypr_version = redvypr_version_f.read().strip()
 # -- Project information -----------------------------------------------------
 
 project = 'redvypr'
@@ -22,7 +24,8 @@ copyright = '2021, Peter Holtermann'
 author = 'Peter Holtermann'
 
 # The full version, including alpha/beta/rc tags
-release = '0.3.0'
+version = redvypr_version
+release = redvypr_version
 
 
 # -- General configuration ---------------------------------------------------
@@ -38,6 +41,7 @@ extensions = ['sphinx.ext.napoleon','sphinx.ext.autosectionlabel','sphinx.ext.au
 autosummary_generate = True
 
 autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","queue","yaml","PyQt5","pkg_resources","pyqtgraph","numpy","inspect","threading","multiprocessing","socket","argparse","importlib","glob","pathlib","signal","QtWidgets", "QtCore", "QtGui","netCDF4","copy","threading","socket","serial.tools.list_ports"]#,"redvypr.devices"]
+#autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","queue"]#,"yaml","pkg_resources","inspect","threading","multiprocessing","socket","argparse","importlib","glob","pathlib","signal","QtWidgets", "QtCore", "QtGui","netCDF4","copy","threading","socket","serial.tools.list_ports"]#,"redvypr.devices"]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

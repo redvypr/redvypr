@@ -1,3 +1,8 @@
+"""
+Sensor calibration device
+
+"""
+
 import datetime
 import logging
 import queue
@@ -19,6 +24,8 @@ pyqtgraph.setConfigOption('foreground', 'k')
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('calibration')
 logger.setLevel(logging.INFO)
+
+description = "Sensor calibration device"
 
 
 def start(datainqueue,dataqueue,comqueue):
@@ -43,7 +50,7 @@ def start(datainqueue,dataqueue,comqueue):
                 
 
 class Device():
-    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = []):
+    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = {}):
         """
         """
         self.publish     = False # publishes data, a typical sensor is doing this
@@ -52,6 +59,7 @@ class Device():
         self.dataqueue   = dataqueue        
         self.comqueue    = comqueue
         self.config      = config # Please note that this is typically a placeholder, the config structure will be written by redvypr and the yaml
+        self.create_standard_config()
         
         # The mininum and maximum times, used for making the time axis the same between different sensors
         self.tmin = []
@@ -68,7 +76,17 @@ class Device():
         
         # The units of the different devices
         self.units = []
-                
+        
+    def create_standard_config(self):
+        """
+        """
+        
+        try:
+            self.config['devices']
+        except:
+            self.config['devices'] = []
+            
+
     def start(self):
         start(self.datainqueue,self.dataqueue,self.comqueue)
         
@@ -159,7 +177,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 #
 #
 #
-class displayDeviceCalibrationWidget(QtWidgets.QWidget):
+class PlotWidget(QtWidgets.QWidget):
     """ Widget is plotting realtimedata using the pyqtgraph functionality
     This widget can be configured with a configuration dictionary 
     """
@@ -483,7 +501,7 @@ class displayDeviceCalibrationWidget(QtWidgets.QWidget):
 # 
 #
 #
-class displayTableWidget(QtWidgets.QWidget):
+class PolyfitWidget(QtWidgets.QWidget):
     """ The widgets shows average data values together with some statistics and fitting
     """
     def __init__(self,device=None):
@@ -576,41 +594,43 @@ class displayTableWidget(QtWidgets.QWidget):
     def init_table(self):
         """
         """
-        # Check if config has necessary entries
-        try:
-            self.device.config['table']
-        except:
-            self.device.config['table'] = {}
-        
-        try:
-            self.device.config['table']['manual']
-        except:
-            self.device.config['table']['manual'] = []
+        if False:
+            # Check if config has necessary entries
+            try:
+                self.device.config['polyfit']
+            except:
+                self.device.config['polyfit'] = {}
             
-        try:
-            self.device.config['table']['comments']
-        except:
-            self.device.config['table']['comments'] = []
+            try:
+                self.device.config['polyfit']['manual']
+            except:
+                self.device.config['polyfit']['manual'] = []
+                
+            try:
+                self.device.config['polyfit']['comments']
+            except:
+                self.device.config['polyfit']['comments'] = []
+                
+                
+            try:
+                self.device.config['devices']
+            except:
+                self.device.config['devices'] = []
+                
+            try:
+                self.device.config['polyfit']['headers']
+            except:
+                self.device.config['polyfit']['headers'] = []
             
-            
-        try:
-            self.device.config['devices']
-        except:
-            self.device.config['devices'] = []
-            
-        try:
-            self.device.config['table']['headers']
-        except:
-            self.device.config['table']['headers'] = []
-            
-        numcols = len(self.device.config['devices']) + len(self.device.config['table']['manual']) + len(self.device.config['table']['comments'])
-        self.numdevices = len(self.device.config['devices']) + len(self.device.config['table']['manual'])
+        numcols = len(self.device.config['devices']) + len(self.device.config['polyfit']['manual']) + len(self.device.config['polyfit']['comments'])
+        self.numdevices = len(self.device.config['devices']) + len(self.device.config['polyfit']['manual'])
         self.numcols = numcols
         self.datatable.setColumnCount(numcols+2 + self.coloffset)
-        self.headerrows += len(self.device.config['table']['headers'])
+        self.headerrows += len(self.device.config['polyfit']['headers'])
         self.datatable.setRowCount(self.headerrows)
         # Add the custom headers
-        for i,header in enumerate(self.device.config['table']['headers']):
+        i = 0
+        for i,header in enumerate(self.device.config['polyfit']['headers']):
             item = QtWidgets.QTableWidgetItem(header)
             self.datatable.setItem(2 + i,0,item)
         
@@ -633,8 +653,8 @@ class displayTableWidget(QtWidgets.QWidget):
         colnum = colnum +i + 1
         
          
-        print('Manual',self.device.config['table']['manual'])    
-        for i,dev in enumerate(self.device.config['table']['manual']):
+        print('Manual',self.device.config['polyfit']['manual'])    
+        for i,dev in enumerate(self.device.config['polyfit']['manual']):
             devname = dev['name']
             try:
                 devunit = dev['unit']
@@ -651,8 +671,8 @@ class displayTableWidget(QtWidgets.QWidget):
             
         colnum = colnum + i + 1
         # Adding comment rows to the table
-        print('Comments',self.device.config['table']['comments'])    
-        for i,dev in enumerate(self.device.config['table']['comments']):
+        print('Comments',self.device.config['polyfit']['comments'])    
+        for i,dev in enumerate(self.device.config['polyfit']['comments']):
             devname = dev['name']
             try:
                 devunit = dev['unit']
@@ -668,27 +688,29 @@ class displayTableWidget(QtWidgets.QWidget):
             self.datatable.setItem(1,colnum + i,item)
             
         # Add time unit
-        xunit = self.device.units[0]['x']
-        item = QtWidgets.QTableWidgetItem(xunit)
-        self.datatable.setItem(1,0+self.coloffset,item)
-        item = QtWidgets.QTableWidgetItem(xunit)
-        self.datatable.setItem(1,1+self.coloffset,item)
-        
-        # Add header description
-        item = QtWidgets.QTableWidgetItem('Device')
-        self.datatable.setItem(0,0,item)
-        item = QtWidgets.QTableWidgetItem('Unit')
-        self.datatable.setItem(1,0,item)
-        #self.device.redvypr.get_data_providing_devices(self.device)        
-        self.datatable.resizeColumnsToContents()
-        
-        # this is done to call reference sensor_changed for the first time
-        reference_sensor = self.fitwidget['refcombo'].currentText()
-        
-        # Init the fittable
-        self.update_fittable()
-        # update the reference sensor
-        self.reference_sensor_changed(reference_sensor)
+        print('Hallo',i)
+        if(i>0):
+            xunit = self.device.units[0]['x']
+            item = QtWidgets.QTableWidgetItem(xunit)
+            self.datatable.setItem(1,0+self.coloffset,item)
+            item = QtWidgets.QTableWidgetItem(xunit)
+            self.datatable.setItem(1,1+self.coloffset,item)
+            
+            # Add header description
+            item = QtWidgets.QTableWidgetItem('Device')
+            self.datatable.setItem(0,0,item)
+            item = QtWidgets.QTableWidgetItem('Unit')
+            self.datatable.setItem(1,0,item)
+            #self.device.redvypr.get_data_providing_devices(self.device)        
+            self.datatable.resizeColumnsToContents()
+            
+            # this is done to call reference sensor_changed for the first time
+            reference_sensor = self.fitwidget['refcombo'].currentText()
+            
+            # Init the fittable
+            self.update_fittable()
+            # update the reference sensor
+            self.reference_sensor_changed(reference_sensor)
         
     def update_table(self,numdisp=None):
         """ This is called when new data from the realtimedataplot is available, please note that every subscribed device is calling this
@@ -755,7 +777,7 @@ class displayTableWidget(QtWidgets.QWidget):
         for i,dev in enumerate(self.device.config['devices']):
             self.fitwidget['refcombo'].addItem(dev['device'])
             
-        for i,dev in enumerate(self.device.config['table']['manual']):
+        for i,dev in enumerate(self.device.config['polyfit']['manual']):
             self.fitwidget['refcombo'].addItem(dev['name'])
             
             
@@ -897,10 +919,14 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.tabwidget.addTab(self,'Data')   
         config = {'dt_update':dt_update,'last_update':time.time()}
         self.config = config
-        if 'table' in self.device.config.keys(): # If the user wants to have a table
-            self.widgets['table'] = displayTableWidget(device = self.device)
+        print('Hallo',self.device.config)
+        if 'polyfit' in self.device.config.keys(): # If the user wants to have a table
+            self.widgets['polyfit'] = PolyfitWidget(device = self.device)
+            i1 = self.tabwidget.addTab(self.widgets['polyfit'],'Polyfit')
             
-            i1 = self.tabwidget.addTab(self.widgets['table'],'Table')
+        if 'responsetime' in self.device.config.keys(): # If the user wants to have a table
+            self.widgets['responsetime'] = ResponsetimeWidget(device = self.device)
+            i1 = self.tabwidget.addTab(self.widgets['responsetime'],'Responsetime')
             
         # Add buttons
         self.btn_add_interval = QtWidgets.QPushButton('Get data')
@@ -923,10 +949,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
         # Add axes to the widget
         config=self.device.config
         #print('Hallo2',config['devices'])
+        i = 0
         for i,config_device in enumerate(config['devices']):
             logger.debug(funcname + ': Adding device ' + str(config_device))
                                                 
-            plot = displayDeviceCalibrationWidget(config_device,device=self.device,numdisp=i,buffersize=self.buffersizestd)
+            plot = PlotWidget(config_device,device=self.device,numdisp=i,buffersize=self.buffersizestd)
             self.btn_add_interval.clicked.connect(plot.get_data_clicked)
             self.layout.addWidget(plot,i,0)
             self.plots.append(plot)
@@ -949,13 +976,19 @@ class displayDeviceWidget(QtWidgets.QWidget):
          
         self.layout.addWidget(self.btn_add_interval,i+1,0)
         # Update the average data table
-        if 'table' in self.device.config.keys(): # If the user wants to have a table
-            self.widgets['table'].init_table()
+        
+        if 'polyfit' in self.device.config.keys(): # If the user wants to have a table
+            self.widgets['polyfit'].init_table()
+
+        # Update the responsetime widget with the new data            
+        if 'responsetime' in self.device.config.keys(): # If the user wants to have a table
+            for plot in self.plots:
+                plot.sig_new_user_data.connect(self.widgets['responsetime']._update_data_intervals)
         
         
     def new_user_data(self,numdisp):
         print('New user data',numdisp)
-        self.widgets['table'].update_table(numdisp=numdisp)
+        self.widgets['polyfit'].update_table(numdisp=numdisp)
                
     def config_widget(self):
         """
@@ -996,5 +1029,64 @@ class displayDeviceWidget(QtWidgets.QWidget):
     
             except Exception as e:
                 logger.debug(funcname + 'Exception:' + str(e))
+                
+                
+#
+#
+#
+#
+#
+class ResponsetimeWidget(QtWidgets.QWidget):
+    """ The widgets helps to calculate the response time of sensors
+    """
+    def __init__(self,device=None):
+        funcname = __name__ + '.init()'
+        super(QtWidgets.QWidget, self).__init__()
+        self.layout           = QtWidgets.QGridLayout(self)
+        self.device           = device
+        self.plot = pyqtgraph.PlotWidget()
+        self.line = pyqtgraph.PlotDataItem()
+        self.plot.addItem(self.line)
+        
+        self.devicecombo = QtWidgets.QComboBox(self)
+        for i,dev in enumerate(self.device.config['devices']):
+            self.devicecombo.addItem(dev['device'])
+            
+        self.intervalcombo = QtWidgets.QComboBox(self)
+        self.updatebutton   = QtWidgets.QPushButton('Update')
+        self.updatebutton.clicked.connect(self._update_plot)
+                 
+        
+        self.layout.addWidget(self.plot,1,0,1,3)
+        self.layout.addWidget(QtWidgets.QLabel('Device'),2,0)    
+        self.layout.addWidget(QtWidgets.QLabel('Data interval'),2,1)    
+        self.layout.addWidget(self.devicecombo,3,0)    
+        self.layout.addWidget(self.intervalcombo,3,1)    
+        self.layout.addWidget(self.updatebutton,3,2)    
+        
+    def _update_data_intervals(self,numdisp):
+        """ Function checks the self.device.data_intervals list and updates the items of self.intervalcombo
+        """
+        print('Updating intervals')
+        nintervals = len(self.device.data_interval[numdisp])
+        self.intervalcombo.clear()
+        for i in range(nintervals):
+            self.intervalcombo.addItem(str(i))
+            
+    def _update_plot(self):
+        """ Redraws the plot
+        """
+        numdevice = self.devicecombo.currentIndex()
+        devname = self.devicecombo.currentText()
+        numinterval = self.intervalcombo.currentIndex()
+        print('numinterval',numinterval)
+        if(numinterval>=0):
+            xdata = self.device.data_interval[numdevice][numinterval]['x']
+            ydata = self.device.data_interval[numdevice][numinterval]['y']
+            print('numinterval',numinterval,'numdevice',numdevice)
+            print('xdata',xdata)
+            self.line.setData(x=xdata,y=ydata)
+        else:
+            logger.warning('No data available')
 
             

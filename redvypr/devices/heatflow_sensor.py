@@ -1,5 +1,7 @@
 """
 
+Heatflowsensor device
+
 Configuration options for a heatflow device
 
 .. code-block::
