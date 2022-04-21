@@ -28,6 +28,9 @@ logger.setLevel(logging.INFO)
 description = "Sensor calibration device"
 
 
+standard_color = QtGui.QColor(255,10,10)
+standard_color_vline = QtGui.QColor(255,100,100)
+standard_linewidth_vline = 2
 def start(datainqueue,dataqueue,comqueue):
     funcname = __name__ + '.start()'        
     while True:
@@ -201,12 +204,11 @@ class PlotWidget(QtWidgets.QWidget):
         # Add axes to the widget
         #config = device.config
         
-        
-        print('Hallo',config)
         i = 0
-        
         self.vlines = []
-        self.vLine_interactive = pyqtgraph.InfiniteLine(angle=90, movable=False)
+        color = standard_color_vline
+        linewidth = standard_linewidth_vline
+        self.vLine_interactive = pyqtgraph.InfiniteLine(angle=90, movable=False,pen = pyqtgraph.mkPen(color, width=linewidth))
          
         if True:
             logger.debug(funcname + ': Adding plot' + str(config))
@@ -286,7 +288,8 @@ class PlotWidget(QtWidgets.QWidget):
                 color = QtGui.QColor(colors[0],colors[1],colors[2])
             except Exception as e:
                 logger.debug('No color found:' + str(e))
-                color = QtGui.QColor(255,10,10)
+                
+                color = standard_color
                     
             # Configuration of the line plot
             lineconfig = {'device':name,'x':x,'y':y,'linewidth':linewidth,'color':color}
@@ -1047,6 +1050,7 @@ class ResponsetimeWidget(QtWidgets.QWidget):
         self.plot = pyqtgraph.PlotWidget()
         self.line = pyqtgraph.PlotDataItem()
         self.plot.addItem(self.line)
+        self.datetick = True
         
         self.devicecombo = QtWidgets.QComboBox(self)
         for i,dev in enumerate(self.device.config['devices']):
@@ -1062,7 +1066,64 @@ class ResponsetimeWidget(QtWidgets.QWidget):
         self.layout.addWidget(QtWidgets.QLabel('Data interval'),2,1)    
         self.layout.addWidget(self.devicecombo,3,0)    
         self.layout.addWidget(self.intervalcombo,3,1)    
-        self.layout.addWidget(self.updatebutton,3,2)    
+        self.layout.addWidget(self.updatebutton,3,2) 
+        
+        # Vertical line to choose interval for response time
+        self.vlines = []
+        color = standard_color_vline
+        linewidth = standard_linewidth_vline
+        self.vLine_interactive = pyqtgraph.InfiniteLine(angle=90, movable=False,pen = pyqtgraph.mkPen(color, width=linewidth))
+        self.plot.addItem(self.vLine_interactive)
+        # Get the mouse move events to draw a line
+        self.viewbox = self.plot.plotItem.vb 
+        self.plot.scene().sigMouseMoved.connect(self._mouseMoved)
+        self.plot.scene().sigMouseClicked.connect(self._mouseClicked)
+        self.user_interval = [] # x positions of the interval to be processed for the responsetime
+        
+    def _mouseMoved(self,evt):
+        """Function if mouse has been moved in a pyqtgraph
+        """
+        pos = (evt.x(),evt.y())
+        mousePoint = self.viewbox.mapSceneToView(evt)
+        self._mouse_moved_proc(mousePoint.x(), mousePoint.y())
+         
+    def _mouseClicked(self,evt):
+        """ If the mouse was clicked in this pyqtgraph widget
+        """
+        
+        if evt.button() == QtCore.Qt.LeftButton:
+            col = pyqtgraph.mkPen(0.5,width=3)
+            colsymbol = pyqtgraph.mkPen(color=QtGui.QColor(150,150,150),width=4)         
+            print('Clicked: ' + str(evt.scenePos()))
+            mousePoint = self.viewbox.mapSceneToView(evt.scenePos())
+            x = mousePoint.x()
+            self.user_interval.append(x)
+            while(len(self.user_interval)>2):
+                self.user_interval.pop(0)
+                
+            self._mouse_clicked_proc() 
+            
+    def _mouse_moved_proc(self,x,y):
+        """ Function is process the mouse movement, this can be local or by a signal call from another widget 
+        """
+        if True:
+            print('x',x)
+            self.vLine_interactive.setPos(x)
+            
+            
+    def _mouse_clicked_proc(self):
+        """ Function that is called by signals from other widgets if a mouse was clicked
+        """
+        print('User Interval',self.user_interval)
+        for vline in self.vlines:
+            self.plot.removeItem(vline)
+            
+        self.vlines = []
+        for x in self.user_interval:
+            vLine = pyqtgraph.InfiniteLine(angle=90, movable=False)
+            vLine.setPos(x)       
+            self.plot.addItem(vLine, ignoreBounds=True)
+            self.vlines.append(vLine)      
         
     def _update_data_intervals(self,numdisp):
         """ Function checks the self.device.data_intervals list and updates the items of self.intervalcombo
@@ -1085,7 +1146,12 @@ class ResponsetimeWidget(QtWidgets.QWidget):
             ydata = self.device.data_interval[numdevice][numinterval]['y']
             print('numinterval',numinterval,'numdevice',numdevice)
             print('xdata',xdata)
-            self.line.setData(x=xdata,y=ydata)
+            color = standard_color
+            linewidth = 1
+            self.line.setData(x=xdata,y=ydata,pen = pyqtgraph.mkPen(color, width=linewidth))
+            if(self.datetick):
+                axis = pyqtgraph.DateAxisItem(orientation='bottom')
+                self.plot.setAxisItems({"bottom": axis})
         else:
             logger.warning('No data available')
 
