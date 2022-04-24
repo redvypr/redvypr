@@ -1061,10 +1061,34 @@ class ResponsetimeWidget(QtWidgets.QWidget):
         self._calcwidget = QtWidgets.QWidget()
         self._calcbutton = QtWidgets.QPushButton('Calculate')
         self._calcbutton.clicked.connect(self._calc_and_disp_responsetime)
+        self._clearbutton = QtWidgets.QPushButton('Clear')
+        self._clearbutton.clicked.connect(self._clear_fit)
+        self._savebutton = QtWidgets.QPushButton('Save fit')
+        self._calcdatawidget = QtWidgets.QWidget() # This widget is used to display the fit data
+        self._calcdatalayout = QtWidgets.QGridLayout(self._calcdatawidget)
+        
+        self._threshlabel = QtWidgets.QLabel('Threshold [%]:')
+        self._threshline = QtWidgets.QLineEdit()
+        threshtext = "{:f}".format(0.6321*100)
+        self._threshline.setText(threshtext)
+        self._threshline.setValidator(QtGui.QDoubleValidator())
+        self._threshline.setMaxLength(4)
+        self._threshline.setAlignment(QtCore.Qt.AlignRight)
+        
+        self._reslabel = QtWidgets.QLabel(self._create_fittext())
+        self._calcdatalayout.addWidget(self._reslabel, 1, 0,1,4)
+        
+        
         #self._calcbutton.clicked.connect(self._update_plot)
         self._calcwidget_layout = QtWidgets.QGridLayout(self._calcwidget)
-        self._calcwidget_layout.addWidget(QtWidgets.QLabel('Calculate Responsetime'),0,0)    
-        self._calcwidget_layout.addWidget(self._calcbutton,1,0)    
+        self._calcwidget_layout.addWidget(QtWidgets.QLabel('Calculate exponential responsetime'),0,0,1,4,QtCore.Qt.AlignHCenter)    
+        self._calcwidget_layout.addWidget(self._threshlabel, 1, 0)
+        self._calcwidget_layout.addWidget(self._threshline, 1, 1)
+        self._calcwidget_layout.addWidget(self._calcbutton,1,2)
+        self._calcwidget_layout.addWidget(self._clearbutton,1,3)
+        self._calcwidget_layout.addWidget(self._savebutton,1,4)
+        self._calcwidget_layout.addWidget(self._calcdatawidget,2,0,1,5)        
+        
         
         # Devicewidget and UI to choose the data intervals
         self.devicecombo = QtWidgets.QComboBox(self)
@@ -1107,10 +1131,14 @@ class ResponsetimeWidget(QtWidgets.QWidget):
     def _calc_and_disp_responsetime(self):
         """ Function checks if an interval for calculation was choosen and if so calls the responsetime calculation  
         """
-        print()
+        for p in self.fitplots:
+            self.plot.removeItem(p)
+            
+        self.fitplots = []
+        
         nlines = len(self.vlines)
         if(nlines==2):
-            print('Get some data')
+            thresh = np.double(self._threshline.text())/100 # Get the threshold
             tmin = self.user_interval[0]
             tmax = self.user_interval[1]
             ind = (self.xdata > tmin) & (self.xdata <= tmax)
@@ -1120,7 +1148,7 @@ class ResponsetimeWidget(QtWidgets.QWidget):
             linewidth = 3 
             
             self.resp_line.setData(x=self.xresp,y=self.yresp,pen = pyqtgraph.mkPen(color, width=linewidth))
-            fit = self.calc_responsetime(self.xresp,self.yresp)
+            fit = self.calc_responsetime(self.xresp,self.yresp,thresh=thresh)
             # Plot the fit
             line1 = pyqtgraph.PlotDataItem([fit['xresp']],[fit['yresp']], pen =(0, 0, 200), symbolBrush =(0, 0, 200), symbolPen ='w', symbol ='o', symbolSize = 14) 
             self.fitplots.append(line1)
@@ -1132,16 +1160,28 @@ class ResponsetimeWidget(QtWidgets.QWidget):
             
             line1 = pyqtgraph.PlotDataItem([fit['x1']],[fit['y1']], pen =(100, 100, 100), symbolBrush =(100, 100, 100), symbolPen ='w', symbol ='o', symbolSize = 14) 
             self.fitplots.append(line1)
-            self.plot.addItem(line1)           
+            self.plot.addItem(line1)
+            # Update the response time widget
+            self._reslabel.setText(self._create_fittext(fit))
         else:
             logger.warning('Choose an interval for the calculation of the responsetime')
-            
+    
+    def _create_fittext(self,fit=None):
+        if(fit == None):
+            return 'Tau [s]: X, X Tau: X, Y Tau: X\nX0: X, X1: X, Y0: X, Y1: X'
+        else:
+            return 'Tau [s]: {:f}, X Tau: {:f}, Y Tau: {:f}\nX0: {:f}, X1: {:f}, Y0: {:f}, Y1: {:f}'.format(fit['dtresp'],fit['xresp'],fit['yresp'],fit['x0'],fit['x1'],fit['y0'],fit['y1'])
+                   
     def _clear_plot(self):
         xdata = []
         ydata = []
         self.line.setData(x=xdata,y=ydata)
-        self.resp_line.setData(x=xdata,y=ydata)
+        self._clear_fit()
         
+    def _clear_fit(self):
+        xdata = []
+        ydata = []
+        self.resp_line.setData(x=xdata,y=ydata)
         for p in self.fitplots:
             self.plot.removeItem(p)
             
