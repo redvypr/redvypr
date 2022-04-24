@@ -1047,11 +1047,26 @@ class ResponsetimeWidget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         self.layout           = QtWidgets.QGridLayout(self)
         self.device           = device
-        self.plot = pyqtgraph.PlotWidget()
-        self.line = pyqtgraph.PlotDataItem()
+        self.plot      = pyqtgraph.PlotWidget()
+        self.line      = pyqtgraph.PlotDataItem()
+        self.resp_line = pyqtgraph.PlotDataItem()
         self.plot.addItem(self.line)
+        self.plot.addItem(self.resp_line)
         self.datetick = True
+        self.xdata = np.NaN
+        self.ydata = np.NaN
+        self.xresp = np.NaN
+        self.yresp = np.NaN
+        # Widget and UI to calculate response times
+        self._calcwidget = QtWidgets.QWidget()
+        self._calcbutton = QtWidgets.QPushButton('Calculate')
+        self._calcbutton.clicked.connect(self._calc_and_disp_responsetime)
+        #self._calcbutton.clicked.connect(self._update_plot)
+        self._calcwidget_layout = QtWidgets.QGridLayout(self._calcwidget)
+        self._calcwidget_layout.addWidget(QtWidgets.QLabel('Calculate Responsetime'),0,0)    
+        self._calcwidget_layout.addWidget(self._calcbutton,1,0)    
         
+        # Devicewidget and UI to choose the data intervals
         self.devicecombo = QtWidgets.QComboBox(self)
         for i,dev in enumerate(self.device.config['devices']):
             self.devicecombo.addItem(dev['device'])
@@ -1059,17 +1074,22 @@ class ResponsetimeWidget(QtWidgets.QWidget):
         self.intervalcombo = QtWidgets.QComboBox(self)
         self.updatebutton   = QtWidgets.QPushButton('Update')
         self.updatebutton.clicked.connect(self._update_plot)
+        self._devicewidget = QtWidgets.QWidget()
+        self._devicewidget_layout = QtWidgets.QGridLayout(self._devicewidget)
+        self._devicewidget_layout.addWidget(QtWidgets.QLabel('Device'),2,0)    
+        self._devicewidget_layout.addWidget(QtWidgets.QLabel('Data interval'),2,1)    
+        self._devicewidget_layout.addWidget(self.devicecombo,3,0)    
+        self._devicewidget_layout.addWidget(self.intervalcombo,3,1)    
+        self._devicewidget_layout.addWidget(self.updatebutton,3,2) 
                  
         
-        self.layout.addWidget(self.plot,1,0,1,3)
-        self.layout.addWidget(QtWidgets.QLabel('Device'),2,0)    
-        self.layout.addWidget(QtWidgets.QLabel('Data interval'),2,1)    
-        self.layout.addWidget(self.devicecombo,3,0)    
-        self.layout.addWidget(self.intervalcombo,3,1)    
-        self.layout.addWidget(self.updatebutton,3,2) 
+        self.layout.addWidget(self.plot,0,0,1,3)
+        self.layout.addWidget(self._calcwidget,1,0,1,3)
+        self.layout.addWidget(self._devicewidget,2,0,1,3)
         
-        # Vertical line to choose interval for response time
-        self.vlines = []
+        
+        self.fitplots = [] # A list of misc plot items plotted to highlight the fit
+        self.vlines = [] # Vertical lines to choose interval for response time
         color = standard_color_vline
         linewidth = standard_linewidth_vline
         self.vLine_interactive = pyqtgraph.InfiniteLine(angle=90, movable=False,pen = pyqtgraph.mkPen(color, width=linewidth))
@@ -1080,6 +1100,115 @@ class ResponsetimeWidget(QtWidgets.QWidget):
         self.plot.scene().sigMouseClicked.connect(self._mouseClicked)
         self.user_interval = [] # x positions of the interval to be processed for the responsetime
         
+        # Add random test data
+        self.showtestdata = True
+        self._add_test_data()
+        
+    def _calc_and_disp_responsetime(self):
+        """ Function checks if an interval for calculation was choosen and if so calls the responsetime calculation  
+        """
+        print()
+        nlines = len(self.vlines)
+        if(nlines==2):
+            print('Get some data')
+            tmin = self.user_interval[0]
+            tmax = self.user_interval[1]
+            ind = (self.xdata > tmin) & (self.xdata <= tmax)
+            self.xresp = self.xdata[ind]
+            self.yresp = self.ydata[ind]
+            color = standard_color
+            linewidth = 3 
+            
+            self.resp_line.setData(x=self.xresp,y=self.yresp,pen = pyqtgraph.mkPen(color, width=linewidth))
+            fit = self.calc_responsetime(self.xresp,self.yresp)
+            # Plot the fit
+            line1 = pyqtgraph.PlotDataItem([fit['xresp']],[fit['yresp']], pen =(0, 0, 200), symbolBrush =(0, 0, 200), symbolPen ='w', symbol ='o', symbolSize = 14) 
+            self.fitplots.append(line1)
+            self.plot.addItem(line1) 
+            
+            line1 = pyqtgraph.PlotDataItem([fit['x0']],[fit['y0']], pen =(200, 200, 200), symbolBrush =(200, 200, 200), symbolPen ='w', symbol ='o', symbolSize = 14) 
+            self.fitplots.append(line1)
+            self.plot.addItem(line1) 
+            
+            line1 = pyqtgraph.PlotDataItem([fit['x1']],[fit['y1']], pen =(100, 100, 100), symbolBrush =(100, 100, 100), symbolPen ='w', symbol ='o', symbolSize = 14) 
+            self.fitplots.append(line1)
+            self.plot.addItem(line1)           
+        else:
+            logger.warning('Choose an interval for the calculation of the responsetime')
+            
+    def _clear_plot(self):
+        xdata = []
+        ydata = []
+        self.line.setData(x=xdata,y=ydata)
+        self.resp_line.setData(x=xdata,y=ydata)
+        
+        for p in self.fitplots:
+            self.plot.removeItem(p)
+            
+        self.fitplots = []
+        
+    def calc_responsetime(self,x,y,thresh = 0.6321):
+        """ Calculates the responsetime of self.xdata, self.ydata
+        
+        """
+        #thresh = 0.6321 # 1-1/exp(1)
+    
+        x0 = x[0]
+        x1 = x[-1]
+        y0 = y[0]
+        y1 = y[-1]
+        dy = (y1 - y0)
+    
+        ymax = max([y0,y1])
+    
+        xint = np.NaN
+        for i in range(1,len(y)):
+            if(y0 > y1):
+                yint = (ymax * (1-thresh))
+            else:
+                yint = (ymax * thresh)
+                
+            foundthresh0 = (y[i-1] < yint) and (y[i] >= yint)
+            foundthresh1 = (y[i-1] > yint) and (y[i] <= yint)
+            if(foundthresh0 or foundthresh1):
+                xthresh = x[i-1:i+1]
+                ythresh = y[i-1:i+1]
+                
+                xint = np.interp(yint,ythresh,xthresh) # Interpolate the threshold time
+                break
+    
+        dtresp = xint - x0
+        fit = {'dtresp':dtresp,'xresp':xint,'yresp':yint,'x0':x0,'y0':y0,'x1':x1,'y1':y1}
+        print(fit)
+        return fit
+        
+
+        
+    def _add_test_data(self):
+        """ Adds random data for testing purposes 
+        """
+
+        tau = np.random.rand(1)[0]
+        amp = np.random.rand(1)[0] * 10
+        posneg = np.random.rand(1)[0] - 0.5
+        x = np.arange(time.time(),time.time()+10,.001)
+        x = x - x[0]
+        if posneg>0:
+            y = np.exp(-x/tau)
+        else:
+            y = 1 - np.exp(-x/tau)
+
+        y = y * amp + 0.01*amp * np.random.rand(len(y))
+        # The whole dataset
+        self.xdata = x
+        self.ydata = y
+        # The data used for the response calculation
+        self.xresp = x
+        self.yresp = y
+        
+        self._update_plot()
+        pass
+    
     def _mouseMoved(self,evt):
         """Function if mouse has been moved in a pyqtgraph
         """
@@ -1140,6 +1269,8 @@ class ResponsetimeWidget(QtWidgets.QWidget):
         numdevice = self.devicecombo.currentIndex()
         devname = self.devicecombo.currentText()
         numinterval = self.intervalcombo.currentIndex()
+        self._clear_plot()
+        
         print('numinterval',numinterval)
         if(numinterval>=0):
             xdata = self.device.data_interval[numdevice][numinterval]['x']
@@ -1148,10 +1279,36 @@ class ResponsetimeWidget(QtWidgets.QWidget):
             print('xdata',xdata)
             color = standard_color
             linewidth = 1
+            # Save the data for later processing
+            self.xdata = xdata
+            self.ydata = ydata
             self.line.setData(x=xdata,y=ydata,pen = pyqtgraph.mkPen(color, width=linewidth))
             if(self.datetick):
                 axis = pyqtgraph.DateAxisItem(orientation='bottom')
                 self.plot.setAxisItems({"bottom": axis})
+                
+            self.plot.setXRange(min(self.xdata),max(self.xdata))
+            self.user_interval.append(xdata[0])
+            self.user_interval.append(xdata[-1])
+            while(len(self.user_interval)>2):
+                self.user_interval.pop(0)
+                
+            self._mouse_clicked_proc()
+        elif(self.showtestdata):
+            self.showtestdata = False
+            color = standard_color
+            linewidth = 1
+            self.line.setData(x=self.xdata,y=self.ydata,pen = pyqtgraph.mkPen(color, width=linewidth))
+            axis = pyqtgraph.DateAxisItem(orientation='bottom')
+            self.plot.setAxisItems({"bottom": axis})
+            self.plot.setXRange(min(self.xdata),max(self.xdata))
+              
+            self.user_interval.append(self.xdata[0])
+            self.user_interval.append(self.xdata[-1])
+            while(len(self.user_interval)>2):
+                self.user_interval.pop(0)
+                
+            self._mouse_clicked_proc()   
         else:
             logger.warning('No data available')
 
