@@ -114,8 +114,8 @@ def start_tcp_send(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     """
     funcname = __name__ + '.start_tcp_send()'
     logger.debug(funcname + ':Starting network thread')        
-    sentences = 0
-    bytes_read = 0
+    npackets     = 0 # Number of packets
+    bytes_read   = 0
     threadqueues = []
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind((config['address'],config['port']))
@@ -382,11 +382,11 @@ def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     """
     funcname = __name__ + '.start_udp_recv()'
     logger.debug(funcname + ':Starting network thread')        
-    sentences = 0
-    bytes_read = 0
+    npackets     = 0
+    bytes_read   = 0
     threadqueues = []
-    tstatus = 0
-    dtstatus = 5 # Send a status message every dtstatus seconds
+    tstatus      = 0
+    dtstatus     = 2 # Send a status message every dtstatus seconds
     
     #client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) # UDP
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # UDP
@@ -434,14 +434,17 @@ def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
                                 datan[k] = data[k]
 
                             dataqueue.put(datan)
+                            npackets += 1
             else: # Put the "str" data into the packet with the key in "data"
                 data = datab.decode('utf-8')
                 datan = {'t':t}
                 datan['data'] = data
                 dataqueue.put(datan)
+                npackets += 1
             
+            #print(config)
             #print('UDP Received',datab)
-            #print('UDP Converted to',data)
+            #print('UDP sent as',datan)
         except socket.timeout as e:
             pass
         except Exception as e:
@@ -454,6 +457,7 @@ def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
         if((time.time() - tstatus) > dtstatus):
             statusdata = {}
             statusdata['bytes_read'] = bytes_read
+            statusdata['npackets'] = npackets
             statusdata['time'] = str(datetime.datetime.now())            
             tstatus = time.time()
             #statusdata['clients'] = []
@@ -621,8 +625,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         
         # Serialize
         self._combo_ser = QtWidgets.QComboBox()
-        self._combo_ser.addItem('YAML')
         self._combo_ser.addItem('str')
+        self._combo_ser.addItem('YAML')
+        
+        
         
         # Data format to submit
         self.fdataentry  = QtWidgets.QLabel("Data keys publish")        
@@ -636,7 +642,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addRow(QtWidgets.QLabel("Port"),self.portline)
         layout.addRow(QtWidgets.QLabel("Data direction"),self._combo_inout)
         layout.addRow(QtWidgets.QLabel("Protocol"),self._combo_proto)
-        layout.addRow(QtWidgets.QLabel("Data publishing options"))
+        self._serialize_label = QtWidgets.QLabel("Data publishing options")
+        layout.addRow(self._serialize_label)
         layout.addRow(self._data_pub_all,self._data_pub_dict)
         layout.addRow(QtWidgets.QLabel("Serialize"),self._combo_ser)
         layout.addRow(self.fdataentry,self.dataentry)  
@@ -695,6 +702,16 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.process_options()'
         config   = {}
+        
+        # Change the GUI according to send/receive
+        if(self._combo_inout.currentText() == 'Publish'):
+            self._serialize_label.setText("Data publishing options")
+            self.dataentry.setEnabled(True)
+        else:  
+            self._serialize_label.setText("Data receiving options")
+            #self._combo_ser.setCurrentIndex(0)
+            self._data_pub_all.setChecked(True)
+            self.dataentry.setEnabled(False)
          
         if(self._combo_inout.currentText() == 'Publish'):
             config['direction'] = 'publish'

@@ -353,7 +353,7 @@ class redvypr(QtCore.QObject):
 
     def populate_device_path(self):
         """Searches all device paths for modules and creates a list with the
-        found devices self.device_modules
+        found devices in self.device_modules
 
         """
         funcname = 'populate_device_path()'
@@ -383,16 +383,76 @@ class redvypr(QtCore.QObject):
                     pass
 
                 if(hasdevice):
-                    devdict = {'module':module,'name':module_name,'source':pfile}
+                    devdict = {'module':module,'name':module_name,'source':module.__file__}
                     self.device_modules.append(devdict)
 
         # Add all devices from the device module
-        device_modules = inspect.getmembers(redvyprdevices,inspect.ismodule)                
-        for smod in device_modules:
-            devicemodule     = getattr(redvyprdevices, smod[0])
-            devdict = {'module':devicemodule,'name':smod[0],'source':'devices'}
-            self.device_modules.append(devdict)                                    
+        max_tries      = 5000 # The maximum recursion of modules
+        n_tries        = 0
+        testmodules    = [redvyprdevices]
+        device_modules = []
+        while (len(testmodules) > 0) and (n_tries < max_tries):
+            testmodule = testmodules[0]
+            device_module_tmp = inspect.getmembers(testmodule,inspect.ismodule)
+            for smod in device_module_tmp:
+                devicemodule  = getattr(testmodule, smod[0])
+                # Check if the device is valid
+                valid_module  = self.valid_device(devicemodule)
+                if(valid_module['valid']): # If the module is valid add it to devices
+                    devdict   = {'module':devicemodule,'name':smod[0],'source':smod[1].__file__}
+                    self.device_modules.append(devdict)
+                else: # Check recursive if devices are found
+                    n_tries   += 1
+                    testmodules.append(devicemodule)
 
+            testmodules.pop(0)
+    
+
+    def valid_device(self,devicemodule): 
+        """ Checks if the module is a valid redvypr module
+        """
+        funcname = 'valid_device()'
+        logger.debug('Checking device {:s}'.format(str(devicemodule))) 
+        try:
+            devicemodule.Device
+            hasdevice = True
+        except:
+            hasdevice = False
+        
+        try:
+            devicemodule.start
+            hasstart = True
+        except:
+            hasstart = False
+            
+        if(hasstart == False):
+            try:
+                devicemodule.Device.start
+                hasstart = True
+            except:
+                hasstart = False
+            
+        try:
+            devicemodule.displayDeviceWidget
+            hasdisplaywidget = True
+        except:
+            hasdisplaywidget = False
+            
+        try:
+            devicemodule.initDeviceWidget
+            hasinitwidget = True
+        except:
+            hasinitwidget = False
+                          
+        devicecheck = {}
+        devicecheck['valid'] = hasdevice and hasstart                                                 
+        devicecheck['Device'] = hasdevice                                                 
+        devicecheck['start'] = hasstart
+        devicecheck['initgui'] = hasinitwidget
+        devicecheck['displaygui'] = hasdisplaywidget
+        
+        return devicecheck
+        
 
     def add_device(self,devicemodulename=None, deviceconfig = None, thread=False):
         """ Function adds a device
@@ -882,6 +942,7 @@ class redvyprWidget(QtWidgets.QWidget):
         layout = QtWidgets.QFormLayout(self.add_device_widget)
         self.__devices_list    = QtWidgets.QListWidget()
         self.__devices_list.itemClicked.connect(self.__device_name)
+        self.__devices_list.currentItemChanged.connect(self.__device_name)
         self.__devices_info    = QtWidgets.QWidget()
         self.__devices_addbtn  = QtWidgets.QPushButton('Add')
         self.__devices_addbtn.clicked.connect(self.add_device_click)
@@ -925,6 +986,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__devices_list.setCurrentItem(itms[0])
         self.__device_name()
         self.add_device_widget.show()
+        
 
     def __device_info(self):
         """ Populates the self.__devices_info widget with the info of the module

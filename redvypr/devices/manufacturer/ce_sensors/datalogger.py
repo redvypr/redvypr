@@ -1,18 +1,18 @@
 """
 
-Heatflowsensor device
+datalogger device
 
 Configuration options for a heatflow device
 
 .. code-block::
 
 - deviceconfig:
-    name: heatflow1
+    name: datalogger
     config:
-      coeffs:
+      dummy:
         - name: HFSV
           coeff: [2, 0, 9200, 0, 0, W/m2]
-  devicemodulename: heatflow_sensor
+  devicemodulename: datalogger
 
 """
 
@@ -27,13 +27,13 @@ import sys
 import yaml
 import pyqtgraph
 
-description = 'Parses and displays data of digital heat flow sensors with NMEA type data string'
+description = 'Parses and displays data with a NMEA type of data string'
 
 pyqtgraph.setConfigOption('background', 'w')
 pyqtgraph.setConfigOption('foreground', 'k')
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('plot')
+logger = logging.getLogger('datalogger')
 logger.setLevel(logging.DEBUG)
 
 class datadisplay(QtWidgets.QWidget):

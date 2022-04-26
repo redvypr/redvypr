@@ -15,6 +15,7 @@ import yaml
 import pyqtgraph
 from redvypr.data_packets import device_in_data, get_keys
 import redvypr.files as files
+import xlsxwriter
 
 _icon_file = files.icon_file
 
@@ -1170,7 +1171,7 @@ class ResponsetimeWidget(QtWidgets.QWidget):
         if(fit == None):
             return 'Tau [s]: X, X Tau: X, Y Tau: X\nX0: X, X1: X, Y0: X, Y1: X'
         else:
-            return 'Tau [s]: {:f}, X Tau: {:f}, Y Tau: {:f}\nX0: {:f}, X1: {:f}, Y0: {:f}, Y1: {:f}'.format(fit['dtresp'],fit['xresp'],fit['yresp'],fit['x0'],fit['x1'],fit['y0'],fit['y1'])
+            return 'Tau [s]: {:f}, X Tau: {:f}, Y Tau: {:f}\nyoutX0: {:f}, X1: {:f}, Y0: {:f}, Y1: {:f}'.format(fit['dtresp'],fit['xresp'],fit['yresp'],fit['x0'],fit['x1'],fit['y0'],fit['y1'])
                    
     def _clear_plot(self):
         xdata = []
@@ -1218,8 +1219,7 @@ class ResponsetimeWidget(QtWidgets.QWidget):
                 break
     
         dtresp = xint - x0
-        fit = {'dtresp':dtresp,'xresp':xint,'yresp':yint,'x0':x0,'y0':y0,'x1':x1,'y1':y1}
-        print(fit)
+        fit = {'dtresp':dtresp,'xresp':xint,'yresp':yint,'x0':x0,'y0':y0,'x1':x1,'y1':y1,'x':x,'y':y}
         return fit
         
 
@@ -1302,6 +1302,18 @@ class ResponsetimeWidget(QtWidgets.QWidget):
         self.intervalcombo.clear()
         for i in range(nintervals):
             self.intervalcombo.addItem(str(i))
+            
+    def _save_fit(self,fname,fit,filetype='xlsx'):
+        """ Save the fit into a file
+        """
+        fname_xlsx = fname
+        if True:
+            # Create an new Excel file and add a worksheet.
+            workbook = xlsxwriter.Workbook(fname_xlsx)
+            worksheet = workbook.add_worksheet()
+            worksheet.write(3, 0, 123.456)
+            workbook.close()
+        
             
     def _update_plot(self):
         """ Redraws the plot
