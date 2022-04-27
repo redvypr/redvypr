@@ -59,29 +59,19 @@ class datadisplay(QtWidgets.QWidget):
 
 def parse_nmea(data):
     """ Parses a NMEA type heatflow data string
-    $noSN,00000315.1035,HFS,-0.000196,V,-0.000392,W/m2,NTC,+0.028857,V,+33.926881,degC,VIN,+0.114332,V,+1.257654,VCC
+    $pi4werkstatt,0,2022-04-27 03:44:52.481,1651031092.482,0.00000000
     """
 
     datas = data.split(',')
     datadict = {}
-    datadict['sn']       = datas[0][1:] # Serialnumber
-    datadict['ts']       = float(datas[1]) # Sampling counter [s]
-    datadict['hfname']   = datas[2] # Name of the sensor
-    datadict['hfV']      = float(datas[3]) # Voltage 
-    datadict['hfV_unit'] = datas[4] # Voltage Unit
-    datadict['hf']       = float(datas[5]) # Heat flow 
-    datadict['hf_unit']  = datas[6] # Heat flow Unit
-    datadict['NTCname']  = datas[7] # Name of the sensor    
-    datadict['NTCV']     = float(datas[8]) # Voltage 
-    datadict['NTCV_unit']= datas[9] # Voltage Unit
-    datadict['NTC']      = float(datas[10]) # Heat flow 
-    datadict['NTC_unit'] = datas[11] # Heat flow Unit
-    datadict['VINname']  = datas[12] # Name of the sensor    
-    datadict['VINV']     = float(datas[13]) # Voltage 
-    datadict['VINV_unit']= datas[14] # Voltage Unit
-    datadict['VIN']      = float(datas[15]) # Heat flow 
-    datadict['VIN_unit'] = datas[16] # Heat flow Unit
-
+    datadict['sn']         = datas[0][1:]        # Serialnumber
+    datadict['tsample']    = float(datas[3])
+    channel                = datas[1]            # The channel
+    channel_unit           = '@' + channel
+    datadict['ch']         = channel
+    datadict[channel]      = float(datas[4])     # The data
+    datadict[channel_unit] = {'unit':'V'}
+    
     return datadict
 
 
@@ -99,7 +89,11 @@ def convert_data_with_coeffs(data,coeffs):
     return data
 
 def start(datainqueue,dataqueue,comqueue,devicename,config={}):
-    funcname = __name__ + '.start()'        
+    funcname = __name__ + '.start()'
+    try:
+        datakey = config['datakey']
+    except:
+        datakey = 'data'  
     while True:
         try:
             com = comqueue.get(block=False)
@@ -113,7 +107,7 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
         while(datainqueue.empty() == False):
             try:
                 data = datainqueue.get(block=False)
-                datap = parse_nmea(data['nmea'])
+                datap = parse_nmea(data[datakey]) # Get the data from the dictionary
                 # Check if we have coefficients to calculate values
                 if('coeffs' in config.keys()):
                     datap = convert_data_with_coeffs(datap,config['coeffs'])
@@ -205,7 +199,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
 class displayDeviceWidget(QtWidgets.QWidget):
-    """ Widget is showing heatflowsensor data
+    """ Widget is showing logger data
     """
     def __init__(self,dt_update = 0.5,device=None,buffersize=1000,tabwidget=None):
         funcname = __name__ + '.init()'
@@ -223,11 +217,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
             #self.datadisplaywidget = QtWidgets.QWidget()            
             tabwidget.addTab(self.datadisplaywidget,'Sensor data')
             
-        self.rawplot = QtWidgets.QWidget(self)
-        self.layout_rawplot = QtWidgets.QGridLayout(self.rawplot)
-        tabwidget.addTab(self.rawplot,'Rawdata data plots')                    
-        self.create_dataplotwidget() # This widget is for plots of the data
-
+        #self.rawplot = QtWidgets.QWidget(self)
+        #self.layout_rawplot = QtWidgets.QGridLayout(self.rawplot)
+        #tabwidget.addTab(self.rawplot,'Rawdata data plots')                    
+        #self.create_dataplotwidget() # This widget is for plots of the data
+        config = {'dt_update':self.dt_update,'last_update':time.time()}
+        self.config = config
 
 
                 
@@ -374,8 +369,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 # Add the line to all plots
                 self.plots.append(plot_dict)
             
-        config = {'dt_update':self.dt_update,'last_update':time.time()}
-        self.config = config
+        
 
 
 
@@ -392,21 +386,18 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.timelabel.setFont(QtGui.QFont('Arial', fsize.height()+10))
         self.timelabel.setAlignment(QtCore.Qt.AlignCenter)                
         self._datadisplays = {}
-        self._datadisplays['hfV']  = datadisplay(title='Heat flow [V]')
-        self._datadisplays['hf']   = datadisplay(title='Heat flow [W/m**2]')
-        self._datadisplays['NTCV'] = datadisplay(title='Temperature [V]')
-        self._datadisplays['NTC']  = datadisplay(title='Temperature [°C]')
-        self._datadisplays['VIN']  = datadisplay(title='Input Voltage [V]')
-        self._datadisplays['ts']  = datadisplay(title='Counter [s]')                                
+        self._datadisplays['0'] = datadisplay(title='CH0')
+        self._datadisplays['1'] = datadisplay(title='CH1')
+        self._datadisplays['2'] = datadisplay(title='CH2')
+        self._datadisplays['3'] = datadisplay(title='CH3')
+
 
         self.datadisplaywidget_layout.addWidget(self.snlabel,0,0,1,2)
         self.datadisplaywidget_layout.addWidget(self.timelabel,1,0,1,2)        
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['hfV'],2,0)
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['hf'],2,1)
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['NTCV'],3,0)
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['NTC'],3,1)
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['ts'],4,0)                
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['VIN'],4,1)                        
+        self.datadisplaywidget_layout.addWidget(self._datadisplays['0'],2,0)
+        self.datadisplaywidget_layout.addWidget(self._datadisplays['1'],2,1)
+        self.datadisplaywidget_layout.addWidget(self._datadisplays['2'],3,0)
+        self.datadisplaywidget_layout.addWidget(self._datadisplays['3'],3,1)
         
     
     def thread_status(self,status):
@@ -421,10 +412,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 config = line_dict['config'] 
         
     def update(self,data):
-        """ 
+        """ Updates the data display
         """
-        funcname = __name__ + '.update()'
+        
+        funcname = __name__ + '.update():'
         tnow = time.time()
+        logger.debug(funcname + 'data {:s}'.format(str(data)))
         try:
             #print(funcname + 'got data',data)
             devicename = data['device']
@@ -440,30 +433,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
             timestr = datetime.datetime.fromtimestamp(data['t']).strftime('%d %b %Y %H:%M:%S')
             self.timelabel.setText(timestr)
             # Update data display
-            for key in self._datadisplays.keys(): # The keys are the same in the data structure
-                newdata = float(data[key])
-                self._datadisplays[key].set_data(newdata)
+            channel = data['ch'] # Get the channel
+            
+            newdata = float(data[channel])
+            #print('Channel',channel,'newdata',newdata)
+            self._datadisplays[channel].set_data(newdata)
 
-            # Update plots
-            if True:
-                # Loop over all plot axes
-                for plot_dict in self.plots:
-                    if True:
-                        pw        = plot_dict['widget'] # The plot widget
-                        for ind,line_dict in enumerate(plot_dict['lines']): # Loop over all lines of the devices to plot
-                            line      = line_dict['line'] # The line to plot
-                            config    = line_dict['config'] # The line to plot
-                            x         = line_dict['x'] # The line to plot
-                            y         = line_dict['y'] # The line to plot   
-                            x         = np.roll(x,-1)
-                            y         = np.roll(y,-1)
-                            newx = float(data[config['x']])
-                            newy = float(data[config['y']])
-                            x[-1]    = newx
-                            y[-1]    = newy
-                            line_dict['x']  = x
-                            line_dict['y']  = y
-                            line.setData(x=x,y=y,pen = pyqtgraph.mkPen(config['color'], width=config['linewidth']))
+            
         except Exception as e:
             logger.debug(funcname + ':' + str(e))
 

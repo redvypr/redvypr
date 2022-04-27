@@ -585,11 +585,13 @@ class plotWidget(QtWidgets.QFrame):
         #print('got data',data)
         # Always update
         update = True
+        print('funcname',funcname)
         try:
             # Loop over all plot axes
             if True:
                 plot_dict = self.plot_dict
                 # Check if the device is to be plotted
+                print('1',devicename_plot,device_in_data(devicename_plot,data))
                 for devicename_plot in plot_dict['lines'].keys(): # Loop over all lines of the devices to plot
                     if(device_in_data(devicename_plot,data)):
                         pw        = plot_dict['widget'] # The plot widget

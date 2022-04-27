@@ -452,6 +452,19 @@ class redvypr(QtCore.QObject):
         devicecheck['displaygui'] = hasdisplaywidget
         
         return devicecheck
+    
+    
+    def device_loglevel(self,device,loglevel=None):
+        """ Returns the loglevel of the device
+        """
+        loglevel = 'NA'
+        for d in self.devices:
+            if d['devices'] == device:
+                if(d['logger'] is not None):
+                    loglevel = d['logger'].getEffectiveLevel()
+                    break
+                
+        return loglevel
         
 
     def add_device(self,devicemodulename=None, deviceconfig = None, thread=False):
@@ -481,7 +494,8 @@ class redvypr(QtCore.QObject):
               else:
                   thread = True
                   
-              [devicedict,ind_devices] = self.create_devicedict(devicemodule,thread=thread,deviceconfig=deviceconfig)
+              devicedict = self.create_devicedict(devicemodule,thread=thread,deviceconfig=deviceconfig)
+              
               device = devicedict['device']
               # If the device does not have a name, add a standard but unique one
               try:
@@ -510,26 +524,36 @@ class redvypr(QtCore.QObject):
               if(loglevel_device == "standard"):
                   loglevel_device = logger.level
 
+              
               # If the device has a logger
+              devicedict['logger'] = None 
               try:
                   device.logger.setLevel(loglevel_device)
+                  devicedict['logger'] = device.logger
               except Exception as e:
                   logger.debug(funcname + ': NA logger device loglevel {:s}'.format(str(e)))
+                  
 
               # If the module has a logger            
               try:
                   devicemodule.logger.setLevel(loglevel_device)
+                  devicedict['logger'] = devicemodule.logger
               except Exception as e:            
                   logger.debug(funcname + ': NA logger module loglevel {:s}'.format(str(e)))
 
 
+              # Add the device to the device list
+              self.devices.append(devicedict) # Add the device to the devicelist
+              ind_device = len(self.devices)-1    
+              
               if(autostart):
                   logger.debug(funcname + ': Starting device')
                   self.start_device_thread(device)
-
-              devicelist = [devicedict,ind_devices,devicemodule]
+                  
+              devicelist = [devicedict,ind_device,devicemodule]
               self.device_added.emit(devicelist)
               device_found = True
+              
               break
 
         if(device_found == False):
@@ -583,6 +607,7 @@ class redvypr(QtCore.QObject):
         # The displaywidget, to be filled by redvyprWidget.add_device (optional)
         devicedict['devicedisplaywidget'] = None
         
+        
         # Setting the configuration of the device. Each key entry in
         # the dict is directly set as an attribute in the device class
         if(deviceconfig is not None):
@@ -593,9 +618,9 @@ class redvypr(QtCore.QObject):
                 setattr(device,key,confvalue)
             
                 
-        self.devices.append(devicedict)
         
-        return [devicedict,len(self.devices)-1]
+        #self.devices.append(devicedict) # Add the device to the devicelist
+        return devicedict
 
     def start_device_thread(self,device):
         """Functions starts a thread, to process the data (i.e. reading from a device, writing to a file)

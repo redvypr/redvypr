@@ -340,6 +340,23 @@ class deviceinfoWidget(QtWidgets.QWidget):
         #label.setFont(QtGui.QFont('Arial', fsize.height()+4))                
         self.layout = QtWidgets.QHBoxLayout(self)
         self.layout2 = QtWidgets.QGridLayout()
+        self.logwidget = QtWidgets.QComboBox() # A Combobox to change the loglevel of the device
+        self.logwidget.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
+        # Fill the logwidget
+        logger    = self.devicedict['logger']
+        if(logger is not None):
+            level     = logger.getEffectiveLevel()
+            levelname = logging.getLevelName(level)
+            loglevels = ['CRITICAL','ERROR','WARNING','INFO','DEBUG']
+            for i,l in enumerate(loglevels):
+                self.logwidget.addItem(l)
+                    
+            self.logwidget.setCurrentText(levelname)
+        else:
+            self.logwidget.addItem('NA')
+            
+        self.logwidget.currentIndexChanged.connect(self.loglevel_changed)
+        
         self.viewbtn = QtWidgets.QPushButton("View")
         self.viewbtn.clicked.connect(self.viewclicked)
         self.viewbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)        
@@ -363,12 +380,20 @@ class deviceinfoWidget(QtWidgets.QWidget):
         self.layout2.addWidget(self.namelabel,1,0)
         self.layout.addLayout(self.layout2)
         self.layout.addStretch()
+        self.layout.addWidget(self.logwidget)
         self.layout.addWidget(self.viewbtn)
         self.layout.addWidget(self.infobtn)         
         self.layout.addWidget(self.renbtn)
         self.layout.addWidget(self.conbtn)
         self.layout.addWidget(self.rembtn)
         self.layout.addWidget(self.startbtn)
+        
+    def loglevel_changed(self):
+        loglevel = self.logwidget.currentText()
+        logger = self.devicedict['logger']
+        print('loglevel changed to',loglevel)
+        if(logger is not None):
+            logger.setLevel(loglevel)
 
     def get_info(self):        
         self.infowidget       = QtWidgets.QPlainTextEdit()

@@ -63,6 +63,7 @@ def send_data(data_dict,config):
     """
     funcname = __name__ + 'send_data()'
 
+    # Choose the serialize function
     if(config['serialize'] == 'str'):
         serialize = str 
     elif(config['serialize'] == 'yaml'):
