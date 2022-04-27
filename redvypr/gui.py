@@ -612,7 +612,15 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
         print('Updating list')
         self.datakeylist.clear()
         for key in self.datakeylist_subscribed[devicename]:
-            self.datakeylist.addItem(key)
+            # If a conversion to an int works, make quatoations around it, otherwise leave it as it is
+            try:
+                keyint = int(key)
+                keystr = '"' + key + '"'
+            except:
+                keystr = key
+                    
+            self.datakeylist.addItem(keystr)
+
 
     def done_clicked(self):
         self.close()
