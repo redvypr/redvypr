@@ -3,7 +3,7 @@ Installation
 
 Raspberry Pi4
 ^^^^^^^^^^^^^
-Installed on a Raspberry PI4
+Installed on a Raspberry Pi4
 
 sudo apt-get install python3-pyqt5 python3-pyqtgraph python3-netcdf4 python3-yaml python3-setuptools python3-serial python3-xlsxwriter
 
