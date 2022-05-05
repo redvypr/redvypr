@@ -1,0 +1,121 @@
+# A test configuration file
+hostname: heatflowsensor
+
+devices:
+- deviceconfig:
+    name: udpbroadcast
+    config:
+       address: <broadcast>
+       port: 28719
+       protocol: udp
+       direction: receive
+       serialize: str
+  devicemodulename: network_device
+- deviceconfig:
+    name: datalogger
+    loglevel: info
+  devicemodulename: datalogger
+- deviceconfig:
+    name: calibration
+    loglevel: debug
+    config:
+       title: Calibration
+       datetick: True
+       responsetime: # A responsetimewidget
+          device: datalogger # The device for the responsetime
+       polyfit:
+          headers: # Extra rows with a custom header, if the headername is in a props@['y'] of the device it is automatically filled
+             - 'Serialnumber'
+          comments: # Extra columns for additional information like comments, serial numbers, remarks
+             - name: Comment
+
+       devices:
+         - device: datalogger
+           x: tsample
+           y: "0"
+           buffersize: 1000
+         - device: datalogger
+           x: tsample
+           y: "1"
+           buffersize: 1000
+         - device: datalogger
+           x: tsample
+           y: "2"
+           buffersize: 1000
+         - device: datalogger
+           x: tsample
+           y: "3"
+           buffersize: 1000  
+  devicemodulename: calibration
+- deviceconfig: # The plotting device
+    name: plot
+    loglevel: info
+    config:
+       - title: Channel 0
+         type: graph
+         location: [0,0] # The location as in QgridBoxLayout
+         xlabel: time
+         ylabel: Voltage
+         datetick: True
+         lines: 
+            - device: datalogger
+              name: channel 0
+              x: t
+              y: "0"
+              buffersize: 2000
+       - title: Channel 1
+         location: [1,0] # The location as in QgridBoxLayout
+         type: graph
+         xlabel: time
+         ylabel: Voltage
+         datetick: True
+         lines: 
+            - device: datalogger
+              name: channel 1
+              x: t
+              y: "1"
+              buffersize: 2000
+       - title: Channel 2
+         location: [0,1] # The location as in QgridBoxLayout
+         type: graph
+         xlabel: time
+         ylabel: Voltage
+         datetick: True
+         lines: 
+            - device: datalogger
+              name: channel 1
+              x: t
+              y: "2"
+              buffersize: 2000
+       - title: Channel 3
+         location: [1,1] # The location as in QgridBoxLayout
+         type: graph
+         xlabel: time
+         ylabel: Voltage
+         datetick: True
+         lines: 
+            - device: datalogger
+              name: channel 1
+              x: t
+              y: "3"
+              buffersize: 2000                            
+              
+        
+         
+  devicemodulename: plot  
+
+
+connections:
+- publish: udpbroadcast
+  receive: datalogger
+- publish: datalogger
+  receive: plot
+- publish: datalogger
+  receive: calibration
+
+start:
+- udpbroadcast
+- datalogger
+- plot
+- calibration
+

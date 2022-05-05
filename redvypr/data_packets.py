@@ -33,6 +33,34 @@ def get_devicename(data,uuid=False):
         devicename = data['device'] + ':' + data['host']['name'] + '@' + data['host']['addr']
     return devicename
 
+
+def get_datastream(datakey,data=None,device=None,hostname=None,uuid=False,ip=False):
+    """ Returns a datastream string based either on a  data packet or on hostname 
+    
+    Args:
+        datakey (str): The key for the datastream
+        data (dict): A redvypr data dictionary
+        hostname (str): The hostname
+        uuid (Optional[bool]): Default False. Returns the devicename with the uuid (True) or the hostname + IP-Address (False)
+        
+    Returns:
+        str: The full devicename
+    """
+    
+    
+    if((data == None) and (device == None)):
+        raise TypeError('Either data or device need to be not None')
+    
+    if(data is not None):
+        device = data['device']
+        hostname = data['host']['name']
+        addr = data['host']['addr']
+        uuid = data['host']['uuid']
+        
+    datastream = datakey + '/' + device
+        
+    return datastream
+
 def device_in_data(devicestring, data, get_devicename = False):
     """ Checks if the devicestring (or datastream) is in the datapacket. 
     

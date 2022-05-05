@@ -103,10 +103,10 @@ class initDeviceWidget(QtWidgets.QWidget):
     connect      = QtCore.pyqtSignal(Device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
-        layout        = QtWidgets.QFormLayout(self)
+        layout        = QtWidgets.QGridLayout(self)
 
         self.device   = device
-        self.label    = QtWidgets.QLabel("Datadisplay setup")
+        #self.label    = QtWidgets.QLabel("Datadisplay setup")
         self.conbtn = QtWidgets.QPushButton("Connect logger to devices")
         self.conbtn.clicked.connect(self.con_clicked)        
         self.startbtn = QtWidgets.QPushButton("Start logging")
@@ -114,14 +114,16 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.startbtn.setCheckable(True)
         self.addbtn = QtWidgets.QPushButton("Add")
         self.addbtn.clicked.connect(self.add_clicked)
+        self.addbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
+
         self.addtype = QtWidgets.QComboBox()
         self.addtype.addItem('Graph')
         self.addtype.addItem('Numeric Display')
         # The location stuff
         self.locwidget = QtWidgets.QWidget()        
         loclayout = QtWidgets.QGridLayout(self.locwidget)
-        labx  = QtWidgets.QLabel('Loc x')
-        laby  = QtWidgets.QLabel('Loc y')
+        labx  = QtWidgets.QLabel('Location x')
+        laby  = QtWidgets.QLabel('Location y')
         labsx  = QtWidgets.QLabel('Size x')
         labsy  = QtWidgets.QLabel('Size y')                
         self.locx  = QtWidgets.QSpinBox()
@@ -131,28 +133,38 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.sizey = QtWidgets.QSpinBox()
         self.sizey.setValue(1)
         loclayout.addWidget(labx,0,0)        
-        loclayout.addWidget(self.locx,1,0)
-        loclayout.addWidget(laby,0,1)                
+        loclayout.addWidget(self.locx,0,1)
+        loclayout.addWidget(laby,1,0)                
         loclayout.addWidget(self.locy,1,1)
-        loclayout.addWidget(labsx,0,2)                                
-        loclayout.addWidget(self.sizex,1,2)
-        loclayout.addWidget(labsy,0,3)                                
-        loclayout.addWidget(self.sizey,1,3)                
+        loclayout.addWidget(labsx,2,0)                                
+        loclayout.addWidget(self.sizex,2,1)
+        loclayout.addWidget(labsy,3,0)                                
+        loclayout.addWidget(self.sizey,3,1)  
+        
+        loclayout.addWidget(QtWidgets.QLabel('Plot type'),4,0)
+        loclayout.addWidget(self.addtype,4,1)
+        loclayout.addWidget(self.addbtn,0,2,5,1)                                              
         # Location stuff done
         
         self.config = [] # A list of plots
 
-        layout.addRow(self.label)        
-        layout.addRow(self.conbtn)
-        layout.addRow(self.locwidget)        
-        layout.addRow(self.addtype,self.addbtn)
-        layout.addRow(self.startbtn)        
+        #layout.addWidget(self.label,0,0,1,2)        
+        layout.addWidget(self.conbtn,1,0)
+        layout.addWidget(self.startbtn,1,1)
+        layout.addWidget(self.locwidget,3,0,1,2)        
+        
+        
         
 
         # Configuration of plots
         self.configwidget  = QtWidgets.QWidget()
-        self.configlayout        = QtWidgets.QGridLayout(self.configwidget) # The layout
-        layout.addRow(self.configwidget)
+        backcolor = 'lightgray'
+        #self.configwidget.setStyleSheet("border-style: outset;border-width: 2px;border-color: black")        
+        #self.configwidget.setStyleSheet("border-style: outset;border-width: 2px;border-color: black")
+        self.configwidget.setStyleSheet("background-color : {:s}".format(backcolor))                
+
+        self.configlayout  = QtWidgets.QGridLayout(self.configwidget) # The layout
+        layout.addWidget(self.configwidget,5,0,3,2)
         #
 
     def finalize_init(self):
@@ -205,7 +217,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         """            
         print('Add new graph')
         print('Device',self.device)
-        print(self.redvyprdevicelistentry)
+        print('test',self.redvyprdevicelistentry)
         locx = self.locx.value()
         locy = self.locy.value()
         sizex = self.sizex.value()
@@ -263,27 +275,39 @@ class initDeviceWidget(QtWidgets.QWidget):
                 # Add the configurationwidget to the initwidget
                 # Add a button wich is opening the configuration widget
                 button = QtWidgets.QPushButton(config['type'])
+                button.setStatusTip('Click on icon for setup')
+
+                #backcolor = 'lightgray'
+                backcolor = 'white'
+                bordercolor = 'black'        
+                button.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(backcolor,bordercolor))        
+                button.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
                 button.clicked.connect(self.config_clicked)
                 if(config['type'].lower() == 'graph'):
                     configtree = configTreePlotWidget(config=config)
-                    button.configwidget = configtree
                 elif(config['type'].lower() == 'numdisp'):
-                    configtree = configTreeNumDispWidget(config=config)
-                    button.configwidget = configtree                    
+                    configtree = configTreeNumDispWidget(config=config)                 
                 else:
                     return None
-
-                configwidget = QtWidgets.QWidget()
-                tmplayout = QtWidgets.QGridLayout(configwidget)
-                tmplayout.addWidget(button,0,0,1,2)
+                
+                configtree.redvypr = self.device.redvypr 
+                configtree.device = self.device
+                button.configwidget = QtWidgets.QWidget()
+                tmplayout = QtWidgets.QGridLayout(button.configwidget)
+                tmplayout.addWidget(configtree,0,0)
                 configupdate = QtWidgets.QPushButton('Update')
                 configupdate.config = config # Add the configuration dictionary to the button
                 configupdate.configtree = configtree # A modified config with updates
                 configupdate.clicked.connect(self.update_clicked)
                 removebtn = QtWidgets.QPushButton('Remove')
                 removebtn.clicked.connect(self.rem_clicked)
-                tmplayout.addWidget(removebtn,1,1)                
-                tmplayout.addWidget(configupdate,1,0)
+                tmplayout.addWidget(removebtn,1,0)                
+                tmplayout.addWidget(configupdate,2,0)
+
+                configwidget = QtWidgets.QWidget()
+                tmplayout = QtWidgets.QGridLayout(configwidget)
+                tmplayout.addWidget(button,0,0,1,2)
+                
                 self.configlayout.addWidget(configwidget,location[0],location[1],location[2],location[3])
 
     def config_clicked(self):
@@ -585,7 +609,6 @@ class plotWidget(QtWidgets.QFrame):
         #print('got data',data)
         # Always update
         update = True
-        print('funcname',funcname)
         try:
             # Loop over all plot axes
             if True:
@@ -593,16 +616,13 @@ class plotWidget(QtWidgets.QFrame):
                 # Check if the device is to be plotted
                 
                 for devicename_plot in plot_dict['lines'].keys(): # Loop over all lines of the devices to plot
-                    print('1',devicename_plot,device_in_data(devicename_plot,data))
                     if(device_in_data(devicename_plot,data)):
                         pw        = plot_dict['widget'] # The plot widget
                         for ind,line_dict in enumerate(plot_dict['lines'][devicename_plot]): # Loop over all lines of the device to plot
-                            print('Line dict',line_dict)
                             line      = line_dict['line'] # The line to plot
                             config    = line_dict['config'] # The line to plot
                             x         = line_dict['x'] # The line to plot
                             y         = line_dict['y'] # The line to plot
-                            print('x',x,'y',y) 
                             # data can be a single float or a list
                             newx = data[config['x']]
                             newy = data[config['y']]
@@ -618,7 +638,6 @@ class plotWidget(QtWidgets.QFrame):
                                 line_dict['x']  = x
                                 line_dict['y']  = y
                             if(ind==0): # Use the first line for the ylabel
-                                
                                 if('useprops' in self.config.keys()):
                                     if(self.config['useprops']):
                                         propkey = '?' + config['y']
@@ -660,14 +679,16 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
         super().__init__()
             
         self.config      = copy.deepcopy(config) # Make a copy of the dictionary
-        #self.config      = config 
-        
         # make only the first column editable        
         self.setEditTriggers(self.NoEditTriggers)
         self.itemDoubleClicked.connect(self.edititem)
-        #self.header().setVisible(False)
+        self.header().setVisible(False)
         self.create_qtree(self.config,editable=True)
-
+        self.resizeColumnToContents(0)  
+        self.itemExpanded.connect(self._proc_expanded)
+         
+    def _proc_expanded(self):
+        self.resizeColumnToContents(0)          
     def checkEdit(self, item, column):
         """ Helper function that only allows to edit column 1
         """
@@ -711,7 +732,8 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
             logger.debug(funcname + '{:s}'.format(str(e)))
 
 
-
+        self.resizeColumnToContents(0)
+                                      
     def create_qtree(self,config,editable=True):
         """Creates a new qtree from the configuration and replaces the data in
         the dictionary with a configdata obejct, that save the data
@@ -982,9 +1004,9 @@ class configTreeNumDispWidget(QtWidgets.QTreeWidget):
         
         # make only the first column editable        
         self.setEditTriggers(self.NoEditTriggers)
-        #self.header().setVisible(False)
+        self.header().setVisible(False)
         self.create_qtree(self.config,editable=True)
-
+        
     def checkEdit(self, item, column):
         """ Helper function that only allows to edit column 1
         """
@@ -1027,7 +1049,7 @@ class configTreeNumDispWidget(QtWidgets.QTreeWidget):
         except Exception as e:
             logger.debug(funcname + '{:s}'.format(str(e)))
 
-
+        self.resizeColumnToContents(0)                            
 
     def create_qtree(self,config,editable=True):
         """Creates a new qtree from the configuration and replaces the data in
@@ -1064,7 +1086,7 @@ class configTreeNumDispWidget(QtWidgets.QTreeWidget):
         self.itemDoubleClicked.connect(self.checkEdit)
         self.itemChanged.connect(self.item_changed) # If an item is changed
         self.currentItemChanged.connect(self.current_item_changed) # If an item is changed            
-                                
+        self.resizeColumnToContents(0)                            
     
 
             

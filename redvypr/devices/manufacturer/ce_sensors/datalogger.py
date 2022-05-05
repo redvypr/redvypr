@@ -67,7 +67,7 @@ def parse_nmea(data):
     datadict['sn']         = datas[0][1:]        # Serialnumber
     datadict['tsample']    = float(datas[3])
     channel                = datas[1]            # The channel
-    channel_unit           = '@' + channel
+    channel_unit           = '?' + channel
     datadict['ch']         = channel
     datadict[channel]      = float(datas[4])     # The data
     datadict[channel_unit] = {'unit':'V'}
@@ -417,7 +417,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         
         funcname = __name__ + '.update():'
         tnow = time.time()
-        logger.debug(funcname + 'data {:s}'.format(str(data)))
+        #logger.debug(funcname + 'data {:s}'.format(str(data)))
         try:
             #print(funcname + 'got data',data)
             devicename = data['device']

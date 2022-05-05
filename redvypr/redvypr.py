@@ -478,7 +478,6 @@ class redvypr(QtCore.QObject):
         for smod in self.device_modules:
            if(devicemodulename == smod['name']):
               logger.debug('Trying to import device {:s}'.format(smod['name']))
-              print(smod)
               devicemodule     = smod['module']
               #devicemodule     = getattr(redvyprdevices, devicemodulename)
               # Check for multiprocess options
@@ -551,6 +550,12 @@ class redvypr(QtCore.QObject):
                   self.start_device_thread(device)
                   
               devicelist = [devicedict,ind_device,devicemodule]
+              # Finalize the initialization of the device (after the configuration was included)
+              try:
+                  device.finalize_init()
+              except Exception as e:
+                  logger.debug(funcname + ': No finalize_init() of device')
+                  
               self.device_added.emit(devicelist)
               device_found = True
               
@@ -869,7 +874,7 @@ class redvyprWidget(QtWidgets.QWidget):
                     config = [config]
 
                 for c in config:
-                    print(c)
+                    print('Config',c)
                     self.redvypr.parse_configuration(c)
 
 
