@@ -1067,11 +1067,17 @@ class redvyprWidget(QtWidgets.QWidget):
         #
         # Create the init widget
         try:
-            deviceinitwidget = devicemodule.initDeviceWidget(device)
+            deviceinitwidget_bare = devicemodule.initDeviceWidget
+        except Exception as e:
+            logger.debug(funcname + ': Widget does not have a deviceinitwidget or start/stop signals:' + str(e))
+            deviceinitwidget_bare = QtWidgets.QWidget() # Use a standard widget
+            
+        try:
+            deviceinitwidget = deviceinitwidget_bare(device)
             deviceinitwidget.device_start.connect(self.redvypr.start_device_thread)
             deviceinitwidget.device_stop.connect(self.redvypr.stop_device_thread)
         except Exception as e:
-            logger.debug(funcname + ': Widget does not have a deviceinitwidget or start/stop signals:' + str(e))
+            logger.warning(funcname + ': Widget does not have a deviceinitwidget or start/stop signals:' + str(e))
             deviceinitwidget = QtWidgets.QWidget() # Use a standard widget
             
         try:

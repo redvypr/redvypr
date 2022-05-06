@@ -26,8 +26,9 @@ import logging
 import sys
 import yaml
 import pyqtgraph
+import serial
 
-description = 'Parses and displays data with a NMEA type of data string'
+description = 'Interface for the Leitenberger temperature calibration device'
 
 pyqtgraph.setConfigOption('background', 'w')
 pyqtgraph.setConfigOption('foreground', 'k')
@@ -51,74 +52,89 @@ class datadisplay(QtWidgets.QWidget):
         layout.addWidget(self.data)
 
     def set_data(self,data):
-        newdatastr = "{:.6f}".format(data) # TODO, here a format string defined in the widget could be applied
+        newdatastr = "{:.2f}".format(data) # TODO, here a format string defined in the widget could be applied
         self.data.setText(newdatastr)
   
         
 
 
-def parse_nmea(data):
-    """ Parses a NMEA type heatflow data string
-    $pi4werkstatt,0,2022-04-27 03:44:52.481,1651031092.482,0.00000000
-    """
-
-    datas = data.split(',')
-    datadict = {}
-    datadict['sn']         = datas[0][1:]        # Serialnumber
-    datadict['tsample']    = float(datas[3])
-    channel                = datas[1]            # The channel
-    channel_unit           = '?' + channel
-    datadict['ch']         = channel
-    datadict[channel]      = float(datas[4])     # The data
-    datadict[channel_unit] = {'unit':'V'}
-    
-    return datadict
 
 
-def convert_data_with_coeffs(data,coeffs):
-    for coeff in coeffs:
-        if(coeff['name'] in data):
-            origdata = data[coeff['name']]
-            if(coeff['coeff'][0] == 2): # Polynom
-                convdata = coeff['coeff'][1] + origdata * coeff['coeff'][2] + origdata**2 * coeff['coeff'][3] + origdata**3 * coeff['coeff'][4]
-            else:
-                convdata = np.NaN
-
-            data[coeff['convname']] = convdata
-
-    return data
 
 def start(datainqueue,dataqueue,comqueue,devicename,config={}):
     funcname = __name__ + '.start()'
+    chunksize = 1000 # The maximum amount of bytes read with one chunk
+    logger.debug(funcname + ':Starting reading serial data')        
+    nmea_sentence = ''
+    sentences = 0
+    bytes_read = 0
+    ttest = time.time()
+    serial_device = False
+    
+    try:
+        serial_name = config['serial_name']
+    except:
+        serial_name = 'NaN'
+    try:
+        baud = config['baud']
+    except:
+        baud = 9600
+    try:
+        parity=config['parity']
+    except:
+        parity=serial.PARITY_NONE
+    try:
+        stopbits=config['stopbits']
+    except:
+        stopbits=serial.STOPBITS_ONE
+    try:
+        bytesize= config['bytesize']
+    except: 
+        bytesize=serial.EIGHTBITS
+    
+    try:
+        max_size = config['max_size']
+    except:
+        max_size=10000
+        
+    try:
+        dt = config['dt']
+    except:
+        dt = 0.5
+        
+    if True:
+        try:
+            serial_device = serial.Serial(serial_name,baud,parity=parity,stopbits=stopbits,bytesize=bytesize,timeout=0.1)
+            #print('Serial device 0',serial_device)            
+            #serial_device.timeout(0.05)
+            #print('Serial device 1',serial_device)                        
+        except Exception as e:
+            #print('Serial device 2',serial_device)
+            logger.debug(funcname + ': Exception open_serial_device {:s} {:d}: '.format(serial_name,baud) + str(e))
+            return False
+        
     try:
         datakey = config['datakey']
     except:
         datakey = 'data'  
+        
     while True:
         try:
             com = comqueue.get(block=False)
             print('received',com)
-            break
         except:
             pass
 
-
-        time.sleep(0.05)
-        while(datainqueue.empty() == False):
-            try:
-                data = datainqueue.get(block=False)
-                datap = parse_nmea(data[datakey]) # Get the data from the dictionary
-                # Check if we have coefficients to calculate values
-                if('coeffs' in config.keys()):
-                    datap = convert_data_with_coeffs(datap,config['coeffs'])
-                    #print(datap)
-                    
-                datan = {**data, **datap} # Python 3.9: z = x | y
-                datan['device'] = devicename
-                dataqueue.put(datan)
-
-            except Exception as e:
-                logger.debug(funcname + ':Exception:' + str(e))            
+        time.sleep(dt)
+        
+        # Read T set
+        com = b'$1RVAR0 \r'
+        print(com)
+        ser.write(com) # write a string
+        s = ser.read(100)
+        print(s)
+        
+        #dataqueue.put(datan)
 
 class Device():
     def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = {}):
@@ -130,230 +146,205 @@ class Device():
         self.dataqueue   = dataqueue        
         self.comqueue    = comqueue
         self.config      = config # Please note that this is typically a placeholder, the config structure will be written by redvypr and the yaml
-        self.name        = 'heatflowsensor' # This will be overwritten by the config!
+        self.name        = 'Tfluid' # This will be overwritten by the config!
                 
     def start(self):
         start(self.datainqueue,self.dataqueue,self.comqueue,devicename=self.name,config=self.config)
         
     def __str__(self):
-        sstr = 'heatflow_sensor'
+        sstr = 'Leitenberger temperature calibration device'
         return sstr
-
-
-
+    
+    
+    
 class initDeviceWidget(QtWidgets.QWidget):
-    device_start = QtCore.pyqtSignal(Device) # Signal requesting a start of the device (starting the thread)
-    device_stop  = QtCore.pyqtSignal(Device) # Signal requesting a stop of device
-    connect      = QtCore.pyqtSignal(Device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    device_start = QtCore.pyqtSignal(Device)
+    device_stop = QtCore.pyqtSignal(Device)        
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
-        layout        = QtWidgets.QFormLayout(self)
+        layout        = QtWidgets.QVBoxLayout(self)
         self.device   = device
-        self.label    = QtWidgets.QLabel("Heatflowsensor setup")
-        self.conbtn = QtWidgets.QPushButton("Connect to datasource devices")
-        self.conbtn.clicked.connect(self.con_clicked)
-        self.startbtn = QtWidgets.QPushButton("Start logging")
-        self.startbtn.clicked.connect(self.start_clicked)
-        self.startbtn.setCheckable(True)
-
-        layout.addRow(self.label)        
-        layout.addRow(self.conbtn)
-        layout.addRow(self.startbtn)
-
-    def con_clicked(self):
-        button = self.sender()
-        self.connect.emit(self.device)        
-            
-    def start_clicked(self):
-        button = self.sender()
-        if button.isChecked():
-            print("button pressed")
-            self.device_start.emit(self.device)
-            button.setText("Stop logging")
-            self.conbtn.setEnabled(False)
-        else:
-            print('button released')
-            self.device_stop.emit(self.device)
-            button.setText("Start logging")
-            self.conbtn.setEnabled(True)
-            
-            
+        self.serialwidget = QtWidgets.QWidget()
+        self.init_serialwidget()
+        self.label    = QtWidgets.QLabel("Leitenberger FLUID100 Calibration setup")
+        #self.startbtn = QtWidgets.QPushButton("Open device")
+        #self.startbtn.clicked.connect(self.start_clicked)
+        #self.stopbtn = QtWidgets.QPushButton("Close device")
+        #self.stopbtn.clicked.connect(self.stop_clicked)
+        layout.addWidget(self.label)        
+        layout.addWidget(self.serialwidget)
+        layout.addStretch()
+        #layout.addWidget(self.startbtn)
+        #layout.addWidget(self.stopbtn)
+        
     def thread_status(self,status):
-        """ This function is called by redvypr whenever the thread is started/stopped
-        """   
         self.update_buttons(status['threadalive'])
 
-       
+    def init_serialwidget(self):
+        """Fills the serial widget with content
+        """
+        layout = QtWidgets.QGridLayout(self.serialwidget)
+        # Serial baud rates
+        baud = [300,600,1200,2400,4800,9600,19200,38400,57600,115200,576000,921600]
+        self._combo_serial_devices = QtWidgets.QComboBox()
+        #self._combo_serial_devices.currentIndexChanged.connect(self._serial_device_changed)
+        self._combo_serial_baud = QtWidgets.QComboBox()
+        for b in baud:
+            self._combo_serial_baud.addItem(str(b))
+
+        self._combo_serial_baud.setCurrentIndex(4)
+        # creating a line edit
+        edit = QtWidgets.QLineEdit(self)
+        onlyInt = QtGui.QIntValidator()
+        edit.setValidator(onlyInt)
+  
+        # setting line edit
+        self._combo_serial_baud.setLineEdit(edit)
+        
+        self._combo_parity = QtWidgets.QComboBox()
+        self._combo_parity.addItem('None')
+        self._combo_parity.addItem('Odd')
+        self._combo_parity.addItem('Even')
+        self._combo_parity.addItem('Mark')
+        self._combo_parity.addItem('Space')
+        
+        self._combo_stopbits = QtWidgets.QComboBox()
+        self._combo_stopbits.addItem('1')
+        self._combo_stopbits.addItem('1.5')
+        self._combo_stopbits.addItem('2')
+        
+        self._combo_databits = QtWidgets.QComboBox()
+        self._combo_databits.addItem('8')
+        self._combo_databits.addItem('7')
+        self._combo_databits.addItem('6')
+        self._combo_databits.addItem('5')
+        
+        self._button_serial_openclose = QtWidgets.QPushButton('Open')
+        self._button_serial_openclose.clicked.connect(self.start_clicked)
+
+
+        # Check for serial devices and list them
+        for comport in serial.tools.list_ports.comports():
+            self._combo_serial_devices.addItem(str(comport.device))
+
+        layout.addWidget(QtWidgets.QLabel('Serial device'),1,0)
+        layout.addWidget(self._combo_serial_devices,2,0)
+        layout.addWidget(QtWidgets.QLabel('Baud'),1,1)
+        layout.addWidget(self._combo_serial_baud,2,1)
+        layout.addWidget(QtWidgets.QLabel('Parity'),1,2)  
+        layout.addWidget(self._combo_parity,2,2) 
+        layout.addWidget(QtWidgets.QLabel('Databits'),1,3)  
+        layout.addWidget(self._combo_databits,2,3) 
+        layout.addWidget(QtWidgets.QLabel('Stopbits'),1,4)  
+        layout.addWidget(self._combo_stopbits,2,4) 
+        layout.addWidget(self._button_serial_openclose,2,5)
+
+        
+    
     def update_buttons(self,thread_status):
-            """ Updating all buttons depending on the thread status (if its alive, graying out things)
-            """
-            if(thread_status):
-                self.startbtn.setText('Stop reading data')
-                self.startbtn.setChecked(True)
-                #self.conbtn.setEnabled(False)
-            else:
-                self.startbtn.setText('Start reading data')
-                #self.conbtn.setEnabled(True)
+        """ Updating all buttons depending on the thread status (if its alive, graying out things)
+        """
+        if(thread_status):
+            self._button_serial_openclose.setText('Close')
+            self._combo_serial_baud.setEnabled(False)
+            self._combo_serial_devices.setEnabled(False)
+        else:
+            self._button_serial_openclose.setText('Open')
+            self._combo_serial_baud.setEnabled(True)
+            self._combo_serial_devices.setEnabled(True)
+        
+            
+    def start_clicked(self):
+        #print('Start clicked')
+        button = self._button_serial_openclose
+        #print('Start clicked:' + button.text())
+        if('Open' in button.text()):
+            button.setText('Close')
+            serial_name = str(self._combo_serial_devices.currentText())
+            serial_baud = int(self._combo_serial_baud.currentText())
+            stopbits = self._combo_stopbits.currentText()
+            if(stopbits=='1'):
+                self.device.stopbits =  serial.STOPBITS_ONE
+            elif(stopbits=='1.5'):
+                self.device.stopbits =  serial.STOPBITS_ONE_POINT_FIVE
+            elif(stopbits=='2'):
+                self.device.config['stopbits'] =  serial.STOPBITS_TWO
+                
+            databits = int(self._combo_databits.currentText())
+            self.device.config['bytesize'] = databits
 
+            parity = self._combo_parity.currentText()
+            if(parity=='None'):
+                self.device.config['parity'] = serial.PARITY_NONE
+            elif(parity=='Even'):                
+                self.device.config['parity'] = serial.PARITY_EVEN
+            elif(parity=='Odd'):                
+                self.device.config['parity'] = serial.PARITY_ODD
+            elif(parity=='Mark'):                
+                self.device.config['parity'] = serial.PARITY_MARK
+            elif(parity=='Space'):                
+                self.device.config['parity'] = serial.PARITY_SPACE
+                
+            self.device.config['serial_name'] = serial_name
+            self.device.config['baud'] = serial_baud
+            self.device_start.emit(self.device)
+        else:
+            self.stop_clicked()
 
+    def stop_clicked(self):
+        #print('Stop clicked')
+        button = self._button_serial_openclose
+        self.device_stop.emit(self.device)
+        button.setText('Closing') 
+        #self._combo_serial_baud.setEnabled(True)
+        #self._combo_serial_devices.setEnabled(True)      
 
 
 class displayDeviceWidget(QtWidgets.QWidget):
-    """ Widget is showing logger data
+    """ Widget is showing temperature calibration data
     """
     def __init__(self,dt_update = 0.5,device=None,buffersize=1000,tabwidget=None):
         funcname = __name__ + '.init()'
         super(QtWidgets.QWidget, self).__init__()
-        self.layout_plot        = QtWidgets.QGridLayout(self)
+        self.layout_plot  = QtWidgets.QGridLayout(self)
         self.device = device
-        self.tabname = 'Converted data plots'        
+        self.tabname = 'Data'        
         self.dt_update = dt_update
         self.buffersizestd = buffersize
         self.plots = []
         
-        # Add a widget with the data 
-        if(tabwidget is not None):
-            self.create_datadisplaywidget()
-            #self.datadisplaywidget = QtWidgets.QWidget()            
-            tabwidget.addTab(self.datadisplaywidget,'Sensor data')
-            
-        #self.rawplot = QtWidgets.QWidget(self)
-        #self.layout_rawplot = QtWidgets.QGridLayout(self.rawplot)
-        #tabwidget.addTab(self.rawplot,'Rawdata data plots')                    
-        #self.create_dataplotwidget() # This widget is for plots of the data
         config = {'dt_update':self.dt_update,'last_update':time.time()}
         self.config = config
+        # 
+        self.create_plotwidget()
 
 
-                
-    def create_dataplotwidget(self):
+    def create_plotwidget(self):
         funcname = __name__ + '.create_dataplotwidget()'
         # Add axes to the widget
-        for i in range(6):
-            if i == 0:
-                logger.debug(funcname + ': Adding voltage plot')
-                # The axes
-                title = 'Heat flow voltage'
-                location = [0,0]
-                whichwidget = 0
-                datetick = True
-                ylabel = 'V'
-                # The line to plot
-                buffersize = self.buffersizestd
-                xdata = np.zeros(buffersize) * np.NaN
-                ydata = np.zeros(buffersize) * np.NaN
-                name = 'HFS'
-                lineplot = pyqtgraph.PlotDataItem( name = name )
-                linewidth = 1
-                color = QtGui.QColor(255,10,10)
-                x = 't'
-                y = 'hfV'
-
-            elif i == 1:
-                logger.debug(funcname + ': Adding heat flow plot')
-                # The axes
-                title = 'Heat flow'
-                location = [0,0]
-                whichwidget = 1                
-                datetick = True
-                ylabel = 'W/m**2'
-                # The line to plot
-                buffersize = self.buffersizestd
-                xdata = np.zeros(buffersize) * np.NaN
-                ydata = np.zeros(buffersize) * np.NaN
-                name = 'HFS'
-                lineplot = pyqtgraph.PlotDataItem( name = name )
-                linewidth = 1
-                color = QtGui.QColor(255,10,10)
-                x = 't'
-                y = 'hf'
-            elif i == 2:
-                logger.debug(funcname + ': Adding heat flow plot')
-                # The axes
-                title = 'Temperature voltage'
-                location = [1,0]
-                whichwidget = 0                
-                datetick = True
-                ylabel = 'V'
-                # The line to plot
-                buffersize = self.buffersizestd
-                xdata = np.zeros(buffersize) * np.NaN
-                ydata = np.zeros(buffersize) * np.NaN
-                name = 'Temp [V]'
-                lineplot = pyqtgraph.PlotDataItem( name = name )
-                linewidth = 1
-                color = QtGui.QColor(255,10,10)
-                x = 't'
-                y = 'NTCV'
-            elif i == 3:
-                logger.debug(funcname + ': Adding heat flow plot')
-                # The axes
-                title = 'Temperature'
-                location = [1,0]
-                whichwidget = 1                
-                datetick = True
-                ylabel = 'degC'
-                # The line to plot
-                buffersize = self.buffersizestd
-                xdata = np.zeros(buffersize) * np.NaN
-                ydata = np.zeros(buffersize) * np.NaN
-                name = 'Temp '
-                lineplot = pyqtgraph.PlotDataItem( name = name )
-                linewidth = 1
-                color = QtGui.QColor(255,10,10)
-                x = 't'
-                y = 'NTC'
-            elif i == 4:
-                logger.debug(funcname + ': Adding input voltage plot')
-                # The axes
-                title = 'Input voltage not scaled'
-                location = [2,0]
-                whichwidget = 0                
-                datetick = True
-                ylabel = 'V'
-                # The line to plot
-                buffersize = self.buffersizestd
-                xdata = np.zeros(buffersize) * np.NaN
-                ydata = np.zeros(buffersize) * np.NaN
-                name = 'VINV'
-                lineplot = pyqtgraph.PlotDataItem( name = name )
-                linewidth = 1
-                color = QtGui.QColor(255,10,10)
-                x = 't'
-                y = 'VIN'
-            elif i == 5:
-                logger.debug(funcname + ': Adding input voltage plot')
-                # The axes
-                title = 'Input voltage'
-                location = [2,0]
-                whichwidget = 1                
-                datetick = True
-                ylabel = 'V'
-                # The line to plot
-                buffersize = self.buffersizestd
-                xdata = np.zeros(buffersize) * np.NaN
-                ydata = np.zeros(buffersize) * np.NaN
-                name = 'VIN'
-                lineplot = pyqtgraph.PlotDataItem( name = name )
-                linewidth = 1
-                color = QtGui.QColor(255,10,10)
-                x = 't'
-                y = 'VIN'
-
-
+        logger.debug(funcname )
+        # The axes
+        title = 'LR Cal'
+        location = [2,0]
+        whichwidget = 0
+        datetick = True
+        ylabel = 'T [°C]'
+        # The line to plot
+        buffersize = self.buffersizestd
+        xdata = np.zeros(buffersize) * np.NaN
+        ydata = np.zeros(buffersize) * np.NaN
+        name = 'LR cal'
+        lineplot = pyqtgraph.PlotDataItem( name = name )
+        linewidth = 1
+        color = QtGui.QColor(255,10,10)
+        x = 't'
+        y = 'hfV'
+        if True:
             plot = pyqtgraph.PlotWidget(title=title)
-            if(whichwidget == 1):
-                self.layout_plot.addWidget(plot,location[0],location[1])
-            else:
-                self.layout_rawplot.addWidget(plot,location[0],location[1])
-            if(datetick):
-                axis = pyqtgraph.DateAxisItem(orientation='bottom')
-                plot.setAxisItems({"bottom": axis})
-
+            self.layout_plot.addWidget(plot,2,0,1,2)
+            axis = pyqtgraph.DateAxisItem(orientation='bottom')
+            plot.setAxisItems({"bottom": axis})
             plot.setLabel('left', ylabel )
-            if False:
-                plot.setLabel('bottom', xlabel )
-
             plot_dict = {'widget':plot,'lines':[]}
             # Add a lines with the actual data to the graph
             if True:
@@ -369,36 +360,29 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 # Add the line to all plots
                 self.plots.append(plot_dict)
             
-        
-
-
-
-    def create_datadisplaywidget(self):
-        """ Widget that shows the heatflowsensor data
-        """
-        self.datadisplaywidget = QtWidgets.QWidget()
-        self.datadisplaywidget_layout = QtWidgets.QGridLayout(self.datadisplaywidget)
-        self.snlabel       = QtWidgets.QLabel('Serialnumber')
-        self.timelabel     = QtWidgets.QLabel('Time')
-        fsize         = self.snlabel.fontMetrics().size(0, self.snlabel.text())
-        self.snlabel.setFont(QtGui.QFont('Arial', fsize.height()+10))
-        self.snlabel.setAlignment(QtCore.Qt.AlignCenter)        
-        self.timelabel.setFont(QtGui.QFont('Arial', fsize.height()+10))
-        self.timelabel.setAlignment(QtCore.Qt.AlignCenter)                
+        # Add displays
         self._datadisplays = {}
-        self._datadisplays['0'] = datadisplay(title='CH0')
-        self._datadisplays['1'] = datadisplay(title='CH1')
-        self._datadisplays['2'] = datadisplay(title='CH2')
-        self._datadisplays['3'] = datadisplay(title='CH3')
-
-
-        self.datadisplaywidget_layout.addWidget(self.snlabel,0,0,1,2)
-        self.datadisplaywidget_layout.addWidget(self.timelabel,1,0,1,2)        
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['0'],2,0)
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['1'],2,1)
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['2'],3,0)
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['3'],3,1)
+        self._datadisplays['T'] = datadisplay(title='T')
+        self._datadisplays['Tset'] = datadisplay(title='T set')
+        self._datadisplays['Tseted'] = QtWidgets.QLineEdit()
+        self._datadisplays['Tseted'].setText('15.00')
+        self._datadisplays['Tseted'].setValidator(QtGui.QDoubleValidator())
+        self._datadisplays['Tseted'].setMaxLength(6)
+        self._datadisplays['Tseted'].setAlignment(QtCore.Qt.AlignRight)
+        self._datadisplays['Tsetbut'] = QtWidgets.QPushButton('Set temperature')
+        self._datadisplays['Tsetbut'].clicked.connect(self._set_temp)
+        self.layout_plot.addWidget(self._datadisplays['T'],0,0)
+        self.layout_plot.addWidget(self._datadisplays['Tset'],0,1)
+        self.layout_plot.addWidget(self._datadisplays['Tseted'],1,0)
+        self.layout_plot.addWidget(self._datadisplays['Tsetbut'],1,1)
         
+    def _set_temp(self):
+        """ Temperature set command
+        """
+        T = float(self._datadisplays['Tseted'].text())
+        logger.debug('Setting temperature to {:f}'.format(T))
+        comdict = {'Tset':T}
+        self.device.comqueue.put(comdict)
     
     def thread_status(self,status):
         """ This function is regularly called by redvypr whenever the thread is started/stopped
