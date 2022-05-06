@@ -264,22 +264,28 @@ class redvypr(QtCore.QObject):
 
 
     def parse_configuration(self,configfile=None):
-        """ Parses a dictionary with a configuration
+        """ Parses a dictionary with a configuration, if the file does not exists it will return with false, otherwise self.config will be updated
+
+        Arguments:
+            configfile (str or dict):
+        Returns:
+            True or False
         """
         funcname = "parse_configuration()"
         logger.debug(funcname)
         if(type(configfile) == str):
-            logger.debug(funcname + ':Opening yaml file: ' + str(configfile))
+            logger.info(funcname + ':Opening yaml file: ' + str(configfile))
             if(os.path.exists(configfile)):
                 fconfig = open(configfile)
                 config = yaml.load(fconfig, Loader=yaml.loader.SafeLoader)
             else:
-                logger.debug(funcname + ':Yaml file: ' + str(configfile) +  ' does not exist!')                
+                logger.warning(funcname + ':Yaml file: ' + str(configfile) +  ' does not exist!')
+                return False
         elif(type(configfile) == dict):
-            logger.debug(funcname + ':Opening dictionary')
+            logger.info(funcname + ':Opening dictionary')
             config = configfile
         else:
-            logger.debug(funcname + ':This shouldnt happen')
+            logger.warning(funcname + ':This shouldnt happen')
 
 
         self.config = config
@@ -300,14 +306,25 @@ class redvypr(QtCore.QObject):
 
             
         # Adding the devices found in the config ['devices']
-        if('devices' in config.keys()):
+        # Check if we have a list or something
+        try:
+            iter(config['devices'])
+            hasdevices = True
+        except:
+            hasdevices = False        
+        if(hasdevices):
             for device in config['devices']:
                 logger.info('Adding device:' +device['deviceconfig']['name'])
                 # TODO, check if the name has been already given
                 self.add_device(devicemodulename=device['devicemodulename'],deviceconfig=device['deviceconfig'])
 
         # Connecting devices ['connections']
-        if('connections' in config.keys()):        
+        try:
+            iter(config['connections'])
+            hascons = True
+        except:
+            hascons = False        
+        if(hascons):        
             logger.debug('Connecting devices')
             for con in config['connections']:
                 logger.debug('Connecting devices:' + str(con))
@@ -349,7 +366,7 @@ class redvypr(QtCore.QObject):
                     for s in self.devices:
                         if(s['device'].name == start_device):
                             self.start_device_thread(s['device'])
-
+        return True
 
     def populate_device_path(self):
         """Searches all device paths for modules and creates a list with the

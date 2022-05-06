@@ -8,10 +8,7 @@ Configuration options for a heatflow device
 
 - deviceconfig:
     name: lrTcal
-    config:
-      dummy:
-        - name: HFSV
-          coeff: [2, 0, 9200, 0, 0, W/m2]
+    loglevel: debug
   devicemodulename: lrcal_Tfluid
 
 """
@@ -100,16 +97,12 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
     try:
         dt = config['dt']
     except:
-        dt = 0.5
+        dt = 2.0
         
     if True:
         try:
-            serial_device = serial.Serial(serial_name,baud,parity=parity,stopbits=stopbits,bytesize=bytesize,timeout=0.1)
-            #print('Serial device 0',serial_device)            
-            #serial_device.timeout(0.05)
-            #print('Serial device 1',serial_device)                        
+            ser = serial.Serial(serial_name,baud,parity=parity,stopbits=stopbits,bytesize=bytesize,timeout=0.1)
         except Exception as e:
-            #print('Serial device 2',serial_device)
             logger.debug(funcname + ': Exception open_serial_device {:s} {:d}: '.format(serial_name,baud) + str(e))
             return False
         
@@ -121,20 +114,119 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
     while True:
         try:
             com = comqueue.get(block=False)
-            print('received',com)
+            logger.debug(funcname + ': received command {:s}'.format(str(com)))
+            if(com == 'stop'):
+                break
+            elif(type(com) == dict):
+                logger.debug(funcname + ': Dictionary')
+                if('Tset' in com.keys()): # Set a new temperature
+                    logger.debug(funcname + ': Dictionary Tset')                    
+                    T = com['Tset']
+                    try:
+                        Tstr = "{:2.1f}".format(T).replace('.',',').encode('UTF-8')
+                        com = b'$1WVAR0 ' + Tstr + b'\r'
+                        logger.debug(funcname + ' Writing command: {:s}'.format(str(com)))
+                        ser.write(com) # write a string
+                        s = ser.read(100)
+                        print(s)
+                    except Exception as e:
+                        logger.debug(funcname + ': Could not write command because of: {:s}'.format(str(e)))
         except:
             pass
 
         time.sleep(dt)
-        
+        datadict = {}        
         # Read T set
         com = b'$1RVAR0 \r'
         print(com)
         ser.write(com) # write a string
         s = ser.read(100)
         print(s)
-        
-        #dataqueue.put(datan)
+        # Parse the result (should look like this: b'*1 +0015.00\r'
+        sstr = s.decode()
+        print(sstr)
+        if('*1' in sstr):
+            try:
+                Tset = sstr.split(' ')[1][:-1]
+                Tset = float(Tset)
+            except Exception as e:
+                logger.debug(funcname + ':' + str(e))
+                Tset = np.NaN
+
+            datadict['Tset'] = Tset
+
+            
+        com = b'$1RVAR100 \r'
+        print('Reading bath temperature',com)
+        ser.write(com)     # write a string
+        #time.sleep(0.1)
+        s = ser.read(100)
+        print(s)
+        # Parse the result (should look like this: b'*1 +0015.00\r'
+        sstr = s.decode()
+        print(sstr)
+        if('*1' in sstr):
+            try:
+                Tbath = sstr.split(' ')[1][:-1]
+                Tbath = float(Tbath)
+            except Exception as e:
+                logger.debug(funcname + ':' + str(e))
+                Tbath = np.NaN
+
+            datadict['Tbath'] = Tbath
+
+        # Title
+        com = b'$1RVAR9 \r'
+        print('Reading title',com)
+        ser.write(com)     # write a string
+        #time.sleep(0.1)
+        s = ser.read(100)
+        print(s)
+        # Unit
+        com = b'$1RVAR10 \r'
+        print('Reading unit',com)
+        ser.write(com)     # write a string
+        #time.sleep(0.1)
+        s = ser.read(100)
+        print(s)
+        # Serial number
+        com = b'$1RVAR16 \r'
+        print('Reading serial number',com)
+        ser.write(com)     # write a string
+        #time.sleep(0.1)
+        s = ser.read(100)
+        print(s)
+        # Min set point
+        com = b'$1RVAR17 \r'
+        print('Reading min set point',com)
+        ser.write(com)     # write a string
+        #time.sleep(0.1)
+        s = ser.read(100)
+        print(s)
+        # Max set point
+        com = b'$1RVAR18 \r'
+        print('Reading max set point',com)
+        ser.write(com)     # write a string
+        #time.sleep(0.1)
+        s = ser.read(100)
+        print(s)
+        # Stability range
+        com = b'$1RVAR28 \r'
+        print('Stability range',com)
+        ser.write(com)     # write a string
+        #time.sleep(0.1)
+        s = ser.read(100)
+        print(s)
+        # Symbol of steadiness
+        com = b'$1RVAR29 \r'
+        print('Steadiness',com)
+        ser.write(com)     # write a string
+        #time.sleep(0.1)
+        s = ser.read(100)
+        print(s)                      
+
+        if(len(datadict.keys())>0):
+            dataqueue.put(datadict)
 
 class Device():
     def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = {}):
@@ -192,7 +284,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         for b in baud:
             self._combo_serial_baud.addItem(str(b))
 
-        self._combo_serial_baud.setCurrentIndex(4)
+        self._combo_serial_baud.setCurrentIndex(5)
         # creating a line edit
         edit = QtWidgets.QLineEdit(self)
         onlyInt = QtGui.QIntValidator()
@@ -311,7 +403,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.tabname = 'Data'        
         self.dt_update = dt_update
         self.buffersizestd = buffersize
-        self.plots = []
         
         config = {'dt_update':self.dt_update,'last_update':time.time()}
         self.config = config
@@ -333,48 +424,71 @@ class displayDeviceWidget(QtWidgets.QWidget):
         buffersize = self.buffersizestd
         xdata = np.zeros(buffersize) * np.NaN
         ydata = np.zeros(buffersize) * np.NaN
+        xdata2 = np.zeros(buffersize) * np.NaN
+        ydata2 = np.zeros(buffersize) * np.NaN        
         name = 'LR cal'
-        lineplot = pyqtgraph.PlotDataItem( name = name )
+        lineplot = pyqtgraph.PlotDataItem( name = 'T bath' )
+        lineplot2 = pyqtgraph.PlotDataItem( name = 'T set' )
         linewidth = 1
         color = QtGui.QColor(255,10,10)
         x = 't'
         y = 'hfV'
         if True:
             plot = pyqtgraph.PlotWidget(title=title)
-            self.layout_plot.addWidget(plot,2,0,1,2)
             axis = pyqtgraph.DateAxisItem(orientation='bottom')
             plot.setAxisItems({"bottom": axis})
             plot.setLabel('left', ylabel )
-            plot_dict = {'widget':plot,'lines':[]}
+            plot_dict = {'widget':plot,'lines':{}}
             # Add a lines with the actual data to the graph
             if True:
-                # Heat flow sensor Voltage
+                # Bath temperature
                 logger.debug(funcname + ':Adding a line to the plot')
                 # Configuration of the line plot
+                linewidth = 2
+                color = QtGui.QColor(255,50,50)
                 lineconfig = {'device':self.device,'x':x,'y':y,'linewidth':linewidth,'color':color}
                 # Add the line and the configuration to the lines list
                 line_dict = {'line':lineplot,'config':lineconfig,'x':xdata,'y':ydata}
                 # The lines are sorted according to the devicenames, each device has a list of lines attached to it
-                plot_dict['lines'].append(line_dict)
+                plot_dict['lines']['Tbath'] = line_dict
+                plot.addLegend()                
                 plot.addItem(lineplot)
+
+                # The set temperature
+                linewidth = 1
+                color = QtGui.QColor(10,10,10)
+                lineconfig = {'device':self.device,'x':x,'y':y,'linewidth':linewidth,'color':color}
+                # Add the line and the configuration to the lines list
+                line_dict = {'line':lineplot2,'config':lineconfig,'x':xdata2,'y':ydata2}
+                # The lines are sorted according to the devicenames, each device has a list of lines attached to it
+                plot_dict['lines']['Tset'] = line_dict
+                plot.addItem(lineplot2)
+                
                 # Add the line to all plots
-                self.plots.append(plot_dict)
-            
+                self.plot = plot_dict
+
+        self.timelabel     = QtWidgets.QLabel('Time')
+        fsize         = self.timelabel.fontMetrics().size(0, self.timelabel.text())
+        self.timelabel.setFont(QtGui.QFont('Arial', fsize.height()+10))
+        self.timelabel.setAlignment(QtCore.Qt.AlignCenter)                        
         # Add displays
         self._datadisplays = {}
-        self._datadisplays['T'] = datadisplay(title='T')
+        self._datadisplays['Tbath'] = datadisplay(title='T bath')
         self._datadisplays['Tset'] = datadisplay(title='T set')
         self._datadisplays['Tseted'] = QtWidgets.QLineEdit()
-        self._datadisplays['Tseted'].setText('15.00')
+        self._datadisplays['Tseted'].setText('18.00')
         self._datadisplays['Tseted'].setValidator(QtGui.QDoubleValidator())
         self._datadisplays['Tseted'].setMaxLength(6)
         self._datadisplays['Tseted'].setAlignment(QtCore.Qt.AlignRight)
         self._datadisplays['Tsetbut'] = QtWidgets.QPushButton('Set temperature')
         self._datadisplays['Tsetbut'].clicked.connect(self._set_temp)
-        self.layout_plot.addWidget(self._datadisplays['T'],0,0)
-        self.layout_plot.addWidget(self._datadisplays['Tset'],0,1)
-        self.layout_plot.addWidget(self._datadisplays['Tseted'],1,0)
-        self.layout_plot.addWidget(self._datadisplays['Tsetbut'],1,1)
+        self.layout_plot.addWidget(self.timelabel,0,0) 
+        self.layout_plot.addWidget(self._datadisplays['Tbath'],1,0)
+        self.layout_plot.addWidget(self._datadisplays['Tset'],1,1)
+        self.layout_plot.addWidget(self._datadisplays['Tseted'],2,0)
+        self.layout_plot.addWidget(self._datadisplays['Tsetbut'],2,1)
+        # Pyqtgraph plot
+        self.layout_plot.addWidget(plot,3,0,1,2)        
         
     def _set_temp(self):
         """ Temperature set command
@@ -388,13 +502,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         """ This function is regularly called by redvypr whenever the thread is started/stopped
         """
         pass        
-        #self.update_buttons(status['threadalive'])
-        
-    def update_line_styles(self):
-        for plot_dict in self.plot_dicts:
-            for line_dict in plot_dict['lines']:
-                config = line_dict['config'] 
-        
+
     def update(self,data):
         """ Updates the data display
         """
@@ -403,27 +511,60 @@ class displayDeviceWidget(QtWidgets.QWidget):
         tnow = time.time()
         #logger.debug(funcname + 'data {:s}'.format(str(data)))
         try:
-            #print(funcname + 'got data',data)
-            devicename = data['device']
-            # Only plot the data in intervals of dt_update length, this prevents high CPU loads for fast devices
+            print(funcname + 'got data',data)
             update = (tnow - self.config['last_update']) > self.config['dt_update']
 
             if(update):
                 self.config['last_update'] = tnow
 
-            # Serialnumber (should stay the same though)
-            self.snlabel.setText(data['sn'])
             # Update the time
-            timestr = datetime.datetime.fromtimestamp(data['t']).strftime('%d %b %Y %H:%M:%S')
+            t = data['t']
+            timestr = datetime.datetime.fromtimestamp(t).strftime('%d %b %Y %H:%M:%S')
             self.timelabel.setText(timestr)
-            # Update data display
-            channel = data['ch'] # Get the channel
-            
-            newdata = float(data[channel])
-            #print('Channel',channel,'newdata',newdata)
-            self._datadisplays[channel].set_data(newdata)
+            try:
+                self._datadisplays['Tset'].set_data(data['Tset'])
+                Tset = data['Tset']
+            except Exception as e:
+                logger.debug(funcname + ':Tset error: {:s}'.format(str(e)))
+                Tset = None
 
-            
+            try:
+                self._datadisplays['Tbath'].set_data(data['Tbath'])
+                Tbath = data['Tbath']
+            except Exception as e:
+                logger.debug(funcname + ':Tbath error: {:s}'.format(str(e)))
+                Tbath = None
+
+            if(Tbath is not None):
+                # Update the plot
+                lbath = self.plot['lines']['Tbath']
+                x = lbath['x']
+                y = lbath['y']            
+                x        = np.roll(x,-1)
+                y        = np.roll(y,-1)
+                x[-1]    = float(t)
+                y[-1]    = float(Tbath)
+                lbath['x']  = x
+                lbath['y']  = y
+                color = lbath['config']['color']
+                linewidth = lbath['config']['linewidth']                                
+                lbath['line'].setData(x=x,y=y,pen = pyqtgraph.mkPen(color), width=linewidth)
+
+            if(Tset is not None):
+                # Update the plot
+                lset = self.plot['lines']['Tset']
+                x = lset['x']
+                y = lset['y']            
+                x        = np.roll(x,-1)
+                y        = np.roll(y,-1)
+                x[-1]    = float(t)
+                y[-1]    = float(Tset)
+                lset['x']  = x
+                lset['y']  = y
+                color = lset['config']['color']
+                linewidth = lset['config']['linewidth']                
+                lset['line'].setData(x=x,y=y,pen = pyqtgraph.mkPen(color), width=linewidth)                                
+                
         except Exception as e:
             logger.debug(funcname + ':' + str(e))
 
