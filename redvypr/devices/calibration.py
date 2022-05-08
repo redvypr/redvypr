@@ -53,156 +53,6 @@ def start(datainqueue,dataqueue,comqueue):
                 logger.debug(funcname + ':Exception:' + str(e))
                 
 
-class Device():
-    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = {}):
-        """
-        """
-        self.publish     = False # publishes data, a typical sensor is doing this
-        self.subscribe   = True  # subscribing data, a typical datalogger is doing this
-        self.datainqueue = datainqueue
-        self.dataqueue   = dataqueue        
-        self.comqueue    = comqueue
-        self.config      = config # Please note that this is typically a placeholder, the config structure will be written by redvypr and the yaml
-        self.create_standard_config()
-        
-        # The mininum and maximum times, used for making the time axis the same between different sensors
-        self.tmin = []
-        self.tmax = []
-        
-        self.tmin_old = 0#np.NaN
-        self.tmax_old = 0
-        
-        self.dt_allowoff = 20 # The offset allowed before a new range is used
-        
-        # Variable to save interval for averaging/cutting by user choice
-        self.user_interval = []
-        self.data_interval = []
-        
-        # The units of the different devices
-        self.units = []
-        
-    def finalize_init(self):
-        """ Function is called when the initialization of the redvypr device is completed
-        """        
-        if True:
-            # Check if config has necessary entries
-            try:
-                self.config['polyfit']
-            except:
-                self.config['polyfit'] = {}
-            
-            try:
-                self.config['polyfit']['manual']
-            except:
-                self.config['polyfit']['manual'] = []
-                
-            try:
-                self.config['polyfit']['comments']
-            except:
-                self.config['polyfit']['comments'] = []
-                
-                
-            try:
-                self.config['devices']
-            except:
-                self.config['devices'] = []
-                
-            try:
-                self.config['polyfit']['headers']
-            except:
-                self.config['polyfit']['headers'] = []
-                
-        
-    def create_standard_config(self):
-        """
-        """
-        
-        try:
-            self.config['devices']
-        except:
-            self.config['devices'] = []
-            
-
-    def start(self):
-        start(self.datainqueue,self.dataqueue,self.comqueue)
-        
-    def get_trange(self):
-        """ Create a x axis range for
-        """
-        tmin = np.nanmin(self.tmin)# - self.dt_allowoff
-        tmax = np.nanmax(self.tmax)# + self.dt_allowoff
-        #print(self.tmax,self.tmax_old)
-        if((tmin - self.tmin_old) > self.dt_allowoff):
-            self.tmin_old = tmin
-        if((tmax-self.tmax_old) > 0):
-            tmax = tmax + self.dt_allowoff
-            self.tmax_old = tmax
-            return [tmin,tmax]
-        else:
-            return [self.tmin_old,self.tmax_old]
-        
-        #print('tminmax',tmin,tmax)
-        
-        
-    def __str__(self):
-        sstr = 'calibration'
-        return sstr
-
-
-
-class initDeviceWidget(QtWidgets.QWidget):
-    device_start = QtCore.pyqtSignal(Device)
-    device_stop = QtCore.pyqtSignal(Device)            
-    connect      = QtCore.pyqtSignal(Device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other sensors
-    def __init__(self,sensor=None):
-        super(QtWidgets.QWidget, self).__init__()
-        layout        = QtWidgets.QFormLayout(self)
-        self.device   = device        
-        self.label    = QtWidgets.QLabel("Rawdatadisplay setup")
-        self.conbtn = QtWidgets.QPushButton("Connect logger to devices")
-        self.conbtn.clicked.connect(self.con_clicked)        
-        self.startbtn = QtWidgets.QPushButton("Start logging")
-        self.startbtn.clicked.connect(self.start_clicked)
-        self.startbtn.setCheckable(True)
-
-        layout.addRow(self.label)        
-        layout.addRow(self.conbtn)
-        layout.addRow(self.startbtn)
-
-    def con_clicked(self):
-        button = self.sender()
-        self.connect.emit(self.device)        
-            
-    def start_clicked(self):
-        button = self.sender()
-        if button.isChecked():
-            print("button pressed")
-            self.device_start.emit(self.device)
-            button.setText("Stop logging")
-            self.conbtn.setEnabled(False)
-        else:
-            print('button released')
-            self.device_stop.emit(self.device)
-            button.setText("Start logging")
-            self.conbtn.setEnabled(True)
-            
-            
-    def thread_status(self,status):
-        """ This function is called by redvypr whenever the thread is started/stopped
-        """   
-        self.update_buttons(status['threadalive'])
-
-       
-    def update_buttons(self,thread_status):
-            """ Updating all buttons depending on the thread status (if its alive, graying out things)
-            """
-            if(thread_status):
-                self.startbtn.setText('Stop logging')
-                self.startbtn.setChecked(True)
-                #self.conbtn.setEnabled(False)
-            else:
-                self.startbtn.setText('Start logging')
-                #self.conbtn.setEnabled(True)
 
 
 
@@ -248,6 +98,7 @@ class PlotWidget(QtWidgets.QWidget):
             title = '{:s} x:{:s}, y:{:s}'.format(config['device'],config['x'],config['y']) 
             
             plot = pyqtgraph.PlotWidget(title=title)
+            plot.sigRangeChanged.connect(self._range_changed)
             layout.addWidget(plot,1,0)
 
             graph = plot
@@ -334,7 +185,15 @@ class PlotWidget(QtWidgets.QWidget):
             
         config = {'dt_update':dt_update,'last_update':time.time()}
         self.config = config
-
+        
+    def _range_changed(self):
+        """ Called when the x or y range of the plot was change
+        """
+        print('Changed')
+        axX = self.plots[0]['widget'].getAxis('bottom')
+        print('x axis range: {}'.format(axX.range)) # <------- get range of x axis
+        self.sig_tminmax_changed.emit(axX.range[0],axX.range[1])
+        
     def mouseMoved(self,evt):
         """Function if mouse has been moved in a pyqtgraph
         """
@@ -365,6 +224,12 @@ class PlotWidget(QtWidgets.QWidget):
             self.vlines.append(vLine)
             
         
+    def clear_data(self):
+        """ Clear all data to NaN
+        """
+        self.plots[0]['x'][:] = np.NaN
+        self.plots[0]['y'][:] = np.NaN 
+        self.plot_data(force_plot=True)
     def get_data_clicked(self):
         """ Function called by the get_data button to, yes, get_data
         """
@@ -448,9 +313,45 @@ class PlotWidget(QtWidgets.QWidget):
         """ Functions changes xlimits based on a global value found in device.tmin device.tmax
         """
         pw            = self.plots[0]['widget'] # The plot widget
-        pw.setXRange(tmin,tmax)
+        print('Hallo',self.device._xsync )
+        if(self.device._xsync == 2):
+            tmax = time.time()
+            tmin = tmax - self.device._xsync_dt
+            pw.setXRange(tmin,tmax)
+        elif(self.device._xsync == 1):
+            print('Updating',tmin,tmax)
+            pw.setXRange(tmin,tmax)
             
-        
+    def plot_data(self,force_plot = False):
+        funcname = __name__ + '.plot_data():'
+        try:
+            # Loop over all plot axes
+            for line_dict in self.plots:
+                for line_dict in self.plots:
+                    if(line_dict['newdata'] or force_plot):
+                        line      = line_dict['line'] # The line to plot
+                        config    = line_dict['config'] # The line to plot
+                        x         = line_dict['x'] # The line to plot
+                        y         = line_dict['y'] # The line to plot  
+                        line.setData(x=x,y=y,pen = pyqtgraph.mkPen(config['color'], width=config['linewidth']))
+                        line_dict['newdata']  = False
+                        
+                    # Use the same time axes for all
+                    pw            = line_dict['widget'] # The plot widget
+                    if(True):
+                        config_device = line_dict['config']
+                        datastream_x = config_device['device'] + '(' + config_device['x'] + ',' + config_device['y'] + ')' 
+                        #datastream_x_combo = 
+                        #[tmin,tmax] = self.device.get_trange()
+                        #print('tmin',tmin,tmax)
+                        #pw.setXRange(tmin,tmax)
+                        #self.sig_tminmax_changed.emit(tmin,tmax)
+                        ylabel = '[{:s}]'.format(self.device.units[self.numdisp]['y'])
+                        #print('hallo',self.numdisp,ylabel)
+                        pw.setLabel('left', ylabel)
+        except Exception as e:
+            logger.debug(funcname + str(e))
+            
     def update(self,data):
         funcname = __name__ + '.update():'
         tnow = time.time()
@@ -505,31 +406,13 @@ class PlotWidget(QtWidgets.QWidget):
                             
                         line_dict['newdata']  = True
                         self.device.tmin[self.numdisp] = np.nanmin(x)
-                        self.device.tmax[self.numdisp] = np.nanmax(x)  
-            #if(update):
-            if True:
-                for line_dict in self.plots:
-                    if(line_dict['newdata']):
-                        line      = line_dict['line'] # The line to plot
-                        config    = line_dict['config'] # The line to plot
-                        x         = line_dict['x'] # The line to plot
-                        y         = line_dict['y'] # The line to plot  
-                        line.setData(x=x,y=y,pen = pyqtgraph.mkPen(config['color'], width=config['linewidth']))
-                        line_dict['newdata']  = False
-                        
-                    # Use the same time axes for all
-                    pw            = line_dict['widget'] # The plot widget
-                    if(True):
-                        [tmin,tmax] = self.device.get_trange()
-                        #print('tmin',tmin,tmax)
-                        pw.setXRange(tmin,tmax)
-                        self.sig_tminmax_changed.emit(tmin,tmax)
-                        ylabel = '[{:s}]'.format(self.device.units[self.numdisp]['y'])
-                        #print('hallo',self.numdisp,ylabel)
-                        pw.setLabel('left', ylabel)
+                        self.device.tmax[self.numdisp] = np.nanmax(x)
+                          
+            self.plot_data()
     
         except Exception as e:
-            logger.debug(funcname + str(e))
+            pass
+            #logger.debug(funcname + str(e))
             
             
 #
@@ -934,147 +817,7 @@ class PolyfitWidget(QtWidgets.QWidget):
                     self.refsensor_fittableindex  = i
                 else:
                     item.setBackground(white)
-#
-#
-# The display widget
-#
-#
-class displayDeviceWidget(QtWidgets.QWidget):
-    """ Widget is a wrapper for several calibration widgets (average table, response time, ...) 
-    This widget can be configured with a configuration dictionary
-    Args: 
-    tabwidget:
-    device:
-    buffersize:
-    dt_update:
-    """
-    
-    def __init__(self,dt_update = 0.25,device=None,buffersize=1000,tabwidget = None):
-        funcname = __name__ + '.init()'
-        super(QtWidgets.QWidget, self).__init__()
-        self.layout        = QtWidgets.QGridLayout(self)
-        self.device = device
-        self.buffersizestd = buffersize
-        self.plots = []
-        self.databuf = [] # A buffer of data
-        self.tabwidget = tabwidget
-        self.widgets = {}
-
-        self.tabwidget.addTab(self,'Data')   
-        config = {'dt_update':dt_update,'last_update':time.time()}
-        self.config = config
-        print('Hallo',self.device.config)
-        if 'polyfit' in self.device.config.keys(): # If the user wants to have a table
-            self.widgets['polyfit'] = PolyfitWidget(device = self.device)
-            i1 = self.tabwidget.addTab(self.widgets['polyfit'],'Polyfit')
-            
-        if 'responsetime' in self.device.config.keys(): # If the user wants to have a table
-            self.widgets['responsetime'] = ResponsetimeWidget(device = self.device)
-            i1 = self.tabwidget.addTab(self.widgets['responsetime'],'Responsetime')
-            
-        # Add buttons
-        self.btn_add_interval = QtWidgets.QPushButton('Get data')
-        
-        self.update_widgets()
-
-    def update_widgets(self):
-        """ Compares self.config and widgets and add/removes plots if necessary
-        """
-        funcname = __name__ + '.update_widgets():'
-        logger.debug(funcname)
-        self.device.tmin = []
-        self.device.tmax = []
-        # Remove all plots (thats brute but easy to bookeep
-        for plot in self.plots:
-            plot.close()
-            
-        # Clear the data interval list
-        self.device.data_interval = []
-        # Add axes to the widget
-        config=self.device.config
-        #print('Hallo2',config['devices'])
-        i = 0
-        for i,config_device in enumerate(config['devices']):
-            logger.debug(funcname + ': Adding device ' + str(config_device))
-                                                
-            plot = PlotWidget(config_device,device=self.device,numdisp=i,buffersize=self.buffersizestd)
-            self.btn_add_interval.clicked.connect(plot.get_data_clicked)
-            self.layout.addWidget(plot,i,0)
-            self.plots.append(plot)
-            # Add the tmin/tmax functionality
-            self.device.tmin.append(1e30)
-            self.device.tmax.append(-1e30)
-            self.device.data_interval.append([])
-            self.device.units.append({'x':'s','y':'NA'})
-            
-        # Connect all mouse moved signals
-        for plot in self.plots:
-            for plot2 in self.plots:
-                if(plot == plot2):
-                    continue
-                else:
-                    plot.sig_mouse_moved.connect(plot2.mouse_moved_proc)
-                    plot.sig_tminmax_changed.connect(plot2.update_tminmax)
-                    plot.sig_mouse_clicked.connect(plot2.mouse_clicked_proc)
-                    plot.sig_new_user_data.connect(self.new_user_data)
-         
-        self.layout.addWidget(self.btn_add_interval,i+1,0)
-        # Update the average data table
-        
-        if 'polyfit' in self.device.config.keys(): # If the user wants to have a table
-            self.widgets['polyfit'].init_table()
-
-        # Update the responsetime widget with the new data            
-        if 'responsetime' in self.device.config.keys(): # If the user wants to have a table
-            for plot in self.plots:
-                plot.sig_new_user_data.connect(self.widgets['responsetime']._update_data_intervals)
-        
-        
-    def new_user_data(self,numdisp):
-        print('New user data',numdisp)
-        self.widgets['polyfit'].update_table(numdisp=numdisp)
-               
-    def config_widget(self):
-        """
-        """
-        self.configwidget = QtWidgets.QWidget(self)
-        self.configwidget.show()
-        
-    def thread_status(self,status):
-        """ This function is regularly called by redvypr whenever the thread is started/stopped
-        """
-        pass
-        #print('Thread',status)
-        #self.update_buttons(status['threadalive'])
-        
-    def update_line_styles(self):
-        for plot_dict in self.plot_dicts:
-            for line_dict in plot_dict['lines']:
-                config = line_dict['config'] 
-        
-    def update(self,data):
-        funcname = __name__ + '.update():'
-        tnow = time.time()
-        self.databuf.append(data)
-        #print('got data',data)
-        #print('statistics',self.device.statistics)
-        devicename = data['device']
-        # Only plot the data in intervals of dt_update length, this prevents high CPU loads for fast devices
-        update = (tnow - self.config['last_update']) > self.config['dt_update']
-        #print('update update',update)
-        if(update):
-            self.config['last_update'] = tnow
-            try:
-                for data in self.databuf:
-                    for plot in self.plots:
-                        plot.update(data)
-
-                self.databuf = []
-    
-            except Exception as e:
-                logger.debug(funcname + 'Exception:' + str(e))
-                
-                
+                    
 #
 #
 #
@@ -1404,4 +1147,385 @@ class ResponsetimeWidget(QtWidgets.QWidget):
         else:
             logger.warning('No data available')
 
+
+
+class Device():
+    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = {}):
+        """
+        """
+        self.publish     = False # publishes data, a typical sensor is doing this
+        self.subscribe   = True  # subscribing data, a typical datalogger is doing this
+        self.datainqueue = datainqueue
+        self.dataqueue   = dataqueue        
+        self.comqueue    = comqueue
+        self.config      = config # Please note that this is typically a placeholder, the config structure will be written by redvypr and the yaml
+        self.create_standard_config()
+        
+        # The mininum and maximum times, used for making the time axis the same between different sensors
+        self.tmin = []
+        self.tmax = []
+        
+        self.tmin_old = 0#np.NaN
+        self.tmax_old = 0
+        
+        self.dt_allowoff = 20 # The offset allowed before a new range is used
+        
+        # Variable to save interval for averaging/cutting by user choice
+        self.user_interval = []
+        self.data_interval = []
+        
+        # The units of the different devices
+        self.units = []
+        
+        # How and if to synchronize the different X-Axes? 0: None, 1: With one Axes, 2: Last dt
+        self._xsync = 0
+        self._xsync_dt = 60
+        
+    def finalize_init(self):
+        """ Function is called when the initialization of the redvypr device is completed
+        """        
+        if True:
+            # Check if config has necessary entries
+            try:
+                self.config['polyfit']
+            except:
+                self.config['polyfit'] = {}
             
+            try:
+                self.config['polyfit']['manual']
+            except:
+                self.config['polyfit']['manual'] = []
+                
+            try:
+                self.config['polyfit']['comments']
+            except:
+                self.config['polyfit']['comments'] = []
+                
+                
+            try:
+                self.config['devices']
+            except:
+                self.config['devices'] = []
+                
+            try:
+                self.config['polyfit']['headers']
+            except:
+                self.config['polyfit']['headers'] = []
+                
+        
+    def create_standard_config(self):
+        """
+        """
+        
+        try:
+            self.config['devices']
+        except:
+            self.config['devices'] = []
+            
+
+    def start(self):
+        start(self.datainqueue,self.dataqueue,self.comqueue)
+        
+    def get_trange(self):
+        """ Create a x axis range for
+        """
+        tmin = np.nanmin(self.tmin)# - self.dt_allowoff
+        tmax = np.nanmax(self.tmax)# + self.dt_allowoff
+        #print(self.tmax,self.tmax_old)
+        if((tmin - self.tmin_old) > self.dt_allowoff):
+            self.tmin_old = tmin
+        if((tmax-self.tmax_old) > 0):
+            tmax = tmax + self.dt_allowoff
+            self.tmax_old = tmax
+            return [tmin,tmax]
+        else:
+            return [self.tmin_old,self.tmax_old]
+        
+        #print('tminmax',tmin,tmax)
+        
+        
+    def __str__(self):
+        sstr = 'calibration'
+        return sstr
+
+            
+#
+#
+#
+#
+#
+#
+class initDeviceWidget(QtWidgets.QWidget):
+    device_start = QtCore.pyqtSignal(Device)
+    device_stop = QtCore.pyqtSignal(Device)            
+    connect      = QtCore.pyqtSignal(Device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other sensors
+    def __init__(self,sensor=None):
+        super(QtWidgets.QWidget, self).__init__()
+        layout        = QtWidgets.QFormLayout(self)
+        self.device   = device        
+        self.label    = QtWidgets.QLabel("Rawdatadisplay setup")
+        self.conbtn = QtWidgets.QPushButton("Connect logger to devices")
+        self.conbtn.clicked.connect(self.con_clicked)        
+        self.startbtn = QtWidgets.QPushButton("Start logging")
+        self.startbtn.clicked.connect(self.start_clicked)
+        self.startbtn.setCheckable(True)
+
+        layout.addRow(self.label)        
+        layout.addRow(self.conbtn)
+        layout.addRow(self.startbtn)
+
+    def con_clicked(self):
+        button = self.sender()
+        self.connect.emit(self.device)        
+            
+    def start_clicked(self):
+        button = self.sender()
+        if button.isChecked():
+            print("button pressed")
+            self.device_start.emit(self.device)
+            button.setText("Stop logging")
+            self.conbtn.setEnabled(False)
+        else:
+            print('button released')
+            self.device_stop.emit(self.device)
+            button.setText("Start logging")
+            self.conbtn.setEnabled(True)
+            
+            
+    def thread_status(self,status):
+        """ This function is called by redvypr whenever the thread is started/stopped
+        """   
+        self.update_buttons(status['threadalive'])
+
+       
+    def update_buttons(self,thread_status):
+            """ Updating all buttons depending on the thread status (if its alive, graying out things)
+            """
+            if(thread_status):
+                self.startbtn.setText('Stop logging')
+                self.startbtn.setChecked(True)
+                #self.conbtn.setEnabled(False)
+            else:
+                self.startbtn.setText('Start logging')
+                #self.conbtn.setEnabled(True)
+
+
+#
+#
+# The display widget
+#
+#
+class displayDeviceWidget(QtWidgets.QWidget):
+    """ Widget is a wrapper for several calibration widgets (average table, response time, ...) 
+    This widget can be configured with a configuration dictionary
+    Args: 
+    tabwidget:
+    device:
+    buffersize:
+    dt_update:
+    """
+    
+    def __init__(self,dt_update = 0.25,device=None,buffersize=1000,tabwidget = None):
+        funcname = __name__ + '.init()'
+        super(QtWidgets.QWidget, self).__init__()
+        self.layout        = QtWidgets.QGridLayout(self)
+        self.device        = device
+        self.buffersizestd = buffersize
+        self.plots         = []
+        self.databuf       = [] # A buffer of data
+        self.tabwidget     = tabwidget
+        self.widgets       = {}
+
+        self.tabwidget.addTab(self,'Data')   
+        config = {'dt_update':dt_update,'last_update':time.time()}
+        self.config = config
+        print('Hallo',self.device.config)
+        if 'polyfit' in self.device.config.keys(): # If the user wants to have a table
+            self.widgets['polyfit'] = PolyfitWidget(device = self.device)
+            i1 = self.tabwidget.addTab(self.widgets['polyfit'],'Polyfit')
+            
+        if 'responsetime' in self.device.config.keys(): # If the user wants to have a table
+            self.widgets['responsetime'] = ResponsetimeWidget(device = self.device)
+            i1 = self.tabwidget.addTab(self.widgets['responsetime'],'Responsetime')
+            
+        # Add buttons
+        self.btn_add_interval = QtWidgets.QPushButton('Get data')
+        self.btn_clear = QtWidgets.QPushButton('Clear data')
+        self.check_sync = QtWidgets.QRadioButton('Sync with')
+        self.check_sync.setStatusTip('All axes are synced with the choosen axes')
+        self.check_sync_no = QtWidgets.QRadioButton('None')
+        self.check_sync_no.setStatusTip('All axes are updated individually')
+        self.check_sync_lastdt = QtWidgets.QRadioButton('Last dt')
+        self.check_sync_lastdt.setStatusTip('The last dt seconds are displayed')
+        self.ledit_lastdt = QtWidgets.QLineEdit()
+        self.ledit_lastdt.setValidator(QtGui.QDoubleValidator())
+        self.ledit_lastdt.setText('60')
+        self.combo_sync = QtWidgets.QComboBox()
+        self.combo_sync.currentIndexChanged.connect(self._xsync_changed)
+        
+        self._pub_group = QtWidgets.QButtonGroup()
+        self._pub_group.addButton(self.check_sync)
+        self._pub_group.addButton(self.check_sync_no)
+        self._pub_group.addButton(self.check_sync_lastdt)
+        self.check_sync_no.setChecked(True)
+        self.check_sync.toggled.connect(self._xsync_changed)
+        self.check_sync_no.toggled.connect(self._xsync_changed)
+        self.check_sync_lastdt.toggled.connect(self._xsync_changed)
+        
+        self.update_widgets()
+        self._xsync_changed()
+        
+    def _xsync_changed(self):
+        """
+        """
+        print('Hallo')
+        # Connect tmin/max changed of sync to all the others
+        config=self.device.config
+        for i,config_device in enumerate(config['devices']):
+            datastream_x = config_device['device'] + '(' + config_device['x'] + ',' + config_device['y'] + ')' 
+            if(datastream_x == self.combo_sync.currentText()):
+                print('Current datastream',datastream_x,i)
+                break
+
+        
+        
+        for plot in self.plots:
+                # Disconnect all signals
+                try:
+                    plot.sig_tminmax_changed.disconnect()
+                except:
+                    pass   
+                    
+        if(self.check_sync_no.isChecked()):
+            logger.debug('No X-Sync')
+            self.device._xsync = 0
+            return
+        if(self.check_sync_lastdt.isChecked()):
+            logger.debug('Last dt X-Sync')
+            self.device._xsync = 2
+            self.device._xsync_dt = float(self.ledit_lastdt.text())
+            return
+        # Sync with one axis
+        if(self.check_sync.isChecked()):
+            logger.debug('Axes X-Sync')
+            self.device._xsync = 1   
+            plot = self.plots[i]
+             
+            if True:
+                for plot2 in self.plots:
+                    if(plot == plot2):
+                        continue
+                    else:
+                        #print('Connecting signals')
+                        plot.sig_tminmax_changed.connect(plot2.update_tminmax)
+
+    def update_widgets(self):
+        """ Compares self.config and widgets and add/removes plots if necessary
+        """
+        funcname = __name__ + '.update_widgets():'
+        logger.debug(funcname)
+        self.combo_sync.clear()
+        self.device.tmin = []
+        self.device.tmax = []
+        # Remove all plots (thats brute but easy to bookeep
+        for plot in self.plots:
+            plot.close()
+            
+        # Clear the data interval list
+        self.device.data_interval = []
+        # Add axes to the widget
+        config=self.device.config
+        #print('Hallo2',config['devices'])
+        i = 0
+        for i,config_device in enumerate(config['devices']):
+            logger.debug(funcname + ': Adding device ' + str(config_device))
+                                                
+            plot = PlotWidget(config_device,device=self.device,numdisp=i,buffersize=self.buffersizestd)
+            self.btn_add_interval.clicked.connect(plot.get_data_clicked)
+            self.btn_clear.clicked.connect(plot.clear_data)
+            self.layout.addWidget(plot,i,0,1,-1)
+            self.plots.append(plot)
+            # Add the tmin/tmax functionality
+            self.device.tmin.append(1e30)
+            self.device.tmax.append(-1e30)
+            self.device.data_interval.append([])
+            self.device.units.append({'x':'s','y':'NA'})
+            datastream_x = config_device['device'] + '(' + config_device['x'] + ',' +config_device['y'] + ')' 
+            self.combo_sync.addItem(datastream_x)
+            
+            
+        # Connect all mouse moved signals
+        for plot in self.plots:
+            for plot2 in self.plots:
+                if(plot == plot2):
+                    continue
+                else:
+                    plot.sig_mouse_moved.connect(plot2.mouse_moved_proc)
+                    #plot.sig_tminmax_changed.connect(plot2.update_tminmax)
+                    plot.sig_mouse_clicked.connect(plot2.mouse_clicked_proc)
+                    plot.sig_new_user_data.connect(self.new_user_data)
+         
+        self.layout.addWidget(self.btn_add_interval,i+1,0,1,-1)
+        self.layout.addWidget(self.btn_clear,i+2,6)
+        self.layout.addWidget(QtWidgets.QLabel('Sync X-Axis'),i+2,0)
+        self.layout.addWidget(self.check_sync_no,i+2,1)
+        self.layout.addWidget(self.check_sync,i+2,2)
+        self.layout.addWidget(self.combo_sync,i+2,3)
+        self.layout.addWidget(self.check_sync_lastdt,i+2,4)
+        self.layout.addWidget(self.ledit_lastdt,i+2,5)
+        # Update the average data table
+        
+        if 'polyfit' in self.device.config.keys(): # If the user wants to have a table
+            self.widgets['polyfit'].init_table()
+
+        # Update the responsetime widget with the new data            
+        if 'responsetime' in self.device.config.keys(): # If the user wants to have a table
+            for plot in self.plots:
+                plot.sig_new_user_data.connect(self.widgets['responsetime']._update_data_intervals)
+        
+        
+    def new_user_data(self,numdisp):
+        print('New user data',numdisp)
+        self.widgets['polyfit'].update_table(numdisp=numdisp)
+               
+    def config_widget(self):
+        """
+        """
+        self.configwidget = QtWidgets.QWidget(self)
+        self.configwidget.show()
+        
+    def thread_status(self,status):
+        """ This function is regularly called by redvypr whenever the thread is started/stopped
+        """
+        pass
+        #print('Thread',status)
+        #self.update_buttons(status['threadalive'])
+        
+    def update_line_styles(self):
+        for plot_dict in self.plot_dicts:
+            for line_dict in plot_dict['lines']:
+                config = line_dict['config'] 
+        
+    def update(self,data):
+        funcname = __name__ + '.update():'
+        tnow = time.time()
+        self.databuf.append(data)
+        #print('got data',data)
+        #print('statistics',self.device.statistics)
+        devicename = data['device']
+        # Only plot the data in intervals of dt_update length, this prevents high CPU loads for fast devices
+        update = (tnow - self.config['last_update']) > self.config['dt_update']
+        #print('update update',update)
+        if(update):
+            self.config['last_update'] = tnow
+            try:
+                for data in self.databuf:
+                    for plot in self.plots:
+                        plot.update(data)
+
+                self.databuf = []
+    
+            except Exception as e:
+                logger.debug(funcname + 'Exception:' + str(e))
+                
+                
