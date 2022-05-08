@@ -16,6 +16,10 @@ import pyqtgraph
 from redvypr.data_packets import device_in_data, get_keys, get_datastream
 import redvypr.files as files
 import xlsxwriter
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+
+
 
 _icon_file = files.icon_file
 
@@ -52,10 +56,42 @@ def start(datainqueue,dataqueue,comqueue):
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))
                 
+#
+#
+#https://stackoverflow.com/questions/14097463/displaying-nicely-an-algebraic-expression-in-pyqt#44593428
+#
+class MathTextLabel(QtWidgets.QWidget):
 
+    def __init__(self, mathText, parent=None, **kwargs):
+        super(QtWidgets.QWidget, self).__init__(parent, **kwargs)
 
+        l=QtWidgets.QVBoxLayout(self)
+        l.setContentsMargins(0,0,0,0)
 
+        r,g,b,a=self.palette().base().color().getRgbF()
 
+        self._figure=Figure(edgecolor=(r,g,b), facecolor=(r,g,b))
+        self._canvas=FigureCanvas(self._figure)
+        l.addWidget(self._canvas)
+        self._figure.clear()
+        text=self._figure.suptitle(
+            mathText,
+            x=0.0,
+            y=1.0,
+            horizontalalignment='left',
+            verticalalignment='top',
+            #size=QtGui.QFont().pointSize()*2
+            size=QtGui.QFont().pointSize()
+        )
+        self._canvas.draw()
+
+        (x0,y0),(x1,y1)=text.get_window_extent().get_points()
+        w=x1-x0; h=y1-y0
+
+        self._figure.set_size_inches(w/80, h/80)
+        self.setFixedSize(int(w),int(h))
+        
+        
 #                
 #
 #
@@ -315,8 +351,6 @@ class PlotWidget(QtWidgets.QWidget):
         pw            = self.plots[0]['widget'] # The plot widget
         print('Hallo',self.device._xsync )
         if(self.device._xsync == 2):
-            tmax = time.time()
-            tmin = tmax - self.device._xsync_dt
             pw.setXRange(tmin,tmax)
         elif(self.device._xsync == 1):
             print('Updating',tmin,tmax)
@@ -405,8 +439,6 @@ class PlotWidget(QtWidgets.QWidget):
                             line_dict['y']  = y
                             
                         line_dict['newdata']  = True
-                        self.device.tmin[self.numdisp] = np.nanmin(x)
-                        self.device.tmax[self.numdisp] = np.nanmax(x)
                           
             self.plot_data()
     
@@ -433,21 +465,11 @@ class PolyfitWidget(QtWidgets.QWidget):
         self.datatable.verticalHeader().hide()
         self.datatable_widget = QtWidgets.QWidget()
         
-        # Buttons to add/remove datapoints
-        self.init_table_buttons()
-        # The fit widget
-        self.init_fitwidget()
-        
-        
-        
-        splitter1 = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        splitter1.addWidget(self.datatable_widget)
-        splitter1.addWidget(self.fitwidget['widget'])
-        self.layout.addWidget(splitter1)
-        
         self.headerrows = 2
         self.coloffset  = 1
+        self.num_additional_columns = 2 # tstart/tend/numsamples        
         
+
     def init_table_buttons(self):
         self.btnlayout = QtWidgets.QGridLayout(self.datatable_widget)
         
@@ -459,7 +481,7 @@ class PolyfitWidget(QtWidgets.QWidget):
         self.btn_remrow = QtWidgets.QPushButton('Rem row(s)')
         self.btn_remrow.clicked.connect(self.rem_row)
         self.label_strformat = QtWidgets.QPushButton('Number format')
-        self.lineedit_strformat = QtWidgets.QLineEdit('{:2.2f}')
+        self.lineedit_strformat = QtWidgets.QLineEdit('{:2.4f}')
         self.btnlayout.addWidget(self.datatable,1,0,1,5)
         self.btnlayout.addWidget(self.btn_addhdr,2,0)
         self.btnlayout.addWidget(self.btn_addrow,2,1)
@@ -523,7 +545,10 @@ class PolyfitWidget(QtWidgets.QWidget):
     def init_table(self):
         """
         """
-        self.num_additional_columns = 2 # tstart/tend/numsamples
+        
+        # Buttons to add/remove datapoints
+        self.init_table_buttons()
+        
         numcols = len(self.device.config['devices']) + len(self.device.config['polyfit']['manual']) + len(self.device.config['polyfit']['comments'])
         self.numdevices = len(self.device.config['devices']) + len(self.device.config['polyfit']['manual'])
         self.numcols = numcols
@@ -552,7 +577,6 @@ class PolyfitWidget(QtWidgets.QWidget):
             item = QtWidgets.QTableWidgetItem(devstr)
             self.datatable.setItem(0,colnum,item)
             FLAG_HAS_DEV = True
-        
         
         
         print('Manual',self.device.config['polyfit']['manual'],colnum)
@@ -600,6 +624,9 @@ class PolyfitWidget(QtWidgets.QWidget):
         item = QtWidgets.QTableWidgetItem('t end')
         self.datatable.setItem(0,colnum,item)
         colnum = colnum + 1
+        
+        # The fit widget
+        self.init_fitwidget()
 
         # Add time unit
         if(FLAG_HAS_DEV):
@@ -622,12 +649,18 @@ class PolyfitWidget(QtWidgets.QWidget):
             # this is done to call reference sensor_changed for the first time
             reference_sensor = self.fitwidget['refcombo'].currentText()
             
-            # Init the fittable
-            self.update_fittable()
+            
             # update the reference sensor
             self.reference_sensor_changed(reference_sensor)
             
         self.datatable.resizeColumnsToContents()
+        
+        
+        
+        splitter1 = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter1.addWidget(self.datatable_widget)
+        splitter1.addWidget(self.fitwidget['widget'])
+        self.layout.addWidget(splitter1)
         
     def update_table(self,numdisp=None):
         """ This is called when new data from the realtimedataplot is available, please note that every subscribed device is calling this
@@ -669,6 +702,7 @@ class PolyfitWidget(QtWidgets.QWidget):
         t2item = QtWidgets.QTableWidgetItem(t2str)
         xitem  = QtWidgets.QTableWidgetItem(strformat.format(xmean))
         yitem  = QtWidgets.QTableWidgetItem(strformat.format(ymean))
+        yitem.rawdata = ymean # Save the original data as additional property regardless of the display type
         
         
         #self.datatable.setItem(numintervals+1,0,nitem)
@@ -686,7 +720,7 @@ class PolyfitWidget(QtWidgets.QWidget):
         self.fitwidget = {}
         self.fitwidget['widget'] = QtWidgets.QWidget(self)
         self.fitwidget['fitbutton'] = QtWidgets.QPushButton('Fit data')
-        self.fitwidget['fitbutton'].clicked.connect(self.fitdata)
+        
         self.fitwidget['savebutton'] = QtWidgets.QPushButton('Save')
         self.fitwidget['savebutton'].clicked.connect(self.savedata)
         self.fitwidget['layout'] = QtWidgets.QGridLayout(self.fitwidget['widget'])
@@ -702,26 +736,53 @@ class PolyfitWidget(QtWidgets.QWidget):
         for i,dev in enumerate(self.device.config['polyfit']['manual']):
             self.fitwidget['refcombo'].addItem(dev['name'])
             
-            
+        ## To choose which fit to use    
         self.fitwidget['fitcombo'] = QtWidgets.QComboBox(self)
-        self.fitwidget['fitcombo'].addItem('Linear fit')
+        self.fitwidget['fitcombo'].addItem('Linear')
+        self.fitwidget['fitcombo'].addItem('Polynom')
+        self.fitwidget['fitcombo'].addItem('Steinhart-Hart NTC')
+        self.fitwidget['fitcombo'].currentTextChanged.connect(self._fittype_changed)
         
-        
-        
+        self._fittype_changed() # Call it to initialize the different fit types
         
         
         self.fitwidget['layout'].addWidget(QtWidgets.QLabel('Fit type'),1,0)
         self.fitwidget['layout'].addWidget(self.fitwidget['fitcombo'],1,1)
-        self.fitwidget['layout'].addWidget(self.fitwidget['fittable'],2,0,1,2)   
-        self.fitwidget['layout'].addWidget(QtWidgets.QLabel('Reference Sensor'),3,0)
-        self.fitwidget['layout'].addWidget(self.fitwidget['refcombo'],3,1)
-        self.fitwidget['layout'].addWidget(self.fitwidget['fitbutton'],4,0,1,1)
-        self.fitwidget['layout'].addWidget(self.fitwidget['savebutton'],4,1,1,1)
+        
+        self.fitwidget['layout'].addWidget(self.fitwidget['fittable'],3,0,1,2)   
+        self.fitwidget['layout'].addWidget(QtWidgets.QLabel('Reference Sensor'),4,0)
+        self.fitwidget['layout'].addWidget(self.fitwidget['refcombo'],4,1)
+        self.fitwidget['layout'].addWidget(self.fitwidget['fitbutton'],5,0,1,1)
+        self.fitwidget['layout'].addWidget(self.fitwidget['savebutton'],5,1,1,1)
         fitlabel = QtWidgets.QLabel('Data fit')
         fitlabel.setStyleSheet("font-weight: bold")
         fitlabel.setAlignment(QtCore.Qt.AlignCenter)
         self.fitwidget['layout'].addWidget(fitlabel,0,0,1,2)
         self.fitwidget['fittable'].resizeColumnsToContents()
+        
+    def _fittype_changed(self):
+        """ Update the different fits of the calibration widget
+        """
+        # Init the fittable
+        self.update_fittable_basis()
+        try:
+            self.fittypedisplay.close()
+        except:
+            pass
+        curtext = self.fitwidget['fitcombo'].currentText()
+        if(curtext == 'Linear'):
+            mathText=r'$Y = a \times X$'
+            self.update_fittable_linear()
+            self.fitwidget['fitbutton'].clicked.connect(self.fitdata_linear)
+        elif(curtext == 'Steinhart-Hart NTC'):
+            self.update_fittable_shh()
+            self.fitwidget['fitbutton'].clicked.connect(self.fitdata_shh)
+            mathText=r'$Y^{-1} = a_0 + a_1 \times log(X) + a_2 \times log(X^2) + a_3 \times log(X^3) + a_4 \times log(X^4)$'
+        elif(curtext == 'Polynom'):
+            mathText=r'$Y = a_0 + a_1 \times X + a_2 \times X^2$'
+            
+        self.fittypedisplay = MathTextLabel(mathText)            
+        self.fitwidget['layout'].addWidget(self.fittypedisplay,2,1,1,-1)
         
     def savedata(self):
         """ Save the data found in datatable and fittable into a file format to be choosen by the save widget
@@ -738,8 +799,20 @@ class PolyfitWidget(QtWidgets.QWidget):
         
         self.savewidget.show()
         
-    def fitdata(self):
-        """ Here the data in self.datatable is read and processed according to the fit type
+        
+    def update_fittable_shh(self):
+        """ Update the table to fill in the fittdata according to a Steinhart-Hart type of fit
+        """        
+        self.fitwidget['fittable'].setRowCount(5)
+        fititem = QtWidgets.QTableWidgetItem('a0')
+        self.fitwidget['fittable'].setItem(1,0,fititem)
+        fititem = QtWidgets.QTableWidgetItem('a1')
+        self.fitwidget['fittable'].setItem(2,0,fititem)
+        fititem = QtWidgets.QTableWidgetItem('a2')
+        self.fitwidget['fittable'].setItem(3,0,fititem)
+        
+    def fitdata_shh(self):
+        """ Here the data in self.datatable is fitted against a Steinhart-Hart type of fit typically used for NTC Thermistor
         """
         # Get all data
         ndevices = self.numdevices # Get the number of devices
@@ -749,9 +822,9 @@ class PolyfitWidget(QtWidgets.QWidget):
             data = np.zeros((nrec,ndevices)) # Fill a numpy array
             for i in range(ndevices):
                 for j in range(nrec):
-                    ydata = self.datatable.item(self.headerrows + j,self.coloffset + 2 + i)
+                    ydata = self.datatable.item(self.headerrows + j,self.coloffset + i)
                     try:
-                        ydata = float(ydata.text())
+                        ydata = float(ydata.rawdata) # TODO, here the original data can be used as well
                     except:
                         ydata = np.NaN
                         
@@ -762,28 +835,73 @@ class PolyfitWidget(QtWidgets.QWidget):
                     print('data',data)
                     
             # Fit the data (linear fit)
-            # TODO here also other fits need to be added
             for i in range(ndevices):
-                fit = np.nanmean(data[:,self.refsensor_fittableindex] / data[:,i])
+                fit = np.nanmean(data[:,self.refsensor_deviceindex] / data[:,i])
                 print(fit)
                 fitstr = "{:2.3f}".format(fit) # TODO, here once could choose a format
-                if(self.fitwidget['fittable'].item(1,i) == None):
-                    fititem = QtWidgets.QTableWidgetItem(fitstr)
-                    self.fitwidget['fittable'].setItem(1,i,fititem)
-                else:
-                    self.fitwidget['fittable'].item(1,i).setText(fitstr)
+                if(self.fitwidget['fittable'].item(1,self.coloffset+i) == None):
+                    fititem = QtWidgets.QTableWidgetItem('new')
+                    self.fitwidget['fittable'].setItem(1,self.coloffset+i,fititem)
+
+                self.fitwidget['fittable'].item(1,self.coloffset+i).rawdata = fit # Save the original as additional property
+                self.fitwidget['fittable'].item(1,self.coloffset+i).setText(fitstr)
+                   
+        
+        
+    def update_fittable_linear(self):
+        """ Update the table to fill in the fittdata
+        """        
+        fititem = QtWidgets.QTableWidgetItem('a')
+        self.fitwidget['fittable'].setItem(1,0,fititem)
+        
+    def fitdata_linear(self):
+        """ Here the data in self.datatable is read and processed according to the fit type
+        """
+        # Get all data
+        ndevices = self.numdevices # Get the number of devices
+        print('Fit',ndevices)
+        if( ndevices > 0): # If we have devices
+            nrec = len(self.device.data_interval[0])
+            data = np.zeros((nrec,ndevices)) # Fill a numpy array
+            for i in range(ndevices):
+                for j in range(nrec):
+                    ydata = self.datatable.item(self.headerrows + j,self.coloffset + i)
+                    try:
+                        ydata = float(ydata.rawdata) # TODO, here the original data can be used as well
+                    except:
+                        ydata = np.NaN
+                        
+                    print('ydata',i,j,ydata)
+                    data[j,i] = ydata
+                        
+                    print('ydata',i,j,ydata)
+                    print('data',data)
+                    
+            # Fit the data (linear fit)
+            for i in range(ndevices):
+                fit = np.nanmean(data[:,self.refsensor_deviceindex] / data[:,i])
+                print(fit)
+                fitstr = "{:2.3f}".format(fit) # TODO, here once could choose a format
+                if(self.fitwidget['fittable'].item(1,self.coloffset+i) == None):
+                    fititem = QtWidgets.QTableWidgetItem('new')
+                    self.fitwidget['fittable'].setItem(1,self.coloffset+i,fititem)
+
+                self.fitwidget['fittable'].item(1,self.coloffset+i).rawdata = fit # Save the original as additional property
+                self.fitwidget['fittable'].item(1,self.coloffset+i).setText(fitstr)
                      
 
-    def update_fittable(self):
+    def update_fittable_basis(self):
         """
         """
         # Populate the fittable
         self.fitwidget['fittable'].setColumnCount(self.numcols+2)
         self.fitwidget['fittable'].setRowCount(2)
+        fititem = QtWidgets.QTableWidgetItem('Coefficients')
+        self.fitwidget['fittable'].setItem(0,0,fititem)
         for i in range(self.numcols):
             sensor = self.datatable.item(0,self.coloffset+i).text()
             item = QtWidgets.QTableWidgetItem(sensor)
-            self.fitwidget['fittable'].setItem(0,i+2,item)
+            self.fitwidget['fittable'].setItem(0,self.coloffset+i,item)
             
             
         self.fitwidget['fittable'].resizeColumnsToContents()
@@ -792,6 +910,7 @@ class PolyfitWidget(QtWidgets.QWidget):
         """ Is called whenever the reference sensor was changed
         """   
         # Get the column number of the reference sensor
+        funcname = 'reference_sensor_changed():'
         numcols = self.datatable.columnCount()
         refcolor = QtGui.QColor(200,200,200)
         white = QtGui.QColor(255,255,255)
@@ -818,6 +937,14 @@ class PolyfitWidget(QtWidgets.QWidget):
                 else:
                     item.setBackground(white)
                     
+        for i,dev in enumerate(self.device.config['devices']):
+            devstr = self._get_devicestr(dev)
+            if(reference_sensor == devstr):
+                self.refsensor_deviceindex = i
+                #print('Refsensor deviceindex',i)
+                break
+        
+        logger.debug(funcname + 'Refsensor deviceindex {:d}, datatableindex {:d}, fittableindex {:d}'.format(i,self.refsensor_datatableindex,self.refsensor_fittableindex))
 #
 #
 #
@@ -1360,6 +1487,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.ledit_lastdt = QtWidgets.QLineEdit()
         self.ledit_lastdt.setValidator(QtGui.QDoubleValidator())
         self.ledit_lastdt.setText('60')
+        self.ledit_lastdt.textChanged[str].connect(self._xsync_changed)
         self.combo_sync = QtWidgets.QComboBox()
         self.combo_sync.currentIndexChanged.connect(self._xsync_changed)
         
@@ -1371,14 +1499,29 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.check_sync.toggled.connect(self._xsync_changed)
         self.check_sync_no.toggled.connect(self._xsync_changed)
         self.check_sync_lastdt.toggled.connect(self._xsync_changed)
-        
+        # A timer for the last dt seconds update
+        self._xsync_timer=QtCore.QTimer()
+        self._xsync_timer.timeout.connect(self._update_plot_range)  
         self.update_widgets()
         self._xsync_changed()
         
-    def _xsync_changed(self):
+    def _update_plot_range(self):
+        """ Updates all plots with a x range, used for last dt x sync
         """
+        print('Update plot range timer')
+        tmax = time.time()
+        tmin = tmax - self.device._xsync_dt
+        self.device.tmin = tmin
+        self.device.tmax = tmax
+        for plot in self.plots:
+            plot.update_tminmax(tmin,tmax)
+            
+    def _xsync_changed(self):
+        """ Updates the X-Range configuration of all plots
         """
         print('Hallo')
+        self._xsync_timer.stop() # Stop the dt timer
+        
         # Connect tmin/max changed of sync to all the others
         config=self.device.config
         for i,config_device in enumerate(config['devices']):
@@ -1387,8 +1530,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 print('Current datastream',datastream_x,i)
                 break
 
-        
-        
         for plot in self.plots:
                 # Disconnect all signals
                 try:
@@ -1402,8 +1543,16 @@ class displayDeviceWidget(QtWidgets.QWidget):
             return
         if(self.check_sync_lastdt.isChecked()):
             logger.debug('Last dt X-Sync')
+            dt = float(self.ledit_lastdt.text())
+            if(dt>5):
+                dt_timeout = 2000 # Every two seconds
+            else:
+                dt_timeout = dt/2*1000
+        
+            self._xsync_timer.start(int(dt_timeout)) # Every two seconds
+            #self._xsync_timer.timeout.emit()
             self.device._xsync = 2
-            self.device._xsync_dt = float(self.ledit_lastdt.text())
+            self.device._xsync_dt = dt
             return
         # Sync with one axis
         if(self.check_sync.isChecked()):
@@ -1445,15 +1594,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.btn_clear.clicked.connect(plot.clear_data)
             self.layout.addWidget(plot,i,0,1,-1)
             self.plots.append(plot)
-            # Add the tmin/tmax functionality
-            self.device.tmin.append(1e30)
-            self.device.tmax.append(-1e30)
             self.device.data_interval.append([])
             self.device.units.append({'x':'s','y':'NA'})
             datastream_x = config_device['device'] + '(' + config_device['x'] + ',' +config_device['y'] + ')' 
             self.combo_sync.addItem(datastream_x)
             
-            
+           
         # Connect all mouse moved signals
         for plot in self.plots:
             for plot2 in self.plots:
