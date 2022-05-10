@@ -1147,9 +1147,11 @@ class redvyprWidget(QtWidgets.QWidget):
                 devicetab.addTab(devicedisplaywidget_called,tabname)            
             # Append the widget to the processing queue
             self.redvypr.devices[ind_devices]['gui'].append(devicedisplaywidget_called)
+            self.redvypr.devices[ind_devices]['displaywidget'] = self.redvypr.devices[ind_devices]['gui'][0]
             self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
         else:
-            self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
+            self.redvypr.devices[ind_devices]['initwidget']    = deviceinitwidget
+            self.redvypr.devices[ind_devices]['displaywidget'] = None
                                
         
         self.redvypr.devices[ind_devices]['widget'] = devicewidget # This is the displaywidget
