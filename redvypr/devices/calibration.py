@@ -501,6 +501,7 @@ class PolyfitWidget(QtWidgets.QWidget):
         self.datatable.horizontalHeader().hide()
         self.datatable.verticalHeader().hide()
         self.datatable_widget = QtWidgets.QWidget()
+        self.datatable.itemChanged.connect(self._datatable_item_changed)
         
         self.headerrows = 2
         self.coloffset  = 1
@@ -508,6 +509,9 @@ class PolyfitWidget(QtWidgets.QWidget):
         
         # Buttons to add/remove datapoints
         self.init_widgets()
+        
+        
+        self.update_table()
         
     def init_widgets(self):
         """ Create all widgets and put them in a layout
@@ -538,9 +542,9 @@ class PolyfitWidget(QtWidgets.QWidget):
         self.fitwidget = {}
         self.fitwidget['widget'] = QtWidgets.QWidget(self)
         self.fitwidget['fitbutton'] = QtWidgets.QPushButton('Fit data')
+        self.fitwidget['plotbutton'] = QtWidgets.QPushButton('Plot fit')
         
-        self.fitwidget['savebutton'] = QtWidgets.QPushButton('Save')
-        self.fitwidget['savebutton'].clicked.connect(self.savedata)
+
         self.fitwidget['layout'] = QtWidgets.QGridLayout(self.fitwidget['widget'])
         self.fitwidget['refcombo'] = QtWidgets.QComboBox(self)
         self.fitwidget['fittable'] = QtWidgets.QTableWidget(self)
@@ -556,7 +560,8 @@ class PolyfitWidget(QtWidgets.QWidget):
         self.fitwidget['layout'].addWidget(QtWidgets.QLabel('Reference Sensor'),4,0)
         self.fitwidget['layout'].addWidget(self.fitwidget['refcombo'],4,1)
         self.fitwidget['layout'].addWidget(self.fitwidget['fitbutton'],5,0,1,1)
-        self.fitwidget['layout'].addWidget(self.fitwidget['savebutton'],5,1,1,1)
+        self.fitwidget['layout'].addWidget(self.fitwidget['plotbutton'],5,1,1,1)
+        self.fitwidget['plotbutton'].clicked.connect(self.plot_fit)
         fitlabel = QtWidgets.QLabel('Data fit')
         fitlabel.setStyleSheet("font-weight: bold")
         fitlabel.setAlignment(QtCore.Qt.AlignCenter)
@@ -568,6 +573,25 @@ class PolyfitWidget(QtWidgets.QWidget):
         splitter1.addWidget(self.datatable_widget)
         splitter1.addWidget(self.fitwidget['widget'])
         self.layout.addWidget(splitter1)
+        
+    def plot_fit(self):
+        """ Plots the original data together with the fit 
+        """
+        funcname = self.__class__.__name__ + 'plot_fit()'
+        self._plot_widget = QtWidgets.QWidget()
+        l=QtWidgets.QVBoxLayout(self._plot_widget)
+        l.setContentsMargins(0,0,0,0)
+
+        r,g,b,a=self.palette().base().color().getRgbF()
+
+        self._plot_figure=Figure(edgecolor=(r,g,b), facecolor=(r,g,b))
+        self._plot_canvas=FigureCanvas(self._plot_figure)
+        l.addWidget(self._plot_canvas)
+        self._plot_figure.clear()
+        ax = self._plot_figure.add_subplot(111)
+        ax.plot([1,2],[1,4],'-r')
+        self._plot_canvas.draw()
+        self._plot_widget.show()
         
     def add_headerrow(self):
         """ Adds a new headerrow to the table
@@ -584,34 +608,56 @@ class PolyfitWidget(QtWidgets.QWidget):
         print('Adding row')
         numrows = self.datatable.rowCount()
         # Add fill value to all data intervals
-        for d in self.device.data_interval:
-            d.append(None)
-        if True:
-            self.datatable.setRowCount(numrows + 1)
+        self.datatable.setRowCount(numrows + 1)
+        indrow = numrows # numrows - 1 
+        for idev,dev in enumerate(self.device.data_interval):
+            dempty = {'x':[np.NaN],'y':[np.NaN],'xuser':[0,0]}
+            dev.append(dempty)
+            
+        self.update_table()
+        
+            
         
     def rem_row(self):
         """ Remove the selected rows of the table
         """
-        print('Removing row')
+        funcname = self.__class__.__name__ + '.rem_row():'
+        logger.debug(funcname)
         rows = []
         for i in self.datatable.selectionModel().selection().indexes():
             row, column = i.row(), i.column()
             rows.append(row)
         
-        rows = list(set(rows))  
+        rows = list(set(rows))
         rows.sort(reverse=True)   
         print('Rows',rows)
+        # Remove them from the 
                 
         for row in rows:
             #if(row >= self.headerrows): # Check if its an header
-            if(row >= 2): # Check if its an header
-                print('Removing row',row)                        
-                self.datatable.removeRow(row)
-                if(row<self.headerrows):
+            if(row >= 2): # Check if its not an header
+                if(row<self.headerrows): # Check if its a header added by the user
+                    logger.debug(funcname + 'Removing header row {:d}'.format(row))                        
+                    self.datatable.removeRow(row)
                     self.headerrows -= 1
+                else:
+                    logger.debug(funcname + 'Removing data row {:d}'.format(row))                        
+                    num_devices = len(self.device.data_interval)
+                    for ndev in range(num_devices):
+                        dataitem = self.datatable.item(row,ndev + self.coloffset)
+                        try:
+                            inddata = dataitem.indrawdata
+                            print('a',self.device.data_interval[ndev])
+                            print('b',inddata,ndev)
+                            self.device.data_interval[ndev].pop(inddata)
+                        except Exception as e:
+                            print('Could not remove data',str(e))
+                            
+                    self.datatable.removeRow(row)
             else:
                 print('Will not remove the first rows',row) 
-    
+                
+        self.update_table()
     def _get_devicestr(self,dev):
         """ Helper function to make a generic device string out of the config
         """
@@ -619,7 +665,7 @@ class PolyfitWidget(QtWidgets.QWidget):
         datastream = get_datastream(y,device=dev['device'])
         return datastream 
     
-    def init_table(self):
+    def update_table_header(self):
         """ Initializes the table according to the self.device.config
         """
         
@@ -627,12 +673,25 @@ class PolyfitWidget(QtWidgets.QWidget):
         self.numdevices = len(self.device.config['devices']) + len(self.device.config['polyfit']['manual'])
         self.numcols = numcols
         self.datatable.setColumnCount(numcols+1 + self.num_additional_columns)
-        self.headerrows += len(self.device.config['polyfit']['headers'])
+        self.headerrows = len(self.device.config['polyfit']['headers']) + 2
         self.datatable.setRowCount(self.headerrows)
         # Add the custom headers
+        print('Updating header',len(self.device.config['polyfit']['headers']))
+        print(self.device.config['polyfit']['headers'])
         for j,header in enumerate(self.device.config['polyfit']['headers']):
-            item = QtWidgets.QTableWidgetItem(header)
-            self.datatable.setItem(2 + j,0,item)
+            if(type(header) == str):
+                item = QtWidgets.QTableWidgetItem(header)
+                self.datatable.setItem(2 + j,0,item)
+            else: # A List with headername and contents
+                print('fsfdf',header)
+                for ih,h in enumerate(header):
+                    print('Hallo',h,ih,self.headerrows,j)
+                    item = QtWidgets.QTableWidgetItem(str(h))
+                    self.datatable.setItem(2 + j,ih,item)
+            
+            
+        
+        
         
         FLAG_HAS_DEV = False
         # Add the devices
@@ -726,18 +785,19 @@ class PolyfitWidget(QtWidgets.QWidget):
     def update_table(self):
         """ This is called when new data from the realtimedataplot is available, note that every subscribed device is calling this
         """
+        self.datatable.blockSignals(True)
         funcname = self.__class__.__name__ + '.update_table():'
         numdisp = 0
         logger.debug(funcname)
         numrows = self.datatable.rowCount() - self.headerrows
         try:
             numintervals = len(self.device.data_interval[0])
-            numdevices = len(self.device.data_interval[0])
+            numdevices = len(self.device.data_interval)
         except:
             logger.warning(funcname + ' No devices/data intervals found')
             return
         
-        self.datatable.setRowCount(numintervals + 1 + self.headerrows)#numintervals+self.rowstart)
+        self.datatable.setRowCount(numintervals + self.headerrows)
         
         
         for ndev in range(numdevices):
@@ -767,7 +827,9 @@ class PolyfitWidget(QtWidgets.QWidget):
                 t2item = QtWidgets.QTableWidgetItem(t2str)
                 xitem  = QtWidgets.QTableWidgetItem(strformat.format(xmean))
                 yitem  = QtWidgets.QTableWidgetItem(strformat.format(ymean))
-                yitem.rawdata = ymean # Save the original data as additional property regardless of the display type
+                yitem.rawdata    = ymean # Save the original data as additional property regardless of the display type
+                yitem.indrawdata = i # Save the original data as additional property regardless of the display type
+                yitem.inddevice  = ndev # Save the original data as additional property regardless of the display type
                 #self.datatable.setItem(numintervals+1,0,nitem)
                 # Additional information
                 self.datatable.setItem(numrow,self._start_add_info_col,t1item)
@@ -776,6 +838,33 @@ class PolyfitWidget(QtWidgets.QWidget):
                 self.datatable.setItem(numrow,ndev+self.coloffset,yitem)
         
         self.datatable.resizeColumnsToContents()
+        self.datatable.blockSignals(False)
+        
+    def _datatable_item_changed(self,item):
+        """
+        """        
+        funcname = self.__class__.__name__ + '._datatable_item_changed():'
+        
+        print('Item changed',item.text(), item.column(), item.row())
+        try:
+            newdata = float(item.text())
+        except:
+            newdata = item.text()
+        try: # This exists, if the data was calculated as an average of self.device.user interval
+            rawdata    = item.rawdata
+            indrawdata = item.indrawdata
+            inddevice  = item.inddevice
+        except:
+            print('C')
+            return
+        
+        logger.debug(funcname + 'Modifying the data_interval data and redrawing table')
+        for ind,i in enumerate(self.device.data_interval[inddevice][indrawdata]['y']):
+            self.device.data_interval[inddevice][indrawdata]['y'][ind] = newdata
+            #i = newdata 
+            
+        self.update_table()
+
         
     def config_fitwidget(self):
         """ Fill the widgets with content according to self.device.config
@@ -835,26 +924,7 @@ class PolyfitWidget(QtWidgets.QWidget):
         
         self.fitwidget['layout'].addWidget(self.fittypedisplay,2,1,1,-1)
         
-    def savedata(self):
-        """ Save the data found in datatable and fittable into a file format to be choosen by the save widget
-        """
-        folder = QtWidgets.QFileDialog.getExistingDirectory(None, 'Choose folder to save sensor yaml files')        
-        tnow       = datetime.datetime.now()
-        tstr       = tnow.strftime('%Y-%m-%d_%H%M%S_')
-        fname = tstr + 'polyfit.yaml'
-        fname_full = folder + '/' + fname
-        #self.savewidget = QtWidgets.QWidget()
-        #self.savewidget.setWindowIcon(QtGui.QIcon(_icon_file)) 
-        #self.savewidget.setWindowTitle("Save")
-        
-        # Create a dictionary with the data to be saved
-        data_save = {}
-        data_save['data_interval'] = self.device.data_interval
-        data_save['config'] = self.device.config
-        
-        print('Saving to file {:s}'.format(fname_full))            
-        with open(fname_full, 'w') as fyaml:
-            yaml.dump(data_save, fyaml)
+
 
 
         
@@ -1466,11 +1536,14 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.startbtn = QtWidgets.QPushButton("Start logging")
         self.startbtn.clicked.connect(self.start_clicked)
         self.startbtn.setCheckable(True)
-        self.loadbtn = QtWidgets.QPushButton("Load saved data")
+        self.loadbtn = QtWidgets.QPushButton("Load calibration")
         self.loadbtn.clicked.connect(self.load_data)
+        self.savebtn = QtWidgets.QPushButton('Save calibration')
+        self.savebtn.clicked.connect(self.savedata)        
         layout.addRow(self.label)        
         layout.addRow(self.conbtn)
         layout.addRow(self.loadbtn)
+        layout.addRow(self.savebtn)
         layout.addRow(self.startbtn)
         
     def load_data(self):
@@ -1497,7 +1570,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         
         # Stop the device first
         self.device_stop.emit(self.device)
-        device = self.redvyprdevicelistentry['device']
+        #device = self.redvyprdevicelistentry['device']
+        device = self.device
         device.config = data_yaml['config']
         
         # Write the config to update the widgets
@@ -1507,6 +1581,51 @@ class initDeviceWidget(QtWidgets.QWidget):
         if('polyfit' in device.config.keys()):
             logger.debug(funcname + 'Updating polyfit widget')
             displaywidget.widgets['polyfit'].update_table()
+            
+    def savedata(self):
+        """ Save the data found in datatable and fittable into a file format to be choosen by the save widget
+        """
+        folder = QtWidgets.QFileDialog.getExistingDirectory(None, 'Choose folder to save sensor yaml files')        
+        tnow       = datetime.datetime.now()
+        tstr       = tnow.strftime('%Y-%m-%d_%H%M%S_')
+        fname = tstr + 'polyfit.yaml'
+        fname_full = folder + '/' + fname
+        # Create a dictionary with the data to be saved
+        device= self.device
+        data_save = {}
+        data_save['data_interval'] = self.device.data_interval
+        data_save['config']           = self.device.config
+        # Update the header  in config
+        if('polyfit' in device.config.keys()):
+            displaywidget = self.redvyprdevicelistentry['displaywidget']
+            datatable = displaywidget.widgets['polyfit'].datatable
+            ncols   = datatable.columnCount()
+            nheader = displaywidget.widgets['polyfit'].headerrows
+            data_units = []
+            for col in range(ncols):
+                try:
+                    data_units.append(datatable.item(1,col).text())
+                except:
+                    data_units.append('')
+            header = []
+            for row in range(2,nheader): # Header starts in third row
+                data_row = []
+                for col in range(ncols):
+                    try:
+                        data_row.append(datatable.item(row,col).text())
+                    except Exception as e:
+                        print('oho',e)
+                        data_row.append('')
+                    
+                header.append(data_row)
+            #self.device.config['polyfit']['headers']
+        
+            data_save['config']['polyfit']['headers'] = header
+            data_save['config']['polyfit']['units']   = data_units
+        
+        print('Saving to file {:s}'.format(fname_full))            
+        with open(fname_full, 'w') as fyaml:
+            yaml.dump(data_save, fyaml)
                 
 
     def con_clicked(self):
@@ -1744,7 +1863,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         
         if 'polyfit' in self.device.config.keys(): # If the user wants to have a table
             logger.debug(funcname + ': Init polyfit table ')
-            self.widgets['polyfit'].init_table()
+            self.widgets['polyfit'].update_table_header()
 
     
     def get_data_clicked(self):
