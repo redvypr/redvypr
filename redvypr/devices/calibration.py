@@ -855,7 +855,7 @@ class PolyfitWidget(QtWidgets.QWidget):
             indrawdata = item.indrawdata
             inddevice  = item.inddevice
         except:
-            print('C')
+            logger.warning(funcname + 'Could not get rawdata and indices, returning without table update')
             return
         
         logger.debug(funcname + 'Modifying the data_interval data and redrawing table')
