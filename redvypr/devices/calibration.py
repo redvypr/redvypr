@@ -18,6 +18,7 @@ import redvypr.files as files
 import xlsxwriter
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+import tempsensor
 
 class ntc():
     def __init__(self):
@@ -579,19 +580,47 @@ class PolyfitWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + 'plot_fit()'
         self._plot_widget = QtWidgets.QWidget()
-        l=QtWidgets.QVBoxLayout(self._plot_widget)
+        l=QtWidgets.QFormLayout(self._plot_widget)
         l.setContentsMargins(0,0,0,0)
-
         r,g,b,a=self.palette().base().color().getRgbF()
-
         self._plot_figure=Figure(edgecolor=(r,g,b), facecolor=(r,g,b))
         self._plot_canvas=FigureCanvas(self._plot_figure)
-        l.addWidget(self._plot_canvas)
+        l.addRow(self._plot_canvas)
+        
+        # Add combo box
+        self._plot_combo_y = QtWidgets.QComboBox()
+        for i,dev in enumerate(self.device.config['devices']):
+            devstr = self._get_devicestr(dev)
+            self._plot_combo_y.addItem(devstr)
+            
+        self._plot_combo_y.currentIndexChanged.connect(self._get_plot_index)
+        
+        l.addRow(self._plot_canvas)
+        l.addRow(self._plot_combo_y)
+        
         self._plot_figure.clear()
-        ax = self._plot_figure.add_subplot(111)
-        ax.plot([1,2],[1,4],'-r')
-        self._plot_canvas.draw()
+        self._index_plot = 0
+        self._ax = self._plot_figure.add_subplot(111)
+        self._update_plotfit_data()
         self._plot_widget.show()
+        
+    def _update_plotfit_data(self):
+        """ Updates the plot fit data with current plot index
+        """
+        data = self.get_data()
+        index_plot = 0
+        self._ax.clear()
+        x = data[:,self.refsensor_deviceindex]
+        y = data[:,self._index_plot]
+        self._ax.plot(x,y,'-r')
+        self._plot_canvas.draw()
+        
+        
+    def _get_plot_index(self):
+        """ Gets the index of the sensor to be plotted
+        """
+        self._index_plot = self._plot_combo_y.currentIndex()
+        self._update_plotfit_data()
         
     def add_headerrow(self):
         """ Adds a new headerrow to the table
@@ -916,35 +945,18 @@ class PolyfitWidget(QtWidgets.QWidget):
             layout.addRow(mathwidget)
             layout.addRow(label_order,spin_order)
             self.update_fittable_shh()
-            
-            
         elif(curtext == 'Polynom'):
             mathText=r'$Y = a_0 + a_1 \times X + a_2 \times X^2$'
             self.fittypedisplay = MathTextLabel(mathText)            
         
         self.fitwidget['layout'].addWidget(self.fittypedisplay,2,1,1,-1)
         
-
-
-
         
-                
-    def update_fittable_shh(self):
-        """ Update the table to fill in the fittdata according to a Steinhart-Hart type of fit
-        """  
-        order = self._poly_order.value()  
-        nrows = order + 1   
-        self.fitwidget['fittable'].setRowCount(nrows)
-        for i in range(nrows-1):
-            fititem = QtWidgets.QTableWidgetItem('a{:d}'.format(i))
-            self.fitwidget['fittable'].setItem(1+i,0,fititem)
-        
-    def fitdata_shh(self):
-        """ Here the data in self.datatable is fitted against a Steinhart-Hart type of fit typically used for NTC Thermistor
+    def get_data(self):
+        """ Collects the data in self.datatable and returns it in an array
         """
-        # Get all data
-        order = self._poly_order.value()  
         ndevices = self.numdevices # Get the number of devices
+        data = None
         print('Fit',ndevices)
         if( ndevices > 0): # If we have devices
             nrec = len(self.device.data_interval[0])
@@ -957,27 +969,58 @@ class PolyfitWidget(QtWidgets.QWidget):
                     except:
                         ydata = np.NaN
                         
-                    print('ydata',i,j,ydata)
+                    #print('ydata',i,j,ydata)
                     data[j,i] = ydata
                         
-                    print('ydata',i,j,ydata)
-                    print('data',data)
+                    #print('ydata',i,j,ydata)
+                    #print('data',data)
                     
+        return data
+                
+    def update_fittable_shh(self):
+        """ Update the table to fill in the fittdata according to a Steinhart-Hart type of fit
+        """  
+        funcname = self.__class__.__name__ + '.update_fittable_shh():'
+        self.fitwidget['fittable'].clear()
+        self.update_fittable_basis()
+        order = self._poly_order.value()  
+        nrows = order + 1   
+        self.fitwidget['fittable'].setRowCount(nrows)
+        for i in range(nrows-1):
+            fititem = QtWidgets.QTableWidgetItem('a{:d}'.format(i))
+            self.fitwidget['fittable'].setItem(1+i,0,fititem)
+        
+    def fitdata_shh(self):
+        """ Here the data in self.datatable is fitted against a Steinhart-Hart type of fit typically used for NTC Thermistor
+        """
+        # Get all data
+        funcname = self.__class__.__name__ + '.fitdata_shh():'
+        self.update_fittable_shh()
+        order = self._poly_order.value()  
+        ndevices = self.numdevices # Get the number of devices
+        
+        print('Fit',ndevices)
+        data = self.get_data()
+        if( data is not None):
             # Fit the data (linear fit)
             ntcfit = ntc()
             for i in range(ndevices):
-                fit = ntcfit.fit_Steinhart_Hart(data[:,self.refsensor_deviceindex],data[:,i],cfit=order)
-                #print(fit)
-                if True:
+                logger.debug(funcname + 'Fitting device {:d} with order {:d}'.format(i,order))
+                if(i is not self.refsensor_deviceindex):
+                    print('T',data[:,self.refsensor_deviceindex])
+                    print('fit data',data[:,i])
+                    print(i,self.refsensor_deviceindex)
+                    fit = tempsensor.ntc.fit_Steinhart_Hart(data[:,self.refsensor_deviceindex],data[:,i],cfit=order)
                     for j in range(order):
                         fitdata = fit['P'][-j-1]
                         fitstr = "{:2.6}".format(fitdata)
                         fititem = QtWidgets.QTableWidgetItem(fitstr)
+                        #print('fitstr',fitstr,j,i)
                         self.fitwidget['fittable'].setItem(1+j,self.coloffset+i,fititem)
-                        self.fitwidget['fittable'].item(1,self.coloffset+i).rawdata = fitdata # Save the original as additional property
+                        self.fitwidget['fittable'].item(1+j,self.coloffset+i).rawdata = fitdata # Save the original as additional property
                 
                 
-                   
+        self.fitwidget['fittable'].resizeColumnsToContents()
         
         
     def update_fittable_linear(self):
