@@ -447,16 +447,26 @@ class PlotWidget(QtWidgets.QWidget):
                 if(device_in_data(line_dict['config']['device'],data)):
                     #print('data',data) 
                     if True:
-                        line      = line_dict['line'] # The line to plot
+                        line      = line_dict['line']   # The line to plot
                         config    = line_dict['config'] # The line to plot
-                        x         = line_dict['x'] # The line to plot
-                        y         = line_dict['y'] # The line to plot 
+                        x         = line_dict['x']      # The line to plot
+                        y         = line_dict['y']      # The line to plot 
                         
                         # data can be a single float or a list
                         newx = data[config['x']]
                         newy = data[config['y']]
                         
                         # Try to get the unit
+                        # First via the configuration
+                        try:
+                            unitstry = config['unit']
+                            print('Found device unit',unitstry)
+                            print('Found device unit',unitstry)
+                            print('Found device unit',unitstry)
+                            print('Found device unit',unitstry)
+                            self.device.units[self.numdisp] = {'x':'time','y':unitstry}
+                        except:
+                            pass
                         propskeyy = '?' + config['y']
                         try:
                             unitstry = data[propskeyy]['unit']
@@ -504,9 +514,13 @@ class PolyfitWidget(QtWidgets.QWidget):
         self.datatable_widget = QtWidgets.QWidget()
         self.datatable.itemChanged.connect(self._datatable_item_changed)
         
-        self.headerrows = 2
-        self.coloffset  = 1
-        self.num_additional_columns = 2 # tstart/tend/numsamples        
+        self.headerrows_basis       = 4
+        self.headerrows             = self.headerrows_basis
+        self.coloffset              = 1
+        self.num_additional_columns = 3 # comment/tstart/tend 
+        self._row_units  = 1
+        self._row_type   = 2
+        self._row_serial = 3      
         
         # Buttons to add/remove datapoints
         self.init_widgets()
@@ -600,7 +614,8 @@ class PolyfitWidget(QtWidgets.QWidget):
         
         self._plot_figure.clear()
         self._index_plot = 0
-        self._ax = self._plot_figure.add_subplot(111)
+        self._ax_data = self._plot_figure.add_subplot(211) # The original data 
+        self._ax_diff = self._plot_figure.add_subplot(212) # The difference between the fit and the data
         self._update_plotfit_data()
         self._plot_widget.show()
         
@@ -608,11 +623,19 @@ class PolyfitWidget(QtWidgets.QWidget):
         """ Updates the plot fit data with current plot index
         """
         data = self.get_data()
+        fitdata = self.get_data(datatype='fit')
         index_plot = 0
-        self._ax.clear()
+        self._ax_data.clear()
+        self._ax_diff.clear()
         x = data[:,self.refsensor_deviceindex]
         y = data[:,self._index_plot]
-        self._ax.plot(x,y,'-r')
+        
+        xfit  = fitdata[:,self.refsensor_deviceindex]
+        yfit  = fitdata[:,self._index_plot]
+        ydiff = fitdata[:,self._index_plot] - fitdata[:,self.refsensor_deviceindex]
+        print('xfit',xfit,'yfit',yfit)
+        self._ax_data.plot(x,y,'-k')
+        self._ax_diff.plot(xfit,ydiff,'or')
         self._plot_canvas.draw()
         
         
@@ -697,30 +720,38 @@ class PolyfitWidget(QtWidgets.QWidget):
     def update_table_header(self):
         """ Initializes the table according to the self.device.config
         """
-        
-        numcols = len(self.device.config['devices']) + len(self.device.config['polyfit']['manual']) + len(self.device.config['polyfit']['comments'])
+        self.datatable.blockSignals(True)
+        print('Config',self.device.config['polyfit'])
+        numcols = len(self.device.config['devices'])
+        try:
+            numcols+= len(self.device.config['polyfit']['manual'])
+        except:
+            pass
+            
+        try:
+            numcols += len(self.device.config['polyfit']['comments'])
+        except:
+            pass
         self.numdevices = len(self.device.config['devices']) + len(self.device.config['polyfit']['manual'])
         self.numcols = numcols
         self.datatable.setColumnCount(numcols+1 + self.num_additional_columns)
-        self.headerrows = len(self.device.config['polyfit']['headers']) + 2
+        self.headerrows = len(self.device.config['polyfit']['headers']) + self.headerrows_basis
         self.datatable.setRowCount(self.headerrows)
-        # Add the custom headers
+        
+        # Add the custom headers bloew the standard headers
         print('Updating header',len(self.device.config['polyfit']['headers']))
-        print(self.device.config['polyfit']['headers'])
         for j,header in enumerate(self.device.config['polyfit']['headers']):
+            headerrow = self.headerrows_basis + j
+            # Check if
             if(type(header) == str):
                 item = QtWidgets.QTableWidgetItem(header)
-                self.datatable.setItem(2 + j,0,item)
+                self.datatable.setItem(headerrow,0,item)
             else: # A List with headername and contents
-                print('fsfdf',header)
                 for ih,h in enumerate(header):
-                    print('Hallo',h,ih,self.headerrows,j)
                     item = QtWidgets.QTableWidgetItem(str(h))
-                    self.datatable.setItem(2 + j,ih,item)
+                    self.datatable.setItem(headerrow,ih,item)
             
             
-        
-        
         
         FLAG_HAS_DEV = False
         # Add the devices
@@ -750,29 +781,16 @@ class PolyfitWidget(QtWidgets.QWidget):
             self.datatable.setItem(0,colnum,item)
             # Add unit
             item = QtWidgets.QTableWidgetItem(devunit)
-            self.datatable.setItem(1,colnum,item)
+            self.datatable.setItem(self._row_units,colnum,item)
             
-        # Adding comment column to the table
-        print('Comments',self.device.config['polyfit']['comments'],colnum)
-        for i,dev in enumerate(self.device.config['polyfit']['comments']):
-            colnum = colnum + 1
-            devname = dev['name']
-            try:
-                devunit = dev['unit']
-            except:
-                devunit = ''
-                
-            print('devname',devname,colnum)
-            # Add name
-            item = QtWidgets.QTableWidgetItem(devname)
-            self.datatable.setItem(0,colnum,item)
-            # Add unit
-            item = QtWidgets.QTableWidgetItem(devunit)
-            self.datatable.setItem(1,colnum,item)
+            
             
         colnum = colnum + 1
         # Add additional information
         self._start_add_info_col = colnum
+        item = QtWidgets.QTableWidgetItem('Comment')
+        self.datatable.setItem(0,colnum,item)
+        colnum = colnum + 1
         item = QtWidgets.QTableWidgetItem('t start')
         self.datatable.setItem(0,colnum,item)
         colnum = colnum + 1
@@ -789,27 +807,124 @@ class PolyfitWidget(QtWidgets.QWidget):
             xunit = self.device.units[0]['x']
             # t start/t end
             item = QtWidgets.QTableWidgetItem(xunit)
-            self.datatable.setItem(1,self._start_add_info_col,item)
-            item = QtWidgets.QTableWidgetItem(xunit)
             self.datatable.setItem(1,self._start_add_info_col+1,item)
+            item = QtWidgets.QTableWidgetItem(xunit)
+            self.datatable.setItem(1,self._start_add_info_col+2,item)
             
             # Add header description
             item = QtWidgets.QTableWidgetItem('Device')
             self.datatable.setItem(0,0,item)
+            
+            
+            # Add device/sensor type
+            item = QtWidgets.QTableWidgetItem('Type')
+            self.datatable.setItem(self._row_type,0,item)
+            sensortype = []
+            for i,dev in enumerate(self.device.config['devices']):
+                try:
+                    sensortype.append(dev['type'])
+                except:
+                    sensortype.append('')
+                    
+            print('Hallo',sensortype)
+            print('Hallo',sensortype)
+            print('Hallo',sensortype)
+            print('Hallo',sensortype)
+            
+            for ih,h in enumerate(sensortype):
+                item = QtWidgets.QTableWidgetItem(str(h))
+                devcol = self._get_devicecolumn(ih)
+                self.datatable.setItem(self._row_type,devcol,item)
+            
+            # Add serialnumbers
+            item = QtWidgets.QTableWidgetItem('Serialnumber')
+            self.datatable.setItem(self._row_serial,0,item)
+            serial = []
+            for i,dev in enumerate(self.device.config['devices']):
+                try:
+                    serial.append(dev['serialnumber'])
+                except:
+                    serial.append('')
+
+            for ih,h in enumerate(serial):
+                item = QtWidgets.QTableWidgetItem(str(h))
+                devcol = self._get_devicecolumn(ih)
+                self.datatable.setItem(self._row_serial,devcol,item)
+                
+            # Add Units
             item = QtWidgets.QTableWidgetItem('Unit')
-            self.datatable.setItem(1,0,item)
-            #self.device.redvypr.get_data_providing_devices(self.device)        
-            self.datatable.resizeColumnsToContents()
+            self.datatable.setItem(self._row_units,0,item)
+            units = []
+            for i,dev in enumerate(self.device.config['devices']):
+                try:
+                    units.append(dev['unit'])
+                except:
+                    units.append('')
+
+            for ih,h in enumerate(units):
+                item = QtWidgets.QTableWidgetItem(str(h))
+                devcol = self._get_devicecolumn(ih)
+                self.datatable.setItem(self._row_units,devcol,item)
+                self.device.units[ih]['y'] = str(h)
             
-            # this is done to call reference sensor_changed for the first time
+            # This is done to call reference sensor_changed for the first time
             reference_sensor = self.fitwidget['refcombo'].currentText()
-            
-            
             # update the reference sensor
             self.reference_sensor_changed(reference_sensor)
             
+            
+        # Add comments (if available)
+        try: 
+            comments = self.device.config['polyfit']['comments']
+        except:
+            comments = []
+            
+        if(len(comments) > self.headerrows - 1):
+            self.datatable.setRowCount(len(comments)-1)
+            
+        for i,c in enumerate(comments):
+            item = QtWidgets.QTableWidgetItem(str(c))
+            self.datatable.setItem(self._row_serial,self._start_add_info_col,item)
+            
         self.datatable.resizeColumnsToContents()
+        self.datatable.blockSignals(False)
         
+    def update_fitwidgets(self):
+        """ Update the fitwidgets according to the config
+        """
+        funcname = self.__class__.__name__ + '.update_fitwidgets():'
+        
+        
+        refcombo = self.fitwidget['refcombo']
+        fitcombo = self.fitwidget['fitcombo']
+        fittype = fitcombo.currentText()
+        refsensor = refcombo.currentText()
+        
+        # Fittype
+        try:
+            fittype = self.device.config['polyfit']['fittype']
+            for i in range(fitcombo.count()):
+                fittype_tmp = fitcombo.itemText(i)
+                print(fittype,fittype_tmp,fittype_tmp == fittype)
+                if(fittype_tmp == fittype):
+                    fitcombo.setCurrentIndex(i)
+                    break
+            
+        except Exception as e:
+            logger.info(funcname + str(e))
+            
+        # Reference sensor
+        try:
+            reftype = self.device.config['polyfit']['refsensor']
+            for i in range(refcombo.count()):
+                reftype_tmp = refcombo.itemText(i)
+                if(reftype_tmp == reftype):
+                    refcombo.setCurrentIndex(i)
+                    break
+            
+        except Exception as e:
+            logger.info(funcname + str(e))
+    
         
     def update_table(self):
         """ This is called when new data from the realtimedataplot is available, note that every subscribed device is calling this
@@ -824,6 +939,7 @@ class PolyfitWidget(QtWidgets.QWidget):
             numdevices = len(self.device.data_interval)
         except:
             logger.warning(funcname + ' No devices/data intervals found')
+            self.datatable.blockSignals(False)
             return
         
         self.datatable.setRowCount(numintervals + self.headerrows)
@@ -835,7 +951,8 @@ class PolyfitWidget(QtWidgets.QWidget):
             yunit = self.device.units[ndev]['y']
             xunititem = QtWidgets.QTableWidgetItem(xunit)
             yunititem = QtWidgets.QTableWidgetItem(yunit)
-            self.datatable.setItem(1,ndev+self.coloffset,yunititem)
+            devcol = self._get_devicecolumn(ndev)
+            self.datatable.setItem(self._row_units,devcol,yunititem)
             for i in range(numintervals):
                 numrow = i + self.headerrows
                 numrowsnew = self.datatable.rowCount() - self.headerrows
@@ -861,36 +978,64 @@ class PolyfitWidget(QtWidgets.QWidget):
                 yitem.inddevice  = ndev # Save the original data as additional property regardless of the display type
                 #self.datatable.setItem(numintervals+1,0,nitem)
                 # Additional information
-                self.datatable.setItem(numrow,self._start_add_info_col,t1item)
-                self.datatable.setItem(numrow,self._start_add_info_col+1,t2item)
+                self.datatable.setItem(numrow,self._start_add_info_col+1,t1item)
+                self.datatable.setItem(numrow,self._start_add_info_col+2,t2item)
                 # The averaged data itself
-                self.datatable.setItem(numrow,ndev+self.coloffset,yitem)
+                
+                self.datatable.setItem(numrow,devcol,yitem)
         
         self.datatable.resizeColumnsToContents()
         self.datatable.blockSignals(False)
         
-    def _datatable_item_changed(self,item):
+    def _get_devicecolumn(self,ndev,inverse=False):
+        """ Returns the column of the device with the index ndev, 
+        if inverse=True returns the device index for the given table column
         """
+        if inverse:
+            return ndev-self.coloffset
+        else:
+            return ndev+self.coloffset
+        
+    def _datatable_item_changed(self,item):
+        """ Function is called whenever the user changes the datatable
         """        
         funcname = self.__class__.__name__ + '._datatable_item_changed():'
         
         print('Item changed',item.text(), item.column(), item.row())
-        try:
-            newdata = float(item.text())
-        except:
-            newdata = item.text()
-        try: # This exists, if the data was calculated as an average of self.device.user interval
-            rawdata    = item.rawdata
-            indrawdata = item.indrawdata
-            inddevice  = item.inddevice
-        except:
-            logger.warning(funcname + 'Could not get rawdata and indices, returning without table update')
-            return
         
-        logger.debug(funcname + 'Modifying the data_interval data and redrawing table')
-        for ind,i in enumerate(self.device.data_interval[inddevice][indrawdata]['y']):
-            self.device.data_interval[inddevice][indrawdata]['y'][ind] = newdata
-            #i = newdata 
+            
+        
+        row = item.row()
+        col = item.column()
+        inddev = self._get_devicecolumn(col,inverse=True)
+        if(row <= self.headerrows): # Changed in the header section
+            newdata = item.text()
+            if(row == self._row_units):
+                print('Unit changed')
+                self.device.config['devices'][inddev]['unit'] = str(newdata)
+            elif(row == self._row_type):
+                print('Type changed')   
+                self.device.config['devices'][inddev]['type'] = str(newdata)
+            elif(row == self._row_serial):
+                print('Serial changed')
+                self.device.config['devices'][inddev]['serialnumber'] = str(newdata)
+        else: # Changed in the data section
+            try:
+                newdata = float(item.text())
+            except:
+                newdata = item.text()
+            try: # This exists, if the data was calculated as an average of self.device.user interval
+                rawdata    = item.rawdata
+                indrawdata = item.indrawdata
+                inddevice  = item.inddevice
+            except:
+                logger.warning(funcname + 'Could not get rawdata and indices, returning without table update')
+                return
+            
+            logger.debug(funcname + 'Modifying the data_interval data and redrawing table')
+            for ind,i in enumerate(self.device.data_interval[inddevice][indrawdata]['y']):
+                self.device.data_interval[inddevice][indrawdata]['y'][ind] = newdata
+                #i = newdata 
             
         self.update_table()
 
@@ -929,7 +1074,7 @@ class PolyfitWidget(QtWidgets.QWidget):
             mathText=r'$Y = a \times X$'
             self.update_fittable_linear()
             self.fitwidget['fitbutton'].clicked.connect(self.fitdata_linear)
-            self.fittypedisplay = MathTextLabel(mathText)            
+            self.fittypedisplay = MathTextLabel(mathText)
         elif(curtext == 'Steinhart-Hart NTC'):
             self.fitwidget['fitbutton'].clicked.connect(self.fitdata_shh)
             mathText=r'$Y^{-1} = a_0 + a_1 \times log(X) + a_2 \times log(X^2) + a_3 \times log(X^3) + a_4 \times log(X^4)$'
@@ -952,8 +1097,8 @@ class PolyfitWidget(QtWidgets.QWidget):
         self.fitwidget['layout'].addWidget(self.fittypedisplay,2,1,1,-1)
         
         
-    def get_data(self):
-        """ Collects the data in self.datatable and returns it in an array
+    def get_data(self,datatype='raw'):
+        """ Collects the rawdata or fitdata in self.datatable and returns it in an array
         """
         ndevices = self.numdevices # Get the number of devices
         data = None
@@ -961,22 +1106,45 @@ class PolyfitWidget(QtWidgets.QWidget):
         if( ndevices > 0): # If we have devices
             nrec = len(self.device.data_interval[0])
             data = np.zeros((nrec,ndevices)) # Fill a numpy array
+            fitdata = np.zeros((nrec,ndevices)) # Fill a numpy array
             for i in range(ndevices):
                 for j in range(nrec):
-                    ydata = self.datatable.item(self.headerrows + j,self.coloffset + i)
+                    yitem = self.datatable.item(self.headerrows + j,self.coloffset + i)
+                    # The rawdata
                     try:
-                        ydata = float(ydata.rawdata) # TODO, here the original data can be used as well
-                    except:
+                        ydata = float(yitem.rawdata) # TODO, here the original data can be used as well
+                    except Exception as e:
                         ydata = np.NaN
                         
-                    #print('ydata',i,j,ydata)
                     data[j,i] = ydata
+                    # The fitdata
+                    try:
+                        yfitdata = float(yitem.fitdata) # TODO, here the original data can be used as well
+                    except Exception as e:
+                        yfitdata = np.NaN
                         
-                    #print('ydata',i,j,ydata)
-                    #print('data',data)
+                    fitdata[j,i] = yfitdata
+                        
+        if(datatype == 'raw'):
+            return data
+        elif(datatype == 'fit'):
+            return fitdata
+        else:
+            return None
+    
+    
+    def _save_fitdata_to_datatable(self,fitdata):
+        """ Saves the fitted data to the datatable as extra parameter
+        """
+        ndevices = self.numdevices # Get the number of devices
+        if( ndevices > 0): # If we have devices
+            nrec = len(self.device.data_interval[0])
+            for i in range(ndevices):
+                for j in range(nrec):
+                    item = self.datatable.item(self.headerrows + j,self.coloffset + i)
+                    item.fitdata = fitdata[j,i]
+                    print('item',j,i,item.fitdata)
                     
-        return data
-                
     def update_fittable_shh(self):
         """ Update the table to fill in the fittdata according to a Steinhart-Hart type of fit
         """  
@@ -1001,6 +1169,8 @@ class PolyfitWidget(QtWidgets.QWidget):
         
         print('Fit',ndevices)
         data = self.get_data()
+        fitdata = np.zeros(np.shape(data)) * np.NaN
+        fittype = self.fitwidget['fitcombo'].currentText()
         if( data is not None):
             # Fit the data (linear fit)
             ntcfit = ntc()
@@ -1012,14 +1182,47 @@ class PolyfitWidget(QtWidgets.QWidget):
                     print(i,self.refsensor_deviceindex)
                     fit = tempsensor.ntc.fit_Steinhart_Hart(data[:,self.refsensor_deviceindex],data[:,i],cfit=order)
                     for j in range(order):
-                        fitdata = fit['P'][-j-1]
-                        fitstr = "{:2.6}".format(fitdata)
+                        fitcoeff = fit['P'][-j-1]
+                        fitstr = "{:2.6}".format(fitcoeff)
                         fititem = QtWidgets.QTableWidgetItem(fitstr)
                         #print('fitstr',fitstr,j,i)
                         self.fitwidget['fittable'].setItem(1+j,self.coloffset+i,fititem)
-                        self.fitwidget['fittable'].item(1+j,self.coloffset+i).rawdata = fitdata # Save the original as additional property
-                
-                
+                        self.fitwidget['fittable'].item(1+j,self.coloffset+i).rawdata = fitcoeff # Save the original as additional property
+                        
+                    self.device.fitdata[i]['coeffs']       = np.ndarray.tolist(fit['P'])
+                    self.device.fitdata[i]['order']        = order
+                    self.device.fitdata[i]['type']         = fittype
+                    try:
+                        self.device.fitdata[i]['device']
+                    except:
+                        self.device.fitdata[i]['device'] = {}
+                    try:
+                        self.device.fitdata[i]['device']['serialnumber'] = self.device.config['devices'][i]['serialnumber']
+                    except:
+                        self.device.fitdata[i]['device']['serialnumber'] = ''
+                    try:
+                        self.device.fitdata[i]['device']['type'] = self.device.config['devices'][i]['type']
+                    except:
+                        self.device.fitdata[i]['device']['type'] = ''
+                        
+                    try:
+                        self.device.fitdata[i]['device']['unit_raw'] = self.device.config['devices'][i]['unit']
+                    except:
+                        self.device.fitdata[i]['device']['unit_raw'] = ''
+                        
+                    try:
+                        self.device.fitdata[i]['device']['unit_fit'] = self.device.config['devices'][self.refsensor_deviceindex]['unit']
+                    except:
+                        self.device.fitdata[i]['device']['unit_fit'] = ''
+                    
+                    # Convert the data
+                    fitdata[:,i] = tempsensor.ntc.get_T_Steinhart_Hart(data[:,i],fit['P'])
+                    print('Fitdata',fitdata[:,i])
+                else:
+                    fitdata[:,i] = data[:,self.refsensor_deviceindex]
+                    
+            self._save_fitdata_to_datatable(fitdata)
+                    
         self.fitwidget['fittable'].resizeColumnsToContents()
         
         
@@ -1481,16 +1684,18 @@ class Device():
         self.data_interval = []
         
         # The units of the different devices
-        self.units = []
+        self.units   = []
+        self.fitdata = []
         
         # How and if to synchronize the different X-Axes? 0: None, 1: With one Axes, 2: Last dt
         self._xsync = 0
         self._xsync_dt = 60
-        
+
     def finalize_init(self):
         """ Function is called when the initialization of the redvypr device is completed
         """ 
-        
+        funcname = self.__class__.__name__ + 'finalize_init():'
+        logger.debug(funcname)
         if True:
             try:
                 self.config['devices']
@@ -1505,6 +1710,10 @@ class Device():
                 self.config['polyfit'] = {}
             
         if 'polyfit' in self.config.keys():
+            print('Type',type(self.config['polyfit']))
+            if(type(self.config['polyfit']) is not dict):
+                print('to dict')
+                self.config['polyfit'] = {}
             try:
                 self.config['polyfit']['manual']
             except:
@@ -1520,7 +1729,21 @@ class Device():
                 self.config['polyfit']['headers']
             except:
                 self.config['polyfit']['headers'] = []
+        
                 
+    def init_data_structure(self):
+        """ Initializes data structure to store and fit calibration data.
+        """
+        # Clear the data interval list
+        funcname = self.__class__.__name__ + 'init_data_structure():'
+        self.data_interval = []
+        # Clear the fit data
+        self.fitdata       = []
+        for i,config_device in enumerate(self.config['devices']):
+            logger.debug(funcname + ': Adding device ' + str(config_device))
+            self.data_interval.append([])
+            self.fitdata.append({})
+            self.units.append({'name':config_device,'x':'s','y':'NA'})
         
     def create_standard_config(self):
         """
@@ -1582,7 +1805,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.loadbtn = QtWidgets.QPushButton("Load calibration")
         self.loadbtn.clicked.connect(self.load_data)
         self.savebtn = QtWidgets.QPushButton('Save calibration')
-        self.savebtn.clicked.connect(self.savedata)        
+        self.savebtn.clicked.connect(self.save_data)        
         layout.addRow(self.label)        
         layout.addRow(self.conbtn)
         layout.addRow(self.loadbtn)
@@ -1616,6 +1839,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         #device = self.redvyprdevicelistentry['device']
         device = self.device
         device.config = data_yaml['config']
+        device.finalize_init()
         
         # Write the config to update the widgets
         displaywidget = self.redvyprdevicelistentry['displaywidget']
@@ -1623,9 +1847,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         device.data_interval = data_yaml['data_interval']
         if('polyfit' in device.config.keys()):
             logger.debug(funcname + 'Updating polyfit widget')
+            displaywidget.widgets['polyfit'].update_fitwidgets()
             displaywidget.widgets['polyfit'].update_table()
             
-    def savedata(self):
+            
+    def save_data(self):
         """ Save the data found in datatable and fittable into a file format to be choosen by the save widget
         """
         folder = QtWidgets.QFileDialog.getExistingDirectory(None, 'Choose folder to save sensor yaml files')        
@@ -1634,37 +1860,55 @@ class initDeviceWidget(QtWidgets.QWidget):
         fname = tstr + 'polyfit.yaml'
         fname_full = folder + '/' + fname
         # Create a dictionary with the data to be saved
-        device= self.device
-        data_save = {}
-        data_save['data_interval'] = self.device.data_interval
-        data_save['config']           = self.device.config
-        # Update the header  in config
+        device     = self.device
+        data_save  = {}
+        data_save['data_interval']  = self.device.data_interval
+        data_save['fitdata']        = self.device.fitdata
+        #data_save['units']          = self.device.units
+        data_save['config']         = self.device.config
+        # Update the header in config
         if('polyfit' in device.config.keys()):
             displaywidget = self.redvyprdevicelistentry['displaywidget']
-            datatable = displaywidget.widgets['polyfit'].datatable
-            ncols   = datatable.columnCount()
-            nheader = displaywidget.widgets['polyfit'].headerrows
-            data_units = []
-            for col in range(ncols):
-                try:
-                    data_units.append(datatable.item(1,col).text())
-                except:
-                    data_units.append('')
+            datatable     = displaywidget.widgets['polyfit'].datatable
+            ncols         = datatable.columnCount()
+            nrows         = datatable.rowCount()
+            nheader       = displaywidget.widgets['polyfit'].headerrows
+            nheader_basis = displaywidget.widgets['polyfit'].headerrows_basis
+            row_units     = displaywidget.widgets['polyfit']._row_units
+            row_type      = displaywidget.widgets['polyfit']._row_type
+            row_serial    = displaywidget.widgets['polyfit']._row_serial
+            
+
             header = []
-            for row in range(2,nheader): # Header starts in third row
+            for row in range(nheader_basis,nheader): # Header starts in fourth row
                 data_row = []
                 for col in range(ncols):
                     try:
                         data_row.append(datatable.item(row,col).text())
                     except Exception as e:
-                        print('oho',e)
                         data_row.append('')
                     
                 header.append(data_row)
-            #self.device.config['polyfit']['headers']
-        
+
+            # Get comments 
+            comments = []
+            col_comment = displaywidget.widgets['polyfit']._start_add_info_col
+            for row in range(1,nrows):
+                try:
+                    comments.append(datatable.item(row,col_comment).text())
+                except:
+                    comments.append('')
+
+            
+            data_save['config']['polyfit']['comments']= comments
             data_save['config']['polyfit']['headers'] = header
-            data_save['config']['polyfit']['units']   = data_units
+            # Saving the fittype and the reference sensor
+            fitcombo = displaywidget.widgets['polyfit'].fitwidget['fitcombo']
+            refcombo = displaywidget.widgets['polyfit'].fitwidget['refcombo']
+            fittype = fitcombo.currentText()
+            refsensor = refcombo.currentText()
+            data_save['config']['polyfit']['fittype']   = fittype
+            data_save['config']['polyfit']['refsensor'] = refsensor
         
         print('Saving to file {:s}'.format(fname_full))            
         with open(fname_full, 'w') as fyaml:
@@ -1862,8 +2106,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
         for plot in self.plots:
             plot.close()
             
-        # Clear the data interval list
-        self.device.data_interval = []
+            
+        self.device.init_data_structure()
+        
         # Add axes to the widget
         config=self.device.config
         #print('Hallo2',config['devices'])
@@ -1877,8 +2122,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.btn_clear.clicked.connect(plot.clear_data)
             self.layout.addWidget(plot,i,0,1,-1)
             self.plots.append(plot)
-            self.device.data_interval.append([])
-            self.device.units.append({'x':'s','y':'NA'})
             datastream_x = config_device['device'] + '(' + config_device['x'] + ',' +config_device['y'] + ')' 
             self.combo_sync.addItem(datastream_x)
             

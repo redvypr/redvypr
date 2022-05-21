@@ -571,7 +571,7 @@ class redvypr(QtCore.QObject):
               try:
                   device.finalize_init()
               except Exception as e:
-                  logger.debug(funcname + ': No finalize_init() of device')
+                  logger.debug(funcname + ': No finalize_init() of device (Exception: {:s}'.format(str(e)))
                   
               self.device_added.emit(devicelist)
               device_found = True
@@ -971,11 +971,25 @@ class redvyprWidget(QtWidgets.QWidget):
     def load_config(self):
         """ Loads a configuration file
         """
-        funcname = __name__ + '.load_config()'                        
+        funcname = self.__class__.__name__ + '.load_config()'                        
         logger.debug(funcname)
         conffile, _ = QtWidgets.QFileDialog.getOpenFileName(self,"QFileDialog.getOpenFileName()", "","Yaml Files (*.yaml);;All Files (*)")
         if conffile:
             self.redvypr.parse_configuration(conffile)
+            
+    def save_config(self):
+        """ Saves a configuration file
+        """
+        funcname = self.__class__.__name__ + '.save_config():'                        
+        logger.debug(funcname)
+        print('Not implented yet!')
+        data_save = self.redvypr.config
+        fname_full, _ = QtWidgets.QFileDialog.getSaveFileName(self,"QFileDialog.getSaveFileName()", "","Yaml Files (*.yaml);;All Files (*)")
+        if fname_full:
+            print('Saving to file {:s}'.format(fname_full))            
+            with open(fname_full, 'w') as fyaml:
+                yaml.dump(data_save, fyaml)
+
 
 
 
@@ -1378,6 +1392,11 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         loadcfgAction.setShortcut("Ctrl+O")
         loadcfgAction.setStatusTip('Load a configuration file')
         loadcfgAction.triggered.connect(self.load_config)
+        
+        savecfgAction = QtWidgets.QAction("&Save", self)
+        savecfgAction.setShortcut("Ctrl+S")
+        savecfgAction.setStatusTip('Saves a configuration file')
+        savecfgAction.triggered.connect(self.save_config)
 
         pathAction = QtWidgets.QAction("&Devicepath", self)
         pathAction.setShortcut("Ctrl+L")
@@ -1404,6 +1423,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         mainMenu = self.menuBar()
         fileMenu = mainMenu.addMenu('&File')
         fileMenu.addAction(loadcfgAction)
+        fileMenu.addAction(savecfgAction)
         fileMenu.addAction(pathAction)
         fileMenu.addAction(quitAction)
 
@@ -1448,6 +1468,9 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
 
     def load_config(self):
         self.redvypr.load_config()
+        
+    def save_config(self):
+        self.redvypr.save_config()
 
     def close_application(self):
         self.redvypr.close_application()
