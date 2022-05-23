@@ -395,25 +395,25 @@ class ads124s0x_pihat:
         return data
 
 
-#https://stackoverflow.com/questions/1952464/in-python-how-do-i-determine-if-an-object-is-iterable
-def iterable(obj):
-    return isinstance(obj, Iterable)
-
-def to_csv(tu,data):
-    """ Creates a csv data string out of the input data
-    """
-    td = datetime.datetime.fromtimestamp(tu,tz=datetime.timezone.utc)
-    tstr = td.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-
-    # check if we have an iterable object
-    if(iterable(data) == False):
-        data = [data]
-    pstr = tstr + ',{:.3f}'.format(tu)
     #https://stackoverflow.com/questions/1952464/in-python-how-do-i-determine-if-an-object-is-iterable
-    for d in data:
-        pstr += ',{:1.8f}'.format(d)
+    def iterable(self,obj):
+        return isinstance(obj, Iterable)
 
-    return pstr
+    def to_csv(self,tu,data):
+        """ Creates a csv data string out of the input data
+        """
+        td = datetime.datetime.fromtimestamp(tu,tz=datetime.timezone.utc)
+        tstr = td.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+
+        # check if we have an iterable object
+        if(self.iterable(data) == False):
+            data = [data]
+        pstr = tstr + ',{:.3f}'.format(tu)
+        #https://stackoverflow.com/questions/1952464/in-python-how-do-i-determine-if-an-object-is-iterable
+        for d in data:
+            pstr += ',{:1.8f}'.format(d)
+
+        return pstr
     
 
 

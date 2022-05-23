@@ -1,6 +1,6 @@
 """
 
-datalogger device
+Raspberry PI based datalogger device
 
 Configuration options for a heatflow device
 
@@ -95,35 +95,76 @@ def convert_data_with_coeffs(data,coeffs):
 
 def start(datainqueue,dataqueue,comqueue,devicename,config={}):
     funcname = __name__ + '.start()'
-    try:
-        datakey = config['datakey']
-    except:
-        datakey = 'data'  
+
+    adc = ads124s0x_pihat()
+    adc.init_device()
+    ind_datarate = 4
+    SPS = adc.SPS[ind_datarate]
+    twait = 2.1/float(SPS)
+    #twait = 0.1
+    print('SPS',SPS,'twait',twait)
+    adc.reset()
+    adc.set_datarate(datarate = ind_datarate)
+    # Set IDAC0 to AIN5 with 0.1 mA
+    refreg = int('00010010', 2) # Power on the internal reference, which is needed for the IDAQ
+    IDACcurr = int('00000011', 2) # 100uA
+    IDACmuxreg = int('11110101', 2) # IDAC1 on AIN5, IDAC2 off
+    print('Setup IDAC1 on AIN5 with 100uA')
+    adc.write_reg(adc.regs['REF'],[refreg])
+    adc.write_reg(adc.regs['IDACMAG'],[IDACcurr])
+    adc.write_reg(adc.regs['IDACMUX'],[IDACmuxreg])        
+    # Read Pairs:
+    # NTC0
+    # NTC1
+    # VIN
+    # Current
+    adc.get_registers()
+    adc.print_registers()
+    adc.start()
+
+    i = -1
     while True:
         try:
             com = comqueue.get(block=False)
-            print('received',com)
+            logger.info(funcname + ': received command "{:s}", stopping now'.format(com))
             break
         except:
             pass
 
 
-        time.sleep(0.05)
-        while(datainqueue.empty() == False):
-            try:
-                data = datainqueue.get(block=False)
-                datap = parse_nmea(data[datakey]) # Get the data from the dictionary
-                # Check if we have coefficients to calculate values
-                if('coeffs' in config.keys()):
-                    datap = convert_data_with_coeffs(datap,config['coeffs'])
-                    #print(datap)
-                    
-                datan = {**data, **datap} # Python 3.9: z = x | y
-                datan['device'] = devicename
-                dataqueue.put(datan)
+        i += 1
+        td = datetime.datetime.now(datetime.timezone.utc)
 
-            except Exception as e:
-                logger.debug(funcname + ':Exception:' + str(e))            
+        time.sleep(.01)
+        t = time.time()
+        if(i%4 == 0):
+            adc.set_input(1,0)
+        if(i%4 == 1):
+            adc.set_input(3,2)                        
+        if(i%4 == 2):
+            adc.set_input(9,8)        
+        if(i%4 == 3):
+            adc.set_input(11,10)
+
+        chn = "{:d}".format((i%4)+1)
+        adc.start()
+        tu = time.time()
+        td = datetime.datetime.fromtimestamp(tu,tz=datetime.timezone.utc)
+        tstr = td.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        time.sleep(twait)
+        adc_data = adc.read_data()
+        csvstr = adc.to_csv(tu,adc_data)
+        #channels[i%4].append(tu,adc_data)
+        #data = '$pi4heatflowref,' + chn + ',' + csvstr
+        #datab = data.encode('utf-8')
+        #server.sendto(datab, ('<broadcast>', UDPPORT))
+        datad = {'t':time.time(),chn:adc_data,'ch':chn}
+        print('Data',datad)
+        #print(chn + ',' + csvstr)
+        dataqueue.put(datad)
+
+#except Exception as e:
+#                logger.debug(funcname + ':Exception:' + str(e))            
 
 class Device():
     def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = {}):
@@ -391,18 +432,18 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.timelabel.setFont(QtGui.QFont('Arial', fsize.height()+10))
         self.timelabel.setAlignment(QtCore.Qt.AlignCenter)                
         self._datadisplays = {}
-        self._datadisplays['0'] = datadisplay(title='CH0')
         self._datadisplays['1'] = datadisplay(title='CH1')
         self._datadisplays['2'] = datadisplay(title='CH2')
         self._datadisplays['3'] = datadisplay(title='CH3')
+        self._datadisplays['4'] = datadisplay(title='CH4')
 
 
         self.datadisplaywidget_layout.addWidget(self.snlabel,0,0,1,2)
         self.datadisplaywidget_layout.addWidget(self.timelabel,1,0,1,2)        
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['0'],2,0)
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['1'],2,1)
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['2'],3,0)
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['3'],3,1)
+        self.datadisplaywidget_layout.addWidget(self._datadisplays['1'],2,0)
+        self.datadisplaywidget_layout.addWidget(self._datadisplays['2'],2,1)
+        self.datadisplaywidget_layout.addWidget(self._datadisplays['3'],3,0)
+        self.datadisplaywidget_layout.addWidget(self._datadisplays['4'],3,1)
         
     
     def thread_status(self,status):
@@ -433,7 +474,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 self.config['last_update'] = tnow
 
             # Serialnumber (should stay the same though)
-            self.snlabel.setText(data['sn'])
+            #self.snlabel.setText(data['sn'])
             # Update the time
             timestr = datetime.datetime.fromtimestamp(data['t']).strftime('%d %b %Y %H:%M:%S')
             self.timelabel.setText(timestr)

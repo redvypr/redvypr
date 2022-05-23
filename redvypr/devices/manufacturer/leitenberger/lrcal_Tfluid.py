@@ -112,6 +112,7 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
         datakey = 'data'  
         
     while True:
+        t0 = time.time()
         try:
             com = comqueue.get(block=False)
             logger.debug(funcname + ': received command {:s}'.format(str(com)))
@@ -134,7 +135,7 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
         except:
             pass
 
-        time.sleep(dt)
+
         datadict = {}        
         # Read T set
         com = b'$1RVAR0 \r'
@@ -210,6 +211,7 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
         #time.sleep(0.1)
         s = ser.read(100)
         print(s)
+        
         # Stability range
         com = b'$1RVAR28 \r'
         print('Stability range',com)
@@ -227,6 +229,12 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
 
         if(len(datadict.keys())>0):
             dataqueue.put(datadict)
+
+        t1 = time.time()
+        dt_load = t1 - t0
+        dt_sleep = dt - dt_load
+        if(dt_sleep > 0):
+            time.sleep(dt_sleep)            
 
 class Device():
     def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = {}):
