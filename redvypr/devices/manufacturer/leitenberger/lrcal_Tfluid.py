@@ -116,13 +116,14 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
         try:
             com = comqueue.get(block=False)
             logger.debug(funcname + ': received command {:s}'.format(str(com)))
+            logger.info(funcname + ': received command {:s}'.format(str(com)))
             if(com == 'stop'):
                 break
             elif(type(com) == dict):
                 logger.debug(funcname + ': Dictionary')
-                if('Tset' in com.keys()): # Set a new temperature
-                    logger.debug(funcname + ': Dictionary Tset')                    
-                    T = com['Tset']
+                if('set' in com.keys()): # Set a new temperature
+                    logger.debug(funcname + ': Dictionary set')                    
+                    T = com['set']
                     try:
                         Tstr = "{:2.1f}".format(T).replace('.',',').encode('UTF-8')
                         com = b'$1WVAR0 ' + Tstr + b'\r'
@@ -139,13 +140,13 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
         datadict = {}        
         # Read T set
         com = b'$1RVAR0 \r'
-        print(com)
+        #print(com)
         ser.write(com) # write a string
         s = ser.read(100)
-        print(s)
+        #print(s)
         # Parse the result (should look like this: b'*1 +0015.00\r'
         sstr = s.decode()
-        print(sstr)
+        #print(sstr)
         if('*1' in sstr):
             try:
                 Tset = sstr.split(' ')[1][:-1]
@@ -154,18 +155,18 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
                 logger.debug(funcname + ':' + str(e))
                 Tset = np.NaN
 
-            datadict['Tset'] = Tset
+            datadict['set'] = Tset
 
             
         com = b'$1RVAR100 \r'
-        print('Reading bath temperature',com)
+        #print('Reading bath temperature',com)
         ser.write(com)     # write a string
         #time.sleep(0.1)
         s = ser.read(100)
-        print(s)
+        #print(s)
         # Parse the result (should look like this: b'*1 +0015.00\r'
         sstr = s.decode()
-        print(sstr)
+        #print(sstr)
         if('*1' in sstr):
             try:
                 Tbath = sstr.split(' ')[1][:-1]
@@ -178,54 +179,54 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
 
         # Title
         com = b'$1RVAR9 \r'
-        print('Reading title',com)
+        #print('Reading title',com)
         ser.write(com)     # write a string
         #time.sleep(0.1)
         s = ser.read(100)
-        print(s)
+        #print(s)
         # Unit
         com = b'$1RVAR10 \r'
-        print('Reading unit',com)
+        #print('Reading unit',com)
         ser.write(com)     # write a string
         #time.sleep(0.1)
         s = ser.read(100)
-        print(s)
+        #print(s)
         # Serial number
         com = b'$1RVAR16 \r'
-        print('Reading serial number',com)
+        #print('Reading serial number',com)
         ser.write(com)     # write a string
         #time.sleep(0.1)
         s = ser.read(100)
-        print(s)
+        #print(s)
         # Min set point
         com = b'$1RVAR17 \r'
-        print('Reading min set point',com)
+        #print('Reading min set point',com)
         ser.write(com)     # write a string
         #time.sleep(0.1)
         s = ser.read(100)
-        print(s)
+        #print(s)
         # Max set point
         com = b'$1RVAR18 \r'
-        print('Reading max set point',com)
+        #print('Reading max set point',com)
         ser.write(com)     # write a string
         #time.sleep(0.1)
         s = ser.read(100)
-        print(s)
+        #print(s)
         
         # Stability range
         com = b'$1RVAR28 \r'
-        print('Stability range',com)
+        #print('Stability range',com)
         ser.write(com)     # write a string
         #time.sleep(0.1)
         s = ser.read(100)
-        print(s)
+        #print(s)
         # Symbol of steadiness
         com = b'$1RVAR29 \r'
-        print('Steadiness',com)
+        #print('Steadiness',com)
         ser.write(com)     # write a string
         #time.sleep(0.1)
         s = ser.read(100)
-        print(s)                      
+        #print(s)                      
 
         if(len(datadict.keys())>0):
             dataqueue.put(datadict)
@@ -503,7 +504,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         """
         T = float(self._datadisplays['Tseted'].text())
         logger.debug('Setting temperature to {:f}'.format(T))
-        comdict = {'Tset':T}
+        comdict = {'set':T}
         self.device.comqueue.put(comdict)
     
     def thread_status(self,status):

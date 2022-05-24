@@ -743,8 +743,11 @@ class redvypr(QtCore.QObject):
     def send_command(self,device,command):
         """ Sends a command to a device by putting it into the command queue
         """
+        funcname = self.__class__.__name__ + '.send_command():'
         dev = self.get_device_from_str(device)
-        print('Hallo',device,command,dev)
+        print(funcname,device,command,dev)
+        logger.debug(funcname + 'Sending command')
+        dev.comqueue.put(command)
                 
 
     def adddevicepath(self,folder):

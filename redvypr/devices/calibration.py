@@ -13,7 +13,7 @@ import logging
 import sys
 import yaml
 import pyqtgraph
-from redvypr.data_packets import device_in_data, get_keys, get_datastream
+from redvypr.data_packets import device_in_data, get_keys, get_datastream, parse_devicestring
 import redvypr.files as files
 import xlsxwriter
 from matplotlib.figure import Figure
@@ -633,9 +633,9 @@ class PolyfitWidget(QtWidgets.QWidget):
     def _autocal_start(self):
         funcname       = self.__class__.__name__ + '._autocal_start()'
         logger.debug(funcname)
-        dev = self.device.config['devices'][self.refsensor_deviceindex]#['device']            
-        devstr = self._get_devicestr(dev)            
-        self.device.redvypr.send_command(devstr,{'set':10.0})        
+        dev = self.device.config['devices'][self.refsensor_deviceindex]#['device']
+        devdict = parse_devicestring(dev['device'])
+        self.device.redvypr.send_command(devdict['devicename'],{'set':10.0})        
         if(self.sender().text() == 'Start'):
 
             currentrow     = self._autocalstartline.value()
