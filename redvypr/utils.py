@@ -6,6 +6,9 @@ logger = logging.getLogger('redvypr')
 logger.setLevel(logging.DEBUG)
 
 
+
+
+
 def addrm_device_as_data_provider(devices,deviceprovider,devicereceiver,remove=False):
     """ Adds or remove deviceprovider as a datasource to devicereceiver
     Arguments:

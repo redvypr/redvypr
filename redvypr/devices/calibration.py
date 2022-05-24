@@ -540,14 +540,17 @@ class PolyfitWidget(QtWidgets.QWidget):
         self.btn_addrow.clicked.connect(self.add_row)
         self.btn_remrow = QtWidgets.QPushButton('Rem row(s)')
         self.btn_remrow.clicked.connect(self.rem_row)
+        self.btn_autocal = QtWidgets.QPushButton('Autocal')
+        self.btn_autocal.clicked.connect(self.autocal)        
         self.label_strformat = QtWidgets.QPushButton('Number format')
         self.lineedit_strformat = QtWidgets.QLineEdit('{:2.4f}')
         self.btnlayout.addWidget(self.datatable,1,0,1,5)
         self.btnlayout.addWidget(self.btn_addhdr,2,0)
         self.btnlayout.addWidget(self.btn_addrow,2,1)
         self.btnlayout.addWidget(self.btn_remrow,2,2)
-        self.btnlayout.addWidget(self.label_strformat,2,3)
-        self.btnlayout.addWidget(self.lineedit_strformat,2,4)
+        self.btnlayout.addWidget(self.btn_autocal,2,3)        
+        self.btnlayout.addWidget(self.label_strformat,2,4)
+        self.btnlayout.addWidget(self.lineedit_strformat,2,-1)
         datalabel = QtWidgets.QLabel('Data')
         datalabel.setAlignment(QtCore.Qt.AlignCenter)
         datalabel.setStyleSheet("font-weight: bold")
@@ -588,6 +591,109 @@ class PolyfitWidget(QtWidgets.QWidget):
         splitter1.addWidget(self.datatable_widget)
         splitter1.addWidget(self.fitwidget['widget'])
         self.layout.addWidget(splitter1)
+
+    def autocal(self):
+        """ Automatic calibration
+        """
+        funcname = self.__class__.__name__ + '.autocal()'
+        logger.info(funcname)
+        self._autocalw = QtWidgets.QWidget()
+        l=QtWidgets.QFormLayout(self._autocalw)
+        self._autocaldisplay=QtWidgets.QLabel('Time')
+        self._autocalstart    =QtWidgets.QPushButton('Start')
+        self._autocalstart.clicked.connect(self._autocal_start)
+        self._autocalstartline=QtWidgets.QSpinBox()
+        self._autocalstartline.setValue(1)
+        self._autocalbtnrows  =QtWidgets.QPushButton('Set rows')
+        self._autocalbtnrows.clicked.connect(self._autocal_setrows)
+        self._autocalspinrows =QtWidgets.QSpinBox()
+        self._autocalspinrows.setMinimum(1)
+        self._autocalspinrows.setMaximum(1000)                
+        self._autocalspinrows.setValue(10)
+        self._autocaltimer=QtCore.QTimer()
+        self._autocaltimer.timeout.connect(self._autocal_timeout)
+
+
+        # Table with the time data
+        self._autocaltable = QtWidgets.QTableWidget()
+
+        self._autocal_setrows()
+        self._autocaltable.setColumnCount(2)
+        self._autocaltable.setHorizontalHeaderLabels(['Set', 'Time [s]'])
+
+
+        
+        l.addRow(self._autocaldisplay)
+        l.addRow(self._autocalstart,self._autocalstartline)
+        l.addRow(self._autocalbtnrows,self._autocalspinrows)        
+        l.addRow(self._autocaltable)
+        
+        self._autocalw.show()
+
+    def _autocal_start(self):
+        funcname       = self.__class__.__name__ + '._autocal_start()'
+        logger.debug(funcname)
+        dev = self.device.config['devices'][self.refsensor_deviceindex]#['device']            
+        devstr = self._get_devicestr(dev)            
+        self.device.redvypr.send_command(devstr,{'set':10.0})        
+        if(self.sender().text() == 'Start'):
+
+            currentrow     = self._autocalstartline.value()
+            self._autocal_currentrow = currentrow - 1
+            self._autocal_counter = 0 # Causes an immidiate row change
+            self._autocaltimer.start(1000)
+            self._autocaltimer.timeout.emit()
+            self.sender().setText('Stop')
+
+        elif(self.sender().text() == 'Stop'):
+            self.sender().setText('Start')            
+            self._autocaltimer.stop()
+            
+    def _autocal_setrows(self):
+        rows = self._autocalspinrows.value()
+        self._autocaltable.setRowCount(rows)
+        self._autocalstartline.setMaximum(rows)        
+
+    def _autocal_timeout(self):
+        """ Timeout of the calibration
+        """
+        refcolor = QtGui.QColor(200,200,200)
+        white = QtGui.QColor(255,255,255)        
+        funcname = self.__class__.__name__ + '._autocal_timeout()'
+        rows = self._autocaltable.rowCount()
+        logger.info(funcname)
+        print('Timeout')
+
+        self._autocal_counter -= 1
+        if(self._autocal_counter <= 0):
+            self._autocal_currentrow += 1
+            self._autocalstartline.setValue(self._autocal_currentrow)
+            for i in range(rows):
+                item = self._autocaltable.item(i,1)
+                if(item is not None):
+                    item.setBackground(white)            
+            item = self._autocaltable.item(self._autocal_currentrow - 1,1)
+            if(item is not None):
+                item.setBackground(refcolor)
+            else:
+                item = QtWidgets.QTableWidgetItem('')
+                item.setBackground(refcolor)
+                self._autocaltable.setItem(self._autocal_currentrow - 1,1,item)
+                
+            try:
+                self._autocal_currenttimeout = int(item.text())
+            except:
+                self._autocal_currenttimeout = 2
+
+            self._autocal_counter = self._autocal_currenttimeout
+            # Set the value of the reference device
+
+            
+        self._autocaldisplay.setText('{:d}'.format(self._autocal_counter))
+        logger.debug(funcname + ' Row: {:d}, timeout {:d},counter {:d}'.format(self._autocal_currentrow,self._autocal_currenttimeout,self._autocal_counter))
+        if(self._autocal_currentrow > rows):
+            self._autocaltimer.stop() 
+            
         
     def plot_fit(self):
         """ Plots the original data together with the fit 

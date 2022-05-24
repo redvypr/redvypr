@@ -1,5 +1,59 @@
 import time
 
+
+def parse_devicestring(devicestr):
+    """
+    """
+    devstring_full = devicestr
+    # Check first if we have a datastream
+    if('/' in devstring_full):
+
+        s = devstring_full.split('/')
+        datakey   = s[0]
+        devstring = s[1]
+    else:
+        datakey   = None
+        devstring = devstring_full
+
+    # First distinguish between the different realizations of the devicestring
+    UUID = None
+    if('::' in devstring): # UUID
+        s = devstring.split('::')
+        devicename = s[0]
+        UUID = s[1]
+    elif(':' in devstring): # hostname
+        s = devstring.split(':')
+        devicename = s[0]
+        rest       = s[1]
+        if('@' in rest):
+            hostname = rest.split('@')[0]
+            addr     = rest.split('@')[1]
+        else:
+            hostname = rest
+            addr     = data['host']['addr'] 
+    else:
+        devicename = devstring
+        hostname   = None
+        addr       = None
+
+    hostexpanded   = (hostname == '*')
+    addrexpanded   = (addr == '*')
+    deviceexpanded = (devicename == '*')
+    uuidexpanded   = (UUID == '*')
+
+    # Fill a dictionary
+    parsed_data = {}
+    parsed_data['hostname']     = hostname
+    parsed_data['addr']         = addr
+    parsed_data['devicename']   = devicename
+    parsed_data['UUID']         = UUID
+    parsed_data['datakey']      = datakey
+    parsed_data['hostexpand']   = hostexpanded
+    parsed_data['addrexpand']   = addrexpanded
+    parsed_data['deviceexpand'] = deviceexpanded
+    parsed_data['uuidexpand']   = uuidexpanded            
+    return parsed_data
+
 def get_keys(data):
     """Returns the keys of a redvypr data dictionary without the standard
     keys ('t', 'host','device','numpacket') as well as keys with an
@@ -108,6 +162,8 @@ def device_in_data(devicestring, data, get_devicename = False):
             - list: [bool,devicename,expanded]: First entry True is devicestring agrees with dictionary, second entry: the devicename string, third entry True if devicestring was expanded
     
     """
+
+    # TODO: replace with parse_devicestring()
     if(type(devicestring) == str):
         devicestring = [devicestring]
 

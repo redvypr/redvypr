@@ -26,6 +26,7 @@ import logging
 import sys
 import yaml
 import pyqtgraph
+import tempsensor
 # This import does only work on a respberry PI (spidev needed)
 from .ads124s0x import ads124s0x_pihat
 
@@ -80,18 +81,37 @@ def parse_nmea(data):
     return datadict
 
 
-def convert_data_with_coeffs(data,coeffs):
-    for coeff in coeffs:
-        if(coeff['name'] in data):
-            origdata = data[coeff['name']]
-            if(coeff['coeff'][0] == 2): # Polynom
-                convdata = coeff['coeff'][1] + origdata * coeff['coeff'][2] + origdata**2 * coeff['coeff'][3] + origdata**3 * coeff['coeff'][4]
-            else:
-                convdata = np.NaN
+def convert_data(data,chn,config):
+    funcname = __name__ + '.convert_data():'    
 
-            data[coeff['convname']] = convdata
+    try:
+        confch     = config['channels'][chn]
+        convtype   = config['channels'][chn]['type']
+        convcoeffs = config['channels'][chn]['coeffs']        
+    except Exception as e:
+        logger.debug(funcname + ' Did not find conversion data for channel {:s}'.format(chn))
+        confch = None
 
-    return data
+    if(confch is not None):
+        print('Found configuration')
+        data_conv = {}
+        try:
+            chconv = config['channels'][chn]['device']['serialnumber']# The channel name of the converted data
+        except:
+            chconv = chn + '_conv'
+        if(confch['type'].upper() == 'Steinhart-Hart NTC'.upper()): # NTC, TODO, this should be done more general
+            T                   = tempsensor.ntc.get_T_Steinhart_Hart(data,convcoeffs)
+            infoconv            = '?' + chconv
+            data_conv[chconv]   = T
+            data_conv[infoconv] = {'ch':chn}
+            data_conv['ch_conv'] = chconv # Make a key with the converted channel name, that makes it easier to look for the data
+            print('Temperature',T)
+        
+        return data_conv        
+    else:
+        return None
+        
+
 
 def start(datainqueue,dataqueue,comqueue,devicename,config={}):
     funcname = __name__ + '.start()'
@@ -153,12 +173,12 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
         tstr = td.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
         time.sleep(twait)
         adc_data = adc.read_data()
-        csvstr = adc.to_csv(tu,adc_data)
-        #channels[i%4].append(tu,adc_data)
-        #data = '$pi4heatflowref,' + chn + ',' + csvstr
-        #datab = data.encode('utf-8')
-        #server.sendto(datab, ('<broadcast>', UDPPORT))
-        datad = {'t':time.time(),chn:adc_data,'ch':chn}
+        datad = {'t':time.time(),chn:adc_data,'ch':chn}                    
+        # Convert the data (if coefficients are available
+        datac = convert_data(adc_data,chn,config)
+        if(datac is not None):
+            datad = {**datad,**datac}
+
         print('Data',datad)
         #print(chn + ',' + csvstr)
         dataqueue.put(datad)
@@ -176,7 +196,7 @@ class Device():
         self.dataqueue   = dataqueue        
         self.comqueue    = comqueue
         self.config      = config # Please note that this is typically a placeholder, the config structure will be written by redvypr and the yaml
-        self.name        = 'heatflowsensor' # This will be overwritten by the config!
+        self.name        = 'datalogger_rpi' # This will be overwritten by the config!
                 
     def start(self):
         start(self.datainqueue,self.dataqueue,self.comqueue,devicename=self.name,config=self.config)
@@ -260,8 +280,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
         # Add a widget with the data 
         if(tabwidget is not None):
             self.create_datadisplaywidget()
+            self.create_converteddatadisplaywidget()
             #self.datadisplaywidget = QtWidgets.QWidget()            
             tabwidget.addTab(self.datadisplaywidget,'Sensor data')
+            if('channels' in self.device.config.keys()):
+                tabwidget.addTab(self.converteddatadisplaywidget,'Converted data')            
+            
             
         #self.rawplot = QtWidgets.QWidget(self)
         #self.layout_rawplot = QtWidgets.QGridLayout(self.rawplot)
@@ -414,9 +438,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 plot.addItem(lineplot)
                 # Add the line to all plots
                 self.plots.append(plot_dict)
-            
-        
-
 
 
     def create_datadisplaywidget(self):
@@ -443,7 +464,33 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.datadisplaywidget_layout.addWidget(self._datadisplays['1'],2,0)
         self.datadisplaywidget_layout.addWidget(self._datadisplays['2'],2,1)
         self.datadisplaywidget_layout.addWidget(self._datadisplays['3'],3,0)
-        self.datadisplaywidget_layout.addWidget(self._datadisplays['4'],3,1)
+        self.datadisplaywidget_layout.addWidget(self._datadisplays['4'],3,1)                
+            
+        
+    def create_converteddatadisplaywidget(self):
+        """ Widget that shows the heatflowsensor data
+        """
+        self.converteddatadisplaywidget = QtWidgets.QWidget()
+        self.converteddatadisplaywidget_layout = QtWidgets.QGridLayout(self.converteddatadisplaywidget)
+        self._cdatadisplays = {}
+        for ser in self.device.config['channels'].keys():
+            try:
+                chconv = self.device.config['channels'][ser]['device']['serialnumber']# The channel name of the converted data
+            except:
+                chconv = ser + '_conv'
+                
+            self._cdatadisplays[chconv] = datadisplay(title=chconv)
+            if(ser == '1'):
+                loc = [2,0]
+            elif(ser == '2'):
+                loc = [2,1]
+            elif(ser == '3'):
+                loc = [3,0]
+            elif(ser == '4'):
+                loc = [3,1]
+                
+            self.converteddatadisplaywidget_layout.addWidget(self._cdatadisplays[chconv],loc[0],loc[1])
+
         
     
     def thread_status(self,status):
@@ -485,6 +532,15 @@ class displayDeviceWidget(QtWidgets.QWidget):
             #print('Channel',channel,'newdata',newdata)
             self._datadisplays[channel].set_data(newdata)
 
+            # Look for converted data
+            if 'ch_conv' in data.keys():
+                print('Got converted data')
+                chconv = data['ch_conv']
+
+                newdata_conv = float(data[chconv])
+                #print('Channel',channel,'newdata',newdata)
+                self._cdatadisplays[chconv].set_data(newdata_conv)                
+                
             
         except Exception as e:
             logger.debug(funcname + ':' + str(e))

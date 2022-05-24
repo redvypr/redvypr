@@ -738,6 +738,13 @@ class redvypr(QtCore.QObject):
                     device.thread_status({'threadalive': sendict['thread'].is_alive()})
                 except:
                     pass
+
+
+    def send_command(self,device,command):
+        """ Sends a command to a device by putting it into the command queue
+        """
+        dev = self.get_device_from_str(device)
+        print('Hallo',device,command,dev)
                 
 
     def adddevicepath(self,folder):
