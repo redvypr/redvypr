@@ -30,7 +30,7 @@ def parse_devicestring(devicestr):
             addr     = rest.split('@')[1]
         else:
             hostname = rest
-            addr     = data['host']['addr'] 
+            addr     = None
     else:
         devicename = devstring
         hostname   = None
