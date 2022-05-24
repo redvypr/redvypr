@@ -16,7 +16,10 @@ def parse_devicestring(devicestr):
         devstring = devstring_full
 
     # First distinguish between the different realizations of the devicestring
-    UUID = None
+    UUID       = None
+    hostname   = None
+    addr       = None
+    devicename = None        
     if('::' in devstring): # UUID
         s = devstring.split('::')
         devicename = s[0]
@@ -30,11 +33,8 @@ def parse_devicestring(devicestr):
             addr     = rest.split('@')[1]
         else:
             hostname = rest
-            addr     = None
     else:
         devicename = devstring
-        hostname   = None
-        addr       = None
 
     hostexpanded   = (hostname == '*')
     addrexpanded   = (addr == '*')
