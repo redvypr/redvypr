@@ -155,7 +155,7 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
                 logger.debug(funcname + ':' + str(e))
                 Tset = np.NaN
 
-            datadict['set'] = Tset
+            datadict['Tset'] = Tset
 
             
         com = b'$1RVAR100 \r'

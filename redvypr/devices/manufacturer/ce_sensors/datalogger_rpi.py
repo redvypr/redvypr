@@ -93,7 +93,7 @@ def convert_data(data,chn,config):
         confch = None
 
     if(confch is not None):
-        print('Found configuration')
+        #print('Found configuration')
         data_conv = {}
         try:
             chconv = config['channels'][chn]['device']['serialnumber']# The channel name of the converted data
@@ -105,7 +105,7 @@ def convert_data(data,chn,config):
             data_conv[chconv]   = T
             data_conv[infoconv] = {'ch':chn}
             data_conv['ch_conv'] = chconv # Make a key with the converted channel name, that makes it easier to look for the data
-            print('Temperature',T)
+            #print('Temperature',T)
         
         return data_conv        
     else:
@@ -179,7 +179,7 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
         if(datac is not None):
             datad = {**datad,**datac}
 
-        print('Data',datad)
+        #print('Data',datad)
         #print(chn + ',' + csvstr)
         dataqueue.put(datad)
 
@@ -534,7 +534,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
             # Look for converted data
             if 'ch_conv' in data.keys():
-                print('Got converted data')
+                #print('Got converted data')
                 chconv = data['ch_conv']
 
                 newdata_conv = float(data[chconv])

@@ -460,19 +460,18 @@ class PlotWidget(QtWidgets.QWidget):
                         # First via the configuration
                         try:
                             unitstry = config['unit']
-                            print('Found device unit',unitstry)
-                            print('Found device unit',unitstry)
-                            print('Found device unit',unitstry)
-                            print('Found device unit',unitstry)
                             self.device.units[self.numdisp] = {'x':'time','y':unitstry}
                         except:
-                            pass
-                        propskeyy = '?' + config['y']
-                        try:
-                            unitstry = data[propskeyy]['unit']
-                            self.device.units[self.numdisp] = {'x':'time','y':unitstry}
-                        except Exception as e:
-                            self.device.units[self.numdisp] = {'x':'time','y':'NA'}
+                            unitstry = None
+
+                        if(unitstry == None):
+                            propskeyy = '?' + config['y']
+                            try:
+                                unitstry = data[propskeyy]['unit']
+                                self.device.units[self.numdisp] = {'x':'time','y':unitstry}
+                            except Exception as e:
+                                self.device.units[self.numdisp] = {'x':'time','y':'NA'}
+                                
                         if(type(newx) is not list):
                             newx = [newx]
                             newy = [newy]
@@ -503,7 +502,7 @@ class PlotWidget(QtWidgets.QWidget):
 class PolyfitWidget(QtWidgets.QWidget):
     """ The widgets shows average data values together with some statistics and fitting
     """
-    def __init__(self,device=None):
+    def __init__(self,device=None,displaywidget = None):
         funcname = __name__ + '.init()'
         super(QtWidgets.QWidget, self).__init__()
         self.layout           = QtWidgets.QGridLayout(self)
@@ -513,7 +512,7 @@ class PolyfitWidget(QtWidgets.QWidget):
         self.datatable.verticalHeader().hide()
         self.datatable_widget = QtWidgets.QWidget()
         self.datatable.itemChanged.connect(self._datatable_item_changed)
-        
+        self.displaywidget = displaywidget # The parent widget
         self.headerrows_basis       = 4
         self.headerrows             = self.headerrows_basis
         self.coloffset              = 1
@@ -524,8 +523,6 @@ class PolyfitWidget(QtWidgets.QWidget):
         
         # Buttons to add/remove datapoints
         self.init_widgets()
-        
-        
         self.update_table()
         
     def init_widgets(self):
@@ -592,11 +589,35 @@ class PolyfitWidget(QtWidgets.QWidget):
         splitter1.addWidget(self.fitwidget['widget'])
         self.layout.addWidget(splitter1)
 
+        if('autocal' in self.device.config.keys()):
+           self.autocal()
+
     def autocal(self):
-        """ Automatic calibration
+        """ Automatic calibration functionality
         """
         funcname = self.__class__.__name__ + '.autocal()'
         logger.info(funcname)
+        # Check if we have a config, if not create one
+        try:
+            self.device.config['autocal']
+        except:
+            self.device.config['autocal'] = {}
+
+        try:
+            self.device.config['autocal']['dt_sampling']
+        except:
+            self.device.config['autocal']['dt_sampling'] = 30
+
+        try:
+            self.device.config['autocal']['set']
+        except:
+            self.device.config['autocal']['set'] = [1,2,3,4,5]
+
+        try:
+            self.device.config['autocal']['time']
+        except:
+            self.device.config['autocal']['time'] = [10,15,30,40,5]            
+        
         self._autocalw = QtWidgets.QWidget()
         l=QtWidgets.QFormLayout(self._autocalw)
         self._autocaldisplay=QtWidgets.QLabel('Time')
@@ -609,7 +630,14 @@ class PolyfitWidget(QtWidgets.QWidget):
         self._autocalspinrows =QtWidgets.QSpinBox()
         self._autocalspinrows.setMinimum(1)
         self._autocalspinrows.setMaximum(1000)                
-        self._autocalspinrows.setValue(10)
+        self._autocalspinrows.setValue(len(self.device.config['autocal']['time']))
+
+        self._autocaldt  =QtWidgets.QLabel('Delta t [s] sampling')
+        self._autocaldtspin =QtWidgets.QSpinBox()
+        self._autocaldtspin.setMinimum(1)
+        self._autocaldtspin.setMaximum(1000)                
+        self._autocaldtspin.setValue(self.device.config['autocal']['dt_sampling'])
+        
         self._autocaltimer=QtCore.QTimer()
         self._autocaltimer.timeout.connect(self._autocal_timeout)
 
@@ -617,14 +645,16 @@ class PolyfitWidget(QtWidgets.QWidget):
         # Table with the time data
         self._autocaltable = QtWidgets.QTableWidget()
 
-        self._autocal_setrows()
+
         self._autocaltable.setColumnCount(2)
         self._autocaltable.setHorizontalHeaderLabels(['Set', 'Time [s]'])
+        self._autocal_setrows()        
 
 
         
         l.addRow(self._autocaldisplay)
         l.addRow(self._autocalstart,self._autocalstartline)
+        l.addRow(self._autocaldt,self._autocaldtspin)                
         l.addRow(self._autocalbtnrows,self._autocalspinrows)        
         l.addRow(self._autocaltable)
         
@@ -633,9 +663,6 @@ class PolyfitWidget(QtWidgets.QWidget):
     def _autocal_start(self):
         funcname       = self.__class__.__name__ + '._autocal_start()'
         logger.debug(funcname)
-        dev = self.device.config['devices'][self.refsensor_deviceindex]#['device']
-        devdict = parse_devicestring(dev['device'])
-        self.device.redvypr.send_command(devdict['devicename'],{'set':10.0})        
         if(self.sender().text() == 'Start'):
 
             currentrow     = self._autocalstartline.value()
@@ -652,7 +679,20 @@ class PolyfitWidget(QtWidgets.QWidget):
     def _autocal_setrows(self):
         rows = self._autocalspinrows.value()
         self._autocaltable.setRowCount(rows)
-        self._autocalstartline.setMaximum(rows)        
+        self._autocalstartline.setMaximum(rows)
+
+        # Fill the table
+        t = self.device.config['autocal']['time']
+        s = self.device.config['autocal']['set']
+        
+        for i in range(len(t)):
+            print(i,rows)
+            if(i < rows):
+                item0 = QtWidgets.QTableWidgetItem(str(s[i]))                
+                item1 = QtWidgets.QTableWidgetItem(str(t[i]))
+                self._autocaltable.setItem(i,0,item0)
+                self._autocaltable.setItem(i,1,item1)                
+
 
     def _autocal_timeout(self):
         """ Timeout of the calibration
@@ -665,13 +705,40 @@ class PolyfitWidget(QtWidgets.QWidget):
         print('Timeout')
 
         self._autocal_counter -= 1
+        # New row, sample data, send command to reference device and change row
         if(self._autocal_counter <= 0):
+            print('Timeout!',self._autocal_currentrow)
+            if(self._autocal_currentrow > 0): # Dont sample the first 
+                # Get the dataself.device.config['autocal']['time']
+                tsample1 = time.time()
+                tsample0 = tsample1 - self._autocaldtspin.value()
+                print('Sampling',tsample0,tsample1)
+                self.displaywidget.sample_interval(tsample0,tsample1)
+            if True:
+                # Set the value of the reference device
+                item = self._autocaltable.item(self._autocal_currentrow,0)
+                try:
+                    varset = float(item.text())
+                except:
+                    varset = None
+
+                if(varset is not None):
+                    dev = self.device.config['devices'][self.refsensor_deviceindex]#['device']
+                    devdict = parse_devicestring(dev['device'])
+                    logger.info(funcname + ' Sending command to device {:s} to set value to {:f}'.format(dev['device'],varset))
+                    self.device.redvypr.send_command(devdict['devicename'],{'set':varset})
+                else:
+                    logger.warning(funcname + ' No value found to send for a command')
+                
+            # Prepare everything for the next row ...
             self._autocal_currentrow += 1
             self._autocalstartline.setValue(self._autocal_currentrow)
             for i in range(rows):
                 item = self._autocaltable.item(i,1)
                 if(item is not None):
-                    item.setBackground(white)            
+                    item.setBackground(white)
+
+            # Counter item
             item = self._autocaltable.item(self._autocal_currentrow - 1,1)
             if(item is not None):
                 item.setBackground(refcolor)
@@ -686,13 +753,15 @@ class PolyfitWidget(QtWidgets.QWidget):
                 self._autocal_currenttimeout = 2
 
             self._autocal_counter = self._autocal_currenttimeout
-            # Set the value of the reference device
+
 
             
-        self._autocaldisplay.setText('{:d}'.format(self._autocal_counter))
+        self._autocaldisplay.setText('{:d} s'.format(self._autocal_counter))
         logger.debug(funcname + ' Row: {:d}, timeout {:d},counter {:d}'.format(self._autocal_currentrow,self._autocal_currenttimeout,self._autocal_counter))
         if(self._autocal_currentrow > rows):
-            self._autocaltimer.stop() 
+            self._autocaltimer.stop()
+            self._autocaldisplay.setText('Done')
+            self._autocalstart.setText('Start')
             
         
     def plot_fit(self):
@@ -932,11 +1001,6 @@ class PolyfitWidget(QtWidgets.QWidget):
                 except:
                     sensortype.append('')
                     
-            print('Hallo',sensortype)
-            print('Hallo',sensortype)
-            print('Hallo',sensortype)
-            print('Hallo',sensortype)
-            
             for ih,h in enumerate(sensortype):
                 item = QtWidgets.QTableWidgetItem(str(h))
                 devcol = self._get_devicecolumn(ih)
@@ -1022,6 +1086,7 @@ class PolyfitWidget(QtWidgets.QWidget):
         # Reference sensor
         try:
             reftype = self.device.config['polyfit']['refsensor']
+            print('Found refsensor',reftype)
             for i in range(refcombo.count()):
                 reftype_tmp = refcombo.itemText(i)
                 if(reftype_tmp == reftype):
@@ -2194,7 +2259,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 self.widgets['polyfit']
             except:
                 logger.debug(funcname + 'Adding PolfitWidget')
-                self.widgets['polyfit'] = PolyfitWidget(device = self.device)
+                self.widgets['polyfit'] = PolyfitWidget(device = self.device,displaywidget=self)
                 i1 = self.tabwidget.addTab(self.widgets['polyfit'],'Polyfit')
             
         if 'responsetime' in self.device.config.keys(): # If the user wants to have a table
@@ -2219,7 +2284,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         config=self.device.config
         #print('Hallo2',config['devices'])
         i = 0
-        self.btn_add_interval.clicked.connect(self.get_data_clicked)
+        self.btn_add_interval.clicked.connect(self.get_data_from_plots_clicked)
         for i,config_device in enumerate(config['devices']):
             logger.debug(funcname + ': Adding device ' + str(config_device))
                                                 
@@ -2256,16 +2321,41 @@ class displayDeviceWidget(QtWidgets.QWidget):
         if 'polyfit' in self.device.config.keys(): # If the user wants to have a table
             logger.debug(funcname + ': Init polyfit table ')
             self.widgets['polyfit'].update_table_header()
+            self.widgets['polyfit'].update_fitwidgets()
 
-    
-    def get_data_clicked(self):
+
+    def sample_interval(self,t0,t1):
+        """
+        Changes the data intervals for sampling (this is needed for
+        automatic sampling by autocal, instead of the user choosing
+        the interval using the mouse)
+
+        """
+        funcname = self.__class__.__name__ + '.sample_interval():'
+        logger.info(funcname)        
+        self.device.user_interval = []
+        self.device.user_interval.append(t0)
+        self.device.user_interval.append(t1)
+        for i,plot in enumerate(self.plots):
+            plot.mouse_clicked_proc()
+            data = plot.get_data_clicked()
+            if(data is not None):
+                self.device.data_interval[i].append(data)
+
+        if 'polyfit' in self.device.config.keys(): # If the user wants to have a table                
+            self.widgets['polyfit'].update_table()
+        # Update the responsetime widget with the new data            
+        if 'responsetime' in self.device.config.keys(): # If the user wants to have a table
+            self.widgets['responsetime']._update_data_intervals()
+
+
+    def get_data_from_plots_clicked(self):
         """ Collects data from all plots and saves it into the self.device.data_interval list
         """
         for i,plot in enumerate(self.plots):
             data = plot.get_data_clicked()
             if(data is not None):
                 self.device.data_interval[i].append(data)
-                
                 
         if 'polyfit' in self.device.config.keys(): # If the user wants to have a table                
             self.widgets['polyfit'].update_table()
