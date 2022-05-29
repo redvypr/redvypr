@@ -106,7 +106,14 @@ def convert_data(data,chn,config):
             data_conv[infoconv] = {'ch':chn}
             data_conv['ch_conv'] = chconv # Make a key with the converted channel name, that makes it easier to look for the data
             #print('Temperature',T)
-        
+        elif(confch['type'].upper() == 'Polynom'.upper()): # NTC, TODO, this should be done more general            
+            p = numpy.polynomial.Polynomial(convcoeffs)
+            res = p(data)
+            infoconv            = '?' + chconv
+            data_conv[chconv]   = res
+            data_conv[infoconv] = {'ch':chn}
+            data_conv['ch_conv'] = chconv # Make a key with the converted channel name, that makes it easier to look for the data
+
         return data_conv        
     else:
         return None
