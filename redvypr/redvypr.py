@@ -1014,6 +1014,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__devices_list    = QtWidgets.QListWidget()
         self.__devices_list.itemClicked.connect(self.__device_name)
         self.__devices_list.currentItemChanged.connect(self.__device_name)
+        self.__devices_list.itemDoubleClicked.connect(self.add_device_click)
         self.__devices_info    = QtWidgets.QWidget()
         self.__devices_addbtn  = QtWidgets.QPushButton('Add')
         self.__devices_addbtn.clicked.connect(self.add_device_click)
