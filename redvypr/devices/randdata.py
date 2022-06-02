@@ -32,6 +32,11 @@ class Device():
 
         self.logger = logging.getLogger('randdata')
         self.logger.setLevel(logging.INFO)
+        
+    def get_datakeys(self):
+        """ Returns a list of datakey that the device has in their data dictionary
+        """
+        return ['t','data','?data']
 
         
     def start(self):

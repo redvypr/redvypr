@@ -119,6 +119,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.addtype = QtWidgets.QComboBox()
         self.addtype.addItem('Graph')
         self.addtype.addItem('Numeric Display')
+        self.addtype.currentIndexChanged.connect(self.update_plotname)
         # The location stuff
         self.locwidget = QtWidgets.QWidget()        
         loclayout = QtWidgets.QGridLayout(self.locwidget)
@@ -127,11 +128,20 @@ class initDeviceWidget(QtWidgets.QWidget):
         labsx  = QtWidgets.QLabel('Size x')
         labsy  = QtWidgets.QLabel('Size y')                
         self.locx  = QtWidgets.QSpinBox()
+        self.locx.valueChanged.connect(self.update_plotname)
         self.locy  = QtWidgets.QSpinBox()
+        self.locy.valueChanged.connect(self.update_plotname)
         self.sizex = QtWidgets.QSpinBox()
         self.sizex.setValue(1)
         self.sizey = QtWidgets.QSpinBox()
         self.sizey.setValue(1)
+        self.addname = QtWidgets.QLineEdit()
+        # Make the lineedit less wide
+        # https://forum.qt.io/topic/37280/solved-how-to-change-initial-size-of-qlineedit/5
+        self.addname.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred);
+        self.addname.setMinimumWidth(200)
+        self.update_plotname()
+        
         loclayout.addWidget(labx,0,0)        
         loclayout.addWidget(self.locx,0,1)
         loclayout.addWidget(laby,1,0)                
@@ -143,7 +153,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         
         loclayout.addWidget(QtWidgets.QLabel('Plot type'),4,0)
         loclayout.addWidget(self.addtype,4,1)
-        loclayout.addWidget(self.addbtn,0,2,5,1)                                              
+        
+        loclayout.addWidget(QtWidgets.QLabel('Plot name'),5,0)
+        loclayout.addWidget(self.addname,5,1)
+        loclayout.addWidget(self.addbtn,0,2,-1,1)                                              
         # Location stuff done
         
         self.config = [] # A list of plots
@@ -154,8 +167,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.locwidget,3,0,1,2)        
         
         
-        
-
         # Configuration of plots
         self.configwidget  = QtWidgets.QWidget()
         backcolor = 'lightgray'
@@ -166,6 +177,15 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.configlayout  = QtWidgets.QGridLayout(self.configwidget) # The layout
         layout.addWidget(self.configwidget,5,0,3,2)
         #
+        
+    def update_plotname(self):
+        """ Updates the plot name  
+        """
+        x = self.locx.value()
+        y = self.locy.value()
+        plottype = self.addtype.currentText()
+        name = '{:s} {:d}x{:d}'.format(plottype,x,y)
+        self.addname.setText(name)
 
     def finalize_init(self):
         """ This function is called after the configuration is parsed
@@ -192,7 +212,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         sizey = self.sizey.value()                
         plotdict_bare = {}
         plotdict_bare['type'] = 'numdisp'        
-        plotdict_bare['title'] = ''
+        plotdict_bare['title'] = self.addname.text()
         plotdict_bare['location'] = [locy,locx,sizey,sizex]
         plotdict_bare['unit'] = '[auto]' # Add auto
         plotdict_bare['data'] = 'data'
@@ -224,7 +244,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         sizey = self.sizey.value()        
         plotdict_bare = {}
         plotdict_bare['type'] = 'graph'        
-        plotdict_bare['title'] = 'New Plot'
+        plotdict_bare['title'] = self.addname.text()
+        plotdict_bare['name'] = self.addname.text()
         plotdict_bare['location'] = [locy,locx,sizey,sizex]
         plotdict_bare['xlabel'] = 'x label'
         plotdict_bare['ylabel'] = 'y label'
@@ -497,15 +518,21 @@ class plotWidget(QtWidgets.QFrame):
         self.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(backcolor,bordercolor))        
         self.layout = QtWidgets.QVBoxLayout(self)
         self.config = config
+        i = 0
         if True:
             logger.debug(funcname + ': Adding plot' + str(config))
             try:
                 title = config['title']
             except:
                 title = "Plot {:d}".format(i)
+                
+            try:
+                name = config['name']
+            except:
+                name = "Plot {:d}".format(i)
             
-            plot = pyqtgraph.PlotWidget(title=title)
-            
+            plot = pyqtgraph.PlotWidget(title=title,name=name)
+            plot.register(name=name)
             # Add a legend
             plot.addLegend()
 
@@ -800,7 +827,7 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
         logger.debug(funcname + str(item.text(0)) + ' ' + str(item.text(1)))
         self.item_change = item
         if(item.text(0) == 'device'):
-            self.devicechoose = redvypr_devicelist_widget(self.redvypr,self.device) # Peter test
+            self.devicechoose = redvypr_devicelist_widget(self.redvypr,self.device,deviceonly=True) # Open a device choosing widget
             self.devicechoose.device_name_changed.connect(self.devicechanged)
             self.devicechoose.show()
 
@@ -818,7 +845,7 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
                     print('Devicename',devicename)
                     break
                     
-            self.devicechoose = redvypr_devicelist_widget(self.redvypr,self.device,devicename = devicename) # Peter test
+            self.devicechoose = redvypr_devicelist_widget(self.redvypr,self.device,devicename = devicename,deviceonly=False,devicelock = True) # Open a device choosing widget
             self.devicechoose.datakey_name_changed.connect(self.devicechanged)
             self.devicechoose.show()
 
@@ -1036,7 +1063,7 @@ class configTreeNumDispWidget(QtWidgets.QTreeWidget):
             yparse = yaml.safe_load(pstring)
             newdata = yparse['a']
             item.setText(1,self.backup_data)
-            print('ohno',e)            
+            #print('ohno',e)            
 
         # Change the dictionary 
         try:

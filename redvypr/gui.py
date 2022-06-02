@@ -26,6 +26,10 @@ import signal
 import uuid
 from redvypr.version import version
 import redvypr.files as files
+# Console
+# https://github.com/jupyter/qtconsole/blob/master/examples/inprocess_qtconsole.py
+from qtconsole.rich_jupyter_widget import RichJupyterWidget
+from qtconsole.inprocess import QtInProcessKernelManager
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -536,20 +540,24 @@ class displayDeviceWidget_standard(QtWidgets.QWidget):
 
 #
 class redvypr_devicelist_widget(QtWidgets.QWidget):
-    """ Widget that displays information collected in the statistics
+    """ Widget that lets the user choose available subscribed devices (if device is not None) and datakeys. This
+    devicelock: The user cannot change the device anymore 
     """
     device_name_changed        = QtCore.pyqtSignal(str) # Signal notifying if the device path was changed
     datakey_name_changed       = QtCore.pyqtSignal(str) # Signal notifying if the datakey has changed
-    def __init__(self,redvypr,device=None,devicename=None,datakey=None):
+    def __init__(self,redvypr,device=None,devicename=None,datakey=None,deviceonly=False,devicelock=False):
         super(QtWidgets.QWidget, self).__init__()
+        self.setWindowIcon(QtGui.QIcon(_icon_file))   
         self.redvypr = redvypr
         self.layout = QtWidgets.QVBoxLayout(self)
+        self.deviceonly = deviceonly
         if(devicename == None):
             self.devicename = 'Na'
         else:
             self.devicename = devicename
 
-        self.device = device            
+        self.device = device 
+        flag_all_devices = self.device == None # All devices or only one device?           
         if(device is not None):
             self.devicenamelabel = QtWidgets.QLabel('Device: ' + device.name)
             self.layout.addWidget(self.devicenamelabel)
@@ -558,16 +566,20 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
         self.layout.addWidget(self.deviceavaillabel)
         
         self.devicelist  = QtWidgets.QListWidget() # List of available devices
-        self.datakeylist = QtWidgets.QListWidget() # List of available datakeys
+        
         self.devicecustom = QtWidgets.QLineEdit()
         self.devicecustom.textChanged[str].connect(self.devicecustom_changed)
         self.layout.addWidget(self.devicelist)
         self.layout.addWidget(self.devicecustom)
-        self.devicedatakeyslabel = QtWidgets.QLabel('Data keys of device')
-        self.layout.addWidget(self.devicedatakeyslabel)        
-        self.layout.addWidget(self.datakeylist)
-        self.datakeycustom = QtWidgets.QLineEdit()
-        self.layout.addWidget(self.datakeycustom)
+        # The datakeys
+        if(deviceonly == False):
+            self.datakeylist = QtWidgets.QListWidget() # List of available datakeys
+            self.devicedatakeyslabel = QtWidgets.QLabel('Data keys of device')
+            self.layout.addWidget(self.devicedatakeyslabel)        
+            self.layout.addWidget(self.datakeylist)
+            self.datakeycustom = QtWidgets.QLineEdit()
+            self.layout.addWidget(self.datakeycustom)
+            self.datakeylist.itemDoubleClicked.connect(self.datakey_clicked)
 
         self.buttondone = QtWidgets.QPushButton('Done')
         self.buttondone.clicked.connect(self.done_clicked)
@@ -575,29 +587,49 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
 
         devicelist = []
         self.datakeylist_subscribed = {}
-        flag_all_devices = self.device == None
+        
+        # Add devices to show
+        print('Devices',self.redvypr.devices)
         for devdict in self.redvypr.devices:
             devname = devdict['device'].name
-            print(devname,devname in device.data_receiver)
-            flag_subscribed_device = devname in device.data_receiver
+            print('Device',devdict['device'])
+            if(self.device is not None):
+                print(devname,devname in device.data_receiver)
+                flag_subscribed_device = devname in device.data_receiver
+            else:
+                flag_subscribed_device = False
             flag_device_itself = devdict['device'] == self.device
-            if(flag_all_devices or flag_subscribed_device or flag_device_itself):
+            if(flag_all_devices):
+                devicelist.append(str(devname))
+                print(devdict['statistics']['datakeys'])
+                self.datakeylist_subscribed[devname] = devdict['statistics']['datakeys']
+                
+            elif(flag_subscribed_device or flag_device_itself):
+                
+                data_provider = self.redvypr.get_data_providing_devices(device = devdict['device'])
+                # Add subscribed devices
+                for dev in data_provider:
+                    devname = devdict['device'].name
+                    devicelist.append(str(devname))
+                    #print(devdict['statistics']['devicekeys'])
+                    self.datakeylist_subscribed[devname] = devdict['statistics']['datakeys']
+
+                print('Data provider',data_provider)
+                # Add devices from the statistics, this is needed if the subscribed device receives itself data from other devices and is forwarding them
+                # It doesnt if the device is already added above, it is simply overwritten here
                 devices = devdict['statistics']['devices']
-                #print('Devices',devices)
+                print('Devices',devices)
                 for dev in devices:
                     devicelist.append(str(dev))
                     #print(devdict['statistics']['devicekeys'])
                     self.datakeylist_subscribed[dev] = devdict['statistics']['devicekeys'][dev]
 
+        # Populate devices
         for devname in devicelist:
             self.devicelist.addItem(devname)
             
-        #print('data provider',device.data_provider)
-        #print('data receiver',device.data_receiver)
-        
         self.devicelist.itemDoubleClicked.connect(self.device_clicked)
-        self.datakeylist.itemDoubleClicked.connect(self.datakey_clicked)
-
+        
         # Update the custom text with the given devicename and check if it exists in the item list
         # If its existing update the datakeylist
         self.devicecustom.setText(str(devicename))                
@@ -606,10 +638,12 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
                 self.devicelist.setCurrentItem(self.devicelist.item(i))
                 self.device_clicked(self.devicelist.item(i))                
 
-        #self.devicecustom_changed(self.devicename)
+        if(devicelock):
+            self.devicelist.setEnabled(False)
         
     def update_datakeylist(self,devicename):
-        print('Updating list')
+        """ Update the datakeylist whenever the device was changed
+        """
         self.datakeylist.clear()
         for key in self.datakeylist_subscribed[devicename]:
             # If a conversion to an int works, make quatoations around it, otherwise leave it as it is
@@ -630,8 +664,9 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
         """
         devicename = item.text()
         #print('Click',item.text())
-        self.devicedatakeyslabel.setText('Data keys of device ' + devicename)
-        self.update_datakeylist(devicename)
+        if(self.deviceonly == False):
+            self.devicedatakeyslabel.setText('Data keys of device ' + devicename)
+            self.update_datakeylist(devicename)
         self.devicecustom.setText(str(devicename))        
         self.device_name_changed.emit(item.text())
 
@@ -646,8 +681,6 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
         pass
         #self.device_name_changed.emit(str(text))                    
          
-
-
 
                 
 

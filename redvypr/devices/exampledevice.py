@@ -59,6 +59,12 @@ class Device():
     def __str__(self):
         sstr = 'exampledevice'
         return sstr
+    
+    
+    def get_datakeys(self):
+        """ Returns a list of datakey that the device has in their data dictionary
+        """
+        return ['t','data','?data','temperature']
 
     def get_info(self):
         """This a example function displaying information about the device

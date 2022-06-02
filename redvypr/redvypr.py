@@ -16,7 +16,7 @@ import threading
 import multiprocessing
 import redvypr.devices as redvyprdevices
 from redvypr.data_packets import device_in_data, get_devicename
-from redvypr.gui import redvyprConnectWidget,QPlainTextEditLogger,displayDeviceWidget_standard,deviceinfoWidget
+from redvypr.gui import redvyprConnectWidget,QPlainTextEditLogger,displayDeviceWidget_standard,deviceinfoWidget,redvypr_devicelist_widget
 from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices
 import socket
 import argparse
@@ -27,6 +27,9 @@ import signal
 import uuid
 from redvypr.version import version
 import redvypr.files as files
+
+from pyqtconsole.console import PythonConsole
+from pyqtconsole.highlighter import format
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -487,7 +490,7 @@ class redvypr(QtCore.QObject):
     def add_device(self,devicemodulename=None, deviceconfig = None, thread=False):
         """ Function adds a device
         """
-        funcname = __name__ + '.add_device()' 
+        funcname = self.__class__.__name__ + '.add_device():' 
         logger.debug(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(deviceconfig))
         devicelist = []
         device_found = False
@@ -523,6 +526,15 @@ class redvypr(QtCore.QObject):
               device.redvypr = self
               # Link the statistics directly into the device as well    
               device.statistics = devicedict['statistics']
+              # Add a priori datakeys to the statistics, of the device supports it
+              try:
+                  datakeys = device.get_datakeys()
+                  logger.debug(funcname + 'Adding datakeys received from .get_datakeys(): {:s}'.format(str(datakeys)))
+              except Exception as e:
+                  logger.debug(funcname + 'Device does not have .get_datakeys()')
+                  datakeys = []
+                  
+              device.statistics['datakeys'] = list(set(datakeys))
               # Check if the device wants a direct start after initialization
               try:
                   autostart = device.autostart
@@ -777,7 +789,12 @@ class redvypr(QtCore.QObject):
             
 
     def get_devicedict_from_str(self,devicestr):
-        """ Returns the devicedict based on an inputstr, if not found returns None
+        """
+        Returns the devicedict based on an inputstr, if not found returns None
+        
+        Args:
+            devicestr: str
+            
         """
         for d in self.devices:
             if d['device'].name == devicestr:
@@ -786,7 +803,15 @@ class redvypr(QtCore.QObject):
         return None    
     
     def get_devices(self):
-        """ Returns a list of the devices
+        """
+        Returns a list of the devices
+
+        Returns
+        -------
+        devicelist : TYPE
+            DESCRIPTION.
+
+
         """
         devicelist = []
         for d in self.devices:
@@ -794,12 +819,66 @@ class redvypr(QtCore.QObject):
 
         return devicelist
 
-    def get_data_providing_devices(self,device):
-        return get_data_providing_devices(self.devices,device)
+    def get_data_providing_devices(self,device=None,forwarded_devices=True):
+        """
+        Returns a list of devices that provide data. This is either the subscribed devices itself or a device that forwards data packets (i.e. network device)
 
+        Args:
+            device: bool
+                None: Returns all data providing devices. 
+                Device:  Returns all data providing devices of device 
+            forwarded_devices: bool
+                A device might forward data packets from other devices. These devices can be listed as well, note that the device needs to have data packets received already to have them in their statistic.
+
+        Returns
+        -------
+        list
+            A list containing the names of the data providing devices
+
+        """
+        devicelist = []
+        if(device == None):
+            for dev in self.devices:
+                devname = dev['device']
+                if(dev['device'].publish):
+                    devicelist.append(devname)
+        else:   
+            devicelist = get_data_providing_devices(self.devices,device)
+            
+        devices_forward = devdict['statistics']['devices']
+        print('Devices forward',devices_forward)
+        for dev in devices_forward:
+            devicelist.append(dev)
+            
+        devicelist = list(set(devicelist))
+        
+        return devicelist
+    
+    def get_datastreams(self,device=None,forwarded_devices=True):
+        """
+        Args:
+            device:
+            forwarded_devices:
+        """
+        return None
+        
     def get_data_receiving_devices(self,device):
         return get_data_receiving_devices(self.devices,device)
+    
+    def get_known_devices(self):
+        """ List all known devices that can be loaded by redvypr
+        
+        Returns:
+        --------
+        list
+            A list of known devices
+        """
+        devices = []
+        for d in self.device_modules:
+            devices.append(d['name'])
 
+        return devices
+    
     def addrm_device_as_data_provider(self,deviceprovider,devicereceiver,remove=False):
         """ Adding/removing devices as dataprovider for the device devicereceiver
         Arguments:
@@ -815,11 +894,6 @@ class redvypr(QtCore.QObject):
 
         ret = addrm_device_as_data_provider(self.devices,deviceprovider,devicereceiver,remove=remove)
         return ret
-
-
-        
-
-
 
 
 #
@@ -861,7 +935,12 @@ class redvyprWidget(QtWidgets.QWidget):
         self.devicetabs.setMovable(True)
         self.devicetabs.setTabsClosable(True)
         self.devicetabs.tabCloseRequested.connect(self.closeTab)
-
+        
+        ## Add a console
+        #self.console = redvypr_console()
+        
+        
+           
         # The configuration of the redvypr
         self.create_devicepathwidget()
         self.create_statuswidget()
@@ -906,7 +985,24 @@ class redvyprWidget(QtWidgets.QWidget):
 
 
         self.__populate_devicepathlistWidget()
-
+        
+    def open_console(self):
+        """ Opens a pyqtconsole console widget
+            
+        """
+        if True:
+            # Console
+            self.console = PythonConsole(formats={
+                'keyword': format('darkBlue', 'bold')
+                })
+            self.console.setWindowIcon(QtGui.QIcon(_icon_file))
+            self.console.setWindowTitle("redvypr console")        
+            self.console.push_local_ns('redvypr_widget', self)
+            self.console.push_local_ns('redvypr', self.redvypr)
+            self.console.show()
+            self.console.eval_queued()
+        
+        #self.devicetabs.addTab(self.console,'Console') 
     def renamedevice(self,oldname,name):
         """ Renames a devices
         """
@@ -1049,12 +1145,13 @@ class redvyprWidget(QtWidgets.QWidget):
 
         # Populate the device list
         itms = []
-        for d in self.redvypr.device_modules:
-            itm = QtWidgets.QListWidgetItem(d['name'])
+        known_devices = self.redvypr.get_known_devices()
+        for d in known_devices:
+            itm = QtWidgets.QListWidgetItem(d)
             itms.append(itm)
             self.__devices_list.addItem(itm)
             
-        # set the first item as current and create a device name
+        # Set the first item as current and create a device name
         self.__devices_list.setCurrentItem(itms[0])
         self.__device_name()
         self.add_device_widget.show()
@@ -1092,7 +1189,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__device_name()
 
     def _add_device(self,devicelist):
-        """Function is called via the redvypr.add_device signal and is adding
+        """ Function is called via the redvypr.add_device signal and is adding
         all the gui functionality to the device
 
         """
@@ -1392,8 +1489,8 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         # Add the icon
         self.setWindowIcon(QtGui.QIcon(_icon_file))           
         
-        self.redvypr = redvyprWidget(config=config)
-        self.setCentralWidget(self.redvypr)
+        self.redvypr_widget = redvyprWidget(config=config)
+        self.setCentralWidget(self.redvypr_widget)
         quitAction = QtWidgets.QAction("&Quit", self)
         quitAction.setShortcut("Ctrl+Q")
         quitAction.setStatusTip('Close the program')
@@ -1412,7 +1509,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         pathAction = QtWidgets.QAction("&Devicepath", self)
         pathAction.setShortcut("Ctrl+L")
         pathAction.setStatusTip('Edit the device path')
-        pathAction.triggered.connect(self.redvypr.show_devicepathwidget)                
+        pathAction.triggered.connect(self.redvypr_widget.show_devicepathwidget)                
 
         deviceAction = QtWidgets.QAction("&Add device", self)
         deviceAction.setShortcut("Ctrl+A")
@@ -1445,6 +1542,17 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         
         
         # Help and About menu
+        toolMenu = mainMenu.addMenu('&Tools')
+        toolAction = QtWidgets.QAction("&Choose Device/Datakey ", self)
+        toolAction.setStatusTip('Opens a window to choose an available device and/or datakeys')
+        toolAction.triggered.connect(self.show_deviceselect)
+        consoleAction = QtWidgets.QAction("&Open console", self)
+        consoleAction.triggered.connect(self.open_console)
+        toolMenu.addAction(toolAction)
+        toolMenu.addAction(consoleAction)
+        
+        
+        # Help and About menu
         helpAction = QtWidgets.QAction("&About", self)
         helpAction.setStatusTip('Information about the software version')
         helpAction.triggered.connect(self.about)
@@ -1453,13 +1561,14 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         helpMenu.addAction(helpAction)
 
         self.show()
-
+        
+    def open_console(self):
+        self.redvypr_widget.open_console()
     def gotodevicetab(self):
-        self.redvypr.devicetabs.setCurrentWidget(self.redvypr.devicesummarywidget)
-
+        self.redvypr_widget.devicetabs.setCurrentWidget(self.redvypr_widget.devicesummarywidget)
 
     def connect_device_gui(self):
-        self.redvypr.connect_device_gui()
+        self.redvypr_widget.connect_device_gui()
 
     def about(self):
         self._about_widget = QtWidgets.QWidget()
@@ -1473,18 +1582,21 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         iconlabel.setPixmap(icon)
         layout.addWidget(iconlabel)
         self._about_widget.show()
-
+        
+    def show_deviceselect(self):
+        self.__deviceselect__ = redvypr_devicelist_widget(redvypr=self.redvypr_widget.redvypr,deviceonly=True)
+        self.__deviceselect__.show()
     def open_add_device_widget(self):
-        self.redvypr.open_add_device_widget()
+        self.redvypr_widget.open_add_device_widget()
 
     def load_config(self):
-        self.redvypr.load_config()
+        self.redvypr_widget.load_config()
         
     def save_config(self):
-        self.redvypr.save_config()
+        self.redvypr_widget.save_config()
 
     def close_application(self):
-        self.redvypr.close_application()
+        self.redvypr_widget.close_application()
             
         sys.exit()
         
@@ -1575,8 +1687,11 @@ def redvypr_main():
         rect = screen.availableGeometry()
         width = int(rect.width()*4/5)
         height = int(rect.height()*2/3)
+        
+
         #print('Available: %d x %d' % (rect.width(), rect.height()))
         ex = redvyprMainWidget(width=width,height=height,config=config_all)
+                  
         sys.exit(app.exec_())
 
 
