@@ -545,22 +545,36 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
     """
     device_name_changed        = QtCore.pyqtSignal(str) # Signal notifying if the device path was changed
     datakey_name_changed       = QtCore.pyqtSignal(str) # Signal notifying if the datakey has changed
-    def __init__(self,redvypr,device=None,devicename=None,datakey=None,deviceonly=False,devicelock=False):
+    def __init__(self,redvypr,device=None,devicename_highlight=None,datakey=None,deviceonly=False,devicelock=False,subscribed_only=True):
+        """
+        Args:
+            redvypr:
+            device:
+            devicename_highlight: The devicename that is highlighted in the list
+            datakey:
+            deviceonly:
+            devicelock:
+            subscribed_only: Show the subscribed devices only
+        """
+        
         super(QtWidgets.QWidget, self).__init__()
         self.setWindowIcon(QtGui.QIcon(_icon_file))   
         self.redvypr = redvypr
         self.layout = QtWidgets.QVBoxLayout(self)
         self.deviceonly = deviceonly
-        if(devicename == None):
-            self.devicename = 'Na'
+        if(devicename_highlight == None):
+            self.devicename_highlight = 'Na'
         else:
-            self.devicename = devicename
+            self.devicename_highlight = devicename_highlight
 
         self.device = device 
-        flag_all_devices = self.device == None # All devices or only one device?           
+        flag_all_devices = (self.device == None) or (subscribed_only == False) # All devices or only one device?           
         if(device is not None):
             self.devicenamelabel = QtWidgets.QLabel('Device: ' + device.name)
             self.layout.addWidget(self.devicenamelabel)
+            self.devicename = device.name
+        else:
+            self.devicename = ''
 
         self.deviceavaillabel = QtWidgets.QLabel('Available devices')
         self.layout.addWidget(self.deviceavaillabel)
@@ -600,12 +614,13 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
                 flag_subscribed_device = False
             flag_device_itself = devdict['device'] == self.device
             if(flag_all_devices):
-                devicelist.append(str(devname))
-                print(devdict['statistics']['datakeys'])
-                self.datakeylist_subscribed[devname] = devdict['statistics']['datakeys']
+                subscribed_only
+                if(devname != self.devicename):
+                    devicelist.append(str(devname))
+                    print(devdict['statistics']['datakeys'])
+                    self.datakeylist_subscribed[devname] = devdict['statistics']['datakeys']
                 
             elif(flag_subscribed_device or flag_device_itself):
-                
                 data_provider = self.redvypr.get_data_providing_devices(device = devdict['device'])
                 # Add subscribed devices
                 for dev in data_provider:
@@ -632,9 +647,9 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
         
         # Update the custom text with the given devicename and check if it exists in the item list
         # If its existing update the datakeylist
-        self.devicecustom.setText(str(devicename))                
+        self.devicecustom.setText(str(devicename_highlight))                
         for i in range(self.devicelist.count()-1):
-            if(self.devicelist.item(i).text() == self.devicename):
+            if(self.devicelist.item(i).text() == self.devicename_highlight):
                 self.devicelist.setCurrentItem(self.devicelist.item(i))
                 self.device_clicked(self.devicelist.item(i))                
 

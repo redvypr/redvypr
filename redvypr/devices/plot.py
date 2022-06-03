@@ -11,13 +11,44 @@ import copy
 import pyqtgraph
 from redvypr.data_packets import device_in_data, get_keys
 from redvypr.gui import redvypr_devicelist_widget
+import redvypr.files as files
 
+_logo_file = files.logo_file
+_icon_file = files.icon_file
 pyqtgraph.setConfigOption('background', 'w')
 pyqtgraph.setConfigOption('foreground', 'k')
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('plot')
 logger.setLevel(logging.DEBUG)
+
+def get_bare_graph_config():
+    """ Returns a valid bare configuration for a graph plot
+    """
+    plotdict_bare = {}
+    plotdict_bare['type'] = 'graph'        
+    plotdict_bare['title'] = 'Graph title'
+    plotdict_bare['name'] = 'Graph'
+    plotdict_bare['location'] = [0,0,0,0]
+    plotdict_bare['xlabel'] = 'x label'
+    plotdict_bare['ylabel'] = 'y label'
+    plotdict_bare['datetick'] = True
+    plotdict_bare['lines'] = []
+    plotdict_bare['lines'].append(get_bare_graph_line_config())
+    plotdict_bare['lines'].append(get_bare_graph_line_config())
+    return plotdict_bare
+
+
+def get_bare_graph_line_config():
+    line_bare = {}
+    line_bare['device'] = 'add devicename here'
+    line_bare['name'] = 'this is a line'
+    line_bare['x'] = 't'
+    line_bare['y'] = 'data'
+    line_bare['linewidth'] = 2
+    line_bare['color'] = [255,0,0]
+    line_bare['buffersize'] = 5000
+    return line_bare
 
 
 def start(datainqueue,dataqueue,comqueue):
@@ -55,11 +86,16 @@ class Device():
         parsed
 
         """
-        funcname = self.name + ':' + __name__ +':'        
+        self.connect_devices()
+        
+    def connect_devices(self):
+        """ Connects devices, if they are not already connected
+        """
+        funcname = self.__class__.__name__ + '.connect_devices():'                                
         logger.debug(funcname)
         # Check of devices have not been added
         devices = self.redvypr.get_devices() # Get all devices
-        dataprovider = self.redvypr.get_data_providing_devices(self) # Get already connected publisher
+        dataprovider = self.redvypr.get_data_providing_devices(device = self) # Get already connected publisher
         plot_devices = []
         for plot in self.config: # Loop over all plots
             if(plot['type'].lower() == 'numdisp'):
@@ -241,25 +277,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         locx = self.locx.value()
         locy = self.locy.value()
         sizex = self.sizex.value()
-        sizey = self.sizey.value()        
-        plotdict_bare = {}
-        plotdict_bare['type'] = 'graph'        
+        sizey = self.sizey.value()
+        # Get a configuration and modify it
+        plotdict_bare = get_bare_graph_config()        
         plotdict_bare['title'] = self.addname.text()
         plotdict_bare['name'] = self.addname.text()
         plotdict_bare['location'] = [locy,locx,sizey,sizex]
-        plotdict_bare['xlabel'] = 'x label'
-        plotdict_bare['ylabel'] = 'y label'
-        plotdict_bare['datetick'] = True
-        plotdict_bare['lines'] = []
-        line_bare = {}
-        line_bare['device'] = 'add devicename here'
-        line_bare['name'] = 'line 1'
-        line_bare['x'] = 't'
-        line_bare['y'] = 'data'
-        line_bare['linewidth'] = 2
-        line_bare['color'] = [255,0,0]
-        line_bare['buffersize'] = 5000
-        plotdict_bare['lines'].append(line_bare)
         # Check if we have already a plot here
         flag_add_plot = True
         for config in self.device.config:
@@ -277,7 +300,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
     def add_allwidgets(self):
-        """
+        """ Adds all plots defined in the list self.device.config
         """
         if True:
             # Adding/Updating the plotwidgets in the display widget
@@ -305,7 +328,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 button.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
                 button.clicked.connect(self.config_clicked)
                 if(config['type'].lower() == 'graph'):
-                    configtree = configTreePlotWidget(config=config)
+                    configtree = configPlotWidget(config=config,device = self.device, redvypr = self.redvypr)
                 elif(config['type'].lower() == 'numdisp'):
                     configtree = configTreeNumDispWidget(config=config)                 
                 else:
@@ -326,6 +349,8 @@ class initDeviceWidget(QtWidgets.QWidget):
                 tmplayout.addWidget(configupdate,2,0)
 
                 configwidget = QtWidgets.QWidget()
+                button.configwidget.setWindowIcon(QtGui.QIcon(_icon_file))        
+                button.configwidget.setWindowTitle('redvypr plot setup')
                 tmplayout = QtWidgets.QGridLayout(configwidget)
                 tmplayout.addWidget(button,0,0,1,2)
                 
@@ -334,8 +359,6 @@ class initDeviceWidget(QtWidgets.QWidget):
     def config_clicked(self):
         """ Open the configurationwidget of the clicked button
         """
-        self.sender().configwidget.redvypr = self.redvypr
-        self.sender().configwidget.device = self.device
         self.sender().configwidget.show()
 
     def rem_clicked(self):
@@ -358,7 +381,9 @@ class initDeviceWidget(QtWidgets.QWidget):
                     self.device.config[i] = confignew
                     button.config = confignew
                     break
-                
+            
+            # Reconnecting the devices    
+            self.device.connect_devices()
             # Lets update the display widget
             self.redvyprdevicelistentry['gui'][0].update_widgets()
 
@@ -419,7 +444,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.config = config
 
     def update_widgets(self):
-        """ Compares self.config and widgets and add/removes plots if necessary
+        """ Compares self.device.config and widgets and add/removes plots if necessary
         """
         funcname = __name__ + '.update_widgets():'
         logger.debug(funcname)
@@ -429,12 +454,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
             
         # Add axes to the widget
         for i,config in enumerate(self.device.config):
-
             if(config['type'] == 'graph'):
                 logger.debug(funcname + ': Adding graph' + str(config))                
                 plot = plotWidget(config)
                 location = config['location']            
-
                 if(len(location) == 2):
                     self.layout.addWidget(plot,location[0],location[1])
                 else:
@@ -578,8 +601,6 @@ class plotWidget(QtWidgets.QFrame):
                     
                 lineplot = pyqtgraph.PlotDataItem( name = name)
                 
-                
-                
                 try:
                     device = line['device']
                 except:
@@ -693,8 +714,42 @@ class plotWidget(QtWidgets.QFrame):
             #print(funcname + 'Exception:' + str(e))
             logger.debug(funcname + 'Exception:' + str(e))
 
-
 #
+#
+#
+#
+#
+class configPlotWidget(QtWidgets.QWidget):
+    def __init__(self, config = {}, editable=True, device = None, redvypr = None):
+        super().__init__()
+        self.device      = device
+        self.redvypr     = redvypr
+        self.config      = copy.deepcopy(config) # Make a copy of the dictionary
+        self.layout      = QtWidgets.QVBoxLayout(self)
+        self.tree        = configTreePlotWidget(config,editable=editable,device=device,redvypr=redvypr)
+        self.tree.config_changed.connect(self.config_changed)
+        self.tree.line_touched.connect(self._line_touched)
+        
+        self.linebtn     = QtWidgets.QPushButton('Add line')
+        self.linebtn.clicked.connect(self.process_linebutton)
+        
+        self.layout.addWidget(self.tree)
+        self.layout.addWidget(self.linebtn)
+    
+    def process_linebutton(self):
+        if(self.linebtn.text()   == 'Add line'):
+            self.tree.add_line()
+        elif(self.linebtn.text() == 'Remove line'):
+            self.linebtn.setText('Add line')
+            self.tree.rem_line(self.lineindex)
+            
+    def _line_touched(self,index):
+        self.linebtn.setText('Remove line')
+        self.lineindex = index
+        
+    def config_changed(self,config):
+        #print('Config changed',config)
+        self.config = copy.deepcopy(self.tree.config) # Make a copy of the dictionary
 #
 #
 #
@@ -702,32 +757,71 @@ class plotWidget(QtWidgets.QFrame):
 class configTreePlotWidget(QtWidgets.QTreeWidget):
     """ Qtreewidget that display and modifies the configuration of the plotWidget display
     """
-    def __init__(self, config = {},editable=True):
+    config_changed = QtCore.pyqtSignal(dict) # Signal requesting a start of the device (starting the thread)
+    line_touched = QtCore.pyqtSignal(int) # Signal stating that a line was touched, useful for line removal
+    def __init__(self, config = {},editable=True,device = None, redvypr = None):
         super().__init__()
-            
-        self.config      = copy.deepcopy(config) # Make a copy of the dictionary
+        self.device  = device
+        self.redvypr = redvypr
+        self.config  = copy.deepcopy(config) # Make a copy of the dictionary
+        self.config  = config
+        self.editable= editable
         # make only the first column editable        
         self.setEditTriggers(self.NoEditTriggers)
         self.itemDoubleClicked.connect(self.edititem)
         self.header().setVisible(False)
-        self.create_qtree(self.config,editable=True)
+        self.create_qtree(self.config,editable = self.editable)
         self.resizeColumnToContents(0)  
         self.itemExpanded.connect(self._proc_expanded)
+        self.itemDoubleClicked.connect(self.checkEdit)
+        self.itemChanged.connect(self.item_changed) # If an item is changed
+        self.currentItemChanged.connect(self.current_item_changed) # If an item is changed
          
     def _proc_expanded(self):
-        self.resizeColumnToContents(0)          
+        self.resizeColumnToContents(0)        
+          
     def checkEdit(self, item, column):
         """ Helper function that only allows to edit column 1
         """
         funcname = __name__ + '.checkEdit():'
         if column == 1:
             self.editItem(item, column)
+            
+    def add_line(self):
+        """ Adds a new bare line to the config
+        
+        """
+        lineconfig = get_bare_graph_line_config()
+        self.config['lines'].append(lineconfig)
+        config      = copy.deepcopy(self.config) # Make a copy of the dictionary
+        self.config = config
+        self.create_qtree(config, editable = self.editable)
+        print('Config (add line)',self.config)
+        
+    def rem_line(self,index):
+        """ Removes a line at position index
+        
+        """
+        self.config['lines'].pop(index)
+        config      = copy.deepcopy(self.config) # Make a copy of the dictionary
+        self.config = config
+        self.create_qtree(config, editable = self.editable)
+        print('Config (rem line)',self.config)
+            
 
     def current_item_changed(self,current,previous):
         """ Save the data in the currently changed item, this is used to
         restore if newly entered data is not valid
         """
-        self.backup_data = current.text(1)            
+        try:
+            self.backup_data = current.text(1)
+        except:
+            self.backup_data = None
+            
+        if(current.text(0) == 'line'):
+            index = int(current.text(1))
+            self.line_touched.emit(index)
+            
 
     def item_changed(self,item,column):
         """ Updates the dictionary with the changed data
@@ -760,10 +854,11 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
 
 
         self.resizeColumnToContents(0)
+        self.config_changed.emit(self.config)
                                       
     def create_qtree(self,config,editable=True):
         """Creates a new qtree from the configuration and replaces the data in
-        the dictionary with a configdata obejct, that save the data
+        the dictionary with a configdata object, that save the data
         but also the qtreeitem, making it possible to have a synced
         config dictionary from/with a qtreewidgetitem. TODO: Worth to
         replace with a qviewitem?
@@ -772,6 +867,7 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
 
         funcname = __name__ + ':create_qtree():'
         logger.debug(funcname)
+        self.blockSignals(True)
         if True:
             self.clear()
             parent = self.invisibleRootItem()
@@ -781,10 +877,11 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
         #parent.setEditTriggers(QtGui.QAbstractItemView.DoubleClicked)        
         for key in sorted(config.keys()):
             if(key == 'lines'):
-                child = QtWidgets.QTreeWidgetItem([key,''])                
-                parent.addChild(child)
-                lineparent = child
+                linesparent = QtWidgets.QTreeWidgetItem([key,''])                
+                parent.addChild(linesparent)
                 for iline,line in enumerate(config['lines']):
+                    lineparent = QtWidgets.QTreeWidgetItem(['line',str(iline)])                
+                    linesparent.addChild(lineparent)
                     for linekey in sorted(line.keys()):
                         value = config['lines'][iline][linekey]
                         data = configdata(value)
@@ -817,9 +914,8 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
 
 
         # Connect edit triggers
-        self.itemDoubleClicked.connect(self.checkEdit)
-        self.itemChanged.connect(self.item_changed) # If an item is changed
-        self.currentItemChanged.connect(self.current_item_changed) # If an item is changed
+        self.blockSignals(False)
+        self.config_changed.emit(config)
 
     def edititem(self,item,colno):
         funcname = __name__ + 'edititem()'
@@ -827,10 +923,12 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
         logger.debug(funcname + str(item.text(0)) + ' ' + str(item.text(1)))
         self.item_change = item
         if(item.text(0) == 'device'):
-            self.devicechoose = redvypr_devicelist_widget(self.redvypr,self.device,deviceonly=True) # Open a device choosing widget
+            
+            # Let the user choose all devices and take care that the devices has been connected
+            self.devicechoose = redvypr_devicelist_widget(self.redvypr, self.device, deviceonly=True, subscribed_only=False) # Open a device choosing widget
             self.devicechoose.device_name_changed.connect(self.devicechanged)
             self.devicechoose.show()
-
+            
         if((item.text(0) == 'x') or (item.text(0) == 'y')):
             # Get the devicename first
             parent = item.parent()
@@ -845,7 +943,7 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
                     print('Devicename',devicename)
                     break
                     
-            self.devicechoose = redvypr_devicelist_widget(self.redvypr,self.device,devicename = devicename,deviceonly=False,devicelock = True) # Open a device choosing widget
+            self.devicechoose = redvypr_devicelist_widget(self.redvypr,self.device,devicename_highlight = devicename,deviceonly=False,devicelock = True) # Open a device choosing widget
             self.devicechoose.datakey_name_changed.connect(self.devicechanged)
             self.devicechoose.show()
 

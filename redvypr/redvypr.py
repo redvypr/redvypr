@@ -836,23 +836,37 @@ class redvypr(QtCore.QObject):
             A list containing the names of the data providing devices
 
         """
-        devicelist = []
-        if(device == None):
-            for dev in self.devices:
-                devname = dev['device']
-                if(dev['device'].publish):
-                    devicelist.append(devname)
-        else:   
-            devicelist = get_data_providing_devices(self.devices,device)
-            
-        devices_forward = devdict['statistics']['devices']
-        print('Devices forward',devices_forward)
-        for dev in devices_forward:
-            devicelist.append(dev)
-            
-        devicelist = list(set(devicelist))
+        funcname = self.__class__.__name__ + '.get_data_providing_devices():'                                
+        logger.debug(funcname)
+        for devdict in self.devices:
+            if(devdict['device'] == device):
+                flag_device_itself = True 
+                break
         
-        return devicelist
+        if(device == None):
+            flag_device_itself = True
+            
+        if(flag_device_itself == False):
+            raise ValueError('Device not in redvypr')
+        else:
+            devicelist = []
+            if(device == None):
+                for dev in self.devices:
+                    devname = dev['device']
+                    if(dev['device'].publish):
+                        devicelist.append(devname)
+            else:   
+                devicelist = get_data_providing_devices(self.devices,device)
+
+            # Add all devices that are forwarded                
+            devices_forward = devdict['statistics']['devices']
+            print('Devices forward',devices_forward)
+            for dev in devices_forward:
+                devicelist.append(dev)
+                
+            devicelist = list(set(devicelist))
+            
+            return devicelist
     
     def get_datastreams(self,device=None,forwarded_devices=True):
         """
@@ -1606,7 +1620,38 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
 
 
 
+#
+#
+# A splash screen
+#
+#
 
+class SplashScreen(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(700, 350)
+        self.setWindowFlag(QtCore.Qt.FramelessWindowHint)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.counter = 0
+        self.n = 50
+        #self.initUI()
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.count)
+        self.timer.start(100)
+        
+    def count(self):
+        # set progressbar value
+        #self.progressBar.setValue(self.counter)
+        # stop progress if counter
+        # is greater than n and
+        # display main window app
+        if self.counter >= self.n:
+            self.timer.stop()
+            self.close()
+            time.sleep(1)
+            ## Start the main application
+            #self.main_window()
+        self.counter += 1
 #
 #
 # Main function called from os

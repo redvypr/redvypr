@@ -91,8 +91,17 @@ def get_data_receiving_devices(devices,device):
     return devicesin
 
 def get_data_providing_devices(devices,device):
-    """ Returns a list of devices that are providing their data to device, i.e. device.datain is in the 'dataout' list of the device
+    """
+     Returns a list of devices that are providing their data to device, i.e. device.datain is in the 'dataout' list of the device
     devices = list of dictionaries 
+    
+        devices: List of dictionaries as in redvypr.devices
+        device: redvypr Device, see exampledevice.py
+        
+    Returns
+        -------
+        list
+            A list containing the names of the data providing devices
     """
     # Find the device first in self.devices and save the index
     inddevice = -1
