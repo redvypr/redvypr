@@ -1114,10 +1114,10 @@ class redvyprWidget(QtWidgets.QWidget):
                     config = [config]
 
                 for c in config:
-                    print('Config',c)
                     self.redvypr.parse_configuration(c)
 
-                self.hostname_changed(self.redvypr.config['hostname'])   
+                if('hostname' in self.redvypr.config.keys()):
+                    self.hostname_changed(self.redvypr.config['hostname'])   
         self.__populate_devicepathlistWidget()
         
     def open_console(self):
