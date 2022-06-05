@@ -31,6 +31,14 @@ import redvypr.files as files
 from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
 
+import ctypes
+myappid = u'redvypr.redvypr.version' # arbitrary string
+try:
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+except:
+    pass
+
+
 _logo_file = files.logo_file
 _icon_file = files.icon_file
     
