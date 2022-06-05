@@ -31,6 +31,8 @@ import redvypr.files as files
 from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
 
+# Windows icon fix
+# https://stackoverflow.com/questions/1551605/how-to-set-applications-taskbar-icon-in-windows-7/1552105#1552105
 import ctypes
 myappid = u'redvypr.redvypr.version' # arbitrary string
 try:
