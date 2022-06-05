@@ -1621,7 +1621,8 @@ class redvyprWidget(QtWidgets.QWidget):
 class redvyprMainWidget(QtWidgets.QMainWindow):
     def __init__(self,width=None,height=None,config=None):
         super(redvyprMainWidget, self).__init__()
-        self.setGeometry(0, 0, width, height)
+        #self.setGeometry(0, 0, width, height)
+        
         self.setWindowTitle("redvypr")
         # Add the icon
         self.setWindowIcon(QtGui.QIcon(_icon_file))           
@@ -1698,6 +1699,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         helpMenu = mainMenu.addMenu('&Help')
         helpMenu.addAction(helpAction)
 
+        self.resize(width, height)
         self.show()
         
     def open_console(self):
@@ -1858,7 +1860,7 @@ def redvypr_main():
         height = int(rect.height()*2/3)
         
 
-        logger.debug('Available screen size: {:d} x {:d}'.format(rect.width(), rect.height()))
+        logger.debug('Available screen size: {:d} x {:d} using {:d} x {:d}'.format(rect.width(), rect.height(),width,height))
         ex = redvyprMainWidget(width=width,height=height,config=config_all)
                   
         sys.exit(app.exec_())
