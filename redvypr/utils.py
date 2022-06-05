@@ -101,8 +101,9 @@ def get_data_providing_devices(devices,device):
     Returns
         -------
         list
-            A list containing the names of the data providing devices
+            A list containing the device
     """
+    devicesout = []
     # Find the device first in self.devices and save the index
     inddevice = -1
     for i,s in enumerate(devices):
@@ -110,9 +111,8 @@ def get_data_providing_devices(devices,device):
             inddevice = i
 
     if(inddevice < 0):
-        return None
-    
-    devicesout = []
+        raise ValueError('Device not in redvypr')
+        
     # Look if the devices are connected as input to the chosen device
     # s in self.devices-> data -> device
     datain = device.datainqueue

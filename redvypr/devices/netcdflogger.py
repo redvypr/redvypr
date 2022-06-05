@@ -47,7 +47,7 @@ import netCDF4
 import copy
 import pkg_resources
 import yaml
-from redvypr.data_packets import device_in_data, get_devicename, get_keys
+from redvypr.data_packets import device_in_data, get_devicename_from_data, get_keys_from_data
 from redvypr.version import version
 
 
@@ -202,6 +202,7 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
             except Exception as e:
                 logger.debug(funcname + ': could not close netcdfile')
                 
+            logger.info(funcname + ':Stopping now')
             break
         except Exception as e:
             #logger.warning(funcname + ': Error stopping thread:' + str(e))
@@ -263,7 +264,7 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                     if('*' in group['name']):
                         # Found an expansion, here a "real" group will be created based on the data packet.
                         groupname = data['host']['name']
-                        devicename_exp = get_devicename(data) # This will be the groupname
+                        devicename_exp = get_devicename_from_data(data) # This will be the groupname
                         # Check if the group is already existing
                         flag_group_exists = False
                         for group_test in config['groups']:
@@ -276,7 +277,7 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
                             newgroup     = {'name':devicename_exp,'devices':[],'variables':[]}
                             newgroup['devices'].append(devicename_exp)
                             # Create variables based on the data packet
-                            newvariables = get_keys(data)
+                            newvariables = get_keys_from_data(data)
                             
                             for nvar in newvariables:
                                 # Check if data can be converted to a float
@@ -350,6 +351,8 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,dataoutqueues=[],
 
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))
+                
+    logger.info(funcname + 'stopped')
 
 class Device():
     """This is a netCDF4 logger. It reads the dictionary packets from

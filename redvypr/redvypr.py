@@ -15,7 +15,7 @@ import inspect
 import threading
 import multiprocessing
 import redvypr.devices as redvyprdevices
-from redvypr.data_packets import device_in_data, get_devicename
+from redvypr.data_packets import device_in_data, get_devicename_from_data, get_datastreams_from_data, parse_devicestring
 from redvypr.gui import redvyprConnectWidget,QPlainTextEditLogger,displayDeviceWidget_standard,deviceinfoWidget,redvypr_devicelist_widget
 from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices
 import socket
@@ -58,12 +58,12 @@ def get_ip():
     return IP
 
 # The hostinfo, to distinguish between different redvypr instances
-hostinfo = {'name':'redvypr','tstart':time.time(),'addr':get_ip(),'uuid':str(uuid.uuid1())}
+hostinfo = {'hostname':'redvypr','tstart':time.time(),'addr':get_ip(),'uuid':str(uuid.uuid1()),'local':True}
 
 def distribute_data(devices,infoqueue,dt=0.01):
     """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
     """
-    funcname = __name__ + 'distribute_data()'
+    funcname = __name__ + '.distribute_data()'
     dt_info = 1.0 # The time interval information will be sent
     dt_avg = 0 # Averaging of the distribution time needed
     navg = 0    
@@ -86,6 +86,8 @@ def distribute_data(devices,infoqueue,dt=0.01):
                 if('device' not in data.keys()):
                     data['device']   = str(device.name)
                     data['host']     = hostinfo
+                else: # Check if we have a local data packet, i.e. a packet that comes from another redvypr instance with another UUID
+                    data['host']['local']    = data['host']['uuid'] == hostinfo['uuid']
                     
                 # Add the time to the datadict if its not already in
                 if('t' not in data.keys()):
@@ -104,16 +106,18 @@ def distribute_data(devices,infoqueue,dt=0.01):
                         # be different from the transporting device,
                         # i.e. network devices do not change the name
                         # of the transporting dictionary
-                        devicename_stat = get_devicename(data)
+                        devicename_stat  = get_devicename_from_data(data,uuid=True)
                         try:
                             devicedict['statistics']['devicekeys'][devicename_stat]
                         except:
                             devicedict['statistics']['devicekeys'][devicename_stat] = []
-
+                            
                         devicedict['statistics']['devicekeys'][devicename_stat] = list(set(devicedict['statistics']['devicekeys'][devicename_stat] + list(data.keys())))
                         devicedict['statistics']['devices'] = list(set(devicedict['statistics']['devices'] + [devicename_stat]))
+                        datastreams_stat = get_datastreams_from_data(data,uuid=True)
+                        devicedict['statistics']['datastreams'] = list(set(devicedict['statistics']['datastreams'] + datastreams_stat))
                 except Exception as e:
-                    logger.debug(funcname + ':' + str(e))
+                    logger.debug(funcname + ':Statistics:' + str(e))
 
                 if True:
                     # Feed the data into the modules/functions/objects and
@@ -204,7 +208,7 @@ class redvypr(QtCore.QObject):
         """ Creates a statusstr of the devices
         """
         tstr = str(datetime.datetime.now())
-        statusstr = "{:s}, {:s}, num devices {:d}".format(tstr, hostinfo['name'], len(self.devices))
+        statusstr = "{:s}, {:s}, num devices {:d}".format(tstr, hostinfo['hostname'], len(self.devices))
         
         for sendict in self.devices:
             try:
@@ -358,7 +362,7 @@ class redvypr(QtCore.QObject):
         # Add the hostname
         try:
             logger.info(funcname + ': Setting hostname to {:s}'.format(config['hostname']))
-            hostinfo['name'] = config['hostname']
+            hostinfo['hostname'] = config['hostname']
         except:
             pass
         
@@ -535,6 +539,7 @@ class redvypr(QtCore.QObject):
                   datakeys = []
                   
               device.statistics['datakeys'] = list(set(datakeys))
+              # TODO, change that to datastreams
               # Check if the device wants a direct start after initialization
               try:
                   autostart = device.autostart
@@ -633,7 +638,7 @@ class redvypr(QtCore.QObject):
         device.data_receiver = []
         device.data_provider = []        
         
-        statistics = {'inspect':True,'numpackets':0,'datakeys':[],'devices':[],'devicekeys':{}} # A dictionary for gathering useful information about the packages
+        statistics = {'inspect':True,'numpackets':0,'datakeys':[],'devices':[],'devicekeys':{},'datastreams':[]} # A dictionary for gathering useful information about the packages
         devicedict = {'device':device,'thread':None,'dataout':[],'gui':[],'guiqueue':[guiqueue],'statistics':statistics}
         # Add some statistics
         devicedict['numpacket'] = 0
@@ -776,8 +781,14 @@ class redvypr(QtCore.QObject):
         if(folder not in self.device_paths):
             self.device_paths.remove(folder)
             self.device_path_changed.emit() # Notify about the changes
-
-
+            
+            
+    def get_devicename_from_device(selfs,device):
+        """
+        """
+        devicename = device.name + ':' + hostinfo['hostname'] + '@' + hostinfo['addr'] + '::' + hostinfo['uuid']
+        return devicename
+    
     def get_device_from_str(self,devicestr):
         """ Returns the deviced based on an inputstr, if not found returns None
         """
@@ -790,14 +801,35 @@ class redvypr(QtCore.QObject):
 
     def get_devicedict_from_str(self,devicestr):
         """
-        Returns the devicedict based on an inputstr, if not found returns None
+        Returns the devicedict based on an devicestr, if not found returns None
         
         Args:
-            devicestr: str
+            devicestr (str): 
             
+            
+        Returns
+        -------
+        device : dict
+            The redvypr devicedict corresponding to the devicestr.
+            
+        
         """
+        deviceparsed = parse_devicestring(devicestr, local_hostinfo = hostinfo)
         for d in self.devices:
-            if d['device'].name == devicestr:
+            flag_name     = d['device'].name     == deviceparsed['devicename']
+            flag_name     = flag_name or deviceparsed['deviceexpand']
+            
+            flag_hostname = hostinfo['hostname'] == deviceparsed['hostname']
+            flag_hostname = flag_hostname or deviceparsed['hostexpand']
+            
+            flag_addr     = hostinfo['addr']     == deviceparsed['addr']
+            flag_addr     = flag_addr or deviceparsed['addrexpand']
+            
+            flag_UUID     = hostinfo['uuid']     == deviceparsed['uuid']
+            flag_UUID     = flag_UUID or deviceparsed['uuidexpand']
+            
+            flag_local    = deviceparsed['local']
+            if (flag_name and flag_local) or (flag_name and flag_UUID) or (flag_name and flag_addr and flag_hostname):
                 return d
 
         return None    
@@ -818,8 +850,18 @@ class redvypr(QtCore.QObject):
             devicelist.append(d['device'].name)
 
         return devicelist
+    
+    def get_forwarded_devicenames(self,device=None):
+        """
+        """
+        try:
+            devicenames = device.statistics['devices']
+        except:
+            devicenames = []
+            
+        return devicenames
 
-    def get_data_providing_devices(self,device=None,forwarded_devices=True):
+    def get_data_providing_devicenames(self,device=None,forwarded_devices=True):
         """
         Returns a list of devices that provide data. This is either the subscribed devices itself or a device that forwards data packets (i.e. network device)
 
@@ -838,6 +880,7 @@ class redvypr(QtCore.QObject):
         """
         funcname = self.__class__.__name__ + '.get_data_providing_devices():'                                
         logger.debug(funcname)
+        flag_device_itself = False
         for devdict in self.devices:
             if(devdict['device'] == device):
                 flag_device_itself = True 
@@ -849,32 +892,109 @@ class redvypr(QtCore.QObject):
         if(flag_device_itself == False):
             raise ValueError('Device not in redvypr')
         else:
-            devicelist = []
+            devicenamelist = []
             if(device == None):
                 for dev in self.devices:
-                    devname = dev['device']
+                    devname = dev['device'].name
                     if(dev['device'].publish):
-                        devicelist.append(devname)
+                        devicenamelist.append(devname)
+                        print('Devname test',devname)
+                        devicenamelist_forward = self.get_forwarded_devicenames(dev['device'])
+                        print('Devname forward',devicenamelist_forward)
+                        devicenamelist.extend(devicenamelist_forward)
+                        
             else:   
                 devicelist = get_data_providing_devices(self.devices,device)
+                for dev in devicelist:
+                    devicenamelist.append(dev.name)
+                    
+                devicenamelist_forward = self.get_forwarded_devicenames(dev['device'])
+                devicenamelist.extend(devicenamelist_forward)
 
-            # Add all devices that are forwarded                
-            devices_forward = devdict['statistics']['devices']
-            print('Devices forward',devices_forward)
-            for dev in devices_forward:
-                devicelist.append(dev)
-                
-            devicelist = list(set(devicelist))
+            print('Devicelist 1',devicenamelist)    
+            devicenamelist = list(set(devicenamelist))
             
-            return devicelist
-    
-    def get_datastreams(self,device=None,forwarded_devices=True):
+            return devicenamelist
+        
+        
+        
+    def get_datastreams(self,device=None,format='uuid'):
         """
         Args:
-            device:
-            forwarded_devices:
+            device: (redvypr device or str):
+            format:
         """
-        return None
+        funcname       = self.__class__.__name__ + '.get_datastreams():'                                
+        datastreamlist = []
+        
+        if(type(device) == str):
+            datastreams_all = []
+            for dev in self.devices:
+                datastreams_all.extend(dev['statistics']['datastreams'])
+            datastreams_all = list(set(datastreams_all))
+            # Parse the devicestring
+            deviceparsed = parse_devicestring(device,local_hostinfo=hostinfo)
+            ##print('datastreams',datastreams_all)
+            ##print('deviceparsed',deviceparsed)
+            for stream in datastreams_all:
+                datastream_parsed = parse_devicestring(stream,local_hostinfo=hostinfo)
+                ##print('datastream parsed',datastream_parsed)
+                flag_name     = datastream_parsed['devicename'] == deviceparsed['devicename']
+                flag_name     = flag_name or deviceparsed['deviceexpand']
+            
+                flag_hostname = datastream_parsed['hostname']   == deviceparsed['hostname']
+                flag_hostname = flag_hostname or deviceparsed['hostexpand']
+            
+                flag_addr     = datastream_parsed['addr']       == deviceparsed['addr']
+                flag_addr     = flag_addr or deviceparsed['addrexpand']
+            
+                flag_uuid     = datastream_parsed['uuid']       == deviceparsed['uuid']
+                flag_uuid     = flag_uuid or deviceparsed['uuidexpand']
+            
+                flag_local    = datastream_parsed['local']      == deviceparsed['local']
+                
+                ##print('name',flag_name,'hostname',flag_hostname,'addr',flag_addr,'uuid',flag_uuid)
+                if (flag_name and flag_local) or (flag_name and flag_uuid) or (flag_name and flag_addr and flag_hostname):
+                    datastreamlist.append(stream)
+            
+            datastreamlist = list(set(datastreamlist))
+            
+        elif(device == None):
+            for dev in self.devices:
+                datastreamlist.extend(dev['statistics']['datastreams'])
+            datastreamlist = list(set(datastreamlist))
+            
+        else:
+            datastreamlist = device.statistics['datastreams']
+            datastreamlist = list(set(datastreamlist))
+            
+        return datastreamlist
+    
+    
+    def get_datakeys(self,device):
+        funcname = self.__class__.__name__ + '.get_datakeys():'                                
+        """
+        Get the datakeys for the device. 
+        
+        
+        Args:
+            device (redvypr device or str):
+            
+        Returns:
+        --------
+        list
+            A list of the device datakeys
+         
+        """
+        datakeys = []    
+        datastreams = self.get_datastreams(device) # Get datastreams of device
+        for stream in datastreams:
+            key = stream.split('/')[0]
+            datakeys.append(key)
+        
+        datakeys = list(set(datakeys))
+        
+        return datakeys
         
     def get_data_receiving_devices(self,device):
         return get_data_receiving_devices(self.devices,device)
@@ -997,7 +1117,7 @@ class redvyprWidget(QtWidgets.QWidget):
                     print('Config',c)
                     self.redvypr.parse_configuration(c)
 
-
+                self.hostname_changed(self.redvypr.config['hostname'])   
         self.__populate_devicepathlistWidget()
         
     def open_console(self):
@@ -1338,12 +1458,15 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__con_widget.show()
         
         
-    def __hostname_changed(self):
+    def __hostname_changed_click(self):
         hostname, ok = QtWidgets.QInputDialog.getText(self, 'redvypr hostname', 'Enter new hostname:')
         if ok:
+            self.hostname_changed(hostname)
+    def hostname_changed(self,hostname):
+        if True:
             self.__hostname_line.setText(hostname)
             self.redvypr.config['hostname'] = hostname
-            hostinfo['name'] = hostname
+            hostinfo['hostname'] = hostname
 
 
     def update_status(self):
@@ -1367,7 +1490,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__hostname_line  = QtWidgets.QLabel('')
         self.__hostname_line.setAlignment(QtCore.Qt.AlignRight)
         self.__hostname_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.__hostname_line.setText(hostinfo['name'])
+        self.__hostname_line.setText(hostinfo['hostname'])
         # UUID
         self.__uuid_label = QtWidgets.QLabel('UUID:')
         self.__uuid_line  = QtWidgets.QLabel('')
@@ -1382,7 +1505,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__ip_line.setText(hostinfo['addr'])
         # Change the hostname
         self.__hostname_btn = QtWidgets.QPushButton('Change hostname')
-        self.__hostname_btn.clicked.connect(self.__hostname_changed)
+        self.__hostname_btn.clicked.connect(self.__hostname_changed_click)
 
         layout.addRow(self.__hostname_label,self.__hostname_line)
         layout.addRow(self.__uuid_label,self.__uuid_line)
@@ -1562,6 +1685,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         toolAction.triggered.connect(self.show_deviceselect)
         consoleAction = QtWidgets.QAction("&Open console", self)
         consoleAction.triggered.connect(self.open_console)
+        consoleAction.setShortcut("Ctrl+N")
         toolMenu.addAction(toolAction)
         toolMenu.addAction(consoleAction)
         

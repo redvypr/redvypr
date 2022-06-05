@@ -381,7 +381,7 @@ def start_udp_send(dataqueue, datainqueue, comqueue, statusqueue, config=None):
 def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     """ UDP receiving
     """
-    funcname = __name__ + '.start_udp_recv()'
+    funcname = __name__ + '.start_udp_recv():'
     logger.debug(funcname + ':Starting network thread')        
     npackets     = 0
     bytes_read   = 0
@@ -401,7 +401,7 @@ def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
         try:
             com = comqueue.get(block=False)
             client.close()            
-            logger.debug('received command:' + str(com) + ' stopping now')
+            logger.info(funcname + 'received command:' + str(com) + ' stopping now')
             statusdata = {}
             statusdata['status'] = 'Stopping UDP redcv thread'
             statusdata['time'] = str(datetime.datetime.now())
@@ -470,7 +470,7 @@ def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
                 pass
 
 
-
+    logger.info(funcname + ' stopped')
 
 class Device():
     def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None):

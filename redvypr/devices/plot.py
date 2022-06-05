@@ -9,7 +9,7 @@ import sys
 import yaml
 import copy
 import pyqtgraph
-from redvypr.data_packets import device_in_data, get_keys
+from redvypr.data_packets import device_in_data, get_keys_from_data
 from redvypr.gui import redvypr_devicelist_widget
 import redvypr.files as files
 
@@ -35,7 +35,7 @@ def get_bare_graph_config():
     plotdict_bare['datetick'] = True
     plotdict_bare['lines'] = []
     plotdict_bare['lines'].append(get_bare_graph_line_config())
-    plotdict_bare['lines'].append(get_bare_graph_line_config())
+    #plotdict_bare['lines'].append(get_bare_graph_line_config())
     return plotdict_bare
 
 
@@ -52,11 +52,11 @@ def get_bare_graph_line_config():
 
 
 def start(datainqueue,dataqueue,comqueue):
-    funcname = __name__ + '.start()'        
+    funcname = __name__ + '.start()'
     while True:
         try:
             com = comqueue.get(block=False)
-            logger.info(funcname + ': received command:' + com)
+            logger.info(funcname + ': Stopping now')
             break
         except:
             pass
@@ -68,7 +68,9 @@ def start(datainqueue,dataqueue,comqueue):
                 data = datainqueue.get(block=False)
                 dataqueue.put(data) # This has to be done, otherwise the gui does not get any data ...
             except Exception as e:
-                logger.debug(funcname + ': Exception:' + str(e))            
+                logger.debug(funcname + ': Exception:' + str(e))
+                
+    logger.info(funcname + ': Stopped')            
 
 class Device():
     def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = []):
@@ -95,14 +97,13 @@ class Device():
         logger.debug(funcname)
         # Check of devices have not been added
         devices = self.redvypr.get_devices() # Get all devices
-        dataprovider = self.redvypr.get_data_providing_devices(device = self) # Get already connected publisher
         plot_devices = []
         for plot in self.config: # Loop over all plots
-            if(plot['type'].lower() == 'numdisp'):
+            if(str(plot['type']).lower() == 'numdisp'):
                 name = plot['device']
                 plot_devices.append(name)
 
-            elif(plot['type'].lower() == 'graph'):
+            elif(str(plot['type']).lower() == 'graph'):
                 for l in plot['lines']: # Loop over all lines in a plot
                     name = l['device']
                     plot_devices.append(name)                    
@@ -145,7 +146,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         #self.label    = QtWidgets.QLabel("Datadisplay setup")
         self.conbtn = QtWidgets.QPushButton("Connect logger to devices")
         self.conbtn.clicked.connect(self.con_clicked)        
-        self.startbtn = QtWidgets.QPushButton("Start logging")
+        self.startbtn = QtWidgets.QPushButton("Start plotting")
         self.startbtn.clicked.connect(self.start_clicked)
         self.startbtn.setCheckable(True)
         self.addbtn = QtWidgets.QPushButton("Add")
@@ -343,9 +344,6 @@ class initDeviceWidget(QtWidgets.QWidget):
                 configupdate.config = config # Add the configuration dictionary to the button
                 configupdate.configtree = configtree # A modified config with updates
                 configupdate.clicked.connect(self.update_clicked)
-                removebtn = QtWidgets.QPushButton('Remove')
-                removebtn.clicked.connect(self.rem_clicked)
-                tmplayout.addWidget(removebtn,1,0)                
                 tmplayout.addWidget(configupdate,2,0)
 
                 configwidget = QtWidgets.QWidget()
@@ -397,12 +395,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         if button.isChecked():
             logger.debug(funcname + "button pressed")                
             self.device_start.emit(self.device)
-            button.setText("Stop logging")
+            button.setText("Stop plotting")
             self.conbtn.setEnabled(False)
         else:
             logger.debug(funcname + "button released")                            
             self.device_stop.emit(self.device)
-            button.setText("Start logging")
+            button.setText("Start plotting")
             self.conbtn.setEnabled(True)
             
             
@@ -416,11 +414,11 @@ class initDeviceWidget(QtWidgets.QWidget):
             """ Updating all buttons depending on the thread status (if its alive, graying out things)
             """
             if(thread_status):
-                self.startbtn.setText('Stop logging')
+                self.startbtn.setText('Stop plotting')
                 self.startbtn.setChecked(True)
                 #self.conbtn.setEnabled(False)
             else:
-                self.startbtn.setText('Start logging')
+                self.startbtn.setText('Start plotting')
                 #self.conbtn.setEnabled(True)
 
 
@@ -455,9 +453,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
         # Add axes to the widget
         for i,config in enumerate(self.device.config):
             if(config['type'] == 'graph'):
-                logger.debug(funcname + ': Adding graph' + str(config))                
+                logger.debug(funcname + ': Adding graph' + str(config))
                 plot = plotWidget(config)
-                location = config['location']            
+                location = config['location']
                 if(len(location) == 2):
                     self.layout.addWidget(plot,location[0],location[1])
                 else:
@@ -467,9 +465,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
             elif(config['type'] == 'numdisp'):
                 logger.debug(funcname + ': Adding numeric display' + str(config))
                 plot = numdispWidget(config)
-                location = config['location']            
+                location = config['location']
                 self.layout.addWidget(plot,location[0],location[1])
-                self.plots.append(plot)                
+                self.plots.append(plot)
 
                 
     def config_widget(self):
@@ -537,6 +535,11 @@ class plotWidget(QtWidgets.QFrame):
             bordercolor = config['background']
         except:
             bordercolor = 'black'
+            
+        try:
+            config['useprops']
+        except:
+            config['useprops'] = True
             
         self.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(backcolor,bordercolor))        
         self.layout = QtWidgets.QVBoxLayout(self)
@@ -648,13 +651,26 @@ class plotWidget(QtWidgets.QFrame):
                 
         self.plot_dict = plot_dict
         
+    def clear_buffer(self):
+        """ Clears the buffer of all lines
+        """
+        # Check if the device is to be plotted
+        
+        devicenames  = self.plot_dict['lines'].keys()
+        for devicename in devicenames:
+            for ind,line_dict in enumerate(self.plot_dict['lines'][devicename]): # Loop over all lines of the device to plot
+                line      = line_dict['line'] # The line to plot
+                config    = line_dict['config'] # The line to plot
+                line_dict['x'][:] = np.NaN 
+                line_dict['y'][:] = np.NaN 
+        
     def update_plot(self,data):
         """ Updates the plot based on the given data
         """
         #print('Hallo',data)
-        funcname = __name__ + '.update()'
+        funcname = self.__class__.__name__ + '.update_plot():'
         tnow = time.time()
-        #print('got data',data)
+        print(funcname + 'got data',data)
         # Always update
         update = True
         try:
@@ -662,7 +678,6 @@ class plotWidget(QtWidgets.QFrame):
             if True:
                 plot_dict = self.plot_dict
                 # Check if the device is to be plotted
-                
                 for devicename_plot in plot_dict['lines'].keys(): # Loop over all lines of the devices to plot
                     if(device_in_data(devicename_plot,data)):
                         pw        = plot_dict['widget'] # The plot widget
@@ -733,8 +748,27 @@ class configPlotWidget(QtWidgets.QWidget):
         self.linebtn     = QtWidgets.QPushButton('Add line')
         self.linebtn.clicked.connect(self.process_linebutton)
         
+        self.clearbtn     = QtWidgets.QPushButton('Clear data')
+        self.clearbtn.clicked.connect(self.process_clearbutton)
+        
+
         self.layout.addWidget(self.tree)
         self.layout.addWidget(self.linebtn)
+        self.layout.addWidget(self.clearbtn)
+        
+    def process_clearbutton(self):
+        """ Clears the databuffer of the lines 
+        """
+        #clear_buffer
+        devicedict = self.redvypr.get_devicedict_from_str(self.device.name)
+        print('Config',self.config)
+        for p in devicedict['displaywidget'].plots:
+            if(type(p) == plotWidget):
+                print('Found a plot widget')
+                print('Config widget',p.config)
+                if True: # Here we need to check if its the right plot
+                    p.clear_buffer()
+        
     
     def process_linebutton(self):
         if(self.linebtn.text()   == 'Add line'):
@@ -771,7 +805,7 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
         self.itemDoubleClicked.connect(self.edititem)
         self.header().setVisible(False)
         self.create_qtree(self.config,editable = self.editable)
-        self.resizeColumnToContents(0)  
+        self.resizeColumnToContents(0)
         self.itemExpanded.connect(self._proc_expanded)
         self.itemDoubleClicked.connect(self.checkEdit)
         self.itemChanged.connect(self.item_changed) # If an item is changed
@@ -925,30 +959,34 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
         if(item.text(0) == 'device'):
             
             # Let the user choose all devices and take care that the devices has been connected
-            self.devicechoose = redvypr_devicelist_widget(self.redvypr, self.device, deviceonly=True, subscribed_only=False) # Open a device choosing widget
-            self.devicechoose.device_name_changed.connect(self.devicechanged)
+            self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = None, deviceonly=True, subscribed_only=False) # Open a device choosing widget
+            self.devicechoose.device_name_changed.connect(self.itemchanged)
             self.devicechoose.show()
             
         if((item.text(0) == 'x') or (item.text(0) == 'y')):
             # Get the devicename first
             parent = item.parent()
             devicename = ''
+            device_datakey = None
             print('Childcount',parent.childCount())
             for i in range(parent.childCount()):
                 child = parent.child(i)
                 keystring = child.text(0)
                 print('keystring',keystring)
                 if(keystring == 'device'):
-                    devicename = child.text(1)
-                    print('Devicename',devicename)
+                    devicestr_datakey = child.text(1)
+                    print('Devicename',devicestr_datakey)
                     break
-                    
-            self.devicechoose = redvypr_devicelist_widget(self.redvypr,self.device,devicename_highlight = devicename,deviceonly=False,devicelock = True) # Open a device choosing widget
-            self.devicechoose.datakey_name_changed.connect(self.devicechanged)
-            self.devicechoose.show()
+            
+            if(devicestr_datakey is not None): 
+                print('Opening devicelist widget')       
+                self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = devicestr_datakey,devicename_highlight = devicestr_datakey,deviceonly=False,devicelock = True, subscribed_only=False) # Open a device choosing widget
+                #self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = self.device,deviceonly=False,devicelock = True) # Open a device choosing widget
+                self.devicechoose.datakey_name_changed.connect(self.itemchanged)
+                self.devicechoose.show()
 
             
-    def devicechanged(self,devicename):
+    def itemchanged(self,devicename):
         """ Changes the current item text
         """
         #print('Devicename',devicename)
@@ -1008,7 +1046,7 @@ class numdispWidget(QtWidgets.QFrame):
         try:
             self.config['useprops']
         except:
-            self.config['useprops'] = False
+            self.config['useprops'] = True
 
         self.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(backcolor,bordercolor))
         self.layout = QtWidgets.QGridLayout(self)
@@ -1092,7 +1130,7 @@ class numdispWidget(QtWidgets.QFrame):
             
             if(self.config['useprops']):
                 # Get the propertykey 
-                propkey = 'props@' + datakey 
+                propkey = '?' + datakey 
                 try:
                     props = data[propkey]
                 except:

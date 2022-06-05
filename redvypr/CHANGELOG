@@ -1,4 +1,8 @@
 	-0.4.3: - pyqtconsole added, plot gui nicer
+	        - Reworked the datastream/devicename string nomenclature
+			- major updates in basic functions as  device_in_data, parse_devicestring
+			- new functions in redvypr as: get_datastreams, get_datakeys, get_known_devices
+			- added local flag in hostinfo
 	-0.4.2: - calibration heavily updated, save config feature in redvypr
 	-0.4.1: - get_datastream
 	-0.4.0: - migrated to redvypr.net;github.com/redvypr/redvypr

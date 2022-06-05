@@ -13,7 +13,7 @@ import logging
 import sys
 import yaml
 import pyqtgraph
-from redvypr.data_packets import device_in_data, get_keys, get_datastream, parse_devicestring
+from redvypr.data_packets import device_in_data, get_keys_from_data, get_datastream, parse_devicestring
 import redvypr.files as files
 import xlsxwriter
 from matplotlib.figure import Figure

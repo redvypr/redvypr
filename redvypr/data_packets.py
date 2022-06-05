@@ -1,8 +1,17 @@
 import time
+import logging
+import sys
 
+logging.basicConfig(stream=sys.stderr)
+logger = logging.getLogger('data_packets')
+logger.setLevel(logging.DEBUG)
 
-def parse_devicestring(devicestr):
+def parse_devicestring(devicestr,local_hostinfo=None):
     """
+     Parses as redvypr datastring or devicestring
+    
+        devicestr: the devicestring
+        local_uuid: if the devicestring is local, the local hostinfo is used to fill in hostname, addr and UUID etc. 
     """
     devstring_full = devicestr
     # Check first if we have a datastream
@@ -16,63 +25,90 @@ def parse_devicestring(devicestr):
         devstring = devstring_full
 
     # First distinguish between the different realizations of the devicestring
-    UUID       = None
+    uuid       = None
     hostname   = None
     addr       = None
-    devicename = None        
+    devicename = None 
+    local      = True # True if devicename is local
+    # Check first if we have an UUID       
     if('::' in devstring): # UUID
-        s = devstring.split('::')
-        devicename = s[0]
-        UUID = s[1]
-    elif(':' in devstring): # hostname
+        s         = devstring.split('::')
+        devstring = s[0]
+        uuid      = s[1]
+        local     = False
+        
+    if(':' in devstring): # hostname
         s = devstring.split(':')
         devicename = s[0]
         rest       = s[1]
+        local      = False
         if('@' in rest):
             hostname = rest.split('@')[0]
             addr     = rest.split('@')[1]
         else:
             hostname = rest
+            addr     = '*' # If only the hostname is defined, addr is expected to be expanded
     else:
         devicename = devstring
 
     hostexpanded   = (hostname == '*')
     addrexpanded   = (addr == '*')
     deviceexpanded = (devicename == '*')
-    uuidexpanded   = (UUID == '*')
+    uuidexpanded   = (uuid == '*')
+    
+    if(local and (local_hostinfo is not None)):
+        if(hostname == None):
+            hostname = local_hostinfo['hostname']
+        addr     = local_hostinfo['addr']
+        uuid     = local_hostinfo['uuid']
+    
 
     # Fill a dictionary
     parsed_data = {}
+    parsed_data['devicestr']    = devicestr
     parsed_data['hostname']     = hostname
     parsed_data['addr']         = addr
     parsed_data['devicename']   = devicename
-    parsed_data['UUID']         = UUID
+    parsed_data['uuid']         = uuid
     parsed_data['datakey']      = datakey
     parsed_data['hostexpand']   = hostexpanded
     parsed_data['addrexpand']   = addrexpanded
     parsed_data['deviceexpand'] = deviceexpanded
     parsed_data['uuidexpand']   = uuidexpanded            
+    parsed_data['local']        = local
+    
     return parsed_data
 
-def get_keys(data):
-    """Returns the keys of a redvypr data dictionary without the standard
-    keys ('t', 'host','device','numpacket') as well as keys with an
+def get_keys_from_data(data,rem_standard=True,rem_tnum=False,rem_props=False):
+    """
+    Returns the keys of a redvypr data dictionary without the standard
+    keys (host','device','numpacket') as well as keys with an
     '@' in it.
-
+    Args:
+        data (dict): redvypr data dictionary 
+        rem_standard (bool): Remove host, device
+        rem_tnum (bool): Remove t, numpacket
+        rem_props (bool): Remove property keys (i.e. keys starting with a '?'?
+    
+        data (dict): 
+        rem_props (bool): 
     """
     keys = list(data.keys())
-    keys.remove('t')
-    keys.remove('host')
-    keys.remove('device')
-    keys.remove('numpacket')
-    for k in keys:
-        if('@' in k):
-            keys.remove(k)
+    if rem_tnum:
+        keys.remove('t')
+        keys.remove('numpacket')
+    if rem_standard:        
+        keys.remove('host')
+        keys.remove('device')
+    if rem_props:
+        for k in keys:
+            if('?' in k):
+                keys.remove(k)
             
     return keys
 
-def get_devicename(data,uuid=False):
-    """ Returns a devicename including the hostname, ip or uuid.
+def get_devicename_from_data(data,uuid=False):
+    """ Returns a redvypr devicename string including the hostname, ip with the optional uuid.
     
     Args:
         data (dict): A redvypr data dictionary
@@ -82,14 +118,58 @@ def get_devicename(data,uuid=False):
         str: The full devicename
     """
     if(uuid):
-        devicename = data['device'] + '::' + data['host']['uuid']
+        devicename = data['device'] + ':' + data['host']['hostname'] + '@' + data['host']['addr'] + '::' + data['host']['uuid']
     else:
-        devicename = data['device'] + ':' + data['host']['name'] + '@' + data['host']['addr']
+        devicename = data['device'] + ':' + data['host']['hostname'] + '@' + data['host']['addr']
     return devicename
 
 
+def get_datastream_from_data(data,datakey,uuid=False):
+    """ Returns a redvypr datastream string including the hostname, ip with the optional uuid.
+    
+    Args:
+        datakey (str): The datakey, 
+        data (dict): A redvypr data dictionary
+        uuid (Optional[bool]): Default False. Returns the devicename with the uuid (True) or the hostname + IP-Address (False)
+        
+    Returns:
+        str: 
+            - The full datastream
+            - devicename string if datakey is None or ''
+            - None if datakey is not in data dict
+    """
+    devicestr = get_devicename_from_data(data,uuid)
+    if((datakey == None) or (datakey == '')):
+        return devicestr
+    else:
+        if(datakey in data.keys()):
+            datastream = datakey + '/' + devicestr
+        else:
+            None
+        
+    
+def get_datastreams_from_data(data,uuid=False):
+    """ Returns all datastreams of the datapacket
+    
+    Args:
+        data (dict): A redvypr data dictionary
+        uuid (Optional[bool]): Default False. Returns the devicename with the uuid (True) or the hostname + IP-Address (False)
+        
+    Returns:
+        list: A list of all datastreams
+    """
+    datastreams = []
+    datakeys = get_keys_from_data(data)
+    devicename = get_devicename_from_data(data,uuid=True)
+    for key in datakeys:
+        datastream = key + '/' + devicename
+        datastreams.append(datastream)
+        
+    return datastreams
+
+
 def get_datastream(datakey,data=None,device=None,hostname=None,uuid=False,ip=False):
-    """ Returns a datastream string based either on a  data packet or on hostname 
+    """ Returns a datastream string based either on a data packet or on hostname 
     
     Args:
         datakey (str): The key for the datastream
@@ -107,7 +187,7 @@ def get_datastream(datakey,data=None,device=None,hostname=None,uuid=False,ip=Fal
     
     if(data is not None):
         device = data['device']
-        hostname = data['host']['name']
+        hostname = data['host']['hostname']
         addr = data['host']['addr']
         uuid = data['host']['uuid']
         
@@ -123,6 +203,7 @@ def device_in_data(devicestring, data, get_devicename = False):
         - Devicename with hostname: rand1:randredvypr
         - Devicename with ip and any hostname: rand1:*@192.168.178.33
         - Devicename with uuid: rand1::5c9295ee-6f8e-11ec-9f01-f7ad581789cc
+        - Devicename with hostname, IP and uuid: rand1:redvypr1@192.168.178.33::5c9295ee-6f8e-11ec-9f01-f7ad581789cc
         
     Examples of datastreams:        
         - 'data' key: data/rand1:randredvypr
@@ -133,7 +214,7 @@ def device_in_data(devicestring, data, get_devicename = False):
 
         from redvypr.data_packets import device_in_data
         
-        data = {'t': 1648623649.1282434, 'data': 1.2414117419163326, '?data': {'unit': 'randomunit', 'type': 'f'}, 'device': 'testranddata', 'host': {'name': 'redvyprtest', 'tstart': 1648623606.2900488, 'addr': '192.168.132.74', 'uuid': '07b7a4de-aff7-11ec-9324-135f333bc2f6'}, 'numpacket': 212}
+        data = {'t': 1648623649.1282434, 'data': 1.2414117419163326, '?data': {'unit': 'randomunit', 'type': 'f'}, 'device': 'testranddata', 'host': {'hostname': 'redvyprtest', 'tstart': 1648623606.2900488, 'addr': '192.168.132.74', 'uuid': '07b7a4de-aff7-11ec-9324-135f333bc2f6'}, 'numpacket': 212}
         devicestrings = ['testranddata']
         devicestrings.append('*')
         devicestrings.append('testranddata:redvyprtest')
@@ -168,15 +249,24 @@ def device_in_data(devicestring, data, get_devicename = False):
         devicestring = [devicestring]
 
     for devstring_full in devicestring:
-        # Check first if we have a datastream
-        if('/' in devstring_full):
-
-            s = devstring_full.split('/')
-            datakey   = s[0]
-            devstring = s[1]
+        device_parsed = parse_devicestring(devstring_full) 
+        datakey       = device_parsed['datakey']
+        uuid          = device_parsed['uuid']
+        devicename    = device_parsed['devicename']
+        hostname      = device_parsed['hostname']
+        addr          = device_parsed['addr']
+        
+        
+        deviceflag  = (devicename  == data['device'])            or device_parsed['deviceexpand']
+        hostflag    = (hostname    == data['host']['hostname'])  or device_parsed['hostexpand'] 
+        addrflag    = (addr        == data['host']['addr'])      or device_parsed['addrexpand'] 
+        uuidflag    = (uuid        == data['host']['uuid'])      or device_parsed['uuidexpand']
+        localflag   = data['host']['local']                      and device_parsed['local']
+        
+        if(datakey is not None):
             if(datakey in data.keys()):
                 flag_datakey = True
-                key_str = datakey + '/' # This will be an addon to the devicename
+                key_str = datakey
             else: # If the key does not fit, return False immidiately
                 flag_datakey = False 
                 
@@ -184,63 +274,30 @@ def device_in_data(devicestring, data, get_devicename = False):
                     return [False,None,False]
                 else:
                     return False
-
-        else:
-            key_str = ''
-            devstring = devstring_full
-            
-        # First distinguish between the different realizations of the devicestring
-        UUID = None
-        if('::' in devstring): # UUID
-            s = devstring.split('::')
-            devicename = s[0]
-            UUID = s[1]
-        elif(':' in devstring): # hostname
-            s = devstring.split(':')
-            devicename = s[0]
-            rest       = s[1]
-            if('@' in rest):
-                hostname = rest.split('@')[0]
-                addr     = rest.split('@')[1]
+                
+        if(deviceflag and localflag):
+            if(get_devicename):
+                devicename = get_datastream_from_data(key_str,data,uuid=True)
+                #devicename = key_str + data['device'] + ':' + data['host']['hostname'] + '@' + data['host']['addr']
+                return [True,devicename,deviceexpanded or hostexpanded or addrexpanded]
             else:
-                hostname = rest
-                addr     = data['host']['addr'] 
-        else:
-            devicename = devstring
-            hostname   = data['host']['name'] # Take the hostname from the data as it is not defined
-            addr       = data['host']['addr'] 
+                return True
+
+        elif(deviceflag and hostflag and addrflag):
+            if(get_devicename):
+                devicename = get_datastream_from_data(key_str,data,uuid=True)
+                #devicename = key_str + data['device'] + ':' + data['host']['hostname'] + '@' + data['host']['addr']
+                return [True,devicename,deviceexpanded or hostexpanded or addrexpanded]
+            else:
+                return True
             
-        if(UUID==None): # Return the IP address
-            hostexpanded = (hostname == '*')
-            if(hostexpanded):
-                hostname = data['host']['name']
-                
-            addrexpanded = (addr == '*')
-            if(addrexpanded):
-                addr = data['host']['addr']
-                
-            deviceexpanded  = (devicename == '*')
-            
-            deviceflag = (devicename == data['device'])        or deviceexpanded
-            hostflag   = (hostname   == data['host']['name'])  or hostexpanded 
-            addrflag    = (addr       == data['host']['addr']) or addrexpanded 
-            if(deviceflag and hostflag and addrflag):
-                if(get_devicename):
-                    devicename = key_str + data['device'] + ':' + data['host']['name'] + '@' + data['host']['addr']
-                    return [True,devicename,deviceexpanded or hostexpanded or addrexpanded]
-                else:
-                    return True
-        else:
-            deviceexpanded = (devicename == '*')
-            deviceflag     = (devicename == data['device'])        or deviceexpanded
-            uuidexpanded   = (UUID == '*')
-            uuidflag       = (UUID == data['host']['uuid'])        or uuidexpanded
-            if(deviceflag and uuidflag):
-                if(get_devicename):
-                    devicename = key_str + data['device'] + '::' + data['host']['uuid']
-                    return [True,devicename,deviceexpanded or uuidexpanded]                    
-                else:
-                    return True                
+        elif(deviceflag and uuidflag):
+            if(get_devicename):
+                devicename = get_datastream_from_data(key_str,data,uuid=True)
+                #devicename = key_str + data['device'] + '::' + data['host']['uuid']
+                return [True,devicename,deviceexpanded or uuidexpanded]                    
+            else:
+                return True                
 
     if(get_devicename):
         return [False,None,False]
@@ -248,53 +305,8 @@ def device_in_data(devicestring, data, get_devicename = False):
         return False
     
     
-def device_in_data_old(devicestring, data, get_devicename = False):
-    """ Checks if the devicestring is in the datapacket.
-    Arguments:
-        :param str devicestr: The person sending the message
-        :devicestring: String or list of strings consisting the devicename and, optionally, the hostname/respectively IP-Adress
-        Examples : Devicename: rand1, Devicename with hostname: rand1@randredvypr, Devicename with ip: rand1@192.168.178.33, Devicename with uuid: rand1@5c9295ee-6f8e-11ec-9f01-f7ad581789cc
-        :data: a redvypr data dictionary
-    Returns:
     
-    """
-    if(type(devicestring) == str):
-        devicestring = [devicestring]
-
-    for devstring in devicestring:
-
-        if('@' in devstring): # Return the IP address
-            devicename = devstring.split('@')[0]
-            hostname   = devstring.split('@')[1]
-            hostexpanded = (hostname == '*')
-            if(hostexpanded):
-                hostname = data['host']['name']
-                
-            expanded   = (devicename == '*')
-            deviceflag = (devicename == data['device']) or expanded
-            hostflag = (hostname == data['host']['name']) or (hostname == data['host']['addr'])
-            if(deviceflag and hostflag):
-                devicename = data['device'] + '@' + hostname                
-                if(get_devicename):
-                    return [True,devicename,expanded or hostexpanded]
-                else:
-                    return True
-        elif(':' in devstring): # Return the IP address
-            pass
-        else:
-            expanded   = (devstring == '*')
-            if((devstring == data['device']) or expanded):
-                if(get_devicename):
-                    return [True,data['device'],expanded]                    
-                else:
-                    return True                
-
-    if(get_devicename):
-        return [False,None,False]
-    else:
-        return False
-
-
+    
 
 def datadict(data,datakey=None,tu=None):
     """ A datadictionary used as internal datastructure in redvypr
