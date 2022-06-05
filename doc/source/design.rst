@@ -134,5 +134,6 @@ from the UUID. The "@" is used to separate the IP. Some examples:
 - data/randdata:redvypr@192.168.155.1
 - data/randdata:*
 - data/randata::65d7a34e-aaba-11ec-9324-135f333bc2f6
+- data/randdata:redvypr@192.168.155.1::65d7a34e-aaba-11ec-9324-135f333bc2f6
 
 

@@ -26,10 +26,6 @@ import signal
 import uuid
 from redvypr.version import version
 import redvypr.files as files
-# Console
-# https://github.com/jupyter/qtconsole/blob/master/examples/inprocess_qtconsole.py
-from qtconsole.rich_jupyter_widget import RichJupyterWidget
-from qtconsole.inprocess import QtInProcessKernelManager
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file

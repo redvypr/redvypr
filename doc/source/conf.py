@@ -40,7 +40,8 @@ extensions = ['sphinx.ext.napoleon','sphinx.ext.autosectionlabel','sphinx.ext.au
 
 autosummary_generate = True
 
-autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","queue","yaml","PyQt5","pkg_resources","pyqtgraph","numpy","inspect","threading","multiprocessing","socket","argparse","importlib","glob","pathlib","signal","QtWidgets", "QtCore", "QtGui","netCDF4","copy","threading","socket","serial.tools.list_ports"]#,"redvypr.devices"]
+autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","queue","yaml","PyQt5","pkg_resources","pyqtgraph","numpy","inspect","threading","multiprocessing","socket","argparse","importlib","glob","pathlib","signal","QtWidgets", "QtCore", "QtGui","netCDF4","copy","threading","socket","serial.tools.list_ports","redvypr.version","redvypr.files","pyqtconsole","redvypr.devices"]
+#autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","queue","yaml","PyQt5","pkg_resources","pyqtgraph","numpy","inspect","threading","multiprocessing","socket","argparse","importlib","glob","pathlib","signal","QtWidgets", "QtCore", "QtGui","netCDF4","copy","threading","socket","serial.tools.list_ports"]#,"redvypr.devices"]
 #autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","queue"]#,"yaml","pkg_resources","inspect","threading","multiprocessing","socket","argparse","importlib","glob","pathlib","signal","QtWidgets", "QtCore", "QtGui","netCDF4","copy","threading","socket","serial.tools.list_ports"]#,"redvypr.devices"]
 
 # Add any paths that contain templates here, relative to this directory.
