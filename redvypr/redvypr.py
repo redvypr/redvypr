@@ -1858,7 +1858,7 @@ def redvypr_main():
         height = int(rect.height()*2/3)
         
 
-        #print('Available: %d x %d' % (rect.width(), rect.height()))
+        logger.debug('Available screen size: {:d} x {:d}'.format(rect.width(), rect.height()))
         ex = redvyprMainWidget(width=width,height=height,config=config_all)
                   
         sys.exit(app.exec_())
