@@ -548,7 +548,13 @@ class redvypr(QtCore.QObject):
                   logger.debug(funcname + 'Device does not have .get_datakeys()')
                   datakeys = []
                   
-              device.statistics['datakeys'] = list(set(datakeys))
+              device.statistics['datakeys'] = list(set(datakeys)) 
+              # Add also the datastreams
+              for dkey in datakeys:
+                  dstream = self.construct_datastream_from_device_datakey(dkey, device)
+                  device.statistics['datastreams'].append(dstream)
+              
+              device.statistics['datastreams'] = list(set(device.statistics['datastreams']))
               # TODO, change that to datastreams
               # Check if the device wants a direct start after initialization
               try:
@@ -793,11 +799,40 @@ class redvypr(QtCore.QObject):
             self.device_path_changed.emit() # Notify about the changes
             
             
-    def get_devicename_from_device(selfs,device):
+    def get_devicename_from_device(self,device):
         """
+        Creates a redvypr devicename from device and the hostinfo.
+        Args:
+            device:
+        
+        Returns
+        -------
+        device : str
+            The devicestring
+            
         """
         devicename = device.name + ':' + hostinfo['hostname'] + '@' + hostinfo['addr'] + '::' + hostinfo['uuid']
         return devicename
+    
+    def construct_datastream_from_device_datakey(self,datakey,device):
+        """
+        Returns a full datastream from a redvypr device and datakey. Note that the datastream must no exist. 
+        Args:
+            datakey: str
+                The datakey
+            device: redvypr device
+                The redvypr device 
+        
+        
+        Returns
+        -------
+        str
+            A str of the datastream
+            
+        """
+        devicename = self.get_devicename_from_device(device)
+        datastream = datakey + '/' + devicename
+        return datastream
     
     def get_device_from_str(self,devicestr):
         """ Returns the deviced based on an inputstr, if not found returns None
@@ -926,13 +961,20 @@ class redvypr(QtCore.QObject):
             
             return devicenamelist
         
-        
+
+            
         
     def get_datastreams(self,device=None,format='uuid'):
         """
+        Gets datastreams from a device (or all devices if device == None).
         Args:
             device: (redvypr device or str):
             format:
+            
+         Returns
+        -------
+        list
+            A list containing the datastreams
         """
         funcname       = self.__class__.__name__ + '.get_datastreams():'                                
         datastreamlist = []

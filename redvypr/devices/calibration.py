@@ -15,6 +15,7 @@ import yaml
 import pyqtgraph
 from redvypr.data_packets import device_in_data, get_keys_from_data, get_datastream, parse_devicestring
 import redvypr.files as files
+from redvypr.gui import redvypr_devicelist_widget
 import xlsxwriter
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -2063,8 +2064,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout        = QtWidgets.QFormLayout(self)
         self.device   = device        
         self.label    = QtWidgets.QLabel("Rawdatadisplay setup")
-        self.conbtn = QtWidgets.QPushButton("Connect logger to devices")
-        self.conbtn.clicked.connect(self.con_clicked)        
+        self.conbtn = QtWidgets.QPushButton("Add devices for calibration")
+        self.conbtn.clicked.connect(self.con_clicked)
         
         self.startbtn = QtWidgets.QPushButton("Start logging")
         self.startbtn.clicked.connect(self.start_clicked)
@@ -2188,7 +2189,10 @@ class initDeviceWidget(QtWidgets.QWidget):
 
     def con_clicked(self):
         button = self.sender()
-        self.connect.emit(self.device)        
+        #self.connect.emit(self.device)    
+        #self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = devicestr_datakey,devicename_highlight = devicestr_datakey,deviceonly=False,devicelock = True, subscribed_only=False) # Open a device choosing widget
+        self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = None,devicename_highlight = None,deviceonly=False,devicelock = False, subscribed_only=False) # Open a device choosing widget
+        self.devicechoose.show()
             
     def start_clicked(self):
         button = self.sender()
