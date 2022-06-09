@@ -2387,6 +2387,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.label    = QtWidgets.QLabel("Rawdatadisplay setup")
         self.conbtn = QtWidgets.QPushButton("Add device")
         self.conbtn.clicked.connect(self.con_clicked)
+        self.polybtn = QtWidgets.QPushButton("Add Polyfit")
+        self.polybtn.clicked.connect(self.poly_clicked)
+        self.respbtn = QtWidgets.QPushButton("Add Responsetime fit")
+        self.respbtn.clicked.connect(self.resp_clicked)
         self.updbtn = QtWidgets.QPushButton("Update configuration")
         self.updbtn.clicked.connect(self.update_config_clicked)
         self.startbtn = QtWidgets.QPushButton("Start logging")
@@ -2400,14 +2404,16 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.configtree.device_selected.connect(self.qtree_device_selected)    
         layout.addRow(self.label)        
         layout.addRow(self.conbtn)
-        layout.addRow(self.loadbtn)
+        layout.addRow(self.polybtn,self.respbtn)
+        layout.addRow(self.loadbtn,self.savebtn)
         layout.addRow(self.updbtn)
         layout.addRow(self.startbtn)
         layout.addRow(self.configtree)
-        layout.addRow(self.savebtn)
+        
         
         # Make a new config out of the 
         self.newconfig = {'devices':[]} 
+        self.newdata_interval = None
         
     def qtree_device_selected(self,devicename,deviceindex):
         print('qtree_device_selected',devicename)
@@ -2438,11 +2444,11 @@ class initDeviceWidget(QtWidgets.QWidget):
             logger.warning(funcname + ' No data_interval found in yaml, not valid')
             return
         
+        self.newconfig       =data_yaml['config']
+        self.newdata_interval=data_yaml['data_interval']
+        self.configtree.create_qtree(config)
         
-        self.apply_new_configuration(config=data_yaml['config'], data_interval=data_yaml['data_interval'])
-        
-            
-            
+                    
             
     def save_data(self):
         """ Save the data found in datatable and fittable into a file format to be choosen by the save widget
@@ -2508,10 +2514,13 @@ class initDeviceWidget(QtWidgets.QWidget):
             yaml.dump(data_save, fyaml)
      
     def update_config_clicked(self):
+        funcname = self.__class__.__name__ + '.update_config_clicked():'
+        logger.debug(funcname)
         self.newconfig = self.configtree.get_config()
         newconfig = copy.deepcopy(self.newconfig)
         print('Updating',newconfig)
-        self.apply_new_configuration(newconfig)
+        self.apply_new_configuration(config = newconfig,data_interval=self.newdata_interval)
+        self.newdata_interval = None
             
     def apply_new_configuration(self,config,data_interval=None):
         """
@@ -2528,7 +2537,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         device.config        = copy.deepcopy(config)
         # Add data_intervals (if available). This is mainly used for loading an old configuration
         if(data_interval is not None):
-            device.data_interval = data_yaml['data_interval']
+            device.data_interval = data_interval
             
         device.finalize_init()
         displaywidget = self.redvyprdevicelistentry['displaywidget']
@@ -2567,7 +2576,23 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         self.configtree.create_qtree(config)
         
+        
+    def poly_clicked(self):
+        funcname = self.__class__.__name__ + '.poly_clicked():'
+        logger.debug(funcname)
+        self.newconfig['polyfit'] = {'manual':[]}
+        self.configtree.create_qtree(self.newconfig)
+    
+    def resp_clicked(self):
+        funcname = self.__class__.__name__ + '.resp_clicked():'
+        logger.debug(funcname)        
+        self.newconfig['responsetime'] = {}
+        self.configtree.create_qtree(self.newconfig)
+        
+        
     def con_clicked(self):
+        funcname = self.__class__.__name__ + '.con_clicked():'
+        logger.debug(funcname)
         button = self.conbtn
         if('Add' in button.text()):
             self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = None,devicename_highlight = None,deviceonly=True,devicelock = False, subscribed_only=False) # Open a device choosing widget
