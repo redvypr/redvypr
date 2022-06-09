@@ -54,10 +54,10 @@ def addrm_device_as_data_provider(devices,deviceprovider,devicereceiver,remove=F
     datainqueue       = devices[inddevicereceiver]['device'].datainqueue
     datareceivernames = devices[inddevicereceiver]['device'].data_receiver
     dataoutlist       = devices[inddeviceprovider]['dataout']
-    
+    logger.debug(funcname + ':Data receiver {:s}'.format(devices[inddevicereceiver]['device'].name))
     if(remove):
         if(datainqueue in dataoutlist):
-            logger.debug(funcname + ': Removed device')
+            logger.debug(funcname + ': Removed device {:s} as data provider'.format(devices[inddeviceprovider]['device'].name))
             dataoutlist.remove(datainqueue)
             # Remove the receiver name from the list
             devices[inddevicereceiver]['device'].data_receiver.remove(devices[inddeviceprovider]['device'].name)
@@ -69,7 +69,7 @@ def addrm_device_as_data_provider(devices,deviceprovider,devicereceiver,remove=F
         if(datainqueue in dataoutlist):
             return False
         else:
-            logger.debug('addrm_device_as_data_provider():added device')
+            logger.debug('addrm_device_as_data_provider():Added device {:s} as data provider'.format(devices[inddeviceprovider]['device'].name))
             dataoutlist.append(datainqueue)
             # Add the receiver and provider names to the device
             devices[inddevicereceiver]['device'].data_receiver.append(devices[inddeviceprovider]['device'].name)

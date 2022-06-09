@@ -2028,6 +2028,32 @@ class Device():
     def start(self):
         start(self.datainqueue,self.dataqueue,self.comqueue)
         
+    def connect_devices(self):
+        """ Connects devices, if they are not already connected
+        """
+        funcname = self.__class__.__name__ + '.connect_devices():'                                
+        logger.debug(funcname)
+        # Remove all connections
+        self.redvypr.rm_all_data_provider(self)
+        # Check of devices have not been added
+        devices = self.redvypr.get_devices() # Get all devices
+        calib_devices = []
+        for cal in self.config['devices']: # Loop over all plots
+            name = cal['device']
+            calib_devices.append(name)
+
+        # Add the device if not already done so
+        if True:
+            for name in calib_devices:
+                logger.info(funcname + 'Connecting device {:s}'.format(name))
+                ret = self.redvypr.addrm_device_as_data_provider(name,self,remove=False)
+                if(ret == None):
+                    logger.info(funcname + 'Device was not found')
+                elif(ret == False):
+                    logger.info(funcname + 'Device was already connected')
+                elif(ret == True):
+                    logger.info(funcname + 'Device was successfully connected')   
+        
     def get_trange(self):
         """ Create a x axis range for
         """
@@ -2359,7 +2385,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout        = QtWidgets.QFormLayout(self)
         self.device   = device  
         self.label    = QtWidgets.QLabel("Rawdatadisplay setup")
-        self.conbtn = QtWidgets.QPushButton("Add device for calibration")
+        self.conbtn = QtWidgets.QPushButton("Add device")
         self.conbtn.clicked.connect(self.con_clicked)
         self.updbtn = QtWidgets.QPushButton("Update configuration")
         self.updbtn.clicked.connect(self.update_config_clicked)
@@ -2370,7 +2396,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.loadbtn.clicked.connect(self.load_data)
         self.savebtn = QtWidgets.QPushButton('Save calibration')
         self.savebtn.clicked.connect(self.save_data)  
-        self.configtree = configTreeCalibrationWidget(config=self.device.config,redvypr=self.device.redvypr)      
+        self.configtree = configTreeCalibrationWidget(config=self.device.config,redvypr=self.device.redvypr) 
+        self.configtree.device_selected.connect(self.qtree_device_selected)    
         layout.addRow(self.label)        
         layout.addRow(self.conbtn)
         layout.addRow(self.loadbtn)
@@ -2381,6 +2408,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         
         # Make a new config out of the 
         self.newconfig = {'devices':[]} 
+        
+    def qtree_device_selected(self,devicename,deviceindex):
+        print('qtree_device_selected',devicename)
+        if(deviceindex >= 0):
+            self.conbtn.setText("Remove device")
+        else:
+            self.conbtn.setText("Add device")
         
     def load_data(self):
         """ Loading a previously performed calibration
@@ -2474,10 +2508,10 @@ class initDeviceWidget(QtWidgets.QWidget):
             yaml.dump(data_save, fyaml)
      
     def update_config_clicked(self):
-        print('Update',self.newconfig)
         self.newconfig = self.configtree.get_config()
-        print('Update 2',self.newconfig)
-        #self.apply_new_configuration(self.newconfig)
+        newconfig = copy.deepcopy(self.newconfig)
+        print('Updating',newconfig)
+        self.apply_new_configuration(newconfig)
             
     def apply_new_configuration(self,config,data_interval=None):
         """
@@ -2486,10 +2520,12 @@ class initDeviceWidget(QtWidgets.QWidget):
             config:
             data_interval:
         """
+        funcname = self.__class__.__name__ + '.apply_new_configuration():'
+        logger.debug(funcname)
         self.device_stop.emit(self.device)
         # Add the config to the device and update the whole widgets
         device               = self.device
-        device.config        = config
+        device.config        = copy.deepcopy(config)
         # Add data_intervals (if available). This is mainly used for loading an old configuration
         if(data_interval is not None):
             device.data_interval = data_yaml['data_interval']
@@ -2532,17 +2568,24 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.configtree.create_qtree(config)
         
     def con_clicked(self):
-        button = self.sender()
-        #self.connect.emit(self.device)    
-        #self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = devicestr_datakey,devicename_highlight = devicestr_datakey,deviceonly=False,devicelock = True, subscribed_only=False) # Open a device choosing widget
-        self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = None,devicename_highlight = None,deviceonly=True,devicelock = False, subscribed_only=False) # Open a device choosing widget
-        self.devicechoose.apply.connect(self.__device_added__)
-        self.devicechoose.show()
-            
+        button = self.conbtn
+        if('Add' in button.text()):
+            self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = None,devicename_highlight = None,deviceonly=True,devicelock = False, subscribed_only=False) # Open a device choosing widget
+            self.devicechoose.apply.connect(self.__device_added__)
+            self.devicechoose.show()
+        elif('Rem' in button.text()):
+            devname = self.configtree.devicename_selected
+            print('Remove',devname)
+            ind = self.configtree.deviceindex_selected
+            self.newconfig['devices'].pop(ind)
+            self.configtree.create_qtree(self.newconfig)
+            self.conbtn.setText("Add device")
+        
     def start_clicked(self):
         button = self.sender()
         if button.isChecked():
             print("button pressed")
+            self.device.connect_devices()
             self.device_start.emit(self.device)
             button.setText("Stop logging")
             self.conbtn.setEnabled(False)
@@ -2579,6 +2622,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 class configTreeCalibrationWidget(QtWidgets.QTreeWidget):
     """ Qtreewidget that display and modifies the configuration of the calibration config
     """
+    device_selected = QtCore.pyqtSignal(str,int) 
     def __init__(self, config = {},editable=True,redvypr=None):
         funcname = __name__ + '.__init__():'
         super().__init__()
@@ -2587,7 +2631,7 @@ class configTreeCalibrationWidget(QtWidgets.QTreeWidget):
         print(funcname + str(config))
         # make only the first column editable        
         self.setEditTriggers(self.NoEditTriggers)
-        #self.header().setVisible(False)
+        self.header().setVisible(False)
         self.create_qtree(config,editable=True)
         
         self.itemExpanded.connect(self.resize_view)
@@ -2609,7 +2653,20 @@ class configTreeCalibrationWidget(QtWidgets.QTreeWidget):
         """ Save the data in the currently changed item, this is used to
         restore if newly entered data is not valid
         """
-        self.backup_data = current.text(1)            
+        devicename  = 'NA'
+        deviceindex = -1
+        self.backup_data = current.text(1)
+        item = current
+        if(item.parent() is not None):
+            print(item.text(0),item.parent().text(0))
+            if(item.parent().text(0) == 'devices'): # Check if we have a device
+                devicename = item.text(1)
+                deviceindex = int(item.text(0))
+                print('Device',devicename,deviceindex)
+                self.devicename_selected = devicename
+                self.deviceindex_selected = deviceindex
+        
+        self.device_selected.emit(devicename,deviceindex)
 
     def item_changed(self,item,column):
         """ Updates the dictionary with the changed data
@@ -2633,6 +2690,7 @@ class configTreeCalibrationWidget(QtWidgets.QTreeWidget):
         # Change the dictionary 
         try:
             key = item._ncconfig_key
+            #print('key',key,item._ncconfig_[key])
             if(type(item._ncconfig_[key]) == configdata):
                item._ncconfig_[key].value = newdata # The newdata, parsed with yaml               
             else:
@@ -2675,8 +2733,8 @@ class configTreeCalibrationWidget(QtWidgets.QTreeWidget):
                         # Change the configuration with configdata to store extra informations
                         keycontent_new                   = configdata(keycontent)
                         config['devices'][idev][devkey]  = keycontent_new
-                        devicekeyitem._ncconfig_         = config
-                        devicekeyitem._ncconfig_key      = key  
+                        devicekeyitem._ncconfig_         = config['devices'][idev]
+                        devicekeyitem._ncconfig_key      = devkey  
                         if(editable):
                             devicekeyitem.setFlags(devicekeyitem.flags() | QtCore.Qt.ItemIsEditable)
                             
@@ -2692,8 +2750,6 @@ class configTreeCalibrationWidget(QtWidgets.QTreeWidget):
                     child.setFlags(child.flags() | QtCore.Qt.ItemIsEditable)
                 groupparent = child
 
-
-         
         self.resizeColumnToContents(0)
         self.blockSignals(False)  
         
@@ -2707,7 +2763,7 @@ class configTreeCalibrationWidget(QtWidgets.QTreeWidget):
             self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = None, deviceonly=True, subscribed_only=False) # Open a device choosing widget
             self.devicechoose.device_name_changed.connect(self.itemtextchange)
             self.devicechoose.show()
-            
+        
         if((item.text(0) == 'x') or (item.text(0) == 'y')):
             # Get the devicename first
             parent = item.parent()

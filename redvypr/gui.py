@@ -709,6 +709,8 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
 
         
     def devicecustom_changed(self,text):
+        """ TODO
+        """
         pass
         #self.device_name_changed.emit(str(text))                    
          

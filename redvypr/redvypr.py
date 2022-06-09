@@ -912,7 +912,7 @@ class redvypr(QtCore.QObject):
 
     def get_data_providing_devicenames(self,device=None,forwarded_devices=True):
         """
-        Returns a list of devices that provide data. This is either the subscribed devices itself or a device that forwards data packets (i.e. network device)
+        Returns a list of the devices that provide data to device. This is either the subscribed devices itself or a device that forwards data packets (i.e. network device)
 
         Args:
             device: bool
@@ -966,8 +966,15 @@ class redvypr(QtCore.QObject):
             return devicenamelist
         
 
-            
-        
+    def get_data_providing_devices(self,device):
+        """
+        Returns LOCAL devices that provide data, note that if forwarded devices are needed, use get_data_providing_devicenames!
+        Args:
+            device:
+        """
+        devicelist = get_data_providing_devices(self.devices,device)       
+        return devicelist
+    
     def get_datastreams(self,device=None,format='uuid'):
         """
         Gets datastreams from a device (or all devices if device == None).
@@ -1028,7 +1035,6 @@ class redvypr(QtCore.QObject):
     
     
     def get_datakeys(self,device):
-        funcname = self.__class__.__name__ + '.get_datakeys():'                                
         """
         Get the datakeys for the device. 
         
@@ -1042,6 +1048,8 @@ class redvypr(QtCore.QObject):
             A list of the device datakeys
          
         """
+        funcname = self.__class__.__name__ + '.get_datakeys():'                                
+        logger.debug(funcname)
         datakeys = []    
         datastreams = self.get_datastreams(device) # Get datastreams of device
         for stream in datastreams:
@@ -1053,6 +1061,8 @@ class redvypr(QtCore.QObject):
         return datakeys
         
     def get_data_receiving_devices(self,device):
+        funcname = self.__class__.__name__ + '.get_data_receiving_devices():'                                
+        logger.debug(funcname)        
         return get_data_receiving_devices(self.devices,device)
     
     def get_known_devices(self):
@@ -1063,12 +1073,26 @@ class redvypr(QtCore.QObject):
         list
             A list of known devices
         """
+        funcname = self.__class__.__name__ + '.get_known_devices():'
+        logger.debug(funcname)
         devices = []
         for d in self.device_modules:
             devices.append(d['name'])
 
         return devices
     
+    def rm_all_data_provider(self,device):
+        """
+        Remove all devices that provide data
+        Args:
+            device: The redvypr device
+        """
+        funcname = self.__class__.__name__ + '.rm_all_data_provider():'
+        logger.debug(funcname)
+        dataprovider = self.get_data_providing_devices(device)
+        for provider in dataprovider:
+            self.addrm_device_as_data_provider(self,provider,device,remove=True)
+        
     def addrm_device_as_data_provider(self,deviceprovider,devicereceiver,remove=False):
         """ Adding/removing devices as dataprovider for the device devicereceiver
         Arguments:
