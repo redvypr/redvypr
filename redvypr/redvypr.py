@@ -198,17 +198,19 @@ class redvypr(QtCore.QObject):
         self.datadistinfoqueue = queue.Queue(maxsize=1000) # A queue to get informations from the datadistribution
         self.datadistthread = threading.Thread(target=distribute_data, args=(self.devices,self.datadistinfoqueue,self.dt_datadist), daemon=True)
         self.datadistthread.start()
+        logger.info(funcname + ':Searching for devices')
         self.populate_device_path()
+        logger.info(funcname + ':Done searching for devices')
 
         # Configurating redvypr
         if(config is not None):
-            logger.debug(funcname + ':Configuration: ' + str(config))            
+            logger.debug(funcname + ':Configuration: ' + str(config))
             if(type(config) == str):
                 config = [config]
 
             for c in config:
-                logger.debug(funcname + ':Parsing configuration: ' + str(c))                            
-                self.parse_configuration(c)        
+                logger.debug(funcname + ':Parsing configuration: ' + str(c))
+                self.parse_configuration(c)
 
     def print_status(self):
         funcname = __name__ + '.print_status():'
@@ -548,13 +550,15 @@ class redvypr(QtCore.QObject):
                   logger.debug(funcname + 'Device does not have .get_datakeys()')
                   datakeys = []
                   
-              device.statistics['datakeys'] = list(set(datakeys)) 
-              # Add also the datastreams
-              for dkey in datakeys:
-                  dstream = self.construct_datastream_from_device_datakey(dkey, device)
-                  device.statistics['datastreams'].append(dstream)
-              
-              device.statistics['datastreams'] = list(set(device.statistics['datastreams']))
+              device.statistics['datakeys'] = list(set(datakeys))
+              if(len(device.statistics['datakeys'])>0): 
+                  # Add also the datastreams
+                  for dkey in datakeys:
+                      dstream = self.construct_datastream_from_device_datakey(dkey, device)
+                      device.statistics['datastreams'].append(dstream)
+                  
+                  device.statistics['datastreams'] = list(set(device.statistics['datastreams']))
+                  
               # TODO, change that to datastreams
               # Check if the device wants a direct start after initialization
               try:
@@ -1287,6 +1291,7 @@ class redvyprWidget(QtWidgets.QWidget):
 
     def open_add_device_widget(self):
         """Opens a widget for the user to choose to add a device
+        TODO: make an own widget out of this
 
         """
         self.add_device_widget = QtWidgets.QWidget()
@@ -1336,7 +1341,8 @@ class redvyprWidget(QtWidgets.QWidget):
             itm = QtWidgets.QListWidgetItem(d)
             itms.append(itm)
             self.__devices_list.addItem(itm)
-            
+        
+        self.__devices_list.setMinimumWidth(self.__devices_list.sizeHintForColumn(0))    
         # Set the first item as current and create a device name
         self.__devices_list.setCurrentItem(itms[0])
         self.__device_name()

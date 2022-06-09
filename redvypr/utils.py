@@ -6,7 +6,26 @@ logger = logging.getLogger('redvypr')
 logger.setLevel(logging.DEBUG)
 
 
-
+#
+# Custom object to store optional data as i.e. qitem, but does not
+# pickle it, used to get original data again
+#
+class configdata():
+    """ This is a class that stores the original data and potentially
+    additional information, if it is pickled it is only returning
+    self.value but not potential additional information
+    
+    The usage is to store configurations and additional complex data as whole Qt Widgets associated but if the configdata is pickled or copied it will return only the original data
+    For example::
+        d  = configdata('some text')
+        d.moredata = 'more text or even a whole Qt Widget'
+        e = copy.deepcopy(d)
+        print(e) 
+    """
+    def __init__(self, value):
+        self.value = value
+    def __reduce__(self):
+        return (type(self.value), (self.value, ))
 
 
 def addrm_device_as_data_provider(devices,deviceprovider,devicereceiver,remove=False):

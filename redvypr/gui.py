@@ -540,6 +540,7 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
     devicelock: The user cannot change the device anymore 
     """
     device_name_changed        = QtCore.pyqtSignal(str) # Signal notifying if the device path was changed
+    apply                      = QtCore.pyqtSignal(dict) # Signal notifying if the Apply button was clicked
     datakey_name_changed       = QtCore.pyqtSignal(str) # Signal notifying if the datakey has changed
     def __init__(self,redvypr,device=None,devicename_highlight=None,datakey=None,deviceonly=False,devicelock=False,subscribed_only=True):
         """
@@ -592,10 +593,12 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
             self.layout.addWidget(self.datakeylist)
             self.datakeycustom = QtWidgets.QLineEdit()
             self.layout.addWidget(self.datakeycustom)
-            self.datakeylist.itemDoubleClicked.connect(self.datakey_clicked)
+            self.datastreamcustom = QtWidgets.QLineEdit()
+            self.layout.addWidget(self.datastreamcustom)
+            self.datakeylist.itemDoubleClicked.connect(self.datakey_clicked) # TODO here should by an apply signal emitted
             self.datakeylist.currentItemChanged.connect(self.datakey_clicked)
 
-        self.buttondone = QtWidgets.QPushButton('Done')
+        self.buttondone = QtWidgets.QPushButton('Apply')
         self.buttondone.clicked.connect(self.done_clicked)
         self.layout.addWidget(self.buttondone)                
 
@@ -617,15 +620,13 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
             print('Devname',devname,'devdict',devdict)
             if(devname != self.devicename):
                 devicelist.append(str(devname))
-                ##print('Datakeys',devdict['statistics']['datakeys'])
                 
-            ##self.datakeylist_subscribed[devname] = devdict['statistics']['datakeys']
                 
         # Populate devices
         for devname in devicelist:
             self.devicelist.addItem(devname)
             
-        self.devicelist.itemDoubleClicked.connect(self.device_clicked)
+        self.devicelist.itemDoubleClicked.connect(self.device_clicked) # TODO here should by an apply signal emitted
         self.devicelist.currentItemChanged.connect(self.device_clicked)
         if(len(devicelist)>0):
             self.device_clicked(self.devicelist.item(0))
@@ -646,17 +647,20 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
 
         if(devicelock):
             self.devicelist.setEnabled(False)
+            
         
     def update_datakeylist(self,devicename):
         """ Update the datakeylist whenever the device was changed
         """
         self.datakeylist.clear()
+        
         try:
-            #datakeylist = self.datakeylist_subscribed[devicename]
-            datakeylist = self.redvypr.get_datakeys(devicename)
+            self.datakeys    = self.redvypr.get_datakeys(devicename)
+            self.datastreams = self.redvypr.get_datastreams(devicename)
         except:
-            datakeylist = []
-        for key in datakeylist:
+            self.datakeys    = []
+            self.datastreams = []
+        for key in self.datakeys:
             # If a conversion to an int works, make quotations around it, otherwise leave it as it is
             try:
                 keyint = int(key)
@@ -668,6 +672,16 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
 
 
     def done_clicked(self):
+        devicename  = self.devicecustom.text()
+        if(self.deviceonly == False):
+            datakey    = self.datakeycustom.text()
+            datastream = self.datastreamcustom.text()
+        else:
+            datakey    = None
+            datastream = None
+        
+        signal_dict = {'devicename':devicename,'datakey':datakey,'datastream':datastream}
+        self.apply.emit(signal_dict)    
         self.close()
         
     def device_clicked(self,item):
@@ -684,8 +698,13 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
         self.device_name_changed.emit(item.text())
 
     def datakey_clicked(self,item):
-        datakey = item.text()
+        index      = self.datakeylist.currentRow()
+        #datakey    = item.text()
+        datakey = self.datakeys[index]
+        datastream = self.datastreams[index]
         self.datakeycustom.setText(str(datakey))
+        self.datastreamcustom.setText(str(datastream))
+        
         self.datakey_name_changed.emit(item.text())        
 
         

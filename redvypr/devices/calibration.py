@@ -15,8 +15,10 @@ import yaml
 import pyqtgraph
 from redvypr.data_packets import device_in_data, get_keys_from_data, get_datastream, parse_devicestring
 import redvypr.files as files
+from redvypr.utils import configdata 
 from redvypr.gui import redvypr_devicelist_widget
 import xlsxwriter
+import copy
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import tempsensor
@@ -2049,182 +2051,6 @@ class Device():
         return sstr
 
             
-#
-#
-#
-#
-#
-#
-class initDeviceWidget(QtWidgets.QWidget):
-    device_start = QtCore.pyqtSignal(Device)
-    device_stop = QtCore.pyqtSignal(Device)            
-    connect      = QtCore.pyqtSignal(Device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other sensors
-    def __init__(self,device=None):
-        super(QtWidgets.QWidget, self).__init__()
-        layout        = QtWidgets.QFormLayout(self)
-        self.device   = device        
-        self.label    = QtWidgets.QLabel("Rawdatadisplay setup")
-        self.conbtn = QtWidgets.QPushButton("Add devices for calibration")
-        self.conbtn.clicked.connect(self.con_clicked)
-        
-        self.startbtn = QtWidgets.QPushButton("Start logging")
-        self.startbtn.clicked.connect(self.start_clicked)
-        self.startbtn.setCheckable(True)
-        self.loadbtn = QtWidgets.QPushButton("Load calibration")
-        self.loadbtn.clicked.connect(self.load_data)
-        self.savebtn = QtWidgets.QPushButton('Save calibration')
-        self.savebtn.clicked.connect(self.save_data)        
-        layout.addRow(self.label)        
-        layout.addRow(self.conbtn)
-        layout.addRow(self.loadbtn)
-        layout.addRow(self.savebtn)
-        layout.addRow(self.startbtn)
-        
-    def load_data(self):
-        """ Loading a previously performed calibration
-        """
-        funcname = self.__class__.__name__ + '.load_data():'
-        fname_open = QtWidgets.QFileDialog.getOpenFileName(self, 'Open file', '',"YAML files (*.yaml);; All files (*)")
-        logger.info(funcname + 'Opening file {:s}'.format(fname_open[0]))
-        fname = fname_open[0]
-        with open(fname, 'r') as yfile:
-            data_yaml = yaml.safe_load(yfile)
-        
-        try:
-            data_yaml['config']
-        except Exception as e:
-            logger.warning(funcname + ' No configuration found in yaml, not valid')
-            return
-        
-        try:
-            data_yaml['data_interval']
-        except Exception as e:
-            logger.warning(funcname + ' No data_interval found in yaml, not valid')
-            return
-        
-        # Stop the device first
-        self.device_stop.emit(self.device)
-        #device = self.redvyprdevicelistentry['device']
-        # Add the config to the device and update the whole widgets
-        device               = self.device
-        device.config        = data_yaml['config']
-        device.data_interval = data_yaml['data_interval']
-        device.finalize_init()
-        #print('data interval 1',device.data_interval)
-        
-        displaywidget = self.redvyprdevicelistentry['displaywidget']
-        displaywidget.update_widgets()
-        
-        #print('data interval 2',device.data_interval)
-        if('polyfit' in device.config.keys()):
-            logger.debug(funcname + 'Updating polyfit widget')
-            displaywidget.widgets['polyfit'].update_table()
-            displaywidget.widgets['polyfit'].update_fitwidgets()
-            
-            
-            
-    def save_data(self):
-        """ Save the data found in datatable and fittable into a file format to be choosen by the save widget
-        """
-        folder = QtWidgets.QFileDialog.getExistingDirectory(None, 'Choose folder to save sensor yaml files')        
-        tnow       = datetime.datetime.now()
-        tstr       = tnow.strftime('%Y-%m-%d_%H%M%S_')
-        fname = tstr + 'polyfit.yaml'
-        fname_full = folder + '/' + fname
-        # Create a dictionary with the data to be saved
-        device     = self.device
-        data_save  = {}
-        data_save['data_interval']  = self.device.data_interval
-        data_save['fitdata']        = self.device.fitdata
-        #data_save['units']          = self.device.units
-        data_save['config']         = self.device.config
-        # Update the header in config
-        if('polyfit' in device.config.keys()):
-            displaywidget = self.redvyprdevicelistentry['displaywidget']
-            datatable     = displaywidget.widgets['polyfit'].datatable
-            ncols         = datatable.columnCount()
-            nrows         = datatable.rowCount()
-            nheader       = displaywidget.widgets['polyfit'].headerrows
-            nheader_basis = displaywidget.widgets['polyfit'].headerrows_basis
-            row_units     = displaywidget.widgets['polyfit']._row_units
-            row_type      = displaywidget.widgets['polyfit']._row_type
-            row_serial    = displaywidget.widgets['polyfit']._row_serial
-            
-
-            header = []
-            for row in range(nheader_basis,nheader): # Header starts in fourth row
-                data_row = []
-                for col in range(ncols):
-                    try:
-                        data_row.append(datatable.item(row,col).text())
-                    except Exception as e:
-                        data_row.append('')
-                    
-                header.append(data_row)
-
-            # Get comments 
-            comments = []
-            col_comment = displaywidget.widgets['polyfit']._start_add_info_col
-            for row in range(1,nrows):
-                try:
-                    comments.append(datatable.item(row,col_comment).text())
-                except:
-                    comments.append('')
-
-            
-            data_save['config']['polyfit']['comments']= comments
-            data_save['config']['polyfit']['headers'] = header
-            # Saving the fittype and the reference sensor
-            fitcombo = displaywidget.widgets['polyfit'].fitwidget['fitcombo']
-            refcombo = displaywidget.widgets['polyfit'].fitwidget['refcombo']
-            fittype = fitcombo.currentText()
-            refsensor = refcombo.currentText()
-            data_save['config']['polyfit']['fittype']   = fittype
-            data_save['config']['polyfit']['refsensor'] = refsensor
-        
-        print('Saving to file {:s}'.format(fname_full))            
-        with open(fname_full, 'w') as fyaml:
-            yaml.dump(data_save, fyaml)
-                
-
-    def con_clicked(self):
-        button = self.sender()
-        #self.connect.emit(self.device)    
-        #self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = devicestr_datakey,devicename_highlight = devicestr_datakey,deviceonly=False,devicelock = True, subscribed_only=False) # Open a device choosing widget
-        self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = None,devicename_highlight = None,deviceonly=False,devicelock = False, subscribed_only=False) # Open a device choosing widget
-        self.devicechoose.show()
-            
-    def start_clicked(self):
-        button = self.sender()
-        if button.isChecked():
-            print("button pressed")
-            self.device_start.emit(self.device)
-            button.setText("Stop logging")
-            self.conbtn.setEnabled(False)
-        else:
-            print('button released')
-            self.device_stop.emit(self.device)
-            button.setText("Start logging")
-            self.conbtn.setEnabled(True)
-               
-    def thread_status(self,status):
-        """ This function is called by redvypr whenever the thread is started/stopped
-        """   
-        self.update_buttons(status['threadalive'])
-
-       
-    def update_buttons(self,thread_status):
-            """ Updating all buttons depending on the thread status (if its alive, graying out things)
-            """
-            if(thread_status):
-                self.startbtn.setText('Stop logging')
-                self.startbtn.setChecked(True)
-                #self.conbtn.setEnabled(False)
-            else:
-                self.startbtn.setText('Start logging')
-                self.startbtn.setChecked(False)
-                #self.conbtn.setEnabled(True)
-
 
 #
 #
@@ -2516,5 +2342,404 @@ class displayDeviceWidget(QtWidgets.QWidget):
     
             except Exception as e:
                 logger.debug(funcname + 'Exception:' + str(e))
+                
+                
+#
+#
+#
+#
+#
+#
+class initDeviceWidget(QtWidgets.QWidget):
+    device_start = QtCore.pyqtSignal(Device)
+    device_stop = QtCore.pyqtSignal(Device)            
+    connect      = QtCore.pyqtSignal(Device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other sensors
+    def __init__(self,device=None):
+        super(QtWidgets.QWidget, self).__init__()
+        layout        = QtWidgets.QFormLayout(self)
+        self.device   = device  
+        self.label    = QtWidgets.QLabel("Rawdatadisplay setup")
+        self.conbtn = QtWidgets.QPushButton("Add device for calibration")
+        self.conbtn.clicked.connect(self.con_clicked)
+        self.updbtn = QtWidgets.QPushButton("Update configuration")
+        self.updbtn.clicked.connect(self.update_config_clicked)
+        self.startbtn = QtWidgets.QPushButton("Start logging")
+        self.startbtn.clicked.connect(self.start_clicked)
+        self.startbtn.setCheckable(True)
+        self.loadbtn = QtWidgets.QPushButton("Load calibration")
+        self.loadbtn.clicked.connect(self.load_data)
+        self.savebtn = QtWidgets.QPushButton('Save calibration')
+        self.savebtn.clicked.connect(self.save_data)  
+        self.configtree = configTreeCalibrationWidget(config=self.device.config,redvypr=self.device.redvypr)      
+        layout.addRow(self.label)        
+        layout.addRow(self.conbtn)
+        layout.addRow(self.loadbtn)
+        layout.addRow(self.updbtn)
+        layout.addRow(self.startbtn)
+        layout.addRow(self.configtree)
+        layout.addRow(self.savebtn)
+        
+        # Make a new config out of the 
+        self.newconfig = {'devices':[]} 
+        
+    def load_data(self):
+        """ Loading a previously performed calibration
+        """
+        funcname = self.__class__.__name__ + '.load_data():'
+        fname_open = QtWidgets.QFileDialog.getOpenFileName(self, 'Open file', '',"YAML files (*.yaml);; All files (*)")
+        logger.info(funcname + 'Opening file {:s}'.format(fname_open[0]))
+        fname = fname_open[0]
+        with open(fname, 'r') as yfile:
+            data_yaml = yaml.safe_load(yfile)
+        
+        try:
+            data_yaml['config']
+        except Exception as e:
+            logger.warning(funcname + ' No configuration found in yaml, not valid')
+            return
+        
+        try:
+            data_yaml['data_interval']
+        except Exception as e:
+            logger.warning(funcname + ' No data_interval found in yaml, not valid')
+            return
+        
+        
+        self.apply_new_configuration(config=data_yaml['config'], data_interval=data_yaml['data_interval'])
+        
+            
+            
+            
+    def save_data(self):
+        """ Save the data found in datatable and fittable into a file format to be choosen by the save widget
+        """
+        folder = QtWidgets.QFileDialog.getExistingDirectory(None, 'Choose folder to save sensor yaml files')        
+        tnow       = datetime.datetime.now()
+        tstr       = tnow.strftime('%Y-%m-%d_%H%M%S_')
+        fname = tstr + 'polyfit.yaml'
+        fname_full = folder + '/' + fname
+        # Create a dictionary with the data to be saved
+        device     = self.device
+        data_save  = {}
+        data_save['data_interval']  = self.device.data_interval
+        data_save['fitdata']        = self.device.fitdata
+        #data_save['units']          = self.device.units
+        data_save['config']         = self.device.config
+        # Update the header in config
+        if('polyfit' in device.config.keys()):
+            displaywidget = self.redvyprdevicelistentry['displaywidget']
+            datatable     = displaywidget.widgets['polyfit'].datatable
+            ncols         = datatable.columnCount()
+            nrows         = datatable.rowCount()
+            nheader       = displaywidget.widgets['polyfit'].headerrows
+            nheader_basis = displaywidget.widgets['polyfit'].headerrows_basis
+            row_units     = displaywidget.widgets['polyfit']._row_units
+            row_type      = displaywidget.widgets['polyfit']._row_type
+            row_serial    = displaywidget.widgets['polyfit']._row_serial
+            
+
+            header = []
+            for row in range(nheader_basis,nheader): # Header starts in fourth row
+                data_row = []
+                for col in range(ncols):
+                    try:
+                        data_row.append(datatable.item(row,col).text())
+                    except Exception as e:
+                        data_row.append('')
+                    
+                header.append(data_row)
+
+            # Get comments 
+            comments = []
+            col_comment = displaywidget.widgets['polyfit']._start_add_info_col
+            for row in range(1,nrows):
+                try:
+                    comments.append(datatable.item(row,col_comment).text())
+                except:
+                    comments.append('')
+
+            
+            data_save['config']['polyfit']['comments']= comments
+            data_save['config']['polyfit']['headers'] = header
+            # Saving the fittype and the reference sensor
+            fitcombo = displaywidget.widgets['polyfit'].fitwidget['fitcombo']
+            refcombo = displaywidget.widgets['polyfit'].fitwidget['refcombo']
+            fittype = fitcombo.currentText()
+            refsensor = refcombo.currentText()
+            data_save['config']['polyfit']['fittype']   = fittype
+            data_save['config']['polyfit']['refsensor'] = refsensor
+        
+        print('Saving to file {:s}'.format(fname_full))            
+        with open(fname_full, 'w') as fyaml:
+            yaml.dump(data_save, fyaml)
+     
+    def update_config_clicked(self):
+        print('Update',self.newconfig)
+        self.newconfig = self.configtree.get_config()
+        print('Update 2',self.newconfig)
+        #self.apply_new_configuration(self.newconfig)
+            
+    def apply_new_configuration(self,config,data_interval=None):
+        """
+        Updates all widgets based on the new config and data_interval
+        Args:
+            config:
+            data_interval:
+        """
+        self.device_stop.emit(self.device)
+        # Add the config to the device and update the whole widgets
+        device               = self.device
+        device.config        = config
+        # Add data_intervals (if available). This is mainly used for loading an old configuration
+        if(data_interval is not None):
+            device.data_interval = data_yaml['data_interval']
+            
+        device.finalize_init()
+        displaywidget = self.redvyprdevicelistentry['displaywidget']
+        displaywidget.update_widgets()
+        if('polyfit' in device.config.keys()):
+            logger.debug(funcname + 'Updating polyfit widget')
+            displaywidget.widgets['polyfit'].update_table()
+            displaywidget.widgets['polyfit'].update_fitwidgets()
+            
+    def __device_added__(self,devicedict):
+        print('Device added',devicedict)
+        devicestr = devicedict['devicename']
+        newdevice = {'device':devicestr,'x':'t','y':'NA'}
+        
+        try:
+            devicedicts = self.newconfig['devices']
+        except:
+            devicedicts = []
+            
+        FLAG_DEVICE_EXISTS = False
+        for d in devicedicts:
+            if(d['device'] == devicestr):
+                FLAG_DEVICE_EXISTS = True
+                
+        if(FLAG_DEVICE_EXISTS==True):
+            logger.info('Device is already exsiting')
+        else:
+            logger.info('Adding device {:s}'.format(devicestr))
+            self.newconfig['devices'].append(newdevice)
+            
+        
+        self.update_configwidgets(self.newconfig)
+            
+    def update_configwidgets(self,config):
+        """ Updating the configuration widgets, basically visualizing the new configuration. This is done before the all widgeta are updated with apply_new_configuration and the configuration is applied
+        """
+        self.configtree.create_qtree(config)
+        
+    def con_clicked(self):
+        button = self.sender()
+        #self.connect.emit(self.device)    
+        #self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = devicestr_datakey,devicename_highlight = devicestr_datakey,deviceonly=False,devicelock = True, subscribed_only=False) # Open a device choosing widget
+        self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = None,devicename_highlight = None,deviceonly=True,devicelock = False, subscribed_only=False) # Open a device choosing widget
+        self.devicechoose.apply.connect(self.__device_added__)
+        self.devicechoose.show()
+            
+    def start_clicked(self):
+        button = self.sender()
+        if button.isChecked():
+            print("button pressed")
+            self.device_start.emit(self.device)
+            button.setText("Stop logging")
+            self.conbtn.setEnabled(False)
+        else:
+            print('button released')
+            self.device_stop.emit(self.device)
+            button.setText("Start logging")
+            self.conbtn.setEnabled(True)
+               
+    def thread_status(self,status):
+        """ This function is called by redvypr whenever the thread is started/stopped
+        """   
+        self.update_buttons(status['threadalive'])
+
+       
+    def update_buttons(self,thread_status):
+            """ Updating all buttons depending on the thread status (if its alive, graying out things)
+            """
+            if(thread_status):
+                self.startbtn.setText('Stop logging')
+                self.startbtn.setChecked(True)
+                #self.conbtn.setEnabled(False)
+            else:
+                self.startbtn.setText('Start logging')
+                self.startbtn.setChecked(False)
+                #self.conbtn.setEnabled(True)
+
+                
+#
+#
+#
+#
+#
+class configTreeCalibrationWidget(QtWidgets.QTreeWidget):
+    """ Qtreewidget that display and modifies the configuration of the calibration config
+    """
+    def __init__(self, config = {},editable=True,redvypr=None):
+        funcname = __name__ + '.__init__():'
+        super().__init__()
+            
+        self.redvypr     = redvypr
+        print(funcname + str(config))
+        # make only the first column editable        
+        self.setEditTriggers(self.NoEditTriggers)
+        #self.header().setVisible(False)
+        self.create_qtree(config,editable=True)
+        
+        self.itemExpanded.connect(self.resize_view)
+        self.itemCollapsed.connect(self.resize_view)
+        # Connect edit triggers
+        self.itemDoubleClicked.connect(self.checkEdit)
+        self.itemChanged.connect(self.item_changed) # If an item is changed
+        self.currentItemChanged.connect(self.current_item_changed) # If an item is changed           
+        
+    def checkEdit(self, item, column):
+        """ Helper function that only allows to edit column 1
+        """
+        funcname = __name__ + '.checkEdit():'
+        logger.debug(funcname + '{:d}'.format(column))
+        if column == 1:
+            self.edititem(item, column)
+
+    def current_item_changed(self,current,previous):
+        """ Save the data in the currently changed item, this is used to
+        restore if newly entered data is not valid
+        """
+        self.backup_data = current.text(1)            
+
+    def item_changed(self,item,column):
+        """ Updates the dictionary with the changed data
+        """
+        funcname = __name__ + '.item_changed():'
+        logger.debug(funcname + 'Changed {:s} {:d} to {:s}'.format(item.text(0),column,item.text(1)))
+        # Parse the string given by the changed item using yaml (this makes the types correct again)
+        try:
+            pstring = "a: {:s}".format(item.text(1))
+            yparse = yaml.safe_load(pstring)
+            newdata = yparse['a']
+        except Exception as e: # Could not parse, use the old, valid data as a backup
+            logger.debug(funcname + '{:s}'.format(str(e)))            
+            pstring = "a: {:s}".format(self.backup_data)
+            yparse = yaml.safe_load(pstring)
+            newdata = yparse['a']
+            item.setText(1,self.backup_data)
+            #print('ohno',e)   
+               
+
+        # Change the dictionary 
+        try:
+            key = item._ncconfig_key
+            if(type(item._ncconfig_[key]) == configdata):
+               item._ncconfig_[key].value = newdata # The newdata, parsed with yaml               
+            else:
+               item._ncconfig_[key] = newdata # The newdata, parsed with yaml
+
+        except Exception as e:
+            logger.debug(funcname + '{:s}'.format(str(e)))
+
+        self.resizeColumnToContents(0)                            
+
+    def create_qtree(self,config,editable=True):
+        """Creates a new qtree from the configuration and replaces the data in
+        the dictionary with a configdata obejct, that save the data
+        but also the qtreeitem, making it possible to have a synced
+        config dictionary from/with a qtreewidgetitem. TODO: Worth to
+        replace with a qviewitem?
+
+        """
+        funcname = __name__ + '.create_qtree():'
+        self.config      = config
+        logger.debug(funcname)
+        self.blockSignals(True)
+        if True:
+            self.clear()
+            root = self.invisibleRootItem()
+            self.setColumnCount(2)
+            
+        for key in sorted(config.keys()):
+            if key == 'devices':
+                parent = QtWidgets.QTreeWidgetItem([key,''])
+                root.addChild(parent)
+                for idev,dev in enumerate(config['devices']):
+                    devicename = dev['device']
+                    deviceitem = QtWidgets.QTreeWidgetItem([str(idev),devicename])
+                    parent.addChild(deviceitem)
+                    for devkey in config['devices'][idev].keys():
+                        keycontent    = config['devices'][idev][devkey]
+                        devicekeyitem = QtWidgets.QTreeWidgetItem([devkey,keycontent])
+                        deviceitem.addChild(devicekeyitem)
+                        # Change the configuration with configdata to store extra informations
+                        keycontent_new                   = configdata(keycontent)
+                        config['devices'][idev][devkey]  = keycontent_new
+                        devicekeyitem._ncconfig_         = config
+                        devicekeyitem._ncconfig_key      = key  
+                        if(editable):
+                            devicekeyitem.setFlags(devicekeyitem.flags() | QtCore.Qt.ItemIsEditable)
+                            
+            else:
+                value               = config[key]
+                data                = configdata(value)
+                config[key]         = data                
+                child = QtWidgets.QTreeWidgetItem([key,str(value)])
+                child._ncconfig_    = config
+                child._ncconfig_key = key                
+                root.addChild(child)
+                if(editable):
+                    child.setFlags(child.flags() | QtCore.Qt.ItemIsEditable)
+                groupparent = child
+
+
+         
+        self.resizeColumnToContents(0)
+        self.blockSignals(False)  
+        
+    def edititem(self,item,colno):
+        funcname = __name__ + 'edititem()'
+        #print('Hallo!',item,colno)
+        logger.debug(funcname + str(item.text(0)) + ' ' + str(item.text(1)))
+        self.item_change = item
+        if(item.text(0) == 'device'):
+            # Let the user choose all devices and take care that the devices has been connected
+            self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = None, deviceonly=True, subscribed_only=False) # Open a device choosing widget
+            self.devicechoose.device_name_changed.connect(self.itemtextchange)
+            self.devicechoose.show()
+            
+        if((item.text(0) == 'x') or (item.text(0) == 'y')):
+            # Get the devicename first
+            parent = item.parent()
+            devicename = ''
+            device_datakey = None
+            print('Childcount',parent.childCount())
+            for i in range(parent.childCount()):
+                child = parent.child(i)
+                keystring = child.text(0)
+                print('keystring',keystring)
+                if(keystring == 'device'):
+                    devicestr_datakey = child.text(1)
+                    print('Devicename',devicestr_datakey)
+                    break
+            
+            if(devicestr_datakey is not None): 
+                print('Opening devicelist widget')       
+                self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = devicestr_datakey,devicename_highlight = devicestr_datakey,deviceonly=False,devicelock = True, subscribed_only=False) # Open a device choosing widget
+                self.devicechoose.datakey_name_changed.connect(self.itemtextchange)
+                self.devicechoose.show()
+        
+    def resize_view(self):
+        self.resizeColumnToContents(0) 
+        
+    def itemtextchange(self,itemtext):
+        """ Changes the current item text self.item_change, which is defined in self.item_changed. This is a wrapper function to work with signals that return text only
+        """
+        self.item_change.setText(1,itemtext)
+        
+    def get_config(self):
+        print('Get config',self.config)
+        config = self.config
+        return config 
                 
                 

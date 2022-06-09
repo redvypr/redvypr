@@ -818,8 +818,9 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
         """ Helper function that only allows to edit column 1
         """
         funcname = __name__ + '.checkEdit():'
+        logger.debug(funcname)
         if column == 1:
-            self.editItem(item, column)
+            self.edititem(item, column)
             
     def add_line(self):
         """ Adds a new bare line to the config
@@ -955,12 +956,12 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
         funcname = __name__ + 'edititem()'
         #print('Hallo!',item,colno)
         logger.debug(funcname + str(item.text(0)) + ' ' + str(item.text(1)))
-        self.item_change = item
+        self.item_change = item # Save item that is to be changed
         if(item.text(0) == 'device'):
             
             # Let the user choose all devices and take care that the devices has been connected
             self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = None, deviceonly=True, subscribed_only=False) # Open a device choosing widget
-            self.devicechoose.device_name_changed.connect(self.itemchanged)
+            self.devicechoose.device_name_changed.connect(self.itemtextchange)
             self.devicechoose.show()
             
         if((item.text(0) == 'x') or (item.text(0) == 'y')):
@@ -986,11 +987,10 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
                 self.devicechoose.show()
 
             
-    def itemchanged(self,devicename):
-        """ Changes the current item text
+    def itemtextchange(self,itemtext):
+        """ Changes the current item text self.item_change, which is defined in self.item_changed. This is a wrapper function to work with signals that return text only
         """
-        #print('Devicename',devicename)
-        self.item_change.setText(1,devicename)
+        self.item_change.setText(1,itemtext)
 
 
 
@@ -1222,7 +1222,7 @@ class configTreeNumDispWidget(QtWidgets.QTreeWidget):
         replace with a qviewitem?
 
         """
-        funcname = __name__ + ':create_qtree():'
+        funcname = __name__ + '.create_qtree():'
         logger.debug(funcname)
         if True:
             self.clear()
@@ -1261,7 +1261,7 @@ class configTreeNumDispWidget(QtWidgets.QTreeWidget):
 # pickle it, used to get original data again
 #
 class configdata():
-    """This is a class that stores the original data and potentially
+    """ This is a class that stores the original data and potentially
     additional information, if it is pickled it is only returning
     self.value but not potential additional information
 
