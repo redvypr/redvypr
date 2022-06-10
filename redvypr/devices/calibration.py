@@ -2382,9 +2382,11 @@ class initDeviceWidget(QtWidgets.QWidget):
     connect      = QtCore.pyqtSignal(Device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other sensors
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
-        layout        = QtWidgets.QFormLayout(self)
+        layout        = QtWidgets.QGridLayout(self)
         self.device   = device  
-        self.label    = QtWidgets.QLabel("Rawdatadisplay setup")
+        self.label    = QtWidgets.QLabel("Calibration setup")
+        self.label.setAlignment(QtCore.Qt.AlignCenter)
+        self.label.setStyleSheet(''' font-size: 24px; font: bold''')
         self.conbtn = QtWidgets.QPushButton("Add device")
         self.conbtn.clicked.connect(self.con_clicked)
         self.polybtn = QtWidgets.QPushButton("Add Polyfit")
@@ -2393,22 +2395,34 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.respbtn.clicked.connect(self.resp_clicked)
         self.updbtn = QtWidgets.QPushButton("Update configuration")
         self.updbtn.clicked.connect(self.update_config_clicked)
+        self.updbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
         self.startbtn = QtWidgets.QPushButton("Start logging")
         self.startbtn.clicked.connect(self.start_clicked)
         self.startbtn.setCheckable(True)
+        self.startbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
         self.loadbtn = QtWidgets.QPushButton("Load calibration")
         self.loadbtn.clicked.connect(self.load_data)
         self.savebtn = QtWidgets.QPushButton('Save calibration')
         self.savebtn.clicked.connect(self.save_data)  
         self.configtree = configTreeCalibrationWidget(config=self.device.config,redvypr=self.device.redvypr) 
-        self.configtree.device_selected.connect(self.qtree_device_selected)    
-        layout.addRow(self.label)        
-        layout.addRow(self.conbtn)
-        layout.addRow(self.polybtn,self.respbtn)
-        layout.addRow(self.loadbtn,self.savebtn)
-        layout.addRow(self.updbtn)
-        layout.addRow(self.startbtn)
-        layout.addRow(self.configtree)
+        self.configtree.device_selected.connect(self.qtree_device_selected) 
+        
+        
+        conflabel = QtWidgets.QLabel('Configuration')
+        conflabel.setAlignment(QtCore.Qt.AlignCenter)
+        conflabel.setStyleSheet(''' font-size: 24px; font: bold''')
+           
+        layout.addWidget(self.label,0,0,1,2) 
+        layout.addWidget(self.conbtn,1,0)
+        layout.addWidget(self.polybtn,2,0)
+        layout.addWidget(self.respbtn,3,0)
+        layout.addWidget(self.savebtn,4,0)
+        layout.addWidget(self.loadbtn,5,0)
+        layout.addWidget(conflabel,6,0,1,2) 
+        layout.addWidget(self.configtree,7,0,1,2)
+        layout.addWidget(self.updbtn,1,1,2,1)
+        layout.addWidget(self.startbtn,3,1,3,1)
+        
         
         
         # Make a new config out of the 
