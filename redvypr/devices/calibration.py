@@ -261,9 +261,9 @@ class PlotWidget(QtWidgets.QWidget):
     def _range_changed(self):
         """ Called when the x or y range of the plot was change
         """
-        print('Changed')
+        #print('Changed')
         axX = self.plots[0]['widget'].getAxis('bottom')
-        print('x axis range: {}'.format(axX.range)) # <------- get range of x axis
+        #print('x axis range: {}'.format(axX.range)) # <------- get range of x axis
         self.sig_tminmax_changed.emit(axX.range[0],axX.range[1])
         
     def mouseMoved(self,evt):
@@ -2113,6 +2113,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
         # Add buttons
         self.btn_add_interval = QtWidgets.QPushButton('Get data')
+        self.btn_add_interval.clicked.connect(self.get_data_from_plots_clicked)
         self.btn_clear = QtWidgets.QPushButton('Clear data')
         self.check_sync = QtWidgets.QRadioButton('Sync with')
         self.check_sync.setStatusTip('All axes are synced with the choosen axes')
@@ -2184,17 +2185,18 @@ class displayDeviceWidget(QtWidgets.QWidget):
         for plot in self.plots:
             plot.close()
             
-        self.plot = []    
+        self.plots = []    
         # Add axes to the widget
         config=self.device.config
-        #print('Hallo2',config['devices'])
+        try:
+            self.btn_clear.clicked.disconnect()
+        except:
+            pass
         i = 0
-        self.btn_add_interval.clicked.connect(self.get_data_from_plots_clicked)
         for i,config_device in enumerate(config['devices']):
             logger.debug(funcname + ': Adding device ' + str(config_device))
                                                 
             plot = PlotWidget(config_device,device=self.device,numdisp=i,buffersize=self.buffersizestd)
-            #self.btn_add_interval.clicked.connect(plot.get_data_clicked)
             self.btn_clear.clicked.connect(plot.clear_data)
             self.layout.addWidget(plot,i,0,1,-1)
             self.plots.append(plot)
@@ -2558,6 +2560,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         # Add the config to the device and update the whole widgets
         device               = self.device
         device.config        = copy.deepcopy(config)
+        self.device.init_data_structure()
         # Add data_intervals (if available). This is mainly used for loading an old configuration
         if(data_interval is not None):
             device.data_interval = data_interval
@@ -2605,12 +2608,14 @@ class initDeviceWidget(QtWidgets.QWidget):
     def poly_clicked(self):
         funcname = self.__class__.__name__ + '.poly_clicked():'
         logger.debug(funcname)
+        self.newconfig = copy.deepcopy(self.newconfig)
         self.newconfig['polyfit'] = {'manual':[]}
         self.configtree.create_qtree(self.newconfig)
     
     def resp_clicked(self):
         funcname = self.__class__.__name__ + '.resp_clicked():'
-        logger.debug(funcname)        
+        logger.debug(funcname)
+        self.newconfig = copy.deepcopy(self.newconfig)        
         self.newconfig['responsetime'] = {}
         self.configtree.create_qtree(self.newconfig)
         
