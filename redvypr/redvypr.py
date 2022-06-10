@@ -1091,7 +1091,7 @@ class redvypr(QtCore.QObject):
         logger.debug(funcname)
         dataprovider = self.get_data_providing_devices(device)
         for provider in dataprovider:
-            self.addrm_device_as_data_provider(self,provider,device,remove=True)
+            self.addrm_device_as_data_provider(provider,device,remove=True)
         
     def addrm_device_as_data_provider(self,deviceprovider,devicereceiver,remove=False):
         """ Adding/removing devices as dataprovider for the device devicereceiver
@@ -1205,6 +1205,8 @@ class redvyprWidget(QtWidgets.QWidget):
             
         """
         if True:
+            width = 800
+            height = 500
             # Console
             self.console = PythonConsole(formats={
                 'keyword': format('darkBlue', 'bold')
@@ -1213,7 +1215,9 @@ class redvyprWidget(QtWidgets.QWidget):
             self.console.setWindowTitle("redvypr console")        
             self.console.push_local_ns('redvypr_widget', self)
             self.console.push_local_ns('redvypr', self.redvypr)
+            self.console.resize(width, height)
             self.console.show()
+            
             self.console.eval_queued()
         
         #self.devicetabs.addTab(self.console,'Console') 

@@ -1160,7 +1160,7 @@ class PolyfitWidget(QtWidgets.QWidget):
             numdevices   = len(self.device.data_interval)
             logger.debug(funcname + ' Numintervals {:d} numdevices {:d}'.format(numintervals,numdevices))
         except Exception as e:
-            logger.warning(funcname + ' No devices/data intervals found: {:s}'.format(e))
+            logger.warning(funcname + ' No devices/data intervals found: {:s}'.format(str(e)))
             self.datatable.blockSignals(False)
             return
         
@@ -1348,7 +1348,10 @@ class PolyfitWidget(QtWidgets.QWidget):
     def get_data(self,datatype='mean'):
         """ Collects the averaged data or fitted data in self.datatable and returns it in an array
         """
+        funcname = self.__class__.__name__ + '.get_data():'
+        logger.debug(funcname)
         ndevices = self.numdevices # Get the number of devices
+        print(funcname,'ndevices',ndevices)
         data = None
         if( ndevices > 0): # If we have devices
             nrec = len(self.device.data_interval[0])
@@ -2181,7 +2184,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         for plot in self.plots:
             plot.close()
             
-            
+        self.plot = []    
         # Add axes to the widget
         config=self.device.config
         #print('Hallo2',config['devices'])
@@ -2198,7 +2201,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
             datastream_x = config_device['device'] + '(' + config_device['x'] + ',' +config_device['y'] + ')' 
             self.combo_sync.addItem(datastream_x)
             
-           
+        
+        # Updating the data structure (i.e. data_interval)
+        self.device.init_data_structure()   
         # Connect all mouse moved signals
         for plot in self.plots:
             for plot2 in self.plots:
@@ -2319,7 +2324,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def get_data_from_plots_clicked(self):
         """ Collects data from all plots and saves it into the self.device.data_interval list
         """
+        funcname = self.__class__.__name__ + '.get_data_from_plots_clicked():'
+        logger.debug(funcname)
+        print('plots',len(self.plots))
         for i,plot in enumerate(self.plots):
+            print('Getting data:',i)
             data = plot.get_data_clicked()
             if(data is not None):
                 self.device.data_interval[i].append(data)
@@ -2582,12 +2591,14 @@ class initDeviceWidget(QtWidgets.QWidget):
             logger.info('Adding device {:s}'.format(devicestr))
             self.newconfig['devices'].append(newdevice)
             
-        
+        self.newconfig = copy.deepcopy(self.newconfig) # If we have configdata items, clean them
         self.update_configwidgets(self.newconfig)
             
     def update_configwidgets(self,config):
         """ Updating the configuration widgets, basically visualizing the new configuration. This is done before the all widgeta are updated with apply_new_configuration and the configuration is applied
         """
+        funcname = self.__class__.__name__ + '.update_configwidgets():'
+        logger.debug(funcname)
         self.configtree.create_qtree(config)
         
         
