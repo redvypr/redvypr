@@ -11,5 +11,6 @@ from . import mergedata
 from . import exampledevice
 from . import exampledevice_bare
 from . import calibration
+from . import rawdatalogger
 from . import manufacturer
 

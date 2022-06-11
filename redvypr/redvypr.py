@@ -168,7 +168,8 @@ class redvypr(QtCore.QObject):
 
     """
     device_path_changed = QtCore.pyqtSignal() # Signal notifying if the device path was changed
-    device_added        = QtCore.pyqtSignal(list) # Signal notifying if the device path was changed    
+    device_added        = QtCore.pyqtSignal(list) # Signal notifying if the device path was changed
+    devices_connected   = QtCore.pyqtSignal(str,str) # Signal notifying if two devices were connected
     def __init__(self,parent=None,config=None,nogui=False):
         #super(redvypr, self).__init__(parent)
         super(redvypr, self).__init__()
@@ -360,7 +361,7 @@ class redvypr(QtCore.QObject):
                        indreceiver = i 
 
                 if((indprovider > -1) and (indreceiver > -1)):
-                    addrm_device_as_data_provider(self.devices,deviceprovider,devicereceiver,remove=False)
+                    self.addrm_device_as_data_provider(deviceprovider,devicereceiver,remove=False)
                     sensprov = get_data_providing_devices(self.devices,devicereceiver)
                     sensreicv = get_data_receiving_devices(self.devices,deviceprovider)
                     #print('provider',devicereceiver,sensprov)            
@@ -966,14 +967,46 @@ class redvypr(QtCore.QObject):
             return devicenamelist
         
 
-    def get_data_providing_devices(self,device):
+    def get_data_providing_devices(self,device=None):
         """
         Returns LOCAL devices that provide data, note that if forwarded devices are needed, use get_data_providing_devicenames!
         Args:
-            device:
+            device: redvypr_device or None, if none return all data providing devices
+            
+        Returns
+        -------
+        list
+            A list containing redvypr_devices
         """
-        devicelist = get_data_providing_devices(self.devices,device)       
+        devicelist = []
+        devicedicts = self.get_data_providing_devicedicts(device)
+        for d in devicedicts:
+            devicelist.append(d['device'])
         return devicelist
+        
+    
+    def get_data_providing_devicedicts(self,device=None):
+        """
+        Returns LOCAL devices that provide data, note that if forwarded devices are needed, use get_data_providing_devicenames!
+        Args:
+            device: redvypr_device or None, if none return all data providing devices
+            
+        Returns
+        -------
+        list
+            A list containing redvypr dictionary containing the device and additional infrastructure::
+                redvypr.get_data_providing_devices()[0].keys()
+                dict_keys(['device', 'thread', 'dataout', 'gui', 'guiqueue', 'statistics', 'numpacket', 'numpacketout', 'devicedisplaywidget', 'logger', 'displaywidget', 'initwidget', 'widget', 'infowidget'])
+        """
+        if(device == None):
+            devicedicts = []
+            for dev in self.devices:
+                if(dev['device'].publish):
+                    devicedicts.append(dev)
+        else:
+            devicedicts = get_data_providing_devices(self.devices,device)
+                   
+        return devicedicts
     
     def get_datastreams(self,device=None,format='uuid'):
         """
@@ -982,7 +1015,7 @@ class redvypr(QtCore.QObject):
             device: (redvypr device or str):
             format:
             
-         Returns
+        Returns
         -------
         list
             A list containing the datastreams
@@ -1107,6 +1140,8 @@ class redvypr(QtCore.QObject):
             devicereceiver = self.get_device_from_str(devicereceiver)
 
         ret = addrm_device_as_data_provider(self.devices,deviceprovider,devicereceiver,remove=remove)
+        # Emit a connection signal
+        self.devices_connected.emit(deviceprovider.name,devicereceiver.name)
         return ret
 
 
@@ -1315,8 +1350,6 @@ class redvyprWidget(QtWidgets.QWidget):
                 yaml.dump(data_save, fyaml)
 
 
-
-
     def open_add_device_widget(self):
         """Opens a widget for the user to choose to add a device
         TODO: make an own widget out of this
@@ -1342,7 +1375,10 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__mp_group  = QtWidgets.QButtonGroup()
         self.__mp_group.addButton(self.__mp_thread)
         self.__mp_group.addButton(self.__mp_multi)
-        layout.addRow(self.__devices_list,self.__devices_info)
+        
+        
+        layout.addRow(self.__devices_info)
+        layout.addRow(self.__devices_list)
         layout.addRow(self.__mp_label)
         layout.addRow(self.__mp_thread,self.__mp_multi)
         layout.addRow(self.__devices_devnamelabel,self.__devices_devname)                                
