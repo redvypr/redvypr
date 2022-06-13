@@ -191,20 +191,58 @@ class initDeviceWidget(QtWidgets.QWidget):
         onlyInt = QtGui.QIntValidator()
         edit.setValidator(onlyInt)
         self.dt_newfile = edit
-        self.dt_newfile.setToolTip('Create a new file every N seconds.\nFilename is "filenamebase"_yyyymmdd_HHMMSS."ext".\nUse 0 to disable feature.')
+        self.dt_newfile.setToolTip('Create a new file every N seconds.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
         try:
             self.dt_newfile.setText(str(self.device.config['dt_newfile']))
         except Exception as e:
             self.dt_newfile.setText('0')
             
-        
+        # Delta t for new file
+        edit = QtWidgets.QLineEdit(self)
+        onlyInt = QtGui.QIntValidator()
+        edit.setValidator(onlyInt)
+        self.size_newfile = edit
+        self.size_newfile.setToolTip('Create a new file every N bytes.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
+        try:
+            self.size_newfile.setText(str(self.device.config['size_newfile']))
+        except Exception as e:
+            self.size_newfile.setText('0')
             
+        self.newfiletimecombo = QtWidgets.QComboBox()
+        self.newfiletimecombo.addItem('second')
+        self.newfiletimecombo.addItem('hour')
+        self.newfiletimecombo.addItem('day')
+        self.newfiletimecombo.setCurrentIndex(0)
+            
+        self.newfilesizecombo = QtWidgets.QComboBox()
+        self.newfilesizecombo.addItem('Bytes')
+        self.newfilesizecombo.addItem('kB')
+        self.newfilesizecombo.addItem('MB')
+        self.newfilesizecombo.addItem('GB')
+        self.newfilesizecombo.setCurrentIndex(2)
+        
+        sizelabel = QtWidgets.QLabel('New file after')
+         # File change layout
+        self.newfilelayout = QtWidgets.QFormLayout()
+        self.newfilelayout.addRow(sizelabel)
+        self.newfilelayout.addRow(self.dt_newfile,self.newfiletimecombo)
+        self.newfilelayout.addRow(self.size_newfile,self.newfilesizecombo)
+        
+        # Filenamelayout
+        self.newfilenamecombo = QtWidgets.QComboBox()
+        self.newfilenamecombo.addItem('redvypr_raw')
+        self.newfilenamelayout = QtWidgets.QHBoxLayout()
+        self.newfilenamelayout.addWidget(self.outfilename)
+        self.newfilenamelayout.addWidget(self.newfilenamecombo)    
+       
+        # The outwidget
         self.outwidget = QtWidgets.QWidget()
         self.outlayout = QtWidgets.QVBoxLayout(self.outwidget)
-        self.outlayout.addWidget(self.outfilename)
+        
+        self.outlayout.addLayout(self.newfilenamelayout)
         self.outlayout.addWidget(self.addfilebtn)
-        self.outlayout.addWidget(QtWidgets.QLabel('dt newfile'))
-        self.outlayout.addWidget(self.dt_newfile)
+        self.outlayout.addLayout(self.newfilelayout)
+        
         self.outlayout.addStretch(1)
             
         layout.addWidget(self.label,0,0,1,2)
