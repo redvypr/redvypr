@@ -15,7 +15,7 @@ import inspect
 import threading
 import multiprocessing
 import redvypr.devices as redvyprdevices
-from redvypr.data_packets import device_in_data, get_devicename_from_data, get_datastreams_from_data, parse_devicestring
+from redvypr.data_packets import device_in_data, get_devicename_from_data, get_datastreams_from_data, parse_devicestring, do_data_statistics, create_data_statistic_dict
 from redvypr.gui import redvyprConnectWidget,QPlainTextEditLogger,displayDeviceWidget_standard,deviceinfoWidget,redvypr_devicelist_widget
 from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices
 import socket
@@ -77,7 +77,7 @@ def distribute_data(devices,infoqueue,dt=0.01):
     dt_info = 1.0 # The time interval information will be sent
     dt_avg = 0 # Averaging of the distribution time needed
     navg = 0    
-    tinfo = time.time()    
+    tinfo = time.time()
     tstop = time.time()
     dt_sleep = dt
     while True:
@@ -109,23 +109,25 @@ def distribute_data(devices,infoqueue,dt=0.01):
 
                 try:
                     if devicedict['statistics']['inspect']:
-                        devicedict['statistics']['numpackets'] += 1
-                        # Create a unique list of datakeys
-                        devicedict['statistics']['datakeys'] = list(set(devicedict['statistics']['datakeys'] + list(data.keys())))
-                        # Create a unqiue list of devices, device can
-                        # be different from the transporting device,
-                        # i.e. network devices do not change the name
-                        # of the transporting dictionary
-                        devicename_stat  = get_devicename_from_data(data,uuid=True)
-                        try:
-                            devicedict['statistics']['devicekeys'][devicename_stat]
-                        except:
-                            devicedict['statistics']['devicekeys'][devicename_stat] = []
-                            
-                        devicedict['statistics']['devicekeys'][devicename_stat] = list(set(devicedict['statistics']['devicekeys'][devicename_stat] + list(data.keys())))
-                        devicedict['statistics']['devices'] = list(set(devicedict['statistics']['devices'] + [devicename_stat]))
-                        datastreams_stat = get_datastreams_from_data(data,uuid=True)
-                        devicedict['statistics']['datastreams'] = list(set(devicedict['statistics']['datastreams'] + datastreams_stat))
+                        devicedict['statistics'] = do_data_statistics(data,devicedict['statistics'])
+                        if False:
+                            devicedict['statistics']['numpackets'] += 1
+                            # Create a unique list of datakeys
+                            devicedict['statistics']['datakeys'] = list(set(devicedict['statistics']['datakeys'] + list(data.keys())))
+                            # Create a unqiue list of devices, device can
+                            # be different from the transporting device,
+                            # i.e. network devices do not change the name
+                            # of the transporting dictionary
+                            devicename_stat  = get_devicename_from_data(data,uuid=True)
+                            try:
+                                devicedict['statistics']['devicekeys'][devicename_stat]
+                            except:
+                                devicedict['statistics']['devicekeys'][devicename_stat] = []
+                                
+                            devicedict['statistics']['devicekeys'][devicename_stat] = list(set(devicedict['statistics']['devicekeys'][devicename_stat] + list(data.keys())))
+                            devicedict['statistics']['devices'] = list(set(devicedict['statistics']['devices'] + [devicename_stat]))
+                            datastreams_stat = get_datastreams_from_data(data,uuid=True)
+                            devicedict['statistics']['datastreams'] = list(set(devicedict['statistics']['datastreams'] + datastreams_stat))
                 except Exception as e:
                     logger.debug(funcname + ':Statistics:' + str(e))
 
@@ -659,7 +661,7 @@ class redvypr(QtCore.QObject):
         device.data_receiver = []
         device.data_provider = []        
         
-        statistics = {'inspect':True,'numpackets':0,'datakeys':[],'devices':[],'devicekeys':{},'datastreams':[]} # A dictionary for gathering useful information about the packages
+        statistics = create_data_statistic_dict()
         devicedict = {'device':device,'thread':None,'dataout':[],'gui':[],'guiqueue':[guiqueue],'statistics':statistics}
         # Add some statistics
         devicedict['numpacket'] = 0

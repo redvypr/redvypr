@@ -10,6 +10,7 @@ import sys
 import yaml
 import copy
 import os
+from redvypr.data_packets import do_data_statistics, create_data_statistic_dict
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('rawdatalogger')
@@ -43,32 +44,52 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
     filename = config['filename']
-    try:
-        logger.info(funcname + ' Will create new file every {:d}s.'.format(config['dt_newfile']))
-    except:
-        config['dt_newfile'] = 0
+    if True:
+        try:
+            dtneworig  = config['dt_newfile']
+            dtunit     = config['dt_newfileunit']
+            if(dtunit.lower() == 'second'):
+                dtfac = 1.0
+            elif(dtunit.lower() == 'hour'):
+                dtfac = 3600.0
+            elif(dtunit.lower() == 'day'):
+                dtfac = 86400.0
+                
+            dtnews     = dtneworig * dtfac
+            print('dtnews',dtnews)
+            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfileunit']))
+        except:
+            dtnews = 0
+            
+            
+        #try:
+        #    logger.info(funcname + ' Will create new file every {:d}s.'.format(config['dt_newfile']))
+        #except:
+        #    config['dt_newfile'] = 0
 
     try:
         config['dt_sync']
     except:
         config['dt_sync'] = 5
 
-    print('Config',config)    
-    #[f,filename] = create_logfile(config)
-    #if(f == None):
-    #   return None
+    print(funcname,'Config',config)    
+    [f,filename] = create_logfile(config)
+    statistics = create_data_statistic_dict()
+    if(f == None):
+       return None
     
     bytes_written   = 0
     packets_written = 0
-    tfile   = time.time() # Save the time the file was created
-    tflush  = time.time() # Save the time the file was created    
+    tfile           = time.time() # Save the time the file was created
+    tflush          = time.time() # Save the time the file was created    
     while True:
-        tcheck = time.time()
+        tcheck      = time.time()
         try:
-            dt = tcheck - tfile
-            if((config['dt_newfile'] > 0) and (config['dt_newfile'] <= dt)):
+            dt      = tcheck - tfile
+            if((dtnew > 0) and (dtnew <= dt)):
                 f.close()
                 [f,filename] = create_logfile(config)
+                statistics = create_data_statistic_dict()
                 tfile = tcheck                
         except:
             pass
@@ -88,24 +109,27 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
             pass
 
 
+        
         time.sleep(0.05)
         while(datainqueue.empty() == False):
             try:
                 data = datainqueue.get(block=False)
+                statistics = do_data_statistics(data,statistics)
                 yamlstr = yaml.dump(data,explicit_end=True,explicit_start=True)
                 print(yamlstr)   
+                print(statistics)   
                 #print('Datastr',datastr)
                 bytes_written += len(yamlstr)
                 packets_written += 1
-                #f.write(datastr)
-                #if((time.time() - tflush) > config['dt_sync']):
-                #    f.flush()
-                #    os.fsync(f.fileno())
-                #    tflush = time.time()
+                f.write(yamlstr)
+                if((time.time() - tflush) > config['dt_sync']):
+                    f.flush()
+                    os.fsync(f.fileno())
+                    tflush = time.time()
                     
                 # Send statistics
                 data_stat = {}
-                data_stat['filename'] = filename
+                data_stat['filename']        = filename
                 data_stat['bytes_written']   = bytes_written
                 data_stat['packets_written'] = packets_written                
                 #dataqueue.put(data_stat)
@@ -264,7 +288,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         filename, _ = QtWidgets.QFileDialog.getSaveFileName(self,"Logging file","","All Files (*);;Text Files (*.txt)")
         if filename:
             self.outfilename.setText(filename)
-            self.device.config['filename'] = filename
+            
 
 
     def con_clicked(self):
@@ -299,11 +323,17 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)        
         button = self.sender()
         if button.isChecked():
-            logger.debug("button pressed")
-            self.device.config['dt_filename']= int(self.dt_newfile.text())
+            logger.debug(funcname + "button pressed")
+            self.device.config['dt_newfile']        = int(self.dt_newfile.text()) 
+            self.device.config['dt_newfile_unit']   = self.newfiletimecombo.currentText()
+            self.device.config['size_newfile']      = int(self.size_newfile.text())
+            self.device.config['size_newfile_unit'] = self.newfilesizecombo.currentText()
+            fileextension = self.newfilenamecombo.currentText()
+            filename = self.outfilename.text() + '.' + fileextension
+            self.device.config['filename']          = filename
             self.device_start.emit(self.device)
         else:
-            logger.debug('button released')
+            logger.debug(funcname + 'button released')
             self.device_stop.emit(self.device)
 
             

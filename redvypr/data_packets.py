@@ -6,6 +6,43 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('data_packets')
 logger.setLevel(logging.DEBUG)
 
+
+def create_data_statistic_dict():
+    statdict = {}
+    statdict['inspect']    = True
+    statdict['numpackets'] = 0
+    statdict['datakeys']   = []
+    statdict['devicekeys'] = {}
+    statdict['devices']    = []
+    statdict['datastreams']= []
+    return statdict
+def do_data_statistics(data, statdict):
+    """
+    Fills in the statistics dictionary with the data packet information
+    Args:
+        data:
+        statdict:
+    """
+    statdict['numpackets'] += 1
+    # Create a unique list of datakeys
+    statdict['datakeys'] = list(set(statdict['datakeys'] + list(data.keys())))
+    # Create a unqiue list of devices, device can
+    # be different from the transporting device,
+    # i.e. network devices do not change the name
+    # of the transporting dictionary
+    devicename_stat  = get_devicename_from_data(data,uuid=True)
+    try:
+        statdict['devicekeys'][devicename_stat]
+    except:
+        statdict['devicekeys'][devicename_stat] = []
+        
+    statdict['devicekeys'][devicename_stat] = list(set(statdict['devicekeys'][devicename_stat] + list(data.keys())))
+    statdict['devices'] = list(set(statdict['devices'] + [devicename_stat]))
+    datastreams_stat = get_datastreams_from_data(data,uuid=True)
+    statdict['datastreams'] = list(set(statdict['datastreams'] + datastreams_stat))
+    return statdict
+
+
 def parse_devicestring(devicestr,local_hostinfo=None):
     """
      Parses as redvypr datastring or devicestring
