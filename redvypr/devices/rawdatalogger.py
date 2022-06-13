@@ -19,21 +19,26 @@ logger.setLevel(logging.DEBUG)
 description = "Saves the raw redvypr packets into a file"
 
 def create_logfile(config):
-    funcname = __name__ + '.create_logfile()'
-    if((config['dt_newfile'] > 0)):
+    funcname = __name__ + '.create_logfile():'
+    logger.debug(funcname)
+    filebase= config['filename']
+    fileext = '.' + config['fileextension']
+    if((config['dt_newfile'] > 0) or (config['size_newfile'] > 0)):
        tstr = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-       (filebase,fileext)=os.path.splitext(config['filename'])
-       filename = filebase + '_' + tstr + fileext
+       if(len(filebase) > 0):
+           filename = filebase + '_' + tstr + fileext
+       else:
+           filename = tstr + fileext
     else:
        filename = config['filename']
        
-    logger.info(funcname + ': Will create a new file: {:s}'.format(filename))
+    logger.info(funcname + ' Will create a new file: {:s}'.format(filename))
     if True:
         try:
             f = open(filename,'w+')
-            logger.debug(funcname + 'Opened file: {:s}'.format(filename))
+            logger.debug(funcname + ' Opened file: {:s}'.format(filename))
         except Exception as e:
-            logger.warning(funcname + ': Error opening file:' + filename + ':' + str(e))
+            logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
             return None
        
     return [f,filename]
@@ -47,26 +52,41 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
     if True:
         try:
             dtneworig  = config['dt_newfile']
-            dtunit     = config['dt_newfileunit']
+            dtunit     = config['dt_newfile_unit']
             if(dtunit.lower() == 'second'):
                 dtfac = 1.0
             elif(dtunit.lower() == 'hour'):
                 dtfac = 3600.0
             elif(dtunit.lower() == 'day'):
                 dtfac = 86400.0
+            else:
+                dtfac = 0
                 
             dtnews     = dtneworig * dtfac
-            print('dtnews',dtnews)
-            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfileunit']))
-        except:
+            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
+        except Exception as e:
+            print('Exception',e)
             dtnews = 0
             
+        try:
+            sizeneworig  = config['size_newfile']
+            sizeunit     = config['size_newfile_unit']
+            if(sizeunit.lower() == 'kb'):
+                sizefac = 1000.0
+            elif(sizeunit.lower() == 'mb'):            
+                sizefac = 1e6
+            elif(sizeunit.lower() == 'bytes'):            
+                sizefac = 1 
+            else:
+                sizefac = 0
+                
+            sizenewb     = sizeneworig * sizefac # Size in bytes
+            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
+        except Exception as e:
+            print('Exception',e)
+            sizenewb = 0  # Size in bytes
             
-        #try:
-        #    logger.info(funcname + ' Will create new file every {:d}s.'.format(config['dt_newfile']))
-        #except:
-        #    config['dt_newfile'] = 0
-
+            
     try:
         config['dt_sync']
     except:
@@ -78,21 +98,26 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
     if(f == None):
        return None
     
-    bytes_written   = 0
-    packets_written = 0
+    bytes_written         = 0
+    packets_written       = 0
+    bytes_written_total   = 0
+    packets_written_total = 0
+    
     tfile           = time.time() # Save the time the file was created
     tflush          = time.time() # Save the time the file was created    
     while True:
         tcheck      = time.time()
-        try:
-            dt      = tcheck - tfile
-            if((dtnew > 0) and (dtnew <= dt)):
+        if True:
+            file_age      = tcheck - tfile
+            FLAG_TIME = (dtnews > 0)  and (file_age >= dtnews)
+            FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
+            if(FLAG_TIME or FLAG_SIZE):
                 f.close()
                 [f,filename] = create_logfile(config)
                 statistics = create_data_statistic_dict()
-                tfile = tcheck                
-        except:
-            pass
+                tfile = tcheck   
+                bytes_written         = 0
+                packets_written       = 0             
        
         try:
             com = comqueue.get(block=False)
@@ -116,11 +141,10 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
                 data = datainqueue.get(block=False)
                 statistics = do_data_statistics(data,statistics)
                 yamlstr = yaml.dump(data,explicit_end=True,explicit_start=True)
-                print(yamlstr)   
-                print(statistics)   
-                #print('Datastr',datastr)
-                bytes_written += len(yamlstr)
-                packets_written += 1
+                bytes_written         += len(yamlstr)
+                packets_written       += 1
+                bytes_written_total   += len(yamlstr)
+                packets_written_total += 1
                 f.write(yamlstr)
                 if((time.time() - tflush) > config['dt_sync']):
                     f.flush()
@@ -242,7 +266,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.newfilesizecombo.addItem('Bytes')
         self.newfilesizecombo.addItem('kB')
         self.newfilesizecombo.addItem('MB')
-        self.newfilesizecombo.addItem('GB')
         self.newfilesizecombo.setCurrentIndex(2)
         
         sizelabel = QtWidgets.QLabel('New file after')
@@ -329,8 +352,8 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.device.config['size_newfile']      = int(self.size_newfile.text())
             self.device.config['size_newfile_unit'] = self.newfilesizecombo.currentText()
             fileextension = self.newfilenamecombo.currentText()
-            filename = self.outfilename.text() + '.' + fileextension
-            self.device.config['filename']          = filename
+            self.device.config['filename']          = self.outfilename.text()
+            self.device.config['fileextension']     = fileextension
             self.device_start.emit(self.device)
         else:
             logger.debug(funcname + 'button released')
