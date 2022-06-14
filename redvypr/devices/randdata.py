@@ -76,6 +76,12 @@ class Device():
                         xoff = func['range'][0]
                         x += rng.random() * dx - xoff
                         
+                    elif(func['name']=='const'):
+                        try:
+                            x += float(func['const'])
+                        except Exception as e:
+                            self.logger.debug(str(e))
+                        
                     elif(func['name']=='sin'):
                         try:
                             x += func['amp'] * np.sin(func['f'] * t + func['phase'])
@@ -119,18 +125,77 @@ class initDeviceWidget(QtWidgets.QWidget):
     device_stop = QtCore.pyqtSignal(Device)        
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
-        layout        = QtWidgets.QVBoxLayout(self)
+        layout        = QtWidgets.QFormLayout(self)
         self.device   = device
-        self.label    = QtWidgets.QLabel("Hello, this is random")
+        self.label    = QtWidgets.QLabel("Random data setup")
+        self.label.setAlignment(QtCore.Qt.AlignCenter)
+        self.label.setStyleSheet(''' font-size: 24px; font: bold''')
+        
+        
         self.startbtn = QtWidgets.QPushButton("Start data")
         self.startbtn.clicked.connect(self.start_clicked)
-        self.startbtn.setCheckable(True)        
-        layout.addWidget(self.label)
-        layout.addWidget(self.startbtn)
-
+        self.startbtn.setCheckable(True)    
+        
+        # Sampling time
+        self.dt_edit = QtWidgets.QLineEdit(self)
+        onlyDouble = QtGui.QDoubleValidator()
+        self.dt_edit.setValidator(onlyDouble)
+        self.dt_edit.setToolTip('Time of a new sample')
+        self.dt_label = QtWidgets.QLabel("Sampling time [s]")
+        
+        # Number of samples
+        self.n_edit = QtWidgets.QLineEdit(self)
+        onlyInt = QtGui.QIntValidator()
+        self.n_edit.setValidator(onlyInt)
+        self.n_edit.setToolTip('Number of samples before packet is sent')
+        self.n_label = QtWidgets.QLabel("Sample number per packet")
+        
+        # Constant function
+        self.constlabel    = QtWidgets.QLabel("Constant function")
+        self.constlabel.setAlignment(QtCore.Qt.AlignCenter)
+        self.constlabel.setStyleSheet(''' font-size: 20px; font: bold''')
+        self.const_edit = QtWidgets.QLineEdit(self)
+        onlyDouble = QtGui.QDoubleValidator()
+        self.const_edit.setValidator(onlyDouble)
+        self.const_edit.setToolTip('Constant value')
+        self.const_label = QtWidgets.QLabel("Constant")
+        
+        # random function
+        self.randlabel    = QtWidgets.QLabel("Random function")
+        self.randlabel.setAlignment(QtCore.Qt.AlignCenter)
+        self.randlabel.setStyleSheet(''' font-size: 20px; font: bold''')
+        self.rand_edit = QtWidgets.QLineEdit(self)
+        onlyDouble = QtGui.QDoubleValidator()
+        self.rand_edit.setValidator(onlyDouble)
+        self.rand_edit.setToolTip('Amplitude of the random data')
+        self.rand_label = QtWidgets.QLabel("Amplitude")
+        
+        layout.addRow(self.label)
+        layout.addRow(self.dt_label,self.dt_edit)
+        layout.addRow(self.n_label,self.n_edit)
+        layout.addRow(self.constlabel)
+        layout.addRow(self.const_label,self.const_edit)
+        layout.addRow(self.randlabel)
+        layout.addRow(self.rand_label,self.rand_edit)
+        layout.addRow(self.startbtn)
+        
+    def finalize_init(self):
+        try:
+            self.dt_edit.setText(str(self.device.config['dt']))
+        except Exception as e:
+            self.dt_edit.setText('0.5')
+            
+        try:
+            self.n_edit.setText(str(self.device.config['n']))
+        except Exception as e:
+            self.n_edit.setText('1')
+            
     def start_clicked(self):
         button = self.sender()
         if button.isChecked():
+            self.device.config['dt'] = float(self.dt_edit.text()) 
+            self.device.config['n']  = int(self.n_edit.text()) 
+            
             self.device_start.emit(self.device)
             button.setText("Starting")
             #self.conbtn.setEnabled(False)
