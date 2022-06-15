@@ -13,10 +13,10 @@ import os
 from redvypr.data_packets import do_data_statistics, create_data_statistic_dict
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('rawdatalogger')
+logger = logging.getLogger('rawdatareplay')
 logger.setLevel(logging.DEBUG)
 
-description = "Saves the raw redvypr packets into a file"
+description = "Replays a raw redvypr data file"
 
 def create_logfile(config):
     funcname = __name__ + '.create_logfile():'
@@ -166,13 +166,13 @@ class Device():
     def __init__(self,dataqueue=None,comqueue=None,datainqueue=None):
         """
         """
-        self.publish     = False  # publishes data, a typical device is doing this
-        self.subscribe   = True   # subscribing data, a typical datalogger is doing this
+        self.publish     = True  # publishes data, a typical device is doing this
+        self.subscribe   = False   # subscribing data, a typical datalogger is doing this
         self.datainqueue = datainqueue
         self.dataqueue   = dataqueue        
         self.comqueue    = comqueue
         self.config      = {}
-        self.config['filename']= ''
+        self.config['files'] = []
                 
     def start(self):
         funcname = self.__class__.__name__
@@ -200,119 +200,46 @@ class initDeviceWidget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)
         self.device   = device
-        self.label    = QtWidgets.QLabel("rawdatalogger setup")
+        self.label    = QtWidgets.QLabel("rawdatareplay setup")
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         self.label.setStyleSheet(''' font-size: 24px; font: bold''')
         self.config_widgets= [] # A list of all widgets that can only be used of the device is not started yet
         # Input output widget
-        self.inlabel  = QtWidgets.QLabel("Input") 
+        self.inlabel  = QtWidgets.QLabel("Filenames") 
         self.inlist   = QtWidgets.QListWidget()
-        self.adddeviceinbtn   = QtWidgets.QPushButton("Add/Rem device")
-        self.adddeviceinbtn.clicked.connect(self.con_clicked)
-        self.addallbtn   = QtWidgets.QPushButton("Add all devices")
-        self.addallbtn.clicked.connect(self.con_clicked)                
-        # The output widgets
-        self.outlabel = QtWidgets.QLabel("Logfile")
-        self.outfilename = QtWidgets.QLineEdit()
-        try:
-            filename = self.device.config['filename']
-        except:
-            filename = ''
-
-        self.outfilename.setText(filename)
+        self.addfilesbtn   = QtWidgets.QPushButton("Add files")
+        self.addfilesbtn.clicked.connect(self.add_files)
+        self.config_widgets.append(self.inlist)
+        self.config_widgets.append(self.addfilesbtn)
         
-        self.addfilebtn   = QtWidgets.QPushButton("Add file")
-        self.config_widgets.append(self.addfilebtn)       
-        self.addfilebtn.clicked.connect(self.get_filename)
-        
-        # The rest
-        #self.conbtn = QtWidgets.QPushButton("Connect logger to devices")
-        #self.conbtn.clicked.connect(self.con_clicked)        
         self.startbtn = QtWidgets.QPushButton("Start logging")
         self.startbtn.clicked.connect(self.start_clicked)
         self.startbtn.setCheckable(True)
         self.startbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
-
-
-        # Delta t for new file
-        edit = QtWidgets.QLineEdit(self)
-        onlyInt = QtGui.QIntValidator()
-        edit.setValidator(onlyInt)
-        self.dt_newfile = edit
-        self.dt_newfile.setToolTip('Create a new file every N seconds.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
-        try:
-            self.dt_newfile.setText(str(self.device.config['dt_newfile']))
-        except Exception as e:
-            self.dt_newfile.setText('0')
-            
-        # Delta t for new file
-        edit = QtWidgets.QLineEdit(self)
-        onlyInt = QtGui.QIntValidator()
-        edit.setValidator(onlyInt)
-        self.size_newfile = edit
-        self.size_newfile.setToolTip('Create a new file every N bytes.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
-        try:
-            self.size_newfile.setText(str(self.device.config['size_newfile']))
-        except Exception as e:
-            self.size_newfile.setText('0')
-            
-        self.newfiletimecombo = QtWidgets.QComboBox()
-        self.newfiletimecombo.addItem('second')
-        self.newfiletimecombo.addItem('hour')
-        self.newfiletimecombo.addItem('day')
-        self.newfiletimecombo.setCurrentIndex(0)
-            
-        self.newfilesizecombo = QtWidgets.QComboBox()
-        self.newfilesizecombo.addItem('Bytes')
-        self.newfilesizecombo.addItem('kB')
-        self.newfilesizecombo.addItem('MB')
-        self.newfilesizecombo.setCurrentIndex(2)
         
-        sizelabel = QtWidgets.QLabel('New file after')
-         # File change layout
-        self.newfilelayout = QtWidgets.QFormLayout()
-        self.newfilelayout.addRow(sizelabel)
-        self.newfilelayout.addRow(self.dt_newfile,self.newfiletimecombo)
-        self.newfilelayout.addRow(self.size_newfile,self.newfilesizecombo)
-        
-        # Filenamelayout
-        self.newfilenamecombo = QtWidgets.QComboBox()
-        self.newfilenamecombo.addItem('redvypr_raw')
-        self.newfilenamelayout = QtWidgets.QHBoxLayout()
-        self.newfilenamelayout.addWidget(self.outfilename)
-        self.newfilenamelayout.addWidget(self.newfilenamecombo)    
-       
-        # The outwidget
-        self.outwidget = QtWidgets.QWidget()
-        self.outlayout = QtWidgets.QVBoxLayout(self.outwidget)
-        
-        self.outlayout.addLayout(self.newfilenamelayout)
-        self.outlayout.addWidget(self.addfilebtn)
-        self.outlayout.addLayout(self.newfilelayout)
-        
-        self.outlayout.addStretch(1)
-            
         layout.addWidget(self.label,0,0,1,2)
-        layout.addWidget(self.inlabel,1,0)         
-        layout.addWidget(self.inlist,2,0)      
-        layout.addWidget(self.adddeviceinbtn,3,0)      
-        layout.addWidget(self.addallbtn,4,0)   
-        layout.addWidget(self.outlabel,1,1)
-        layout.addWidget(self.outwidget,2,1,3,1)   
-        layout.addWidget(self.startbtn,6,0,2,2)
+        layout.addWidget(self.inlabel,1,0)
+        layout.addWidget(self.addfilesbtn,2,0)               
+        layout.addWidget(self.inlist,3,0)      
+        layout.addWidget(self.startbtn,4,0,2,2)
         
     def finalize_init(self):
         """ Util function that is called by redvypr after initializing all config (i.e. the configuration from a yaml file)
         """
-        # Update the device list, if devices have been connected
-        self.redvypr.devices_connected.connect(self.update_device_list)
+        pass
 
-    def get_filename(self):
-        filename, _ = QtWidgets.QFileDialog.getSaveFileName(self,"Logging file","","redvypr raw (*.redvypr_raw);;All Files (*)")
-        if filename:
-            self.outfilename.setText(filename)
+    def add_files(self):
+        filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self,"Rawdatafiles","","redvypr raw (*.redvypr_raw);;All Files (*)")
+        print('Filenames',filenames)
+        for f in filenames: 
+            self.device.config['files'].append(f)
             
-
+        self.update_filenamelist()
+            
+    def update_filenamelist(self):
+        self.inlist.clear()
+        for f in self.device.config['files']:
+            self.inlist.addItem(f)
 
     def con_clicked(self):
         funcname = self.__class__.__name__ + '.con_clicked():'
@@ -320,40 +247,14 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if(button == self.adddeviceinbtn):
             self.connect.emit(self.device)
-        elif(button == self.addallbtn):
-            print('Add all')
-            #devices = self.redvypr.get_data_providing_devices(self.device)
-            devices = self.redvypr.get_data_providing_devices()
-            for d in devices:
-                print('Adding',d.name)
-                self.redvypr.addrm_device_as_data_provider(d,self.device)
             
-            #self.update_device_list()
-                            
-    def update_device_list(self,devicestr_provider='',devicestr_receiver=''):
-        funcname = self.__class__.__name__ + '.update_device_list():'
-        logger.debug(funcname)
-        print('Devices',devicestr_provider,devicestr_receiver)
-        devices = self.redvypr.get_data_providing_devices(self.device)
-        self.inlist.clear()
-        for d in devices:
-            print(d)
-            devname = d.name
-            self.inlist.addItem(devname)
-        
+
     def start_clicked(self):
         funcname = self.__class__.__name__ + '.start_clicked():'
         logger.debug(funcname)
         button = self.sender()
         if button.isChecked():
             logger.debug(funcname + "button pressed")
-            self.device.config['dt_newfile']        = int(self.dt_newfile.text())
-            self.device.config['dt_newfile_unit']   = self.newfiletimecombo.currentText()
-            self.device.config['size_newfile']      = int(self.size_newfile.text())
-            self.device.config['size_newfile_unit'] = self.newfilesizecombo.currentText()
-            fileextension = self.newfilenamecombo.currentText()
-            self.device.config['filename']          = self.outfilename.text()
-            self.device.config['fileextension']     = fileextension
             self.device_start.emit(self.device)
         else:
             logger.debug(funcname + 'button released')

@@ -336,8 +336,11 @@ class redvypr(QtCore.QObject):
             hasdevices = False        
         if(hasdevices):
             for device in config['devices']:
-                logger.info('Adding device:' +device['deviceconfig']['name'])
-                # TODO, check if the name has been already given
+                try:
+                    device['deviceconfig']
+                except:
+                    device['deviceconfig'] = {}
+                    
                 self.add_device(devicemodulename=device['devicemodulename'],deviceconfig=device['deviceconfig'])
 
         # Connecting devices ['connections']
@@ -389,6 +392,17 @@ class redvypr(QtCore.QObject):
                         if(s['device'].name == start_device):
                             self.start_device_thread(s['device'])
         return True
+    
+    def check_devicename(self,devicename_orig):
+        """
+        Args:
+            devicename_orig:
+            
+        Returns:
+            
+        """
+         
+        return devicename
 
     def populate_device_path(self):
         """Searches all device paths for modules and creates a list with the
@@ -539,7 +553,7 @@ class redvypr(QtCore.QObject):
               try:
                   device.name
               except:
-                  device.name = devicemodulename +'_' + str(self.numdevice)
+                  device.name = devicemodulename + '_' + str(self.numdevice)
 
               # Add the redvypr object to the device itself
               device.redvypr = self
@@ -1912,17 +1926,19 @@ class SplashScreen(QtWidgets.QWidget):
 def redvypr_main():
     print("Python based REaltime Data VYewer and PlotteR  (REDVYPR)")
     
-    redvypr_help      = 'redvypr'
-    config_help       = 'Using a yaml config file'
-    config_help_nogui = 'start redvypr without a gui'
-    config_help_path  = 'add path to search for redvypr modules'
+    redvypr_help          = 'redvypr'
+    config_help           = 'Using a yaml config file'
+    config_help_nogui     = 'start redvypr without a gui'
+    config_help_path      = 'add path to search for redvypr modules'
     config_help_hostname  = 'hostname of redvypr, overwrites the hostname in a possible configuration '            
+    config_help_add       = 'add device, can be called multiple times'
     parser = argparse.ArgumentParser()
     parser.add_argument('--verbose', '-v', action='count')
     parser.add_argument('--config', '-c',help=config_help)
     parser.add_argument('--nogui', '-ng',help=config_help_nogui,action='store_true')
     parser.add_argument('--add_path', '-p',help=config_help_path)
     parser.add_argument('--hostname', '-hn',help=config_help_hostname)        
+    parser.add_argument('--add_device', '-a',help=config_help_add, action='append')        
     parser.set_defaults(nogui=False)
     args = parser.parse_args()
 
@@ -1944,7 +1960,19 @@ def redvypr_main():
     # Add the configuration
     config = args.config
     if(config is not None):
-        config_all.append(config)    
+        config_all.append(config)   
+        
+     # Add device
+    if(args.add_device is not None):
+        
+        hostconfig = {'devices':[]}
+        print('devices',args.add_device)
+        for d in args.add_device:
+            logger.info('Adding device {:s}'.format(d))
+            dev = {'devicemodulename':d}
+            hostconfig['devices'].append(dev)
+
+        config_all.append(hostconfig)
 
     # Add hostname
     if(args.hostname is not None):
