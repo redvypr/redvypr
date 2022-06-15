@@ -18,149 +18,57 @@ logger.setLevel(logging.DEBUG)
 
 description = "Replays a raw redvypr data file"
 
-def create_logfile(config):
-    funcname = __name__ + '.create_logfile():'
-    logger.debug(funcname)
-    filebase= config['filename']
-    fileext = '.' + config['fileextension']
-    if((config['dt_newfile'] > 0) or (config['size_newfile'] > 0)):
-       tstr = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-       if(len(filebase) > 0):
-           filename = filebase + '_' + tstr + fileext
-       else:
-           filename = tstr + fileext
-    else:
-       filename = config['filename']
-       
-    logger.info(funcname + ' Will create a new file: {:s}'.format(filename))
-    if True:
-        try:
-            f = open(filename,'w+')
-            logger.debug(funcname + ' Opened file: {:s}'.format(filename))
-        except Exception as e:
-            logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
-            return None
-       
-    return [f,filename]
-
+def get_packets(filestream=None):
+    if(filestream == None):
+        return None
+    
 
 
 def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
-    filename = config['filename']
-    if True:
-        try:
-            dtneworig  = config['dt_newfile']
-            dtunit     = config['dt_newfile_unit']
-            if(dtunit.lower() == 'second'):
-                dtfac = 1.0
-            elif(dtunit.lower() == 'hour'):
-                dtfac = 3600.0
-            elif(dtunit.lower() == 'day'):
-                dtfac = 86400.0
-            else:
-                dtfac = 0
-                
-            dtnews     = dtneworig * dtfac
-            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
-        except Exception as e:
-            print('Exception',e)
-            dtnews = 0
-            
-        try:
-            sizeneworig  = config['size_newfile']
-            sizeunit     = config['size_newfile_unit']
-            if(sizeunit.lower() == 'kb'):
-                sizefac = 1000.0
-            elif(sizeunit.lower() == 'mb'):            
-                sizefac = 1e6
-            elif(sizeunit.lower() == 'bytes'):            
-                sizefac = 1 
-            else:
-                sizefac = 0
-                
-            sizenewb     = sizeneworig * sizefac # Size in bytes
-            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
-        except Exception as e:
-            print('Exception',e)
-            sizenewb = 0  # Size in bytes
-            
-            
+    files = config['files']
+    #
     try:
-        config['dt_sync']
+        config['speedup']
     except:
-        config['dt_sync'] = 5
+        config['speedup'] = 1.0 # Realtime
 
-    print(funcname,'Config',config)    
-    [f,filename] = create_logfile(config)
-    statistics = create_data_statistic_dict()
-    if(f == None):
-       return None
+    speedup = config['speedup']
     
-    bytes_written         = 0
-    packets_written       = 0
-    bytes_written_total   = 0
-    packets_written_total = 0
+    print(funcname,'Config',config)    
+    statistics = create_data_statistic_dict()
+    
+    bytes_read         = 0
+    packets_read       = 0
+    bytes_read_total   = 0
+    packets_read_total = 0
     
     tfile           = time.time() # Save the time the file was created
-    tflush          = time.time() # Save the time the file was created    
+    tflush          = time.time() # Save the time the file was created
+    f = None    
+    nfile = 0
     while True:
         tcheck      = time.time()
-        if True:
-            file_age      = tcheck - tfile
-            FLAG_TIME = (dtnews > 0)  and (file_age >= dtnews)
-            FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
-            if(FLAG_TIME or FLAG_SIZE):
-                f.close()
-                [f,filename] = create_logfile(config)
-                statistics = create_data_statistic_dict()
-                tfile = tcheck   
-                bytes_written         = 0
-                packets_written       = 0             
-       
         try:
             com = comqueue.get(block=False)
             logger.debug(funcname + ': received:' + str(com))
-            # Closing all open files
-            try:
-                f.close()
-            except Exception as e:
-                logger.debug(funcname + ': could not close:' + str(f))
-                
             break
         except Exception as e:
             #logger.warning(funcname + ': Error stopping thread:' + str(e))
             pass
 
-
+        packets = get_packets(f)
+        if(packets == None):
+            filename = files[nfile]
+            print('Opening new file',filename)
+            f = open(filename)
+            nfile += 1
+            if(nfile >= len(files)):
+                logger.info(funcname + ': All files read, stopping now')
+                break
         
         time.sleep(0.05)
-        while(datainqueue.empty() == False):
-            try:
-                data = datainqueue.get(block=False)
-                statistics = do_data_statistics(data,statistics)
-                yamlstr = yaml.dump(data,explicit_end=True,explicit_start=True)
-                bytes_written         += len(yamlstr)
-                packets_written       += 1
-                bytes_written_total   += len(yamlstr)
-                packets_written_total += 1
-                f.write(yamlstr)
-                if((time.time() - tflush) > config['dt_sync']):
-                    f.flush()
-                    os.fsync(f.fileno())
-                    tflush = time.time()
-                    
-                # Send statistics
-                data_stat = {}
-                data_stat['filename']        = filename
-                data_stat['bytes_written']   = bytes_written
-                data_stat['packets_written'] = packets_written                
-                #dataqueue.put(data_stat)
-
-            except Exception as e:
-                logger.debug(funcname + ':Exception:' + str(e))
-                #print(data)
 
 class Device():
     def __init__(self,dataqueue=None,comqueue=None,datainqueue=None):

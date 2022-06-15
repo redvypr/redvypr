@@ -520,7 +520,7 @@ class redvypr(QtCore.QObject):
         return loglevel
         
 
-    def add_device(self,devicemodulename=None, deviceconfig = None, thread=False):
+    def add_device(self,devicemodulename=None, deviceconfig = None, thread=None):
         """ Function adds a device
         """
         funcname = self.__class__.__name__ + '.add_device():' 
@@ -532,19 +532,19 @@ class redvypr(QtCore.QObject):
            if(devicemodulename == smod['name']):
               logger.debug('Trying to import device {:s}'.format(smod['name']))
               devicemodule     = smod['module']
-              #devicemodule     = getattr(redvyprdevices, devicemodulename)
-              # Check for multiprocess options
-              try:
-                  multiprocess = deviceconfig['config']['mp'].lower()
-              except:
-                  multiprocess = 'thread'
+              # Check for multiprocess options in configuration
+              if(thread == None):
+                  try:
+                      multiprocess = deviceconfig['config']['mp'].lower()
+                  except:
+                      multiprocess = 'thread'
 
-              if(multiprocess == 'thread'):
-                  thread = True
-              elif(multiprocess == 'process'):
-                  thread = False
-              else:
-                  thread = True
+                  if(multiprocess == 'thread'):
+                      thread = True
+                  elif(multiprocess == 'process'):
+                      thread = False
+                  else:
+                      thread = True
                   
               devicedict = self.create_devicedict(devicemodule,thread=thread,deviceconfig=deviceconfig)
               
@@ -1446,7 +1446,7 @@ class redvyprWidget(QtWidgets.QWidget):
         
     def __device_name(self):
         devicemodulename = self.__devices_list.currentItem().text()
-        devicename = devicemodulename + '_{:d}'.format(self.redvypr.numdevice)
+        devicename = devicemodulename + '_{:d}'.format(self.redvypr.numdevice + 1 )
         self.__devices_devname.setText(devicename)
         self.__device_info()
         
