@@ -7,7 +7,7 @@ redvypr: RealtimeData Viewer and PRocessor (in PYthon)
 
 Overview
 --------
-Redvypr offers a [Python](https://www.python.org/) based framework to connect sensors and devices providing digital data and the possibilities to merge,process, redistribute and save the data. See figure below for an artistic overview of the general structure of redvypr:
+Redvypr offers a [Python](https://www.python.org/) based framework to connect sensors and devices providing digital data and the possibilities to merge, process, redistribute and save the data. See figure below for an artistic overview of the general structure of redvypr:
 
 ![Artistic view of redvyprs general structure](doc/source/figures/redvypr_v02.png)
 
@@ -42,13 +42,15 @@ choosen as the language as it provides a rich infrastructure of
 packets to deal with digital data and its interfaces, i.e. using
 network devices, databases or serial connections. The extensive usage 
 of [queues](https://docs.python.org/3/library/queue.html), [threads](https://docs.python.org/3/library/threading.html) and [multiprocesses](https://docs.python.org/3/library/multiprocessing.html) allows to work with asynchronously received data from
-various sensors.
+various sensors. 
+
+Please note that redvypr does not provide an interface to a specifc sensor, this needs to be coded by the user.
 
 Redvypr was designed with the following goals in mind:
 - Runs on small embedded systems
 - Allows to work with asynchronously received data from multiple sensors
 - Scalable by using several redvypr instances either on one computer or on a network
-- Can be easily extended by users
+- Can be easily extended by users by the usage of modules to include a specific device/sensor
 - Setup via a configuration file and an optional GUI
 
 
