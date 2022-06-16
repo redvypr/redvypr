@@ -2,12 +2,12 @@
 <h1 align="center"> <img src="doc/source/figures/logo_v03.1.png" alt="Redvypr logo" width="150"/></h1>
 
 
-redvypr: Realtimedata viewer and processor (in python)
+redvypr: RealtimeData Viewer and PRocessor (in PYthon)
 ======================================================
 
 Overview
 --------
-redvypr offers a python based framework to connect sensors and devices providing digital data and the possibilities to merge/process/save the data. See figure below for an artistic overview of the general structure of redvypr:
+redvypr offers a Python based framework to connect sensors and devices providing digital data and the possibilities to merge,process, redistribute and save the data. See figure below for an artistic overview of the general structure of redvypr:
 
 ![Artistic view of redvyprs general structure](doc/source/figures/redvypr_v02.png)
 
