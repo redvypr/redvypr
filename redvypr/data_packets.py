@@ -16,6 +16,7 @@ def create_data_statistic_dict():
     statdict['devices']    = []
     statdict['datastreams']= []
     return statdict
+
 def do_data_statistics(data, statdict):
     """
     Fills in the statistics dictionary with the data packet information
