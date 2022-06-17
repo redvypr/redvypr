@@ -4,6 +4,7 @@ from . import gps_device
 from . import randdata
 from . import nmea_logbook
 from . import textlogger
+from . import csvlogger
 from . import netcdflogger
 from . import plot
 from . import mergedata

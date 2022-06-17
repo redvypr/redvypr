@@ -1,3 +1,4 @@
+	-0.4.4: - rawdatalogger, rawdatareplay, csvlogger (not usable yet)
 	-0.4.3: - pyqtconsole added, plot gui nicer
 	        - Reworked the datastream/devicename string nomenclature
 			- major updates in basic functions as  device_in_data, parse_devicestring
