@@ -12,9 +12,8 @@ with open(os.path.join(ROOT_DIR, 'VERSION')) as version_file:
 
 setup(name='redvypr',
       version=version,
-      description='redvypr: Realtime data viewer and processor (in Python)',
-      long_description='redvypr: Realtime data viewer and processor (in Python). Python based software to read, process, save and visualize data from various sensors.',
-      long_description_content_type='text/x-md',      
+      description='redvypr: REaltime Data Viewer and PRocessor (in PYthon)',
+      long_description='redvypr: REaltime Data Viewer and PRocessor (in PYthon). Python based software to read, process, fuse, distribute, save and visualize data from various sensors.',
       url='https://github.com/redvypr/redvypr',
       author='Peter Holtermann',
       author_email='peter.holtermann@systemausfall.org',
