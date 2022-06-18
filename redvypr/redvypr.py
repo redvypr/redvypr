@@ -14,10 +14,6 @@ import numpy as np
 import inspect
 import threading
 import multiprocessing
-import redvypr.devices as redvyprdevices
-from redvypr.data_packets import device_in_data, get_devicename_from_data, get_datastreams_from_data, parse_devicestring, do_data_statistics, create_data_statistic_dict
-from redvypr.gui import redvyprConnectWidget,QPlainTextEditLogger,displayDeviceWidget_standard,deviceinfoWidget,redvypr_devicelist_widget
-from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices
 import socket
 import argparse
 import importlib.util
@@ -25,11 +21,20 @@ import glob
 import pathlib
 import signal
 import uuid
-from redvypr.version import version
-import redvypr.files as files
-
 from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
+# Import redvypr specific stuff
+
+import redvypr.devices as redvyprdevices
+from redvypr.data_packets import device_in_data, get_devicename_from_data, get_datastreams_from_data, parse_devicestring, do_data_statistics, create_data_statistic_dict
+from redvypr.gui import redvyprConnectWidget,QPlainTextEditLogger,displayDeviceWidget_standard,deviceinfoWidget,redvypr_devicelist_widget
+from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices
+from redvypr.version import version
+import redvypr.files as files
+from redvypr.device import redvypr_device
+
+
+
 
 # Windows icon fix
 # https://stackoverflow.com/questions/1551605/how-to-set-applications-taskbar-icon-in-windows-7/1552105#1552105
@@ -110,24 +115,6 @@ def distribute_data(devices,infoqueue,dt=0.01):
                 try:
                     if devicedict['statistics']['inspect']:
                         devicedict['statistics'] = do_data_statistics(data,devicedict['statistics'])
-                        if False:
-                            devicedict['statistics']['numpackets'] += 1
-                            # Create a unique list of datakeys
-                            devicedict['statistics']['datakeys'] = list(set(devicedict['statistics']['datakeys'] + list(data.keys())))
-                            # Create a unqiue list of devices, device can
-                            # be different from the transporting device,
-                            # i.e. network devices do not change the name
-                            # of the transporting dictionary
-                            devicename_stat  = get_devicename_from_data(data,uuid=True)
-                            try:
-                                devicedict['statistics']['devicekeys'][devicename_stat]
-                            except:
-                                devicedict['statistics']['devicekeys'][devicename_stat] = []
-                                
-                            devicedict['statistics']['devicekeys'][devicename_stat] = list(set(devicedict['statistics']['devicekeys'][devicename_stat] + list(data.keys())))
-                            devicedict['statistics']['devices'] = list(set(devicedict['statistics']['devices'] + [devicename_stat]))
-                            datastreams_stat = get_datastreams_from_data(data,uuid=True)
-                            devicedict['statistics']['datastreams'] = list(set(devicedict['statistics']['datastreams'] + datastreams_stat))
                 except Exception as e:
                     logger.debug(funcname + ':Statistics:' + str(e))
 
@@ -520,7 +507,7 @@ class redvypr(QtCore.QObject):
         return loglevel
         
 
-    def add_device(self,devicemodulename=None, deviceconfig = None, thread=None):
+    def add_device(self,devicemodulename=None, deviceconfig = {}, thread=None):
         """ Function adds a device
         """
         funcname = self.__class__.__name__ + '.add_device():' 
@@ -529,174 +516,202 @@ class redvypr(QtCore.QObject):
         device_found = False
         # Loop over all modules and check of we find the name
         for smod in self.device_modules:
-           if(devicemodulename == smod['name']):
-              logger.debug('Trying to import device {:s}'.format(smod['name']))
-              devicemodule     = smod['module']
-              # Check for multiprocess options in configuration
-              if(thread == None):
-                  try:
-                      multiprocess = deviceconfig['config']['mp'].lower()
-                  except:
-                      multiprocess = 'thread'
-
-                  if(multiprocess == 'thread'):
-                      thread = True
-                  elif(multiprocess == 'process'):
-                      thread = False
-                  else:
-                      thread = True
-                  
-              devicedict = self.create_devicedict(devicemodule,thread=thread,deviceconfig=deviceconfig)
-              
-              device = devicedict['device']
-              # If the device does not have a name, add a standard but unique one
-              try:
-                  device.name
-              except:
-                  device.name = devicemodulename + '_' + str(self.numdevice)
-
-              # Add the redvypr object to the device itself
-              device.redvypr = self
-              # Link the statistics directly into the device as well    
-              device.statistics = devicedict['statistics']
-              # Add a priori datakeys to the statistics, of the device supports it
-              try:
-                  datakeys = device.get_datakeys()
-                  logger.debug(funcname + 'Adding datakeys received from .get_datakeys(): {:s}'.format(str(datakeys)))
-              except Exception as e:
-                  logger.debug(funcname + 'Device does not have .get_datakeys()')
-                  datakeys = []
-                  
-              device.statistics['datakeys'] = list(set(datakeys))
-              if(len(device.statistics['datakeys'])>0): 
-                  # Add also the datastreams
-                  for dkey in datakeys:
-                      dstream = self.construct_datastream_from_device_datakey(dkey, device)
-                      device.statistics['datastreams'].append(dstream)
-                  
-                  device.statistics['datastreams'] = list(set(device.statistics['datastreams']))
-                  
-              # TODO, change that to datastreams
-              # Check if the device wants a direct start after initialization
-              try:
-                  autostart = device.autostart
-              except:
-                  autostart = False
-
-
-              # Do the loglevel use "standard" to take the loglevel of the redvypr instance
-              try:
-                  loglevel_device = device.loglevel.upper()
-              except: # Use the standard loglevel of redvypr
-                  loglevel_device = "standard"
-
-              # If we have standard 
-              if(loglevel_device == "standard"):
-                  loglevel_device = logger.level
-
-              
-              # If the device has a logger
-              devicedict['logger'] = None 
-              try:
-                  device.logger.setLevel(loglevel_device)
-                  devicedict['logger'] = device.logger
-              except Exception as e:
-                  logger.debug(funcname + ': NA logger device loglevel {:s}'.format(str(e)))
-                  
-
-              # If the module has a logger            
-              try:
-                  devicemodule.logger.setLevel(loglevel_device)
-                  devicedict['logger'] = devicemodule.logger
-              except Exception as e:            
-                  logger.debug(funcname + ': NA logger module loglevel {:s}'.format(str(e)))
-
-
-              # Add the device to the device list
-              self.devices.append(devicedict) # Add the device to the devicelist
-              ind_device = len(self.devices)-1    
-              
-              if(autostart):
-                  logger.debug(funcname + ': Starting device')
-                  self.start_device_thread(device)
-                  
-              devicelist = [devicedict,ind_device,devicemodule]
-              # Finalize the initialization of the device (after the configuration was included)
-              try:
-                  device.finalize_init()
-              except Exception as e:
-                  logger.debug(funcname + ': No finalize_init() of device (Exception: {:s}'.format(str(e)))
-                  
-              self.device_added.emit(devicelist)
-              device_found = True
-              
-              break
-
+            if(devicemodulename == smod['name']):
+                logger.debug('Trying to import device {:s}'.format(smod['name']))
+                devicemodule     = smod['module']
+                
+                try:
+                    deviceconfig['config']
+                except:
+                    deviceconfig['config'] = {}
+                # If the device does not have a name, add a standard but unique one
+                try:
+                    deviceconfig['config']['name']
+                except:
+                    deviceconfig['config']['name'] = devicemodulename + '_' + str(self.numdevice)
+                    
+                try:
+                    deviceconfig['config']['loglevel']
+                except:
+                    deviceconfig['config']['loglevel'] = 'INFO'
+                    
+                # Check for multiprocess options in configuration
+                if(thread == None):
+                    try:
+                        multiprocess = deviceconfig['config']['mp'].lower()
+                    except:
+                        multiprocess = 'thread'
+                
+                    if(multiprocess == 'thread'):
+                        thread = True
+                    elif(multiprocess == 'process'):
+                        thread = False
+                    else:
+                        thread = True
+                        
+                if thread: # Thread or multiprocess
+                    dataqueue        = queue.Queue(maxsize=queuesize)
+                    datainqueue      = queue.Queue(maxsize=queuesize)            
+                    comqueue         = queue.Queue(maxsize=queuesize)
+                    statusqueue      = queue.Queue(maxsize=queuesize)
+                    guiqueue         = queue.Queue(maxsize=queuesize)                                
+                else:
+                    dataqueue        = multiprocessing.Queue(maxsize=queuesize)
+                    datainqueue      = multiprocessing.Queue(maxsize=queuesize)            
+                    comqueue         = multiprocessing.Queue(maxsize=queuesize)
+                    statusqueue      = multiprocessing.Queue(maxsize=queuesize)
+                    guiqueue         = multiprocessing.Queue(maxsize=queuesize)                                            
+                
+                print('Type',type(devicemodule.Device))
+                sig = inspect.signature(devicemodule.Device)
+                print('Signature',sig)
+                if(type(devicemodule.Device) == redvypr_device):
+                    print('This is a redvypr_device')
+                    
+                 # Device do not necessarily have a statusqueue
+                try:
+                    print('New style device')
+                    name = deviceconfig['config'].pop('name')
+                    loglevel = deviceconfig['config'].pop('loglevel')
+                    print('Name',name)
+                    device               = devicemodule.Device(name = name, redvypr = self, dataqueue= dataqueue,comqueue = comqueue,datainqueue = datainqueue,statusqueue = statusqueue, loglevel = loglevel,numdevice = self.numdevice)
+                    self.numdevice      += 1  
+                    FLAG_DEVICE_OLDSTYLE = False
+                    # If the device has a logger
+                    devicelogger = device.logger
+                    print('New style device done') 
+                except Exception as e:
+                    print('Excpetion new style',str(e))
+                    FLAG_DEVICE_OLDSTYLE = True
+                    
+                    
+                if(FLAG_DEVICE_OLDSTYLE): # This need to be replaced by the redvypr_device
+                    # Device do not necessarily have a statusqueue
+                    try:
+                        device               = devicemodule.Device(dataqueue= dataqueue,comqueue = comqueue,datainqueue = datainqueue,statusqueue = statusqueue)
+                    except Exception as e:
+                        device               = devicemodule.Device(dataqueue = dataqueue,comqueue = comqueue,datainqueue = datainqueue)
+                    
+                    # Add an unique number
+                    device.numdevice     = self.numdevice
+                    self.numdevice      += 1  
+                    # Setting the configuration of the device. Each key entry in
+                    # the dict is directly set as an attribute in the device class
+                    if(deviceconfig is not None):
+                        logger.info('Setting configuration of device: ' + str(device) + ' #' + str(device.numdevice))
+                        for key in deviceconfig:
+                            confvalue = deviceconfig[key]                
+                            logger.info(key + ':'+ str(confvalue))
+                            setattr(device,key,confvalue)
+                    
+                    # Add the redvypr object to the device itself
+                    device.redvypr = self            
+                    # Do the loglevel use "standard" to take the loglevel of the redvypr instance
+                    try:
+                        loglevel_device = device.loglevel.upper()
+                    except: # Use the standard loglevel of redvypr
+                        loglevel_device = "standard"
+                    
+                    # If we have standard 
+                    if(loglevel_device == "standard"):
+                        loglevel_device = logger.level
+                
+                
+                    # If the device has a logger
+                    devicelogger = None 
+                    try:
+                        device.logger.setLevel(loglevel_device)
+                        devicelogger = device.logger
+                    except Exception as e:
+                        logger.debug(funcname + ': NA logger device loglevel {:s}'.format(str(e)))
+                        
+                        
+                    # If the module has a logger            
+                    try:
+                        devicemodule.logger.setLevel(loglevel_device)
+                        devicelogger = devicemodule.logger
+                    except Exception as e:            
+                        logger.debug(funcname + ': NA logger module loglevel {:s}'.format(str(e)))
+                        
+                        
+                      
+                if thread: # Thread or multiprocess        
+                    device.mp = 'thread'
+                else:
+                    device.mp = 'multiprocessing'
+        
+                # Add lists of receiving and providing devicenames
+                device.data_receiver = []
+                device.data_provider = []        
+                
+                statistics = create_data_statistic_dict()
+                devicedict = {'device':device,'thread':None,'dataout':[],'gui':[],'guiqueue':[guiqueue],'statistics':statistics,'logger':devicelogger}
+                # Add some statistics
+                devicedict['numpacket'] = 0
+                devicedict['numpacketout'] = 0        
+                # The displaywidget, to be filled by redvyprWidget.add_device (optional)
+                devicedict['devicedisplaywidget'] = None
+                
+                
+                device = devicedict['device']
+                
+                
+                # Link the statistics directly into the device as well    
+                device.statistics = devicedict['statistics']
+                # Add a priori datakeys to the statistics, of the device supports it
+                try:
+                    datakeys = device.get_datakeys()
+                    logger.debug(funcname + 'Adding datakeys received from .get_datakeys(): {:s}'.format(str(datakeys)))
+                except Exception as e:
+                    logger.debug(funcname + 'Device does not have .get_datakeys()')
+                    datakeys = []
+                    
+                device.statistics['datakeys'] = list(set(datakeys))
+                if(len(device.statistics['datakeys'])>0): 
+                    # Add also the datastreams
+                    for dkey in datakeys:
+                        dstream = self.construct_datastream_from_device_datakey(dkey, device)
+                        device.statistics['datastreams'].append(dstream)
+                    
+                    device.statistics['datastreams'] = list(set(device.statistics['datastreams']))
+                    
+                # TODO, change that to datastreams
+                # Check if the device wants a direct start after initialization
+                try:
+                    autostart = device.autostart
+                except:
+                    autostart = False
+                
+                
+                
+                
+                
+                # Add the device to the device list
+                self.devices.append(devicedict) # Add the device to the devicelist
+                ind_device = len(self.devices)-1    
+                
+                if(autostart):
+                    logger.debug(funcname + ': Starting device')
+                    self.start_device_thread(device)
+                    
+                devicelist = [devicedict,ind_device,devicemodule]
+                # Finalize the initialization of the device (after the configuration was included)
+                try:
+                    device.finalize_init()
+                except Exception as e:
+                    logger.debug(funcname + ': No finalize_init() of device (Exception: {:s}'.format(str(e)))
+                    
+                print('Emitting device signal')
+                self.device_added.emit(devicelist)
+                device_found = True
+                
+                break
+                
         if(device_found == False):
             logger.warning(funcname + ': Could not add device (not found): {:s}'.format(str(devicemodulename)))
            
         return devicelist
 
-
-    def create_devicedict(self,devicemodule,devicename = None,thread=False,deviceconfig=None):
-        """Adds a device of type devicemodulename
-
-        """
-
-        if thread: # Thread or multiprocess
-            dataqueue        = queue.Queue(maxsize=queuesize)
-            datainqueue      = queue.Queue(maxsize=queuesize)            
-            comqueue         = queue.Queue(maxsize=queuesize)
-            statusqueue      = queue.Queue(maxsize=queuesize)
-            #dataoutqueue     = queue.Queue(maxsize=queuesize)
-            guiqueue         = queue.Queue(maxsize=queuesize)                                
-        else:
-            dataqueue        = multiprocessing.Queue(maxsize=queuesize)
-            datainqueue      = multiprocessing.Queue(maxsize=queuesize)            
-            comqueue         = multiprocessing.Queue(maxsize=queuesize)
-            statusqueue      = multiprocessing.Queue(maxsize=queuesize)
-            #dataoutqueue     = multiprocessing.Queue(maxsize=queuesize)
-            guiqueue         = multiprocessing.Queue(maxsize=queuesize)                                            
-        
-        # Device do not necessarily have a statusqueue
-        try:
-            device               = devicemodule.Device(dataqueue= dataqueue,comqueue = comqueue,datainqueue = datainqueue,statusqueue = statusqueue)
-        except:
-            device               = devicemodule.Device(dataqueue,comqueue,datainqueue)
-        # Add an unique number
-        device.numdevice     = self.numdevice
-        self.numdevice      += 1        
-        if thread: # Thread or multiprocess        
-            device.mp = 'thread'
-        else:
-            device.mp = 'multiprocessing'
-
-        # Add lists of receiving and providing devicenames
-        device.data_receiver = []
-        device.data_provider = []        
-        
-        statistics = create_data_statistic_dict()
-        devicedict = {'device':device,'thread':None,'dataout':[],'gui':[],'guiqueue':[guiqueue],'statistics':statistics}
-        # Add some statistics
-        devicedict['numpacket'] = 0
-        devicedict['numpacketout'] = 0        
-        # The displaywidget, to be filled by redvyprWidget.add_device (optional)
-        devicedict['devicedisplaywidget'] = None
-        
-        
-        # Setting the configuration of the device. Each key entry in
-        # the dict is directly set as an attribute in the device class
-        if(deviceconfig is not None):
-            logger.info('Setting configuration of device: ' + str(device) + ' #' + str(device.numdevice))
-            for key in deviceconfig:
-                confvalue = deviceconfig[key]                
-                logger.info(key + ':'+ str(confvalue))
-                setattr(device,key,confvalue)
-            
-                
-        
-        #self.devices.append(devicedict) # Add the device to the devicelist
-        return devicedict
 
     def start_device_thread(self,device):
         """Functions starts a thread, to process the data (i.e. reading from a device, writing to a file)

@@ -1,3 +1,5 @@
+	-0.4.5: - Redesign of API, redvypr_device object as standard Device 
+			- Configuration of devices not longer as attributes but directly as a argument to __init__
 	-0.4.4: - rawdatalogger, rawdatareplay, csvlogger (not usable yet)
 	-0.4.3: - pyqtconsole added, plot gui nicer
 	        - Reworked the datastream/devicename string nomenclature

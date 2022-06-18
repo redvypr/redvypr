@@ -24,7 +24,7 @@ def create_logfile(config):
     filebase= config['filename']
     fileext = '.' + config['fileextension']
     if((config['dt_newfile'] > 0) or (config['size_newfile'] > 0)):
-       tstr = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+       tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
        if(len(filebase) > 0):
            filename = filebase + '_' + tstr + fileext
        else:

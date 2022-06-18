@@ -10,6 +10,7 @@ import sys
 import yaml
 import copy
 import os
+from redvypr.device import redvypr_device
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('csvlogger')
@@ -19,7 +20,7 @@ logger.setLevel(logging.DEBUG)
 def create_logfile(config):
     funcname = __name__ + '.create_logfile()'
     if((config['dt_newfile'] > 0)):
-       tstr = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+       tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
        (filebase,fileext)=os.path.splitext(config['filename'])
        filename = filebase + '_' + tstr + fileext
     else:
@@ -53,29 +54,70 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
         config['dt_sync'] = 5
 
     try:
-        config['keys']
+        config['datastreams']
     except:
-        logger.warning(funcname + ': Need to specify data keys, aborting')
+        logger.warning(funcname + ': Need to specify datastreams aborting')
         return None
         
     [f,filename] = create_logfile(config)
     if(f == None):
-       return None
+        logger.warning(funcname + ': Could not open csv file {:s}'.format())
+        return None
+   
+   
+    if True:
+        try:
+            dtneworig  = config['dt_newfile']
+            dtunit     = config['dt_newfile_unit']
+            if(dtunit.lower() == 'second'):
+                dtfac = 1.0
+            elif(dtunit.lower() == 'hour'):
+                dtfac = 3600.0
+            elif(dtunit.lower() == 'day'):
+                dtfac = 86400.0
+            else:
+                dtfac = 0
+                
+            dtnews     = dtneworig * dtfac
+            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
+        except Exception as e:
+            print('Exception',e)
+            dtnews = 0
+            
+        try:
+            sizeneworig  = config['size_newfile']
+            sizeunit     = config['size_newfile_unit']
+            if(sizeunit.lower() == 'kb'):
+                sizefac = 1000.0
+            elif(sizeunit.lower() == 'mb'):            
+                sizefac = 1e6
+            elif(sizeunit.lower() == 'bytes'):            
+                sizefac = 1 
+            else:
+                sizefac = 0
+                
+            sizenewb     = sizeneworig * sizefac # Size in bytes
+            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
+        except Exception as e:
+            print('Exception',e)
+            sizenewb = 0  # Size in bytes
     
     bytes_written   = 0
     packets_written = 0
-    tfile   = time.time() # Save the time the file was created
-    tflush  = time.time() # Save the time the file was created    
+    tfile           = time.time() # Save the time the file was created
+    tflush          = time.time() # Save the time the file was created    
     while True:
         tcheck = time.time()
-        try:
-            dt = tcheck - tfile
-            if((config['dt_newfile'] > 0) and (config['dt_newfile'] <= dt)):
-                f.close()
-                [f,filename] = create_logfile(config)
-                tfile = tcheck                
-        except:
-            pass
+        file_age      = tcheck - tfile
+        FLAG_TIME = (dtnews > 0)  and (file_age >= dtnews)
+        FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
+        if(FLAG_TIME or FLAG_SIZE):
+            f.close()
+            [f,filename] = create_logfile(config)
+            statistics = create_data_statistic_dict()
+            tfile = tcheck   
+            bytes_written         = 0
+            packets_written       = 0      
        
         try:
             com = comqueue.get(block=False)
@@ -97,26 +139,11 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
             try:
                 data = datainqueue.get(block=False)
                 datastr = ''
-                if(config['packetcount']):
-                    datastr += '{:d},'.format(packets_written)
-                if(config['time']):
-                    tstr = datetime.datetime.fromtimestamp(data['t']).strftime('%Y-%m-%d %H:%M:%S.%f')
-                    datastr += tstr
-                if(config['host']):
-                    datastr += ',' + data['host']['addr'] + ',' + data['host']['name']
-                if(config['device']):
-                    datastr += ',' + data['device']
-
-                for key in config['keys']:
-                    if(config['add_key']):
-                        datastr +=  ',' + key + ',' + str(data[key])
-                    else:
-                        datastr += str(data[key])
-                        
-                if(config['newline']):                    
-                    datastr += '\n'
+                tstr = datetime.datetime.fromtimestamp(data['t']).strftime('%Y-%m-%d %H:%M:%S.%f')
+                datastr += tstr
+                datastr += '\n'
                     
-                #print('Datastr',datastr)
+                print('Datastr',datastr)
                 bytes_written += len(datastr)
                 packets_written += 1
                 f.write(datastr)
@@ -125,44 +152,28 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
                     os.fsync(f.fileno())
                     tflush = time.time()
                     
-                data_new = data
-                data_new['data']     = datastr
-                data_new['filename'] = filename
-                data_new['bytes_written']   = bytes_written
-                data_new['packets_written'] = packets_written                
-                dataqueue.put(data_new)
-                #print('Read data',datastr)
-
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))
                 #print(data)
 
-class Device():
-    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,filename = ''):
+class Device(redvypr_device):
+    def __init__(self,**kwargs):
         """
         """
-        self.publish     = True  # publishes data, a typical device is doing this
-        self.subscribe   = True  # subscribing data, a typical datalogger is doing this
-        self.datainqueue = datainqueue
-        self.dataqueue   = dataqueue        
-        self.comqueue    = comqueue
-        self.config      = {}
-        self.config['filename']= ''
-        self.config['host']    = True
-        self.config['time']    = True
-        self.config['device']  = True
-        self.config['newline'] = False
-        self.config['keys']    = ['data']
-        self.config['add_key'] = True
-                
+        super(Device, self).__init__(**kwargs)
+        try:
+            self.config['datastreams']
+        except:
+            self.config['datastreams'] = set()
+            
+
     def start(self):
         config=copy.deepcopy(self.config)
         try:
-            config['keys']
+            config['datastreams']
         except:
-            config['keys'] = ['data']
+            config['datastreams'] = set()
 
-        
         start(self.datainqueue,self.dataqueue,self.comqueue,config=config)
         
     def __str__(self):
@@ -186,21 +197,24 @@ class initDeviceWidget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)
         self.device   = device
+        self.redvypr  = device.redvypr
         self.label    = QtWidgets.QLabel("CSV-Logger setup")
-        self.config_widgets= [] # A list of all widgets that can only be used of the device is not started yet
+        self.label.setAlignment(QtCore.Qt.AlignCenter)
+        self.label.setStyleSheet(''' font-size: 24px; font: bold''')
+        self.config_widgets = [] # A list of all widgets that can only be used of the device is not started yet
         # The output tree widget
-        self.outlabel = QtWidgets.QLabel("Logfile")
+        self.outfilebutton = QtWidgets.QPushButton("Logfile")
+        self.outfilebutton.clicked.connect(self.get_filename)
         self.outfilename = QtWidgets.QLineEdit()
+        self.config_widgets.append(self.outfilebutton)
+        self.config_widgets.append(self.outfilename)
         try:
             filename = self.device.config['filename']
         except:
-            filename = ''
+            tnow = datetime.datetime.now()
+            filename = tnow.strftime("redvypr_%Y-%m-%d_%H%M%S.csv")
 
         self.outfilename.setText(filename)
-        
-        self.addfilebtn   = QtWidgets.QPushButton("Add file")
-        self.config_widgets.append(self.addfilebtn)       
-        self.addfilebtn.clicked.connect(self.get_filename)
         
         self.create_datasteamwidget()
         
@@ -212,17 +226,20 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.startbtn.setCheckable(True)
 
         layout.addWidget(self.label,0,0)  
-        layout.addWidget(self.datastreamwidget,1,0)
+        layout.addWidget(self.outfilebutton,1,0)
+        layout.addWidget(self.outfilename,2,0)
+        layout.addWidget(self.datastreamwidget,3,0)
         layout.addWidget(self.startbtn,5,0)
         
-        
-        
+        self.update_datastreamwidget()
+        self.redvypr.device_added.connect(self.update_datastreamwidget)
         
     def finalize_init(self):
         """ Util function that is called by redvypr after initializing all config (i.e. the configuration from a yaml file)
         """
-        self.update_datastreamwidget()
-        self.redvypr.device_added.connect(self.update_datastreamwidget)
+        funcname = self.__class__.__name__ + '.finalize_init()'
+        logger.debug(funcname)
+        
         
     def create_datasteamwidget(self):
         """
@@ -230,7 +247,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.datastreamwidget = QtWidgets.QWidget()
         self.datastreamwidget_layout = QtWidgets.QGridLayout(self.datastreamwidget)
         self.addallbtn = QtWidgets.QPushButton('Add all')
+        self.addallbtn.clicked.connect(self.addremstream)
         self.remallbtn = QtWidgets.QPushButton('Rem all')
+        self.remallbtn.clicked.connect(self.addremstream)
         self.arrleft = QtWidgets.QToolButton()
         self.arrleft.setArrowType(QtCore.Qt.LeftArrow)
         self.arrleft.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Fixed)
@@ -238,9 +257,17 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.arrright = QtWidgets.QToolButton()
         self.arrright.setArrowType(QtCore.Qt.RightArrow)
         self.arrright.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Fixed)
+        self.arrright.clicked.connect(self.addremstream)
         # Datastreams
         self.datastreamlist_all = QtWidgets.QListWidget()
         self.datastreamlist_choosen = QtWidgets.QListWidget()
+        
+        self.config_widgets.append(self.datastreamlist_all) 
+        self.config_widgets.append(self.datastreamlist_choosen) 
+        self.config_widgets.append(self.arrleft) 
+        self.config_widgets.append(self.arrright) 
+        self.config_widgets.append(self.remallbtn) 
+        self.config_widgets.append(self.addallbtn) 
         
         self.datastreamwidget_layout.addWidget(QtWidgets.QLabel('Available Datastreams'),0,0,1,2)
         self.datastreamwidget_layout.addWidget(self.datastreamlist_all,1,0,6,2)
@@ -255,9 +282,30 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = self.__class__.__name__ + '.addremstream():'
         logger.debug(funcname)
         button = self.sender()
-        if(button == self.arrright):
+        if(button == self.arrright): # Add selected
+            print('right')
             streams = self.datastreamlist_all.selectedItems()
-            print('streams',streams)
+            for streamitem in streams:
+                stream = streamitem.text()
+                print('stream',stream)
+                self.device.config['datastreams'].add(stream)
+                
+        elif(button == self.addallbtn): # Add all
+            for i in range(self.datastreamlist_all.count()):
+                stream = self.datastreamlist_all.item(i).text()
+                self.device.config['datastreams'].add(stream)
+                
+        elif(button == self.remallbtn): # Rem all            
+            self.device.config['datastreams'] = set()
+                
+        elif(button == self.arrleft):
+            print('left')
+            streams = self.datastreamlist_choosen.selectedItems()
+            print(self.device.config['datastreams'])
+            for streamitem in streams:
+                stream = streamitem.text()
+                print('stream',stream)
+                self.device.config['datastreams'].remove(stream)
             
         self.update_datastreamwidget()
         
@@ -266,14 +314,20 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         datastreams = self.redvypr.get_datastreams()
         self.datastreamlist_all.clear()
+        self.datastreamlist_choosen.clear()
         for d in datastreams:
             dshort = d.split('::')[0]
             if(dshort[0] != '?'):
                 self.datastreamlist_all.addItem(dshort)
-        
+                
+        datastreams_subscribed = self.device.config['datastreams']
+        for d in datastreams_subscribed:
+            self.datastreamlist_choosen.addItem(d)
 
     def get_filename(self):
-        filename, _ = QtWidgets.QFileDialog.getSaveFileName(self,"CSV file","","CSV Files (*.csv);;All Files (*)")
+        tnow = datetime.datetime.now()
+        filename_suggestion = tnow.strftime("redvypr_%Y-%m-%d_%H%M%S.csv")
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(self,"CSV file",filename_suggestion,"CSV Files (*.csv);;All Files (*)")
         if filename:
             self.outfilename.setText(filename)
             self.device.config['filename'] = filename
@@ -288,6 +342,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if button.isChecked():
             logger.debug("button pressed")
+            # The filename
+            self.device.config['filename'] = self.outfilename.text()
+            # Connect the datastreams
+            
             self.device_start.emit(self.device)
         else:
             logger.debug('button released')
