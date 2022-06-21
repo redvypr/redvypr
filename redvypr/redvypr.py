@@ -21,6 +21,7 @@ import glob
 import pathlib
 import signal
 import uuid
+import random
 from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
 # Import redvypr specific stuff
@@ -73,7 +74,10 @@ def get_ip():
     return IP
 
 # The hostinfo, to distinguish between different redvypr instances
-hostinfo = {'hostname':'redvypr','tstart':time.time(),'addr':get_ip(),'uuid':str(uuid.uuid1()),'local':True}
+#redvyprid = str(uuid.uuid1()) # Old
+randstr = '{:03d}'.format(random.randrange(2**8))
+redvyprid = datetime.datetime.now().strftime('%Y%m%d%H%M%S.%f-') + str(uuid.getnode()) + '-' + randstr
+hostinfo = {'hostname':'redvypr','tstart':time.time(),'addr':get_ip(),'uuid':redvyprid,'local':True}
 
 def distribute_data(devices,infoqueue,dt=0.01):
     """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
@@ -592,6 +596,8 @@ class redvypr(QtCore.QObject):
                     except Exception as e:
                         device               = devicemodule.Device(dataqueue = dataqueue,comqueue = comqueue,datainqueue = datainqueue)
                     
+                    # Add the name to the device
+                    device.name         = name
                     # Add an unique number
                     device.numdevice     = self.numdevice
                     self.numdevice      += 1  
@@ -1039,11 +1045,21 @@ class redvypr(QtCore.QObject):
                    
         return devicedicts
     
+    def get_datastream_providing_device(self,datastream):
+        """ Gets the device that provides that datastream
+        """
+        funcname       = self.__class__.__name__ + '.get_datastream_providing_device():'
+        logger.debug(funcname)                                
+        datastreamparsed = parse_devicestring(datastream,local_hostinfo=hostinfo)
+        for dev in self.devices:
+            datastreamlist.extend(dev['statistics']['datastreams'])
+        
+    
     def get_datastreams(self,device=None,format='uuid'):
         """
         Gets datastreams from a device (or all devices if device == None).
         Args:
-            device: (redvypr device or str):
+            device: (redvypr_device or str):
             format:
             
         Returns
