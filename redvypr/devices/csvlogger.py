@@ -35,6 +35,16 @@ def create_logfile(config):
         except Exception as e:
             logger.warning(funcname + ': Error opening file:' + filename + ':' + str(e))
             return None
+        
+        datastreams = config['datastreams']
+        separator = config['separator']
+        # Write header
+        headerstr = 'time' + separator + 'time' + separator + 'numpacket'
+        for datastream in datastreams:
+            headerstr += separator + datastream 
+         
+        headerstr += '\n'
+        f.write(headerstr)   
        
     return [f,filename]
 
@@ -58,7 +68,9 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
     try:
         separator = config['separator']
     except:
-        separator = ','
+        config['separator'] = ','
+        
+    separator = config['separator']
 
     try:
         datastreams = config['datastreams']
@@ -152,51 +164,84 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
 
 
         time.sleep(0.05)
+         
         while(datainqueue.empty() == False):
             try:
                 datapacket = datainqueue.get(block=False)
                 # Check if a datastream is in the data
                 data_save_time = None
-                data_save = []
+                data_save = {}
+                maxlen = 0
+                FLAG_save_packet = False
                 for datastream in datastreams:
-                    FLAG_add_time = True
                     if(device_in_data(datastream, datapacket)):
-                        print('Datastream in datapacket')
-                        data = get_data(datastream,datapacket)
-                        data_save.append([datastream,data])
-                        if(FLAG_add_time):
-                            data_save_time = datapacket['t']
-                            FLAG_add_time = False
-                            tstr = datetime.datetime.fromtimestamp(datapacket['t']).strftime('%Y-%m-%d %H:%M:%S.%f')
+                        FLAG_save_packet = True
+                        data     = get_data(datastream,datapacket)
+                        data_tmp = copy.deepcopy(data)
+                        print('Datastream in datapacket',data)
+                        # Check for iterables and str, save all non iterables (and str) in list
+                        if(type(data) == 'str'):
+                            data_save[datastream] = [data]
+                        else:
+                            # Data can be a list or similar, this will be saved as one line
+                            # Check if we have an iterable, of not make a one element list
+                            try:
+                                iterator = iter(data)
+                            except TypeError:
+                                # not iterable
+                                data = [data]
+                                
+                            data_save[datastream] = data
+                        
+                        print('data',data)    
+                        maxlen = max(maxlen,len(data))
+                        
+                if(FLAG_save_packet):
+                    # Make the time iterable (if its not already)
+                    try:
+                        iterator = iter(datapacket['t'])
+                    except TypeError:
+                        # not iterable
+                        timepackets = [datapacket['t']]
+                        
+                    for i in range(maxlen): # Loop over the longest length, this is typically one 
+                        print('i',i,maxlen)
+                        try:
+                            timepacket = timepackets[i]
+                        except:
+                            timepacket = timepackets[-1]
+                        
+                        
+                        timepacketd = datetime.datetime.fromtimestamp(timepacket)
+                        tstr = datetime.datetime.strftime(timepacketd,"%y-%m-%d %H:%M:%S.%f")    
+                        datastr_time = '{:s}{:s}{:f}{:s}{:d}'.format(tstr,separator,timepacket,separator,datapacket['numpacket'])
+                        datastr = datastr_time
+                        for datastream in datastreams:
+                            print('datas',datastream,data)
+                            try:
+                                data = data_save[datastream][i]
+                            except:
+                                data = ''
                             
-                    else:
-                        data_save.append('')
-                
-                
-                datastr = '{:s}{:s}{:f}{:s}{:d}'.format(tstr,separator,datapacket['t'],separator,datapacket['numpacket'])
-                for datastream,data in data_save:
-                    datastr += separator
-                    if(data == ''):
-                        pass
-                    else:
-                        dataformat = formats[datastream]
-                        dataformat = '{:' + dataformat + '}' # Add the python specific brackets
-                        print('data',datastream,data,dataformat)
-                        try: 
-                            datastr += dataformat.format(data)
-                        except Exception as e:
-                            logger.warning(funcname + ': Invalid format ({:s}) for data {:s}'.format(dataformat,str(data)))  
-                
-                
-                datastr += '\n'
-                        
-                        
-                #print('Datastr',data_save)                          
-                print('Datastr',datastr)                          
+                            datastr += separator
+                            if(data == ''):
+                                pass
+                            else:
+                                dataformat = formats[datastream]
+                                dataformat = '{:' + dataformat + '}' # Add the python specific brackets
+                                print('data hallo',datastream,data,dataformat)
+                                try: 
+                                    datastr += dataformat.format(data)
+                                except Exception as e:
+                                    logger.warning(funcname + ': Invalid format ({:s}) for data {:s}'.format(dataformat,str(data)))  
                     
-                bytes_written += len(datastr)
-                packets_written += 1
-                f.write(datastr)
+                
+                        datastr += '\n'
+                        print('Datastr',datastr)                          
+                        bytes_written += len(datastr)
+                        packets_written += 1
+                        f.write(datastr)
+                        
                 if((time.time() - tflush) > config['dt_sync']):
                     f.flush()
                     os.fsync(f.fileno())
