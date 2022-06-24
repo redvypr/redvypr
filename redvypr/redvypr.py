@@ -643,7 +643,7 @@ class redvypr(QtCore.QObject):
                         logger.debug(funcname + ': NA logger module loglevel {:s}'.format(str(e)))
                         
                     # Link the statistics directly into the device as well    
-                    device.statistics = devicedict['statistics'] 
+                    device.statistics = statistics 
                     
                     # Add lists of receiving and providing devicenames
                     device.data_receiver = []

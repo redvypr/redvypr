@@ -53,11 +53,11 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
         try:
             dtneworig  = config['dt_newfile']
             dtunit     = config['dt_newfile_unit']
-            if(dtunit.lower() == 'second'):
+            if(dtunit.lower() == 'seconds'):
                 dtfac = 1.0
-            elif(dtunit.lower() == 'hour'):
+            elif(dtunit.lower() == 'hours'):
                 dtfac = 3600.0
-            elif(dtunit.lower() == 'day'):
+            elif(dtunit.lower() == 'days'):
                 dtfac = 86400.0
             else:
                 dtfac = 0
@@ -257,12 +257,14 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.size_newfile.setText('0')
             
         self.newfiletimecombo = QtWidgets.QComboBox()
-        self.newfiletimecombo.addItem('second')
-        self.newfiletimecombo.addItem('hour')
-        self.newfiletimecombo.addItem('day')
-        self.newfiletimecombo.setCurrentIndex(0)
+        self.newfiletimecombo.addItem('None')
+        self.newfiletimecombo.addItem('seconds')
+        self.newfiletimecombo.addItem('hours')
+        self.newfiletimecombo.addItem('days')
+        self.newfiletimecombo.setCurrentIndex(1)
             
         self.newfilesizecombo = QtWidgets.QComboBox()
+        self.newfilesizecombo.addItem('None')
         self.newfilesizecombo.addItem('Bytes')
         self.newfilesizecombo.addItem('kB')
         self.newfilesizecombo.addItem('MB')

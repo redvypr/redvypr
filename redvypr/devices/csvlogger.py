@@ -352,7 +352,6 @@ class initDeviceWidget(QtWidgets.QWidget):
     connect      = QtCore.pyqtSignal(Device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
-        layout        = QtWidgets.QGridLayout(self)
         self.device   = device
         self.redvypr  = device.redvypr
         self.label    = QtWidgets.QLabel("CSV-Logger setup")
@@ -360,7 +359,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.label.setStyleSheet(''' font-size: 24px; font: bold''')
         self.config_widgets = [] # A list of all widgets that can only be used of the device is not started yet
         # The output tree widget
-        self.outfilebutton = QtWidgets.QPushButton("Logfile")
+        self.outfilebutton = QtWidgets.QPushButton("Choose file")
         self.outfilebutton.clicked.connect(self.get_filename)
         self.outfilename = QtWidgets.QLineEdit()
         self.config_widgets.append(self.outfilebutton)
@@ -383,12 +382,70 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.startbtn = QtWidgets.QPushButton("Write CSV-File")
         self.startbtn.clicked.connect(self.start_clicked)
         self.startbtn.setCheckable(True)
-
-        layout.addWidget(self.label,0,0)  
-        layout.addWidget(self.outfilebutton,1,0)
-        layout.addWidget(self.outfilename,2,0)
-        layout.addWidget(self.datastreamwidget,3,0)
-        layout.addWidget(self.startbtn,5,0)
+        
+        # New file choice
+        # Delta t for new file
+        edit = QtWidgets.QLineEdit()
+        onlyInt = QtGui.QIntValidator()
+        edit.setValidator(onlyInt)
+        self.dt_newfile = edit
+        self.dt_newfile.setToolTip('Create a new file every N seconds.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
+        try:
+            self.dt_newfile.setText(str(self.device.config['dt_newfile']))
+        except Exception as e:
+            self.dt_newfile.setText('0')
+            
+        # Delta t for new file
+        edit = QtWidgets.QLineEdit()
+        onlyInt = QtGui.QIntValidator()
+        edit.setValidator(onlyInt)
+        self.size_newfile = edit
+        self.size_newfile.setToolTip('Create a new file every N bytes.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
+        try:
+            self.size_newfile.setText(str(self.device.config['size_newfile']))
+        except Exception as e:
+            self.size_newfile.setText('0')
+            
+        self.newfiletimecombo = QtWidgets.QComboBox()
+        self.newfiletimecombo.addItem('None')
+        self.newfiletimecombo.addItem('seconds')
+        self.newfiletimecombo.addItem('hours')
+        self.newfiletimecombo.addItem('days')
+        self.newfiletimecombo.setCurrentIndex(1)
+        
+        self.newfilesizecombo = QtWidgets.QComboBox()
+        self.newfilesizecombo.addItem('None')
+        self.newfilesizecombo.addItem('Bytes')
+        self.newfilesizecombo.addItem('kB')
+        self.newfilesizecombo.addItem('MB')
+        self.newfilesizecombo.setCurrentIndex(2)
+        
+        sizelabel = QtWidgets.QLabel('New file after')
+        
+        # Filename layout
+        self.filenamewidget = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(self.filenamewidget)
+        layout.addWidget(self.outfilename)
+        layout.addWidget(self.outfilebutton)
+        
+        # File change layout
+        self.newfilewidget = QtWidgets.QWidget() 
+        layout = QtWidgets.QHBoxLayout(self.newfilewidget)
+        #layout.addWidget(sizelabel)
+        layout.addWidget(self.dt_newfile)
+        layout.addWidget(self.newfiletimecombo)
+        layout.addWidget(self.size_newfile)
+        layout.addWidget(self.newfilesizecombo)
+        
+        # The full layout
+        layout = QtWidgets.QGridLayout(self)
+        layout.addWidget(self.label,0,0,1,-1)  
+        layout.addWidget(QtWidgets.QLabel('Filename'),1,0)
+        layout.addWidget(self.filenamewidget,1,1,1,-1)
+        layout.addWidget(sizelabel,2,0)
+        layout.addWidget(self.newfilewidget,2,1,1,-1)
+        layout.addWidget(self.datastreamwidget,3,0,1,-1)
+        layout.addWidget(self.startbtn,5,0,1,-1)
         
         self.update_datastreamwidget()
         self.redvypr.device_added.connect(self.update_datastreamwidget)
