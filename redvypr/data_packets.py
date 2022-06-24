@@ -9,14 +9,27 @@ logger.setLevel(logging.DEBUG)
 
 def create_data_statistic_dict():
     statdict = {}
-    statdict['inspect']    = True
-    statdict['numpackets'] = 0
-    statdict['datakeys']   = []
-    statdict['devicekeys'] = {}
-    statdict['devices']    = []
-    statdict['datastreams']= []
+    statdict['inspect']         = True
+    statdict['numpackets']      = 0
+    statdict['datakeys']        = []
+    statdict['devicekeys']      = {}
+    statdict['devices']         = []
+    statdict['datastreams']     = []
+    statdict['datastreams_info']= {}
     return statdict
 
+def do_data_statistics_deep(datapacket, statdict):
+    """
+    """
+    datastreams_stat        = get_datastreams_from_data(datapacket,uuid=True)
+    for datastream in datastreams_stat:
+        if(datastream[0] == '?'):
+            datastream_info = datastream[1:] # The datastream for the info
+            data_info       = get_data(datastream,datapacket)
+            statdict['datastreams_info'][datastream_info] = data_info
+    
+    return statdict
+            
 def do_data_statistics(data, statdict):
     """
     Fills in the statistics dictionary with the data packet information
@@ -31,15 +44,15 @@ def do_data_statistics(data, statdict):
     # be different from the transporting device,
     # i.e. network devices do not change the name
     # of the transporting dictionary
-    devicename_stat  = get_devicename_from_data(data,uuid=True)
+    devicename_stat = get_devicename_from_data(data,uuid=True)
     try:
         statdict['devicekeys'][devicename_stat]
     except:
         statdict['devicekeys'][devicename_stat] = []
         
     statdict['devicekeys'][devicename_stat] = list(set(statdict['devicekeys'][devicename_stat] + list(data.keys())))
-    statdict['devices'] = list(set(statdict['devices'] + [devicename_stat]))
-    datastreams_stat = get_datastreams_from_data(data,uuid=True)
+    statdict['devices']     = list(set(statdict['devices'] + [devicename_stat]))
+    datastreams_stat        = get_datastreams_from_data(data,uuid=True)
     statdict['datastreams'] = list(set(statdict['datastreams'] + datastreams_stat))
     return statdict
 
@@ -331,12 +344,12 @@ def compare_datastreams(datastream1, datastream2,hostinfo=None):
         uuidflag    = (d1_parsed['uuid']        == d2_parsed['uuid'])       or d1_parsed['uuidexpand']    or d2_parsed['uuidexpand']
         localflag   = d1_parsed['local'] and d2_parsed['local']
         
-        print('Datakeyflag',datakeyflag)
-        print('Deviceflag',deviceflag)
-        print('Hostflag',hostflag)
-        print('addr',addrflag)
-        print('uuidflag',uuidflag)
-        print('localflag',localflag)
+        #print('Datakeyflag',datakeyflag)
+        #print('Deviceflag',deviceflag)
+        #print('Hostflag',hostflag)
+        #print('addr',addrflag)
+        #print('uuidflag',uuidflag)
+        #print('localflag',localflag)
         
         #matchflag1  = datakeyflag and deviceflag and hostflag and addrflag
         #matchflag2 = datakeyflag  and deviceflag and uuidflag

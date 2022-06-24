@@ -5,6 +5,8 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import time
 import numpy as np
 import sys
+from redvypr.device import redvypr_device
+
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('randdata')
@@ -12,33 +14,25 @@ logger.setLevel(logging.DEBUG)
 
 description = 'Publishes random data.'
 
-class Device():
-    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config=None):
+class Device(redvypr_device):
+    def __init__(self,**kwargs):
         """
         """
-        self.publish     = True # publishes data, a typical device is doing this
-        self.subscribe   = False  # subscribing data, a typical datalogger is doing this
-        self.datainqueue = datainqueue
-        self.dataqueue   = dataqueue        
-        self.comqueue    = comqueue
-        if(config == None):
+        super(Device, self).__init__(**kwargs)
+        self.publish     = True
+        self.subscribe   = False
+        self.description = 'randdata'
+        self.set_apriori_datakeys(['t','data','?data'])
+        self.set_apriori_datakey_info(datakey='data',unit='Urand',datatype='d')
+        if False:#(config == None):
             config = {'dt':0.5,'functions':[]}
             function = {'name':'rand','range':[0,5]}
             config['functions'].append(function)
             function = {'name':'sin','amp':10,'f':0.3,'phase':0.0}
             config['functions'].append(function)
-        self.config      = config
+            
+            self.config      = config
 
-
-        self.logger = logging.getLogger('randdata')
-        self.logger.setLevel(logging.INFO)
-        
-    def get_datakeys(self):
-        """ Returns a list of datakey that the device has in their data dictionary
-        """
-        return ['t','data','?data']
-
-        
     def start(self):
         # This is bad, as the logger is in a different thread
         self.logger.info('Starting randdata with dt {:f}'.format(self.config['dt']))
@@ -107,16 +101,12 @@ class Device():
             if(n==1):
                 tall = tall[0]
                 xall = xall[0]
-            data = {'t':tall,'data':xall,'?data':{'unit':data_unit,'type':'f'}}
+            data = {'t':tall,'data':xall,'?data':{'unit':data_unit,'datatype':'d'}}
             #print('data',data)
             self.dataqueue.put(data)
             tend = time.time()
             # Sleep 'dt' minus the time needed for processing
             #time.sleep(self.config['dt']- (tend-t))
-            
-    def __str__(self):
-        sstr = 'Random data device'
-        return sstr
 
 
 

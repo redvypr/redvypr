@@ -11,7 +11,8 @@ import yaml
 import copy
 import os
 from redvypr.device import redvypr_device
-from redvypr.data_packets import get_data, device_in_data
+from redvypr.data_packets import get_data, device_in_data, compare_datastreams
+import redvypr.version
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('csvlogger')
@@ -31,20 +32,64 @@ def create_logfile(config):
     if True:
         try:
             f = open(filename,'w+')
-            logger.debug(funcname + 'Opened file: {:s}'.format(filename))
+            logger.debug(funcname + ': Opened file: {:s}'.format(filename))
         except Exception as e:
             logger.warning(funcname + ': Error opening file:' + filename + ':' + str(e))
             return None
         
         datastreams = config['datastreams']
-        separator = config['separator']
+        separator   = config['separator']
+        try:
+            commentchar = config['commentchar']
+        except:
+            commentchar = '#'
+        
         # Write header
+        tstr = datetime.datetime.strftime(datetime.datetime.now(),"%y-%m-%d %H:%M:%S.%f")
+        firstline = '{:s}redvypr ({:s}) csv file created on {:s}\n'.format(commentchar,redvypr.version,tstr)
+        f.write(firstline)
+        # The devices
+        f.write(commentchar + 'datastreams\n')
         headerstr = 'time' + separator + 'time' + separator + 'numpacket'
         for datastream in datastreams:
             headerstr += separator + datastream 
          
         headerstr += '\n'
-        f.write(headerstr)   
+        f.write(headerstr)
+        
+        # The units
+        f.write(commentchar + 'units\n')
+        unitstr = 'yyyy-mm-dd HH:MM:SS' + separator + 'seconds since 1970-01-01 00:00:00' + separator + '#'
+        for datastream in datastreams:
+            try:
+                unit = config['datastreams_info'][datastream]['unit']
+            except:
+                unit = ''
+        
+            unitstr += separator + unit
+         
+        unitstr += '\n'
+        f.write(unitstr)
+        
+        headerkeys = ['latlon','location','sensortype','serialnumber','comment']
+        # latlon
+        for headerkey in headerkeys:
+            f.write(commentchar + headerkey + '\n')
+            headerstr = '' + separator + '' + separator + '' # Here could be the data of the device
+            for datastream in datastreams:
+                try:
+                    headerdata = config['datastreams_info'][datastream][headerkey]
+                except:
+                    headerdata = ''
+            
+                headerstr += separator + headerdata
+             
+            headerstr += '\n'
+            f.write(headerstr)
+        
+        # Syncing the header
+        f.flush()
+        os.fsync(f.fileno())
        
     return [f,filename]
 
@@ -79,14 +124,13 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
         return None
     
     try:
-        config['datastreams_format'] 
+        config['datastreams_info']['format'] 
     except:
         f0 = 'f'
-        config['datastreams_format'] = {}
+        config['datastreams_info']['format'] = {}
         for stream in datastreams:
-            config['datastreams_format'][stream] = f0
+            config['datastreams_info'][stream]['format'] = f0
             
-    formats = config['datastreams_format'] 
     
     [f,filename] = create_logfile(config)
     if(f == None):
@@ -138,7 +182,7 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
     while True:
         tcheck = time.time()
         file_age      = tcheck - tfile
-        FLAG_TIME = (dtnews > 0)  and (file_age >= dtnews)
+        FLAG_TIME = (dtnews > 0)  and  (file_age >= dtnews)
         FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
         if(FLAG_TIME or FLAG_SIZE):
             f.close()
@@ -154,8 +198,9 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
             # Closing all open files
             try:
                 f.close()
+                logger.info(funcname + ': File closed:' + str(filename))
             except Exception as e:
-                logger.debug(funcname + ': could not close:' + str(f))
+                logger.debug(funcname + ': could not close:' + str(filename))
                 
             break
         except Exception as e:
@@ -173,7 +218,9 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
                 data_save = {}
                 maxlen = 0
                 FLAG_save_packet = False
+                print('data1')
                 for datastream in datastreams:
+                    print('datastream1',datastream)
                     if(device_in_data(datastream, datapacket)):
                         FLAG_save_packet = True
                         data     = get_data(datastream,datapacket)
@@ -193,13 +240,16 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
                                 
                             data_save[datastream] = data
                         
-                        print('data',data)    
+                        print('data hallo',data)    
                         maxlen = max(maxlen,len(data))
-                        
+                
+                # If we have datastreams found to be saved, then write it to the file        
                 if(FLAG_save_packet):
+                    print('Saving data')
                     # Make the time iterable (if its not already)
                     try:
                         iterator = iter(datapacket['t'])
+                        timepackets = datapacket['t']
                     except TypeError:
                         # not iterable
                         timepackets = [datapacket['t']]
@@ -217,17 +267,21 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
                         datastr_time = '{:s}{:s}{:f}{:s}{:d}'.format(tstr,separator,timepacket,separator,datapacket['numpacket'])
                         datastr = datastr_time
                         for datastream in datastreams:
-                            print('datas',datastream,data)
+                            print('Datastream 10',datastream)
                             try:
                                 data = data_save[datastream][i]
                             except:
                                 data = ''
+                                
+                            print('datas',datastream,data)
                             
                             datastr += separator
                             if(data == ''):
                                 pass
                             else:
-                                dataformat = formats[datastream]
+
+                                dataformat = config['datastreams_info'][datastream]['format']
+                                print('dataformat',dataformat)     
                                 dataformat = '{:' + dataformat + '}' # Add the python specific brackets
                                 print('data hallo',datastream,data,dataformat)
                                 try: 
@@ -258,17 +312,18 @@ class Device(redvypr_device):
         super(Device, self).__init__(**kwargs)
         self.publish     = False
         self.subscribe   = True
+        self.description = 'csvlogger'
         try:
             self.config['datastreams']
         except:
             self.config['datastreams'] = set()
             
-            
-            
         try:
-            self.config['datastreams_format']
+            self.config['datastreams_info']
         except:
-            self.config['datastreams_format'] = {}
+            self.config['datastreams_info'] = {}
+            
+         
             
             
     def start(self):
@@ -280,9 +335,7 @@ class Device(redvypr_device):
 
         start(self.datainqueue,self.dataqueue,self.comqueue,config=config)
         
-    def __str__(self):
-        sstr = 'csvlogger'
-        return sstr
+
 
 
 
@@ -322,10 +375,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         
         self.create_datasteamwidget()
         
+        self.__infodict__ = {'format':'','unit':''}
+        
         # The rest
         #self.conbtn = QtWidgets.QPushButton("Connect logger to devices")
         #self.conbtn.clicked.connect(self.con_clicked)        
-        self.startbtn = QtWidgets.QPushButton("Start logging")
+        self.startbtn = QtWidgets.QPushButton("Write CSV-File")
         self.startbtn.clicked.connect(self.start_clicked)
         self.startbtn.setCheckable(True)
 
@@ -349,7 +404,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         """
         self.datastreamwidget = QtWidgets.QWidget()
-        self.datastreamwidget_layout = QtWidgets.QGridLayout(self.datastreamwidget)
         self.addallbtn = QtWidgets.QPushButton('Add all')
         self.addallbtn.clicked.connect(self.addremstream)
         self.remallbtn = QtWidgets.QPushButton('Rem all')
@@ -365,7 +419,15 @@ class initDeviceWidget(QtWidgets.QWidget):
         # Datastreams
         self.datastreamlist_all = QtWidgets.QListWidget()
         self.datastreamlist_choosen = QtWidgets.QTableWidget()
-        self.datastreamlist_choosen.setColumnCount(2)
+        self.__listlabel__        = ['Datastream','Dataformat','Unit','LatLon','Location','Serialnumber','Sensortype','Comment']
+        self.__ind_format__       = 1
+        self.__ind_unit__         = 2
+        self.__ind_latlon__       = 3
+        self.__ind_location__     = 4
+        self.__ind_serialnumber__ = 5
+        self.__ind_sensortype__   = 6
+        self.__ind_comment__      = 7
+        self.datastreamlist_choosen.setColumnCount(len(self.__listlabel__))
         self.datastreamlist_choosen.itemChanged.connect(self.__table_choosen_changed__)
         
         self.config_widgets.append(self.datastreamlist_all) 
@@ -375,14 +437,48 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.config_widgets.append(self.remallbtn) 
         self.config_widgets.append(self.addallbtn) 
         
-        self.datastreamwidget_layout.addWidget(QtWidgets.QLabel('Available Datastreams'),0,0,1,2)
-        self.datastreamwidget_layout.addWidget(self.datastreamlist_all,1,0,6,2)
-        self.datastreamwidget_layout.addWidget(self.arrleft,5,2)
-        self.datastreamwidget_layout.addWidget(self.remallbtn,4,2)
-        self.datastreamwidget_layout.addWidget(self.addallbtn,3,2)
-        self.datastreamwidget_layout.addWidget(self.arrright,2,2)
-        self.datastreamwidget_layout.addWidget(QtWidgets.QLabel('Datastreams to log'),0,3,1,2)
-        self.datastreamwidget_layout.addWidget(self.datastreamlist_choosen,1,3,6,2)
+        if False:
+            self.datastreamwidget_layout = QtWidgets.QGridLayout(self.datastreamwidget)
+            self.datastreamwidget_layout.addWidget(QtWidgets.QLabel('Available Datastreams'),0,0,1,2)
+            self.datastreamwidget_layout.addWidget(self.datastreamlist_all,1,0,6,2)
+            self.datastreamwidget_layout.addWidget(self.arrleft,5,2)
+            #self.datastreamwidget_layout.addWidget(self.remallbtn,4,2)
+            #self.datastreamwidget_layout.addWidget(self.addallbtn,3,2)
+            self.datastreamwidget_layout.addWidget(self.arrright,2,2)
+            self.datastreamwidget_layout.addWidget(QtWidgets.QLabel('Datastreams to log'),0,3,1,2)
+            self.datastreamwidget_layout.addWidget(self.datastreamlist_choosen,1,3,6,2)
+        if True:
+            self.datastreamwidget_layout = QtWidgets.QHBoxLayout(self.datastreamwidget)
+            # all datastreams
+            layout = QtWidgets.QVBoxLayout()
+            layout.addWidget(QtWidgets.QLabel('Available Datastreams'))
+            layout.addWidget(self.datastreamlist_all)
+            self.datastreamwidget_layout.addLayout(layout, stretch=1)
+            #buttons
+            layout = QtWidgets.QVBoxLayout()
+            layout.addStretch()
+            layout.addWidget(self.arrleft)
+            layout.addWidget(self.remallbtn)
+            layout.addWidget(self.addallbtn)
+            layout.addWidget(self.arrright)
+            layout.addStretch()
+            self.datastreamwidget_layout.addLayout(layout)
+            # The choosen datastreams
+            layout = QtWidgets.QVBoxLayout()
+            layout.addWidget(QtWidgets.QLabel('Datastreams to log'))
+            layout.addWidget(self.datastreamlist_choosen)
+            self.datastreamwidget_layout.addLayout(layout, stretch=2)
+        if False:
+            self.datastreamwidget_layout.addWidget(QtWidgets.QLabel('Available Datastreams'),0,0,1,4)
+            self.datastreamwidget_layout.addWidget(self.datastreamlist_all,1,0,1,4)
+            
+            self.datastreamwidget_layout.addWidget(self.arrleft,2,0)
+            self.datastreamwidget_layout.addWidget(self.remallbtn,2,1)
+            self.datastreamwidget_layout.addWidget(self.addallbtn,2,2)
+            self.datastreamwidget_layout.addWidget(self.arrright,2,3)
+            
+            self.datastreamwidget_layout.addWidget(QtWidgets.QLabel('Datastreams to log'),3,0,1,4)
+            self.datastreamwidget_layout.addWidget(self.datastreamlist_choosen,4,0,1,4)
         
         
     def __table_choosen_changed__(self, item):
@@ -390,12 +486,50 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         row = item.row()
         column = item.column()
-        if column == 1:
+        if column == self.__ind_format__:
             datastream = self.datastreamlist_choosen.item(row,0).text()
-            dformat    = self.datastreamlist_choosen.item(row,1).text()
-            print("Column 1 changed",datastream,dformat)
-            self.device.config['datastreams_format'][datastream] = dformat
-            print(self.device.config['datastreams_format'])
+            dformat    = self.datastreamlist_choosen.item(row,self.__ind_format__).text()
+            print("Format changed",datastream,dformat)
+            self.device.config['datastreams_info'][datastream]['format'] = dformat
+            print(self.device.config['datastreams_info'])
+        elif column == self.__ind_unit__:
+            datastream = self.datastreamlist_choosen.item(row,0).text()
+            dunit      = self.datastreamlist_choosen.item(row,self.__ind_unit__).text()
+            print("Unit changed",datastream,dunit)
+            self.device.config['datastreams_info'][datastream]['unit'] = dunit
+            print(self.device.config['datastreams_info'])
+        elif column == self.__ind_latlon__:
+            datastream = self.datastreamlist_choosen.item(row,0).text()
+            ddata      = self.datastreamlist_choosen.item(row,self.__ind_latlon__).text()
+            print("latlon changed",datastream,ddata)
+            self.device.config['datastreams_info'][datastream]['latlon'] = ddata
+            print(self.device.config['datastreams_info'])
+        elif column == self.__ind_location__:
+            datastream = self.datastreamlist_choosen.item(row,0).text()
+            ddata      = self.datastreamlist_choosen.item(row,self.__ind_location__).text()
+            print("location changed",datastream,ddata)
+            self.device.config['datastreams_info'][datastream]['location'] = ddata
+            print(self.device.config['datastreams_info'])
+        elif column == self.__ind_serialnumber__:
+            datastream = self.datastreamlist_choosen.item(row,0).text()
+            ddata      = self.datastreamlist_choosen.item(row,self.__ind_serialnumber__).text()
+            print("serialnum changed",datastream,ddata)
+            self.device.config['datastreams_info'][datastream]['serialnumber'] = ddata
+            print(self.device.config['datastreams_info'])
+        elif column == self.__ind_sensortype__:
+            datastream = self.datastreamlist_choosen.item(row,0).text()
+            ddata      = self.datastreamlist_choosen.item(row,self.__ind_sensortype__).text()
+            print("sensortype changed",datastream,ddata)
+            self.device.config['datastreams_info'][datastream]['sensortype'] = ddata
+            print(self.device.config['datastreams_info'])    
+        elif column == self.__ind_comment__:
+            datastream = self.datastreamlist_choosen.item(row,0).text()
+            ddata      = self.datastreamlist_choosen.item(row,self.__ind_comment__).text()
+            print("Comment changed",datastream,ddata)
+            self.device.config['datastreams_info'][datastream]['comment'] = ddata
+            print(self.device.config['datastreams_info'])
+            
+            
         
             
     def addremstream(self):
@@ -409,14 +543,21 @@ class initDeviceWidget(QtWidgets.QWidget):
                 stream = streamitem.text()
                 print('stream',stream)
                 self.device.config['datastreams'].add(stream)
-                self.device.subscribe_datastream(stream)
+                self.device.subscribe_datastream(stream)                
+                try:
+                    self.device.config['datastreams_info'][stream]
+                except:
+                    self.device.config['datastreams_info'][stream] = copy.deepcopy(self.__infodict__)   
                 
         elif(button == self.addallbtn): # Add all
             for i in range(self.datastreamlist_all.count()):
                 stream = self.datastreamlist_all.item(i).text()
                 self.device.config['datastreams'].add(stream)
                 self.device.subscribe_datastream(stream)
-                
+                try:
+                    self.device.config['datastreams_info'][stream]
+                except:
+                    self.device.config['datastreams_info'][stream] = copy.deepcopy(self.__infodict__)
             
                 
         elif(button == self.remallbtn): # Rem all            
@@ -444,7 +585,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         datastreams = self.redvypr.get_datastreams()
         self.datastreamlist_all.clear()
         self.datastreamlist_choosen.clear()
-        self.datastreamlist_choosen.setHorizontalHeaderLabels(['Datastream','Format'])
+        self.datastreamlist_choosen.setHorizontalHeaderLabels(self.__listlabel__)
         for d in datastreams:
             dshort = d.split('::')[0]
             if(dshort[0] != '?'):
@@ -454,14 +595,38 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.datastreamlist_choosen.setRowCount(len(datastreams_subscribed))
         for i,d in enumerate(datastreams_subscribed):
             item = QtWidgets.QTableWidgetItem(d)
+            # The format of the string to be written
             try:
-                dformat = self.device.config['datastreams_format'][d]
+                dformat = self.device.config['datastreams_info'][d]['format']
             except:
                 dformat = 'f'  
-            
+                
             formatitem = QtWidgets.QTableWidgetItem(dformat)
+            try:
+                dunit = self.device.config['datastreams_info'][d]['unit']
+            except:
+                dunit = ''
+                
+            # Get the unit from the statistics
+            try:
+                datastream_info = self.redvypr.get_datastream_info(d)
+                dunit_stat = datastream_info['unit']
+            except Exception as e:
+                print('unit stat',e)
+                dunit_stat = ''
+                
+            if(dunit == ''):
+                print('Replacing with dunit_stat')
+                dunit = dunit_stat
+            
+            unititem = QtWidgets.QTableWidgetItem(dunit)
+            
+            
+            
             self.datastreamlist_choosen.setItem(i,0,item)
-            self.datastreamlist_choosen.setItem(i,1,formatitem)
+            self.datastreamlist_choosen.setItem(i,self.__ind_format__,formatitem)
+            self.datastreamlist_choosen.setItem(i,self.__ind_unit__,unititem)
+            
         self.datastreamlist_choosen.resizeColumnsToContents()
         
     def get_filename(self):
@@ -492,7 +657,6 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.device_stop.emit(self.device)
 
     def thread_status(self,status):
-        self.update_device_list()
         self.update_buttons(status['threadalive'])
         
     def update_buttons(self,thread_status):
@@ -500,13 +664,13 @@ class initDeviceWidget(QtWidgets.QWidget):
             """
             # Running
             if(thread_status):
-                self.startbtn.setText('Stop')
+                self.startbtn.setText('Stop writing CSV-File')
                 self.startbtn.setChecked(True)
                 for w in self.config_widgets:
                     w.setEnabled(False)
             # Not running
             else:
-                self.startbtn.setText('Start')
+                self.startbtn.setText('Write CSV-File')
                 for w in self.config_widgets:
                     w.setEnabled(True)
                     

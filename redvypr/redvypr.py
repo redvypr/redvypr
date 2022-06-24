@@ -27,7 +27,7 @@ from pyqtconsole.highlighter import format
 # Import redvypr specific stuff
 
 import redvypr.devices as redvyprdevices
-from redvypr.data_packets import device_in_data, get_devicename_from_data, get_datastreams_from_data, parse_devicestring, do_data_statistics, create_data_statistic_dict
+import redvypr.data_packets as data_packets
 from redvypr.gui import redvyprConnectWidget,QPlainTextEditLogger,displayDeviceWidget_standard,deviceinfoWidget,redvypr_devicelist_widget
 from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices
 from redvypr.version import version
@@ -118,7 +118,9 @@ def distribute_data(devices,infoqueue,dt=0.01):
 
                 try:
                     if devicedict['statistics']['inspect']:
-                        devicedict['statistics'] = do_data_statistics(data,devicedict['statistics'])
+                        devicedict['statistics'] = data_packets.do_data_statistics(data,devicedict['statistics'])
+                        # Do a more detailed inspection for the datakey informations. This could be done less often if it turns out to be expensive
+                        devicedict['statistics'] = data_packets.do_data_statistics_deep(data,devicedict['statistics'])
                 except Exception as e:
                     logger.debug(funcname + ':Statistics:' + str(e))
 
@@ -571,14 +573,15 @@ class redvypr(QtCore.QObject):
                 print('Signature',sig)
                 if(type(devicemodule.Device) == redvypr_device):
                     print('This is a redvypr_device')
-                    
+                
+                statistics = data_packets.create_data_statistic_dict()    
                  # Device do not necessarily have a statusqueue
                 try:
                     print('New style device')
                     name = deviceconfig['config'].pop('name')
                     loglevel = deviceconfig['config'].pop('loglevel')
                     print('Name',name)
-                    device               = devicemodule.Device(name = name, redvypr = self, dataqueue= dataqueue,comqueue = comqueue,datainqueue = datainqueue,statusqueue = statusqueue, loglevel = loglevel,numdevice = self.numdevice)
+                    device               = devicemodule.Device(name = name, redvypr = self, dataqueue= dataqueue,comqueue = comqueue,datainqueue = datainqueue,statusqueue = statusqueue, loglevel = loglevel,numdevice = self.numdevice, statistics = statistics)
                     self.numdevice      += 1  
                     FLAG_DEVICE_OLDSTYLE = False
                     # If the device has a logger
@@ -639,49 +642,36 @@ class redvypr(QtCore.QObject):
                     except Exception as e:            
                         logger.debug(funcname + ': NA logger module loglevel {:s}'.format(str(e)))
                         
-                        
+                    # Link the statistics directly into the device as well    
+                    device.statistics = devicedict['statistics'] 
+                    
+                    # Add lists of receiving and providing devicenames
+                    device.data_receiver = []
+                    device.data_provider = []        
                       
                 if thread: # Thread or multiprocess        
                     device.mp = 'thread'
                 else:
                     device.mp = 'multiprocessing'
         
-                # Add lists of receiving and providing devicenames
-                device.data_receiver = []
-                device.data_provider = []        
+                   
                 
-                statistics = create_data_statistic_dict()
                 devicedict = {'device':device,'thread':None,'dataout':[],'gui':[],'guiqueue':[guiqueue],'statistics':statistics,'logger':devicelogger}
                 # Add some statistics
                 devicedict['numpacket'] = 0
                 devicedict['numpacketout'] = 0        
-                # The displaywidget, to be filled by redvyprWidget.add_device (optional)
+                # The displaywcreate_idget, to be filled by redvyprWidget.add_device (optional)
                 devicedict['devicedisplaywidget'] = None
                 
                 
                 device = devicedict['device']
                 
                 
-                # Link the statistics directly into the device as well    
-                device.statistics = devicedict['statistics']
-                # Add a priori datakeys to the statistics, of the device supports it
-                try:
-                    datakeys = device.get_datakeys()
-                    logger.debug(funcname + 'Adding datakeys received from .get_datakeys(): {:s}'.format(str(datakeys)))
-                except Exception as e:
-                    logger.debug(funcname + 'Device does not have .get_datakeys()')
-                    datakeys = []
+                
+                
+                # Add a priori datakeys to the statistics, if the device supports it
+                self.update_statistics_from_apriori_datakeys(device)
                     
-                device.statistics['datakeys'] = list(set(datakeys))
-                if(len(device.statistics['datakeys'])>0): 
-                    # Add also the datastreams
-                    for dkey in datakeys:
-                        dstream = self.construct_datastream_from_device_datakey(dkey, device)
-                        device.statistics['datastreams'].append(dstream)
-                    
-                    device.statistics['datastreams'] = list(set(device.statistics['datastreams']))
-                    
-                # TODO, change that to datastreams
                 # Check if the device wants a direct start after initialization
                 try:
                     autostart = device.autostart
@@ -717,7 +707,37 @@ class redvypr(QtCore.QObject):
             logger.warning(funcname + ': Could not add device (not found): {:s}'.format(str(devicemodulename)))
            
         return devicelist
-
+    
+    def update_statistics_from_apriori_datakeys(self,device):
+        """
+        """
+        funcname = self.__class__.__name__ + '.update_statistics_from_apriori_datakeys():'
+        logger.debug(funcname)
+        print('device',device)
+        # Add a priori datakeys to the statistics, if the device supports it
+        try:
+            datakeys = device.get_apriori_datakeys()
+            logger.debug(funcname + 'Adding datakeys received from .get_datakeys(): {:s}'.format(str(datakeys)))
+        except Exception as e:
+            logger.debug(funcname + 'Device does not have .get_apriori_datakeys(): {:s}'.format(str(e)))
+            datakeys = []
+            
+        device.statistics['datakeys'] = list(set(datakeys))
+        if(len(device.statistics['datakeys'])>0): 
+            # Add also the datastreams
+            for dkey in datakeys:
+                dstream = self.construct_datastream_from_device_datakey(dkey, device)
+                try:
+                    info = device.get_apriori_datakey_info(dkey)
+                    device.statistics['datastreams_info'][dstream] = info
+                except Exception as e:
+                    pass
+                
+                
+                device.statistics['datastreams'].append(dstream)
+                
+            
+            device.statistics['datastreams'] = list(set(device.statistics['datastreams']))
 
     def start_device_thread(self,device):
         """Functions starts a thread, to process the data (i.e. reading from a device, writing to a file)
@@ -862,7 +882,7 @@ class redvypr(QtCore.QObject):
         Args:
             datakey: str
                 The datakey
-            device: redvypr device
+            device: redvypr_device
                 The redvypr device 
         
         
@@ -901,7 +921,7 @@ class redvypr(QtCore.QObject):
             
         
         """
-        deviceparsed = parse_devicestring(devicestr, local_hostinfo = hostinfo)
+        deviceparsed = data_packets.parse_devicestring(devicestr, local_hostinfo = hostinfo)
         for d in self.devices:
             flag_name     = d['device'].name     == deviceparsed['devicename']
             flag_name     = flag_name or deviceparsed['deviceexpand']
@@ -1053,6 +1073,23 @@ class redvypr(QtCore.QObject):
         datastreamparsed = parse_devicestring(datastream,local_hostinfo=hostinfo)
         for dev in self.devices:
             datastreamlist.extend(dev['statistics']['datastreams'])
+            
+            
+    def get_datastream_info(self,datastream):
+        """ Gets additional information to the datastream, namely the data that is stored in the ?[datakey] dictionary entry
+        """
+        
+        datastreams = self.get_datastreams()
+        datastreaminfo = {}
+        for dev in self.devices:
+            datastreaminfo |= dev['statistics']['datastreams_info']
+            
+        for dstream in datastreaminfo.keys():
+            if(data_packets.compare_datastreams(datastream,dstream)):
+                return datastreaminfo[dstream]
+            
+        return None
+            
         
     
     def get_datastreams(self,device=None,format='uuid'):
