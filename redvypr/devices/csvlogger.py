@@ -362,26 +362,28 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.outfilebutton = QtWidgets.QPushButton("Choose file")
         self.outfilebutton.clicked.connect(self.get_filename)
         self.outfilename = QtWidgets.QLineEdit()
+        
         self.config_widgets.append(self.outfilebutton)
         self.config_widgets.append(self.outfilename)
         try:
             filename = self.device.config['filename']
         except:
             tnow = datetime.datetime.now()
-            filename = tnow.strftime("redvypr_%Y-%m-%d_%H%M%S.csv")
+            filename = tnow.strftime("redvypr_data")
 
         self.outfilename.setText(filename)
+        self.outfilename.editingFinished.connect(self.construct_filename)
         
-        self.create_datasteamwidget()
+        self.outfilename_time = QtWidgets.QLineEdit()
+        self.outfilename_time.setEnabled(False)
         
-        self.__infodict__ = {'format':'','unit':''}
+        self.filenameextcombo = QtWidgets.QComboBox()
+        self.filenameextcombo.addItem('custom')
+        self.filenameextcombo.addItem('csv')
+        self.filenameextcombo.setCurrentIndex(1)
+        self.filenameextcombo.currentIndexChanged.connect(self.__change_fileext__)
+        #self.filenameextcombo.currentTextChanged.connect(self.__change_fileext_text__)
         
-        # The rest
-        #self.conbtn = QtWidgets.QPushButton("Connect logger to devices")
-        #self.conbtn.clicked.connect(self.con_clicked)        
-        self.startbtn = QtWidgets.QPushButton("Write CSV-File")
-        self.startbtn.clicked.connect(self.start_clicked)
-        self.startbtn.setCheckable(True)
         
         # New file choice
         # Delta t for new file
@@ -412,6 +414,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.newfiletimecombo.addItem('hours')
         self.newfiletimecombo.addItem('days')
         self.newfiletimecombo.setCurrentIndex(1)
+        self.newfiletimecombo.currentTextChanged.connect(self.construct_filename)
         
         self.newfilesizecombo = QtWidgets.QComboBox()
         self.newfilesizecombo.addItem('None')
@@ -419,15 +422,17 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.newfilesizecombo.addItem('kB')
         self.newfilesizecombo.addItem('MB')
         self.newfilesizecombo.setCurrentIndex(2)
+        self.newfilesizecombo.currentTextChanged.connect(self.construct_filename)
         
         sizelabel = QtWidgets.QLabel('New file after')
         
         # Filename layout
         self.filenamewidget = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(self.filenamewidget)
-        layout.addWidget(self.outfilename)
         layout.addWidget(self.outfilebutton)
-        
+        layout.addWidget(self.outfilename)
+        layout.addWidget(self.outfilename_time)
+        layout.addWidget(self.filenameextcombo)
         # File change layout
         self.newfilewidget = QtWidgets.QWidget() 
         layout = QtWidgets.QHBoxLayout(self.newfilewidget)
@@ -436,6 +441,19 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.newfiletimecombo)
         layout.addWidget(self.size_newfile)
         layout.addWidget(self.newfilesizecombo)
+        
+         # End new file
+        
+        self.create_datasteamwidget()
+        
+        self.__infodict__ = {'format':'','unit':''}
+        
+        # The rest
+        #self.conbtn = QtWidgets.QPushButton("Connect logger to devices")
+        #self.conbtn.clicked.connect(self.con_clicked)        
+        self.startbtn = QtWidgets.QPushButton("Write CSV-File")
+        self.startbtn.clicked.connect(self.start_clicked)
+        self.startbtn.setCheckable(True)
         
         # The full layout
         layout = QtWidgets.QGridLayout(self)
@@ -447,6 +465,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.datastreamwidget,3,0,1,-1)
         layout.addWidget(self.startbtn,5,0,1,-1)
         
+        self.construct_filename()
         self.update_datastreamwidget()
         self.redvypr.device_added.connect(self.update_datastreamwidget)
         
@@ -536,7 +555,70 @@ class initDeviceWidget(QtWidgets.QWidget):
             
             self.datastreamwidget_layout.addWidget(QtWidgets.QLabel('Datastreams to log'),3,0,1,4)
             self.datastreamwidget_layout.addWidget(self.datastreamlist_choosen,4,0,1,4)
+            
+            
+    def __change_fileext_text__(self):
+        funcname = self.__class__.__name__ + '.__change_fileext_text__():'
+        logger.debug(funcname)
+        self.construct_filename()
         
+    def __change_fileext__(self,itemindex):
+        funcname = self.__class__.__name__ + '.__change_fileext__():'
+        logger.debug(funcname)
+        if(itemindex == 0):
+            self.filenameextcombo.setEditable(True)
+            # getting line edit
+            line = self.filenameextcombo.lineEdit()
+            line.editingFinished.connect(self.__change_fileext_text__)
+        else:
+            self.filenameextcombo.setEditable(False)
+            
+            
+    def get_filename(self):
+        tnow = datetime.datetime.now()
+        filename_suggestion = tnow.strftime("redvypr_%Y-%m-%d_%H%M%S.csv")
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(self,"CSV file",filename_suggestion,"CSV Files (*.csv);;All Files (*)")
+        if filename:
+            (filebase,extension) = os.path.splitext(os.path.basename(filename))
+            extension = extension[1:] # Remove the dot
+            self.outfilename.setText(filebase)
+            # Check if the extension exists
+            count = self.filenameextcombo.count()
+            FLAG_ADD_EXT = True
+            for i in range(count):
+                if(extension == self.filenameextcombo.itemText(i)):
+                    self.filenameextcombo.setCurrentIndex(i)
+                    FLAG_ADD_EXT = False
+                    break
+                
+            if(FLAG_ADD_EXT):
+                self.filenameextcombo.addItem(extension)
+                count = self.filenameextcombo.count()
+                self.filenameextcombo.setCurrentIndex(count-1)
+                
+            # Construct the filename
+            self.construct_filename()
+            
+            
+    def construct_filename(self):
+        funcname = self.__class__.__name__ + '.construct_filename():'
+        combo = self.sender()
+        logger.debug(funcname)
+        
+        filesize = self.newfilesizecombo.currentText()  
+        filetime = self.newfiletimecombo.currentText()
+        #print('text',itemtext,filesize,filetime)
+        if(filesize == 'None' and filetime == 'None'):
+            filenametimestr = '.'
+        else:
+            filenametimestr = '_YYYY-mm-dd_HHMMSS.'
+            
+        self.outfilename_time.setText(filenametimestr)
+        filename_constructed = self.outfilename.text() + self.outfilename_time.text() + self.filenameextcombo.currentText()
+        logger.debug(funcname + 'Filename {:s}'.format(filename_constructed))
+        self.device.config['filename'] = filename_constructed
+        
+                
         
     def __table_choosen_changed__(self, item):
         """
@@ -686,13 +768,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             
         self.datastreamlist_choosen.resizeColumnsToContents()
         
-    def get_filename(self):
-        tnow = datetime.datetime.now()
-        filename_suggestion = tnow.strftime("redvypr_%Y-%m-%d_%H%M%S.csv")
-        filename, _ = QtWidgets.QFileDialog.getSaveFileName(self,"CSV file",filename_suggestion,"CSV Files (*.csv);;All Files (*)")
-        if filename:
-            self.outfilename.setText(filename)
-            self.device.config['filename'] = filename
+    
 
 
     def con_clicked(self):
