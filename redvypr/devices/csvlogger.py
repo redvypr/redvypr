@@ -117,7 +117,7 @@ def create_logfile(config):
 
 
 
-def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host':True,'device':True,'newline':False,'pcktcnt':False,'keys':['data']}):
+def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time':True,'host':True,'device':True,'newline':False,'pcktcnt':False,'keys':['data']}):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
     print('Config',config)
@@ -131,6 +131,12 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
         config['dt_sync']
     except:
         config['dt_sync'] = 5
+    
+    # The time interval of a status message    
+    try:
+        config['dt_status']
+    except:
+        config['dt_status'] = 1
         
     try:
         separator = config['separator']
@@ -157,6 +163,9 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
     packets_written = 0
     [f,filename] = create_logfile(config)
     bytes_written =+ write_csv_header(f,config)
+    statusstr = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ': New file {:s}\n'.format(filename)
+    status = {'data':statusstr}
+    statusqueue.put(status) 
     
     if(f == None):
         logger.warning(funcname + ': Could not open csv file {:s}'.format())
@@ -203,7 +212,9 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
     
     
     tfile           = time.time() # Save the time the file was created
-    tflush          = time.time() # Save the time the file was created    
+    tflush          = time.time() # Save the time the file was flushed to disk
+    tstatus         = time.time() # Save the time the status message was sent
+    # The main loop forever
     while True:
         tcheck = time.time()
         file_age      = tcheck - tfile
@@ -215,7 +226,10 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
             bytes_written         = 0
             packets_written       = 0 
             bytes_written =+ write_csv_header(f,config)
-            tfile = tcheck   
+            tfile = tcheck  
+            statusstr = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ': New file {:s}\n'.format(filename)
+            status = {'data':statusstr}
+            statusqueue.put(status) 
         try:
             com = comqueue.get(block=False)
             logger.debug(funcname + ': received:' + str(com))
@@ -223,6 +237,9 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
             try:
                 f.close()
                 logger.info(funcname + ': File closed:' + str(filename))
+                statusstr = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ': File closed {:s}\n'.format(filename)
+                status = {'data':statusstr}
+                statusqueue.put(status)
             except Exception as e:
                 logger.debug(funcname + ': could not close:' + str(filename))
                 
@@ -233,6 +250,14 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
 
 
         time.sleep(0.05)
+        if((time.time() - tstatus) > config['dt_status']):
+            status = {}
+            status['filename'] = filename
+            status['bytes_written'] = bytes_written
+            status['packets_written'] = packets_written
+            print('Writing status',status)
+            statusqueue.put(status)
+            tstatus = time.time()
          
         while(datainqueue.empty() == False):
             try:
@@ -325,6 +350,8 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
                     os.fsync(f.fileno())
                     tflush = time.time()
                     
+                
+                    
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))
                 #print(data)
@@ -360,7 +387,7 @@ class Device(redvypr_device):
         except:
             config['datastreams'] = set()
 
-        start(self.datainqueue,self.dataqueue,self.comqueue,config=config)
+        start(self.datainqueue,self.dataqueue,self.comqueue,self.statusqueue,config=config)
         
 #
 #
@@ -840,7 +867,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
 class displayDeviceWidget(QtWidgets.QWidget):
-    def __init__(self):
+    def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout          = QtWidgets.QVBoxLayout(self)
         hlayout         = QtWidgets.QHBoxLayout()        
@@ -850,17 +877,49 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.byteslab   = QtWidgets.QLabel("Bytes written: ")
         self.packetslab = QtWidgets.QLabel("Packets written: ")
         self.text.setMaximumBlockCount(10000)
+        self.device = device
         hlayout.addWidget(self.byteslab)
         hlayout.addWidget(self.packetslab)
         layout.addWidget(self.filelab)        
         layout.addLayout(hlayout)
         layout.addWidget(self.text)
-        #self.text.insertPlainText("hallo!")        
+        #self.text.insertPlainText("hallo!")  
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.update_status)
+        self.timer.start(500)
+        
+    def update_status(self):
+        funcname = self.__class__.__name__ + '.update_status():'
+        
+        try:
+            data = self.device.statusqueue.get_nowait()
+        except:
+            data = None
+        if(data is not None):
+            print('data',data)
+            try:
+                self.filelab.setText("File: {:s}".format(data['filename']))        
+                self.byteslab.setText("Bytes written: {:d}".format(data['bytes_written']))
+                self.packetslab.setText("Packets written: {:d}".format(data['packets_written']))
+            except:
+                pass
+            
+            try:
+                self.text.insertPlainText(str(data['data']))
+            except:
+                pass      
 
     def update(self,data):
-        #print('data',data)
-        self.filelab.setText("File: {:s}".format(data['filename']))        
-        self.byteslab.setText("Bytes written: {:d}".format(data['bytes_written']))
-        self.packetslab.setText("Packets written: {:d}".format(data['packets_written']))
-        self.text.insertPlainText(str(data['data']))
+        print('data',data)
+        try:
+            self.filelab.setText("File: {:s}".format(data['filename']))        
+            self.byteslab.setText("Bytes written: {:d}".format(data['bytes_written']))
+            self.packetslab.setText("Packets written: {:d}".format(data['packets_written']))
+        except:
+            pass
+        
+        try:
+            self.text.insertPlainText(str(data['data']))
+        except:
+            pass
         
