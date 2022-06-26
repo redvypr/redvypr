@@ -18,80 +18,102 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('csvlogger')
 logger.setLevel(logging.DEBUG)
 
-
+def write_csv_header(f,config):
+    funcname = __name__ + '.write_csv_header()'
+    logger.debug(funcname)
+    bytes_written = 0
+    datastreams = config['datastreams']
+    separator   = config['separator']
+    try:
+        commentchar = config['commentchar']
+    except:
+        commentchar = '#'
+    
+    # Write header
+    tstr = datetime.datetime.strftime(datetime.datetime.now(),"%y-%m-%d %H:%M:%S.%f")
+    firstline = '{:s}redvypr ({:s}) csv file created on {:s}\n'.format(commentchar,redvypr.version,tstr)
+    f.write(firstline)
+    bytes_written += len(firstline)
+    headerstr = '{:s}hostinfo: {:s}\n'.format(commentchar,str(config['hostinfo']))
+    f.write(headerstr)
+    bytes_written += len(headerstr)
+    # The devices
+    headerstr = commentchar + 'datastreams\n'
+    f.write(headerstr)
+    bytes_written += len(headerstr)
+    headerstr = 'time' + separator + 'time' + separator + 'numpacket'
+    for datastream in datastreams:
+        headerstr += separator + datastream 
+     
+    headerstr += '\n'
+    f.write(headerstr)
+    bytes_written += len(headerstr)
+    # The units
+    f.write(commentchar + 'units\n')
+    unitstr = 'yyyy-mm-dd HH:MM:SS' + separator + 'seconds since 1970-01-01 00:00:00' + separator + '#'
+    for datastream in datastreams:
+        try:
+            unit = config['datastreams_info'][datastream]['unit']
+        except:
+            unit = ''
+    
+        unitstr += separator + unit
+     
+    unitstr += '\n'
+    f.write(unitstr)
+    bytes_written += len(unitstr)
+    # All headerkeys
+    headerkeys = ['latlon','location','sensortype','serialnumber','comment']
+    
+    for headerkey in headerkeys:
+        f.write(commentchar + headerkey + '\n')
+        headerstr = '' + separator + '' + separator + '' # Here could be the data of the device
+        for datastream in datastreams:
+            try:
+                headerdata = config['datastreams_info'][datastream][headerkey]
+            except:
+                headerdata = ''
+        
+            headerstr += separator + headerdata
+         
+        headerstr += '\n'
+        f.write(headerstr)
+        bytes_written += len(headerstr)
+    # Syncing the header
+    f.flush()
+    os.fsync(f.fileno())
+    
+    return bytes_written
+   
+    
 def create_logfile(config):
     funcname = __name__ + '.create_logfile()'
-    if((config['dt_newfile'] > 0)):
-       tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
-       (filebase,fileext)=os.path.splitext(config['filename'])
-       filename = filebase + '_' + tstr + fileext
+    logger.debug(funcname)
+    #self.device.config['filename']      = filename_constructed
+    #self.device.config['filebase']      = self.outfilename.text()
+    #self.device.config['filetime']      = filenametimestr
+    #self.device.config['fileextension'] = self.filenameextcombo.currentText()
+    FLAG_ADD_TIME = '_yyyy-mm-dd_HHMMSS' in config['filename']
+    print('filename',config['filename'],FLAG_ADD_TIME)
+    if(FLAG_ADD_TIME):
+        (filebase1,fileext)=os.path.splitext(config['filename'])
+        filebase = filebase1.split('_yyyy-mm-dd_HHMMSS')[0]
+        tstr     = datetime.datetime.now().strftime('_%Y-%m-%d_%H%M%S')
+        filename = filebase + tstr + fileext
     else:
-       filename = config['filename']
+        filename = config['filename']
        
     logger.info(funcname + ': Will create a new file: {:s}'.format(filename))
     if True:
         try:
             f = open(filename,'w+')
             logger.debug(funcname + ': Opened file: {:s}'.format(filename))
+            return [f,filename]
         except Exception as e:
             logger.warning(funcname + ': Error opening file:' + filename + ':' + str(e))
             return None
         
-        datastreams = config['datastreams']
-        separator   = config['separator']
-        try:
-            commentchar = config['commentchar']
-        except:
-            commentchar = '#'
-        
-        # Write header
-        tstr = datetime.datetime.strftime(datetime.datetime.now(),"%y-%m-%d %H:%M:%S.%f")
-        firstline = '{:s}redvypr ({:s}) csv file created on {:s}\n'.format(commentchar,redvypr.version,tstr)
-        f.write(firstline)
-        # The devices
-        f.write(commentchar + 'datastreams\n')
-        headerstr = 'time' + separator + 'time' + separator + 'numpacket'
-        for datastream in datastreams:
-            headerstr += separator + datastream 
-         
-        headerstr += '\n'
-        f.write(headerstr)
-        
-        # The units
-        f.write(commentchar + 'units\n')
-        unitstr = 'yyyy-mm-dd HH:MM:SS' + separator + 'seconds since 1970-01-01 00:00:00' + separator + '#'
-        for datastream in datastreams:
-            try:
-                unit = config['datastreams_info'][datastream]['unit']
-            except:
-                unit = ''
-        
-            unitstr += separator + unit
-         
-        unitstr += '\n'
-        f.write(unitstr)
-        
-        headerkeys = ['latlon','location','sensortype','serialnumber','comment']
-        # latlon
-        for headerkey in headerkeys:
-            f.write(commentchar + headerkey + '\n')
-            headerstr = '' + separator + '' + separator + '' # Here could be the data of the device
-            for datastream in datastreams:
-                try:
-                    headerdata = config['datastreams_info'][datastream][headerkey]
-                except:
-                    headerdata = ''
-            
-                headerstr += separator + headerdata
-             
-            headerstr += '\n'
-            f.write(headerstr)
-        
-        # Syncing the header
-        f.flush()
-        os.fsync(f.fileno())
-       
-    return [f,filename]
+
 
 
 
@@ -131,8 +153,11 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
         for stream in datastreams:
             config['datastreams_info'][stream]['format'] = f0
             
-    
+    bytes_written   = 0
+    packets_written = 0
     [f,filename] = create_logfile(config)
+    bytes_written =+ write_csv_header(f,config)
+    
     if(f == None):
         logger.warning(funcname + ': Could not open csv file {:s}'.format())
         return None
@@ -142,17 +167,18 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
         try:
             dtneworig  = config['dt_newfile']
             dtunit     = config['dt_newfile_unit']
-            if(dtunit.lower() == 'second'):
+            if(dtunit.lower() == 'seconds'):
                 dtfac = 1.0
-            elif(dtunit.lower() == 'hour'):
+            elif(dtunit.lower() == 'hours'):
                 dtfac = 3600.0
-            elif(dtunit.lower() == 'day'):
+            elif(dtunit.lower() == 'days'):
                 dtfac = 86400.0
             else:
                 dtfac = 0
                 
             dtnews     = dtneworig * dtfac
             logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
+            print('dtnews',dtnews)
         except Exception as e:
             print('Exception',e)
             dtnews = 0
@@ -175,8 +201,7 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
             print('Exception',e)
             sizenewb = 0  # Size in bytes
     
-    bytes_written   = 0
-    packets_written = 0
+    
     tfile           = time.time() # Save the time the file was created
     tflush          = time.time() # Save the time the file was created    
     while True:
@@ -187,11 +212,10 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':'','time':True,'host
         if(FLAG_TIME or FLAG_SIZE):
             f.close()
             [f,filename] = create_logfile(config)
-            statistics = create_data_statistic_dict()
-            tfile = tcheck   
             bytes_written         = 0
-            packets_written       = 0      
-       
+            packets_written       = 0 
+            bytes_written =+ write_csv_header(f,config)
+            tfile = tcheck   
         try:
             com = comqueue.get(block=False)
             logger.debug(funcname + ': received:' + str(com))
@@ -313,6 +337,9 @@ class Device(redvypr_device):
         self.publish     = False
         self.subscribe   = True
         self.description = 'csvlogger'
+        
+        self.config['hostinfo'] = redvypr.hostinfo
+        
         try:
             self.config['datastreams']
         except:
@@ -335,17 +362,11 @@ class Device(redvypr_device):
 
         start(self.datainqueue,self.dataqueue,self.comqueue,config=config)
         
-
-
-
-
 #
 #
 # The init widget
 #
 #
-
-
 class initDeviceWidget(QtWidgets.QWidget):
     device_start = QtCore.pyqtSignal(Device) # Signal requesting a start of the device (starting the thread)
     device_stop  = QtCore.pyqtSignal(Device) # Signal requesting a stop of device
@@ -391,7 +412,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         onlyInt = QtGui.QIntValidator()
         edit.setValidator(onlyInt)
         self.dt_newfile = edit
-        self.dt_newfile.setToolTip('Create a new file every N seconds.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
+        self.dt_newfile.setToolTip('Create a new file every N seconds.\nFilename is "filenamebase"_yyyy-mm-dd_HHMMSS."ext".\nUse 0 to disable feature.')
         try:
             self.dt_newfile.setText(str(self.device.config['dt_newfile']))
         except Exception as e:
@@ -402,7 +423,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         onlyInt = QtGui.QIntValidator()
         edit.setValidator(onlyInt)
         self.size_newfile = edit
-        self.size_newfile.setToolTip('Create a new file every N bytes.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
+        self.size_newfile.setToolTip('Create a new file every N bytes.\nFilename is "filenamebase"_yyyy-mm-dd_HHMMSS."ext".\nUse 0 to disable feature.')
         try:
             self.size_newfile.setText(str(self.device.config['size_newfile']))
         except Exception as e:
@@ -611,12 +632,15 @@ class initDeviceWidget(QtWidgets.QWidget):
         if(filesize == 'None' and filetime == 'None'):
             filenametimestr = '.'
         else:
-            filenametimestr = '_YYYY-mm-dd_HHMMSS.'
+            filenametimestr = '_yyyy-mm-dd_HHMMSS.'
             
         self.outfilename_time.setText(filenametimestr)
         filename_constructed = self.outfilename.text() + self.outfilename_time.text() + self.filenameextcombo.currentText()
         logger.debug(funcname + 'Filename {:s}'.format(filename_constructed))
-        self.device.config['filename'] = filename_constructed
+        self.device.config['filename']      = filename_constructed
+        self.device.config['filebase']      = self.outfilename.text()
+        self.device.config['filetime']      = filenametimestr
+        self.device.config['fileextension'] = self.filenameextcombo.currentText()
         
                 
         
@@ -781,9 +805,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         if button.isChecked():
             logger.debug("button pressed")
             # The filename
-            self.device.config['filename'] = self.outfilename.text()
-            # Connect the datastreams
-            
+            self.construct_filename()
+            self.device.config['dt_newfile']        = int(self.dt_newfile.text())
+            self.device.config['dt_newfile_unit']   = self.newfiletimecombo.currentText()
+            self.device.config['size_newfile']      = int(self.size_newfile.text())
+            self.device.config['size_newfile_unit'] = self.newfilesizecombo.currentText()
             self.device_start.emit(self.device)
         else:
             logger.debug('button released')

@@ -75,6 +75,7 @@ def get_ip():
 
 # The hostinfo, to distinguish between different redvypr instances
 #redvyprid = str(uuid.uuid1()) # Old
+# TODO, should this be in a redvypr instance and not during creation?!
 randstr = '{:03d}'.format(random.randrange(2**8))
 redvyprid = datetime.datetime.now().strftime('%Y%m%d%H%M%S.%f-') + str(uuid.getnode()) + '-' + randstr
 hostinfo = {'hostname':'redvypr','tstart':time.time(),'addr':get_ip(),'uuid':redvyprid,'local':True}
@@ -170,6 +171,7 @@ class redvypr(QtCore.QObject):
         super(redvypr, self).__init__()
         funcname = __name__ + '.__init__()'                                
         logger.debug(funcname)
+        self.hostinfo = hostinfo
         self.config = {} # Might be overwritten by parse_configuration()
         self.numdevice = 0
         self.devices        = [] # List containing dictionaries with information about all attached devices
