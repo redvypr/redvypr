@@ -358,7 +358,7 @@ class Device(redvypr_device):
         self.subscribe   = True
         self.description = 'csvlogger'
         
-        self.config['hostinfo'] = redvypr.hostinfo
+        self.config['hostinfo'] = self.redvypr.hostinfo
         
         try:
             self.config['datastreams']

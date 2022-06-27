@@ -75,12 +75,16 @@ def get_ip():
 
 # The hostinfo, to distinguish between different redvypr instances
 #redvyprid = str(uuid.uuid1()) # Old
-# TODO, should this be in a redvypr instance and not during creation?!
-randstr = '{:03d}'.format(random.randrange(2**8))
-redvyprid = datetime.datetime.now().strftime('%Y%m%d%H%M%S.%f-') + str(uuid.getnode()) + '-' + randstr
-hostinfo = {'hostname':'redvypr','tstart':time.time(),'addr':get_ip(),'uuid':redvyprid,'local':True}
 
-def distribute_data(devices,infoqueue,dt=0.01):
+def create_hostinfo():
+    funcname = __name__ + '.create_hostinfo()'
+    logger.debug(funcname)
+    randstr = '{:03d}'.format(random.randrange(2**8))
+    redvyprid = datetime.datetime.now().strftime('%Y%m%d%H%M%S.%f-') + str(uuid.getnode()) + '-' + randstr
+    hostinfo = {'hostname':'redvypr','tstart':time.time(),'addr':get_ip(),'uuid':redvyprid,'local':True}
+    return hostinfo
+
+def distribute_data(devices,hostinfo,infoqueue,dt=0.01):
     """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
     """
     funcname = __name__ + '.distribute_data()'
@@ -171,7 +175,7 @@ class redvypr(QtCore.QObject):
         super(redvypr, self).__init__()
         funcname = __name__ + '.__init__()'                                
         logger.debug(funcname)
-        self.hostinfo = hostinfo
+        self.hostinfo = create_hostinfo()
         self.config = {} # Might be overwritten by parse_configuration()
         self.numdevice = 0
         self.devices        = [] # List containing dictionaries with information about all attached devices
@@ -194,7 +198,8 @@ class redvypr(QtCore.QObject):
         self.dt_datadist = 0.01 # The time interval of datadistribution
         self.dt_avg_datadist = 0.00 # The time interval of datadistribution        
         self.datadistinfoqueue = queue.Queue(maxsize=1000) # A queue to get informations from the datadistribution
-        self.datadistthread = threading.Thread(target=distribute_data, args=(self.devices,self.datadistinfoqueue,self.dt_datadist), daemon=True)
+        # Lets start the distribution!
+        self.datadistthread = threading.Thread(target=distribute_data, args=(self.devices,self.hostinfo,self.datadistinfoqueue,self.dt_datadist), daemon=True)
         self.datadistthread.start()
         logger.info(funcname + ':Searching for devices')
         self.populate_device_path()
@@ -218,7 +223,7 @@ class redvypr(QtCore.QObject):
         """ Creates a statusstr of the devices
         """
         tstr = str(datetime.datetime.now())
-        statusstr = "{:s}, {:s}, num devices {:d}".format(tstr, hostinfo['hostname'], len(self.devices))
+        statusstr = "{:s}, {:s}, num devices {:d}".format(tstr, self.hostinfo['hostname'], len(self.devices))
         
         for sendict in self.devices:
             try:
@@ -375,7 +380,7 @@ class redvypr(QtCore.QObject):
         # Add the hostname
         try:
             logger.info(funcname + ': Setting hostname to {:s}'.format(config['hostname']))
-            hostinfo['hostname'] = config['hostname']
+            self.hostinfo['hostname'] = config['hostname']
         except:
             pass
         
@@ -875,7 +880,7 @@ class redvypr(QtCore.QObject):
             The devicestring
             
         """
-        devicename = device.name + ':' + hostinfo['hostname'] + '@' + hostinfo['addr'] + '::' + hostinfo['uuid']
+        devicename = device.name + ':' + self.hostinfo['hostname'] + '@' + self.hostinfo['addr'] + '::' + self.hostinfo['uuid']
         return devicename
     
     def construct_datastream_from_device_datakey(self,datakey,device):
@@ -923,18 +928,18 @@ class redvypr(QtCore.QObject):
             
         
         """
-        deviceparsed = data_packets.parse_devicestring(devicestr, local_hostinfo = hostinfo)
+        deviceparsed = data_packets.parse_devicestring(devicestr, local_hostinfo = self.hostinfo)
         for d in self.devices:
             flag_name     = d['device'].name     == deviceparsed['devicename']
             flag_name     = flag_name or deviceparsed['deviceexpand']
             
-            flag_hostname = hostinfo['hostname'] == deviceparsed['hostname']
+            flag_hostname = self.hostinfo['hostname'] == deviceparsed['hostname']
             flag_hostname = flag_hostname or deviceparsed['hostexpand']
             
-            flag_addr     = hostinfo['addr']     == deviceparsed['addr']
+            flag_addr     = self.hostinfo['addr']     == deviceparsed['addr']
             flag_addr     = flag_addr or deviceparsed['addrexpand']
             
-            flag_UUID     = hostinfo['uuid']     == deviceparsed['uuid']
+            flag_UUID     = self.hostinfo['uuid']     == deviceparsed['uuid']
             flag_UUID     = flag_UUID or deviceparsed['uuidexpand']
             
             flag_local    = deviceparsed['local']
@@ -1072,7 +1077,7 @@ class redvypr(QtCore.QObject):
         """
         funcname       = self.__class__.__name__ + '.get_datastream_providing_device():'
         logger.debug(funcname)                                
-        datastreamparsed = parse_devicestring(datastream,local_hostinfo=hostinfo)
+        datastreamparsed = parse_devicestring(datastream,local_hostinfo=self.hostinfo)
         for dev in self.devices:
             datastreamlist.extend(dev['statistics']['datastreams'])
             
@@ -1115,11 +1120,11 @@ class redvypr(QtCore.QObject):
                 datastreams_all.extend(dev['statistics']['datastreams'])
             datastreams_all = list(set(datastreams_all))
             # Parse the devicestring
-            deviceparsed = parse_devicestring(device,local_hostinfo=hostinfo)
+            deviceparsed = parse_devicestring(device,local_hostinfo=self.hostinfo)
             ##print('datastreams',datastreams_all)
             ##print('deviceparsed',deviceparsed)
             for stream in datastreams_all:
-                datastream_parsed = parse_devicestring(stream,local_hostinfo=hostinfo)
+                datastream_parsed = parse_devicestring(stream,local_hostinfo=self.hostinfo)
                 ##print('datastream parsed',datastream_parsed)
                 flag_name     = datastream_parsed['devicename'] == deviceparsed['devicename']
                 flag_name     = flag_name or deviceparsed['deviceexpand']
@@ -1674,7 +1679,7 @@ class redvyprWidget(QtWidgets.QWidget):
         if True:
             self.__hostname_line.setText(hostname)
             self.redvypr.config['hostname'] = hostname
-            hostinfo['hostname'] = hostname
+            self.hostinfo['hostname'] = hostname
 
 
     def update_status(self):
@@ -1698,19 +1703,19 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__hostname_line  = QtWidgets.QLabel('')
         self.__hostname_line.setAlignment(QtCore.Qt.AlignRight)
         self.__hostname_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.__hostname_line.setText(hostinfo['hostname'])
+        self.__hostname_line.setText(self.redvypr.hostinfo['hostname'])
         # UUID
         self.__uuid_label = QtWidgets.QLabel('UUID:')
         self.__uuid_line  = QtWidgets.QLabel('')
         self.__uuid_line.setAlignment(QtCore.Qt.AlignRight)
         self.__uuid_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.__uuid_line.setText(hostinfo['uuid'])
+        self.__uuid_line.setText(self.redvypr.hostinfo['uuid'])
         # IP
         self.__ip_label = QtWidgets.QLabel('IP:')
         self.__ip_line  = QtWidgets.QLabel('')
         self.__ip_line.setAlignment(QtCore.Qt.AlignRight)
         self.__ip_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.__ip_line.setText(hostinfo['addr'])
+        self.__ip_line.setText(self.redvypr.hostinfo['addr'])
         # Change the hostname
         self.__hostname_btn = QtWidgets.QPushButton('Change hostname')
         self.__hostname_btn.clicked.connect(self.__hostname_changed_click)
