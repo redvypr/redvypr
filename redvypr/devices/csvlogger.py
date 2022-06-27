@@ -94,7 +94,7 @@ def create_logfile(config):
     #self.device.config['filetime']      = filenametimestr
     #self.device.config['fileextension'] = self.filenameextcombo.currentText()
     FLAG_ADD_TIME = '_yyyy-mm-dd_HHMMSS' in config['filename']
-    print('filename',config['filename'],FLAG_ADD_TIME)
+    #print('filename',config['filename'],FLAG_ADD_TIME)
     if(FLAG_ADD_TIME):
         (filebase1,fileext)=os.path.splitext(config['filename'])
         filebase = filebase1.split('_yyyy-mm-dd_HHMMSS')[0]
@@ -120,7 +120,7 @@ def create_logfile(config):
 def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time':True,'host':True,'device':True,'newline':False,'pcktcnt':False,'keys':['data']}):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
-    print('Config',config)
+    #print('Config',config)
     filename = config['filename']
     try:
         logger.info(funcname + ' Will create new file every {:d}s.'.format(config['dt_newfile']))
@@ -187,9 +187,8 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time
                 
             dtnews     = dtneworig * dtfac
             logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
-            print('dtnews',dtnews)
         except Exception as e:
-            print('Exception',e)
+            logger.debug('Exception dtnews: {:s}'.format(str(e)))
             dtnews = 0
             
         try:
@@ -207,7 +206,7 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time
             sizenewb     = sizeneworig * sizefac # Size in bytes
             logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
         except Exception as e:
-            print('Exception',e)
+            logger.debug('Exception sizenewb: {:s}'.format(str(e)))
             sizenewb = 0  # Size in bytes
     
     
@@ -221,7 +220,13 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time
         FLAG_TIME = (dtnews > 0)  and  (file_age >= dtnews)
         FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
         if(FLAG_TIME or FLAG_SIZE):
+            # close the old file
             f.close()
+            file_size = os.stat(filename).st_size
+            statusstr = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ': File {:s} closed, {:d} bytes\n'.format(filename,file_size)
+            status = {'data':statusstr}
+            statusqueue.put(status)
+            # open a new file
             [f,filename] = create_logfile(config)
             bytes_written         = 0
             packets_written       = 0 
@@ -237,11 +242,12 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time
             try:
                 f.close()
                 logger.info(funcname + ': File closed:' + str(filename))
-                statusstr = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ': File closed {:s}\n'.format(filename)
+                file_size = os.stat(filename).st_size
+                statusstr = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ': File {:s} closed, {:d} bytes\n'.format(filename,file_size)
                 status = {'data':statusstr}
                 statusqueue.put(status)
             except Exception as e:
-                logger.debug(funcname + ': could not close:' + str(filename))
+                logger.debug(funcname + ': could not close: {:s} ({:s})'.format(filename,str(e)))
                 
             break
         except Exception as e:
@@ -255,7 +261,6 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time
             status['filename'] = filename
             status['bytes_written'] = bytes_written
             status['packets_written'] = packets_written
-            print('Writing status',status)
             statusqueue.put(status)
             tstatus = time.time()
          
@@ -267,14 +272,11 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time
                 data_save = {}
                 maxlen = 0
                 FLAG_save_packet = False
-                print('data1')
                 for datastream in datastreams:
-                    print('datastream1',datastream)
                     if(device_in_data(datastream, datapacket)):
                         FLAG_save_packet = True
                         data     = get_data(datastream,datapacket)
                         data_tmp = copy.deepcopy(data)
-                        print('Datastream in datapacket',data)
                         # Check for iterables and str, save all non iterables (and str) in list
                         if(type(data) == 'str'):
                             data_save[datastream] = [data]
@@ -289,12 +291,10 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time
                                 
                             data_save[datastream] = data
                         
-                        print('data hallo',data)    
                         maxlen = max(maxlen,len(data))
                 
                 # If we have datastreams found to be saved, then write it to the file        
                 if(FLAG_save_packet):
-                    print('Saving data')
                     # Make the time iterable (if its not already)
                     try:
                         iterator = iter(datapacket['t'])
@@ -304,7 +304,6 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time
                         timepackets = [datapacket['t']]
                         
                     for i in range(maxlen): # Loop over the longest length, this is typically one 
-                        print('i',i,maxlen)
                         try:
                             timepacket = timepackets[i]
                         except:
@@ -316,23 +315,18 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time
                         datastr_time = '{:s}{:s}{:f}{:s}{:d}'.format(tstr,separator,timepacket,separator,datapacket['numpacket'])
                         datastr = datastr_time
                         for datastream in datastreams:
-                            print('Datastream 10',datastream)
                             try:
                                 data = data_save[datastream][i]
                             except:
                                 data = ''
                                 
-                            print('datas',datastream,data)
-                            
                             datastr += separator
                             if(data == ''):
                                 pass
                             else:
 
                                 dataformat = config['datastreams_info'][datastream]['format']
-                                print('dataformat',dataformat)     
                                 dataformat = '{:' + dataformat + '}' # Add the python specific brackets
-                                print('data hallo',datastream,data,dataformat)
                                 try: 
                                     datastr += dataformat.format(data)
                                 except Exception as e:
@@ -340,7 +334,6 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time
                     
                 
                         datastr += '\n'
-                        print('Datastr',datastr)                          
                         bytes_written += len(datastr)
                         packets_written += 1
                         f.write(datastr)
@@ -896,7 +889,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
         except:
             data = None
         if(data is not None):
-            print('data',data)
             try:
                 self.filelab.setText("File: {:s}".format(data['filename']))        
                 self.byteslab.setText("Bytes written: {:d}".format(data['bytes_written']))
@@ -908,18 +900,3 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 self.text.insertPlainText(str(data['data']))
             except:
                 pass      
-
-    def update(self,data):
-        print('data',data)
-        try:
-            self.filelab.setText("File: {:s}".format(data['filename']))        
-            self.byteslab.setText("Bytes written: {:d}".format(data['bytes_written']))
-            self.packetslab.setText("Packets written: {:d}".format(data['packets_written']))
-        except:
-            pass
-        
-        try:
-            self.text.insertPlainText(str(data['data']))
-        except:
-            pass
-        
