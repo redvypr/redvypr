@@ -68,7 +68,7 @@ What does it provide?
 Redvypr provides the infrastructure to distribute, save, display and
 plot digital datastreams produced by sensors. New sensors can be
 integrated by creating an own device, example devices are provided
-with redvypr. By solely using Python it gives the user the flexibility
+with redvypr. By solely using python it gives the user the flexibility
 to use the almost infinite number of python packages to read and
 process their data.
 
@@ -88,7 +88,7 @@ What it is not?
 Redvypr provides the infrastructure for sensor but does not provide
 out of the box interfaces to the almost infinite number of different
 sensor realizations. The user needs to write their own interface using
-the API provided by redvypr. Since redvypr is written in Python it is
+the API provided by redvypr. Since redvypr is written in python it is
 not well designed for "fast" sensors, i.e. sensors with sampling rates
 well above 100 Hz and need to be processed at the same
 frequency. Despite this, redvypr is principally capable to buffer the
