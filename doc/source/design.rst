@@ -124,7 +124,7 @@ to define a nomenclature to uniquely the device and datakey to be processed.
 
 Datastream
 ^^^^^^^^^^
-The data a device sends continously with the same datakey over time is called a **datasream**.
+The data a device sends continously with the same datakey over time is called a **datastream**.
 To define a datastream the redvypr hostname/IP/UUID + the devicename + the key need to be specified. 
 The key is separated by a "/" from the device. The device by a ":" from the hostname or by a "::"
 from the UUID. The "@" is used to separate the IP. Some examples:
