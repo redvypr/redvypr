@@ -587,6 +587,13 @@ class redvypr(QtCore.QObject):
                     print('New style device')
                     name = deviceconfig['config'].pop('name')
                     loglevel = deviceconfig['config'].pop('loglevel')
+                    try:
+                        standard_config = devicemodule.get_standard_config()
+                    except Exception as e:
+                        print('Exception',e)
+                        standard_config = {}
+                        
+                    print('Standard config',standard_config)
                     print('Name',name)
                     device               = devicemodule.Device(name = name, redvypr = self, dataqueue= dataqueue,comqueue = comqueue,datainqueue = datainqueue,statusqueue = statusqueue, loglevel = loglevel,numdevice = self.numdevice, statistics = statistics)
                     self.numdevice      += 1  

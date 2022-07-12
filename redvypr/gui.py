@@ -717,3 +717,12 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
 
                 
 
+#
+class redvypr_configtree_widget(QtWidgets.QWidget):
+    """ Widget that lets the user interact with a configuration dictionary
+    """
+    def __init__(self):
+        """
+        """
+        super(QtWidgets.QWidget, self).__init__()
+        self.setWindowIcon(QtGui.QIcon(_icon_file))   

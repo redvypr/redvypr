@@ -18,6 +18,21 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('csvlogger')
 logger.setLevel(logging.DEBUG)
 
+def get_standard_config():
+    """
+    """
+    config                     = {}
+    config['datastreams']      = set()
+    config['datastreams_info'] = {}
+    config['dt_newfile'] = 0
+    config['dt_newfile_unit']
+    config['size_newfile']
+    config['size_newfile_unit']
+    config['dt_status'] = 1
+    config['separator'] = ','
+    
+    return config
+
 def write_csv_header(f,config):
     funcname = __name__ + '.write_csv_header()'
     logger.debug(funcname)
@@ -370,18 +385,14 @@ class Device(redvypr_device):
         except:
             self.config['datastreams_info'] = {}
             
-         
-            
-            
     def start(self):
+        """
+        """
+        funcname = self.__class__.__name__ + '.start()'
+        self.logger.debug(funcname)
         config=copy.deepcopy(self.config)
-        try:
-            config['datastreams']
-        except:
-            config['datastreams'] = set()
-
         start(self.datainqueue,self.dataqueue,self.comqueue,self.statusqueue,config=config)
-        
+
 #
 #
 # The init widget
