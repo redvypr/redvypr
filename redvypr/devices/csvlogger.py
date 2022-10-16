@@ -24,7 +24,7 @@ def get_standard_config():
     config                     = {}
     config['datastreams']      = set()
     config['datastreams_info'] = {}
-    config['dt_newfile'] = 0
+    config['dt_newfile']       = 0
     config['dt_newfile_unit']
     config['size_newfile']
     config['size_newfile_unit']

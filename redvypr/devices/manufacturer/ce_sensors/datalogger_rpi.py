@@ -27,14 +27,15 @@ import sys
 import yaml
 import pyqtgraph
 import tempsensor
-# This import does only work on a respberry PI (spidev needed)
+from redvypr.device import redvypr_device
+# This import does only work on a Raspberry PI (spidev needed)
 from .ads124s0x import ads124s0x_pihat
 
 logger = logging.getLogger('datalogger_rpi')
 logger.setLevel(logging.DEBUG)
 
     
-description = 'Interface to a raspberry PI based ADSADC shield'
+description = 'Interface to a raspberry PI based ADS128S08 ADC shield. CE-Sensors design'
 
 pyqtgraph.setConfigOption('background', 'w')
 pyqtgraph.setConfigOption('foreground', 'k')
@@ -101,7 +102,7 @@ def convert_data(data,chn,config):
             chconv = chn + '_conv'
         if(confch['type'].upper() == 'Steinhart-Hart NTC'.upper()): # NTC, TODO, this should be done more general
             T                   = tempsensor.ntc.get_T_Steinhart_Hart(data,convcoeffs)
-            infoconv            = '?' + chconv
+            infoconv            = '@' + chconv
             data_conv[chconv]   = T
             data_conv[infoconv] = {'ch':chn}
             data_conv['ch_conv'] = chconv # Make a key with the converted channel name, that makes it easier to look for the data
@@ -109,7 +110,7 @@ def convert_data(data,chn,config):
         elif(confch['type'].upper() == 'Polynom'.upper()): # NTC, TODO, this should be done more general            
             p = numpy.polynomial.Polynomial(convcoeffs)
             res = p(data)
-            infoconv            = '?' + chconv
+            infoconv            = '@' + chconv
             data_conv[chconv]   = res
             data_conv[infoconv] = {'ch':chn}
             data_conv['ch_conv'] = chconv # Make a key with the converted channel name, that makes it easier to look for the data
@@ -191,25 +192,23 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
         dataqueue.put(datad)
 
 #except Exception as e:
-#                logger.debug(funcname + ':Exception:' + str(e))            
+#                logger.debug(funcname + ':Exception:' + str(e))
+class Device(redvypr_device):
+    def __init__(self,**kwargs):
+        """
+        """
+        super(Device, self).__init__(**kwargs)
+        self.publish     = True
+        self.subscribe   = True
+        self.description = 'datalogger_rpi'
+        self.set_apriori_datakeys(['t','data','?data'])
+        self.set_apriori_datakey_info(datakey='data',unit='Urand',datatype='d')
 
-class Device():
-    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = {}):
-        """
-        """
-        self.publish     = True # publishes data, a typical device is doing this
-        self.subscribe   = True  # subscribing data, a typical datalogger is doing this
-        self.datainqueue = datainqueue
-        self.dataqueue   = dataqueue        
-        self.comqueue    = comqueue
-        self.config      = config # Please note that this is typically a placeholder, the config structure will be written by redvypr and the yaml
-        self.name        = 'datalogger_rpi' # This will be overwritten by the config!
-                
     def start(self):
         start(self.datainqueue,self.dataqueue,self.comqueue,devicename=self.name,config=self.config)
         
-    def __str__(self):
-        sstr = 'heatflow_sensor'
+    def __str__(self) -> str:
+        sstr = 'datalogger_rpi'
         return sstr
 
 

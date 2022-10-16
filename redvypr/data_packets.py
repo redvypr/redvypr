@@ -7,6 +7,19 @@ logger = logging.getLogger('data_packets')
 logger.setLevel(logging.DEBUG)
 
 
+class address():
+    """ redvypr address 
+    """
+    def __init__(self,addrstr):
+        self.addressstr = addrstr
+        
+    def __contains__(self, datadict):
+        """ Checks if address is in datadict 
+        """
+        
+        return True
+
+
 def create_data_statistic_dict():
     statdict = {}
     statdict['inspect']         = True
@@ -57,10 +70,10 @@ def do_data_statistics(data, statdict):
     return statdict
 
 
-def expand_devicestring(devicestr):
-    """ Expands a datastreamstring or devicestring
+def expand_address_string(addrstr):
+    """ Expands an address string, i.e. it fills non existing entries with wildcards. 
     """
-    devstring_full = devicestr
+    devstring_full = addrstr
     # Check first if we have a datastream string
     if('/' in devstring_full):
         s = devstring_full.split('/')
@@ -99,19 +112,19 @@ def expand_devicestring(devicestr):
     if(local): # No UUID and addr
         uuid = 'local'
     # 'data/randdata_1:redvypr@192.168.178.26::04283d40-ef3c-11ec-ab8f-21d63600f1d0' 
-    devicestring = datakey + devicename + ':' + hostname + '@' + addr + '::' + uuid
-    return devicestring
+    address_string = datakey + devicename + ':' + hostname + '@' + addr + '::' + uuid
+    return address_string
 
 
 
-def parse_devicestring(devicestr,local_hostinfo=None):
+def parse_devicestring(address_string,local_hostinfo=None):
     """
-     Parses as redvypr datastream string or devicestring
+     Parses as redvypr address string and returns a dictionary with the parsed result
     
-        devicestr: the devicestring
-        local_hostinfo: if the devicestring is local, the local hostinfo is used to fill in hostname, addr and UUID etc. 
+        address_string: the devicestring
+        local_hostinfo: if the devicestring is local, the local hostinfo is used to fill in hostname, ip and UUID etc. 
     """
-    devstring_full = expand_devicestring(devicestr)
+    devstring_full = expand_address_string(address_string)
     # Check first if we have a datastream
     datakeyexpanded = False
     if('/' in devstring_full):
@@ -140,7 +153,7 @@ def parse_devicestring(devicestr,local_hostinfo=None):
     local = uuid == 'local'
     if(local and (local_hostinfo is not None)):
         hostname = local_hostinfo['hostname']
-        addr     = local_hostinfo['addr']
+        addr     = local_hostinfo['ip']
         uuid     = local_hostinfo['uuid']
         uuidexpanded   = False
         addrexpanded   = False
@@ -148,10 +161,10 @@ def parse_devicestring(devicestr,local_hostinfo=None):
 
     # Fill a dictionary
     parsed_data = {}
-    parsed_data['devicestr']    = devicestr
-    parsed_data['devicestr_expanded']    = devstring_full
+    parsed_data['address_string']          = address_string
+    parsed_data['address_string_expanded'] = address_string_full
     parsed_data['hostname']     = hostname
-    parsed_data['addr']         = addr
+    parsed_data['ip']           = ip
     parsed_data['devicename']   = devicename
     parsed_data['uuid']         = uuid
     parsed_data['datakey']      = datakey
@@ -482,14 +495,13 @@ def device_in_data(devicestring, datapacket, get_devicename = False):
         return [False,None,False]
     else:
         return False
-    
-    
-    
-    
 
-def datadict(data,datakey=None,tu=None):
-    """ A datadictionary used as internal datastructure in redvypr
-    # TODO, rename to datapacket
+
+
+
+
+def datapacket(data,datakey=None,tu=None):
+    """ A datapacket dictionary used as internal datastructure in redvypr
     """
     if(tu == None):
         tu = time.time()
@@ -499,3 +511,40 @@ def datadict(data,datakey=None,tu=None):
     datadict = {'t':tu}
     datadict[datakey] = data
     return datadict
+
+
+def commandpacket(command='stop',device_uuid=''):
+    """
+
+    Args:
+        command: 'stop'
+        device_uuid:
+
+    Returns:
+         compacket: A redvypr dictionary with the command
+    """
+    compacket = datapacket(command,datakey='redvypr_device_command') # The command
+    compacket['redvypr_device_uuid'] = device_uuid # The uuid of the device the command is for
+    return compacket
+
+
+def check_for_command(datapacket=None,uuid=''):
+    """
+
+    Args:
+        datapacket:
+        uuid:
+
+    Returns:
+        command: content of the field 'redvypr_device_command', typically a string
+    """
+    FLAG_COM1 = 'redvypr_device_command' in datapacket.keys()
+    FLAG_COM2 = 'redvypr_device_uuid' in datapacket.keys()
+    command = None
+    if (FLAG_COM1 and FLAG_COM2):
+        FLAG_UUID = datapacket['redvypr_device_uuid'] == uuid
+        if(FLAG_UUID):
+            command = datapacket['redvypr_device_command']
+
+    return command
+

@@ -26,6 +26,7 @@ import logging
 import sys
 import yaml
 import pyqtgraph
+from redvypr.device import redvypr_device
 
 description = 'Parses and displays data with a NMEA type of data string'
 
@@ -120,23 +121,22 @@ def start(datainqueue,dataqueue,comqueue,devicename,config={}):
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))            
 
-class Device():
-    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = {}):
+class Device(redvypr_device):
+    def __init__(self,**kwargs):
         """
         """
-        self.publish     = True # publishes data, a typical device is doing this
-        self.subscribe   = True  # subscribing data, a typical datalogger is doing this
-        self.datainqueue = datainqueue
-        self.dataqueue   = dataqueue        
-        self.comqueue    = comqueue
-        self.config      = config # Please note that this is typically a placeholder, the config structure will be written by redvypr and the yaml
-        self.name        = 'heatflowsensor' # This will be overwritten by the config!
-                
+        super(Device, self).__init__(**kwargs)
+        self.publish     = True
+        self.subscribe   = True
+        self.description = 'CE-Sensors (ce-sensors.com) datalogger'
+        self.set_apriori_datakeys(['t','data','?data'])
+        self.set_apriori_datakey_info(datakey='data',unit='Urand',datatype='d')
+
     def start(self):
         start(self.datainqueue,self.dataqueue,self.comqueue,devicename=self.name,config=self.config)
         
-    def __str__(self):
-        sstr = 'heatflow_sensor'
+    def __str__(self) -> str:
+        sstr = 'CE-Sensors datalogger'
         return sstr
 
 

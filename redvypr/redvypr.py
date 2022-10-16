@@ -24,17 +24,25 @@ import uuid
 import random
 from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
+import platform
 # Import redvypr specific stuff
 
 import redvypr.devices as redvyprdevices
 import redvypr.data_packets as data_packets
-from redvypr.gui import redvyprConnectWidget,QPlainTextEditLogger,displayDeviceWidget_standard,deviceinfoWidget,redvypr_devicelist_widget
-from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices
+from redvypr.gui import redvypr_ip_widget, redvyprConnectWidget, QPlainTextEditLogger, displayDeviceWidget_standard, deviceinfoWidget, redvypr_devicelist_widget, redvypr_dictionary_widget
+from redvypr.utils import addrm_device_as_data_provider, get_data_receiving_devices, get_data_providing_devices
 from redvypr.version import version
 import redvypr.files as files
 from redvypr.device import redvypr_device
 
-
+# Platform information str
+__platform__ = "redvypr (REaltime Data Vi(Y)ewer and PRocessor (in Python))\n"
+__platform__ += "\n\n"
+__platform__ += "Version: {:s}\n".format(str(version))
+__platform__ += "Python: {:s}\n".format(sys.version)
+__platform__ += "Platform system: {:s}\n".format(platform.system())
+__platform__ += "Platform release: {:s}\n".format(platform.release())
+__platform__ += "Platform version: {:s}\n".format(platform.version())
 
 
 # Windows icon fix
@@ -84,6 +92,25 @@ def create_hostinfo():
     hostinfo = {'hostname':'redvypr','tstart':time.time(),'addr':get_ip(),'uuid':redvyprid,'local':True}
     return hostinfo
 
+
+def treat_datadict(data, devicename, hostinfo, numpacket, tpacket):
+    """ Treats a datadict received from a device and adds additional information from redvypr as hostinfo, numpackets etc. 
+    """
+    # Add deviceinformation to the data package
+    if('device' not in data.keys()):
+        data['device']   = str(devicename)
+        data['host']     = hostinfo
+    else: # Check if we have a local data packet, i.e. a packet that comes from another redvypr instance with another UUID
+        data['host']['local']    = data['host']['uuid'] == hostinfo['uuid']
+        
+    # Add the time to the datadict if its not already in
+    if('t' not in data.keys()):
+        data['t'] = tpacket
+
+    # Add the packetnumber to the datadict
+    if('numpacket' not in data.keys()):
+        data['numpacket'] = numpacket
+
 def distribute_data(devices,hostinfo,infoqueue,dt=0.01):
     """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
     """
@@ -105,22 +132,9 @@ def distribute_data(devices,hostinfo,infoqueue,dt=0.01):
                     devicedict['numpacket'] += 1
                 except Exception as e:
                     break
-
-                # Add deviceinformation to the data package
-                if('device' not in data.keys()):
-                    data['device']   = str(device.name)
-                    data['host']     = hostinfo
-                else: # Check if we have a local data packet, i.e. a packet that comes from another redvypr instance with another UUID
-                    data['host']['local']    = data['host']['uuid'] == hostinfo['uuid']
-                    
-                # Add the time to the datadict if its not already in
-                if('t' not in data.keys()):
-                    data['t'] = tstart
-
-                # Add the packetnumber to the datadict
-                if('numpacket' not in data.keys()):
-                    data['numpacket'] = devicedict['numpacket']
-
+                
+                treat_datadict(data,device.name,hostinfo,devicedict['numpacket'],tstart)
+                # Do statistics
                 try:
                     if devicedict['statistics']['inspect']:
                         devicedict['statistics'] = data_packets.do_data_statistics(data,devicedict['statistics'])
@@ -173,11 +187,13 @@ class redvypr(QtCore.QObject):
     def __init__(self,parent=None,config=None,nogui=False):
         #super(redvypr, self).__init__(parent)
         super(redvypr, self).__init__()
-        funcname = __name__ + '.__init__()'                                
+        print(__platform__)
+        funcname        = __name__ + '.__init__()'
         logger.debug(funcname)
-        self.hostinfo = create_hostinfo()
-        self.config = {} # Might be overwritten by parse_configuration()
-        self.numdevice = 0
+        self.hostinfo   = create_hostinfo()
+        self.config     = {}  # Might be overwritten by parse_configuration()
+        self.properties = {}  # Properties that are distributed with the device
+        self.numdevice  = 0
         self.devices        = [] # List containing dictionaries with information about all attached devices
         self.device_paths   = [] # A list of pathes to be searched for devices
         self.device_modules = []        
@@ -595,7 +611,8 @@ class redvypr(QtCore.QObject):
                         
                     print('Standard config',standard_config)
                     print('Name',name)
-                    device               = devicemodule.Device(name = name, redvypr = self, dataqueue= dataqueue,comqueue = comqueue,datainqueue = datainqueue,statusqueue = statusqueue, loglevel = loglevel,numdevice = self.numdevice, statistics = statistics)
+                    device_uuid = devicemodulename + '_' + str(uuid.uuid1())
+                    device               = devicemodule.Device(name = name, uuid = device_uuid, redvypr = self, dataqueue= dataqueue,comqueue = comqueue,datainqueue = datainqueue,statusqueue = statusqueue, loglevel = loglevel,numdevice = self.numdevice, statistics = statistics)
                     self.numdevice      += 1  
                     FLAG_DEVICE_OLDSTYLE = False
                     # If the device has a logger
@@ -628,7 +645,7 @@ class redvypr(QtCore.QObject):
                             setattr(device,key,confvalue)
                     
                     # Add the redvypr object to the device itself
-                    device.redvypr = self            
+                    device.redvypr = self
                     # Do the loglevel use "standard" to take the loglevel of the redvypr instance
                     try:
                         loglevel_device = device.loglevel.upper()
@@ -676,12 +693,7 @@ class redvypr(QtCore.QObject):
                 devicedict['numpacketout'] = 0        
                 # The displaywcreate_idget, to be filled by redvyprWidget.add_device (optional)
                 devicedict['devicedisplaywidget'] = None
-                
-                
-                device = devicedict['device']
-                
-                
-                
+                #device = devicedict['device']
                 
                 # Add a priori datakeys to the statistics, if the device supports it
                 self.update_statistics_from_apriori_datakeys(device)
@@ -691,10 +703,6 @@ class redvypr(QtCore.QObject):
                     autostart = device.autostart
                 except:
                     autostart = False
-                
-                
-                
-                
                 
                 # Add the device to the device list
                 self.devices.append(devicedict) # Add the device to the devicelist
@@ -714,7 +722,6 @@ class redvypr(QtCore.QObject):
                 print('Emitting device signal')
                 self.device_added.emit(devicelist)
                 device_found = True
-                
                 break
                 
         if(device_found == False):
@@ -760,7 +767,7 @@ class redvypr(QtCore.QObject):
 
         """
         funcname = __name__ + '.start_device_thread():'
-        if(type(device) == dict): # If called from devicewidget
+        if(type(device)start_device_thread == dict): # If called from devicewidget
             device = device['device']
 
         #logger.debug(funcname + 'Starting device: ' + str(device.name))
@@ -818,6 +825,7 @@ class redvypr(QtCore.QObject):
 
         """        
         funcname = __name__ + '.stop_device_thread()'
+        command = data_packets.commandpacket(command='stop',uuid=device.uuid)
         if(type(device) == dict): # If called from devicewidget
             device = device['device']                
         logger.debug(funcname + ':Stopping device: ' + device.name)
@@ -826,6 +834,11 @@ class redvypr(QtCore.QObject):
                 if(sendict['thread'] == None):
                     return
                 elif(sendict['thread'].is_alive()):
+                    try:
+                        device.thread_stop()
+                        return
+                    except:
+                        pass
                     try:
                         if(device.datainqueuestop):
                             datainqueuestop = True
@@ -840,7 +853,7 @@ class redvypr(QtCore.QObject):
                         device.comqueue.put('stop')
                                 
                 else:
-                    print('Stop exception')
+                    logger.warning(funcname + ': Could not stop thread.')
                     
                 # This is probably still an alive thread, since it is usually checked in time intervals within the thread
                 try:    
@@ -849,7 +862,7 @@ class redvypr(QtCore.QObject):
                     pass
 
 
-    def send_command(self,device,command):
+    def send_command(self,device,command): # Legacy ?!!?!, used device.command instead ...
         """ Sends a command to a device by putting it into the command queue
         """
         funcname = self.__class__.__name__ + '.send_command():'
@@ -1267,6 +1280,8 @@ class redvyprWidget(QtWidgets.QWidget):
     """
     def __init__(self,width=None,height=None,config=None):
         """ Args: 
+            width:
+            height:
             config: Either a string containing a path of a yaml file, or a list with strings of yaml files
         """
         super(redvyprWidget, self).__init__()
@@ -1286,8 +1301,10 @@ class redvyprWidget(QtWidgets.QWidget):
         ## Add a console
         #self.console = redvypr_console()
         
-        
-           
+        # Temporary for the configuration
+        temp={'Hallo':4}
+        self.propWidget = redvypr_dictionary_widget(temp)
+        self.propWidget.show()
         # The configuration of the redvypr
         self.create_devicepathwidget()
         self.create_statuswidget()
@@ -1332,6 +1349,9 @@ class redvyprWidget(QtWidgets.QWidget):
                 if('hostname' in self.redvypr.config.keys()):
                     self.hostname_changed(self.redvypr.config['hostname'])   
         self.__populate_devicepathlistWidget()
+
+    def open_ipwidget(self):
+        self.ipwidget = redvypr_ip_widget()
         
     def open_console(self):
         """ Opens a pyqtconsole console widget
@@ -1770,6 +1790,18 @@ class redvyprWidget(QtWidgets.QWidget):
             itm = QtWidgets.QListWidgetItem(d)
             self.__devicepathlist.addItem(itm)
 
+    def __property_widget(self,device=None):
+        """
+
+        Returns:
+
+        """
+        w = QtWidgets.QWidget()
+        if(device == None):
+            props = self.properties
+        else:
+            props = device.properties
+
     def adddevicepath(self):
         """Adds a path to the devicepathlist
         """
@@ -1907,8 +1939,12 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         consoleAction = QtWidgets.QAction("&Open console", self)
         consoleAction.triggered.connect(self.open_console)
         consoleAction.setShortcut("Ctrl+N")
+        IPAction = QtWidgets.QAction("&Network interfaces", self)
+        IPAction.triggered.connect(self.open_ipwidget)
         toolMenu.addAction(toolAction)
+        toolMenu.addAction(IPAction)
         toolMenu.addAction(consoleAction)
+
         
         
         # Help and About menu
@@ -1924,6 +1960,8 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         
     def open_console(self):
         self.redvypr_widget.open_console()
+    def open_ipwidget(self):
+        self.redvypr_widget.open_ipwidget()
     def gotodevicetab(self):
         self.redvypr_widget.devicetabs.setCurrentWidget(self.redvypr_widget.devicesummarywidget)
 
@@ -1931,11 +1969,24 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         self.redvypr_widget.connect_device_gui()
 
     def about(self):
+        """
+Opens an "about" widget showing basic information.
+        """
         self._about_widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(self._about_widget)
-        label = QtWidgets.QLabel("Python based Realtime Data Viewer and Processor (redvypr)")
-        label1 = QtWidgets.QLabel("Version: {:s}".format(str(version)))
-        layout.addWidget(label)
+        label1 = QtWidgets.QTextEdit()
+        label1.setReadOnly(True)
+        label1.setText(__platform__)
+        font = label1.document().defaultFont()
+        fontMetrics = QtGui.QFontMetrics(font)
+        textSize = fontMetrics.size(0, label1.toPlainText())
+        w = textSize.width() + 10
+        h = textSize.height() + 20
+        label1.setMinimumSize(w, h)
+        label1.setMaximumSize(w, h)
+        label1.resize(w, h)
+        label1.setReadOnly(True)
+
         layout.addWidget(label1)
         icon = QtGui.QPixmap(_logo_file)
         iconlabel = QtWidgets.QLabel()
@@ -2006,8 +2057,6 @@ class SplashScreen(QtWidgets.QWidget):
 #
 
 def redvypr_main():
-    print("Python based REaltime Data VYewer and PlotteR  (REDVYPR)")
-    
     redvypr_help          = 'redvypr'
     config_help           = 'Using a yaml config file'
     config_help_nogui     = 'start redvypr without a gui'
