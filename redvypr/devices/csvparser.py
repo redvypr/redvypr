@@ -5,10 +5,11 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import time
 import numpy as np
 import sys
+import csv2dict
 from redvypr.device import redvypr_device
 from redvypr.data_packets import check_for_command
 
-import csv2dict
+
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('csvparser')

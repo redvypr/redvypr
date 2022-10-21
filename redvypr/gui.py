@@ -1,3 +1,5 @@
+import copy
+
 import serial
 import serial.tools
 import os
@@ -328,6 +330,9 @@ class deviceinfoWidget(QtWidgets.QWidget):
     def __init__(self,devicedict,redvyprwidget):
         super(deviceinfoWidget, self).__init__()
         self.devicedict = devicedict
+        self.device = devicedict['device']
+        # Connect the status signal
+        self.device.status_signal.connect(self.thread_status)
         self.redvyprwidget = redvyprwidget
         self.devicetab = self.redvyprwidget.devicetabs # The parent tab with all devices listed
         self.namelabel = QtWidgets.QLabel(devicedict['device'].name)
@@ -418,14 +423,14 @@ class deviceinfoWidget(QtWidgets.QWidget):
         funcname = __name__ + '.startstopclicked()'
         logger.debug(funcname)
         if(self.startbtn.text() == 'Stop'):
-            self.device_stop.emit(self.devicedict)
+            self.device.thread_stop()
         else:
-            self.device_start.emit(self.devicedict)
+            self.device.thread_start()
 
     def thread_status(self,statusdict):
         """ Function regularly called by redvypr to update the thread status
         """
-        status = statusdict['threadalive']
+        status = statusdict['thread_status']
         if(status):
             self.startbtn.setText('Stop')
             self.startbtn.setChecked(True)            
@@ -712,7 +717,22 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
         """ TODO
         """
         pass
-        #self.device_name_changed.emit(str(text))                    
+        #self.device_name_changed.emit(str(text))
+
+
+#
+#
+class redvypr_ip_widget(QtWidgets.QWidget):
+    """ Widget that shows the IP and network devices of the host
+    """
+    def __init__(self):
+        """
+        """
+        funcname = __name__ + '.__init__():'
+        super(QtWidgets.QWidget, self).__init__()
+        #self.setWindowIcon(QtGui.QIcon(_icon_file))
+        #self.table = QtWidgets.QTableWidget()
+        self.show()
          
 
                 
@@ -729,76 +749,182 @@ class redvypr_dictionary_widget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         self.setWindowIcon(QtGui.QIcon(_icon_file))
         self.dictionary = dictionary
-
+        self.dictionary_local = copy.deepcopy(dictionary)
         logger.debug(funcname)
-        self.tree = QtWidgets.QTreeWidget(self)
         self.layout = QtWidgets.QGridLayout(self)
-        self.layout.addWidget(self.tree,0,0)
+        dictreewidget = redvypr_dictionary_tree(data=self.dictionary_local)
+        self.layout.addWidget(dictreewidget)
+
+
+
+
+
+class redvypr_qtreewidgetitem(QtWidgets.QTreeWidgetItem):
+    """
+    Custom QTreeWidgetItem class that keeps a record of the data
+    dict
+    list
+    set (replace by list*?)
+    """
+
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        print('Hallo!')
+
+    def setText(self,*args,**kwargs):
+        super().setText(*args,**kwargs)
+        print('Text')
+    def setData(self,*args,**kwargs):
+        super().setData(*args,**kwargs)
+        print('Data')
+
+
+#
+#
+#
+#
+#
+class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
+    """ Qtreewidget that display and modifies the configuration of the calibration config
+    """
+
+    def __init__(self, data={}, dataname='data',editable=True):
+        funcname = __name__ + '.__init__():'
+        super().__init__()
+
+        logger.debug(funcname + str(data))
         # make only the first column editable
-        self.tree.setEditTriggers(self.tree.NoEditTriggers)
-        #self.tree.header().setVisible(False)
+        #self.setEditTriggers(self.NoEditTriggers)
+        self.datatypes = [['int', int], ['float', float], ['str', str]] # The datatypes
+        self.datatypes_dict = {} # Make a dictionary out of it, thats easier to reference
+        for d in self.datatypes:
+            self.datatypes_dict[d[0]] = d[1]
+        self.header().setVisible(False)
+        self.data = data
+        self.dataname = dataname
+        self.olddata = []
+        self.numhistory = 100
+        # Create the root item
+        self.root = self.invisibleRootItem()
+        self.setColumnCount(3)
+        self.create_qtree()
+        print('Again check if update works')
+        self.create_qtree()
+        self.itemExpanded.connect(self.resize_view)
+        self.itemCollapsed.connect(self.resize_view)
+        # Connect edit triggers
+        self.itemDoubleClicked.connect(self.checkEdit)
+        self.itemChanged.connect(self.item_changed) # If an item is changed
+        self.currentItemChanged.connect(self.current_item_changed)  # If an item is changed
 
-    def checkEdit(self, item, column):
-        """ Helper function that only allows to edit column 1
+        # Connect the contextmenu
+        self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.menuContextTree)
+
+    def rawcopy(self,data):
         """
-        funcname = __name__ + '.checkEdit():'
-        logger.debug(funcname + '{:d}'.format(column))
-        if column == 1:
-            self.edititem(item, column)
-
-    def current_item_changed(self,current,previous):
-        """ Save the data in the currently changed item, this is used to
-        restore if newly entered data is not valid
+        Functions that simply returns the input data, used as the basic field conversion function
         """
-        devicename  = 'NA'
-        deviceindex = -1
-        self.backup_data = current.text(1)
-        item = current
-        if(item.parent() is not None):
-            print(item.text(0),item.parent().text(0))
-            if(item.parent().text(0) == 'devices'): # Check if we have a device
-                devicename = item.text(1)
-                deviceindex = int(item.text(0))
-                print('Device',devicename,deviceindex)
-                self.devicename_selected = devicename
-                self.deviceindex_selected = deviceindex
+        return data
 
-        self.device_selected.emit(devicename,deviceindex)
+    def menuContextTree(self, point):
+        # Infos about the node selected.
+        index = self.indexAt(point)
 
-    def item_changed(self,item,column):
-        """ Updates the dictionary with the changed data
-        """
-        funcname = __name__ + '.item_changed():'
-        logger.debug(funcname + 'Changed {:s} {:d} to {:s}'.format(item.text(0),column,item.text(1)))
-        # Parse the string given by the changed item using yaml (this makes the types correct again)
-        try:
-            pstring = "a: {:s}".format(item.text(1))
-            yparse = yaml.safe_load(pstring)
-            newdata = yparse['a']
-        except Exception as e: # Could not parse, use the old, valid data as a backup
-            logger.debug(funcname + '{:s}'.format(str(e)))
-            pstring = "a: {:s}".format(self.backup_data)
-            yparse = yaml.safe_load(pstring)
-            newdata = yparse['a']
-            item.setText(1,self.backup_data)
-            #print('ohno',e)
+        if not index.isValid():
+            return
 
+        item = self.itemAt(point)
+        name = item.text(0)  # The text of the node.
 
-        # Change the dictionary
-        try:
-            key = item._ncconfig_key
-            #print('key',key,item._ncconfig_[key])
-            if(type(item._ncconfig_[key]) == configdata):
-               item._ncconfig_[key].value = newdata # The newdata, parsed with yaml
+        # We build the menu.
+        menu = QtWidgets.QMenu('Edit dict entry')
+        action_add = menu.addAction("Add item")
+        action_add.__item__ = item
+        action_del = menu.addAction("Delete item")
+        action_del.__item__ = item
+        menu.addSeparator()
+        action_1 = menu.addAction("Choix 1")
+        action_2 = menu.addAction("Choix 2")
+        action_3 = menu.addAction("Choix 3")
+
+        action_add.triggered.connect(self.add_rm_item_menu)
+        action_del.triggered.connect(self.add_rm_item_menu)
+        menu.exec_(self.mapToGlobal(point))
+
+    def seq_iter(self,obj):
+        if isinstance(obj, dict):
+            return obj
+        elif isinstance(obj, list):
+            return range(0,len(obj))
+        else:
+            return None
+
+    def create_item(self, index, data, parent):
+        sequence = self.seq_iter(data)
+        typestr = data.__class__.__name__
+        if(sequence == None): # Check if we have an item that is something with data (not a list or dict)
+            item = QtWidgets.QTreeWidgetItem([str(index), str(data),typestr])
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)  # editable
+            item.__data__         = data
+            item.__dataindex__    = index
+            item.__datatypestr__  = typestr
+            item.__parent__       = parent
+            index_child = self.item_is_child(parent, item)
+            if  index_child == None:  # Check if the item is already existing, if no add it
+                parent.addChild(item)
             else:
-               item._ncconfig_[key] = newdata # The newdata, parsed with yaml
+                pass
+        else:
+            if(index is not None):
+                indexstr = index
+            newparent = QtWidgets.QTreeWidgetItem([str(index), '',typestr])
+            newparent.__data__         = data
+            newparent.__dataindex__    = index
+            newparent.__datatypestr__  = typestr
+            newparent.__parent__       = parent
+            index_child = self.item_is_child(parent, newparent)
+            if index_child==None:  # Check if the item is already existing, if no add it
+                parent.addChild(newparent)
+            else:
+                newparent = parent.child(index_child)
 
-        except Exception as e:
-            logger.debug(funcname + '{:s}'.format(str(e)))
+            for newindex in sequence:
+                newdata = data[newindex]
+                self.create_item(newindex,newdata,newparent)
 
-        self.resizeColumnToContents(0)
+    def item_is_child(self,parent,child):
+        """
+        Checks if the item is a child already
 
-    def create_qtree(self,dictionary,editable=True):
+        Args:
+            parent:
+            child:
+
+        Returns:
+
+        """
+        numchilds  = parent.childCount()
+        #print('numchilds',numchilds,parent.text(0),parent)
+        for i in range(numchilds):
+            testchild = parent.child(i)
+            flag1 = testchild.__data__        == child.__data__
+            flag2 = testchild.__dataindex__   == child.__dataindex__
+            flag3 = testchild.__datatypestr__ == child.__datatypestr__
+            flag4 = testchild.__parent__      == child.__parent__
+            #print('fdsfd',i,testchild.__data__,child.__data__)
+            #print('flags',flag1,flag2,flag3,flag4)
+            if(flag1 and flag2 and flag3 and flag4):
+                #print('The same ...')
+                return i
+
+        return None
+
+
+
+
+
+    def create_qtree(self, editable=True):
         """Creates a new qtree from the configuration and replaces the data in
         the dictionary with a configdata obejct, that save the data
         but also the qtreeitem, making it possible to have a synced
@@ -807,108 +933,176 @@ class redvypr_dictionary_widget(QtWidgets.QWidget):
 
         """
         funcname = __name__ + '.create_qtree():'
-        self.dictionary      = dictionary
         logger.debug(funcname)
         self.blockSignals(True)
         if True:
-            self.clear()
-            root = self.invisibleRootItem()
-            self.setColumnCount(2)
-
-        for key in sorted(dictionary.keys()):
-            if key == 'devices':
-                parent = QtWidgets.QTreeWidgetItem([key,''])
-                root.addChild(parent)
-                for idev,dev in enumerate(config['devices']):
-                    devicename = dev['device']
-                    deviceitem = QtWidgets.QTreeWidgetItem([str(idev),devicename])
-                    parent.addChild(deviceitem)
-                    for devkey in config['devices'][idev].keys():
-                        keycontent    = config['devices'][idev][devkey]
-                        devicekeyitem = QtWidgets.QTreeWidgetItem([devkey,keycontent])
-                        deviceitem.addChild(devicekeyitem)
-                        # Change the configuration with configdata to store extra informations
-                        keycontent_new                   = configdata(keycontent)
-                        config['devices'][idev][devkey]  = keycontent_new
-                        devicekeyitem._ncconfig_         = config['devices'][idev]
-                        devicekeyitem._ncconfig_key      = devkey
-                        if(editable):
-                            devicekeyitem.setFlags(devicekeyitem.flags() | QtCore.Qt.ItemIsEditable)
-
-            else:
-                value               = config[key]
-                data                = configdata(value)
-                config[key]         = data
-                child = QtWidgets.QTreeWidgetItem([key,str(value)])
-                child._ncconfig_    = config
-                child._ncconfig_key = key
-                root.addChild(child)
-                if(editable):
-                    child.setFlags(child.flags() | QtCore.Qt.ItemIsEditable)
-                groupparent = child
+            self.create_item(self.dataname,self.data,self.root)
 
         self.resizeColumnToContents(0)
         self.blockSignals(False)
 
-    def edititem(self,item,colno):
-        funcname = __name__ + 'edititem()'
-        #print('Hallo!',item,colno)
+    def checkEdit(self, item, column):
+        """ Helper function that only allows to edit column 1
+        """
+        funcname = __name__ + '.checkEdit():'
+        logger.debug(funcname + '{:d}'.format(column))
+
+        if (column == 1) and (self.seq_iter(item.__data__) == None):
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)  # editable
+        else:
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)  # not editable
+            #self.edititem(item, column)
+
+    def current_item_changed(self, current, previous):
+        """ Save the data in the currently changed item, this is used to
+        restore if newly entered data is not valid
+        """
+        #self.backup_data = current.text(1)
+        item = current
+        if(item is not None):
+            if (item.parent() is not None):
+                print(item.text(0), item.parent().text(0))
+
+
+    def item_changed(self, item, column):
+        """ Updates the dictionary with the changed data
+        """
+        funcname = __name__ + '.item_changed():'
+        #logger.debug(funcname + 'Changed {:s} {:d} to {:s}'.format(item.text(0), column, item.text(1)))
+        print(funcname + 'Changed {:s} {:d} to {:s}'.format(item.text(0), column, item.text(1)))
+
+        index      = item.__dataindex__
+        datatypestr= item.__datatypestr__
+        parentdata = item.__parent__.__data__
+        newdatastr = item.text(1)
+        self.change_dictionary(item,column,newdatastr,index,datatypestr,parentdata)
+        self.resizeColumnToContents(0)
+
+    def change_dictionary(self,item,column,newdatastr,index,datatypestr,parentdata):
+        """
+        Changes the dictionary
+        Args:
+            index:
+            datatype:
+            parentdata:
+
+        Returns:
+
+        """
+        olddata = parentdata[index]
+
+        convfunc = str
+        for dtype in self.datatypes:
+            if(datatypestr == dtype[0]):
+                convfunc = dtype[1]
+
+        print('Column',column)
+        # Try to convert the new data, if not possible, except take the old data
+        try:
+            self.update_history()
+            parentdata[index] = convfunc(newdatastr)
+        except:
+            item.setText(column,str(olddata))
+
+    def update_history(self):
+        """
+        Manages the history of self.data by updating a list with a deepcopy of prior versions.
+
+        Returns:
+
+        """
+        funcname = __name__ + 'update_history()'
+        logger.debug(funcname)
+        if(len(self.olddata) > self.numhistory):
+            logger.debug('History overflow')
+            self.olddata.pop(0)
+
+        olddata = copy.deepcopy(self.data)
+        self.olddata.append(olddata)  # Make a backup of the data
+
+    def add_rm_item_menu(self):
+        funcname = __name__ + 'add_rm_item_menu()'
+        sender = self.sender()
+        print('Sender', )
+        item = sender.__item__
+        if ('add' in sender.text().lower()):
+            logger.debug(funcname + ' Adding item')
+            self.add_item_widget(item)
+
+        elif ('del' in sender.text().lower()):
+            logger.debug(funcname + ' Deleting item')
+
+    def add_item_widget(self,item):
+        """
+        Widget for the user to add an item
+
+        Returns:
+
+        """
+        self.__add_item_widget = QtWidgets.QWidget()
+        layout = QtWidgets.QFormLayout(self.__add_item_widget)
+        self.__keyinput = QtWidgets.QLineEdit()
+        if (item.__datatypestr__ == 'list'):
+            self.__keyinput.setText('')
+            self.__keyinput.setEnabled(False)
+        self.__datainput = QtWidgets.QLineEdit()
+        self.__datatypeinput = QtWidgets.QComboBox()
+        for d in self.datatypes:
+            self.__datatypeinput.addItem(d[0])
+
+        self.__apply = QtWidgets.QPushButton('Apply')
+        self.__apply.__item__ = item
+        self.__cancel = QtWidgets.QPushButton('Cancel')
+        self.__apply.clicked.connect(self.__add_item_widget_click)
+        self.__cancel.clicked.connect(self.__add_item_widget_click)
+        layout.addRow(QtWidgets.QLabel('Key'),self.__keyinput)
+        layout.addRow(QtWidgets.QLabel('Value'), self.__datainput)
+        layout.addRow(QtWidgets.QLabel('Datatype'), self.__datatypeinput)
+        layout.addRow(self.__apply, self.__cancel)
+
+        self.__add_item_widget.show()
+
+    def __add_item_widget_click(self):
+        sender = self.sender()
+        funcname = __name__ + '__add_item_widget_click()'
+        logger.debug(funcname)
+        if(sender == self.__apply):
+            logger.debug(funcname + ' Apply')
+            item = sender.__item__
+            newdata = self.__datainput.text()
+            newdataindex = self.__keyinput.text()
+            newdatatype = self.__datatypeinput.currentText()
+            self.add_rm_item(item,newdata,newdataindex,newdatatype)
+            print('Item',item)
+        elif(sender == self.__cancel):
+            logger.debug(funcname + ' Cancel')
+
+        self.__add_item_widget.close()
+
+    def add_rm_item(self, item,newdata,newdataindex,newdatatype):
+
+        funcname = __name__ + 'add_rm_item()'
+        print('Hallo!',item)
         logger.debug(funcname + str(item.text(0)) + ' ' + str(item.text(1)))
         self.item_change = item
-        if(item.text(0) == 'device'):
-            # Let the user choose all devices and take care that the devices has been connected
-            self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = None, deviceonly=True, subscribed_only=False) # Open a device choosing widget
-            self.devicechoose.device_name_changed.connect(self.itemtextchange)
-            self.devicechoose.show()
+        # Convert the text to the right format using the conversion function
+        data = self.datatypes_dict[newdatatype](newdata)
+        if(self.item_change.__datatypestr__ == 'list'):
+            logger.debug(funcname + ' Appending item to list')
 
-        if((item.text(0) == 'x') or (item.text(0) == 'y')):
-            # Get the devicename first
-            parent = item.parent()
-            devicename = ''
-            device_datakey = None
-            print('Childcount',parent.childCount())
-            for i in range(parent.childCount()):
-                child = parent.child(i)
-                keystring = child.text(0)
-                print('keystring',keystring)
-                if(keystring == 'device'):
-                    devicestr_datakey = child.text(1)
-                    print('Devicename',devicestr_datakey)
-                    break
+            self.update_history()
+            self.item_change.__data__.append(data)
+            print('data', self.data)
+            self.create_qtree()
 
-            if(devicestr_datakey is not None):
-                print('Opening devicelist widget')
-                self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = devicestr_datakey,devicename_highlight = devicestr_datakey,deviceonly=False,devicelock = True, subscribed_only=False) # Open a device choosing widget
-                self.devicechoose.datakey_name_changed.connect(self.itemtextchange)
-                self.devicechoose.show()
 
     def resize_view(self):
         self.resizeColumnToContents(0)
 
-    def itemtextchange(self,itemtext):
+    def itemtextchange(self, itemtext):
         """ Changes the current item text self.item_change, which is defined in self.item_changed. This is a wrapper function to work with signals that return text only
         """
-        self.item_change.setText(1,itemtext)
-
-    def get_config(self):
-        print('Get config',self.config)
-        config = self.config
-        return config
+        self.item_change.setText(1, itemtext)
 
 
-
-#
-#
-#
-class redvypr_ip_widget(QtWidgets.QWidget):
-    """ Widget that shows the IP and network devices of the host
-    """
-    def __init__(self):
-        """
-        """
-        funcname = __name__ + '.__init__():'
-        super(QtWidgets.QWidget, self).__init__()
-        self.setWindowIcon(QtGui.QIcon(_icon_file))
-        self.table = QtWidgets.QTableWidget()
-        self.show()
 

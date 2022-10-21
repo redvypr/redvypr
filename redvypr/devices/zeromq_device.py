@@ -36,6 +36,8 @@ import copy
 import zmq
 import socket
 from redvypr.device import redvypr_device
+from redvypr.data_packets import check_for_command
+
 
 
 zmq_context = zmq.Context()
@@ -46,7 +48,7 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('zeromq_device')
 logger.setLevel(logging.DEBUG)
 
-description = 'Connects to zeromq datastreams'
+description = 'Send or reveives data via a zeromq PUB/SUB socket'
 
 #https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib
 def get_ip():
@@ -61,116 +63,81 @@ def get_ip():
         s.close()
     return IP
 
-
 def yaml_dump(data):
     #return yaml.dump(data,default_flow_style=False)
     return yaml.dump(data,explicit_end=True,explicit_start=True)
 
-
-def send_data(data_dict,config):
-    """ Function that processes the data_dict to a serialized datastream sendable over network connections 
+def rawcopy(data):
     """
-    funcname = __name__ + 'send_data()'
-
-    # Choose the serialize function
-    if(config['serialize'] == 'str'):
-        serialize = str 
-    elif(config['serialize'] == 'yaml'):
-        serialize = yaml_dump # A dump with options
-        
-    # 
-    if(config['data'][0] == 'all'):
-        datab = serialize(data_dict).encode('utf-8')
-    else:
-        if(type(config['data']) == str):
-            config['data'] = [config['data']]
-            
-        datab = b''
-        for key in config['data']:
-            datab += serialize(data_dict[key]).encode('utf-8')
-
-    return datab
-
-
-def start_send(dataqueue, datainqueue, comqueue, statusqueue, config=None):
-    """ TCP publishing, this thread waits for TCP connections connections. For each connection a new connection is created that is fed with a subthread (handle_tcp_send) is created that is receiving data with a new queue. 
+    Functions that simply returns the input data, used as the basic field conversion function
     """
-    funcname = __name__ + '.start_tcp_send()'
-    logger.debug(funcname + ':Starting network thread')        
+    return data
+
+
+def start_send(dataqueue, datainqueue, statusqueue, config=None):
+    """ zeromq publishing.
+    """
+    funcname = __name__ + '.start_send()'
+    logger.debug(funcname + ':Starting zeromq send thread')
     npackets     = 0 # Number of packets
     bytes_read   = 0
-    threadqueues = []
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((config['address'],config['port']))
-    server.listen(8)
-    server.settimeout(0.05) # timeout for listening
+
+    pub = zmq_context.socket(zmq.PUB)
+    url = 'tcp://' + config['address'] + ':' + str(config['port'])
+    logger.debug(funcname + ':Start receiving data from url {:s}'.format(url))
+    pub.connect(url)
+
     # Some variables for status
-    tstatus = time.time()
-    dtstatus = 5 # Send a status message every dtstatus seconds
-    npackets = 0 # Number packets received via the datainqueue
+    tstatus    = time.time()
+    dtstatus   = 5 # Send a status message every dtstatus seconds
+    npackets   = 0  # Number packets received via the datainqueue
+    bytes_sent = 0  # Number packets received via the datainqueue
+
+    if(config['serialize'] == 'str'):
+        serialize = str
+    elif (config['serialize'] == 'yaml'):
+        serialize = yaml_dump #
+    elif (config['serialize'] == 'raw'):
+        serialize = rawcopy  #
+    else:
+        serialize = yaml_dump #
             
     while True:
-        try:
-            com = comqueue.get(block=False)
-            logger.info(funcname + 'received command:' + str(com) + ' stopping now')
-            server.close()            
-            break
-        except:
-            pass
+        if True:
+            data = datainqueue.get()
+            command = check_for_command(data)
+            if(command is not None):
+                logger.debug('Got a command', command)
+                break
 
-        try:        
-            client, address = server.accept() # Here the timeout will let the loop run with 20 Hz
-            threadqueue = queue.Queue()
-            tcp_thread = threading.Thread(target=handle_tcp_client_send, args=([client,address],threadqueue,statusqueue))
-            tcp_thread.start()
-            threadqueues.append({'thread':tcp_thread,'queue': threadqueue,'address':address,'bytes_sent':0,'packets_sent':0})
-        except socket.timeout:
-            pass
-        except Exception as e:
-            logger.info(funcname + ':thread start: ' + str(e))
-        
-        while(datainqueue.empty() == False):
-            try:
-                data_dict = datainqueue.get(block=False)
-                npackets += 1
-                # Call the send_data function to create a binary sendable datastream
-                datab      = send_data(data_dict,config)
-                #print('sending data',datab)
-                for q in threadqueues:
-                    q['queue'].put(datab)
-                    q['bytes_sent'] += len(datab)
-                    q['packets_sent'] += 1
+        npackets += 1
+        # Call the send_data function to create a binary sendable datastream
 
-            except Exception as e:
-                logger.debug(funcname + ':Exception:' + str(e))
+        #
+        if (config['data'][0] == 'all'):
+            datab = serialize(data_dict).encode('utf-8')
+        else:
+            if (type(config['data']) == str):
+                config['data'] = [config['data']]
 
-
+            datab = b''
+            for key in config['data']:
+                datab += serialize(data_dict[key]).encode('utf-8')
+        datab      = send_data(data,config)
+        pub.send(datab)
+        bytes_sent += len(datab)
 
         # Sending a status message
         if((time.time() - tstatus) > dtstatus):
             statusdata = {'npackets':npackets}
+            statusdata['bytes_sent'] = bytes_sent
             tstatus = time.time()
-            # Do a cleanup of the threads that are dead
-            for q in threadqueues:
-                isalive = q['thread'].is_alive() # This can be False or None if the thread is dead already
-                if(isalive == False):
-                    threadqueues.remove(q)
-                
-            statusdata['clients'] = []
-            statusdata['config'] = copy.deepcopy(config)
-            for q in threadqueues:
-                client = {'bytes':q['bytes_sent'],'address':q['address'][0],'port':q['address'][1],'packets':q['packets_sent']}
-                statusdata['clients'].append(client)
-                
             try:
                 statusqueue.put_nowait(statusdata)
             except: # If the queue is full
-                pass                
+                pass
 
-            
-        
-        
-            
+
 def start_recv(dataqueue, datainqueue, statusqueue, config=None):
     """ zeromq receiving data
     """
@@ -196,9 +163,12 @@ def start_recv(dataqueue, datainqueue, statusqueue, config=None):
     npackets = 0 # Number packets received
     while True:
         try:
-            com = datainqueue.get(block=False)
+            data = datainqueue.get(block=False)
+            command = check_for_command(data)
+            if (command is not None):
+                logger.debug('Got a command', command)
+                break
             logger.debug('received command:' + str(com) + ' stopping now')
-            client.close()            
             break
         except:
             pass
@@ -232,9 +202,8 @@ def start_recv(dataqueue, datainqueue, statusqueue, config=None):
                 datapackets += 1
 
         except Exception as e:
+            # logger.debug(funcname + ':' + str(e))
             pass
-            #logger.info(funcname + ':' + str(e))
-            #return
 
         # Sending a status message
         if((time.time() - tstatus) > dtstatus):
@@ -275,7 +244,7 @@ class Device(redvypr_device):
         logger.debug(funcname)
         if(self.config['direction'] == 'publish'):
             logger.info(__name__ + ':Start to serve data on address:' + str(self.config))
-            start_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
+            #start_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
         elif(self.config['direction'] == 'receive'):
             logger.info('Start to receive data from address:' + str(self.config))
             start_recv(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
@@ -341,6 +310,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QFormLayout(self)
         self.device   = device
+        self.device.status_signal.connect(self.thread_status)
         self.device.check_and_fill_config() # Add standard stuff
         self.inputtabs = QtWidgets.QTabWidget() # Create tabs for different connection types
         self.serialwidget = QtWidgets.QWidget()
@@ -470,7 +440,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         return config
     
     def thread_status(self,status):
-        self.update_buttons(status['threadalive'])
+        self.update_buttons(status['thread_status'])
         
     def update_buttons(self,thread_status):
             """ Updating all buttons depending on the thread status (if its alive, graying out things)
@@ -509,10 +479,10 @@ class initDeviceWidget(QtWidgets.QWidget):
             
             # Setting the configuration
             self.device.config = config
-            self.device_start.emit(self.device)
+            self.device.thread_start()
             button.setText("Starting")
         else:
-            self.device_stop.emit(self.device)
+            self.device.thread_stop()
             button.setText("Stopping")
 
 

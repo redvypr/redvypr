@@ -200,9 +200,7 @@ class redvypr(QtCore.QObject):
         
         ## A timer to check the status of all threads
         self.devicethreadtimer = QtCore.QTimer()
-        self.devicethreadtimer.timeout.connect(self.update_devices_thread_status)
         self.devicethreadtimer.start(500)
-
 
         ## A timer to print the status in the nogui environment
         if(nogui):
@@ -253,52 +251,6 @@ class redvypr(QtCore.QObject):
             #statusstr += ': data packets received: {:d}'.format(sendict['numpacketout'])
 
         return statusstr
-
-
-    def update_devices_thread_status(self):
-        """ This function is called regularly to check the status of the threads
-        """
-        # Check the datadistribution statistics
-        datainfo = []
-        while True:
-            try:
-                data = self.datadistinfoqueue.get(block=False)
-                datainfo.append(data)
-                self.dt_avg_datadist = data['dt_avg']
-
-            except Exception as e:
-                break
-
-        # Check the devicethreadstatusses
-        for sendict in self.devices:
-            # Update the device and the devicewidgets about the thread status
-            if(sendict['thread'] is not None):
-                running2 = sendict['thread'].is_alive()
-                try: # If the device has a thread_status function
-                    device.thread_status({'threadalive':running2})
-                except:
-                    pass
-
-                # Tell it deviceinfos
-                try: # GUI?
-                    sendict['infowidget'].thread_status({'threadalive':running2})
-                except Exception as e:
-                    pass                    
-                # Go tell it to the widgets
-                try: # If the device has a thread_status function
-                    sendict['initwidget'].thread_status({'threadalive':running2})
-                except Exception as e:
-                    pass
-                    #print('Start thread exception:' + str(e))
-
-
-                for guiwidget in sendict['gui']:
-                        try: # If the device has a thread_status function
-                            guiwidget.thread_status({'threadalive':running2})
-                        except Exception as e:
-                            pass
-                            #print('Start thread exception:' + str(e))
-
 
 
     def parse_configuration(self,configfile=None):
@@ -614,72 +566,12 @@ class redvypr(QtCore.QObject):
                     device_uuid = devicemodulename + '_' + str(uuid.uuid1())
                     device               = devicemodule.Device(name = name, uuid = device_uuid, redvypr = self, dataqueue= dataqueue,comqueue = comqueue,datainqueue = datainqueue,statusqueue = statusqueue, loglevel = loglevel,numdevice = self.numdevice, statistics = statistics)
                     self.numdevice      += 1  
-                    FLAG_DEVICE_OLDSTYLE = False
                     # If the device has a logger
                     devicelogger = device.logger
-                    print('New style device done') 
+                    print('New style device done')
                 except Exception as e:
-                    print('Excpetion new style',str(e))
-                    FLAG_DEVICE_OLDSTYLE = True
-                    
-                    
-                if(FLAG_DEVICE_OLDSTYLE): # This need to be replaced by the redvypr_device
-                    # Device do not necessarily have a statusqueue
-                    try:
-                        device               = devicemodule.Device(dataqueue= dataqueue,comqueue = comqueue,datainqueue = datainqueue,statusqueue = statusqueue)
-                    except Exception as e:
-                        device               = devicemodule.Device(dataqueue = dataqueue,comqueue = comqueue,datainqueue = datainqueue)
-                    
-                    # Add the name to the device
-                    device.name         = name
-                    # Add an unique number
-                    device.numdevice     = self.numdevice
-                    self.numdevice      += 1  
-                    # Setting the configuration of the device. Each key entry in
-                    # the dict is directly set as an attribute in the device class
-                    if(deviceconfig is not None):
-                        logger.info('Setting configuration of device: ' + str(device) + ' #' + str(device.numdevice))
-                        for key in deviceconfig:
-                            confvalue = deviceconfig[key]                
-                            logger.info(key + ':'+ str(confvalue))
-                            setattr(device,key,confvalue)
-                    
-                    # Add the redvypr object to the device itself
-                    device.redvypr = self
-                    # Do the loglevel use "standard" to take the loglevel of the redvypr instance
-                    try:
-                        loglevel_device = device.loglevel.upper()
-                    except: # Use the standard loglevel of redvypr
-                        loglevel_device = "standard"
-                    
-                    # If we have standard 
-                    if(loglevel_device == "standard"):
-                        loglevel_device = logger.level
-                
-                
-                    # If the device has a logger
-                    devicelogger = None 
-                    try:
-                        device.logger.setLevel(loglevel_device)
-                        devicelogger = device.logger
-                    except Exception as e:
-                        logger.debug(funcname + ': NA logger device loglevel {:s}'.format(str(e)))
-                        
-                        
-                    # If the module has a logger            
-                    try:
-                        devicemodule.logger.setLevel(loglevel_device)
-                        devicelogger = devicemodule.logger
-                    except Exception as e:            
-                        logger.debug(funcname + ': NA logger module loglevel {:s}'.format(str(e)))
-                        
-                    # Link the statistics directly into the device as well    
-                    device.statistics = statistics 
-                    
-                    # Add lists of receiving and providing devicenames
-                    device.data_receiver = []
-                    device.data_provider = []        
-                      
+                    print('Exception new style',str(e))
+
                 if thread: # Thread or multiprocess        
                     device.mp = 'thread'
                 else:
@@ -761,62 +653,20 @@ class redvypr(QtCore.QObject):
             device.statistics['datastreams'] = list(set(device.statistics['datastreams']))
 
     def start_device_thread(self,device):
-        """Functions starts a thread, to process the data (i.e. reading from a device, writing to a file)
+        """ Functions starts the device thread that is the core of each device
         Args:
            device: Device is either a Device class defined in the device module or a dictionary containing the device class (when called from infodevicewidget in redvypr.py)
 
         """
         funcname = __name__ + '.start_device_thread():'
-        if(type(device)start_device_thread == dict): # If called from devicewidget
+        if(type(device) == dict): # If called from devicewidget
             device = device['device']
 
         #logger.debug(funcname + 'Starting device: ' + str(device.name))
-        print(funcname + 'Starting device: ' + str(device.name))
+        logger.debug(funcname + 'Starting device: ' + str(device.name))
+        thread = device.thread_start()
+        device['thread'] = thread
 
-        # Find the right thread to start
-        for sendict in self.devices:
-            if(sendict['device'] == device):
-                try:
-                    running = sendict['thread'].is_alive()
-                except:
-                    running = False
-
-                if(running):
-                    logger.info(funcname + ':thread/process is already running, doing nothing')
-                else:
-                    try:
-                        if device.mp == 'thread':
-                            devicethread     = threading.Thread(target=device.start, args=(), daemon=True)
-                            sendict['thread']= devicethread
-                            sendict['thread'].start()
-                            logger.info(funcname + 'started {:s} as thread'.format(device.name))
-                        else:
-                            deviceprocess    = multiprocessing.Process(target=device.start, args=())
-                            sendict['thread']= deviceprocess
-                            sendict['thread'].start()
-                            logger.info(funcname + 'started {:s} as process with PID {:d}'.format(device.name, deviceprocess.pid))
-
-                        # Update the device and the devicewidgets about the thread status
-                        running2 = sendict['thread'].is_alive()
-                        try: # If the device has a thread_status function
-                            device.thread_status({'threadalive':running2})
-                        except:
-                            pass
-
-                        try: # If the device has a thread_status function
-                            sendict['initwidget'].thread_status({'threadalive':running2})
-                        except Exception as e:
-                            pass
-
-                        for guiwidget in sendict['gui']:
-                            try: # If the device has a thread_status function
-                                guiwidget.thread_status({'threadalive':running2})
-                            except Exception as e:
-                                pass
-                                #print('Start thread exception:' + str(e))
-                    except Exception as e:
-                        logger.warning(funcname + 'Could not start device {:s}'.format(str(e)))
-                    
 
     def stop_device_thread(self,device):
         """Functions stops a thread, to process the data (i.e. reading from a device, writing to a file)
@@ -829,6 +679,8 @@ class redvypr(QtCore.QObject):
         if(type(device) == dict): # If called from devicewidget
             device = device['device']                
         logger.debug(funcname + ':Stopping device: ' + device.name)
+        thread_status = device.thread_stop()
+
         for sendict in self.devices:
             if(sendict['device'] == device):
                 if(sendict['thread'] == None):
@@ -855,12 +707,6 @@ class redvypr(QtCore.QObject):
                 else:
                     logger.warning(funcname + ': Could not stop thread.')
                     
-                # This is probably still an alive thread, since it is usually checked in time intervals within the thread
-                try:    
-                    device.thread_status({'threadalive': sendict['thread'].is_alive()})
-                except:
-                    pass
-
 
     def send_command(self,device,command): # Legacy ?!!?!, used device.command instead ...
         """ Sends a command to a device by putting it into the command queue
@@ -1298,13 +1144,6 @@ class redvyprWidget(QtWidgets.QWidget):
         self.devicetabs.setTabsClosable(True)
         self.devicetabs.tabCloseRequested.connect(self.closeTab)
         
-        ## Add a console
-        #self.console = redvypr_console()
-        
-        # Temporary for the configuration
-        temp={'Hallo':4}
-        self.propWidget = redvypr_dictionary_widget(temp)
-        self.propWidget.show()
         # The configuration of the redvypr
         self.create_devicepathwidget()
         self.create_statuswidget()
@@ -1392,8 +1231,9 @@ class redvyprWidget(QtWidgets.QWidget):
                 # Create a new infowidget
                 dev['infowidget'].close()
                 dev['infowidget'] = deviceinfoWidget(dev,self)
-                dev['infowidget'].device_start.connect(self.redvypr.start_device_thread)
-                dev['infowidget'].device_stop.connect(self.redvypr.stop_device_thread)
+                # Note: commented for the moment to be replaced by the signals of the device itself
+                #dev['infowidget'].device_start.connect(self.redvypr.start_device_thread)
+                #dev['infowidget'].device_stop.connect(self.redvypr.stop_device_thread)
                 dev['infowidget'].connect.connect(self.connect_device)                
                 for i in range(self.devicetabs.count()):
                     if(self.devicetabs.widget(i) == widget):
@@ -1587,8 +1427,8 @@ class redvyprWidget(QtWidgets.QWidget):
             
         try:
             deviceinitwidget = deviceinitwidget_bare(device)
-            deviceinitwidget.device_start.connect(self.redvypr.start_device_thread)
-            deviceinitwidget.device_stop.connect(self.redvypr.stop_device_thread)
+            #deviceinitwidget.device_start.connect(self.redvypr.start_device_thread)
+            #deviceinitwidget.device_stop.connect(self.redvypr.stop_device_thread)
         except Exception as e:
             logger.warning(funcname + ': Widget does not have a deviceinitwidget or start/stop signals:' + str(e))
             deviceinitwidget = QtWidgets.QWidget() # Use a standard widget
@@ -1653,9 +1493,8 @@ class redvyprWidget(QtWidgets.QWidget):
         self.redvypr.devices[ind_devices]['widget'] = devicewidget # This is the displaywidget
         # Create the infowidget (for the overview of all devices)
         self.redvypr.devices[ind_devices]['infowidget'] = deviceinfoWidget(self.redvypr.devices[ind_devices],self)
-        self.redvypr.devices[ind_devices]['infowidget'].device_start.connect(self.redvypr.start_device_thread)
-        self.redvypr.devices[ind_devices]['infowidget'].device_stop.connect(self.redvypr.stop_device_thread)
         self.redvypr.devices[ind_devices]['infowidget'].connect.connect(self.connect_device)
+
         
         #
         # Add the devicelistentry to the widget, this gives the full information to the device
@@ -1710,6 +1549,12 @@ class redvyprWidget(QtWidgets.QWidget):
 
 
     def update_status(self):
+        while True:
+            try:
+                data = self.datadistinfoqueue.get(block=False)
+                self.dt_avg_datadist = data['dt_avg']
+            except Exception as e:
+                break
         self.__status_dtneeded.setText(' (needed {:0.5f}s)'.format(self.redvypr.dt_avg_datadist))                
 
     def create_statuswidget(self):
@@ -1851,7 +1696,7 @@ class redvyprWidget(QtWidgets.QWidget):
             pass
 
         for sendict in self.redvypr.devices:
-            self.redvypr.stop_device_thread(sendict['device'])
+            sendict['device'].thread_stop()
 
         time.sleep(1)
         for sendict in self.redvypr.devices:        
@@ -2142,7 +1987,6 @@ def redvypr_main():
         width = int(rect.width()*4/5)
         height = int(rect.height()*2/3)
         
-
         logger.debug('Available screen size: {:d} x {:d} using {:d} x {:d}'.format(rect.width(), rect.height(),width,height))
         ex = redvyprMainWidget(width=width,height=height,config=config_all)
                   
