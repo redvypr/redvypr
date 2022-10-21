@@ -795,7 +795,7 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
         logger.debug(funcname + str(data))
         # make only the first column editable
         #self.setEditTriggers(self.NoEditTriggers)
-        self.datatypes = [['int', int], ['float', float], ['str', str]] # The datatypes
+        self.datatypes = [['int', int], ['float', float], ['str', str],['list',list],['dict',dict]] # The datatypes
         self.datatypes_dict = {} # Make a dictionary out of it, thats easier to reference
         for d in self.datatypes:
             self.datatypes_dict[d[0]] = d[1]
@@ -806,6 +806,10 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
         self.numhistory = 100
         # Create the root item
         self.root = self.invisibleRootItem()
+        #self.root.__data__ = data
+        self.root.__dataindex__ = ''
+        self.root.__datatypestr__ = ''
+        self.root.__parent__ = None
         self.setColumnCount(3)
         self.create_qtree()
         print('Again check if update works')
@@ -838,17 +842,20 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
         name = item.text(0)  # The text of the node.
 
         # We build the menu.
-        menu = QtWidgets.QMenu('Edit dict entry')
-        action_add = menu.addAction("Add item")
-        action_add.__item__ = item
+        datatype = item.__datatypestr__
+        if ((datatype == 'list' or (datatype == 'dict'))):
+            menu = QtWidgets.QMenu('Edit dict entry')
+            action_add = menu.addAction("Add item")
+            action_add.__item__ = item
+            action_add.triggered.connect(self.add_rm_item_menu)
+        else:
+            menu = QtWidgets.QMenu('Edit dict entry')
+            action_edit = menu.addAction("Edit item")
+            action_edit.__item__ = item
+            action_edit.triggered.connect(self.add_rm_item_menu)
+
         action_del = menu.addAction("Delete item")
         action_del.__item__ = item
-        menu.addSeparator()
-        action_1 = menu.addAction("Choix 1")
-        action_2 = menu.addAction("Choix 2")
-        action_3 = menu.addAction("Choix 3")
-
-        action_add.triggered.connect(self.add_rm_item_menu)
         action_del.triggered.connect(self.add_rm_item_menu)
         menu.exec_(self.mapToGlobal(point))
 
@@ -861,6 +868,16 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
             return None
 
     def create_item(self, index, data, parent):
+        """
+        Creates recursively qtreewidgetitems. If the item to be created is a sequence (dict or list), it calls itself as often as it finds a real value
+        Args:
+            index:
+            data:
+            parent:
+
+        Returns:
+
+        """
         sequence = self.seq_iter(data)
         typestr = data.__class__.__name__
         if(sequence == None): # Check if we have an item that is something with data (not a list or dict)
@@ -873,8 +890,9 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
             index_child = self.item_is_child(parent, item)
             if  index_child == None:  # Check if the item is already existing, if no add it
                 parent.addChild(item)
-            else:
-                pass
+            else: # Update the data (even if it hasnt changed
+                parent.child(index_child).setText(1,str(data))
+
         else:
             if(index is not None):
                 indexstr = index
@@ -884,7 +902,7 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
             newparent.__datatypestr__  = typestr
             newparent.__parent__       = parent
             index_child = self.item_is_child(parent, newparent)
-            if index_child==None:  # Check if the item is already existing, if no add it
+            if index_child == None:  # Check if the item is already existing, if no add it
                 parent.addChild(newparent)
             else:
                 newparent = parent.child(index_child)
@@ -908,10 +926,13 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
         #print('numchilds',numchilds,parent.text(0),parent)
         for i in range(numchilds):
             testchild = parent.child(i)
-            flag1 = testchild.__data__        == child.__data__
+            #flag1 = testchild.__data__        == child.__data__
+            flag1 = True
             flag2 = testchild.__dataindex__   == child.__dataindex__
-            flag3 = testchild.__datatypestr__ == child.__datatypestr__
+            #flag3 = testchild.__datatypestr__ == child.__datatypestr__
+            flag3 = True
             flag4 = testchild.__parent__      == child.__parent__
+
             #print('fdsfd',i,testchild.__data__,child.__data__)
             #print('flags',flag1,flag2,flag3,flag4)
             if(flag1 and flag2 and flag3 and flag4):
@@ -919,9 +940,6 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
                 return i
 
         return None
-
-
-
 
 
     def create_qtree(self, editable=True):
@@ -978,7 +996,9 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
         self.change_dictionary(item,column,newdatastr,index,datatypestr,parentdata)
         self.resizeColumnToContents(0)
 
-    def change_dictionary(self,item,column,newdatastr,index,datatypestr,parentdata):
+
+
+    def change_dictionary(self, item, column, newdatastr, index, datatypestr, parentdata):
         """
         Changes the dictionary
         Args:
@@ -1028,11 +1048,35 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
         if ('add' in sender.text().lower()):
             logger.debug(funcname + ' Adding item')
             self.add_item_widget(item)
-
+        if ('edit' in sender.text().lower()):
+            logger.debug(funcname + ' Editing item')
+            self.add_item_widget(item)
         elif ('del' in sender.text().lower()):
             logger.debug(funcname + ' Deleting item')
+            self.rm_item_widget(item)
 
-    def add_item_widget(self,item):
+    def rm_item_widget(self, item):
+        """
+        Remove item from qtreewidget and from self.data dictionary
+        Args:
+            item:
+
+        Returns:
+
+        """
+        funcname = __name__ + 'rm_item_widget()'
+        if True: # Removing item
+            index = item.__parent__.indexOfChild(item)
+            # Remove from data
+            if(item.__parent__ is not self.root):
+                parentdata = item.__parent__.__data__
+                parentdata.pop(item.__dataindex__)
+                # Remove from qtreewidget
+                item.__parent__.takeChild(index)
+                print('data',self.data)
+
+
+    def add_item_widget(self, item):
         """
         Widget for the user to add an item
 
@@ -1042,14 +1086,18 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
         self.__add_item_widget = QtWidgets.QWidget()
         layout = QtWidgets.QFormLayout(self.__add_item_widget)
         self.__keyinput = QtWidgets.QLineEdit()
-        if (item.__datatypestr__ == 'list'):
-            self.__keyinput.setText('')
-            self.__keyinput.setEnabled(False)
         self.__datainput = QtWidgets.QLineEdit()
         self.__datatypeinput = QtWidgets.QComboBox()
+        listlist = ['list', 'dict']
         for d in self.datatypes:
-            self.__datatypeinput.addItem(d[0])
+            if(d[0] not in listlist):
+                self.__datatypeinput.addItem(d[0])
+            elif(item.__datatypestr__ in listlist):
+                self.__datatypeinput.addItem(d[0])
 
+        self.__datatypeinput.currentIndexChanged.connect(self.__combo_type_changed)
+        self.__datatypeinput.__item__ = item
+        self.__combo_type_changed() # Grey out unnecessary input lines
         self.__apply = QtWidgets.QPushButton('Apply')
         self.__apply.__item__ = item
         self.__cancel = QtWidgets.QPushButton('Cancel')
@@ -1059,8 +1107,28 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
         layout.addRow(QtWidgets.QLabel('Value'), self.__datainput)
         layout.addRow(QtWidgets.QLabel('Datatype'), self.__datatypeinput)
         layout.addRow(self.__apply, self.__cancel)
-
         self.__add_item_widget.show()
+
+    def __combo_type_changed(self):
+        datatype = self.__datatypeinput.currentText()
+        item = self.__datatypeinput.__item__
+        self.__keyinput.setEnabled(True)
+        self.__datainput.setEnabled(True)
+        parenttype = (item.__parent__.__datatypestr__ == 'list')
+
+        if (item.__datatypestr__ == 'list'):
+            self.__keyinput.setText('')
+            self.__keyinput.setEnabled(False)
+        if (parenttype and not(item.__datatypestr__ == 'list')):
+            self.__keyinput.setText('')
+            self.__keyinput.setEnabled(False)
+        if (datatype == 'list'):
+            self.__keyinput.setEnabled(True)
+            self.__datainput.setEnabled(False)
+        if (datatype == 'dict'):
+            self.__keyinput.setEnabled(True)
+            self.__datainput.setEnabled(False)
+
 
     def __add_item_widget_click(self):
         sender = self.sender()
@@ -1072,37 +1140,56 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
             newdata = self.__datainput.text()
             newdataindex = self.__keyinput.text()
             newdatatype = self.__datatypeinput.currentText()
-            self.add_rm_item(item,newdata,newdataindex,newdatatype)
+            self.add_edit_item(item,newdata,newdataindex,newdatatype)
             print('Item',item)
         elif(sender == self.__cancel):
             logger.debug(funcname + ' Cancel')
 
         self.__add_item_widget.close()
 
-    def add_rm_item(self, item,newdata,newdataindex,newdatatype):
+    def add_edit_item(self, item, newdata, newdataindex, newdatatype):
+        """
+        Depending on the datatype of item either add newdata or modifies existing data
+        Args:
+            item:
+            newdata:
+            newdataindex:
+            newdatatype:
 
+        Returns:
+
+        """
         funcname = __name__ + 'add_rm_item()'
         print('Hallo!',item)
         logger.debug(funcname + str(item.text(0)) + ' ' + str(item.text(1)))
-        self.item_change = item
         # Convert the text to the right format using the conversion function
         data = self.datatypes_dict[newdatatype](newdata)
-        if(self.item_change.__datatypestr__ == 'list'):
+        # Check how to append the data (depends on list or dict type of the item)
+        if(item.__datatypestr__ == 'list'):
             logger.debug(funcname + ' Appending item to list')
-
             self.update_history()
-            self.item_change.__data__.append(data)
+            item.__data__.append(data)
             print('data', self.data)
             self.create_qtree()
+        elif(item.__datatypestr__ == 'dict'):
+            logger.debug(funcname + ' Adding item with key {:s} to dictionary'.format(newdataindex))
+            self.update_history()
+            item.__data__[newdataindex] = data
+            print('data', self.data)
+            self.create_qtree()
+        else:
+            print('Editing item',newdata,newdataindex,newdatatype)
+            print('data before edit', self.data)
+            index = item.__dataindex__
+            item.__parent__.__data__[index] = newdata
+            item.__datatypestr__ = newdatatype
+            print('data edit', self.data)
+            self.create_qtree()
+
 
 
     def resize_view(self):
         self.resizeColumnToContents(0)
-
-    def itemtextchange(self, itemtext):
-        """ Changes the current item text self.item_change, which is defined in self.item_changed. This is a wrapper function to work with signals that return text only
-        """
-        self.item_change.setText(1, itemtext)
 
 
 
