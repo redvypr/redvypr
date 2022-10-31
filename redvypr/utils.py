@@ -1,8 +1,9 @@
 import sys
 import logging
+import copy
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr')
+logger = logging.getLogger('redvypr.utils')
 logger.setLevel(logging.DEBUG)
 
 
@@ -24,8 +25,24 @@ class configdata():
     """
     def __init__(self, value):
         self.value = value
+
     def __reduce__(self):
+        """
+        The function returns only self.value and omits any additional information.
+
+        Returns:
+
+        """
         return (type(self.value), (self.value, ))
+
+    def __str__(self):
+        rstr = 'configdata: {:s}'.format(str(self.value))
+        return rstr
+
+    def __repr__(self):
+        rstr = 'configdata: {:s}'.format(str(self.value))
+        return rstr
+
 
 
 def addrm_device_as_data_provider(devices,deviceprovider,devicereceiver,remove=False):
@@ -145,3 +162,91 @@ def get_data_providing_devices(devices,device):
             print('dataqueue',s,device,str(e))
             
     return devicesout
+
+
+
+def __seq_iter__(obj):
+    if isinstance(obj, dict):
+        return obj
+    elif isinstance(obj, list):
+        return range(0,len(obj))
+    else:
+        return None
+
+
+
+def configtemplate_to_dict(template):
+    """
+    creates a dictionary out of of a configuration dictionary, the values of the dictionary are configdata objects that store the template information as well
+    a deepcopy of the dict will result in an ordinary dictionary.
+    """
+    def loop_over_index(c):
+        for index in __seq_iter__(c):
+            # Check first if we have a configuration dictionary with at least the type
+            FLAG_CONFIG_DICT = False
+            if(type(c[index]) == dict):
+                if ('default' in c[index].keys()):
+                    default_value = c[index]['default']
+                    default_type = default_value.__class__.__name__ # Defaults overrides type
+                    FLAG_CONFIG_DICT = True
+                elif('type' in c[index].keys()):
+                    default_type = c[index]['type']
+                    default_value = ''
+                    FLAG_CONFIG_DICT = True
+
+            if ((__seq_iter__(c[index]) is not None) and (FLAG_CONFIG_DICT == False)):
+                loop_over_index(c[index])
+            else:
+                # Check if we have some default values like type etc ...
+                try:
+                    confdata = configdata(default_value)
+                    confdata.template = c[index]
+                    c[index] = confdata
+                except Exception as e:
+                    print('Exception',e)
+                    confdata = configdata(c[index])
+                    confdata.template = c[index]
+                    c[index] = confdata
+
+    config = copy.deepcopy(template) # Copy the template first
+    loop_over_index(config)
+    print('Config:',config)
+    return config
+
+
+def apply_config_to_dict(userconfig,configdict):
+    """
+    Applies a user configuration to a dictionary created from a template
+    Args:
+        userconfig:
+        configdict:
+
+    Returns:
+
+    """
+
+    def loop_over_index(c,cuser):
+        for index in __seq_iter__(c):
+            if (__seq_iter__(c[index]) is not None):
+                try: # Check if the user data is existing as well
+                    cuser[index]
+                except:
+                    continue
+
+                loop_over_index(c[index],cuser[index])
+            else:
+                try:  # Check if the user data is existing as well
+                    c[index].value = cuser[index]
+                except:
+                    try:  # Check if the user data is existing as well
+                        c[index] = cuser[index]
+                    except:
+                        pass
+                    pass
+
+    print('Configdict before:', configdict)
+    loop_over_index(configdict,userconfig)
+    print('Configdict after:', configdict)
+    return configdict
+
+
