@@ -26,7 +26,7 @@ class redvypr_device(QtCore.QObject):
     thread_stopped = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     status_signal  = QtCore.pyqtSignal(dict)  # Signal with the status of the device
 
-    def __init__(self,name='redvypr_device',uuid = '', redvypr=None,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None,config = {},publish=False,subscribe=False,loglevel = 'INFO',numdevice = -1,statistics=None):
+    def __init__(self,name='redvypr_device',uuid = '', redvypr=None,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None,template = {},config = {},publish=False,subscribe=False,multiprocess='tread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None):
         """
         """
         super(redvypr_device, self).__init__()
@@ -36,7 +36,8 @@ class redvypr_device(QtCore.QObject):
         self.dataqueue   = dataqueue        
         self.comqueue    = comqueue
         self.statusqueue = statusqueue
-        self.config      = config 
+        self.template    = template
+        self.config      = config
         self.redvypr     = redvypr
         self.name        = name
         self.uuid        = uuid
@@ -44,16 +45,20 @@ class redvypr_device(QtCore.QObject):
         self.numdevice   = numdevice
         self.description = 'redvypr_device'
         self.statistics  = statistics
-        self.mp          = 'thread'
+        self.mp          = multiprocess
         self.data_receiver = []
         self.data_provider = []
+
+        # Adding the start function (the function that is executed as a thread or multiprocess and is doing all the work!)
+        if(startfunction is not None):
+            self.start = startfunction
 
         self.devicethreadtimer = QtCore.QTimer()
         self.devicethreadtimer.timeout.connect(self.update_thread_status)
         self.devicethreadtimer.start(500)
 
         # The queue that is used for the thread commmunication
-        self.thread_communication = self.comqueue
+        self.thread_communication = self.datainqueue
 
         self.properties  = {}
         self.__apriori_datakeys__     = {'t','numpacket'}
@@ -63,7 +68,7 @@ class redvypr_device(QtCore.QObject):
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(loglevel)
 
-    def update_thread_status(self):
+    def update_thread_status(self): # Legacy?!?!
         """
 
         Returns:
@@ -79,15 +84,22 @@ class redvypr_device(QtCore.QObject):
         info_dict['thread_status'] = running
         self.status_signal.emit(info_dict)
 
-    def start(self):
+    def get_thread_status(self):
         """
+
+        Returns:
+
         """
-        funcname = self.__class__.__name__ + '.start()'
-        self.logger.debug(funcname)
-        config=copy.deepcopy(self.config)
-        #start(self.datainqueue,self.dataqueue,self.comqueue,self.statusqueue,config=config)
+        try:
+            running = self.thread.is_alive()
+        except:
+            running = False
 
+        info_dict = {}
+        info_dict['uuid'] = self.uuid
+        info_dict['thread_status'] = running
 
+        return info_dict
 
 
     def command(self,command):
@@ -109,6 +121,7 @@ class redvypr_device(QtCore.QObject):
         Returns:
 
         """
+        print('Thread stop')
         command = commandpacket(command='stop', device_uuid=self.uuid)
         self.command(command)
         try:
@@ -143,11 +156,12 @@ class redvypr_device(QtCore.QObject):
                     self.logger.info(funcname + ':thread/process is already running, doing nothing')
                 else:
                     try:
+                        # The arguments for the start function
+                        args = (self.config, self.dataqueue, self.datainqueue, self.statusqueue)
                         if self.mp == 'thread':
-                            self.thread = threading.Thread(target=self.start, args=(), daemon=True)
-
+                            self.thread = threading.Thread(target=self.start, args=args, daemon=True)
                         else:
-                            self.thread = multiprocessing.Process(target=self.start, args=())
+                            self.thread = multiprocessing.Process(target=self.start, args=args)
                             self.logger.info(funcname + 'started {:s} as process with PID {:d}'.format(self.name, self.thread.pid))
 
                         self.thread.start()

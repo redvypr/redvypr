@@ -528,12 +528,12 @@ def commandpacket(command='stop',device_uuid=''):
     return compacket
 
 
-def check_for_command(datapacket=None,uuid=''):
+def check_for_command(datapacket=None,uuid=None):
     """
 
     Args:
         datapacket:
-        uuid:
+        uuid: if set, compare uuid of the command with given uuid, return command only of uuid match
 
     Returns:
         command: content of the field 'redvypr_device_command', typically a string
@@ -542,7 +542,10 @@ def check_for_command(datapacket=None,uuid=''):
     FLAG_COM2 = 'redvypr_device_uuid' in datapacket.keys()
     command = None
     if (FLAG_COM1 and FLAG_COM2):
-        FLAG_UUID = datapacket['redvypr_device_uuid'] == uuid
+        if(uuid is not None):
+            FLAG_UUID = datapacket['redvypr_device_uuid'] == uuid
+        else:
+            FLAG_UUID = True
         if(FLAG_UUID):
             command = datapacket['redvypr_device_command']
 

@@ -18,7 +18,9 @@ import threading
 import multiprocessing
 import redvypr.devices as redvyprdevices
 from redvypr.data_packets import device_in_data, get_devicename_from_data
-from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices,configtemplate_to_dict, apply_config_to_dict
+from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices,configtemplate_to_dict
+from redvypr.device import redvypr_device
+import redvypr.utils
 import socket
 import argparse
 import importlib.util
@@ -1343,8 +1345,74 @@ class redvypr_data_tree(QtWidgets.QTreeWidget):
 #
 #
 #
+class redvypr_deviceInitWidget(QtWidgets.QWidget):
+    #device_start = QtCore.pyqtSignal(redvypr_device) # Signal requesting a start of the device (starting the thread)
+    #device_stop  = QtCore.pyqtSignal(redvypr_device) # Signal requesting a stop of device
+    connect      = QtCore.pyqtSignal(redvypr_device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    def __init__(self, device=None):
+        funcname = __name__ + '.__init__():'
+        logger.debug(funcname)
+        super().__init__()
+        self.layout = QtWidgets.QGridLayout(self)
+        self.config_widgets = []
+        self.device = device
+        self.config_widget = redvypr_config_widget(template=device.template,config = device.config)
+
+        self.config_widgets.append(self.config_widget)
+
+        # Startbutton
+        self.startbutton = QtWidgets.QPushButton('Start')
+        self.startbutton.clicked.connect(self.start_clicked)
+        self.startbutton.setCheckable(True)
+        self.layout.addWidget(self.config_widget, 0, 0)
+        self.layout.addWidget(self.startbutton, 1, 0)
+
+        self.statustimer = QtCore.QTimer()
+        self.statustimer.timeout.connect(self.update_buttons)
+        self.statustimer.start(500)
+
+    def start_clicked(self):
+        button = self.sender()
+        if button.isChecked():
+            logger.debug("button pressed")
+            button.setText('Stop')
+            self.device.thread_start()
+            #self.device_start.emit(self.device)
+        else:
+            logger.debug('button released')
+            button.setText('Start')
+            self.device.thread_stop()
+            #self.device_stop.emit(self.device)
+
+    def update_buttons(self):
+        """ Updating all buttons depending on the thread status (if its alive, graying out things)
+        """
+        # Running
+        status = self.device.get_thread_status()
+        thread_status = status['thread_status']
+        if(thread_status):
+            self.startbutton.setText('Stop')
+            self.startbutton.setChecked(True)
+            for w in self.config_widgets:
+                w.setEnabled(False)
+        # Not running
+        else:
+            self.startbutton.setText('Start')
+            for w in self.config_widgets:
+                w.setEnabled(True)
+
+            # Check if an error occured and the startbutton
+            if (self.startbutton.isChecked()):
+                self.startbutton.setChecked(False)
+            # self.conbtn.setEnabled(True)
+
+#
+#
+#
+#
+#
 class redvypr_config_widget(QtWidgets.QWidget):
-    def __init__(self, template = {},config=None):
+    def __init__(self, template={}, config=None):
         funcname = __name__ + '.__init__():'
         super().__init__()
         self.layout = QtWidgets.QGridLayout(self)
@@ -1358,11 +1426,10 @@ class redvypr_config_widget(QtWidgets.QWidget):
         conftemplate = configtemplate_to_dict(template=template)
         if(config is not None):
             logger.debug(funcname + 'Applying config to template')
-            apply_config_to_dict(config, conftemplate)
+            redvypr.utils.apply_config_to_dict(config, conftemplate)
 
 
-        print('Template',conftemplate)
-        print('Config', config)
+
         self.configtree = redvypr_config_tree(conftemplate,dataname=configname)
 
         #self.itemExpanded.connect(self.resize_view)
@@ -1376,7 +1443,8 @@ class redvypr_config_widget(QtWidgets.QWidget):
         # Add load/save buttons
         self.load_button = QtWidgets.QPushButton('Load')
         self.load_button.clicked.connect(self.load_config)
-        self.save_button = QtWidgets.QPushButton('save')
+        self.save_button = QtWidgets.QPushButton('Save')
+        self.save_button.clicked.connect(self.save_config)
 
         self.layout.addWidget(self.configtree,0,0)
         self.layout.addWidget(self.configgui, 0, 1)
@@ -1384,13 +1452,25 @@ class redvypr_config_widget(QtWidgets.QWidget):
         self.layout.addWidget(self.save_button, 1, 1)
 
     def load_config(self):
-        funcname = __name__ + '.load_confif():'
+        funcname = __name__ + '.load_config():'
         fname_open = QtWidgets.QFileDialog.getOpenFileName(self, 'Open file', '',"YAML files (*.yaml);; All files (*)")
         if(len(fname_open[0]) > 0):
             logger.info(funcname + 'Opening file {:s}'.format(fname_open[0]))
             fname = fname_open[0]
             with open(fname, 'r') as yfile:
                 data_yaml = yaml.safe_load(yfile)
+                self.apply_config(data_yaml)
+
+    def save_config(self):
+        funcname = __name__ + '.save_config():'
+        fname_open = QtWidgets.QFileDialog.getSaveFileName(self, 'Save file', '',"YAML files (*.yaml);; All files (*)")
+        if(len(fname_open[0]) > 0):
+            logger.info(funcname + 'Save file file {:s}'.format(fname_open[0]))
+            config = copy.deepcopy(self.configtree.data)
+            fname = fname_open[0]
+            with open(fname, 'w') as yfile:
+                yaml.dump(config, yfile)
+
 
     def apply_config(self,config):
         """
@@ -1419,7 +1499,13 @@ class redvypr_config_widget(QtWidgets.QWidget):
         try:
             dtype = data.template['type']
         except:
-            dtype = 'str'
+            if(type(data) == redvypr.utils.configdata):
+                dtype = data.value.__class__.__name__
+            else:
+                dtype = data.__class__.__name__
+
+            print('dtpye',dtype)
+            #dtype = 'str'
 
         self.remove_input_widgets()
         if(dtype == 'int'):

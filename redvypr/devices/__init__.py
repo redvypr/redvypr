@@ -9,5 +9,6 @@ from . import mergedata
 from . import rawdatadisp
 from . import rawdatalogger
 from . import rawdatareplay
+from . import test_device
 
 

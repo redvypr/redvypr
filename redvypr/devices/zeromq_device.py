@@ -41,14 +41,26 @@ from redvypr.data_packets import check_for_command
 
 
 zmq_context = zmq.Context()
+description = 'Send or reveives data via a zeromq PUB/SUB socket'
 
+config_template = {}
+config_template['name']      = 'zeromq'
+config_template['address']   = {'type': 'str','default':'127.0.0.1'}
+config_template['port']      = {'type': 'int','default':18196,'range':[0,65535]}
+config_template['direction'] = {'type': 'str', 'options': ['receive', 'publish'],'default':'receive'}
+config_template['data']      = {'type': 'str'}
+config_template['serialize'] = {'type': 'str', 'options': ['yaml', 'str'],'default':'yaml'}
+config_template['redvypr_device'] = {}
+config_template['redvypr_device']['publish']   = True
+config_template['redvypr_device']['subscribe'] = False
+config_template['redvypr_device']['description'] = description
 
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('zeromq_device')
 logger.setLevel(logging.DEBUG)
 
-description = 'Send or reveives data via a zeromq PUB/SUB socket'
+
 
 #https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib
 def get_ip():
@@ -219,295 +231,17 @@ def start_recv(dataqueue, datainqueue, statusqueue, config=None):
                 statusqueue.put_nowait(statusdata)
             except: # If the queue is full
                 pass
+
+def start(config=None, dataqueue=None, datainqueue=None, statusqueue=None):
+    funcname = __name__ + '.start():'
+    logger.debug(funcname)
+    if (config['direction'] == 'publish'):
+        logger.info(__name__ + ':Start to serve data on address:' + str(config))
+        # start_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
+    elif (config['direction'] == 'receive'):
+        logger.info('Start to receive data from address:' + str(config))
+        start_recv(dataqueue, datainqueue, statusqueue, config=config)
         
 
 
-class Device(redvypr_device):
-    def __init__(self,**kwargs):
-        """
-        """
-        super(Device, self).__init__(**kwargs)
-        self.publish     = True
-        self.subscribe   = False
-        self.description = 'zeromq'
-        self.config = {}
-        self.check_and_fill_config() # Add standard stuff
-        
-    def thread_status(self,status):
-        """ Function that is called by redvypr, allowing to update the status of the device according to the thread 
-        """
-        self.threadalive = status['threadalive']
 
-    def start(self):
-        funcname = __name__ + '.start():'
-        self.check_and_fill_config()
-        logger.debug(funcname)
-        if(self.config['direction'] == 'publish'):
-            logger.info(__name__ + ':Start to serve data on address:' + str(self.config))
-            #start_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
-        elif(self.config['direction'] == 'receive'):
-            logger.info('Start to receive data from address:' + str(self.config))
-            start_recv(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
-
-    
-    def check_and_fill_config(self):
-        """ Fills a config, if essential entries are missing
-        """
-        try:
-            self.config['address']
-        except:
-            self.config['address'] = get_ip()
-
-
-        if(self.config['address'] == None):
-            self.config['address'] = get_ip()
-        elif(self.config['address'] == ''):
-            self.config['address'] = get_ip()
-        elif(self.config['address'] == '<ip>'):
-            self.config['address'] = get_ip()
-        elif(self.config['address'] == '<IP>'):
-            self.config['address'] = get_ip()                        
-            
-        try:
-            self.config['port']
-        except:
-            self.config['port']=18196
-            
-        try:
-            self.config['direction']
-        except:
-            self.config['direction'] = 'publish' # publish/receive
-            
-        try:
-            self.config['data']
-        except: 
-            self.config['data'] = 'data' # "all" for the whole dictionary, comma separated "keys" for parts of the dictionary
-
-        try:
-            self.config['serialize']
-        except:
-            self.config['serialize'] = 'yaml' # yaml/str
-
-    def status(self):
-        funcname = 'status()'
-        #print('Status')
-        status = self.statusqueue.get_nowait()
-        #print(statusstr)
-        statusstr = yaml.dump(status)
-        return statusstr
-            
-
-    def __str__(self):
-        sstr = 'zeromq device'
-        return sstr
-
-
-
-class initDeviceWidget(QtWidgets.QWidget):
-    device_start = QtCore.pyqtSignal(Device)
-    device_stop = QtCore.pyqtSignal(Device)        
-    def __init__(self,device=None):
-        super(QtWidgets.QWidget, self).__init__()
-        layout        = QtWidgets.QFormLayout(self)
-        self.device   = device
-        self.device.status_signal.connect(self.thread_status)
-        self.device.check_and_fill_config() # Add standard stuff
-        self.inputtabs = QtWidgets.QTabWidget() # Create tabs for different connection types
-        self.serialwidget = QtWidgets.QWidget()
-        self.label    = QtWidgets.QLabel("Zeromq device")
-        self.label.setAlignment(QtCore.Qt.AlignCenter)
-        self.label.setStyleSheet("font-weight: bold; font-size: 16")
-        self.startbtn = QtWidgets.QPushButton("Open device")
-        self.startbtn.clicked.connect(self.start_clicked)
-        self.startbtn.setCheckable(True)
-        self.config_widgets = [] # Collecting all config widgets here, makinf it easier to grey them out
-        # Address and port
-        self.addressline = QtWidgets.QLineEdit()
-        self.addressline.setStatusTip('The IP Address, use <IP> for local network IP')
-        myip = get_ip()
-        addresses = ["<broadcast>", "<IP>", myip ]
-        completer = QtWidgets.QCompleter(addresses)
-        self.addressline.setCompleter(completer)
-        self.portline = QtWidgets.QLineEdit()
-        
-            
-        # Data direction
-        self._combo_inout = QtWidgets.QComboBox()
-        self._combo_inout.addItem('Publish')
-        self._combo_inout.addItem('Receive')
-        self._combo_inout.currentIndexChanged.connect(self.process_options)
-        
-        # Create an array of radio buttons for yaml/key choice
-        self._data_yaml  = QtWidgets.QRadioButton("redvypr YAML message")
-        self._data_yaml.setStatusTip('redvypr YAML message')
-        self._data_yaml.setChecked(True)
-        self._data_dict = QtWidgets.QRadioButton("Data ist stored in key")
-        self._data_dict.setStatusTip('Choose entries of the dictionary and serialize them as utf-8 string or yaml')
-        
-        self._data_pub_group = QtWidgets.QButtonGroup()
-        self._data_pub_group.addButton(self._data_yaml)
-        self._data_pub_group.addButton(self._data_dict)
-        
-        # Data format to submit
-        self.fdataentry  = QtWidgets.QLabel("Key for storage of received data")
-        self.dataentry   = QtWidgets.QLineEdit()
-        self.dataentry.setText('data')
-        # The layout of all widgets
-        layout.addRow(self.label)
-        layout.addRow(QtWidgets.QLabel("Address"), self.addressline)
-        layout.addRow(QtWidgets.QLabel("Port"),self.portline)
-        layout.addRow(QtWidgets.QLabel("Data direction"),self._combo_inout)
-        self._serialize_label = QtWidgets.QLabel("Data publishing options")
-        layout.addRow(self._serialize_label)
-        layout.addRow(self._data_yaml,self._data_dict)
-        layout.addRow(self.fdataentry,self.dataentry)
-        layout.addRow(self.startbtn)
-        
-        self.config_widgets.append(self.addressline)
-        self.config_widgets.append(self.portline)
-        self.config_widgets.append(self._combo_inout)
-        self.config_widgets.append(self._data_yaml)
-        self.config_widgets.append(self._data_dict)
-        self.config_widgets.append(self.dataentry)
-
-        self.config_to_buttons()
-        self.process_options()
-        
-    def config_to_buttons(self):
-        """ Update the configuration widgets according to the config dictionary in the device module 
-        """
-        funcname = __name__ + '.config_to_buttons()'
-        logger.debug(funcname)
-        if(self.device.config['address'] is not None):
-            self.addressline.setText(self.device.config['address'])
-        if (self.device.config['port'] is not None):
-            self.portline.setText(str(self.device.config['port']))
-
-        if(self.device.config['serialize'] == 'yaml'):
-                self._data_yaml.setChecked(True)
-
-        if(self.device.config['direction'] == 'publish'):
-            self._combo_inout.setCurrentIndex(0)
-        else:
-            self._combo_inout.setCurrentIndex(1)
-            
-        if True:
-            self._data_dict.setChecked(True)
-            txt = self.device.config['data']
-            self.dataentry.setText(txt)
-            
-            
-    def process_options(self):
-        """ Reads all options and creates a configuration dictionary
-        """
-        funcname = __name__ + '.process_options()'
-        config   = {}
-        
-        # Change the GUI according to send/receive
-        if(self._combo_inout.currentText() == 'Publish'):
-            self._serialize_label.setText("Data publishing options")
-            self.dataentry.setEnabled(False)
-        else:  
-            self._serialize_label.setText("Data receiving options")
-            #self._combo_ser.setCurrentIndex(0)
-            #self._data_yaml.setChecked(True)
-            self.dataentry.setEnabled(True)
-
-        if(self._data_yaml.isChecked()):
-            config['serialize'] = 'yaml'
-        else:
-            config['serialize'] = 'str'
-         
-        if(self._combo_inout.currentText() == 'Publish'):
-            config['direction'] = 'publish'
-            self.device.publish   = False
-            self.device.subscribe = True
-        else:
-            config['direction'] = 'receive'
-            self.device.publish   = True
-            self.device.subscribe = False
-
-        config['address'] = self.addressline.text()
-        try:
-            config['port'] = int(self.portline.text())
-        except:
-            logger.warning(funcname + ': Port is not an int')
-            raise ValueError
-        
-        config['data'] = self.dataentry.text()
-
-        logger.debug(funcname + ': config: ' + str(config))    
-        return config
-    
-    def thread_status(self,status):
-        self.update_buttons(status['thread_status'])
-        
-    def update_buttons(self,thread_status):
-            """ Updating all buttons depending on the thread status (if its alive, graying out things)
-            """
-            # Running
-            if(thread_status):
-                self.startbtn.setText('Stop')
-                self.startbtn.setChecked(True)
-                for w in self.config_widgets:
-                    w.setEnabled(False)
-            # Not running
-            else:
-                self.startbtn.setText('Start')
-                for w in self.config_widgets:
-                    w.setEnabled(True)
-                    
-                # Check if an error occured and the startbutton 
-                if(self.startbtn.isChecked()):
-                    self.startbtn.setChecked(False)
-                #self.conbtn.setEnabled(True)
-
-    def start_clicked(self):
-        funcname = __name__ + '.start_clicked()'
-        button = self.sender()
-        if button.isChecked():
-            try:
-                config = self.process_options()
-            except:
-                logger.warning(funcname + ': Invalid settings')
-                self.startbtn.setChecked(False)
-                return
-
-            if(config == None):
-                self.startbtn.setChecked(False)
-                return
-            
-            # Setting the configuration
-            self.device.config = config
-            self.device.thread_start()
-            button.setText("Starting")
-        else:
-            self.device.thread_stop()
-            button.setText("Stopping")
-
-
-
-
-# class displayDeviceWidget(QtWidgets.QWidget):
-#     def __init__(self):
-#         super(QtWidgets.QWidget, self).__init__()
-#         layout        = QtWidgets.QVBoxLayout(self)
-#         hlayout        = QtWidgets.QHBoxLayout(self)
-#         self.bytes_read = QtWidgets.QLabel('Bytes read: ')
-#         self.lines_read = QtWidgets.QLabel('Lines read: ')
-#         self.text     = QtWidgets.QPlainTextEdit(self)
-#         self.text.setReadOnly(True)
-#         self.text.setMaximumBlockCount(10000)
-#         hlayoutv.addWidget(self.bytes_read)
-#         hlayout.addWidget(self.lines_read)
-#         layout.addLayout(hlayout)
-#         layout.addWidget(self.text)
-#
-#     def update(self,data):
-#         #print('data',data)
-#         bstr = "Bytes read: {:d}".format(data['bytes_read'])
-#         lstr = "Lines read: {:d}".format(data['nmea_sentences_read'])
-#         self.bytes_read.setText(bstr)
-#         self.lines_read.setText(lstr)
-#         self.text.insertPlainText(str(data['nmea']))
-        
