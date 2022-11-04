@@ -1,3 +1,5 @@
+import copy
+
 import serial
 import serial.tools
 import os
@@ -258,6 +260,48 @@ class redvypr(QtCore.QObject):
 
         return statusstr
 
+    def get_config(self):
+        """
+        Creates a configuration dictionary out of the current state.
+
+        Returns:
+            config: configuration dictionary
+
+        """
+        config = {}
+
+        config['hostname'] = self.hostinfo['hostname']
+        config['devicepath'] = []
+        for p in self.device_paths:
+            config['devicepath'].append(p)
+        # Loglevel
+        config['loglevel'] = logger.level
+        # Devices
+        config['devices'] = []
+        for devicedict in self.devices:
+            device = devicedict['device']
+            devsave = {'deviceconfig':{}}
+            devsave['deviceconfig']['name']     = device.name
+            devsave['deviceconfig']['loglevel'] = device.loglevel
+            devsave['devicemodulename']         = devicedict['devicemodulename']
+            devconfig = device.config
+            devsave['deviceconfig']['config'] = copy.deepcopy(devconfig)
+            config['devices'].append(devsave)
+
+        # Connections
+        config['connections'] = []
+        for devicedict in self.devices:
+            device = devicedict['device']
+            sensprov = get_data_providing_devices(self.devices, device)
+            for prov in sensprov:
+                condict = {'publish':prov['device'].name,'receive':device.name}
+                config['connections'].append(condict)
+            #sensreicv = get_data_receiving_devices(self.devices, device)
+            #print('Provider',sensprov)
+            #print('Receiver', sensreicv)
+
+        return config
+
     def parse_configuration(self, configfile=None):
         """ Parses a dictionary with a configuration, if the file does not exists it will return with false, otherwise self.config will be updated
 
@@ -276,13 +320,15 @@ class redvypr(QtCore.QObject):
             else:
                 logger.warning(funcname + ':Yaml file: ' + str(configfile) + ' does not exist!')
                 return False
-        elif (type(configfile) == dict):
+        elif(type(configfile) == dict):
             logger.info(funcname + ':Opening dictionary')
             config = configfile
         else:
             logger.warning(funcname + ':This shouldnt happen')
 
         self.config = config
+        if ('loglevel' in config.keys()):
+            logger.setLevel(config['loglevel'])
         # Add device path if found
         if ('devicepath' in config.keys()):
             devpath = config['devicepath']
@@ -611,6 +657,9 @@ class redvypr(QtCore.QObject):
 
                 devicedict = {'device': device, 'thread': None, 'dataout': [], 'gui': [], 'guiqueue': [guiqueue],
                               'statistics': statistics, 'logger': devicelogger}
+
+                # Add the modulename
+                devicedict['devicemodulename'] = devicemodulename
                 # Add some statistics
                 devicedict['numpacket'] = 0
                 devicedict['numpacketout'] = 0
@@ -1313,14 +1362,18 @@ class redvyprWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.save_config():'
         logger.debug(funcname)
-        print('Not implented yet!')
-        data_save = self.redvypr.config
-        fname_full, _ = QtWidgets.QFileDialog.getSaveFileName(self, "QFileDialog.getSaveFileName()", "",
-                                                              "Yaml Files (*.yaml);;All Files (*)")
-        if fname_full:
-            print('Saving to file {:s}'.format(fname_full))
-            with open(fname_full, 'w') as fyaml:
-                yaml.dump(data_save, fyaml)
+        data_save = self.redvypr.get_config()
+        print('data_save',data_save)
+        if True:
+            tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
+            fname_suggestion = 'config_' + self.redvypr.hostinfo['hostname'] + '_' +tstr + '.yaml'
+
+            fname_full, _ = QtWidgets.QFileDialog.getSaveFileName(self, "QFileDialog.getSaveFileName()", fname_suggestion,
+                                                                  "Yaml Files (*.yaml);;All Files (*)")
+            if fname_full:
+                print('Saving to file {:s}'.format(fname_full))
+                with open(fname_full, 'w') as fyaml:
+                    yaml.dump(data_save, fyaml)
 
     def open_add_device_widget(self):
         """Opens a widget for the user to choose to add a device
@@ -1563,7 +1616,7 @@ class redvyprWidget(QtWidgets.QWidget):
         if True:
             self.__hostname_line.setText(hostname)
             self.redvypr.config['hostname'] = hostname
-            self.hostinfo['hostname'] = hostname
+            self.redvypr.hostinfo['hostname'] = hostname
 
     def update_status(self):
         while True:
