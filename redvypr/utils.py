@@ -79,6 +79,9 @@ def addrm_device_as_data_provider(devices,deviceprovider,devicereceiver,remove=F
             # Remove the receiver name from the list
             devices[inddevicereceiver]['device'].data_receiver.remove(devices[inddeviceprovider]['device'].name)
             devices[inddeviceprovider]['device'].data_provider.remove(devices[inddevicereceiver]['device'].name)
+            # Emit device connection change signal
+            devices[inddevicereceiver]['device'].connection_changed.emit()
+            devices[inddeviceprovider]['device'].connection_changed.emit()
             return True
         else:
             return False
@@ -86,11 +89,14 @@ def addrm_device_as_data_provider(devices,deviceprovider,devicereceiver,remove=F
         if(datainqueue in dataoutlist):
             return False
         else:
-            logger.debug('addrm_device_as_data_provider():Added device {:s} as data provider'.format(devices[inddeviceprovider]['device'].name))
+            logger.debug('addrm_device_as_data_provider(): Added device {:s} as data provider'.format(devices[inddeviceprovider]['device'].name))
             dataoutlist.append(datainqueue)
             # Add the receiver and provider names to the device
             devices[inddevicereceiver]['device'].data_receiver.append(devices[inddeviceprovider]['device'].name)
             devices[inddeviceprovider]['device'].data_provider.append(devices[inddevicereceiver]['device'].name)
+            # Emit device connection change signal
+            devices[inddevicereceiver]['device'].connection_changed.emit()
+            devices[inddeviceprovider]['device'].connection_changed.emit()
             return True
 
 

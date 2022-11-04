@@ -10,6 +10,7 @@ import sys
 import yaml
 import copy
 import os
+from redvypr.device import redvypr_device
 from redvypr.data_packets import do_data_statistics, create_data_statistic_dict
 
 logging.basicConfig(stream=sys.stderr)
@@ -17,6 +18,14 @@ logger = logging.getLogger('rawdatalogger')
 logger.setLevel(logging.DEBUG)
 
 description = "Saves the raw redvypr packets into a file"
+config_template = {}
+config_template['name']      = 'rawdatalogger'
+config_template['redvypr_device'] = {}
+config_template['redvypr_device']['publish']   = False
+config_template['redvypr_device']['subscribe'] = True
+config_template['redvypr_device']['description'] = description
+
+
 
 def create_logfile(config):
     funcname = __name__ + '.create_logfile():'
@@ -45,7 +54,8 @@ def create_logfile(config):
 
 
 
-def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
+#def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
+def start(device_info, config={'filename':''}, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
     filename = config['filename']
@@ -162,40 +172,14 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
                 logger.debug(funcname + ':Exception:' + str(e))
                 #print(data)
 
-class Device():
-    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None):
-        """
-        """
-        self.publish     = False  # publishes data, a typical device is doing this
-        self.subscribe   = True   # subscribing data, a typical datalogger is doing this
-        self.datainqueue = datainqueue
-        self.dataqueue   = dataqueue        
-        self.comqueue    = comqueue
-        self.config      = {}
-        self.config['filename']= ''
-                
-    def start(self):
-        funcname = self.__class__.__name__
-        logger.debug(funcname)
-        print('Starting',self.config)
-        config=copy.deepcopy(self.config)
-        start(self.datainqueue,self.dataqueue,self.comqueue,config=config)
-        
-    def __str__(self):
-        sstr = 'rawdatalogger'
-        return sstr
 
 #
 #
 # The init widget
 #
 #
-
-
 class initDeviceWidget(QtWidgets.QWidget):
-    device_start = QtCore.pyqtSignal(Device) # Signal requesting a start of the device (starting the thread)
-    device_stop  = QtCore.pyqtSignal(Device) # Signal requesting a stop of device
-    connect      = QtCore.pyqtSignal(Device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    connect      = QtCore.pyqtSignal(redvypr_device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)
@@ -302,12 +286,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.outlabel,1,1)
         layout.addWidget(self.outwidget,2,1,3,1)   
         layout.addWidget(self.startbtn,6,0,2,2)
-        
-    def finalize_init(self):
-        """ Util function that is called by redvypr after initializing all config (i.e. the configuration from a yaml file)
-        """
-        # Update the device list, if devices have been connected
-        self.redvypr.devices_connected.connect(self.update_device_list)
+
+        # Connect the signals that notify a change of the connection
+        self.device.connection_changed.connect(self.update_device_list)
+        #self.redvypr.devices_connected.connect(self.update_device_list)
 
     def get_filename(self):
         filename, _ = QtWidgets.QFileDialog.getSaveFileName(self,"Logging file","","redvypr raw (*.redvypr_raw);;All Files (*)")
@@ -332,10 +314,11 @@ class initDeviceWidget(QtWidgets.QWidget):
             
             #self.update_device_list()
                             
-    def update_device_list(self,devicestr_provider='',devicestr_receiver=''):
+#    def update_device_list(self,devicestr_provider='',devicestr_receiver=''):
+    def update_device_list(self):
         funcname = self.__class__.__name__ + '.update_device_list():'
         logger.debug(funcname)
-        print('Devices',devicestr_provider,devicestr_receiver)
+        #print('Devices',devicestr_provider,devicestr_receiver)
         devices = self.redvypr.get_data_providing_devices(self.device)
         self.inlist.clear()
         for d in devices:
@@ -356,10 +339,10 @@ class initDeviceWidget(QtWidgets.QWidget):
             fileextension = self.newfilenamecombo.currentText()
             self.device.config['filename']          = self.outfilename.text()
             self.device.config['fileextension']     = fileextension
-            self.device_start.emit(self.device)
+            self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')
-            self.device_stop.emit(self.device)
+            self.device.thread_stop()
 
             
     def thread_status(self,status):

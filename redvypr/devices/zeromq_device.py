@@ -48,7 +48,7 @@ config_template['name']      = 'zeromq'
 config_template['address']   = {'type': 'str','default':'127.0.0.1'}
 config_template['port']      = {'type': 'int','default':18196,'range':[0,65535]}
 config_template['direction'] = {'type': 'str', 'options': ['receive', 'publish'],'default':'receive'}
-config_template['data']      = {'type': 'str'}
+config_template['data']      = {'type': 'str','default':'data'}
 config_template['serialize'] = {'type': 'str', 'options': ['yaml', 'str'],'default':'yaml'}
 config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publish']   = True
@@ -150,7 +150,7 @@ def start_send(dataqueue, datainqueue, statusqueue, config=None):
                 pass
 
 
-def start_recv(dataqueue, datainqueue, statusqueue, config=None):
+def start_recv(dataqueue, datainqueue, statusqueue, config=None,device_info=None):
     """ zeromq receiving data
     """
     funcname = __name__ + '.start_recv()'
@@ -158,9 +158,11 @@ def start_recv(dataqueue, datainqueue, statusqueue, config=None):
     sub = zmq_context.socket(zmq.SUB)
     url = 'tcp://' + config['address'] + ':' + str(config['port'])
     logger.debug(funcname + ':Start receiving data from url {:s}'.format(url))
+    sub.setsockopt(zmq.RCVTIMEO, 200)
     sub.connect(url)
     # subscribe to topic '', TODO, do so
     sub.setsockopt(zmq.SUBSCRIBE, b'')
+
     datapackets = 0
     bytes_read  = 0
 
@@ -176,17 +178,26 @@ def start_recv(dataqueue, datainqueue, statusqueue, config=None):
     while True:
         try:
             data = datainqueue.get(block=False)
-            command = check_for_command(data)
-            if (command is not None):
-                logger.debug('Got a command', command)
-                break
-            logger.debug('received command:' + str(com) + ' stopping now')
-            break
         except:
-            pass
+            data = None
+
+        if(data is not None):
+            command = check_for_command(data,thread_uuid=device_info['thread_uuid'])
+            logger.debug('Got a command {:s}'.format(str(data)))
+            if (command is not None):
+                logger.debug('received command:' + str(command) + ' ,stopping now')
+                break
 
         try:
-            datab = sub.recv(zmq.NOBLOCK)
+            #datab = sub.recv(zmq.NOBLOCK)
+            datab = sub.recv()
+            #print('Got data',datab)
+        except Exception as e:
+            #logger.debug(funcname + ':' + str(e))
+            datab = b''
+
+
+        if(len(datab)>0):
             t = time.time()
             bytes_read += len(datab)
             # Check what data we are expecting and convert it accordingly
@@ -210,12 +221,14 @@ def start_recv(dataqueue, datainqueue, statusqueue, config=None):
                 data = datab.decode('utf-8')
                 datan = {'t':t}
                 datan[key] = data
-                dataqueue.put(datan)
+                try:
+                    dataqueue.put(datan)
+                except Exception as e:
+                    print('Exception',e)
+
                 datapackets += 1
 
-        except Exception as e:
-            # logger.debug(funcname + ':' + str(e))
-            pass
+
 
         # Sending a status message
         if((time.time() - tstatus) > dtstatus):
@@ -232,15 +245,16 @@ def start_recv(dataqueue, datainqueue, statusqueue, config=None):
             except: # If the queue is full
                 pass
 
-def start(config=None, dataqueue=None, datainqueue=None, statusqueue=None):
+def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
+    print(config)
     if (config['direction'] == 'publish'):
         logger.info(__name__ + ':Start to serve data on address:' + str(config))
         # start_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
     elif (config['direction'] == 'receive'):
         logger.info('Start to receive data from address:' + str(config))
-        start_recv(dataqueue, datainqueue, statusqueue, config=config)
+        start_recv(dataqueue, datainqueue, statusqueue, config=config, device_info=device_info)
         
 
 

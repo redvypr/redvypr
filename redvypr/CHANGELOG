@@ -1,4 +1,7 @@
-	-0.4.5: - Redesign of API, redvypr_device object as standard Device 
+    -0.4.6: - configuration now with template dictionaries possible, device can consits only of template and start function, redvypr will use standard device and gui objects
+            - cleanup of old interface (adding attributes to devices while initialization)
+            - added process kill option
+	-0.4.5: - Redesign of API, redvypr_device object as standard Device
 			- Configuration of devices not longer as attributes but directly as a argument to __init__
 	-0.4.4: - rawdatalogger, rawdatareplay, csvlogger (not usable yet)
 	-0.4.3: - pyqtconsole added, plot gui nicer

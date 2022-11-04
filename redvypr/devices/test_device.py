@@ -62,7 +62,7 @@ logger.setLevel(logging.DEBUG)
 
 
 
-def start(config=None,dataqueue=None,datainqueue=None,statusqueue=None):
+def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
     while True:
@@ -71,13 +71,15 @@ def start(config=None,dataqueue=None,datainqueue=None,statusqueue=None):
         except:
             data = None
         if(data is not None):
-
-            command = check_for_command(data)
-            print('Got data!!!', data,command)
+            command = check_for_command(data,thread_uuid=device_info['thread_uuid'])
+            logger.debug('Got a command: {:s}'.format(str(data)))
             if (command is not None):
-                logger.debug('Got a command {:s}'.format(str(command)))
+                logger.debug('Command is for me: {:s}'.format(str(command)))
                 break
-        print('Hallo test')
+
+        dstr = 'Hallo test'
+        print(dstr)
+        dataqueue.put(dstr)
         time.sleep(2)
         
 

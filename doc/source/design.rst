@@ -83,7 +83,10 @@ Description variable in the module (see i.e. randdata.py)::
 
 Data packets
 ------------
-Datapackets sent and received from devices are realized as Python dictionaries. If a device wants
+Datapackets sent and received from devices are realized as Python dictionaries.
+A device is sending data by putting data into the dataqueue. If the data put is not a dictionary, redvypr will convert it into a redvypr data dictionary.
+
+If a device wants
 to send data it simply has to create a dictionary with a key::
 
    data = {}

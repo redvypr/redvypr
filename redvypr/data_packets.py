@@ -513,22 +513,24 @@ def datapacket(data,datakey=None,tu=None):
     return datadict
 
 
-def commandpacket(command='stop',device_uuid=''):
+def commandpacket(command='stop',device_uuid='',thread_uuid=''):
     """
 
     Args:
         command: 'stop'
         device_uuid:
+        thread_uuid:
 
     Returns:
          compacket: A redvypr dictionary with the command
     """
     compacket = datapacket(command,datakey='redvypr_device_command') # The command
-    compacket['redvypr_device_uuid'] = device_uuid # The uuid of the device the command is for
+    compacket['redvypr_device_uuid'] = device_uuid  # The uuid of the device the command is for
+    compacket['redvypr_thread_uuid'] = thread_uuid  # The uuid of the thread of device the command is for
     return compacket
 
 
-def check_for_command(datapacket=None,uuid=None):
+def check_for_command(datapacket=None,uuid=None,thread_uuid=None):
     """
 
     Args:
@@ -540,13 +542,20 @@ def check_for_command(datapacket=None,uuid=None):
     """
     FLAG_COM1 = 'redvypr_device_command' in datapacket.keys()
     FLAG_COM2 = 'redvypr_device_uuid' in datapacket.keys()
+    FLAG_COM3 = 'redvypr_thread_uuid' in datapacket.keys()
     command = None
     if (FLAG_COM1 and FLAG_COM2):
         if(uuid is not None):
             FLAG_UUID = datapacket['redvypr_device_uuid'] == uuid
         else:
             FLAG_UUID = True
-        if(FLAG_UUID):
+
+        if (thread_uuid is not None):
+            FLAG_TUUID = datapacket['redvypr_thread_uuid'] == thread_uuid
+        else:
+            FLAG_TUUID = True
+
+        if(FLAG_UUID and FLAG_TUUID):
             command = datapacket['redvypr_device_command']
 
     return command

@@ -1364,32 +1364,56 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         self.startbutton = QtWidgets.QPushButton('Start')
         self.startbutton.clicked.connect(self.start_clicked)
         self.startbutton.setCheckable(True)
-        self.layout.addWidget(self.config_widget, 0, 0)
-        self.layout.addWidget(self.startbutton, 1, 0)
+        # Process kill button (if thread)
+        if (self.device.mp == 'multiprocess'):
+            # Killbutton
+            self.killbutton = QtWidgets.QPushButton('Kill process')
+            self.killbutton.clicked.connect(self.kill_clicked)
+
+
+        # Connect button
+        self.conbutton = QtWidgets.QPushButton("Connect")
+        self.conbutton.clicked.connect(self.connect_clicked)
+        self.config_widgets.append(self.conbutton)
+
+        self.layout.addWidget(self.config_widget, 0, 0,1,4)
+        self.layout.addWidget(self.conbutton, 1, 0, 1, 4)
+        if (self.device.mp == 'multiprocess'):
+            self.layout.addWidget(self.startbutton, 2, 0,1,3)
+            self.layout.addWidget(self.killbutton, 2, 3)
+        else:
+            self.layout.addWidget(self.startbutton, 2, 0, 1,4)
 
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
 
+    def kill_clicked(self):
+        button = self.sender()
+        logger.debug("Kill device {:s}".format(self.device.name))
+        self.device.kill_process()
     def start_clicked(self):
         button = self.sender()
         if button.isChecked():
             logger.debug("button pressed")
-            button.setText('Stop')
+            button.setText('Starting')
+            config = self.config_widget.get_config()
+            self.device.config = config
             self.device.thread_start()
             #self.device_start.emit(self.device)
         else:
             logger.debug('button released')
-            button.setText('Start')
+            #button.setText('Stopping')
+            self.startbutton.setChecked(True)
             self.device.thread_stop()
-            #self.device_stop.emit(self.device)
 
     def update_buttons(self):
         """ Updating all buttons depending on the thread status (if its alive, graying out things)
         """
-        # Running
+
         status = self.device.get_thread_status()
         thread_status = status['thread_status']
+        # Running
         if(thread_status):
             self.startbutton.setText('Stop')
             self.startbutton.setChecked(True)
@@ -1405,6 +1429,42 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
             if (self.startbutton.isChecked()):
                 self.startbutton.setChecked(False)
             # self.conbtn.setEnabled(True)
+
+    def connect_clicked(self):
+        button = self.sender()
+        self.connect.emit(self.device)
+
+
+#
+#
+#
+#
+#
+class redvypr_deviceInfoWidget(QtWidgets.QWidget):
+    def __init__(self, device=None):
+        funcname = __name__ + '.__init__():'
+        logger.debug(funcname)
+        super().__init__()
+        self.device = device
+        self.layout = QtWidgets.QGridLayout(self)
+        self.infowidget       = QtWidgets.QPlainTextEdit()
+        self.infowidget.setReadOnly(True)
+        self.layout.addWidget(self.infowidget,0,0)
+
+        self.updatetimer = QtCore.QTimer()
+        self.updatetimer.timeout.connect(self.__update_info)
+        self.updatetimer.start(500)
+
+    def __update_info(self):
+        self.infowidget.clear()
+        sortstat = {}
+        for i in sorted(self.device.statistics):
+            sortstat[i]=self.device.statistics[i]
+
+        sortstat['datakeys'] = sorted(sortstat['datakeys'])
+        statstr = yaml.dump(sortstat)
+        self.infowidget.insertPlainText(statstr + '\n')
+
 
 #
 #
@@ -1470,6 +1530,16 @@ class redvypr_config_widget(QtWidgets.QWidget):
             fname = fname_open[0]
             with open(fname, 'w') as yfile:
                 yaml.dump(config, yfile)
+
+    def get_config(self):
+        """
+        Returns a configuation dictionary of the
+
+        Returns:
+
+        """
+        config = copy.deepcopy(self.configtree.data)
+        return config
 
 
     def apply_config(self,config):

@@ -30,7 +30,7 @@ import platform
 import redvypr.devices as redvyprdevices
 import redvypr.data_packets as data_packets
 from redvypr.gui import redvypr_ip_widget, redvyprConnectWidget, QPlainTextEditLogger, displayDeviceWidget_standard, \
-    deviceinfoWidget, redvypr_devicelist_widget, redvypr_deviceInitWidget
+    deviceinfoWidget, redvypr_devicelist_widget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget
 from redvypr.utils import addrm_device_as_data_provider, get_data_receiving_devices, get_data_providing_devices
 from redvypr.version import version
 import redvypr.files as files
@@ -131,10 +131,13 @@ def distribute_data(devices, hostinfo, infoqueue, dt=0.01):
             while True:
                 try:
                     data = device.dataqueue.get(block=False)
+                    if(type(data) is not dict): # If data is not a dictionary, convert it to one
+                        data = {'data':data}
                     devicedict['numpacket'] += 1
                 except Exception as e:
                     break
 
+                # Add additional information, if not present yet
                 treat_datadict(data, device.name, hostinfo, devicedict['numpacket'], tstart)
                 # Do statistics
                 try:
@@ -151,7 +154,7 @@ def distribute_data(devices, hostinfo, infoqueue, dt=0.01):
                     for dataout in devicedict['dataout']:
                         devicedict['numpacketout'] += 1
                         try:
-                            dataout.put_nowait(data)
+                            dataout.put_nowait(data) # These are the datainqueues of the subscribing devices
                         except Exception as e:
                             logger.debug(funcname + ':dataout of :' + devicedict['device'].name + ' full: ' + str(e))
                     for guiqueue in devicedict['guiqueue']:  # Put data into the guiqueue, this queue does always exist
@@ -171,7 +174,10 @@ def distribute_data(devices, hostinfo, infoqueue, dt=0.01):
             tinfo = tstop
             info_dict = {'dt_avg': dt_avg / navg}
             # print(info_dict)
-            infoqueue.put_nowait(info_dict)
+            try:
+                infoqueue.put_nowait(info_dict)
+            except:
+                pass
 
 
 class redvypr(QtCore.QObject):
@@ -516,6 +522,16 @@ class redvypr(QtCore.QObject):
                         funcname + ':No configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
                     config_template = {}
 
+                # Try to get information about publish/subscribe capabilities described in the config_template
+                try:
+                    publish = config_template['redvypr_device']['publish']
+                except:
+                    publish = False
+                try:
+                    subscribe = config_template['redvypr_device']['subscribe']
+                except:
+                    subscribe = False
+
                 try:
                     deviceconfig['config']
                 except:
@@ -537,6 +553,11 @@ class redvypr(QtCore.QObject):
                         multiprocess = deviceconfig['config']['mp'].lower()
                     except:
                         multiprocess = 'thread'
+                elif(thread):
+                    multiprocess = 'thread'
+                else:
+                    multiprocess = 'multiprocess'
+
 
                 if thread:  # Thread or multiprocess
                     dataqueue = queue.Queue(maxsize=queuesize)
@@ -573,7 +594,9 @@ class redvypr(QtCore.QObject):
                     # Config used at all?
                     config = deviceconfig['config']
                     print('Config', config)
+                    print('loglevel', loglevel)
                     device = Device(name=name, uuid=device_uuid, config=config, redvypr=self, dataqueue=dataqueue,
+                                    publish=publish,subscribe=subscribe,
                                     template=config_template, comqueue=comqueue, datainqueue=datainqueue,
                                     statusqueue=statusqueue, loglevel=loglevel, multiprocess=multiprocess,
                                     numdevice=self.numdevice, statistics=statistics,startfunction=startfunction)
@@ -1386,7 +1409,9 @@ class redvyprWidget(QtWidgets.QWidget):
         """
         devicemodulename = self.__devices_list.currentItem().text()
         thread = self.__mp_thread.isChecked()
-        deviceconfig = {'name': str(self.__devices_devname.text())}
+        config = {'name': str(self.__devices_devname.text()),'loglevel':logger.level}
+        deviceconfig = {'config':config}
+        print('Adding device, config',deviceconfig)
         self.redvypr.add_device(devicemodulename=devicemodulename, thread=thread, deviceconfig=deviceconfig)
         # Update the name
         self.__device_name()
@@ -1426,6 +1451,10 @@ class redvyprWidget(QtWidgets.QWidget):
         except Exception as e:
             logger.debug('Widget does not have connect signal:' + str(e))
 
+
+        # Add the info widget
+        deviceinfowidget = redvypr_deviceInfoWidget(device)
+
         #
         # Check if we have a widget to display the data
         # Create the displaywidget
@@ -1434,8 +1463,9 @@ class redvyprWidget(QtWidgets.QWidget):
             devicedisplaywidget = devicemodule.displayDeviceWidget
         except Exception as e:
             logger.debug(funcname + ': No displaywidget found for {:s}'.format(str(devicemodule)))
-            # Using the standard display widget
-            devicedisplaywidget = displayDeviceWidget_standard
+            ## Using the standard display widget
+            # devicedisplaywidget = displayDeviceWidget_standard
+            devicedisplaywidget = None
 
         devicewidget = QtWidgets.QWidget()
         devicelayout = QtWidgets.QVBoxLayout(devicewidget)
@@ -1443,7 +1473,9 @@ class redvyprWidget(QtWidgets.QWidget):
         devicetab.setMovable(True)
         devicelayout.addWidget(devicetab)
 
+        # Add init widget
         devicetab.addTab(deviceinitwidget, 'Init')
+        devicetab.addTab(deviceinfowidget, 'Info')
         # Devices can have their specific display objects, if one is
         # found, initialize it, otherwise just the init Widget
         if (devicedisplaywidget is not None):
@@ -1484,9 +1516,11 @@ class redvyprWidget(QtWidgets.QWidget):
         # Add the devicelistentry to the widget, this gives the full information to the device
         #
         self.redvypr.devices[ind_devices]['initwidget'].redvyprdevicelistentry = self.redvypr.devices[ind_devices]
-        self.redvypr.devices[ind_devices]['gui'][0].redvyprdevicelistentry = self.redvypr.devices[ind_devices]
         self.redvypr.devices[ind_devices]['initwidget'].redvypr = self.redvypr
-        self.redvypr.devices[ind_devices]['gui'][0].redvypr = self.redvypr
+        if(len(self.redvypr.devices[ind_devices]['gui']) > 0):
+            self.redvypr.devices[ind_devices]['gui'][0].redvyprdevicelistentry = self.redvypr.devices[ind_devices]
+            self.redvypr.devices[ind_devices]['gui'][0].redvypr = self.redvypr
+
 
         self.devicetabs.addTab(devicewidget, device.name)
         self.devicetabs.setCurrentWidget(devicewidget)

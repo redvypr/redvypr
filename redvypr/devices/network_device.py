@@ -34,6 +34,8 @@ import socket
 #from apt_pkg import config
 import yaml
 import copy
+from redvypr.device import redvypr_device
+from redvypr.data_packets import check_for_command
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('network_device')
@@ -378,11 +380,11 @@ def start_udp_send(dataqueue, datainqueue, comqueue, statusqueue, config=None):
 
         
         
-def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
+def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info = None):
     """ UDP receiving
     """
     funcname = __name__ + '.start_udp_recv():'
-    logger.debug(funcname + ':Starting network thread')        
+    logger.debug(funcname + ':Starting network thread (uuid: {:s})'.format(device_info['thread_uuid']))
     npackets     = 0
     bytes_read   = 0
     threadqueues = []
@@ -399,23 +401,28 @@ def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     client.bind((config['address'],config['port']))
     while True:
         try:
-            com = comqueue.get(block=False)
-            client.close()            
-            logger.info(funcname + 'received command:' + str(com) + ' stopping now')
-            statusdata = {}
-            statusdata['status'] = 'Stopping UDP redcv thread'
-            statusdata['time'] = str(datetime.datetime.now())
-            try:
-                statusqueue.put_nowait(statusdata)
-            except: # If the queue is full
-                pass            
+            com = datainqueue.get(block=False)
+            command = check_for_command(com,thread_uuid=device_info['thread_uuid'])
+            logger.debug('Got a command: {:s}'.format(str(com)))
+            if (command is not None):
+                logger.debug('Command is for me: {:s}'.format(str(command)))
+                client.close()
+                logger.info(funcname + 'received command:' + str(com) + ' stopping now')
+                statusdata = {}
+                statusdata['status'] = 'Stopping UDP redcv thread'
+                statusdata['time'] = str(datetime.datetime.now())
+                try:
+                    statusqueue.put_nowait(statusdata)
+                except:  # If the queue is full
+                    pass
+                break
 
-            break
         except:
             pass
 
         try:
             datab, addr = client.recvfrom(1000000)
+            print('Got data',datab,addr)
             bytes_read += len(datab)
             t = time.time()
             # Check what data we are expecting and convert it accordingly
@@ -472,42 +479,48 @@ def start_udp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
 
     logger.info(funcname + ' stopped')
 
-class Device():
-    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None):
+class Device(redvypr_device):
+    def __init__(self, **kwargs):
         """
         """
-        self.publish     = False # publishes data, a typical device is doing this
-        self.subscribe   = False  # subscribing data, a typical datalogger is doing this
-        self.datainqueue = datainqueue
-        self.dataqueue   = dataqueue        
-        self.comqueue    = comqueue
-        self.statusqueue = statusqueue
-        self.config = {}
+        super(Device, self).__init__(**kwargs)
+        self.publish = True
+        self.subscribe = True
+        self.description = 'network device'
+        self.thread_communication = self.datainqueue  # Change the commandqueue to the datainqueue
         self.check_and_fill_config() # Add standard stuff
         
-    def thread_status(self,status):
-        """ Function that is called by redvypr, allowing to update the status of the device according to the thread 
+    def start(self, device_info, config, dataqueue, datainqueue, statusqueue):
         """
-        self.threadalive = status['threadalive']
 
-    def start(self):
+        Args:
+            device_info:
+            config:
+            dataqueue:
+            datainqueue:
+            statusqueue:
+
+        Returns:
+
+        """
+
         funcname = __name__ + '.start():'
         self.check_and_fill_config()
         logger.debug(funcname + self.config['protocol'])
         if(self.config['direction'] == 'publish'):
             if(self.config['protocol'] == 'tcp'):
                 logger.info(__name__ + ':Start to serve data on address (TCP):' + str(self.config))
-                start_tcp_send(self.dataqueue,self.datainqueue,self.comqueue,self.statusqueue,config=self.config)
+                start_tcp_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
             elif(self.config['protocol'] == 'udp'):
                 logger.info(__name__ + ':Start to serve data on address (UDP broadcast)')
-                start_udp_send(self.dataqueue,self.datainqueue,self.comqueue,self.statusqueue,config=self.config)                
+                start_udp_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
         elif(self.config['direction'] == 'receive'):
             if(self.config['protocol'] == 'tcp'):
                 logger.info('Start to receive data from address (TCP):' + str(self.config))
-                start_tcp_recv(self.dataqueue,self.datainqueue,self.comqueue,self.statusqueue,config=self.config)
+                start_tcp_recv(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
             elif(self.config['protocol'] == 'udp'):
                 logger.info('Start to receive data from address (UDP):' + str(self.config))
-                start_udp_recv(self.dataqueue,self.datainqueue,self.comqueue,self.statusqueue,config=self.config)
+                start_udp_recv(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config,device_info=device_info)
                 
     
     def check_and_fill_config(self):
@@ -573,8 +586,9 @@ class Device():
 
 
 class initDeviceWidget(QtWidgets.QWidget):
-    device_start = QtCore.pyqtSignal(Device)
-    device_stop = QtCore.pyqtSignal(Device)        
+    #device_start = QtCore.pyqtSignal(Device)
+    #device_stop = QtCore.pyqtSignal(Device)
+    connect      = QtCore.pyqtSignal(redvypr_device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QFormLayout(self)
@@ -661,6 +675,10 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         self.config_to_buttons()
         self.process_options()
+
+        self.statustimer = QtCore.QTimer()
+        self.statustimer.timeout.connect(self.update_buttons)
+        self.statustimer.start(500)
         
     def config_to_buttons(self):
         """ Update the configuration widgets according to the config dictionary in the device module 
@@ -755,9 +773,12 @@ class initDeviceWidget(QtWidgets.QWidget):
     def thread_status(self,status):
         self.update_buttons(status['threadalive'])
         
-    def update_buttons(self,thread_status):
+    def update_buttons(self):
             """ Updating all buttons depending on the thread status (if its alive, graying out things)
             """
+
+            status = self.device.get_thread_status()
+            thread_status = status['thread_status']
             # Running
             if(thread_status):
                 self.startbtn.setText('Stop')
@@ -793,11 +814,11 @@ class initDeviceWidget(QtWidgets.QWidget):
             # Setting the configuration
             print('Starting network with config',config)
             self.device.config = config
-            self.device_start.emit(self.device)
-            print('Config',config)
+            self.device.thread_start
             button.setText("Starting")
         else:
-            self.device_stop.emit(self.device)
+            #self.device_stop.emit(self.device)
+            self.device.thread_stop()
             button.setText("Stopping")
 
 

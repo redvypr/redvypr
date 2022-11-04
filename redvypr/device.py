@@ -15,6 +15,7 @@ import logging
 import sys
 import yaml
 import copy
+import uuid
 import multiprocessing
 import threading
 from redvypr.data_packets import compare_datastreams, parse_devicestring, commandpacket
@@ -24,7 +25,8 @@ logging.basicConfig(stream=sys.stderr)
 class redvypr_device(QtCore.QObject):
     thread_started = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     thread_stopped = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
-    status_signal  = QtCore.pyqtSignal(dict)  # Signal with the status of the device
+    status_signal = QtCore.pyqtSignal(dict)  # Signal with the status of the device
+    connection_changed = QtCore.pyqtSignal()  # Signal notifying that a connection with another device has changed
 
     def __init__(self,name='redvypr_device',uuid = '', redvypr=None,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None,template = {},config = {},publish=False,subscribe=False,multiprocess='tread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None):
         """
@@ -41,6 +43,7 @@ class redvypr_device(QtCore.QObject):
         self.redvypr     = redvypr
         self.name        = name
         self.uuid        = uuid
+        self.thread_uuid = ''
         self.loglevel    = loglevel
         self.numdevice   = numdevice
         self.description = 'redvypr_device'
@@ -53,10 +56,6 @@ class redvypr_device(QtCore.QObject):
         if(startfunction is not None):
             self.start = startfunction
 
-        self.devicethreadtimer = QtCore.QTimer()
-        self.devicethreadtimer.timeout.connect(self.update_thread_status)
-        self.devicethreadtimer.start(500)
-
         # The queue that is used for the thread commmunication
         self.thread_communication = self.datainqueue
 
@@ -68,21 +67,6 @@ class redvypr_device(QtCore.QObject):
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(loglevel)
 
-    def update_thread_status(self): # Legacy?!?!
-        """
-
-        Returns:
-
-        """
-        try:
-            running = self.thread.is_alive()
-        except:
-            running = False
-
-        info_dict = {}
-        info_dict['uuid'] = self.uuid
-        info_dict['thread_status'] = running
-        self.status_signal.emit(info_dict)
 
     def get_thread_status(self):
         """
@@ -115,14 +99,24 @@ class redvypr_device(QtCore.QObject):
         self.thread_communication.put(command)
 
 
+    def kill_process(self):
+        funcname = __name__ + '.kill_process():'
+        self.logger.debug(funcname)
+        if(self.mp == 'multiprocess'):
+            self.logger.debug(funcname + ': Terminating now')
+            self.thread.kill()
+
+
     def thread_stop(self):
         """
         Sends a stop command to the thread_communication queue
         Returns:
 
         """
-        print('Thread stop')
-        command = commandpacket(command='stop', device_uuid=self.uuid)
+        funcname = __name__ + '.thread_stop():'
+        self.logger.debug(funcname)
+        command = commandpacket(command='stop', device_uuid=self.uuid,thread_uuid=self.thread_uuid)
+        print('Sending command',command)
         self.command(command)
         try:
             running2 = self.thread.is_alive()
@@ -133,6 +127,7 @@ class redvypr_device(QtCore.QObject):
         info_dict['thread_status'] = running2
         self.thread_stopped.emit(info_dict)
 
+    #@property
     def thread_start(self):
         """ Starts the device thread
         Args:
@@ -140,7 +135,7 @@ class redvypr_device(QtCore.QObject):
 
         """
         funcname = __name__ + '.start_thread():'
-
+        print('Thread start')
         #logger.debug(funcname + 'Starting device: ' + str(device.name))
         self.logger.debug(funcname + 'Starting device: ' + str(self.name))
         sendict = {}
@@ -157,16 +152,18 @@ class redvypr_device(QtCore.QObject):
                 else:
                     try:
                         # The arguments for the start function
-                        args = (self.config, self.dataqueue, self.datainqueue, self.statusqueue)
+                        thread_uuid = 'thread_' + str(uuid.uuid1())
+                        device_info = {'uuid':self.uuid,'thread_uuid':thread_uuid}
+                        args = (device_info,self.config, self.dataqueue, self.datainqueue, self.statusqueue)
                         if self.mp == 'thread':
                             self.thread = threading.Thread(target=self.start, args=args, daemon=True)
                         else:
                             self.thread = multiprocessing.Process(target=self.start, args=args)
-                            self.logger.info(funcname + 'started {:s} as process with PID {:d}'.format(self.name, self.thread.pid))
+                            #self.logger.info(funcname + 'started {:s} as process with PID {:d}'.format(self.name, self.thread.pid))
 
                         self.thread.start()
                         sendict['thread'] = self.thread
-                        self.logger.info(funcname + 'started {:s} as thread'.format(self.name))
+                        self.logger.info(funcname + 'started {:s}'.format(self.name))
                         # Update the device and the devicewidgets about the thread status
                         running2 = sendict['thread'].is_alive()
                         try: # If the device has a thread_status function
@@ -174,15 +171,18 @@ class redvypr_device(QtCore.QObject):
                         except:
                             pass
 
-                        info_dict = {}
-                        info_dict['uuid'] = self.uuid
+                        self.thread_uuid = thread_uuid
+
+                        info_dict                  = {}
+                        info_dict['uuid']          = self.uuid
+                        info_dict['thread_uuid']   = thread_uuid
                         info_dict['thread_status'] = running2
                         self.thread_started.emit(info_dict)  # Notify about the started thread
 
                         return self.thread
 
                     except Exception as e:
-                        self.logger.warning(funcname + 'Could not start thread Reason: {:s}'.format(str(e)))
+                        self.logger.warning(funcname + 'Could not start thread, reason: {:s}'.format(str(e)))
                         return None
 
     def __str__(self):
