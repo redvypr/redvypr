@@ -199,7 +199,7 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
                 npackets += 1
                 # Call the send_data function to create a binary sendable datastream
                 datab      = packet_to_raw(data_dict,config)
-                print('sending data',datab)
+                #print('sending data',datab)
                 for q in threadqueues:
                     q['queue'].put(datab)
                     q['bytes_sent'] += len(datab)

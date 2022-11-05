@@ -33,7 +33,7 @@ import redvypr.devices as redvyprdevices
 import redvypr.data_packets as data_packets
 from redvypr.gui import redvypr_ip_widget, redvyprConnectWidget, QPlainTextEditLogger, displayDeviceWidget_standard, \
     deviceinfoWidget, redvypr_devicelist_widget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget
-from redvypr.utils import addrm_device_as_data_provider, get_data_receiving_devices, get_data_providing_devices
+from redvypr.utils import addrm_device_as_data_provider, get_data_receiving_devices, get_data_providing_devices, configtemplate_to_dict, apply_config_to_dict
 from redvypr.version import version
 import redvypr.files as files
 from redvypr.device import redvypr_device
@@ -247,11 +247,13 @@ class redvypr(QtCore.QObject):
         statusstr = "{:s}, {:s}, num devices {:d}".format(tstr, self.hostinfo['hostname'], len(self.devices))
 
         for sendict in self.devices:
-            try:
-                running = sendict['thread'].is_alive()
+            status = sendict['device'].get_thread_status()
+            #info_dict['uuid'] = self.uuid
+            #info_dict['thread_uuid'] = self.thread_uuid
+            #info_dict['thread_status'] = running
+            if(status['thread_status']):
                 runstr = 'running'
-            except:
-                running = False
+            else:
                 runstr = 'stopped'
 
             statusstr += '\n\t' + sendict['device'].name + ':' + runstr + ': data packets: {:d}'.format(
@@ -563,10 +565,12 @@ class redvypr(QtCore.QObject):
                 try:
                     config_template = devicemodule.config_template
                     logger.debug(funcname + ':Found configuation template of device {:s}'.format(str(devicemodule)))
+                    templatedict = configtemplate_to_dict(config_template)
                 except Exception as e:
                     logger.debug(
                         funcname + ':No configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
                     config_template = {}
+                    templatedict = None
 
                 # Try to get information about publish/subscribe capabilities described in the config_template
                 try:
@@ -639,6 +643,10 @@ class redvypr(QtCore.QObject):
 
                     # Config used at all?
                     config = deviceconfig['config']
+                    # Merge the config with a potentially existing template to fill in default values
+                    if(templatedict is not None):
+                        config = apply_config_to_dict(config,templatedict)
+                        config = copy.deepcopy(config)
                     print('Config', config)
                     print('loglevel', loglevel)
                     device = Device(name=name, uuid=device_uuid, config=config, redvypr=self, dataqueue=dataqueue,
@@ -739,7 +747,6 @@ class redvypr(QtCore.QObject):
         # logger.debug(funcname + 'Starting device: ' + str(device.name))
         logger.debug(funcname + 'Starting device: ' + str(device.name))
         thread = device.thread_start()
-        device['thread'] = thread
 
     def stop_device_thread(self, device):
         """Functions stops a thread, to process the data (i.e. reading from a device, writing to a file)

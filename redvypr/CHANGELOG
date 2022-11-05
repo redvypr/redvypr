@@ -1,3 +1,6 @@
+    -0.4.7: - nogui works again
+            - template configuration is merged with user configuration in add_device
+            - network_device updated with new API
     -0.4.6: - configuration now with template dictionaries possible, device can consits only of template and start function, redvypr will use standard device and gui objects
             - cleanup of old interface (adding attributes to devices while initialization)
             - added process kill option

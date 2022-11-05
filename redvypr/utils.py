@@ -228,7 +228,7 @@ def apply_config_to_dict(userconfig,configdict):
         configdict:
 
     Returns:
-
+        configdict: A with the userconfig modified configuration dictionary
     """
 
     def loop_over_index(c,cuser):

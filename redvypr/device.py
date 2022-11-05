@@ -81,6 +81,7 @@ class redvypr_device(QtCore.QObject):
 
         info_dict = {}
         info_dict['uuid'] = self.uuid
+        info_dict['thread_uuid'] = self.thread_uuid
         info_dict['thread_status'] = running
 
         return info_dict
