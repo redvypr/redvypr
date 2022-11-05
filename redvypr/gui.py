@@ -382,19 +382,31 @@ class deviceinfoWidget(QtWidgets.QWidget):
         self.startbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
         self.infobtn = QtWidgets.QPushButton("Info")
         self.infobtn.clicked.connect(self.get_info)
-        self.infobtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)                
-        self.layout2.addWidget(QtWidgets.QLabel('Name' + ' Device #' + str(devicedict['device'].numdevice)),0,0)        
-        self.layout2.addWidget(self.namelabel,1,0)
+        self.infobtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
+        #Configuration
+        configlayout = QtWidgets.QVBoxLayout()
+        # Autostart
+        self.autostart = QtWidgets.QPushButton('Autostart')
+        self.autostart.setCheckable(True)
+        self.autostart.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+        self.autostart.clicked.connect(self.autostart_clicked)
+        #self.layout2.addWidget(QtWidgets.QLabel('Name' + ' Device #' + str(devicedict['device'].numdevice)),0,0)
+        self.layout2.addWidget(self.namelabel,0,0)
         self.layout.addLayout(self.layout2)
         self.layout.addStretch()
+        self.layout.addWidget(self.autostart)
         self.layout.addWidget(self.logwidget)
         self.layout.addWidget(self.viewbtn)
-        self.layout.addWidget(self.infobtn)         
+        self.layout.addWidget(self.infobtn)
         self.layout.addWidget(self.renbtn)
         self.layout.addWidget(self.conbtn)
         self.layout.addWidget(self.rembtn)
         self.layout.addWidget(self.startbtn)
-        
+
+    def autostart_clicked(self):
+        #print('Autostart',self.autostart.isChecked())
+        self.device.autostart = self.autostart.isChecked()
+
     def loglevel_changed(self):
         loglevel = self.logwidget.currentText()
         logger = self.devicedict['logger']

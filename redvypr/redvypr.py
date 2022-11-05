@@ -302,6 +302,19 @@ class redvypr(QtCore.QObject):
             #print('Provider',sensprov)
             #print('Receiver', sensreicv)
 
+        # Start devices after they have been added
+        config['start'] = []
+        for devicedict in self.devices:
+            device = devicedict['device']
+            try:
+                autostart = device.autostart
+            except:
+                autostart = False
+
+            if(autostart):
+                config['start'].append(device.name)
+
+
         return config
 
     def parse_configuration(self, configfile=None):
@@ -326,7 +339,7 @@ class redvypr(QtCore.QObject):
             logger.info(funcname + ':Opening dictionary')
             config = configfile
         else:
-            logger.warning(funcname + ':This shouldnt happen')
+            logger.warning(funcname + ':This should not happen')
 
         self.config = config
         if ('loglevel' in config.keys()):
@@ -588,14 +601,14 @@ class redvypr(QtCore.QObject):
                     deviceconfig['config'] = {}
                 # If the device does not have a name, add a standard but unique one
                 try:
-                    deviceconfig['config']['name']
+                    deviceconfig['name']
                 except:
-                    deviceconfig['config']['name'] = devicemodulename + '_' + str(self.numdevice)
+                    deviceconfig['name'] = devicemodulename + '_' + str(self.numdevice)
 
                 try:
-                    deviceconfig['config']['loglevel']
+                    deviceconfig['loglevel']
                 except:
-                    deviceconfig['config']['loglevel'] = 'INFO'
+                    deviceconfig['loglevel'] = 'INFO'
 
                 # Check for multiprocess options in configuration
                 if (thread == None):
@@ -625,8 +638,8 @@ class redvypr(QtCore.QObject):
                 statistics = data_packets.create_data_statistic_dict()
                 # Device do not necessarily have a statusqueue
                 try:
-                    name = deviceconfig['config'].pop('name')
-                    loglevel = deviceconfig['config'].pop('loglevel')
+                    name = deviceconfig['name']
+                    loglevel = deviceconfig['loglevel']
                     device_uuid = devicemodulename + '_' + str(uuid.uuid1())
                     try:
                         devicemodule.Device

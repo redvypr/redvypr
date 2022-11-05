@@ -1,3 +1,5 @@
+    -0.4.8: - autostart option in the devices widget to have the device started automatically with a saved configuration
+            - loglevel/name moved from 'config' to a deviceconfig dictionary entry
     -0.4.7: - nogui works again
             - template configuration is merged with user configuration in add_device
             - network_device updated with new API
