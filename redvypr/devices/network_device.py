@@ -59,28 +59,64 @@ def yaml_dump(data):
     #return yaml.dump(data,default_flow_style=False)
     return yaml.dump(data,explicit_end=True,explicit_start=True)
 
+def raw_to_packet(datab,config):
+    """
+    Packs the received raw data into a packet that can be sent via the dataqueue
 
-def send_data(data_dict,config):
+    Args:
+        datab:
+        config:
+
+    Returns:
+        packets: A list of datapackets to be sent via the dataqueue
+
+    """
+    t = time.time()
+    packets = []
+    if(config['serialize'] == 'yaml'):
+        for databs in datab.split(b'...\n'): # Split the text into single subpackets
+            try:
+                data = yaml.safe_load(databs)
+            except Exception as e:
+                logger.debug(funcname + ': Could not decode message {:s}'.format(str(data)))
+                logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(config['data']))
+            if(data is not None):
+                if(config['data'] == 'all'): # Forward the whole message
+                    packets.append(data)
+                else:
+                    datan = {'t':t}
+                    datan[config['data']] = data[k]
+                    packets.append(datan)
+
+    elif (config['serialize'] == 'utf-8'):  # Put the "str" data into the packet with the key in "data"
+        data = datab.decode('utf-8')
+        datan = {'t':t}
+        datan[config['data']] = data
+        packets.append(datan)
+    elif(config['serialize'] == 'raw'): # Put the "str" data into the packet with the key in "data"
+        datan = {'t':t}
+        datan[config['data']] = datab
+        packets.append(datan)
+
+    return packets
+
+def packet_to_raw(data_dict,config):
     """ Function that processes the data_dict to a serialized datastream sendable over network connections 
     """
     funcname = __name__ + 'send_data()'
-
-    # Choose the serialize function
-    if(config['serialize'] == 'str'):
-        serialize = str 
-    elif(config['serialize'] == 'yaml'):
-        serialize = yaml_dump # A dump with options
-        
-    # 
-    if(config['data'][0] == 'all'):
-        datab = serialize(data_dict).encode('utf-8')
-    else:
-        if(type(config['data']) == str):
-            config['data'] = [config['data']]
-            
-        datab = b''
-        for key in config['data']:
-            datab += serialize(data_dict[key]).encode('utf-8')
+    #
+    if (config['data'] == 'all') and (config['serialize'] == 'yaml'):
+        datab = yaml_dump(data_dict).encode('utf-8')
+    elif (config['serialize'] == 'utf-8'):
+        key = config['data']
+        datab = str(data_dict[key]).encode('utf-8')
+    elif (config['serialize'] == 'raw'):
+        key = config['data']
+        data = data_dict[key]
+        if(isinstance(data, (bytes, bytearray))):
+            datab = data
+        else:
+            datab = str(data).encode('utf-8')
 
     return datab
 
@@ -100,7 +136,7 @@ def handle_tcp_client_send(client,threadqueue,statusqueue):
         data = threadqueue.get()
         #print('Read data from queue')
         try:
-            #logger.debug(funcname  + ':Sending data: {:s}'.format(str(data)))
+            logger.debug(funcname  + ':Sending data: {:s}'.format(str(data)))
             client.send(data)
         except Exception as e:
             statusstr = 'Connection to {:s} closed, stopping thread'.format(str(address))
@@ -110,9 +146,8 @@ def handle_tcp_client_send(client,threadqueue,statusqueue):
                 pass
             logger.info(funcname + ':' + statusstr)
             return
-        
 
-def start_tcp_send(dataqueue, datainqueue, comqueue, statusqueue, config=None):
+def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info=None):
     """ TCP publishing, this thread waits for TCP connections connections. For each connection a new connection is created that is fed with a subthread (handle_tcp_send) is created that is receiving data with a new queue. 
     """
     funcname = __name__ + '.start_tcp_send()'
@@ -128,21 +163,20 @@ def start_tcp_send(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     tstatus = time.time()
     dtstatus = 5 # Send a status message every dtstatus seconds
     npackets = 0 # Number packets received via the datainqueue
-            
-    while True:
-        try:
-            com = comqueue.get(block=False)
-            logger.info(funcname + 'received command:' + str(com) + ' stopping now')
-            server.close()            
-            break
-        except:
-            pass
+    clients = []
+    try:
+        queuesize = config['queuesize']
+    except:
+        queuesize = 1000
 
-        try:        
+    FLAG_RUN = True
+    while FLAG_RUN:
+        try:
             client, address = server.accept() # Here the timeout will let the loop run with 20 Hz
-            threadqueue = queue.Queue()
-            tcp_thread = threading.Thread(target=handle_tcp_client_send, args=([client,address],threadqueue,statusqueue))
+            threadqueue = queue.Queue(maxsize=queuesize)
+            tcp_thread = threading.Thread(target=handle_tcp_client_send, args=([client,address],threadqueue,statusqueue), daemon=True)
             tcp_thread.start()
+            clients.append(client)
             threadqueues.append({'thread':tcp_thread,'queue': threadqueue,'address':address,'bytes_sent':0,'packets_sent':0})
         except socket.timeout:
             pass
@@ -152,10 +186,20 @@ def start_tcp_send(dataqueue, datainqueue, comqueue, statusqueue, config=None):
         while(datainqueue.empty() == False):
             try:
                 data_dict = datainqueue.get(block=False)
+                command = check_for_command(data_dict, thread_uuid=device_info['thread_uuid'])
+                if (command is not None):
+                    logger.debug('Command is for me: {:s}'.format(str(command)))
+                    for client in clients:
+                        client.close()
+                    server.close()
+                    logger.info(funcname + 'received command:' + str(data_dict) + ' stopping now')
+                    FLAG_RUN = False
+                    break
+
                 npackets += 1
                 # Call the send_data function to create a binary sendable datastream
-                datab      = send_data(data_dict,config)
-                #print('sending data',datab)
+                datab      = packet_to_raw(data_dict,config)
+                print('sending data',datab)
                 for q in threadqueues:
                     q['queue'].put(datab)
                     q['bytes_sent'] += len(datab)
@@ -191,7 +235,7 @@ def start_tcp_send(dataqueue, datainqueue, comqueue, statusqueue, config=None):
         
         
             
-def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
+def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info=None):
     """ TCP receiving
     """
     funcname = __name__ + '.start_tcp_recv()'
@@ -234,10 +278,14 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
     npackets = 0 # Number packets received via the datainqueue
     while True:
         try:
-            com = comqueue.get(block=False)
-            logger.debug('received command:' + str(com) + ' stopping now')
-            client.close()            
-            break
+            com = datainqueue.get(block=False)
+            command = check_for_command(com, thread_uuid=device_info['thread_uuid'])
+            print(funcname + ': Got command',com)
+            if (command is not None):
+                logger.debug('Command is for me: {:s}'.format(str(command)))
+                client.close()
+                logger.info(funcname + 'received command:' + str(com) + ' stopping now')
+                break
         except:
             pass
 
@@ -258,44 +306,20 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
                         except:
                             logger.warning(funcname + ': Could not connect to host.')
                             
-                    return
-                    
                     logger.info(funcname + ': Connected to '+ str(config))
                     client.settimeout(0.05) # timeout for listening
                 else:
                     logger.warning(funcname + ': Stopping thread')
                     client.close()
                     break
-            
-            t = time.time()
+
             bytes_read += len(datab)
             # Check what data we are expecting and convert it accordingly
-            if(config['serialize'] == 'yaml'):
-                for databs in datab.split(b'...\n'): # Split the text into single subpackets
-                    try:
-                        data = yaml.safe_load(databs)
-                        #print(datab)
-                        #print(data)
-                    except Exception as e:
-                        logger.debug(funcname + ': Could not decode message {:s}'.format(str(datab)))
-                        logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(str(config['data'])))
-                        data = None
+            packets = raw_to_packet(datab, config)
+            for p in packets:
+                dataqueue.put(p)
+                npackets += 1
 
-                    if(data is not None):
-                        if(config['data'][0] == 'all'): # Forward the whole message
-                            dataqueue.put(data)
-                        else:
-                            datan = {'t':t}
-                            for k in config['data']: # List of keys
-                                datan[k] = data[k]
-
-                            dataqueue.put(datan)
-            else: # Put the "str" data into the packet with the key in "data"
-                data = datab.decode('utf-8')
-                datan = {'t':t}
-                datan['data'] = data
-                dataqueue.put(datan)
-            
         except socket.timeout as e:
             pass
         except Exception as e:
@@ -316,11 +340,8 @@ def start_tcp_recv(dataqueue, datainqueue, comqueue, statusqueue, config=None):
                 statusqueue.put_nowait(statusdata)
             except: # If the queue is full
                 pass
-        
 
-
-
-def start_udp_send(dataqueue, datainqueue, comqueue, statusqueue, config=None):
+def start_udp_send(dataqueue, datainqueue, statusqueue, config=None, device_info=None):
     """ UDP publishing
     """
     funcname = __name__ + '.start_udp_send()'
@@ -337,26 +358,36 @@ def start_udp_send(dataqueue, datainqueue, comqueue, statusqueue, config=None):
         client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         # Enable broadcasting mode
         client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    client.settimeout(0.01) # timeout for listening
 
-    while True:
-        try:
-            com = comqueue.get(block=False)
-            logger.info(funcname + 'received command:' + str(com) + ' stopping now')
-            client.close()            
-            break
-        except:
-            pass
-
+    client.settimeout(0.01) # timeout for listening, do we need that here??
+    FLAG_RUN=True
+    while FLAG_RUN:
         time.sleep(0.05)
         while(datainqueue.empty() == False):
             try:
                 data_dict = datainqueue.get(block=False)
-                npackets += 1
-                # Call the send_data function to create a binary sendable datastream
-                datab      = send_data(data_dict,config)
-                bytes_sent += len(datab)
-                client.sendto(datab, (config['address'], config['port']))
+                command = check_for_command(data_dict, thread_uuid=device_info['thread_uuid'])
+                if (command is not None):
+                    logger.debug('Command is for me: {:s}'.format(str(command)))
+                    client.close()
+                    logger.info(funcname + 'received command:' + str(data_dict) + ' stopping now')
+                    statusdata = {}
+                    statusdata['status'] = 'Stopping UDP redcv thread'
+                    statusdata['time'] = str(datetime.datetime.now())
+                    try:
+                        statusqueue.put_nowait(statusdata)
+                    except:  # If the queue is full
+                        pass
+
+                    FLAG_RUN=False
+                    break
+                else:
+                    npackets   += 1
+                    # Call the send_data function to create a binary sendable datastream
+                    datab       = packet_to_raw(data_dict,config)
+                    bytes_sent += len(datab)
+                    #print('Sending data',datab)
+                    client.sendto(datab, (config['address'], config['port']))
 
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))
@@ -415,6 +446,7 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
                     statusqueue.put_nowait(statusdata)
                 except:  # If the queue is full
                     pass
+
                 break
 
         except:
@@ -422,34 +454,15 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
 
         try:
             datab, addr = client.recvfrom(1000000)
-            print('Got data',datab,addr)
+            #print('Got data',datab,addr)
             bytes_read += len(datab)
             t = time.time()
             # Check what data we are expecting and convert it accordingly
-            if(config['serialize'] == 'yaml'):
-                for databs in datab.split(b'...\n'): # Split the text into single subpackets                
-                    try:
-                        data = yaml.safe_load(databs)
-                    except Exception as e:
-                        logger.debug(funcname + ': Could not decode message {:s}'.format(str(data)))
-                        logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(config['data']))
-                    if(data is not None):                    
-                        if(config['data'][0] == 'all'): # Forward the whole message
-                            dataqueue.put(data)
-                        else:
-                            datan = {'t':t}
-                            for k in config['data']: # List of keys
-                                datan[k] = data[k]
-
-                            dataqueue.put(datan)
-                            npackets += 1
-            else: # Put the "str" data into the packet with the key in "data"
-                data = datab.decode('utf-8')
-                datan = {'t':t}
-                datan['data'] = data
-                dataqueue.put(datan)
+            packets = raw_to_packet(datab, config)
+            for p in packets:
+                dataqueue.put(p)
                 npackets += 1
-            
+
             #print(config)
             #print('UDP Received',datab)
             #print('UDP sent as',datan)
@@ -503,21 +516,22 @@ class Device(redvypr_device):
         Returns:
 
         """
-
         funcname = __name__ + '.start():'
         self.check_and_fill_config()
         logger.debug(funcname + self.config['protocol'])
         if(self.config['direction'] == 'publish'):
             if(self.config['protocol'] == 'tcp'):
                 logger.info(__name__ + ':Start to serve data on address (TCP):' + str(self.config))
-                start_tcp_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
+                start_tcp_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config,device_info=device_info)
             elif(self.config['protocol'] == 'udp'):
                 logger.info(__name__ + ':Start to serve data on address (UDP broadcast)')
-                start_udp_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
+                #start_udp_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
+                start_udp_send(self.dataqueue, self.datainqueue, self.statusqueue, config=self.config,
+                               device_info=device_info)
         elif(self.config['direction'] == 'receive'):
             if(self.config['protocol'] == 'tcp'):
                 logger.info('Start to receive data from address (TCP):' + str(self.config))
-                start_tcp_recv(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
+                start_tcp_recv(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config,device_info=device_info)
             elif(self.config['protocol'] == 'udp'):
                 logger.info('Start to receive data from address (UDP):' + str(self.config))
                 start_udp_recv(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config,device_info=device_info)
@@ -559,16 +573,12 @@ class Device(redvypr_device):
         try:
             self.config['data']
         except: 
-            self.config['data'] = ['all'] # "all" for the whole dictionary, comma separated "keys" for parts of the dictionary
+            self.config['data'] = 'data' #
 
-        # Make a list out of a string
-        if(self.config['data'] == 'all'):
-            self.config['data'] = ['all']
-            
         try:
             self.config['serialize']
         except:
-            self.config['serialize'] = 'yaml' # yaml/str
+            self.config['serialize'] = 'raw' # yaml/str/raw
 
     def status(self):
         funcname = 'status()'
@@ -628,20 +638,21 @@ class initDeviceWidget(QtWidgets.QWidget):
         
         # Publish options
         # Create an array of radio buttons
-        self._data_pub_all  = QtWidgets.QRadioButton("Whole dictionary")
-        self._data_pub_all.setStatusTip('Serializes the whole dictionary into a string using YAML')
+        self._data_pub_all  = QtWidgets.QRadioButton("Redvypr YAML datapacket")
+        self._data_pub_all.setStatusTip('Sends/Expects the whole datapacket as a YAML string')
         self._data_pub_all.setChecked(True)
+        self._data_pub_all.toggled.connect(self.process_options)
         self._data_pub_dict = QtWidgets.QRadioButton("Dictionary entries")
-        self._data_pub_dict.setStatusTip('Choose entries of the dictionary and serialize them as utf-8 string or yaml')
-        
+        self._data_pub_dict.setStatusTip('Sends entries and serialize them as choosen by the serialization box')
+
         self._data_pub_group = QtWidgets.QButtonGroup()
         self._data_pub_group.addButton(self._data_pub_all)
         self._data_pub_group.addButton(self._data_pub_dict)
         
         # Serialize
         self._combo_ser = QtWidgets.QComboBox()
-        self._combo_ser.addItem('str')
-        self._combo_ser.addItem('YAML')
+        self._combo_ser.addItem('utf-8')
+        self._combo_ser.addItem('raw')
         
         
         
@@ -683,7 +694,7 @@ class initDeviceWidget(QtWidgets.QWidget):
     def config_to_buttons(self):
         """ Update the configuration widgets according to the config dictionary in the device module 
         """
-        print('Config to buttons',self.device.config)
+        #print('Config to buttons',self.device.config)
         if(self.device.config['address'] is not None):
             self.addressline.setText(self.device.config['address'])
         if(self.device.config['port'] is not None):
@@ -699,54 +710,44 @@ class initDeviceWidget(QtWidgets.QWidget):
         else:
             self._combo_proto.setCurrentIndex(1)
             
-        if(self.device.config['serialize'] == 'yaml'):
-            self._combo_ser.setCurrentIndex(0)
-        else:
-            self._combo_ser.setCurrentIndex(1)
-            
-        if(self.device.config['data'][0] == ['all']):
-            self._data_pub_all.setChecked(True)   
-        else:
-            self._data_pub_dict.setChecked(True)
-            txt = ''
-            for d in self.device.config['data']:
-                txt += d + ','
+        for i in range(self._combo_ser.count()):
+            self._combo_ser.setCurrentIndex(i)
+            txt = self._combo_ser.currentText()
+            if(txt.lower() == self.device.config['serialize'].lower()):
+                break
 
-            txt = txt[:-1]
-            self.dataentry.setText(txt)
-            
+        self.dataentry.setText(self.device.config['data'])
             
     def process_options(self):
         """ Reads all options and creates a configuration dictionary
         """
         funcname = __name__ + '.process_options()'
         config   = {}
-        
+        #print('Process options')
+
+        config['address']   = self.addressline.text()
+        config['direction'] = self._combo_inout.currentText().lower()
+        config['protocol']  = self._combo_proto.currentText().lower()
+        if(self._data_pub_all.isChecked()): # sending/receiving YAML dictionaries
+            self.dataentry.setEnabled(False)
+            self._combo_ser.setEnabled(False)
+            config['serialize'] = 'yaml'
+            config['data']      = 'all'
+        else:
+            self.dataentry.setEnabled(True)
+            self._combo_ser.setEnabled(True)
+            config['serialize'] = self._combo_ser.currentText().lower()
+            config['data']      = self.dataentry.text()
+
         # Change the GUI according to send/receive
         if(self._combo_inout.currentText() == 'Publish'):
             self._serialize_label.setText("Data publishing options")
-            self.dataentry.setEnabled(True)
-        else:  
+            self.fdataentry.setText("Data key to publish")
+        else:
             self._serialize_label.setText("Data receiving options")
-            #self._combo_ser.setCurrentIndex(0)
-            self._data_pub_all.setChecked(True)
-            self.dataentry.setEnabled(False)
-         
-        if(self._combo_inout.currentText() == 'Publish'):
-            config['direction'] = 'publish'
-            self.device.publish   = False
-            self.device.subscribe = True
-        else:
-            config['direction'] = 'receive'
-            self.device.publish   = True
-            self.device.subscribe = False
+            self.fdataentry.setText("Data key to receive")
 
-        if(self._combo_proto.currentText() == 'TCP'):
-            config['protocol'] = 'tcp'
-        else:
-            config['protocol'] = 'udp'
-    
-        config['address'] = self.addressline.text()
+
         # Check for invalid combinations
         if((config['address'].lower()) == '<broadcast>' and config['protocol'] == 'tcp'):
             logger.warning(funcname + ': Broadcast works only with UDP')
@@ -758,16 +759,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         except:
             logger.warning(funcname + ': Port is not an int')
             raise ValueError
-        
-        if(self._data_pub_all.isChecked()):
-            config['data'] = ['all']
-        else:
-            config['data'] = self.dataentry.text().split(',')
-        
-        config['serialize'] = self._combo_ser.currentText().lower()
-                    
-        
-        logger.debug(funcname + ': config: ' + str(config))    
+
+        logger.debug(funcname + ': config: ' + str(config))
+        self.device.config = config
         return config
     
     def thread_status(self,status):
@@ -783,13 +777,13 @@ class initDeviceWidget(QtWidgets.QWidget):
             if(thread_status):
                 self.startbtn.setText('Stop')
                 self.startbtn.setChecked(True)
-                for w in self.config_widgets:
-                    w.setEnabled(False)
+                #for w in self.config_widgets:
+                #    w.setEnabled(False)
             # Not running
             else:
                 self.startbtn.setText('Start')
-                for w in self.config_widgets:
-                    w.setEnabled(True)
+                #for w in self.config_widgets:
+                #    w.setEnabled(True)
                     
                 # Check if an error occured and the startbutton 
                 if(self.startbtn.isChecked()):
@@ -812,12 +806,12 @@ class initDeviceWidget(QtWidgets.QWidget):
                 return
             
             # Setting the configuration
-            print('Starting network with config',config)
+            #print('Starting network with config',config)
             self.device.config = config
-            self.device.thread_start
+            self.device.thread_start()
             button.setText("Starting")
         else:
-            #self.device_stop.emit(self.device)
+            logger.debug('Stopping thread now')
             self.device.thread_stop()
             button.setText("Stopping")
 

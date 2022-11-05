@@ -44,15 +44,11 @@ zmq_context = zmq.Context()
 description = 'A simple test device'
 
 config_template = {}
-config_template['name']      = 'test'
-config_template['address']   = {'type': 'str','default':'127.0.0.1'}
-config_template['port']      = {'type': 'int','default':18196,'range':[0,65535]}
-config_template['direction'] = {'type': 'str', 'options': ['receive', 'publish'],'default':'receive'}
-config_template['data']      = {'type': 'str'}
-config_template['serialize'] = {'type': 'str', 'options': ['yaml', 'str'],'default':'yaml'}
+config_template['string_send']    = {'type': 'str','default':'Hello World!'}
+config_template['delay_s']        = {'type': 'float','default':2}
 config_template['redvypr_device'] = {}
-config_template['redvypr_device']['publish']   = True
-config_template['redvypr_device']['subscribe'] = False
+config_template['redvypr_device']['publish']     = True
+config_template['redvypr_device']['subscribe']   = False
 config_template['redvypr_device']['description'] = description
 
 
@@ -77,10 +73,10 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
                 logger.debug('Command is for me: {:s}'.format(str(command)))
                 break
 
-        dstr = 'Hallo test'
+        dstr = config['string_send']
         print(dstr)
         dataqueue.put(dstr)
-        time.sleep(2)
+        time.sleep(config['delay_s'])
         
 
 
