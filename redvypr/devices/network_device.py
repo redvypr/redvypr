@@ -652,6 +652,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self._combo_ser = QtWidgets.QComboBox()
         self._combo_ser.addItem('utf-8')
         self._combo_ser.addItem('raw')
+        self._combo_ser.addItem('yaml')
 
 
 
@@ -737,8 +738,16 @@ class initDeviceWidget(QtWidgets.QWidget):
         for i in range(self._combo_ser.count()):
             self._combo_ser.setCurrentIndex(i)
             txt = self._combo_ser.currentText()
+            print('txt',i,txt)
             if(txt.lower() == self.device.config['serialize'].lower()):
+                print('break')
                 break
+
+        if(self.device.config['serialize'].lower() == 'all'):
+            self._data_pub_all.setChecked(True)
+        else:
+            self._data_pub_dict.setChecked(True)
+
 
         self.dataentry.setText(self.device.config['data'])
         self.connect_signals_options(connect=True)
