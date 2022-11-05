@@ -28,7 +28,7 @@ class redvypr_device(QtCore.QObject):
     status_signal = QtCore.pyqtSignal(dict)  # Signal with the status of the device
     connection_changed = QtCore.pyqtSignal()  # Signal notifying that a connection with another device has changed
 
-    def __init__(self,name='redvypr_device',uuid = '', redvypr=None,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None,template = {},config = {},publish=False,subscribe=False,multiprocess='tread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None):
+    def __init__(self,name='redvypr_device',uuid = '', redvypr=None,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None,template = {},config = {},publish=False,subscribe=False,multiprocess='tread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False):
         """
         """
         super(redvypr_device, self).__init__()
@@ -49,6 +49,7 @@ class redvypr_device(QtCore.QObject):
         self.description = 'redvypr_device'
         self.statistics  = statistics
         self.mp          = multiprocess
+        self.autostart   = autostart
         self.data_receiver = []
         self.data_provider = []
 

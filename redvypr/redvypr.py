@@ -285,6 +285,7 @@ class redvypr(QtCore.QObject):
             devsave = {'deviceconfig':{}}
             devsave['deviceconfig']['name']     = device.name
             devsave['deviceconfig']['loglevel'] = device.loglevel
+            devsave['deviceconfig']['autostart']= device.autostart
             devsave['devicemodulename']         = devicedict['devicemodulename']
             devconfig = device.config
             devsave['deviceconfig']['config'] = copy.deepcopy(devconfig)
@@ -302,19 +303,6 @@ class redvypr(QtCore.QObject):
             #print('Provider',sensprov)
             #print('Receiver', sensreicv)
 
-        # Start devices after they have been added
-        config['start'] = []
-        for devicedict in self.devices:
-            device = devicedict['device']
-            try:
-                autostart = device.autostart
-            except:
-                autostart = False
-
-            if(autostart):
-                config['start'].append(device.name)
-
-
         return config
 
     def parse_configuration(self, configfile=None):
@@ -326,6 +314,7 @@ class redvypr(QtCore.QObject):
             True or False
         """
         funcname = "parse_configuration()"
+        parsed_devices = []
         logger.debug(funcname)
         if (type(configfile) == str):
             logger.info(funcname + ':Opening yaml file: ' + str(configfile))
@@ -372,7 +361,8 @@ class redvypr(QtCore.QObject):
                 except:
                     device['deviceconfig'] = {}
 
-                self.add_device(devicemodulename=device['devicemodulename'], deviceconfig=device['deviceconfig'])
+                dev_added = self.add_device(devicemodulename=device['devicemodulename'], deviceconfig=device['deviceconfig'])
+                parsed_devices.append(dev_added)
 
         # Connecting devices ['connections']
         try:
@@ -417,13 +407,12 @@ class redvypr(QtCore.QObject):
         except:
             pass
 
-        if ('start' in config.keys()):
-            logger.debug('Starting devices')
-            if (config['start'] is not None):
-                for start_device in config['start']:
-                    for s in self.devices:
-                        if (s['device'].name == start_device):
-                            self.start_device_thread(s['device'])
+        # Autostart the device, if wanted
+        #for dev in parsed_devices:
+        #    device = dev[0]['device']
+        #    if(device.autostart):
+        #        device.thread_start()
+
         return True
 
     def check_devicename(self, devicename_orig):
@@ -610,6 +599,11 @@ class redvypr(QtCore.QObject):
                 except:
                     deviceconfig['loglevel'] = 'INFO'
 
+                try:
+                    autostart = deviceconfig['autostart']
+                except:
+                    autostart = False
+
                 # Check for multiprocess options in configuration
                 if (thread == None):
                     try:
@@ -663,7 +657,7 @@ class redvypr(QtCore.QObject):
                     print('Config', config)
                     print('loglevel', loglevel)
                     device = Device(name=name, uuid=device_uuid, config=config, redvypr=self, dataqueue=dataqueue,
-                                    publish=publish,subscribe=subscribe,
+                                    publish=publish,subscribe=subscribe,autostart=autostart,
                                     template=config_template, comqueue=comqueue, datainqueue=datainqueue,
                                     statusqueue=statusqueue, loglevel=loglevel, multiprocess=multiprocess,
                                     numdevice=self.numdevice, statistics=statistics,startfunction=startfunction)

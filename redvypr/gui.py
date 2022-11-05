@@ -389,6 +389,10 @@ class deviceinfoWidget(QtWidgets.QWidget):
         self.autostart = QtWidgets.QPushButton('Autostart')
         self.autostart.setCheckable(True)
         self.autostart.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+        try: # If the device has an autostart attribute
+            self.autostart.isChecked(self.device.autostart)
+        except:
+            pass
         self.autostart.clicked.connect(self.autostart_clicked)
         #self.layout2.addWidget(QtWidgets.QLabel('Name' + ' Device #' + str(devicedict['device'].numdevice)),0,0)
         self.layout2.addWidget(self.namelabel,0,0)

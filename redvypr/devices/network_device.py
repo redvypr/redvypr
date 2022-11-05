@@ -612,6 +612,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.startbtn = QtWidgets.QPushButton("Open device")
         self.startbtn.clicked.connect(self.start_clicked)
         self.startbtn.setCheckable(True)
+
         self.config_widgets = [] # Collecting all config widgets here, makinf it easier to grey them out
         # Address and port
         self.addressline = QtWidgets.QLineEdit()
@@ -627,21 +628,19 @@ class initDeviceWidget(QtWidgets.QWidget):
         self._combo_inout = QtWidgets.QComboBox()
         self._combo_inout.addItem('Publish')        
         self._combo_inout.addItem('Receive')
-        self._combo_inout.currentIndexChanged.connect(self.process_options)
+
         
         # Data direction
         self._combo_proto = QtWidgets.QComboBox()
         self._combo_proto.addItem('TCP')        
         self._combo_proto.addItem('UDP')
-        self._combo_proto.currentIndexChanged.connect(self.process_options)
-        
-        
+
         # Publish options
         # Create an array of radio buttons
         self._data_pub_all  = QtWidgets.QRadioButton("Redvypr YAML datapacket")
         self._data_pub_all.setStatusTip('Sends/Expects the whole datapacket as a YAML string')
         self._data_pub_all.setChecked(True)
-        self._data_pub_all.toggled.connect(self.process_options)
+
         self._data_pub_dict = QtWidgets.QRadioButton("Dictionary entries")
         self._data_pub_dict.setStatusTip('Sends entries and serialize them as choosen by the serialization box')
 
@@ -653,7 +652,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         self._combo_ser = QtWidgets.QComboBox()
         self._combo_ser.addItem('utf-8')
         self._combo_ser.addItem('raw')
-        
+
+
+
+
+
         
         
         # Data format to submit
@@ -672,7 +675,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addRow(self._serialize_label)
         layout.addRow(self._data_pub_all,self._data_pub_dict)
         layout.addRow(QtWidgets.QLabel("Serialize"),self._combo_ser)
-        layout.addRow(self.fdataentry,self.dataentry)  
+        layout.addRow(self.fdataentry,self.dataentry)
         layout.addRow(self.startbtn)
         
         self.config_widgets.append(self.addressline)
@@ -686,15 +689,41 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         self.config_to_buttons()
         self.process_options()
+        self.connect_signals_options(connect=True)
 
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
+
+    def connect_signals_options(self,connect=True):
+        if True:
+            if(connect):
+                self._combo_inout.currentIndexChanged.connect(self.process_options)
+                self._combo_proto.currentIndexChanged.connect(self.process_options)
+                self._data_pub_all.toggled.connect(self.process_options)
+                self._combo_ser.currentIndexChanged.connect(self.process_options)
+            else:
+                try:
+                    self._combo_inout.currentIndexChanged.disconnect()
+                    self._combo_proto.currentIndexChanged.disconnect()
+                    self._data_pub_all.toggled.disconnect()
+                    self._combo_ser.currentIndexChanged.disconnect()
+                except:
+                    pass
+
         
     def config_to_buttons(self):
         """ Update the configuration widgets according to the config dictionary in the device module 
         """
         #print('Config to buttons',self.device.config)
+
+        # Disconnect all signals
+        self.connect_signals_options(connect=False)
+        if (self.device.config['protocol'] == 'tcp'):
+            self._combo_proto.setCurrentIndex(0)
+        else:
+            self._combo_proto.setCurrentIndex(1)
+
         if(self.device.config['address'] is not None):
             self.addressline.setText(self.device.config['address'])
         if(self.device.config['port'] is not None):
@@ -704,12 +733,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             self._combo_inout.setCurrentIndex(0)
         else:
             self._combo_inout.setCurrentIndex(1)
-            
-        if(self.device.config['protocol'] == 'tcp'):
-            self._combo_proto.setCurrentIndex(0)
-        else:
-            self._combo_proto.setCurrentIndex(1)
-            
+
         for i in range(self._combo_ser.count()):
             self._combo_ser.setCurrentIndex(i)
             txt = self._combo_ser.currentText()
@@ -717,13 +741,14 @@ class initDeviceWidget(QtWidgets.QWidget):
                 break
 
         self.dataentry.setText(self.device.config['data'])
+        self.connect_signals_options(connect=True)
             
     def process_options(self):
         """ Reads all options and creates a configuration dictionary
         """
         funcname = __name__ + '.process_options()'
         config   = {}
-        #print('Process options')
+        print('Process options')
 
         config['address']   = self.addressline.text()
         config['direction'] = self._combo_inout.currentText().lower()
@@ -751,19 +776,17 @@ class initDeviceWidget(QtWidgets.QWidget):
         # Check for invalid combinations
         if((config['address'].lower()) == '<broadcast>' and config['protocol'] == 'tcp'):
             logger.warning(funcname + ': Broadcast works only with UDP')
-            config = None
-            return config
-        
+
         try:
             config['port'] = int(self.portline.text())
         except:
             logger.warning(funcname + ': Port is not an int')
-            raise ValueError
 
-        logger.debug(funcname + ': config: ' + str(config))
+
         self.device.config = config
+        logger.debug(funcname + ': config: ' + str(config))
         return config
-    
+
     def thread_status(self,status):
         self.update_buttons(status['threadalive'])
         
