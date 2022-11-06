@@ -1,34 +1,13 @@
 import copy
 
-import serial
-import serial.tools
-import os
 import time
-import datetime
 import logging
-import queue
 import sys
 import yaml
-import pkg_resources
 from PyQt5 import QtWidgets, QtCore, QtGui
-import pyqtgraph as pg
-import numpy as np
-import inspect
-import threading
-import multiprocessing
-import redvypr.devices as redvyprdevices
-from redvypr.data_packets import device_in_data, get_devicename_from_data
 from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices,configtemplate_to_dict
 from redvypr.device import redvypr_device
 import redvypr.utils
-import socket
-import argparse
-import importlib.util
-import glob
-import pathlib
-import signal
-import uuid
-from redvypr.version import version
 import redvypr.files as files
 
 _logo_file = files.logo_file
