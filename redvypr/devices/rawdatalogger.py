@@ -64,10 +64,7 @@ def create_logfile(config,count=0):
        
     return [f,filename]
 
-
-
-#def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
-def start(device_info, config={'filename':''}, dataqueue=None, datainqueue=None, statusqueue=None):
+def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
     count = 0

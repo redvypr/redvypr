@@ -1,4 +1,3 @@
-# TODO, improve keys!
 import datetime
 import logging
 import queue
@@ -10,7 +9,8 @@ import sys
 import yaml
 import copy
 import os
-from redvypr.data_packets import do_data_statistics, create_data_statistic_dict
+from redvypr.device import redvypr_device
+from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('rawdatareplay')
@@ -18,8 +18,19 @@ logger.setLevel(logging.DEBUG)
 
 description = "Replays a raw redvypr data file"
 
+description = "Saves the raw redvypr packets into a file"
+config_template = {}
+config_template['name']      = 'rawdatareplay'
+config_template['files']             = []#{'type':'list','description':'List of files ro replay'} # TODO, list
+config_template['loop']              = {'type':'int','description':'Loop over all files if set'} # TODO, bool
+config_template['speedup']           = {'type':'float','description':'Speedup factor of the data'}
+config_template['redvypr_device']    = {}
+config_template['redvypr_device']['publish']   = False
+config_template['redvypr_device']['subscribe'] = True
+config_template['redvypr_device']['description'] = description
+
 def get_packets(filestream=None):
-    funcname = __name__ + '.get_packets()' 
+    funcname = __name__ + '.get_packets()'
     packets = []
     if(filestream is not None):
         data = filestream.read()
@@ -41,9 +52,9 @@ def get_packets(filestream=None):
     
 
 
-def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
+def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
-    logger.debug(funcname + ':Opening writing:')
+    logger.debug(funcname + ':Opening reading:')
     files = config['files']
     t_sent = 0 # The time the last packets was sent
     t_packet_old = 1e12 # The time the last packet had (internally)
@@ -78,12 +89,15 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
     while True:
         tcheck      = time.time()
         try:
-            com = comqueue.get(block=False)
-            logger.debug(funcname + ': received:' + str(com))
-            break
-        except Exception as e:
-            #logger.warning(funcname + ': Error stopping thread:' + str(e))
-            pass
+            data = datainqueue.get(block=False)
+        except:
+            data = None
+        if (data is not None):
+            command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
+            # logger.debug('Got a command: {:s}'.format(str(data)))
+            if (command is not None):
+                logger.debug('Command is for me: {:s}'.format(str(command)))
+                break
 
         packets = get_packets(f)
         if(packets is None):
@@ -98,7 +112,7 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
                 dt_packet = (p['t'] - t_packet_old)/speedup
                 if(dt_packet < 0):
                     dt_packet = 0
-                print('Sending packet in {:f} s.'.format(dt_packet))
+                logger.debug('Sending packet in {:f} s.'.format(dt_packet))
                 if True:
                     time.sleep(dt_packet) 
                     t_sent = time.time()
@@ -121,85 +135,24 @@ def start(datainqueue,dataqueue,comqueue,config={'filename':''}):
                     nfile = 0
             
             filename = files[nfile]
-            print('Opening new file',filename)
+            logger.info('Opening new file {:s}'.format(filename))
             f = open(filename)
             nfile += 1
         
         time.sleep(0.05)
 
-class Device():
-    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None):
-        """
-        """
-        self.publish     = True  # publishes data, a typical device is doing this
-        self.subscribe   = False   # subscribing data, a typical datalogger is doing this
-        self.datainqueue = datainqueue
-        self.dataqueue   = dataqueue        
-        self.comqueue    = comqueue
-        self.config      = {}
-        self.config['files'] = []
-        self.file_statistics = {}
-                
-    def start(self):
-        """
-        """
-        funcname = self.__class__.__name__
-        logger.debug(funcname)
-        print('Starting',self.config)
-        config=copy.deepcopy(self.config)
-        start(self.datainqueue,self.dataqueue,self.comqueue,config=config)
-        
-    def inspect_data(self,filename,rescan=False):
-        """ Inspects the files for possible datastreams in the file with the filename located in config['files'][fileindex].
-        """
-        funcname = self.__class__.__name__ + '.inspect_data()'
-        logger.debug(funcname)
-        try:
-            stat = self.file_statistics[filename]
-            FLAG_HASSTAT=True
-        except:
-            FLAG_HASSTAT=False
-            
-        if(rescan or (FLAG_HASSTAT == False)):
-            logger.debug(funcname + ': Scanning file {:s}'.format(filename))  
-            stat = create_data_statistic_dict()
-            # Create tmin/tmax in statistics
-            stat['t_min'] = 1e12
-            stat['t_max'] = -1e12
-            f = open(filename)
-            packets = get_packets(f)
-            f.close()
-            for p in packets:
-                stat = do_data_statistics(p,stat)
-                tminlist = [stat['t_min'],p['t']]
-                tmaxlist = [stat['t_max'],p['t']]
-                stat['t_min'] = min(tminlist)
-                stat['t_max'] = max(tmaxlist)
-            
-            self.file_statistics[filename] = stat
-        else:
-            logger.debug(funcname + ': No rescan of {:s}'.format(filename))  
-            
-        return stat
-        
-    def __str__(self):
-        sstr = 'rawdatareplay'
-        return sstr
 
 #
 #
 # The init widget
 #
 #
-
-
 class initDeviceWidget(QtWidgets.QWidget):
-    device_start = QtCore.pyqtSignal(Device) # Signal requesting a start of the device (starting the thread)
-    device_stop  = QtCore.pyqtSignal(Device) # Signal requesting a stop of device
-    connect      = QtCore.pyqtSignal(Device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    connect      = QtCore.pyqtSignal(redvypr_device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)
+        self.file_statistics = {}
         self.device   = device
         self.label    = QtWidgets.QLabel("rawdatareplay setup")
         self.label.setAlignment(QtCore.Qt.AlignCenter)
@@ -234,7 +187,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.speedup_edit.setText("1.0")
         
         
-        self.startbtn = QtWidgets.QPushButton("Start logging")
+        self.startbtn = QtWidgets.QPushButton("Start replay")
         self.startbtn.clicked.connect(self.start_clicked)
         self.startbtn.setCheckable(True)
         self.startbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
@@ -250,6 +203,43 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.speedup_label,6,1,1,1,QtCore.Qt.AlignRight)
         layout.addWidget(self.speedup_edit,6,2,1,1,QtCore.Qt.AlignRight)
         layout.addWidget(self.startbtn,7,0,2,-1)
+
+        self.statustimer = QtCore.QTimer()
+        self.statustimer.timeout.connect(self.update_buttons)
+        self.statustimer.start(500)
+
+    def inspect_data(self, filename, rescan=False):
+        """ Inspects the files for possible datastreams in the file with the filename located in config['files'][fileindex].
+        """
+        funcname = self.__class__.__name__ + '.inspect_data()'
+        logger.debug(funcname)
+        try:
+            stat = self.file_statistics[filename]
+            FLAG_HASSTAT = True
+        except:
+            FLAG_HASSTAT = False
+
+        if (rescan or (FLAG_HASSTAT == False)):
+            logger.debug(funcname + ': Scanning file {:s}'.format(filename))
+            stat = create_data_statistic_dict()
+            # Create tmin/tmax in statistics
+            stat['t_min'] = 1e12
+            stat['t_max'] = -1e12
+            f = open(filename)
+            packets = get_packets(f)
+            f.close()
+            for p in packets:
+                stat = do_data_statistics(p, stat)
+                tminlist = [stat['t_min'], p['t']]
+                tmaxlist = [stat['t_max'], p['t']]
+                stat['t_min'] = min(tminlist)
+                stat['t_max'] = max(tmaxlist)
+
+            self.file_statistics[filename] = stat
+        else:
+            logger.debug(funcname + ': No rescan of {:s}'.format(filename))
+
+        return stat
         
     def finalize_init(self):
         """ Util function that is called by redvypr after initializing all config (i.e. the configuration from a yaml file)
@@ -277,8 +267,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         for i in rows:
             filename = self.inlist.item(i,0).text()
-            stat = self.device.inspect_data(filename,rescan=False)
-            
+            stat = self.inspect_data(filename,rescan=False)
             packetitem = QtWidgets.QTableWidgetItem(str(stat['numpackets']))
             self.inlist.setItem(i,1,packetitem)
             tdmin = datetime.datetime.fromtimestamp(stat['t_min'])
@@ -372,18 +361,19 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.device.config['loop']    = loop
             # Speedup
             self.device.config['speedup'] = float(self.speedup_edit.text())
-            self.device_start.emit(self.device)
+            self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')
-            self.device_stop.emit(self.device)
+            self.device.thread_stop()
 
             
-    def thread_status(self,status):
-        self.update_buttons(status['threadalive'])
-        
-    def update_buttons(self,thread_status):
+    def update_buttons(self):
             """ Updating all buttons depending on the thread status (if its alive, graying out things)
             """
+
+            status = self.device.get_thread_status()
+            thread_status = status['thread_status']
+
             # Running
             if(thread_status):
                 self.startbtn.setText('Stop')
