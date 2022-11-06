@@ -61,6 +61,7 @@ logger.setLevel(logging.DEBUG)
 def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
+    print('config',config)
     while True:
         try:
             data = datainqueue.get(block=False)

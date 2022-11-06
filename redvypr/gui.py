@@ -310,7 +310,7 @@ the devives with each other
                     
             
     def disconnect_clicked(self):
-        print('Disconnect')
+        logger.debug('Disconnect')
 
     def itemcon_clicked(self,item):
         # Update the connection list 
@@ -1615,19 +1615,22 @@ class redvypr_config_widget(QtWidgets.QWidget):
             item = btn.item
             logger.debug(funcname + 'Apply')
             data = None
-            try:
-                data = self.__configwidget_input.value()
-            except:
-                pass
-            try:
-                data = self.__configwidget_input.text()
-            except:
-                pass
+            if (data is None):
+                try:
+                    data = self.__configwidget_input.value()
+                except:
+                    pass
 
-            try:
-                data = str(self.__configwidget_input.currentText())
-            except Exception as e:
-                pass
+            if (data is None):
+                try:
+                    data = self.__configwidget_input.text()
+                except:
+                    pass
+            if (data is None):
+                try:
+                    data = str(self.__configwidget_input.currentText())
+                except Exception as e:
+                    pass
 
             if(data is not None):
                 logger.debug(funcname + 'Got data')
@@ -1815,7 +1818,6 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
             except:
                 typestr = data_value.__class__.__name__
 
-            print('Data value', data_value,'typestr',typestr)
             item       = QtWidgets.QTreeWidgetItem([str(index), str(data_value),typestr])
             #item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)  # editable
             item.__data__ = data

@@ -1,7 +1,6 @@
 from . import serial_device
 from . import zeromq_device
 from . import network_device
-from . import textlogger
 from . import csvlogger
 from . import csvparser
 from . import plot

@@ -1946,45 +1946,10 @@ Opens an "about" widget showing basic information.
 
 #
 #
-# A splash screen
-#
-#
-
-class SplashScreen(QtWidgets.QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setFixedSize(700, 350)
-        self.setWindowFlag(QtCore.Qt.FramelessWindowHint)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.counter = 0
-        self.n = 50
-        # self.initUI()
-        self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.count)
-        self.timer.start(100)
-
-    def count(self):
-        # set progressbar value
-        # self.progressBar.setValue(self.counter)
-        # stop progress if counter
-        # is greater than n and
-        # display main window app
-        if self.counter >= self.n:
-            self.timer.stop()
-            self.close()
-            time.sleep(1)
-            ## Start the main application
-            # self.main_window()
-        self.counter += 1
-
-
-#
-#
 # Main function called from os
 #
 #
 #
-
 def redvypr_main():
     redvypr_help = 'redvypr'
     config_help = 'Using a yaml config file'
@@ -2047,6 +2012,7 @@ def redvypr_main():
         config_all.append(hostconfig)
 
     logger.debug('Configuration:\n {:s}\n'.format(str(config_all)))
+    QtCore.QLocale.setDefault(QtCore.QLocale(QtCore.QLocale.English, QtCore.QLocale.UnitedStates))
     # GUI oder command line?
     if (args.nogui):
         def handleIntSignal(signum, frame):
