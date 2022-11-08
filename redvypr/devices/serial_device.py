@@ -8,7 +8,7 @@ import serial
 import serial.tools.list_ports
 import logging
 import sys
-from redvypr.device import redvypr_device
+from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
 
 
 description = 'Reading data from a serial device'
@@ -18,74 +18,42 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('serial_device')
 logger.setLevel(logging.DEBUG)
 
-def get_standard_config():
+
+config_template              = {}
+config_template['comport']   = {'type':'str'}
+config_template['baud']      = {'type':'int','default':4800}
+config_template['parity']    = {'type':'int','default':serial.PARITY_NONE}
+config_template['stopbits']  = {'type':'int','default':serial.STOPBITS_ONE}
+config_template['bytesize']  = {'type':'int','default':serial.EIGHTBITS}
+config_template['dt_poll']   = {'type':'float','default':0.05}
+config_template['chunksize'] = {'type':'int','default':1000} # The maximum amount of bytes read with one chunk
+config_template['packetdelimiter'] = {'type':'str','default':'\n'} # The maximum amount of bytes read with one chunk
+config_template['redvypr_device'] = {}
+config_template['redvypr_device']['publish']   = True
+config_template['redvypr_device']['subscribe'] = False
+config_template['redvypr_device']['description'] = description
+
+
+def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
     """
-    """
-    config              = {}
-    config['comport']   = ''
-    config['baud']      = 4800
-    config['sentences'] = '' # Do we need that?
-    config['parity']    = serial.PARITY_NONE
-    config['stopbits']  = serial.STOPBITS_ONE
-    config['bytesize']  = serial.EIGHTBITS
-    config['dt_poll']   = 0.05
-    config['chunksize'] = 1000 # The maximum amount of bytes read with one chunk
-    
-    return config
 
-
-def process_nmea(rawdata_all):
-    for rawdata in rawdata_all:
-        try:
-            value = chr(rawdata) # .decode('utf-8')
-            #print('data',rawdata,value)
-            bytes_read += 1
-            nmea_sentence += value
-            if(len(nmea_sentence) > max_size):
-                nmea_sentence = ''
-                
-            if(value == '$'):
-                got_dollar = True
-                nmea_sentence = value
-                # Get the time
-                ti = time.time()
-
-            elif((value == '\n') and (got_dollar)):
-                got_dollar = False                    
-                data = {'t':time.time()}
-                data['nmeatime'] = ti
-                data['serialdevice'] = serial_device.name
-                data['nmea'] = nmea_sentence
-                data['bytes_read'] = bytes_read
-                data['nmea_sentences_read'] = sentences
-                logger.debug(funcname + ':Read sentence:' + nmea_sentence)
-                nmea_sentence = ''
-                sentences += 1
-                try:
-                    dataqueue.put(data)
-                except Exception as e:
-                    logger.debug(funcname + ': Dataqueue put exception')
-
-        except Exception as e:
-            logger.debug(':Exception:' + str(e))    
-
-
-def start(datainqueue,dataqueue,comqueue,statusqueue,config=None):
-#def start(dataqueue,comqueue,serial_name,baud,parity=serial.PARITY_NONE,stopbits=serial.STOPBITS_ONE,bytesize=serial.EIGHTBITS,max_size=10000,dt = 0.05):
-    """
-    dt: time.sleep(dt) parameter
     """
     funcname = __name__ + '.start()'
-    
     logger.debug(funcname + ':Starting reading serial data')
     chunksize   = config['chunksize'] #The maximum amount of bytes read with one chunk    
-    serial_name = config['comport']    
+    serial_name = config['comport']
+    baud        = config['baud']
     parity      = config['parity']    
     stopbits    = config['stopbits']    
     bytesize    = config['bytesize']    
     dt_poll     = config['dt_poll']    
     
-    newpacket   = config['newpacket']
+    newpacket   = config['packetdelimiter']
+    # Check if a delimiter shall be used (\n, \r\n, etc ...)
+    if(len(newpacket)>0):
+        FLAG_DELIMITER = True
+    else:
+        FLAG_DELIMITER = False
     if(type(newpacket) is not bytes):
         newpacket = newpacket.encode('utf-8')
         
@@ -111,11 +79,20 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config=None):
     while True:
         # TODO, here commands could be send as well
         try:
-            com = comqueue.get(block=False)
-            logger.debug('received' + str(com))
-            break
+            data = datainqueue.get(block=False)
         except:
-            pass
+            data = None
+        if (data is not None):
+            command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
+            # logger.debug('Got a command: {:s}'.format(str(data)))
+            if (command is not None):
+                sstr = funcname + ': Command is for me: {:s}'.format(str(command))
+                logger.debug(sstr)
+                try:
+                    statusqueue.put_nowait(sstr)
+                except:
+                    pass
+                break
 
 
         time.sleep(dt_poll)
@@ -136,20 +113,21 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config=None):
                 dataqueue.put(data)
                 rawdata_all = b''
                 
-            # Check if the newpacket character in the data 
-            FLAG_CHAR = newpacket in rawdata_all
-            if(FLAG_CHAR):
-                rawdata_split = rawdata_all.split(newpacket)
-                if(len(rawdata_split)>1):
-                    for ind in range(len(rawdata_split)-1): # The last packet does not have the split character
-                        raw = rawdata_split[ind] + newpacket # reconstruct the data
-                        data               = {'t':time.time()}
-                        data['data']       = raw
-                        data['comport']    = serial_device.name
-                        data['bytes_read'] = bytes_read
-                        dataqueue.put(data)
-                        
-                    rawdata_all = rawdata_split[-1] 
+            # Check if the newpacket character in the data
+            if(FLAG_DELIMITER):
+                FLAG_CHAR = newpacket in rawdata_all
+                if(FLAG_CHAR):
+                    rawdata_split = rawdata_all.split(newpacket)
+                    if(len(rawdata_split)>1):
+                        for ind in range(len(rawdata_split)-1): # The last packet does not have the split character
+                            raw = rawdata_split[ind] + newpacket # reconstruct the data
+                            data               = {'t':time.time()}
+                            data['data']       = raw
+                            data['comport']    = serial_device.name
+                            data['bytes_read'] = bytes_read
+                            dataqueue.put(data)
+
+                        rawdata_all = rawdata_split[-1]
         
             
             
@@ -162,50 +140,11 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config=None):
             
                 
 
-class Device(redvypr_device):
-    def __init__(self,**kwargs):
-        """
-        """
-        super(Device, self).__init__(**kwargs)
-        self.publish       = True   # publishes data, a typical device is doing this
-        self.subscribe     = False  # subscribing data, a typical datalogger is doing this
-        self.serial_device = None
-        self.serial_name = ''
-        self.baud = 0
-        self.sentences = 0
-        self.parity = serial.PARITY_NONE
-        self.stopbits = serial.STOPBITS_ONE
-        self.bytesize = serial.EIGHTBITS
-        config['comport']   = ''
-        config['baud']      = 4800
-        config['sentences'] = '' # Do we need that?
-        config['parity']    = serial.PARITY_NONE
-        config['stopbits']  = serial.STOPBITS_ONE
-        config['bytesize']  = serial.EIGHTBITS
-        
-        
-    def thread_status(self,status):
-        """ Function that is called by redvypr, allowing to update the status of the device according to the thread 
-        """
-        self.threadalive = status['threadalive']
-        pass
 
-    def start(self):
-        funcname = __name__ + '.start()'                                
-        logger.debug(funcname)
-        start(self.datainqueue,self.dataqueue,self.comqueue,self.statusqueue,config=config)
-        #start(self.dataqueue,self.comqueue,self.serial_name,self.baud,self.parity,self.stopbits,self.bytesize)
-        
-
-    def __str__(self):
-        sstr = 'serial device'
-        return sstr
 
 
 
 class initDeviceWidget(QtWidgets.QWidget):
-    device_start = QtCore.pyqtSignal(Device)
-    device_stop = QtCore.pyqtSignal(Device)        
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QVBoxLayout(self)
@@ -222,9 +161,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         #layout.addWidget(self.startbtn)
         #layout.addWidget(self.stopbtn)
         
-    def thread_status(self,status):
-        self.update_buttons(status['threadalive'])
-
     def init_serialwidget(self):
         """Fills the serial widget with content
         """

@@ -17,14 +17,28 @@ logger.setLevel(logging.DEBUG)
 
 description = 'Parses comma separated values (csv)'
 
+config_template = {}
+config_template['name']              = 'csvparser'
+config_template['datakey']           = {'type':'str','default':'data'}
+config_template['redvypr_device']    = {}
+config_template['redvypr_device']['publish']   = True
+config_template['redvypr_device']['subscribe'] = True
+config_template['redvypr_device']['description'] = description
 
-def start(dataqueue, datainqueue, statusqueue, config=None):
+
+def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     """ zeromq receiving data
     """
     funcname = __name__ + '.start()'
 
     # Some variables for status
     tstatus = time.time()
+
+    print('Version {:s}'.format(csv2dict.__version__))
+    csv = csv2dict.csv2dict()
+    csv.add_standard_csvdefinitions()
+    csv.print_definitions()
+
     try:
         dtstatus = config['dtstatus']
     except:
@@ -39,84 +53,16 @@ def start(dataqueue, datainqueue, statusqueue, config=None):
             print('Got a command',command)
             break
 
-        print('Data',data)
+        #print('Data',data)
+        csvdata = data['data']
+        dicts = csv.parse_data(csvdata)
+        for k in dicts.keys(): # Loop over all packets and send them
+            packet = dicts[k]
+            packet['t'] = data['t']
+            print('Putting',packet)
+            dataqueue.put(packet)
 
-
-class Device(redvypr_device):
-    def __init__(self, **kwargs):
-        """
-        """
-        super(Device, self).__init__(**kwargs)
-        self.publish     = True
-        self.subscribe   = True
-        self.description = 'csvparser'
-        self.thread_communication = self.datainqueue # Change the commandqueue to the datainqueue
-
-    def start(self):
-        print('Start')
+        #print(dicts)
 
 
 
-class initDeviceWidget(QtWidgets.QWidget):
-    device_start = QtCore.pyqtSignal(Device)
-    device_stop = QtCore.pyqtSignal(Device)
-
-    def __init__(self, device=None):
-        super(QtWidgets.QWidget, self).__init__()
-        layout = QtWidgets.QGridLayout(self)
-        self.device = device
-        self.label = QtWidgets.QLabel("csv parser setup")
-        self.label.setAlignment(QtCore.Qt.AlignCenter)
-        self.label.setStyleSheet(''' font-size: 24px; font: bold''')
-
-        self.editwidget = []  # A list of all widgets that are editable and need to be enabled/disabled
-        self.startbtn = QtWidgets.QPushButton("Start data")
-        self.startbtn.clicked.connect(self.start_clicked)
-        self.startbtn.setCheckable(True)
-
-        layout.addWidget(self.label, 0, 0)
-        layout.addWidget(self.startbtn, 1, 0)
-
-    def start_clicked(self):
-        button = self.sender()
-        if button.isChecked():
-            self.device_start.emit(self.device)
-            button.setText("Starting")
-
-            for e in self.editwidget:
-                e.setEnabled(False)
-        else:
-            button.setText("Stopping")
-            self.device_stop.emit(self.device)
-            # self.conbtn.setEnabled(True)
-
-    def thread_status(self, status):
-        """ This function is called by redvypr whenever the thread is started/stopped
-        """
-        self.update_buttons(status['threadalive'])
-
-    def update_buttons(self, thread_status):
-        """ Updating all buttons depending on the thread status (if its alive, graying out things)
-        """
-        if (thread_status):
-            self.startbtn.setText('Stop logging')
-            self.startbtn.setChecked(True)
-            # self.conbtn.setEnabled(False)
-        else:
-            self.startbtn.setText('Start logging')
-            self.startbtn.setChecked(False)
-            for e in self.editwidget:
-                e.setEnabled(True)
-            # self.conbtn.setEnabled(True)
-
-
-class displayDeviceWidget(QtWidgets.QWidget):
-    def __init__(self):
-        super(QtWidgets.QWidget, self).__init__()
-        layout = QtWidgets.QVBoxLayout(self)
-
-    def update(self, data):
-        try:
-            self.lcd.display(0)
-        except:
-            self.lcd.display(1)

@@ -186,7 +186,7 @@ def start_recv(dataqueue, datainqueue, statusqueue, config=None,device_info=None
             logger.debug('Got a command {:s}'.format(str(data)))
             if (command is not None):
                 logger.debug('received command:' + str(command) + ' ,stopping now')
-                break
+                return
 
         try:
             #datab = sub.recv(zmq.NOBLOCK)
@@ -248,7 +248,6 @@ def start_recv(dataqueue, datainqueue, statusqueue, config=None,device_info=None
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
-    print(config)
     if (config['direction'] == 'publish'):
         logger.info(__name__ + ':Start to serve data on address:' + str(config))
         # start_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)

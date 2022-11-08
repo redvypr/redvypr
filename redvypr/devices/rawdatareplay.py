@@ -74,7 +74,6 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     loop = config['loop']
     
     
-    print(funcname,'Config',config)    
     statistics = create_data_statistic_dict()
     
     bytes_read         = 0
@@ -96,7 +95,12 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
             # logger.debug('Got a command: {:s}'.format(str(data)))
             if (command is not None):
-                logger.debug('Command is for me: {:s}'.format(str(command)))
+                sstr = funcname + ': Command is for me: {:s}'.format(str(command))
+                logger.debug(sstr)
+                try:
+                    statusqueue.put_nowait(sstr)
+                except:
+                    pass
                 break
 
         packets = get_packets(f)
@@ -112,30 +116,51 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                 dt_packet = (p['t'] - t_packet_old)/speedup
                 if(dt_packet < 0):
                     dt_packet = 0
-                logger.debug('Sending packet in {:f} s.'.format(dt_packet))
+
                 if True:
-                    time.sleep(dt_packet) 
+                    time.sleep(dt_packet)
                     t_sent = time.time()
                     t_packet_old = p['t']
                     dataqueue.put(p)
-                
-                #print(p)
-                
-                
+
+                sstr = 'Sending packet in {:f} s.'.format(dt_packet)
+                logger.debug(sstr)
+                try:
+                    statusqueue.put_nowait(sstr)
+                except:
+                    pass
+
+
             FLAG_NEW_FILE = True
             f.close()
             
         if(FLAG_NEW_FILE):
             if(nfile >= len(files)):
                 if(loop == False):
-                    logger.info(funcname + ': All files read, stopping now.')
+                    sstr = funcname + ': All files read, stopping now.'
+                    try:
+                        statusqueue.put_nowait(sstr)
+                    except:
+                        pass
+                    logger.info(sstr)
                     break
                 else:
-                    logger.info(funcname + ': All files read, loop again.')
+                    sstr = funcname + ': All files read, loop again.'
+                    try:
+                        statusqueue.put_nowait(sstr)
+                    except:
+                        pass
+
+                    logger.info(sstr)
                     nfile = 0
             
             filename = files[nfile]
-            logger.info('Opening new file {:s}'.format(filename))
+            sstr = 'Opening file {:s}'.format(filename)
+            try:
+                statusqueue.put_nowait(sstr)
+            except:
+                pass
+            logger.info(sstr)
             f = open(filename)
             nfile += 1
         
@@ -393,10 +418,11 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
 class displayDeviceWidget(QtWidgets.QWidget):
-    def __init__(self):
+    def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout          = QtWidgets.QVBoxLayout(self)
-        hlayout         = QtWidgets.QHBoxLayout()        
+        hlayout         = QtWidgets.QHBoxLayout()
+        self.device     = device
         self.text       = QtWidgets.QPlainTextEdit(self)
         self.text.setReadOnly(True)
         self.filelab= QtWidgets.QLabel("File: ")
@@ -408,12 +434,22 @@ class displayDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.filelab)        
         layout.addLayout(hlayout)
         layout.addWidget(self.text)
-        #self.text.insertPlainText("hallo!")        
+        #self.text.insertPlainText("hallo!")
+        self.statustimer = QtCore.QTimer()
+        self.statustimer.timeout.connect(self.update)
+        self.statustimer.start(500)
 
-    def update(self,data):
-        #print('data',data)
-        self.filelab.setText("File: {:s}".format(data['filename']))        
-        self.byteslab.setText("Bytes written: {:d}".format(data['bytes_written']))
-        self.packetslab.setText("Packets written: {:d}".format(data['packets_written']))
-        self.text.insertPlainText(str(data['data']))
+    def update(self):
+        statusqueue = self.device.statusqueue
+        while (statusqueue.empty() == False):
+            try:
+                data = statusqueue.get(block=False)
+            except:
+                break
+
+            self.text.insertPlainText(str(data) + '\n')
+
+        #self.byteslab.setText("Bytes written: {:d}".format(data['bytes_written']))
+        #self.packetslab.setText("Packets written: {:d}".format(data['packets_written']))
+        #self.text.insertPlainText(str(data['data']))
         

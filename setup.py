@@ -23,7 +23,7 @@ setup(name='redvypr',
       scripts = [],
       entry_points={ 'console_scripts': ['redvypr=redvypr:redvypr_main']},
       package_data = {'':['VERSION','icon/*']},
-      install_requires=[ 'pyaml', 'pyqtgraph','netCDF4', 'tempsensor','pyqtconsole','csv2dict'],
+      install_requires=[ 'pyaml', 'pyqtgraph','netCDF4', 'tempsensor','pyqtconsole','csv2dict','serial'],
       classifiers=[
         'Development Status :: 4 - Beta',
         'Topic :: Scientific/Engineering',          

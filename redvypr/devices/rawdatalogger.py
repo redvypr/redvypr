@@ -153,7 +153,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                     if (command is not None):
                         logger.debug('Command is for me: {:s}'.format(str(command)))
                         FLAG_RUN = False
-                        break
+                        return
 
                 statistics = do_data_statistics(data,statistics)
                 yamlstr = yaml.dump(data,explicit_end=True,explicit_start=True)

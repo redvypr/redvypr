@@ -12,6 +12,8 @@ import pyqtgraph
 from redvypr.data_packets import device_in_data, get_keys_from_data
 from redvypr.gui import redvypr_devicelist_widget
 import redvypr.files as files
+from redvypr.device import redvypr_device
+from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -72,24 +74,12 @@ def start(datainqueue,dataqueue,comqueue):
                 
     logger.info(funcname + ': Stopped')            
 
-class Device():
-    def __init__(self,dataqueue=None,comqueue=None,datainqueue=None,config = []):
+class Device(redvypr_device):
+    def __init__(self, **kwargs):
         """
         """
-        self.publish     = False # publishes data, a typical device is doing this
-        self.subscribe   = True  # subscribing data, a typical datalogger is doing this
-        self.datainqueue = datainqueue
-        self.dataqueue   = dataqueue        
-        self.comqueue    = comqueue
-        self.config      = config # Please note that this is typically a placeholder, the config structure will be written by redvypr and the yaml
+        super(Device, self).__init__(**kwargs)
 
-    def finalize_init(self):
-        """This function is called after the configuration has been read and
-        parsed
-
-        """
-        self.connect_devices()
-        
     def connect_devices(self):
         """ Connects devices, if they are not already connected
         """
@@ -135,8 +125,6 @@ class Device():
 
 
 class initDeviceWidget(QtWidgets.QWidget):
-    device_start = QtCore.pyqtSignal(Device) # Signal requesting a start of the device (starting the thread)
-    device_stop  = QtCore.pyqtSignal(Device) # Signal requesting a stop of device
     connect      = QtCore.pyqtSignal(Device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
