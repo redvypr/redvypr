@@ -185,7 +185,9 @@ def start_recv(dataqueue, datainqueue, statusqueue, config=None,device_info=None
             command = check_for_command(data,thread_uuid=device_info['thread_uuid'])
             logger.debug('Got a command {:s}'.format(str(data)))
             if (command is not None):
-                logger.debug('received command:' + str(command) + ' ,stopping now')
+                logger.debug(funcname + ': received command:' + str(command) + ', stopping now')
+                sub.close()
+                logger.debug(funcname + ': zeromq port closed.')
                 return
 
         try:

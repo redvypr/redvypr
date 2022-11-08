@@ -118,7 +118,7 @@ class redvypr_device(QtCore.QObject):
         funcname = __name__ + '.thread_stop():'
         self.logger.debug(funcname)
         command = commandpacket(command='stop', device_uuid=self.uuid,thread_uuid=self.thread_uuid)
-        print('Sending command',command)
+        #print('Sending command',command)
         self.command(command)
         try:
             running2 = self.thread.is_alive()

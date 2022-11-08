@@ -239,11 +239,19 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel('Stopbits'),1,4)  
         layout.addWidget(self._combo_stopbits,2,4) 
         layout.addWidget(self._button_serial_openclose,2,5)
+
+        self.statustimer = QtCore.QTimer()
+        self.statustimer.timeout.connect(self.update_buttons)
+        self.statustimer.start(500)
         
     
-    def update_buttons(self,thread_status):
+    def update_buttons(self):
         """ Updating all buttons depending on the thread status (if its alive, graying out things)
         """
+
+        status = self.device.get_thread_status()
+        thread_status = status['thread_status']
+
         if(thread_status):
             self._button_serial_openclose.setText('Close')
             self._combo_serial_baud.setEnabled(False)
@@ -287,14 +295,13 @@ class initDeviceWidget(QtWidgets.QWidget):
                 
             self.device.serial_name = serial_name
             self.device.baud = serial_baud
-            self.device_start.emit(self.device)
+            self.device.thread_start()
         else:
             self.stop_clicked()
 
     def stop_clicked(self):
-        #print('Stop clicked')
         button = self._button_serial_openclose
-        self.device_stop.emit(self.device)
+        self.device.thread_stop()
         button.setText('Closing') 
         #self._combo_serial_baud.setEnabled(True)
         #self._combo_serial_devices.setEnabled(True)      
@@ -302,10 +309,11 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
 class displayDeviceWidget(QtWidgets.QWidget):
-    def __init__(self):
+    def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QVBoxLayout(self)
         hlayout        = QtWidgets.QHBoxLayout()
+        self.device = device
         self.bytes_read = QtWidgets.QLabel('Bytes read: ')
         self.lines_read = QtWidgets.QLabel('Lines read: ')
         self.text     = QtWidgets.QPlainTextEdit(self)
@@ -322,5 +330,5 @@ class displayDeviceWidget(QtWidgets.QWidget):
         lstr = "Lines read: {:d}".format(data['nmea_sentences_read'])
         self.bytes_read.setText(bstr)
         self.lines_read.setText(lstr)
-        self.text.insertPlainText(str(data['nmea']))
+        self.text.insertPlainText(str(data['data']))
         

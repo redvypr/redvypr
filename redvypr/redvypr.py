@@ -1020,12 +1020,14 @@ class redvypr(QtCore.QObject):
 
     def get_datastream_providing_device(self, datastream):
         """ Gets the device that provides that datastream
+        Not fully implemented!!!
         """
         funcname = self.__class__.__name__ + '.get_datastream_providing_device():'
         logger.debug(funcname)
-        datastreamparsed = parse_devicestring(datastream, local_hostinfo=self.hostinfo)
-        for dev in self.devices:
-            datastreamlist.extend(dev['statistics']['datastreams'])
+        datastreamparsed = data_packets.parse_devicestring(datastream, local_hostinfo=self.hostinfo)
+        devicename = datastreamparsed['devicename']
+        #for dev in self.devices:
+        #    datastreamlist.extend(dev['statistics']['datastreams'])
 
     def get_datastream_info(self, datastream):
         """ Gets additional information to the datastream, namely the data that is stored in the ?[datakey] dictionary entry
@@ -1063,11 +1065,11 @@ class redvypr(QtCore.QObject):
                 datastreams_all.extend(dev['statistics']['datastreams'])
             datastreams_all = list(set(datastreams_all))
             # Parse the devicestring
-            deviceparsed = parse_devicestring(device, local_hostinfo=self.hostinfo)
+            deviceparsed = data_packets.parse_devicestring(device, local_hostinfo=self.hostinfo)
             ##print('datastreams',datastreams_all)
             ##print('deviceparsed',deviceparsed)
             for stream in datastreams_all:
-                datastream_parsed = parse_devicestring(stream, local_hostinfo=self.hostinfo)
+                datastream_parsed = data_packets.parse_devicestring(stream, local_hostinfo=self.hostinfo)
                 ##print('datastream parsed',datastream_parsed)
                 flag_name = datastream_parsed['devicename'] == deviceparsed['devicename']
                 flag_name = flag_name or deviceparsed['deviceexpand']
@@ -1772,13 +1774,14 @@ class redvyprWidget(QtWidgets.QWidget):
 
     def close_application(self):
         funcname = __name__ + '.close_application():'
-        logger.debug(funcname + ' Closing ...')
+        print(funcname + ' Closing ...')
         try:
             self.add_device_widget.close()
         except:
             pass
 
         for sendict in self.redvypr.devices:
+            print(funcname + ' Stopping {:s}'.format(sendict['device'].name))
             sendict['device'].thread_stop()
 
         time.sleep(1)
@@ -1788,7 +1791,8 @@ class redvyprWidget(QtWidgets.QWidget):
             except:
                 pass
 
-        # sys.exit()
+        print('All stopped, sys.exit()')
+        sys.exit()
 
     def closeEvent(self, event):
         self.close_application()

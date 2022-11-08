@@ -153,7 +153,7 @@ def parse_devicestring(address_string,local_hostinfo=None):
     local = uuid == 'local'
     if(local and (local_hostinfo is not None)):
         hostname = local_hostinfo['hostname']
-        addr     = local_hostinfo['ip']
+        addr     = local_hostinfo['addr']
         uuid     = local_hostinfo['uuid']
         uuidexpanded   = False
         addrexpanded   = False
@@ -162,9 +162,9 @@ def parse_devicestring(address_string,local_hostinfo=None):
     # Fill a dictionary
     parsed_data = {}
     parsed_data['address_string']          = address_string
-    parsed_data['address_string_expanded'] = address_string_full
+    parsed_data['address_string_expanded'] = devstring_full
     parsed_data['hostname']     = hostname
-    parsed_data['ip']           = ip
+    parsed_data['addr']         = addr
     parsed_data['devicename']   = devicename
     parsed_data['uuid']         = uuid
     parsed_data['datakey']      = datakey

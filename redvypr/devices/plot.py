@@ -24,6 +24,15 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('plot')
 logger.setLevel(logging.DEBUG)
 
+description = 'Device that plots the received data'
+config_template = {}
+config_template['plots']    = []
+config_template['redvypr_device'] = {}
+config_template['redvypr_device']['publish']     = False
+config_template['redvypr_device']['subscribe']   = True
+config_template['redvypr_device']['description'] = description
+
+
 def get_bare_graph_config():
     """ Returns a valid bare configuration for a graph plot
     """
@@ -53,33 +62,35 @@ def get_bare_graph_line_config():
     return line_bare
 
 
-def start(datainqueue,dataqueue,comqueue):
+def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
     while True:
-        try:
-            com = comqueue.get(block=False)
-            logger.info(funcname + ': Stopping now')
-            break
-        except:
-            pass
-
-
         time.sleep(0.05)
         while(datainqueue.empty() == False):
             try:
                 data = datainqueue.get(block=False)
+            except:
+                data = None
+
+            if(data is not None):
+                command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
+                #logger.debug('Got a command: {:s}'.format(str(data)))
+                if (command is not None):
+                    logger.debug('Command is for me: {:s}'.format(str(command)))
+                    logger.info(funcname + ': Stopped')
+                    return
+
                 dataqueue.put(data) # This has to be done, otherwise the gui does not get any data ...
-            except Exception as e:
-                logger.debug(funcname + ': Exception:' + str(e))
-                
-    logger.info(funcname + ': Stopped')            
+
+
 
 class Device(redvypr_device):
     def __init__(self, **kwargs):
         """
         """
         super(Device, self).__init__(**kwargs)
-
+        self.connect_devices()
+        self.start = start
     def connect_devices(self):
         """ Connects devices, if they are not already connected
         """
@@ -88,7 +99,7 @@ class Device(redvypr_device):
         # Check of devices have not been added
         devices = self.redvypr.get_devices() # Get all devices
         plot_devices = []
-        for plot in self.config: # Loop over all plots
+        for plot in self.config['plots']: # Loop over all plots
             if(str(plot['type']).lower() == 'numdisp'):
                 name = plot['device']
                 plot_devices.append(name)
@@ -109,19 +120,6 @@ class Device(redvypr_device):
                     logger.info(funcname + 'Device was already connected')
                 elif(ret == True):
                     logger.info(funcname + 'Device was successfully connected')                                                            
-    def start(self):
-        """ Starting the plot
-        """
-        funcname = self.name + ':' + __name__ +':'
-        logger.debug(funcname + 'Starting now')
-
-        # And now start
-        start(self.datainqueue,self.dataqueue,self.comqueue)
-        
-    def __str__(self):
-        sstr = 'plot'
-        return sstr
-
 
 
 class initDeviceWidget(QtWidgets.QWidget):
@@ -184,7 +182,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         loclayout.addWidget(self.addbtn,0,2,-1,1)                                              
         # Location stuff done
         
-        self.config = [] # A list of plots
+        self.config = self.device.config
 
         #layout.addWidget(self.label,0,0,1,2)        
         layout.addWidget(self.conbtn,1,0)
@@ -244,7 +242,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         plotdict_bare['device'] = 'testranddata'        
         # Check if we have already a plot here
         flag_add_plot = True
-        for config in self.device.config:
+        for config in self.device.config['plots']:
             xsame = plotdict_bare['location'][0] == config['location'][0]
             ysame = plotdict_bare['location'][1] == config['location'][1]
             if xsame and ysame:
@@ -253,7 +251,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 break
 
         if(flag_add_plot):
-            self.device.config.append(plotdict_bare)
+            self.device.config['plots'].append(plotdict_bare)
             self.add_allwidgets()            
 
 
@@ -274,7 +272,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         plotdict_bare['location'] = [locy,locx,sizey,sizex]
         # Check if we have already a plot here
         flag_add_plot = True
-        for config in self.device.config:
+        for config in self.device.config['plots']:
             xsame = plotdict_bare['location'][0] == config['location'][0]
             ysame = plotdict_bare['location'][1] == config['location'][1]
             if xsame and ysame:
@@ -283,7 +281,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 break
 
         if(flag_add_plot):
-            self.device.config.append(plotdict_bare)
+            self.device.config['plots'].append(plotdict_bare)
             self.add_allwidgets()
 
 
@@ -295,7 +293,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             # Adding/Updating the plotwidgets in the display widget
             self.redvyprdevicelistentry['gui'][0].update_widgets()
             # Adding/Updating the config widgets in the init widget
-            for i,config in enumerate(self.device.config):
+            for i,config in enumerate(self.device.config['plots']):
                 try:
                     config['location']
                 except:
@@ -361,7 +359,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         #button.config = confignew
         #print('Hallonewnew',button.config)
         if True:
-            for i,dc in enumerate(self.device.config):
+            for i,dc in enumerate(self.device.config['plots']):
                 if(dc == button.config):
                     logger.debug('Found config')
                     self.device.config[i] = confignew
@@ -381,13 +379,14 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.start_clicked():'
         button = self.sender()
         if button.isChecked():
-            logger.debug(funcname + "button pressed")                
-            self.device_start.emit(self.device)
+            logger.debug(funcname + "button pressed")
+            self.device.thread_start()
             button.setText("Stop plotting")
             self.conbtn.setEnabled(False)
         else:
             logger.debug(funcname + "button released")                            
             self.device_stop.emit(self.device)
+            self.device.thread_stop()
             button.setText("Start plotting")
             self.conbtn.setEnabled(True)
             
@@ -425,21 +424,25 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.plots = []
         self.databuf = [] # A buffer of data
 
-            
         config = {'dt_update':dt_update,'last_update':time.time()}
         self.config = config
+
+        #self.statustimer = QtCore.QTimer()
+        #self.statustimer.timeout.connect(self.update)
+        #self.statustimer.start(500)
 
     def update_widgets(self):
         """ Compares self.device.config and widgets and add/removes plots if necessary
         """
         funcname = __name__ + '.update_widgets():'
         logger.debug(funcname)
-        # Remove all plots (thats brute but easy to bookeep
+        # Remove all plots (thats brute but easy to bookkeep)
         for plot in self.plots:
             plot.close()
-            
+
         # Add axes to the widget
-        for i,config in enumerate(self.device.config):
+        for i,configdata in enumerate(self.device.config['plots']):
+            config = copy.deepcopy(configdata) # Make a deepcopy, because we have a configdata object here
             if(config['type'] == 'graph'):
                 logger.debug(funcname + ': Adding graph' + str(config))
                 plot = plotWidget(config)
@@ -477,6 +480,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         
     def update(self,data):
         funcname = __name__ + '.update():'
+        print('Plot update ...')
         tnow = time.time()
         self.databuf.append(data)
         #print('got data',data)
@@ -846,11 +850,13 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
             self.line_touched.emit(index)
             
 
-    def item_changed(self,item,column):
+    #def item_changed(self,item,column):
+    def item_changed(self, item):
         """ Updates the dictionary with the changed data
         """
         funcname = __name__ + '.item_changed():'
-        logger.debug(funcname + 'Changed {:s} {:d} to {:s}'.format(item.text(0),column,item.text(1)))
+        print('item',item)
+        logger.debug(funcname + 'Changed {:s} to {:s}'.format(item.text(0),item.text(1)))
         # Parse the string given by the changed item using yaml (this makes the types correct again)
         try:
             pstring = "a: {:s}".format(item.text(1))
@@ -971,7 +977,7 @@ class configTreePlotWidget(QtWidgets.QTreeWidget):
                 print('Opening devicelist widget')       
                 self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = devicestr_datakey,devicename_highlight = devicestr_datakey,deviceonly=False,devicelock = True, subscribed_only=False) # Open a device choosing widget
                 #self.devicechoose = redvypr_devicelist_widget(self.redvypr, device = self.device,deviceonly=False,devicelock = True) # Open a device choosing widget
-                self.devicechoose.datakey_name_changed.connect(self.itemchanged)
+                self.devicechoose.datakey_name_changed.connect(self.itemtextchange)
                 self.devicechoose.show()
 
             

@@ -654,12 +654,15 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
     def update_datakeylist(self,devicename):
         """ Update the datakeylist whenever the device was changed
         """
+        funcname = __name__ + '.update_datakeylist():'
+        logger.debug(funcname)
         self.datakeylist.clear()
         
         try:
             self.datakeys    = self.redvypr.get_datakeys(devicename)
             self.datastreams = self.redvypr.get_datastreams(devicename)
-        except:
+        except Exception as e:
+            print('Hallo',e)
             self.datakeys    = []
             self.datastreams = []
         for key in self.datakeys:
@@ -1341,9 +1344,7 @@ class redvypr_data_tree(QtWidgets.QTreeWidget):
 #
 #
 class redvypr_deviceInitWidget(QtWidgets.QWidget):
-    #device_start = QtCore.pyqtSignal(redvypr_device) # Signal requesting a start of the device (starting the thread)
-    #device_stop  = QtCore.pyqtSignal(redvypr_device) # Signal requesting a stop of device
-    connect      = QtCore.pyqtSignal(redvypr_device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    connect = QtCore.pyqtSignal(redvypr_device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self, device=None):
         funcname = __name__ + '.__init__():'
         logger.debug(funcname)
@@ -1355,7 +1356,7 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
 
         self.config_widgets.append(self.config_widget)
 
-        # Startbutton
+        # Start-button
         self.startbutton = QtWidgets.QPushButton('Start')
         self.startbutton.clicked.connect(self.start_clicked)
         self.startbutton.setCheckable(True)
@@ -1379,9 +1380,26 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         else:
             self.layout.addWidget(self.startbutton, 2, 0, 1,4)
 
+
+        # If the config is changed, update the device widget
+
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
+
+        self.config_widget.config_changed.connect(self.config_changed)
+
+    def config_changed(self,config):
+        """
+
+
+        Args:
+            config:
+
+        Returns:
+
+        """
+        self.device.config = config
 
     def kill_clicked(self):
         button = self.sender()
@@ -1467,6 +1485,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
 #
 #
 class redvypr_config_widget(QtWidgets.QWidget):
+    config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
     def __init__(self, template={}, config=None):
         funcname = __name__ + '.__init__():'
         super().__init__()
@@ -1482,8 +1501,6 @@ class redvypr_config_widget(QtWidgets.QWidget):
         if(config is not None):
             logger.debug(funcname + 'Applying config to template')
             redvypr.utils.apply_config_to_dict(config, conftemplate)
-
-
 
         self.configtree = redvypr_config_tree(conftemplate,dataname=configname)
 
@@ -1621,6 +1638,8 @@ class redvypr_config_widget(QtWidgets.QWidget):
             else:
                 logger.debug(funcname + 'No valid data')
 
+        config = self.get_config()
+        self.config_changed.emit(config)
 
     def config_widget_number(self,item,dtype='int'):
         """

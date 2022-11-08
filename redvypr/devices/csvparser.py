@@ -59,7 +59,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         for k in dicts.keys(): # Loop over all packets and send them
             packet = dicts[k]
             packet['t'] = data['t']
-            print('Putting',packet)
+            #print('Putting',packet)
             dataqueue.put(packet)
 
         #print(dicts)
