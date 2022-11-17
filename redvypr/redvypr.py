@@ -96,23 +96,6 @@ def create_hostinfo():
     return hostinfo
 
 
-def treat_datadict(data, devicename, hostinfo, numpacket, tpacket):
-    """ Treats a datadict received from a device and adds additional information from redvypr as hostinfo, numpackets etc. 
-    """
-    # Add deviceinformation to the data package
-    if ('device' not in data.keys()):
-        data['device'] = str(devicename)
-        data['host'] = hostinfo
-    else:  # Check if we have a local data packet, i.e. a packet that comes from another redvypr instance with another UUID
-        data['host']['local'] = data['host']['uuid'] == hostinfo['uuid']
-
-    # Add the time to the datadict if its not already in
-    if ('t' not in data.keys()):
-        data['t'] = tpacket
-
-    # Add the packetnumber to the datadict
-    if ('numpacket' not in data.keys()):
-        data['numpacket'] = numpacket
 
 
 def distribute_data(devices, hostinfo, infoqueue, dt=0.01):
@@ -140,7 +123,7 @@ def distribute_data(devices, hostinfo, infoqueue, dt=0.01):
                     break
 
                 # Add additional information, if not present yet
-                treat_datadict(data, device.name, hostinfo, devicedict['numpacket'], tstart)
+                data_packets.treat_datadict(data, device.name, hostinfo, devicedict['numpacket'], tstart)
                 # Do statistics
                 try:
                     if devicedict['statistics']['inspect']:
@@ -1792,7 +1775,8 @@ class redvyprWidget(QtWidgets.QWidget):
                 pass
 
         print('All stopped, sys.exit()')
-        sys.exit()
+        #sys.exit()
+        os._exit(1)
 
     def closeEvent(self, event):
         self.close_application()

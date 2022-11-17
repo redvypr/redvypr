@@ -6,6 +6,7 @@ import time
 import numpy as np
 import sys
 import csv2dict
+import redvypr.data_packets as data_packets
 from redvypr.device import redvypr_device
 from redvypr.data_packets import check_for_command
 
@@ -56,10 +57,14 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         #print('Data',data)
         csvdata = data['data']
         dicts = csv.parse_data(csvdata)
-        for k in dicts.keys(): # Loop over all packets and send them
-            packet = dicts[k]
-            packet['t'] = data['t']
-            #print('Putting',packet)
+        for packet in dicts: # Loop over the list and make a packet out of it
+            print('packet',packet)
+            try:
+                devicename = packet['deviceid']
+            except:
+                devicename = packet['name']
+            data_packets.treat_datadict(packet, devicename, hostinfo=data['host'], numpacket = data['numpacket'], tpacket=data['t'])
+            print('Putting',packet)
             dataqueue.put(packet)
 
         #print(dicts)

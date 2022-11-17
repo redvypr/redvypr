@@ -7,6 +7,26 @@ logger = logging.getLogger('data_packets')
 logger.setLevel(logging.DEBUG)
 
 
+
+def treat_datadict(data, devicename, hostinfo, numpacket, tpacket):
+    """ Treats a datadict received from a device and adds additional information from redvypr as hostinfo, numpackets etc.
+    """
+    # Add deviceinformation to the data package
+    if ('device' not in data.keys()):
+        data['device'] = str(devicename)
+        data['host'] = hostinfo
+    else:  # Check if we have a local data packet, i.e. a packet that comes from another redvypr instance with another UUID
+        data['host']['local'] = data['host']['uuid'] == hostinfo['uuid']
+
+    # Add the time to the datadict if its not already in
+    if ('t' not in data.keys()):
+        data['t'] = tpacket
+
+    # Add the packetnumber to the datadict
+    if ('numpacket' not in data.keys()):
+        data['numpacket'] = numpacket
+
+
 class address():
     """ redvypr address 
     """
