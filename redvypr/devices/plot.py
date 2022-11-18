@@ -136,54 +136,102 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.layout        = QtWidgets.QVBoxLayout(self)
         self.device = device
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        self.configwidget = QtWidgets.QWidget() # The configuration widget
+        self.configwidget  = QtWidgets.QWidget() # The configuration widget
         self.displaywidget = PlotGridWidget()
 
         self.layout.addWidget(self.splitter)
         self.splitter.addWidget(self.configwidget)
         self.splitter.addWidget(self.displaywidget)
 
-        self.configlayout = QtWidgets.QVBoxLayout(self.configwidget)
+        self.configlayout = QtWidgets.QGridLayout(self.configwidget)
         self.init_configwidget()
 
     def init_configwidget(self):
         self.add_button = QtWidgets.QPushButton('Add Plot')
         self.add_button.clicked.connect(self.add_plot_clicked)
         self.add_button.setCheckable(True)
-        # TODO, replace by combobox
-        buticon = qta.icon('mdi6.chart-bell-curve-cumulative')
-        self.addplot_button = QtWidgets.QPushButton(buticon, 'Plot')
-        self.addplot_button.setEnabled(False)
-        buticon = qta.icon('mdi6.order-numeric-ascending')
-        self.addnumdisp_button = QtWidgets.QPushButton(buticon, 'Numeric display')
-        self.addnumdisp_button.setEnabled(False)
+        self.addplot_combo = QtWidgets.QComboBox() #(buticon, 'Plot')
+        self.addplot_combo.addItem('Plot')
+        buticon = qta.icon('mdi6.chart-bell-curve-cumulative')  # Plot
+        self.addplot_combo.setItemIcon(0,buticon)
+        self.addplot_combo.addItem('Numeric Display')
+        buticon = qta.icon('mdi6.order-numeric-ascending')  # Numeric display
+        self.addplot_combo.setItemIcon(1,buticon)
+
+        self.addplot_combo.addItem('Test')
+        self.addplot_combo.setEnabled(False)
+        self.addplot_combo.currentTextChanged.connect(self.add_plot_combo_changed)
 
         self.mod_button = QtWidgets.QPushButton('Modify')
         self.mod_button.clicked.connect(self.mod_plot_clicked)
         self.mod_button.setCheckable(True)
 
+        self.rem_button = QtWidgets.QPushButton('Remove')
+        self.rem_button.clicked.connect(self.rem_plot_clicked)
+        self.rem_button.setCheckable(True)
+
         self.commit_button = QtWidgets.QPushButton('Commit')
         self.commit_button.clicked.connect(self.commit_plot_clicked)
         #self.commit_button.setCheckable(True)
 
-        self.configlayout.addWidget(self.add_button)
-        self.configlayout.addWidget(self.addplot_button)
-        self.configlayout.addWidget(self.addnumdisp_button)
-        self.configlayout.addWidget(self.mod_button)
-        self.configlayout.addWidget(self.commit_button)
-        self.configlayout.addStretch()
+        self.configlayout.addWidget(self.add_button,0,0)
+        self.configlayout.addWidget(self.addplot_combo,0,1)
+        self.configlayout.addWidget(self.mod_button, 1, 0)
+        self.configlayout.addWidget(self.rem_button, 1, 1)
+        self.configlayout.addWidget(self.commit_button,2,0,1,2)
+        self.configlayout.setRowStretch(self.configlayout.rowCount(), 1)
+        #self.configlayout.setRowStretch()
+
+    def add_plot_combo_changed(self):
+        plottype = self.addplot_combo.currentText()
+        print('Plottype',plottype)
+        self.displaywidget.__add_plottype__ = plottype
+        if True:
+            self.displaywidget.__add_plotwidget__ = RandomDataWidget
 
     def add_plot_clicked(self):
-        if(self.add_button.isChecked()):
-            self.addplot_button.setEnabled(True)
-            self.addnumdisp_button.setEnabled(True)
+        self.add_plot_combo_changed()
+
+        if (self.add_button.isChecked()):
+            self.addplot_combo.setEnabled(True)
             self.displaywidget.rubber_enabled = True
+            # Disable other buttons
+            self.mod_button.setChecked(False)
+            self.displaywidget.flag_add_plot = self.add_button.isChecked()
+            self.displaywidget.flag_mod_plot = False
+            self.displaywidget.flag_rem_plot = False
+            self.rem_button.setChecked(False)
+            self.displaywidget.modPlotclicked(False)
         else:
-            self.addplot_button.setEnabled(False)
-            self.addnumdisp_button.setEnabled(False)
+            self.addplot_combo.setEnabled(False)
             self.displaywidget.rubber_enabled = False
 
+    def rem_plot_clicked(self):
+        print('Hallo')
+        if (self.rem_button.isChecked()):
+            self.displaywidget.flag_rem_plot = True
+            self.displaywidget.flag_add_plot = False
+            self.displaywidget.flag_mod_plot = False
+            self.displaywidget.rubber_enabled = False
+            self.addplot_combo.setEnabled(False)
+            self.add_button.setChecked(False)
+            self.mod_button.setChecked(False)
+        else:
+            self.displaywidget.flag_rem_plot = False
+
+
+        self.displaywidget.remPlotclicked(self.rem_button.isChecked())
+
     def mod_plot_clicked(self):
+        if (self.mod_button.isChecked()):
+            self.displaywidget.rubber_enabled = False
+            self.displaywidget.flag_add_plot = False
+            self.displaywidget.flag_rem_plot = False
+            self.addplot_combo.setEnabled(False)
+            self.add_button.setChecked(False)
+            self.rem_button.setChecked(False)
+
+        self.displaywidget.flag_mod_plot = self.mod_button.isChecked()
         self.displaywidget.modPlotclicked(self.mod_button.isChecked())
 
     def commit_plot_clicked(self):
@@ -195,7 +243,11 @@ class PlotGridWidget(QtWidgets.QWidget):
     def __init__(self):
         super(QtWidgets.QWidget, self).__init__()
         self.layout = QtWidgets.QGridLayout(self)
-        self.rubber_enabled = False
+        self.rubber_enabled   = False
+        self.flag_add_plot    = False
+        self.flag_mod_plot    = False
+        self.flag_rem_plot    = False
+        self.__add_location__ = None
         self.nx = 6
         self.ny = 5
         self.gridcells = []
@@ -247,9 +299,11 @@ class PlotGridWidget(QtWidgets.QWidget):
         QtWidgets.QWidget.mouseMoveEvent(self, event)
 
     def mouseReleaseEvent(self, event):
-        if self.rubberband.isVisible():
+
+        if self.rubberband.isVisible(): # New plot to be added
             self.rubberband.hide()
             selected = []
+
             rect = self.rubberband.geometry()
             FLAG_CHECKED = False
             FLAG_ALL_CHECKED = True
@@ -268,7 +322,50 @@ class PlotGridWidget(QtWidgets.QWidget):
                 else:
                     child.setChecked(True)
 
+        if (self.flag_rem_plot):  # If we wantto remove a widget
+            print('Remove click')
+
+
         QtWidgets.QWidget.mouseReleaseEvent(self, event)
+
+    def get_selected_index(self):
+        """
+        Gets the index of all selected gridbuttons (used for adding a device)
+        Returns:
+
+        """
+        # Do we have an area larger than zero?
+        # Adding the new widget
+        iall = []
+        jall = []
+        for child in self.findChildren(QtWidgets.QPushButton):
+            if child.isChecked():
+                iall.append(child.__i__)
+                jall.append(child.__j__)
+
+        if(len(iall)>0 and len(jall)>0):
+            inew = min(iall)
+            di = max(iall) - min(iall) + 1
+            jnew = min(jall)
+            dj = max(jall) - min(jall) + 1
+            self.__add_location__ = [jnew,inew,dj,di]
+        else:
+            self.__add_location__ = None
+
+    def remPlotclicked(self, enabled):
+        """
+        Modify the existing plots
+
+        Returns:
+
+        """
+        logger.debug('Removing')
+        self.reset_all_rubberbands()
+        if (enabled):  # Adding rubberbands to all plots
+            self.show_all_rubberbands()
+        else:  # Hiding all rubberbands
+            self.hide_all_rubberbands()
+
 
     def modPlotclicked(self,enabled):
         """
@@ -277,32 +374,58 @@ class PlotGridWidget(QtWidgets.QWidget):
         Returns:
 
         """
-        if(enabled):
-            for d in self.all_plots:
-                w = d['plot']
-                #rubberband = QtWidgets.QRubberBand(QtWidgets.QRubberBand.Rectangle, self)
+        logger.debug('Modifying')
+        self.reset_all_rubberbands()
+        if(enabled): # Adding rubberbands to all plots
+            self.show_all_rubberbands()
+        else: # Hiding all rubberbands
+            self.hide_all_rubberbands()
 
+    def show_all_rubberbands(self):
+        for d in self.all_plots:
+            w = d['plot']
+            # rubberband = QtWidgets.QRubberBand(QtWidgets.QRubberBand.Rectangle, self)
+            try:
+                rubberband = d['rubber']
+            except:
                 rubberband = ResizableRubberBand(self)
-                rubberband.setGeometry(QtCore.QRect(w.pos(), w.size()).normalized())
                 col = QtGui.QPalette()
                 col.setBrush(QtGui.QPalette.Highlight, QtGui.QBrush(QtCore.Qt.red))
                 rubberband.setPalette(col)
                 rubberband.setWindowOpacity(.5)
-                #print('Size', b, b.pos().x(), b.pos().y(), b.size())
-                #print('Size', self, self.pos(), self.size())
+                # print('Size', b, b.pos().x(), b.pos().y(), b.size())
+                # print('Size', self, self.pos(), self.size())
                 d['rubber'] = rubberband
-                rubberband.show()
-        else:
-            for d in self.all_plots:
-                try:
-                    r = d['rubber']
-                    r.hide()
-                except Exception as e:
-                    print('Hallo',e)
+
+            rubberband.setGeometry(QtCore.QRect(w.pos(), w.size()).normalized())
+            rubberband.show()
+
+    def hide_all_rubberbands(self):
+        for d in self.all_plots:
+            try:
+                r = d['rubber']
+                r.hide()
+            except Exception as e:
+                pass
+
+    def reset_all_rubberbands(self):
+        for d in self.all_plots:
+            try:
+                r = d['rubber']
+                w = d['plot']
+                col = QtGui.QPalette()
+                col.setBrush(QtGui.QPalette.Highlight, QtGui.QBrush(QtCore.Qt.red))
+                #r.setGeometry(QtCore.QRect(w.pos(), w.size()).normalized())
+                r.setPalette(col)
+                r.setWindowOpacity(.5)
+                r.flag_rem_plot = False
+                print('Reset done')
+            except Exception as e:
+                pass
 
 
 
-    def addPlot(self, plotwidget, i, j, width, height):
+    def addPlot(self, plotwidget, j, i, height, width):
         """
 
         Args:
@@ -317,7 +440,7 @@ class PlotGridWidget(QtWidgets.QWidget):
         self.all_plots.append(d)
         plotwidget.show()
 
-    def remPlot(self, plotwidget, i, j, width, height):
+    def remPlot(self, plotwidget):
         """
 
         Args:
@@ -326,57 +449,94 @@ class PlotGridWidget(QtWidgets.QWidget):
         Returns:
 
         """
-        widgetbutton = QtWidgets.QPushButton('Hallo')
-        plotwidget.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
-        self.layout.addWidget(plotwidget, j, i, height, width)
-        self.layout.addWidget(widgetbutton, j, i, height, width)
-        plotwidget.show()
+        self.layout.removeWidget(plotwidget)
+        for d in self.all_plots:
+            if(d['plot'] == plotwidget):
+                print('removing from list')
+                self.all_plots.remove(d)
+                try:
+                    r = d['rubber']
+                    r.close()
+                except:
+                    pass
+                break
 
-    def movePlot(self,plotwidget):
-        # Test rubberband
-
-        if False:
-            self.rubberband_test = QtWidgets.QRubberBand(
-                QtWidgets.QRubberBand.Rectangle, self)
-            self.rubberband_test.setGeometry(
-                QtCore.QRect(b.pos(), b.size()).normalized())
-
-            bla = QtGui.QPalette()
-            bla.setBrush(QtGui.QPalette.Highlight, QtGui.QBrush(QtCore.Qt.red))
-            self.rubberband_test.setPalette(bla)
-            self.rubberband_test.setWindowOpacity(1.0)
-
-            print('Size', b, b.pos().x(), b.pos().y(), b.size())
-            print('Size', self, self.pos(), self.size())
-            self.rubberband_test.show()
+        plotwidget.close()
 
     def commit_clicked(self):
-        iall = []
-        jall = []
-        for d in self.all_plots:
-            try:
-                r = d['rubber']
-                plotwidget = d['plot']
-            except Exception as e:
-                continue
+        """
 
-            rect = r.geometry()
-            for child in self.gridcells:
-                if rect.intersects(child.geometry()):
-                    iall.append(child.__i__)
-                    jall.append(child.__j__)
+        Returns:
 
-            if(len(iall)>0 and len(jall)>0):
-                inew = min(iall)
-                di = max(iall) - min(iall) + 1
-                jnew = min(jall)
-                dj = max(jall) - min(jall) + 1
-                self.layout.removeWidget(plotwidget)
-                self.layout.addWidget(plotwidget,jnew,inew,dj,di)
-                r.hide()
-                self.modPlotclicked(True)
-                #r.hide()
+        """
+        print('Commit')
 
+        if (self.flag_mod_plot):  # Flags are set by the gridwidget buttons
+            print('Modifying plot')
+            for d in self.all_plots:
+                try:
+                    r = d['rubber']
+                    plotwidget = d['plot']
+                except Exception as e:
+                    print('ohoh',e)
+                    continue
+
+                iall = []
+                jall = []
+                rect = r.geometry()
+                for child in self.gridcells:
+                    if rect.intersects(child.geometry()):
+                        iall.append(child.__i__)
+                        jall.append(child.__j__)
+
+                print('iall', iall)
+                print('jall', jall)
+                if(len(iall)>0 and len(jall)>0):
+                    inew = min(iall)
+                    di = max(iall) - min(iall) + 1
+                    jnew = min(jall)
+                    dj = max(jall) - min(jall) + 1
+                    print('Hallo', inew, jnew, di, dj)
+                    self.layout.removeWidget(plotwidget)
+                    self.layout.addWidget(plotwidget,jnew,inew,dj,di)
+
+
+            #self.reset_all_rubberbands()
+
+        if (self.flag_add_plot):  # Flags are set by the gridwidget buttons
+            print('Adding plot')
+            self.get_selected_index() # update self.__add_location__
+            if self.__add_location__  is not None:
+                addwidgetstr = self.__add_plottype__  # is set by the plotgridwidget combo changed signal
+                addwidget = self.__add_plotwidget__  # is set by the plotgridwidget combo changed signal
+                logger.debug('Adding widget {:s}'.format(addwidgetstr))
+                addwidget_called = addwidget()
+                self.addPlot(addwidget_called, self.__add_location__[0], self.__add_location__[1],
+                                      self.__add_location__[2], self.__add_location__[3])
+
+                # Remove all selected indices
+                self.unselect_all()
+
+            else:
+                logger.debug('Not a valid location for adding plot')
+
+        if (self.flag_rem_plot):  # Flags are set by the gridwidget buttons
+            print('remove')
+            for d in self.all_plots:
+                try:
+                    r = d['rubber']
+                    if r.flag_rem:  # New plot to be added
+                        print('removing now',r)
+                        self.remPlot(d['plot'])
+                except Exception as e:
+                    print('Hallo',e)
+
+        #self.flag_mod_plot = False
+        #self.flag_add_plot = False
+
+    def unselect_all(self):
+        for child in self.findChildren(QtWidgets.QPushButton):
+            child.setChecked(False)
 
 
 
@@ -431,6 +591,8 @@ class ResizableRubberBand(QtWidgets.QWidget):
         self.rubberband = QtWidgets.QRubberBand(QtWidgets.QRubberBand.Rectangle, self)
         self.rubberband.move(0, 0)
         self.rubberband.show()
+
+        self.flag_rem = False # Flag for removal
         self.show()
 
     def resizeEvent(self, event):
@@ -445,6 +607,28 @@ class ResizableRubberBand(QtWidgets.QWidget):
         delta = QtCore.QPoint(event.globalPos() - self.oldPos)
         self.move(self.x() + delta.x(), self.y() + delta.y())
         self.oldPos = event.globalPos()
+
+    def mouseReleaseEvent(self, event):
+        print('Mouse release')
+        try:
+            flag_rem = self.parent().flag_rem_plot
+            print('remove', self.parent().flag_rem_plot)
+        except:
+            flag_rem = False
+            print('noremove')
+
+        if(flag_rem and self.flag_rem == False):
+            col = QtGui.QPalette()
+            col.setBrush(QtGui.QPalette.Highlight, QtGui.QBrush(QtCore.Qt.black))
+            self.setPalette(col)
+            self.flag_rem = True
+        else:
+            self.flag_rem = False
+            col = QtGui.QPalette()
+            col.setBrush(QtGui.QPalette.Highlight, QtGui.QBrush(QtCore.Qt.red))
+            self.setPalette(col)
+
+        #self.oldPos = event.globalPos()
 
 
 
