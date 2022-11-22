@@ -304,6 +304,12 @@ class PlotGridWidget(QtWidgets.QWidget):
         self.__add_location__ = None
         self.nx = 6
         self.ny = 5
+        for i in range(self.ny):
+            self.layout.setRowStretch(i, 1)
+
+        for i in range(self.nx):
+            self.layout.setColumnStretch(i, 1)
+
         self.gridcells = []
         self.all_plots = []  # A list of all plots added to the grid
         for i in range(self.nx):
@@ -318,6 +324,8 @@ class PlotGridWidget(QtWidgets.QWidget):
                 # b.setEnabled(False)
                 b.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
                 self.layout.addWidget(b, j, i)
+                if(i==0) and (j == 0):
+                    b.resize_signal.connect(self.resize_all_rubberbands)
 
         #testw = RandomDataWidget()
         testw = redvypr_numdisp_widget()
@@ -468,6 +476,15 @@ class PlotGridWidget(QtWidgets.QWidget):
                 r.setWindowOpacity(.5)
                 r.flag_rem_plot = False
                 print('Reset done')
+            except Exception as e:
+                pass
+
+    def resize_all_rubberbands(self):
+        for d in self.all_plots:
+            try:
+                r = d['rubber']
+                w = d['plot']
+                r.setGeometry(QtCore.QRect(w.pos(), w.size()).normalized())
             except Exception as e:
                 pass
 

@@ -265,7 +265,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         self.config_template = {}
         self.config_template['backgroundcolor'] = {'type':'str','default':'lightgray'}
         self.config_template['bordercolor'] = {'type': 'str', 'default': 'lightgray'}
-        self.config_template['fontsize']    = {'type': 'int', 'default': 50}
+        self.config_template['fontsize']    = {'type': 'int', 'default': 20}
         self.config_template['device']      = {'type': 'str', 'default': 'NA'}  # TODO, make a datastream
         self.config_template['datastream']  = {'type': 'datastream', 'default': 'NA'}  # TODO, make a datastream
         self.config_template['showtime']    = {'type': 'bool', 'default': True}
