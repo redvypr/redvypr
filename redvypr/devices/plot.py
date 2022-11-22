@@ -473,18 +473,24 @@ class PlotGridWidget(QtWidgets.QWidget):
 
     def rubberband_clicked(self):
         funcname = self.__class__.__name__ + '.rubberband_clicked'
+        logger.debug(funcname)
         rubberband = self.sender()
         configplotwidget = rubberband.__config_widget__
-        print(self.configplotwidget.layout())
-        layout = self.configplotwidget.layout()  # The layout of the configplotwidget
-        index = layout.count()
-        while (index >= 0):
-            widget = layout.itemAt(index)
-            if (widget is not None):
-                layout.removeWidget(widget.widget())
-            index -= 1
+        if False: # Show the configuration in the widget, disabled because its not so much space and it does not work so well
+            layout = self.configplotwidget.layout()  # The layout of the configplotwidget
+            index = layout.count()
+            while (index >= 0):
+                widget = layout.itemAt(index)
+                print('Widget',widget)
+                if (widget is not None):
+                    layout.removeWidget(widget.widget())
 
-        layout.addWidget(configplotwidget)
+                index -= 1
+
+            layout.addWidget(configplotwidget)
+        else:
+            configplotwidget.show()
+
 
     def addPlot(self, plotwidget, j, i, height, width):
         """
@@ -498,7 +504,7 @@ class PlotGridWidget(QtWidgets.QWidget):
         # Create a config widget
         config_widget = redvypr_config_widget(config=plotwidget.config, template=plotwidget.config_template,
                                               loadsavebutton=False,redvypr_instance=self.redvypr)
-
+        config_widget.setWindowIcon(QtGui.QIcon(_icon_file))
         config_widget.config_changed.connect(self.config_changed)
         config_widget.plotwidget = plotwidget
         plotwidget.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
@@ -532,7 +538,7 @@ class PlotGridWidget(QtWidgets.QWidget):
 
     def remPlot(self, plotwidget):
         """
-        Remove a plotwidget from the grid
+        Removes a plotwidget from the grid
 
         Args:
             plotwidget:
