@@ -448,20 +448,26 @@ class redvypr(QtCore.QObject):
         max_tries = 5000  # The maximum recursion of modules
         n_tries = 0
         testmodules = [redvyprdevices]
-        device_modules = []
+        valid_device_modules = [] #
+        other_modules = [] # The rest
         while (len(testmodules) > 0) and (n_tries < max_tries):
             testmodule = testmodules[0]
             device_module_tmp = inspect.getmembers(testmodule, inspect.ismodule)
             for smod in device_module_tmp:
                 devicemodule = getattr(testmodule, smod[0])
+                if(devicemodule in other_modules):
+                    logger.debug(funcname + ': Module has been tested already ...')
+                    continue
                 # Check if the device is valid
                 valid_module = self.valid_device(devicemodule)
                 if (valid_module['valid']):  # If the module is valid add it to devices
                     devdict = {'module': devicemodule, 'name': smod[0], 'source': smod[1].__file__}
                     self.device_modules.append(devdict)
+                    valid_device_modules.append(devicemodule)
                 else:  # Check recursive if devices are found
                     n_tries += 1
                     testmodules.append(devicemodule)
+                    other_modules.append(devicemodule)
 
             testmodules.pop(0)
 
@@ -1344,6 +1350,7 @@ class redvyprWidget(QtWidgets.QWidget):
                             data = guiqueue.get(block=False)
                             devicedict['gui'][i].update(data)
                         except Exception as e:
+                            #print('Exception gui',e)
                             break
 
     def load_config(self):
@@ -1503,7 +1510,7 @@ class redvyprWidget(QtWidgets.QWidget):
         except Exception as e:
             logger.debug('Widget does not have connect signal:' + str(e))
 
-
+        device.deviceinitwidget = deviceinitwidget
         # Add the info widget
         deviceinfowidget = redvypr_deviceInfoWidget(device)
 
@@ -1541,7 +1548,8 @@ class redvyprWidget(QtWidgets.QWidget):
 
             # https://stackoverflow.com/questions/334655/passing-a-dictionary-to-a-function-as-keyword-parameters
             devicedisplaywidget_called = devicedisplaywidget(**initdict)
-
+            # Add the widget to the device
+            device.devicedisplaywidget = devicedisplaywidget_called
             # Test if the widget has a tabname
             try:
                 tabname = devicedisplaywidget_called.tabname
@@ -1567,6 +1575,7 @@ class redvyprWidget(QtWidgets.QWidget):
         #
         # Add the devicelistentry to the widget, this gives the full information to the device
         #
+        # 22.11.2022 TODO, this needs to be replaced by functional arguments instead of properties
         self.redvypr.devices[ind_devices]['initwidget'].redvyprdevicelistentry = self.redvypr.devices[ind_devices]
         self.redvypr.devices[ind_devices]['initwidget'].redvypr = self.redvypr
         if(len(self.redvypr.devices[ind_devices]['gui']) > 0):

@@ -4,6 +4,7 @@ from . import network_device
 from . import csvlogger
 from . import csvparser
 from . import plot
+from . import plot_widgets
 from . import rawdatadisp
 from . import rawdatalogger
 from . import rawdatareplay

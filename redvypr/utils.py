@@ -216,7 +216,7 @@ def configtemplate_to_dict(template):
 
     config = copy.deepcopy(template) # Copy the template first
     loop_over_index(config)
-    print('Config:',config)
+    #print('Config:',config)
     return config
 
 

@@ -11,10 +11,11 @@ import copy
 import pyqtgraph
 import qtawesome as qta
 from redvypr.data_packets import device_in_data, get_keys_from_data
-from redvypr.gui import redvypr_devicelist_widget
+from redvypr.gui import redvypr_devicelist_widget, redvypr_config_widget
+from redvypr.devices.plot_widgets import redvypr_numdisp_widget
 import redvypr.files as files
 from redvypr.device import redvypr_device
-from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
+from redvypr.data_packets import do_data_statistics, create_data_statistic_dict, check_for_command
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -27,10 +28,11 @@ logger.setLevel(logging.DEBUG)
 
 description = 'Device that plots the received data'
 config_template = {}
-config_template['plots']    = []
+config_template['plots'] = []
+config_template['dt_update'] = {'type':'float','default':0.25}
 config_template['redvypr_device'] = {}
-config_template['redvypr_device']['publish']     = False
-config_template['redvypr_device']['subscribe']   = True
+config_template['redvypr_device']['publish'] = False
+config_template['redvypr_device']['subscribe'] = True
 config_template['redvypr_device']['description'] = description
 
 
@@ -38,16 +40,16 @@ def get_bare_graph_config():
     """ Returns a valid bare configuration for a graph plot
     """
     plotdict_bare = {}
-    plotdict_bare['type'] = 'graph'        
+    plotdict_bare['type'] = 'graph'
     plotdict_bare['title'] = 'Graph title'
     plotdict_bare['name'] = 'Graph'
-    plotdict_bare['location'] = [0,0,0,0]
+    plotdict_bare['location'] = [0, 0, 0, 0]
     plotdict_bare['xlabel'] = 'x label'
     plotdict_bare['ylabel'] = 'y label'
     plotdict_bare['datetick'] = True
     plotdict_bare['lines'] = []
     plotdict_bare['lines'].append(get_bare_graph_line_config())
-    #plotdict_bare['lines'].append(get_bare_graph_line_config())
+    # plotdict_bare['lines'].append(get_bare_graph_line_config())
     return plotdict_bare
 
 
@@ -58,7 +60,7 @@ def get_bare_graph_line_config():
     line_bare['x'] = 't'
     line_bare['y'] = 'data'
     line_bare['linewidth'] = 2
-    line_bare['color'] = [255,0,0]
+    line_bare['color'] = [255, 0, 0]
     line_bare['buffersize'] = 5000
     return line_bare
 
@@ -67,22 +69,21 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     funcname = __name__ + '.start()'
     while True:
         time.sleep(0.05)
-        while(datainqueue.empty() == False):
+        while (datainqueue.empty() == False):
             try:
                 data = datainqueue.get(block=False)
             except:
                 data = None
 
-            if(data is not None):
+            if (data is not None):
                 command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
-                #logger.debug('Got a command: {:s}'.format(str(data)))
+                # logger.debug('Got a command: {:s}'.format(str(data)))
                 if (command is not None):
                     logger.debug('Command is for me: {:s}'.format(str(command)))
                     logger.info(funcname + ': Stopped')
                     return
 
-                dataqueue.put(data) # This has to be done, otherwise the gui does not get any data ...
-
+                dataqueue.put(data)  # This has to be done, otherwise the gui does not get any data ...
 
 
 class Device(redvypr_device):
@@ -92,71 +93,81 @@ class Device(redvypr_device):
         super(Device, self).__init__(**kwargs)
         self.connect_devices()
         self.start = start
-        print('Hallo!!',self.config)
+        print('Hallo!!', self.config)
 
     def connect_devices(self):
         """ Connects devices, if they are not already connected
         """
-        funcname = self.__class__.__name__ + '.connect_devices():'                                
+        funcname = self.__class__.__name__ + '.connect_devices():'
         logger.debug(funcname)
         # Check of devices have not been added
-        devices = self.redvypr.get_devices() # Get all devices
+        devices = self.redvypr.get_devices()  # Get all devices
         plot_devices = []
-        for plot in self.config['plots']: # Loop over all plots
-            if(str(plot['type']).lower() == 'numdisp'):
+        for plot in self.config['plots']:  # Loop over all plots
+            if (str(plot['type']).lower() == 'numdisp'):
                 name = plot['device']
                 plot_devices.append(name)
 
-            elif(str(plot['type']).lower() == 'graph'):
-                for l in plot['lines']: # Loop over all lines in a plot
+            elif (str(plot['type']).lower() == 'graph'):
+                for l in plot['lines']:  # Loop over all lines in a plot
                     name = l['device']
-                    plot_devices.append(name)                    
-                    
-        # Add the device if not already done so
+                    plot_devices.append(name)
+
+                    # Add the device if not already done so
         if True:
             for name in plot_devices:
                 logger.info(funcname + 'Connecting device {:s}'.format(name))
-                ret = self.redvypr.addrm_device_as_data_provider(name,self,remove=False)
-                if(ret == None):
+                ret = self.redvypr.addrm_device_as_data_provider(name, self, remove=False)
+                if (ret == None):
                     logger.info(funcname + 'Device was not found')
-                elif(ret == False):
+                elif (ret == False):
                     logger.info(funcname + 'Device was already connected')
-                elif(ret == True):
-                    logger.info(funcname + 'Device was successfully connected')                                                            
+                elif (ret == True):
+                    logger.info(funcname + 'Device was successfully connected')
 
 
-
+#
+#
+#
+#
 class displayDeviceWidget(QtWidgets.QWidget):
     """ Widget is a wrapper for several plotting widgets (numdisp, graph) 
     This widget can be configured with a configuration dictionary 
     """
-    def __init__(self,dt_update = 0.25,device=None,buffersize=100):
+
+    def __init__(self, device=None):
         funcname = __name__ + '.init()'
         super(QtWidgets.QWidget, self).__init__()
-        self.layout        = QtWidgets.QVBoxLayout(self)
+        self.config = device.config
+        self.layout = QtWidgets.QVBoxLayout(self)
         self.device = device
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        self.configwidget  = QtWidgets.QWidget() # The configuration widget
-        self.displaywidget = PlotGridWidget()
-
+        self.configwidget = QtWidgets.QWidget()  # The configuration widget
+        self.configplotwidget = QtWidgets.QWidget(
+            parent=self.configwidget)  # The configuration widget of the individual plots
+        self.configplotlayout = QtWidgets.QVBoxLayout(self.configplotwidget)
+        self.displaywidget = PlotGridWidget(configplotwidget=self.configplotwidget,device=self.device,displaywidget = self)
+        self.all_plots = self.displaywidget.all_plots
         self.layout.addWidget(self.splitter)
         self.splitter.addWidget(self.configwidget)
         self.splitter.addWidget(self.displaywidget)
-
+        self.databuf = []
         self.configlayout = QtWidgets.QGridLayout(self.configwidget)
+        self.status = {}
+        self.status['last_update'] = time.time()
         self.init_configwidget()
 
     def init_configwidget(self):
         self.add_button = QtWidgets.QPushButton('Add Plot')
         self.add_button.clicked.connect(self.add_plot_clicked)
         self.add_button.setCheckable(True)
-        self.addplot_combo = QtWidgets.QComboBox() #(buticon, 'Plot')
+        self.addplot_combo = QtWidgets.QComboBox()  # (buticon, 'Plot')
         self.addplot_combo.addItem('Plot')
         buticon = qta.icon('mdi6.chart-bell-curve-cumulative')  # Plot
-        self.addplot_combo.setItemIcon(0,buticon)
+        self.addplot_combo.setItemIcon(0, buticon)
         self.addplot_combo.addItem('Numeric Display')
         buticon = qta.icon('mdi6.order-numeric-ascending')  # Numeric display
-        self.addplot_combo.setItemIcon(1,buticon)
+        self.addplot_combo.setItemIcon(1, buticon)
 
         self.addplot_combo.addItem('Test')
         self.addplot_combo.setEnabled(False)
@@ -172,22 +183,27 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
         self.commit_button = QtWidgets.QPushButton('Commit')
         self.commit_button.clicked.connect(self.commit_plot_clicked)
-        #self.commit_button.setCheckable(True)
+        # self.commit_button.setCheckable(True)
 
-        self.configlayout.addWidget(self.add_button,0,0)
-        self.configlayout.addWidget(self.addplot_combo,0,1)
+        self.configlayout.addWidget(self.add_button, 0, 0)
+        self.configlayout.addWidget(self.addplot_combo, 0, 1)
         self.configlayout.addWidget(self.mod_button, 1, 0)
         self.configlayout.addWidget(self.rem_button, 1, 1)
-        self.configlayout.addWidget(self.commit_button,2,0,1,2)
+        self.configlayout.addWidget(self.commit_button, 2, 0, 1, 2)
         self.configlayout.setRowStretch(self.configlayout.rowCount(), 1)
-        #self.configlayout.setRowStretch()
+        self.configlayout.addWidget(self.configplotwidget, 3, 0, 3, 2)
+        # self.configlayout.setRowStretch()
 
     def add_plot_combo_changed(self):
         plottype = self.addplot_combo.currentText()
-        print('Plottype',plottype)
+        print('Plottype', plottype)
         self.displaywidget.__add_plottype__ = plottype
-        if True:
+        if ('random' in plottype.lower()):
             self.displaywidget.__add_plotwidget__ = RandomDataWidget
+        elif ('num' in plottype.lower()):
+            self.displaywidget.__add_plotwidget__ = redvypr_numdisp_widget
+        else:
+            print('Not implemented yet: {:s}'.format(plottype))
 
     def add_plot_clicked(self):
         self.add_plot_combo_changed()
@@ -207,7 +223,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.displaywidget.rubber_enabled = False
 
     def rem_plot_clicked(self):
-        print('Hallo')
         if (self.rem_button.isChecked()):
             self.displaywidget.flag_rem_plot = True
             self.displaywidget.flag_add_plot = False
@@ -218,7 +233,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.mod_button.setChecked(False)
         else:
             self.displaywidget.flag_rem_plot = False
-
 
         self.displaywidget.remPlotclicked(self.rem_button.isChecked())
 
@@ -237,16 +251,56 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def commit_plot_clicked(self):
         self.displaywidget.commit_clicked()
 
+    def update(self, data):
+        funcname = __name__ + '.update():'
+        print('Plot update ...')
+        tnow = time.time()
+        self.databuf.append(data)
+        print('got data', data)
+        print('status', self.status)
+        print('config', self.config)
+        # print('statistics',self.device.statistics)
+        devicename = data['device']
+        # Only plot the data in intervals of dt_update length, this prevents high CPU loads for fast devices
+        if True:
+            update = (tnow - self.status['last_update']) > self.config['dt_update']
+            print('update update', update)
+            if (update):
+                self.status['last_update'] = tnow
+                print('updating', update)
+                try:
+                    for data in self.databuf:
+                        print('data',data)
+                        for plotdict in self.all_plots:
+                            plot = plotdict['plot']
+                            print('Plot ...',plot,plot.update_plot)
+                            plot.update_plot(data)
 
+                    self.databuf = []
 
+                except Exception as e:
+                    logger.debug(funcname + 'Exception:' + str(e))
+
+#
+#
+#
+#
+#
 class PlotGridWidget(QtWidgets.QWidget):
-    def __init__(self):
+    """
+    The widget of the grid where the single plots can be added by the user
+    """
+    def __init__(self, configplotwidget,device=None,displaywidget = None):
         super(QtWidgets.QWidget, self).__init__()
         self.layout = QtWidgets.QGridLayout(self)
-        self.rubber_enabled   = False
-        self.flag_add_plot    = False
-        self.flag_mod_plot    = False
-        self.flag_rem_plot    = False
+        self.configplotwidget = configplotwidget
+        self.displaywidget = displaywidget # The widget that is actually shown in the tabulator
+        self.device = device
+        self.redvypr = device.redvypr
+        self.rubber_enabled = False
+        self.flag_add_plot = False
+        self.flag_mod_plot = False
+        self.flag_rem_plot = False
         self.__add_location__ = None
         self.nx = 6
         self.ny = 5
@@ -261,27 +315,22 @@ class PlotGridWidget(QtWidgets.QWidget):
                 b.__i__ = i
                 b.__j__ = j
                 self.gridcells.append(b)
-                #b.setEnabled(False)
+                # b.setEnabled(False)
                 b.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
                 self.layout.addWidget(b, j, i)
 
-        #b = QtWidgets.QPushButton()
-        #b.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
-        #self.layout.addWidget(b, 1, 1,2,2)
-        testw = RandomDataWidget()
-        self.addPlot(testw,1,1,2,2)
+        #testw = RandomDataWidget()
+        testw = redvypr_numdisp_widget()
+        self.addPlot(testw, 1, 1, 2, 2)
 
         self.rubberband = QtWidgets.QRubberBand(
             QtWidgets.QRubberBand.Rectangle, self)
-
-
-
 
         self.setMouseTracking(True)
 
     def mousePressEvent(self, event):
         self.origin = event.pos()
-        if(self.rubber_enabled):
+        if (self.rubber_enabled):
             self.rubberband.setGeometry(
                 QtCore.QRect(self.origin, QtCore.QSize()))
             self.rubberband.show()
@@ -292,7 +341,6 @@ class PlotGridWidget(QtWidgets.QWidget):
             self.rubberband.setGeometry(
                 QtCore.QRect(self.origin, event.pos()).normalized())
 
-
             print(self.origin)
             print(
                 QtCore.QRect(self.origin, event.pos()).normalized())
@@ -300,7 +348,7 @@ class PlotGridWidget(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event):
 
-        if self.rubberband.isVisible(): # New plot to be added
+        if self.rubberband.isVisible():  # New plot to be added
             self.rubberband.hide()
             selected = []
 
@@ -310,7 +358,7 @@ class PlotGridWidget(QtWidgets.QWidget):
 
             for child in self.findChildren(QtWidgets.QPushButton):
                 if rect.intersects(child.geometry()):
-                    if(child.isChecked()):
+                    if (child.isChecked()):
                         FLAG_CHECKED = True
                     else:
                         FLAG_ALL_CHECKED = False
@@ -324,7 +372,6 @@ class PlotGridWidget(QtWidgets.QWidget):
 
         if (self.flag_rem_plot):  # If we wantto remove a widget
             print('Remove click')
-
 
         QtWidgets.QWidget.mouseReleaseEvent(self, event)
 
@@ -343,12 +390,12 @@ class PlotGridWidget(QtWidgets.QWidget):
                 iall.append(child.__i__)
                 jall.append(child.__j__)
 
-        if(len(iall)>0 and len(jall)>0):
+        if (len(iall) > 0 and len(jall) > 0):
             inew = min(iall)
             di = max(iall) - min(iall) + 1
             jnew = min(jall)
             dj = max(jall) - min(jall) + 1
-            self.__add_location__ = [jnew,inew,dj,di]
+            self.__add_location__ = [jnew, inew, dj, di]
         else:
             self.__add_location__ = None
 
@@ -366,8 +413,7 @@ class PlotGridWidget(QtWidgets.QWidget):
         else:  # Hiding all rubberbands
             self.hide_all_rubberbands()
 
-
-    def modPlotclicked(self,enabled):
+    def modPlotclicked(self, enabled):
         """
         Modify the existing plots
 
@@ -376,9 +422,9 @@ class PlotGridWidget(QtWidgets.QWidget):
         """
         logger.debug('Modifying')
         self.reset_all_rubberbands()
-        if(enabled): # Adding rubberbands to all plots
+        if (enabled):  # Adding rubberbands to all plots
             self.show_all_rubberbands()
-        else: # Hiding all rubberbands
+        else:  # Hiding all rubberbands
             self.hide_all_rubberbands()
 
     def show_all_rubberbands(self):
@@ -389,6 +435,8 @@ class PlotGridWidget(QtWidgets.QWidget):
                 rubberband = d['rubber']
             except:
                 rubberband = ResizableRubberBand(self)
+                rubberband.mouse_pressed.connect(self.rubberband_clicked)
+                rubberband.__config_widget__ = d['config']  # Add the configuration widget
                 col = QtGui.QPalette()
                 col.setBrush(QtGui.QPalette.Highlight, QtGui.QBrush(QtCore.Qt.red))
                 rubberband.setPalette(col)
@@ -415,7 +463,7 @@ class PlotGridWidget(QtWidgets.QWidget):
                 w = d['plot']
                 col = QtGui.QPalette()
                 col.setBrush(QtGui.QPalette.Highlight, QtGui.QBrush(QtCore.Qt.red))
-                #r.setGeometry(QtCore.QRect(w.pos(), w.size()).normalized())
+                # r.setGeometry(QtCore.QRect(w.pos(), w.size()).normalized())
                 r.setPalette(col)
                 r.setWindowOpacity(.5)
                 r.flag_rem_plot = False
@@ -423,7 +471,20 @@ class PlotGridWidget(QtWidgets.QWidget):
             except Exception as e:
                 pass
 
+    def rubberband_clicked(self):
+        funcname = self.__class__.__name__ + '.rubberband_clicked'
+        rubberband = self.sender()
+        configplotwidget = rubberband.__config_widget__
+        print(self.configplotwidget.layout())
+        layout = self.configplotwidget.layout()  # The layout of the configplotwidget
+        index = layout.count()
+        while (index >= 0):
+            widget = layout.itemAt(index)
+            if (widget is not None):
+                layout.removeWidget(widget.widget())
+            index -= 1
 
+        layout.addWidget(configplotwidget)
 
     def addPlot(self, plotwidget, j, i, height, width):
         """
@@ -434,14 +495,44 @@ class PlotGridWidget(QtWidgets.QWidget):
         Returns:
 
         """
+        # Create a config widget
+        config_widget = redvypr_config_widget(config=plotwidget.config, template=plotwidget.config_template,
+                                              loadsavebutton=False,redvypr_instance=self.redvypr)
+
+        config_widget.config_changed.connect(self.config_changed)
+        config_widget.plotwidget = plotwidget
         plotwidget.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+        # Add the configuration widget to the plotwidget
+        plotwidget.config_widget = config_widget
         self.layout.addWidget(plotwidget, j, i, height, width)
-        d = {'plot':plotwidget}
+        d = {'plot': plotwidget, 'config': config_widget}
+        initwidget = self.device.deviceinitwidget
+        configwidget_global = initwidget.config_widget # The configuration widget that is shown on the init widget
+        self.device.config['plots'].append(plotwidget.config)
+        print('Device config',self.device.config)
+        configwidget_global.reload_config()
         self.all_plots.append(d)
         plotwidget.show()
 
+    def config_changed(self,config):
+        """
+        Function is called whenever the configuration has been changed and updates the configuration of the plotwidget
+
+        Args:
+            config:
+
+        Returns:
+
+        """
+        config_widget = self.sender()
+        funcname = self.__class__.__name__ + '.config_changed'
+        logger.debug(funcname + ' config: {:s}'.format(str(config)))
+        # Copy the configuration to the plotwidget
+        config_widget.plotwidget.config = config
+
     def remPlot(self, plotwidget):
         """
+        Remove a plotwidget from the grid
 
         Args:
             plotwidget:
@@ -451,9 +542,10 @@ class PlotGridWidget(QtWidgets.QWidget):
         """
         self.layout.removeWidget(plotwidget)
         for d in self.all_plots:
-            if(d['plot'] == plotwidget):
+            if (d['plot'] == plotwidget):
                 print('removing from list')
                 self.all_plots.remove(d)
+                self.device.config['plots'].remove(plotwidget.config)
                 try:
                     r = d['rubber']
                     r.close()
@@ -469,16 +561,14 @@ class PlotGridWidget(QtWidgets.QWidget):
         Returns:
 
         """
-        print('Commit')
-
+        logger.debug('Commit')
         if (self.flag_mod_plot):  # Flags are set by the gridwidget buttons
-            print('Modifying plot')
             for d in self.all_plots:
                 try:
                     r = d['rubber']
                     plotwidget = d['plot']
                 except Exception as e:
-                    print('ohoh',e)
+                    print('ohoh', e)
                     continue
 
                 iall = []
@@ -489,30 +579,23 @@ class PlotGridWidget(QtWidgets.QWidget):
                         iall.append(child.__i__)
                         jall.append(child.__j__)
 
-                print('iall', iall)
-                print('jall', jall)
-                if(len(iall)>0 and len(jall)>0):
+                if (len(iall) > 0 and len(jall) > 0):
                     inew = min(iall)
                     di = max(iall) - min(iall) + 1
                     jnew = min(jall)
                     dj = max(jall) - min(jall) + 1
-                    print('Hallo', inew, jnew, di, dj)
                     self.layout.removeWidget(plotwidget)
-                    self.layout.addWidget(plotwidget,jnew,inew,dj,di)
-
-
-            #self.reset_all_rubberbands()
+                    self.layout.addWidget(plotwidget, jnew, inew, dj, di)
 
         if (self.flag_add_plot):  # Flags are set by the gridwidget buttons
-            print('Adding plot')
-            self.get_selected_index() # update self.__add_location__
-            if self.__add_location__  is not None:
+            self.get_selected_index()  # update self.__add_location__
+            if self.__add_location__ is not None:
                 addwidgetstr = self.__add_plottype__  # is set by the plotgridwidget combo changed signal
                 addwidget = self.__add_plotwidget__  # is set by the plotgridwidget combo changed signal
                 logger.debug('Adding widget {:s}'.format(addwidgetstr))
                 addwidget_called = addwidget()
                 self.addPlot(addwidget_called, self.__add_location__[0], self.__add_location__[1],
-                                      self.__add_location__[2], self.__add_location__[3])
+                             self.__add_location__[2], self.__add_location__[3])
 
                 # Remove all selected indices
                 self.unselect_all()
@@ -521,33 +604,29 @@ class PlotGridWidget(QtWidgets.QWidget):
                 logger.debug('Not a valid location for adding plot')
 
         if (self.flag_rem_plot):  # Flags are set by the gridwidget buttons
-            print('remove')
-            for d in self.all_plots:
+            for d in reversed(self.all_plots):
                 try:
                     r = d['rubber']
-                    if r.flag_rem:  # New plot to be added
-                        print('removing now',r)
+                    if r.flag_rem:  # If the remove flag is set
                         self.remPlot(d['plot'])
                 except Exception as e:
-                    print('Hallo',e)
-
-        #self.flag_mod_plot = False
-        #self.flag_add_plot = False
+                    logger.debug('Exception {:s}'.format(str(e)))
 
     def unselect_all(self):
         for child in self.findChildren(QtWidgets.QPushButton):
             child.setChecked(False)
 
 
-
-
-
 class PlotGridWidgetButton(QtWidgets.QPushButton):
+    resize_signal = QtCore.pyqtSignal()  # Signal notifying resize
+
     def __init__(self):
         super(QtWidgets.QWidget, self).__init__()
 
+    def resizeEvent(self, event):
+        self.resize_signal.emit()
+
     def mousePressEvent(self, event):
-        #QtWidgets.QWidget.mousePressEvent(self, event)
         QtWidgets.QWidget.mousePressEvent(self.parent(), event)
 
 
@@ -555,13 +634,17 @@ class RandomDataWidget(QtWidgets.QWidget):
     def __init__(self):
         super(QtWidgets.QWidget, self).__init__()
         self.i = 0
-        self.texts = ['Hello','redvypr','data']
+        self.texts = ['Hello', 'redvypr', 'data']
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_status)
         self.statustimer.start(2000)
         self.label = QtWidgets.QLabel(self.texts[0])
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.addWidget(self.label)
+        self.config = {}
+        self.config['random'] = 10
+        self.config_template = {}
+        self.config_template['random'] = {'type': 'int', 'default': 11}
         self.setStyleSheet("background-color:green;")
 
     def update_status(self):
@@ -575,8 +658,10 @@ class ResizableRubberBand(QtWidgets.QWidget):
 
     Source: http://stackoverflow.com/a/19067132/435253
     """
+    mouse_pressed = QtCore.pyqtSignal()  # Signal
+
     def __init__(self, parent):
-        #super(Device, self).__init__(**kwargs)
+        # super(Device, self).__init__(**kwargs)
         super(ResizableRubberBand, self).__init__(parent)
 
         self.setWindowFlags(QtCore.Qt.SubWindow)
@@ -592,7 +677,7 @@ class ResizableRubberBand(QtWidgets.QWidget):
         self.rubberband.move(0, 0)
         self.rubberband.show()
 
-        self.flag_rem = False # Flag for removal
+        self.flag_rem = False  # Flag for removal
         self.show()
 
     def resizeEvent(self, event):
@@ -601,6 +686,7 @@ class ResizableRubberBand(QtWidgets.QWidget):
     def mousePressEvent(self, event):
         print('Mouse press')
         self.oldPos = event.globalPos()
+        self.mouse_pressed.emit()
 
     def mouseMoveEvent(self, event):
         print('Move')
@@ -617,7 +703,7 @@ class ResizableRubberBand(QtWidgets.QWidget):
             flag_rem = False
             print('noremove')
 
-        if(flag_rem and self.flag_rem == False):
+        if (flag_rem and self.flag_rem == False):
             col = QtGui.QPalette()
             col.setBrush(QtGui.QPalette.Highlight, QtGui.QBrush(QtCore.Qt.black))
             self.setPalette(col)
@@ -628,10 +714,5 @@ class ResizableRubberBand(QtWidgets.QWidget):
             col.setBrush(QtGui.QPalette.Highlight, QtGui.QBrush(QtCore.Qt.red))
             self.setPalette(col)
 
-        #self.oldPos = event.globalPos()
-
-
-
-
-
-
+        # self.__config_widget__
+        # self.oldPos = event.globalPos()

@@ -544,7 +544,7 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
     device_name_changed        = QtCore.pyqtSignal(str) # Signal notifying if the device path was changed
     apply                      = QtCore.pyqtSignal(dict) # Signal notifying if the Apply button was clicked
     datakey_name_changed       = QtCore.pyqtSignal(str) # Signal notifying if the datakey has changed
-    def __init__(self,redvypr,device=None,devicename_highlight=None,datakey=None,deviceonly=False,devicelock=False,subscribed_only=True):
+    def __init__(self,redvypr,device=None,devicename_highlight=None,datakey=None,deviceonly=False,devicelock=False,subscribed_only=True,showapplybutton=True):
         """
         Args:
             redvypr:
@@ -600,9 +600,10 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
             self.datakeylist.itemDoubleClicked.connect(self.datakey_clicked) # TODO here should by an apply signal emitted
             self.datakeylist.currentItemChanged.connect(self.datakey_clicked)
 
-        self.buttondone = QtWidgets.QPushButton('Apply')
-        self.buttondone.clicked.connect(self.done_clicked)
-        self.layout.addWidget(self.buttondone)                
+        if(showapplybutton):
+            self.buttondone = QtWidgets.QPushButton('Apply')
+            self.buttondone.clicked.connect(self.done_clicked)
+            self.layout.addWidget(self.buttondone)
 
         devicelist = []
         self.datakeylist_subscribed = {}
@@ -1211,7 +1212,7 @@ class redvypr_data_tree(QtWidgets.QTreeWidget):
         logger.debug(funcname + str(data))
         # make only the first column editable
         #self.setEditTriggers(self.NoEditTriggers)
-        self.datatypes = [['int', int], ['float', float], ['str', str],['list',list],['dict',dict]] # The datatypes
+        self.datatypes = [['int', int], ['float', float], ['str', str],['list',list],['dict',dict],['bool',bool]] # The datatypes
         self.datatypes_dict = {} # Make a dictionary out of it, thats easier to reference
         for d in self.datatypes:
             self.datatypes_dict[d[0]] = d[1]
@@ -1486,9 +1487,11 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
 #
 class redvypr_config_widget(QtWidgets.QWidget):
     config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
-    def __init__(self, template={}, config=None):
+    def __init__(self, template={}, config=None,loadsavebutton=True,redvypr_instance=None):
         funcname = __name__ + '.__init__():'
         super().__init__()
+        self.redvypr=redvypr_instance
+        self.config = config
         self.layout = QtWidgets.QGridLayout(self)
         self.layout.setColumnStretch(0, 1)
         self.layout.setColumnStretch(1, 1)
@@ -1500,9 +1503,9 @@ class redvypr_config_widget(QtWidgets.QWidget):
         conftemplate = configtemplate_to_dict(template=template)
         if(config is not None):
             logger.debug(funcname + 'Applying config to template')
-            redvypr.utils.apply_config_to_dict(config, conftemplate)
+            self.config = redvypr.utils.apply_config_to_dict(config, conftemplate)
 
-        self.configtree = redvypr_config_tree(conftemplate,dataname=configname)
+        self.configtree = redvypr_config_tree(data = self.config,dataname=configname)
 
         #self.itemExpanded.connect(self.resize_view)
         #self.itemCollapsed.connect(self.resize_view)
@@ -1512,16 +1515,30 @@ class redvypr_config_widget(QtWidgets.QWidget):
         self.configgui = QtWidgets.QWidget() # Widget where the user can modify the content
         self.configgui_layout = QtWidgets.QVBoxLayout(self.configgui)
 
-        # Add load/save buttons
-        self.load_button = QtWidgets.QPushButton('Load')
-        self.load_button.clicked.connect(self.load_config)
-        self.save_button = QtWidgets.QPushButton('Save')
-        self.save_button.clicked.connect(self.save_config)
+        if(loadsavebutton):
+            # Add load/save buttons
+            self.load_button = QtWidgets.QPushButton('Load')
+            self.load_button.clicked.connect(self.load_config)
+            self.save_button = QtWidgets.QPushButton('Save')
+            self.save_button.clicked.connect(self.save_config)
 
         self.layout.addWidget(self.configtree,0,0)
         self.layout.addWidget(self.configgui, 0, 1)
-        self.layout.addWidget(self.load_button, 1, 0)
-        self.layout.addWidget(self.save_button, 1, 1)
+        if (loadsavebutton):
+            self.layout.addWidget(self.load_button, 1, 0)
+            self.layout.addWidget(self.save_button, 1, 1)
+
+    def reload_config(self):
+        """
+        Clears the configtree and redraws it. Good after a third person change of the configuration
+        Returns:
+
+        """
+        funcname = __name__ + '.reload_config():'
+        logger.debug(funcname)
+        self.configtree.clear()
+        self.configtree.create_qtree()
+        logger.debug(funcname)
 
     def load_config(self):
         funcname = __name__ + '.load_config():'
@@ -1553,20 +1570,6 @@ class redvypr_config_widget(QtWidgets.QWidget):
         config = copy.deepcopy(self.configtree.data)
         return config
 
-
-    def apply_config(self,config):
-        """
-        Applies a configuration dictionary to the configtree
-
-        Args:
-            config: config dictionary
-
-        Returns:
-
-        """
-
-        self.configtree.apply_config(config)
-
     def __open_config_gui(self,item):
         """
 
@@ -1589,11 +1592,18 @@ class redvypr_config_widget(QtWidgets.QWidget):
             print('dtpye',dtype)
             #dtype = 'str'
 
+        item.__datatype__ = dtype
         self.remove_input_widgets()
         if(dtype == 'int'):
             self.config_widget_number(item,'int')
         elif (dtype == 'float'):
             self.config_widget_number(item,'float')
+        elif (dtype == 'datastream'):
+            self.config_widget_datastream(item)
+        elif (dtype == 'bool'):
+            #
+            data.template['options'] = ['False','True']
+            self.config_widget_str_combo(item)
         elif(dtype == 'str'):
             # If we have options
             try:
@@ -1605,12 +1615,23 @@ class redvypr_config_widget(QtWidgets.QWidget):
                 self.config_widget_str(item)
 
     def __config_widget_button(self):
+        """
+        Applies the changes of the configuration widget
+
+        Returns:
+
+        """
         funcname = __name__ + '.__config_widget_button(): '
         btn = self.sender()
         if(btn == self.__configwidget_apply):
             item = btn.item
+            dtype = item.__datatype__
             logger.debug(funcname + 'Apply')
             data = None
+            if (dtype == 'datastream'):
+                print('Datastream')
+                data = self.__configwidget_input.datastreamcustom.text()
+
             if (data is None):
                 try:
                     data = self.__configwidget_input.value()
@@ -1628,6 +1649,10 @@ class redvypr_config_widget(QtWidgets.QWidget):
                 except Exception as e:
                     pass
 
+                # Test if we have a bool
+                if(data.template['type'] == 'bool'):
+                    data = bool(data)
+
             if(data is not None):
                 logger.debug(funcname + 'Got data')
                 item.setText(1,str(data))
@@ -1641,7 +1666,30 @@ class redvypr_config_widget(QtWidgets.QWidget):
         config = self.get_config()
         self.config_changed.emit(config)
 
-    def config_widget_number(self,item,dtype='int'):
+    def config_widget_datastream(self, item):
+        """
+        Lets the user change a datastream
+        Args:
+            item:
+
+        Returns:
+
+        """
+        self.remove_input_widgets()
+        datastreamwidget = redvypr_devicelist_widget(redvypr=self.redvypr, showapplybutton=False)
+        datastreamwidget.item     = item
+        self.__configwidget_input = datastreamwidget
+        self.__configwidget_int   = QtWidgets.QWidget()
+        self.__layoutwidget_int   = QtWidgets.QFormLayout(self.__configwidget_int)
+        self.__layoutwidget_int.addRow(datastreamwidget)
+        # Buttons
+        self.__configwidget_apply = QtWidgets.QPushButton('Apply')
+        self.__configwidget_apply.clicked.connect(self.__config_widget_button)
+        self.__configwidget_apply.item = item
+        self.configgui_layout.addWidget(self.__configwidget_int)
+        self.__layoutwidget_int.addRow(self.__configwidget_apply)
+
+    def config_widget_number(self, item, dtype='int'):
         """
         Creates a widgets to modify an integer value
 
@@ -1708,7 +1756,7 @@ class redvypr_config_widget(QtWidgets.QWidget):
 
     def config_widget_str_combo(self, item):
         index = item.__dataindex__
-        data = item.__data__
+        data  = item.__data__
         options = data.template['options']
         self.remove_input_widgets()
         self.__configwidget_int = QtWidgets.QWidget()
@@ -1761,7 +1809,8 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
         self.datatypes_dict = {} # Make a dictionary out of it, thats easier to reference
         for d in self.datatypes:
             self.datatypes_dict[d[0]] = d[1]
-        self.header().setVisible(False)
+        #self.header().setVisible(False)
+        self.setHeaderLabels(['Variable','Value','Type'])
         self.data     = data
         self.dataname = dataname
         # Create the root item
@@ -1774,19 +1823,6 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
         self.create_qtree()
         self.itemExpanded.connect(self.resize_view)
         self.itemCollapsed.connect(self.resize_view)
-
-    def apply_config(self, config):
-        """
-
-        Args:
-            config:
-
-        Returns:
-
-        """
-
-        pass
-
 
     def seq_iter(self,obj):
         if isinstance(obj, dict):

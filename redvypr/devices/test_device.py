@@ -62,6 +62,7 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
     funcname = __name__ + '.start():'
     logger.debug(funcname)
     print('config',config)
+    i = 0
     while True:
         try:
             data = datainqueue.get(block=False)
@@ -77,6 +78,8 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
         dstr = config['string_send']
         print(dstr)
         dataqueue.put(dstr)
+        dataqueue.put({'count':i})
+        i+=1
         time.sleep(config['delay_s'])
         
 
