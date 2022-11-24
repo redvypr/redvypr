@@ -273,6 +273,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         self.config_template['useprops']    = {'type': 'bool', 'default': True,
                                                'description': 'Use the properties to display units etc.'}
         self.config_template['dataformat']  = {'type': 'str', 'default': 'f','description':'The format the data is shown, this will be interpreted as "{:dataformat}".format(data)'}
+        self.config_template['title']       = {'type': 'str', 'default': ''}
         self.config_template['description'] = self.description
         if(config == None): # Create a config from the template
             config = configtemplate_to_dict(self.config_template)
@@ -328,11 +329,9 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
             except:
                 title = ""
 
-            if(len(title)>0):
-                self.titledisp = QtWidgets.QLabel(title)
-                self.titledisp.setStyleSheet("font-weight: bold;border : 1px solid {:s};".format(config['backgroundcolor']))
-                self.titledisp.setAlignment(QtCore.Qt.AlignCenter)
-                self.layout.addWidget(self.titledisp,0,0,1,2)
+            self.titledisp = QtWidgets.QLabel(title)
+            self.titledisp.hide()
+
 
             if(self.config['devicelabel']):
                 self.devicedisp = QtWidgets.QLabel(self.config['device'])
@@ -364,6 +363,31 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
             self.numdisp.setStyleSheet("border : 1px solid {:s};font-weight: bold; font-size: {:d}pt".format(config['backgroundcolor'],config['fontsize']))
             #
             self.layout.addWidget(self.numdisp,3,0)
+
+
+    def apply_config(self):
+        """
+        Applies the config to the widgets
+        Returns:
+
+        """
+        funcname = __name__ + '.apply_config():'
+        logger.debug(funcname)
+        title = self.config['title']
+        if (len(title) > 0):
+            self.titledisp.setText(title)
+            self.titledisp.setStyleSheet("font-weight: bold;border : 1px solid {:s};".format(self.config['backgroundcolor']))
+            self.titledisp.setAlignment(QtCore.Qt.AlignCenter)
+            self.layout.addWidget(self.titledisp, 0, 0, 1, 2)
+            self.titledisp.show()
+        else:
+            try:
+                self.layout.remWidget(self.titledisp)
+                self.titledisp.hide()
+            except Exception as e:
+                print('problem',e)
+                pass
+
 
     def get_timestr(self,unixtime,format=None):
         """ Returns a time string

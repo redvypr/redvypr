@@ -552,6 +552,7 @@ class PlotGridWidget(QtWidgets.QWidget):
         logger.debug(funcname + ' config: {:s}'.format(str(config)))
         # Copy the configuration to the plotwidget
         config_widget.plotwidget.config = config
+        config_widget.plotwidget.apply_config()
 
     def remPlot(self, plotwidget):
         """
