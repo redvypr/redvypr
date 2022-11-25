@@ -15,7 +15,8 @@ from redvypr.gui import redvypr_devicelist_widget, redvypr_config_widget
 from redvypr.devices.plot_widgets import redvypr_numdisp_widget
 import redvypr.files as files
 from redvypr.device import redvypr_device
-from redvypr.data_packets import do_data_statistics, create_data_statistic_dict, check_for_command
+from redvypr.data_packets import do_data_statistics, create_data_statistic_dict, check_for_command, parse_devicestring
+from redvypr.utils import configdata, getdata
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -104,9 +105,13 @@ class Device(redvypr_device):
         devices = self.redvypr.get_devices()  # Get all devices
         plot_devices = []
         for plot in self.config['plots']:  # Loop over all plots
-            if (str(plot['type']).lower() == 'numdisp'):
-                name = plot['device']
-                plot_devices.append(name)
+            print('plot',plot)
+            if (str(getdata(plot['type'])).lower() == 'numdisp'):
+                datastream = getdata(plot['datastream'])
+
+                parsed_stream = parse_devicestring(datastream)
+                devicename = parsed_stream['devicename']
+                plot_devices.append(devicename)
 
             elif (str(plot['type']).lower() == 'graph'):
                 for l in plot['lines']:  # Loop over all lines in a plot
@@ -115,6 +120,7 @@ class Device(redvypr_device):
 
                     # Add the device if not already done so
         if True:
+            print('Plot devices',plot_devices,self.name)
             for name in plot_devices:
                 logger.info(funcname + 'Connecting device {:s}'.format(name))
                 ret = self.redvypr.addrm_device_as_data_provider(name, self, remove=False)
@@ -135,9 +141,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
     This widget can be configured with a configuration dictionary 
     """
 
-    def __init__(self, device=None):
+    def __init__(self, device=None,deviceinitwidget=None):
         funcname = __name__ + '.init()'
         super(QtWidgets.QWidget, self).__init__()
+        self.deviceinitwidget = deviceinitwidget
+        # Let the configuration only be done by here, not in the initwidget
+        self.deviceinitwidget.config_widget.configtree.setEnabled(False)
         self.config = device.config
         self.layout = QtWidgets.QVBoxLayout(self)
         self.device = device
@@ -522,8 +531,9 @@ class PlotGridWidget(QtWidgets.QWidget):
         config_widget = redvypr_config_widget(config=plotwidget.config, template=plotwidget.config_template,
                                               loadsavebutton=False,redvypr_instance=self.redvypr)
         config_widget.setWindowIcon(QtGui.QIcon(_icon_file))
-        config_widget.config_changed.connect(self.config_changed)
+        config_widget.config_changed_flag.connect(self.config_changed)
         config_widget.plotwidget = plotwidget
+        #plotwidget.config = config_widget.config
         plotwidget.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         # Add the configuration widget to the plotwidget
         plotwidget.config_widget = config_widget
@@ -531,13 +541,17 @@ class PlotGridWidget(QtWidgets.QWidget):
         d = {'plot': plotwidget, 'config': config_widget}
         initwidget = self.device.deviceinitwidget
         configwidget_global = initwidget.config_widget # The configuration widget that is shown on the init widget
-        self.device.config['plots'].append(plotwidget.config)
-        print('Device config',self.device.config)
-        configwidget_global.reload_config()
         self.all_plots.append(d)
-        plotwidget.show()
+        self.update_config()
 
-    def config_changed(self,config):
+        plotwidget.show()
+        
+    def update_config(self):
+        self.device.config['plots'] = []
+        for d in self.all_plots:
+            self.device.config['plots'].append(copy.deepcopy(d['config'].config))
+
+    def config_changed(self):
         """
         Function is called whenever the configuration has been changed and updates the configuration of the plotwidget
 
@@ -549,10 +563,15 @@ class PlotGridWidget(QtWidgets.QWidget):
         """
         config_widget = self.sender()
         funcname = self.__class__.__name__ + '.config_changed'
-        logger.debug(funcname + ' config: {:s}'.format(str(config)))
+        logger.debug(funcname + ' config: {:s}'.format(str(config_widget.config)))
         # Copy the configuration to the plotwidget
-        config_widget.plotwidget.config = config
+        config_widget.plotwidget.config = config_widget.config
         config_widget.plotwidget.apply_config()
+        #
+        print('Config device',self.device.config['plots'])
+        logger.debug(funcname + ': Connecting devices')
+        self.update_config()
+        self.device.connect_devices()
 
     def remPlot(self, plotwidget):
         """

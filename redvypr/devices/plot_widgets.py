@@ -15,6 +15,7 @@ import redvypr.files as files
 from redvypr.utils import configtemplate_to_dict
 from redvypr.device import redvypr_device
 from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
+from copy import deepcopy as dc
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -263,7 +264,8 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         #self.setStyleSheet("background-color : red")
         self.description = 'Device that plots the received data'
         self.config_template = {}
-        self.config_template['backgroundcolor'] = {'type':'str','default':'lightgray'}
+        self.config_template['type']        = {'type':'str','default': 'numdisp', 'modify': False}
+        self.config_template['backgroundcolor'] = {'type': 'str', 'default': 'lightgray'}
         self.config_template['bordercolor'] = {'type': 'str', 'default': 'lightgray'}
         self.config_template['fontsize']    = {'type': 'int', 'default': 20}
         self.config_template['device']      = {'type': 'str', 'default': 'NA'}  # TODO, make a datastream
@@ -277,8 +279,9 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         self.config_template['description'] = self.description
         if(config == None): # Create a config from the template
             config = configtemplate_to_dict(self.config_template)
+            config = copy.deepcopy(config)
             self.config = config
-            #config = copy.deepcopy(config)
+
 
         print('widget config',config)
         try:
@@ -317,50 +320,42 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         except:
             config['useprops'] = True
 
-        config = copy.deepcopy(config)
-        self.config = config
-        self.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(config['backgroundcolor'],config['bordercolor']))
+        # Title
+        try:
+            title = config['title']
+        except:
+            title = ""
+
+        # Unit
+        try:
+            unit = config['unit']
+        except:
+            unit = ""
+
+        self.unit = unit
+
+
+        self.titledisp = QtWidgets.QLabel(dc(title))
+        self.titledisp.hide()
+
+        self.devicedisp = QtWidgets.QLabel(dc(self.config['device']))
+        self.devicedisp.hide()
+
+        self.timedisp = QtWidgets.QLabel(self.get_timestr(0))
+        self.timedisp.hide()
+
+        self.unitdisp = QtWidgets.QLabel(dc(unit))
+        self.unitdisp.hide()
+
+
+        self.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(dc(config['backgroundcolor']),dc(config['bordercolor'])))
         self.layout = QtWidgets.QGridLayout(self)
         if True:
             logger.debug(funcname + ': Adding plot' + str(config))
-            # Title
-            try:
-                title = config['title']
-            except:
-                title = ""
+            self.apply_config()
 
-            self.titledisp = QtWidgets.QLabel(title)
-            self.titledisp.hide()
-
-
-            if(self.config['devicelabel']):
-                self.devicedisp = QtWidgets.QLabel(self.config['device'])
-                self.devicedisp.setStyleSheet("border : 1px solid {:s};".format(config['backgroundcolor']))
-                self.devicedisp.setAlignment(QtCore.Qt.AlignCenter)
-                self.layout.addWidget(self.devicedisp,1,0,1,2)
-                
-            if(self.config['showtime']):
-                self.timedisp = QtWidgets.QLabel(self.get_timestr(0))
-                self.timedisp.setStyleSheet("border : 1px solid {:s};".format(config['backgroundcolor']))
-                self.timedisp.setAlignment(QtCore.Qt.AlignCenter)
-                self.layout.addWidget(self.timedisp,2,0,1,2)
-
-            # Unit
-            try:
-                unit = config['unit']
-            except:
-                unit = ""
-
-            self.unit = unit                
-            #if((len(unit)>0) or (self.config['useprops'])):
-            if True:
-                self.unitdisp = QtWidgets.QLabel(unit)
-                self.unitdisp.setStyleSheet("border : 1px solid {:s};".format(config['backgroundcolor']))
-                self.layout.addWidget(self.unitdisp,3,1)
-
-            
             self.numdisp = QtWidgets.QLabel("#")
-            self.numdisp.setStyleSheet("border : 1px solid {:s};font-weight: bold; font-size: {:d}pt".format(config['backgroundcolor'],config['fontsize']))
+            self.numdisp.setStyleSheet("border : 1px solid {:s};font-weight: bold; font-size: {:d}pt".format(dc(config['backgroundcolor']),dc(config['fontsize'])))
             #
             self.layout.addWidget(self.numdisp,3,0)
 
@@ -373,20 +368,48 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         """
         funcname = __name__ + '.apply_config():'
         logger.debug(funcname)
-        title = self.config['title']
-        if (len(title) > 0):
+        title = dc(self.config['title'])
+        if (len(title) > 0): # Show title
             self.titledisp.setText(title)
             self.titledisp.setStyleSheet("font-weight: bold;border : 1px solid {:s};".format(self.config['backgroundcolor']))
             self.titledisp.setAlignment(QtCore.Qt.AlignCenter)
             self.layout.addWidget(self.titledisp, 0, 0, 1, 2)
             self.titledisp.show()
-        else:
+        else: # Do not show title
             try:
-                self.layout.remWidget(self.titledisp)
+                self.layout.removeWidget(self.titledisp)
                 self.titledisp.hide()
             except Exception as e:
                 print('problem',e)
                 pass
+
+        if (dc(self.config['devicelabel'])):
+            self.devicedisp.setStyleSheet("border : 1px solid {:s};".format(dc(self.config['backgroundcolor'])))
+            self.devicedisp.setAlignment(QtCore.Qt.AlignCenter)
+            self.layout.addWidget(self.devicedisp, 1, 0, 1, 2)
+            self.devicedisp.show()
+        else:
+            self.layout.removeWidget(self.devicedisp)
+            self.devicedisp.hide()
+
+        if (dc(self.config['showtime'])):
+            self.timedisp.setStyleSheet("border : 1px solid {:s};".format(dc(self.config['backgroundcolor'])))
+            self.timedisp.setAlignment(QtCore.Qt.AlignCenter)
+            self.layout.addWidget(self.timedisp, 2, 0, 1, 2)
+            self.timedisp.show()
+        else:
+            self.layout.removeWidget(self.timedisp)
+            self.timedisp.hide()
+
+        if(len(self.unit)>0):
+            self.unitdisp.setStyleSheet("border : 1px solid {:s};".format(dc(self.config['backgroundcolor'])))
+            self.layout.addWidget(self.unitdisp, 3, 1)
+            self.unitdisp.show()
+        else:
+            self.layout.removeWidget(self.unitdisp)
+            self.unitdisp.hide()
+
+
 
 
     def get_timestr(self,unixtime,format=None):
@@ -402,18 +425,18 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         """ Updates the plot based on the given data
         """
         funcname = __name__ + '.update()'
+        logger.debug(funcname)
         tnow = time.time()
         print(funcname + ': got data', data)
         print('config', self.config)
-        devicename = data['device']
-        datastream = self.config['datastream']
+        datastream = self.config['datastream'].value
+        dataformat = self.config['dataformat'].value
         parsed_stream = parse_devicestring(datastream)
         datakey = parsed_stream['datakey']
         print('datastram', datastream)
         print('datakey', datakey)
         print('in data',device_in_data(datastream, data))
         if(device_in_data(datastream,data)):
-            dataformat = self.config['dataformat']
             # data can be a single float or a list
             newdata = data[datakey]
             newt    = data['t']
@@ -424,10 +447,10 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
             datastr = "{0:{dformat}}".format(newdata,dformat=dataformat)
             self.numdisp.setText(datastr)
             
-            if(self.config['showtime']):
+            if(self.config['showtime'].value):
                 self.timedisp.setText(self.get_timestr(newt))
             
-            if(self.config['useprops']):
+            if(self.config['useprops'].value):
                 # Get the propertykey 
                 propkey = '?' + datakey 
                 try:
@@ -437,7 +460,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
                     
             if(props is not None):
                 try:
-                    unitstr = str(data[propkey]['unit'])
+                    unitstr = str(data[propkey]['unit'].value)
                     self.unit = unitstr
                 except Exception as e:
                     pass

@@ -1546,6 +1546,9 @@ class redvyprWidget(QtWidgets.QWidget):
             if ('tabwidget' in initargs.parameters.keys()):
                 initdict['tabwidget'] = devicetab
 
+            if ('deviceinitwidget' in initargs.parameters.keys()):
+                initdict['deviceinitwidget'] = deviceinitwidget
+
             # https://stackoverflow.com/questions/334655/passing-a-dictionary-to-a-function-as-keyword-parameters
             devicedisplaywidget_called = devicedisplaywidget(**initdict)
             # Add the widget to the device

@@ -44,6 +44,21 @@ class configdata():
         return rstr
 
 
+def getdata(data):
+    """
+    Returns the data of an object, if its an configdata object, it returns data.value, otherwise data
+    Args:
+        data:
+
+    Returns:
+
+    """
+    try:
+        return data.value
+    except:
+        return data
+
+
 
 def addrm_device_as_data_provider(devices,deviceprovider,devicereceiver,remove=False):
     """ Adds or remove deviceprovider as a datasource to devicereceiver

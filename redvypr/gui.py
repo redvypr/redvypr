@@ -1487,10 +1487,12 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
 #
 class redvypr_config_widget(QtWidgets.QWidget):
     config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
+    config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
     def __init__(self, template={}, config=None,loadsavebutton=True,redvypr_instance=None):
         funcname = __name__ + '.__init__():'
         super().__init__()
         self.redvypr=redvypr_instance
+        # TODO, convert config to dictionary with configdata objects
         self.config = config
         self.layout = QtWidgets.QGridLayout(self)
         self.layout.setColumnStretch(0, 1)
@@ -1500,13 +1502,14 @@ class redvypr_config_widget(QtWidgets.QWidget):
         except:
             configname = 'config'
 
+
         conftemplate = configtemplate_to_dict(template=template)
         if(config is not None):
             logger.debug(funcname + 'Applying config to template')
             self.config = redvypr.utils.apply_config_to_dict(config, conftemplate)
 
         self.configtree = redvypr_config_tree(data = self.config,dataname=configname)
-
+        self.configtree.expandAll()
         #self.itemExpanded.connect(self.resize_view)
         #self.itemCollapsed.connect(self.resize_view)
         self.configtree.itemDoubleClicked.connect(self.__open_config_gui)
@@ -1562,13 +1565,14 @@ class redvypr_config_widget(QtWidgets.QWidget):
 
     def get_config(self):
         """
-        Returns a configuation dictionary of the
+        Returns a configuation dictionary of the qtreewidgetitem
 
         Returns:
 
         """
         config = copy.deepcopy(self.configtree.data)
         return config
+
 
     def __open_config_gui(self,item):
         """
@@ -1649,12 +1653,14 @@ class redvypr_config_widget(QtWidgets.QWidget):
                 except Exception as e:
                     pass
 
+                print('DATADATATAT',data,type(data),dtype,bool(data))
                 # Test if we have a bool
-                if(data.template['type'] == 'bool'):
-                    data = bool(data)
+                if(dtype == 'bool'):
+                    data = data.lower() == 'True'
 
             if(data is not None):
                 logger.debug(funcname + 'Got data')
+                print('data',data)
                 item.setText(1,str(data))
                 try: # If configdata
                     item.__dataparent__[item.__dataindex__].value = data
@@ -1664,6 +1670,7 @@ class redvypr_config_widget(QtWidgets.QWidget):
                 logger.debug(funcname + 'No valid data')
 
         config = self.get_config()
+        self.config_changed_flag.emit()
         self.config_changed.emit(config)
 
     def config_widget_datastream(self, item):
@@ -1846,7 +1853,7 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
         sequence = self.seq_iter(data)
         if(sequence == None): # Check if we have an item that is something with data (not a list or dict)
             data_value = data.value  # Data is a configdata object, or list or dict
-
+            print('Data value',str(data_value),data)
             try:
                 typestr = data.template['type']
             except:
@@ -1863,7 +1870,7 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
             if  index_child == None:  # Check if the item is already existing, if no add it
                 parent.addChild(item)
             else: # Update the data (even if it hasnt changed
-                parent.child(index_child).setText(1,str(data))
+                parent.child(index_child).setText(1,str(data_value))
 
         else:
             typestr = data.__class__.__name__
