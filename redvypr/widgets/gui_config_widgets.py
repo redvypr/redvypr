@@ -656,6 +656,8 @@ class redvypr_config_widget(QtWidgets.QWidget):
 
         self.configtree = redvypr_config_tree(data = self.config,dataname=configname)
         self.configtree.expandAll()
+        self.configtree.resizeColumnToContents(0)
+
         #self.itemExpanded.connect(self.resize_view)
         #self.itemCollapsed.connect(self.resize_view)
         self.configtree.itemDoubleClicked.connect(self.__open_config_gui)
@@ -974,8 +976,8 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
         self.root.__parent__ = None
         self.setColumnCount(3)
         self.create_qtree()
-        self.itemExpanded.connect(self.resize_view)
-        self.itemCollapsed.connect(self.resize_view)
+        #self.itemExpanded.connect(self.resize_view)
+        #self.itemCollapsed.connect(self.resize_view)
 
     def seq_iter(self,obj):
         if isinstance(obj, dict):
@@ -1085,5 +1087,7 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
         self.blockSignals(False)
 
     def resize_view(self):
-        self.resizeColumnToContents(0)
+        pass
+        äprint('resize ...')
+        #self.resizeColumnToContents(0)
 

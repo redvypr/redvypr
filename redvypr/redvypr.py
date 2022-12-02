@@ -34,6 +34,8 @@ from redvypr.utils import addrm_device_as_data_provider, get_data_receiving_devi
 from redvypr.version import version
 import redvypr.files as files
 from redvypr.device import redvypr_device
+import faulthandler
+faulthandler.enable()
 
 # Platform information str
 __platform__ = "redvypr (REaltime Data Vi(Y)ewer and PRocessor (in Python))\n"
