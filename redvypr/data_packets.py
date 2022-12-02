@@ -26,12 +26,25 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket):
     if ('numpacket' not in data.keys()):
         data['numpacket'] = numpacket
 
-
-class address():
+# TODO: check if that is still needed
+class redvypr_address():
     """ redvypr address 
     """
-    def __init__(self,addrstr):
+    def __init__(self,addrstr,local_hostinfo=None):
         self.addressstr = addrstr
+        self.parsed_addrstr = parse_addrstr(addrstr, local_hostinfo=None)
+        self.strtypes = ['<key>','<key>:<device>','<key>/<device>:<host>','<key>/<device>:<host>@<addr>','<key>/<device>:<host>@<addr>::<uuid>']
+    def get_str(self,strtype = 'full'):
+        """
+
+        Args:
+            strtype:
+
+        Returns:
+
+        """
+        pass
+
         
     def __contains__(self, datadict):
         """ Checks if address is in datadict 
@@ -137,7 +150,7 @@ def expand_address_string(addrstr):
 
 
 
-def parse_devicestring(address_string,local_hostinfo=None):
+def parse_addrstr(address_string,local_hostinfo=None):
     """
      Parses as redvypr address string and returns a dictionary with the parsed result
     
@@ -361,8 +374,8 @@ def compare_datastreams(datastream1, datastream2,hostinfo=None):
         return True
 
     if True:
-        d1_parsed     = parse_devicestring(datastream1,hostinfo)
-        d2_parsed     = parse_devicestring(datastream2,hostinfo)
+        d1_parsed     = parse_addrstr(datastream1,hostinfo)
+        d2_parsed     = parse_addrstr(datastream2,hostinfo)
          
         datakey       = d1_parsed['datakey']
         uuid          = d1_parsed['uuid']
@@ -402,7 +415,7 @@ def get_data(datastream,datapacket):
         Returns: Content of the data     
     """
     
-    datastream_parsed = parse_devicestring(datastream)
+    datastream_parsed = parse_addrstr(datastream)
     data = datapacket[datastream_parsed['datakey']]
     return data
 
@@ -461,7 +474,7 @@ def device_in_data(devicestring, datapacket, get_devicename = False):
         devicestring = [devicestring]
 
     for devstring_full in devicestring:
-        device_parsed = parse_devicestring(devstring_full) 
+        device_parsed = parse_addrstr(devstring_full) 
         datakey       = device_parsed['datakey']
         uuid          = device_parsed['uuid']
         devicename    = device_parsed['devicename']

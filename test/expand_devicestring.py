@@ -17,7 +17,7 @@ d.append('wrong number::of::@@::')
 
 for datastream in d:
     d_expanded = redvypr.data_packets.expand_devicestring(datastream)
-    d_parsed = redvypr.data_packets.parse_devicestring(datastream)    
+    d_parsed = redvypr.data_packets.parse_addrstr(datastream)    
     print('datastream orig:\t',datastream)
     print('datastream expanded:\t',d_expanded)
     print('datastream parsed:\t',d_parsed)    

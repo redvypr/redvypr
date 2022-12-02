@@ -15,7 +15,7 @@ from redvypr.gui import redvypr_devicelist_widget, redvypr_config_widget
 from redvypr.devices.plot_widgets import redvypr_numdisp_widget
 import redvypr.files as files
 from redvypr.device import redvypr_device
-from redvypr.data_packets import do_data_statistics, create_data_statistic_dict, check_for_command, parse_devicestring
+from redvypr.data_packets import do_data_statistics, create_data_statistic_dict, check_for_command, parse_addrstr
 from redvypr.utils import configdata, getdata
 
 _logo_file = files.logo_file
@@ -109,7 +109,7 @@ class Device(redvypr_device):
             if (str(getdata(plot['type'])).lower() == 'numdisp'):
                 datastream = getdata(plot['datastream'])
 
-                parsed_stream = parse_devicestring(datastream)
+                parsed_stream = parse_addrstr(datastream)
                 devicename = parsed_stream['devicename']
                 plot_devices.append(devicename)
 
@@ -146,7 +146,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         self.deviceinitwidget = deviceinitwidget
         # Let the configuration only be done by here, not in the initwidget
-        self.deviceinitwidget.config_widget.configtree.setEnabled(False)
+        #self.deviceinitwidget.config_widget.configtree.setEnabled(False)
         self.config = device.config
         self.layout = QtWidgets.QVBoxLayout(self)
         self.device = device

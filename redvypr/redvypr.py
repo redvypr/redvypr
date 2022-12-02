@@ -1,7 +1,4 @@
 import copy
-
-import serial
-import serial.tools
 import os
 import time
 import datetime
@@ -623,7 +620,9 @@ class redvypr(QtCore.QObject):
                 try:
                     name = deviceconfig['name']
                     loglevel = deviceconfig['loglevel']
-                    device_uuid = devicemodulename + '_' + str(uuid.uuid1())
+
+                    numdevices = len(self.devices)
+                    device_uuid = '{:03d}--'.format(numdevices) + str(uuid.uuid1()) + '::' + self.hostinfo['uuid']
                     try:
                         devicemodule.Device
                         HASDEVICE = True
@@ -865,7 +864,7 @@ class redvypr(QtCore.QObject):
             
         
         """
-        deviceparsed = data_packets.parse_devicestring(devicestr, local_hostinfo=self.hostinfo)
+        deviceparsed = data_packets.parse_addrstr(devicestr, local_hostinfo=self.hostinfo)
         for d in self.devices:
             flag_name = d['device'].name == deviceparsed['devicename']
             flag_name = flag_name or deviceparsed['deviceexpand']
@@ -1013,7 +1012,7 @@ class redvypr(QtCore.QObject):
         """
         funcname = self.__class__.__name__ + '.get_datastream_providing_device():'
         logger.debug(funcname)
-        datastreamparsed = data_packets.parse_devicestring(datastream, local_hostinfo=self.hostinfo)
+        datastreamparsed = data_packets.parse_addrstr(datastream, local_hostinfo=self.hostinfo)
         devicename = datastreamparsed['devicename']
         #for dev in self.devices:
         #    datastreamlist.extend(dev['statistics']['datastreams'])
@@ -1054,11 +1053,11 @@ class redvypr(QtCore.QObject):
                 datastreams_all.extend(dev['statistics']['datastreams'])
             datastreams_all = list(set(datastreams_all))
             # Parse the devicestring
-            deviceparsed = data_packets.parse_devicestring(device, local_hostinfo=self.hostinfo)
+            deviceparsed = data_packets.parse_addrstr(device, local_hostinfo=self.hostinfo)
             ##print('datastreams',datastreams_all)
             ##print('deviceparsed',deviceparsed)
             for stream in datastreams_all:
-                datastream_parsed = data_packets.parse_devicestring(stream, local_hostinfo=self.hostinfo)
+                datastream_parsed = data_packets.parse_addrstr(stream, local_hostinfo=self.hostinfo)
                 ##print('datastream parsed',datastream_parsed)
                 flag_name = datastream_parsed['devicename'] == deviceparsed['devicename']
                 flag_name = flag_name or deviceparsed['deviceexpand']

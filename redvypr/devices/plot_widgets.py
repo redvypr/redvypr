@@ -9,10 +9,10 @@ import sys
 import yaml
 import copy
 import pyqtgraph
-from redvypr.data_packets import device_in_data, get_keys_from_data, parse_devicestring
+from redvypr.data_packets import device_in_data, get_keys_from_data, parse_addrstr
 from redvypr.gui import redvypr_devicelist_widget
 import redvypr.files as files
-from redvypr.utils import configtemplate_to_dict
+from redvypr.utils import configtemplate_to_dict, configdata, getdata
 from redvypr.device import redvypr_device
 from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
 from copy import deepcopy as dc
@@ -64,7 +64,7 @@ class plotWidget(QtWidgets.QFrame):
         if True:
             logger.debug(funcname + ': Adding plot' + str(config))
             try:
-                title = config['title']
+                title = getdata(config['title'])
             except:
                 title = "Plot {:d}".format(i)
                 
@@ -261,22 +261,21 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         funcname = __name__ + '.init()'
         super(QtWidgets.QFrame, self).__init__()
         #self.setStyleSheet("border : 1px solid lightgray;background-color : lightgray")
-        #self.setStyleSheet("background-color : red")
+        #self.setStyleSheet("backgrounNAd-color : red")
         self.description = 'Device that plots the received data'
         self.config_template = {}
-        self.config_template['type']        = {'type':'str','default': 'numdisp', 'modify': False}
+        self.config_template['type']            = {'type':'str','default': 'numdisp', 'modify': False}
         self.config_template['backgroundcolor'] = {'type': 'str', 'default': 'lightgray'}
-        self.config_template['bordercolor'] = {'type': 'str', 'default': 'lightgray'}
-        self.config_template['fontsize']    = {'type': 'int', 'default': 20}
-        self.config_template['device']      = {'type': 'str', 'default': 'NA'}  # TODO, make a datastream
-        self.config_template['datastream']  = {'type': 'datastream', 'default': 'NA'}  # TODO, make a datastream
-        self.config_template['showtime']    = {'type': 'bool', 'default': True}
-        self.config_template['devicelabel'] = {'type': 'bool', 'default': True,'description':'Display the devicelabel'}
-        self.config_template['useprops']    = {'type': 'bool', 'default': True,
+        self.config_template['bordercolor']     = {'type': 'str', 'default': 'lightgray'}
+        self.config_template['fontsize']        = {'type': 'int', 'default': 20}
+        self.config_template['datastream']      = {'type': 'datastream', 'default': 'NA'}
+        self.config_template['showtime']        = {'type': 'bool', 'default': True}
+        self.config_template['datastreamlabel'] = {'type': 'str', 'options':['full','<key>','<key>/<device>','<key>/<device>:<host>','<key>/<device>:<host>@<addr>'], 'default': '<key>/<device>','description':'Display the datastreamlabel'}
+        self.config_template['useprops']        = {'type': 'bool', 'default': True,
                                                'description': 'Use the properties to display units etc.'}
-        self.config_template['dataformat']  = {'type': 'str', 'default': 'f','description':'The format the data is shown, this will be interpreted as "{:dataformat}".format(data)'}
-        self.config_template['title']       = {'type': 'str', 'default': ''}
-        self.config_template['description'] = self.description
+        self.config_template['dataformat']      = {'type': 'str', 'default': 'f','description':'The format the data is shown, this will be interpreted as "{:dataformat}".format(data)'}
+        self.config_template['title']           = {'type': 'str', 'default': ''}
+        self.config_template['description']     = self.description
         if(config == None): # Create a config from the template
             config = configtemplate_to_dict(self.config_template)
             config = copy.deepcopy(config)
@@ -310,9 +309,9 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
             config['dataformat'] = "+2.5f"
 
         try:
-            config['devicelabel']
+            config['datastreamlabel']
         except:
-            config['devicelabel'] = True
+            config['datastreamlabel'] = True
             
         # Using the properties key in the data
         try:
@@ -335,16 +334,16 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         self.unit = unit
 
 
-        self.titledisp = QtWidgets.QLabel(dc(title))
+        self.titledisp = QtWidgets.QLabel(getdata(title))
         self.titledisp.hide()
 
-        self.devicedisp = QtWidgets.QLabel(dc(self.config['device']))
+        self.devicedisp = QtWidgets.QLabel(getdata(self.config['datastream']))
         self.devicedisp.hide()
 
         self.timedisp = QtWidgets.QLabel(self.get_timestr(0))
         self.timedisp.hide()
 
-        self.unitdisp = QtWidgets.QLabel(dc(unit))
+        self.unitdisp = QtWidgets.QLabel(getdata(unit))
         self.unitdisp.hide()
 
 
@@ -368,10 +367,10 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         """
         funcname = __name__ + '.apply_config():'
         logger.debug(funcname)
-        title = dc(self.config['title'])
+        title = getdata(self.config['title'])
         if (len(title) > 0): # Show title
             self.titledisp.setText(title)
-            self.titledisp.setStyleSheet("font-weight: bold;border : 1px solid {:s};".format(self.config['backgroundcolor']))
+            self.titledisp.setStyleSheet("font-weight: bold;border : 1px solid {:s};".format(getdata(self.config['backgroundcolor'])))
             self.titledisp.setAlignment(QtCore.Qt.AlignCenter)
             self.layout.addWidget(self.titledisp, 0, 0, 1, 2)
             self.titledisp.show()
@@ -383,8 +382,9 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
                 print('problem',e)
                 pass
 
-        if (dc(self.config['devicelabel'])):
-            self.devicedisp.setStyleSheet("border : 1px solid {:s};".format(dc(self.config['backgroundcolor'])))
+        if (getdata(self.config['datastreamlabel'])): # TODO, let the user choose the datastream display options (UUID, key, key + address ...)
+            self.devicedisp.setText(getdata(self.config['datastream']))
+            self.devicedisp.setStyleSheet("border : 1px solid {:s};".format(getdata(self.config['backgroundcolor'])))
             self.devicedisp.setAlignment(QtCore.Qt.AlignCenter)
             self.layout.addWidget(self.devicedisp, 1, 0, 1, 2)
             self.devicedisp.show()
@@ -393,7 +393,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
             self.devicedisp.hide()
 
         if (dc(self.config['showtime'])):
-            self.timedisp.setStyleSheet("border : 1px solid {:s};".format(dc(self.config['backgroundcolor'])))
+            self.timedisp.setStyleSheet("border : 1px solid {:s};".format(getdata(self.config['backgroundcolor'])))
             self.timedisp.setAlignment(QtCore.Qt.AlignCenter)
             self.layout.addWidget(self.timedisp, 2, 0, 1, 2)
             self.timedisp.show()
@@ -402,7 +402,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
             self.timedisp.hide()
 
         if(len(self.unit)>0):
-            self.unitdisp.setStyleSheet("border : 1px solid {:s};".format(dc(self.config['backgroundcolor'])))
+            self.unitdisp.setStyleSheet("border : 1px solid {:s};".format(getdata(self.config['backgroundcolor'])))
             self.layout.addWidget(self.unitdisp, 3, 1)
             self.unitdisp.show()
         else:
@@ -429,9 +429,9 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         tnow = time.time()
         print(funcname + ': got data', data)
         print('config', self.config)
-        datastream = self.config['datastream'].value
-        dataformat = self.config['dataformat'].value
-        parsed_stream = parse_devicestring(datastream)
+        datastream = getdata(self.config['datastream'])
+        dataformat = getdata(self.config['dataformat'])
+        parsed_stream = parse_addrstr(datastream)
         datakey = parsed_stream['datakey']
         print('datastram', datastream)
         print('datakey', datakey)
@@ -447,10 +447,10 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
             datastr = "{0:{dformat}}".format(newdata,dformat=dataformat)
             self.numdisp.setText(datastr)
             
-            if(self.config['showtime'].value):
+            if(getdata(self.config['showtime'])):
                 self.timedisp.setText(self.get_timestr(newt))
             
-            if(self.config['useprops'].value):
+            if(getdata(self.config['useprops'])):
                 # Get the propertykey 
                 propkey = '?' + datakey 
                 try:
@@ -460,7 +460,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
                     
             if(props is not None):
                 try:
-                    unitstr = str(data[propkey]['unit'].value)
+                    unitstr = str(getdata(data[propkey]['unit']))
                     self.unit = unitstr
                 except Exception as e:
                     pass

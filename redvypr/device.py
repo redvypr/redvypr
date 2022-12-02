@@ -18,7 +18,7 @@ import copy
 import uuid
 import multiprocessing
 import threading
-from redvypr.data_packets import compare_datastreams, parse_devicestring, commandpacket
+from redvypr.data_packets import compare_datastreams, parse_addrstr, commandpacket
 
 logging.basicConfig(stream=sys.stderr)
 
@@ -206,7 +206,7 @@ class redvypr_device(QtCore.QObject):
         datastreams = self.redvypr.get_datastreams()
         for datastream_tmp in datastreams:
             if(compare_datastreams(datastream,datastream_tmp)):
-                datastream_parsed = parse_devicestring(datastream_tmp)
+                datastream_parsed = parse_addrstr(datastream_tmp)
                 devicename = datastream_parsed['devicename']
                 self.logger.debug(funcname + ': Found matching datastream from device {:s}'.format(devicename))
                 self.subscribe_device(devicename)

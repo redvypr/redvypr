@@ -77,7 +77,7 @@ class redvypr_qtreewidgetitem(QtWidgets.QTreeWidgetItem):
 
 #
 #
-#
+# LEGACY ?!?!?
 #
 #
 class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
@@ -483,7 +483,7 @@ class redvypr_dictionary_tree(QtWidgets.QTreeWidget):
 
 #
 #
-#
+# LEGACY?!?!
 #
 #
 class redvypr_data_tree(QtWidgets.QTreeWidget):
