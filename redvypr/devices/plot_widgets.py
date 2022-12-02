@@ -9,6 +9,8 @@ import sys
 import yaml
 import copy
 import pyqtgraph
+
+import redvypr.data_packets
 from redvypr.data_packets import device_in_data, get_keys_from_data, parse_addrstr
 from redvypr.gui import redvypr_devicelist_widget
 import redvypr.files as files
@@ -260,6 +262,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
     def __init__(self,config=None):
         funcname = __name__ + '.init()'
         super(QtWidgets.QFrame, self).__init__()
+        self.redvypr_addrtmp = redvypr.data_packets.redvypr_address('tmp')
         #self.setStyleSheet("border : 1px solid lightgray;background-color : lightgray")
         #self.setStyleSheet("backgrounNAd-color : red")
         self.description = 'Device that plots the received data'
@@ -270,7 +273,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         self.config_template['fontsize']        = {'type': 'int', 'default': 20}
         self.config_template['datastream']      = {'type': 'datastream', 'default': 'NA'}
         self.config_template['showtime']        = {'type': 'bool', 'default': True}
-        self.config_template['datastreamlabel'] = {'type': 'str', 'options':['full','<key>','<key>/<device>','<key>/<device>:<host>','<key>/<device>:<host>@<addr>'], 'default': '<key>/<device>','description':'Display the datastreamlabel'}
+        self.config_template['datastreamlabel'] = {'type': 'str', 'options':self.redvypr_addrtmp.get_strtypes(), 'default': '<key>/<device>','description':'Display the datastreamlabel'}
         self.config_template['useprops']        = {'type': 'bool', 'default': True,
                                                'description': 'Use the properties to display units etc.'}
         self.config_template['dataformat']      = {'type': 'str', 'default': 'f','description':'The format the data is shown, this will be interpreted as "{:dataformat}".format(data)'}
@@ -383,7 +386,12 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
                 pass
 
         if (getdata(self.config['datastreamlabel'])): # TODO, let the user choose the datastream display options (UUID, key, key + address ...)
-            self.devicedisp.setText(getdata(self.config['datastream']))
+            self.redvypr_addrconv = redvypr.data_packets.redvypr_address(getdata(self.config['datastream']))
+            print('dffdsf',getdata(self.config['datastreamlabel']))
+            dstr = self.redvypr_addrconv.get_str('<key>')
+            print('Hallohallo',dstr)
+            print('parsed',self.redvypr_addrconv.parsed_addrstr)
+            self.devicedisp.setText('hallo')
             self.devicedisp.setStyleSheet("border : 1px solid {:s};".format(getdata(self.config['backgroundcolor'])))
             self.devicedisp.setAlignment(QtCore.Qt.AlignCenter)
             self.layout.addWidget(self.devicedisp, 1, 0, 1, 2)

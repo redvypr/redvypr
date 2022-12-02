@@ -1,5 +1,6 @@
 import redvypr.data_packets
 
+
 d = []
 d.append('data/rand1:randredvypr')
 d.append('data/rand1')
@@ -15,8 +16,11 @@ d.append('data/randdata_1:*')
 d.append('foo')
 d.append('wrong number::of::@@::')
 
+
+
+
 for datastream in d:
-    d_expanded = redvypr.data_packets.expand_devicestring(datastream)
+    d_expanded = redvypr.data_packets.expand_address_string(datastream)
     d_parsed = redvypr.data_packets.parse_addrstr(datastream)    
     print('datastream orig:\t',datastream)
     print('datastream expanded:\t',d_expanded)
@@ -25,9 +29,14 @@ for datastream in d:
     print('-----')
 
 
+# Test the address
+addr = redvypr.data_packets.redvypr_address('data/randdata_1:redvypr@192.168.178.26::04283d40-ef3c-11ec-ab8f-21d63600f1d0')
+for stype in addr.strtypes:
+    print('Address:',addr.get_str(stype))
 
 
-
+addr2 = redvypr.data_packets.redvypr_address('')
+print('strtpyes',addr2.get_strtypes())
 
 
 

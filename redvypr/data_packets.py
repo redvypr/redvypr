@@ -26,14 +26,30 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket):
     if ('numpacket' not in data.keys()):
         data['numpacket'] = numpacket
 
-# TODO: check if that is still needed
+#
+#
+#
+#
+#
 class redvypr_address():
     """ redvypr address 
     """
     def __init__(self,addrstr,local_hostinfo=None):
         self.addressstr = addrstr
         self.parsed_addrstr = parse_addrstr(addrstr, local_hostinfo=None)
-        self.strtypes = ['<key>','<key>:<device>','<key>/<device>:<host>','<key>/<device>:<host>@<addr>','<key>/<device>:<host>@<addr>::<uuid>']
+        self.strtypes = ['<key>','<key>/<device>','<key>/<device>:<host>','<key>/<device>:<host>@<addr>','<key>/<device>:<host>@<addr>::<uuid>','<key>/<device>::<uuid>']
+        self.strtypes.append('<device>')
+        self.strtypes.append('<host>')
+        self.strtypes.append('<addr>')
+        self.strtypes.append('<uuid>')
+    def get_strtypes(self):
+        """
+        Returns a list of available datastream str types
+        Returns:
+
+        """
+        return self.strtypes
+
     def get_str(self,strtype = 'full'):
         """
 
@@ -43,9 +59,38 @@ class redvypr_address():
         Returns:
 
         """
-        pass
+        funcname = __name__ + '.get_str():'
+        try:
+            if(strtype == 'full'):
+                return self.addressstr
+            elif(strtype == '<key>'):
+                return self.parsed_addrstr['datakey']
+            elif (strtype == '<device>'):
+                return self.parsed_addrstr['devicename']
+            elif (strtype == '<host>'):
+                return self.parsed_addrstr['hostname']
+            elif (strtype == '<addr>'):
+                return self.parsed_addrstr['addr']
+            elif (strtype == '<uuid>'):
+                return self.parsed_addrstr['uuid']
+            elif (strtype == '<key>/<device>'):
+                return self.parsed_addrstr['datakey'] + '/' + self.parsed_addrstr['devicename']
+            elif (strtype == '<key>/<device>:<host>'):
+                return self.parsed_addrstr['datakey'] + '/' + self.parsed_addrstr['devicename'] + ':' + self.parsed_addrstr['hostname']
+            elif (strtype == '<key>/<device>:<host>@<addr>'):
+                return self.parsed_addrstr['datakey'] + '/' + self.parsed_addrstr['devicename'] + ':' + self.parsed_addrstr[
+                    'hostname'] + '@' + self.parsed_addrstr['addr']
+            elif (strtype == '<key>/<device>:<host>@<addr>::<uuid>'):
+                return self.parsed_addrstr['datakey'] + '/' + self.parsed_addrstr['devicename'] + ':' + self.parsed_addrstr[
+                    'hostname'] + '@' + self.parsed_addrstr['addr'] + '::' + self.parsed_addrstr['uuid']
+            elif (strtype == '<key>/<device>::<uuid>'):
+                return self.parsed_addrstr['datakey'] + '/' + self.parsed_addrstr['devicename'] + '::' + self.parsed_addrstr['uuid']
+        except Exception as e:
+            logger.debug(funcname + ':{:s}'.format(str(e)))
+            return 'NA'
 
-        
+        return 'NA2'
+
     def __contains__(self, datadict):
         """ Checks if address is in datadict 
         """
@@ -167,7 +212,8 @@ def parse_addrstr(address_string,local_hostinfo=None):
         if(datakey == '*'):
             datakeyexpanded = True
     else:
-        datakey   = None
+        #datakey   = None
+        datakey   = ''
         devstring = devstring_full
 
     s         = devstring.split('::')
@@ -488,7 +534,8 @@ def device_in_data(devicestring, datapacket, get_devicename = False):
         uuidflag    = (uuid        == datapacket['host']['uuid'])      or device_parsed['uuidexpand']
         localflag   = datapacket['host']['local']                      and device_parsed['local']
         
-        if(datakey is not None):
+        #if(datakey is not None):
+        if (len(datakey) > 0):
             if(datakey in datapacket.keys()):
                 flag_datakey = True
                 key_str = datakey
