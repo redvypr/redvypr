@@ -2,6 +2,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import logging
 import sys
 import redvypr.files as files
+from redvypr.data_packets import parse_addrstr
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -134,12 +135,23 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
         self.datakeylist.clear()
 
         try:
-            self.datakeys = self.redvypr.get_datakeys(devicename)
             self.datastreams = self.redvypr.get_datastreams(devicename)
         except Exception as e:
             print('Hallo', e)
             self.datakeys = []
             self.datastreams = []
+
+        self.datakeys = []
+        for d in self.datastreams:
+            d_parsed = parse_addrstr(d, self.redvypr.hostinfo)
+            datakey = d_parsed['datakey']
+            uuid = d_parsed['uuid']
+            devicename = d_parsed['devicename']
+            hostname = d_parsed['hostname']
+            addr = d_parsed['addr']
+            self.datakeys.append(datakey)
+
+
         for key in self.datakeys:
             # If a conversion to an int works, make quotations around it, otherwise leave it as it is
             try:
@@ -181,6 +193,9 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
         # datakey    = item.text()
         datakey = self.datakeys[index]
         datastream = self.datastreams[index]
+        print('datakeys', self.datakeys)
+        print('datastream', self.datastreams)
+        print('index',index)
         self.datakeycustom.setText(str(datakey))
         self.datastreamcustom.setText(str(datastream))
 

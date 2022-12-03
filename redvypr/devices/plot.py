@@ -452,7 +452,7 @@ class PlotGridWidget(QtWidgets.QWidget):
                 rubberband = d['rubber']
             except:
                 rubberband = ResizableRubberBand(self)
-                rubberband.mouse_pressed.connect(self.rubberband_clicked)
+                rubberband.mouse_pressed_right.connect(self.rubberband_clicked)
                 rubberband.__config_widget__ = d['config']  # Add the configuration widget
                 col = QtGui.QPalette()
                 col.setBrush(QtGui.QPalette.Highlight, QtGui.QBrush(QtCore.Qt.red))
@@ -701,7 +701,8 @@ class ResizableRubberBand(QtWidgets.QWidget):
 
     Source: http://stackoverflow.com/a/19067132/435253
     """
-    mouse_pressed = QtCore.pyqtSignal()  # Signal
+    mouse_pressed_left = QtCore.pyqtSignal()  # Signal
+    mouse_pressed_right = QtCore.pyqtSignal()  # Signal
 
     def __init__(self, parent):
         # super(Device, self).__init__(**kwargs)
@@ -728,8 +729,15 @@ class ResizableRubberBand(QtWidgets.QWidget):
 
     def mousePressEvent(self, event):
         print('Mouse press')
+        if event.button() == QtCore.Qt.LeftButton:
+            print("Left Button Clicked")
+        elif event.button() == QtCore.Qt.RightButton:
+            #do what you want here
+            print("Right Button Clicked")
+            self.mouse_pressed_right.emit()
+
         self.oldPos = event.globalPos()
-        self.mouse_pressed.emit()
+
 
     def mouseMoveEvent(self, event):
         print('Move')

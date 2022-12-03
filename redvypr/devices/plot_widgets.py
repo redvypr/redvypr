@@ -272,7 +272,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         self.config_template['bordercolor']     = {'type': 'str', 'default': 'lightgray'}
         self.config_template['fontsize']        = {'type': 'int', 'default': 20}
         self.config_template['datastream']      = {'type': 'datastream', 'default': 'NA'}
-        self.config_template['showtime']        = {'type': 'bool', 'default': True}
+        self.config_template['timeformat']      = {'type': 'str', 'default': '%d-%b-%Y %H:%M:%S'}
         self.config_template['datastreamlabel'] = {'type': 'str', 'options':self.redvypr_addrtmp.get_strtypes(), 'default': '<key>/<device>','description':'Display the datastreamlabel'}
         self.config_template['useprops']        = {'type': 'bool', 'default': True,
                                                'description': 'Use the properties to display units etc.'}
@@ -302,9 +302,9 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
             config['fontsize'] = 50
 
         try:
-            config['showtime']
+            config['timeformat']
         except:
-            config['showtime'] = True
+            config['timeformat'] = self.config_template['timeformat']['default']
             
         try:
             config['dataformat']
@@ -343,7 +343,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         self.devicedisp = QtWidgets.QLabel(getdata(self.config['datastream']))
         self.devicedisp.hide()
 
-        self.timedisp = QtWidgets.QLabel(self.get_timestr(0))
+        self.timedisp = QtWidgets.QLabel(self.get_timestr(0,format=config['timeformat']))
         self.timedisp.hide()
 
         self.unitdisp = QtWidgets.QLabel(getdata(unit))
@@ -401,8 +401,10 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
             self.layout.removeWidget(self.devicedisp)
             self.devicedisp.hide()
 
-        if (dc(self.config['showtime'])):
+        timefmt = getdata(self.config['timeformat'])
+        if(len(timefmt)>0):
             self.timedisp.setStyleSheet("border : 1px solid {:s};".format(getdata(self.config['backgroundcolor'])))
+            self.timedisp.setText(self.get_timestr(0, format=timefmt))
             self.timedisp.setAlignment(QtCore.Qt.AlignCenter)
             self.layout.addWidget(self.timedisp, 2, 0, 1, 2)
             self.timedisp.show()
@@ -455,9 +457,10 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
 
             datastr = "{0:{dformat}}".format(newdata,dformat=dataformat)
             self.numdisp.setText(datastr)
-            
-            if(getdata(self.config['showtime'])):
-                self.timedisp.setText(self.get_timestr(newt))
+
+            timefmt = getdata(self.config['timeformat'])
+            if(len(timefmt)>0):
+                self.timedisp.setText(self.get_timestr(newt,format=timefmt))
             
             if(getdata(self.config['useprops'])):
                 # Get the propertykey 
