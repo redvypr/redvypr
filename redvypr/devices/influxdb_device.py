@@ -1,6 +1,6 @@
 """
 
-test device
+influxdb device
 
 Configuration options for a network device:
 
@@ -19,15 +19,19 @@ import logging
 import sys
 import threading
 import copy
+import zmq
 from redvypr.device import redvypr_device
 from redvypr.data_packets import check_for_command
+import influxdb_client
 
 
-description = 'A simple test device'
+description = 'Device connects to an influxdb database'
 
 config_template = {}
-config_template['string_send']    = {'type': 'str','default':'Hello World!'}
-config_template['delay_s']        = {'type': 'float','default':2}
+config_template['bucket']      = {'type': 'str','default':'redvypr'}
+config_template['url']         = {'type': 'str','default':"http://localhost:8086"}
+config_template['token']       = {'type': 'str','default':''}
+config_template['datastreams'] = {'type': 'list'}
 config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publish']     = True
 config_template['redvypr_device']['subscribe']   = False

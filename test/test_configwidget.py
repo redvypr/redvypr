@@ -1,7 +1,53 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 import redvypr.gui
 import sys
-from redvypr.utils import configtemplate_to_dict, apply_config_to_dict
+from redvypr.utils import configtemplate_to_dict, apply_config_to_dict,configdata
+import copy
+
+d =configdata([])
+d.value.append(configdata(None))
+copy.deepcopy(configdata(None))
+#copy.deepcopy(d)
+
+config_options = {'type': 'str', 'default': 'test', 'options': ['1', '2', 'zehn'], 'range': [0, 2, 1]}
+
+config_template2 = {}
+config_template2['name'] = 'type2'
+config_template2['address'] = {'type': 'str', 'default': '127.0.0.1'}
+config_template2['port'] = {'type': 'int', 'default': 18196}
+
+config_template3 = {}
+config_template3['name'] = 'type3'
+config_template3['serial'] = {'type': 'str', 'default': 'COM0'}
+config_template3['port'] = {'type': 'int', 'default': 18196}
+
+config_template4 = {}
+config_template4['name'] = 'type4'
+config_template4['listconfig'] = {'type': 'list', 'dynamic': True, 'options': [config_template2, config_template2]}
+
+
+config_template = {}
+config_template['name'] = 'zeromq'
+config_template['address'] = {'type': 'str', 'default': '127.0.0.1'}
+config_template['port'] = {'type': 'int', 'default': 18196}
+config_template['direction'] = {'type': 'str', 'options': ['receive', 'publish'], 'default': 'receive'}
+config_template['data'] = {'type': 'str'}
+config_template['serialize'] = {'type': 'str', 'options': ['yaml', 'str'], 'default': 'yaml'}
+config_template['listconfig'] = {'type': 'list', 'dynamic': True, 'options': [config_template2, config_template3, config_template4]}
+
+config = {}
+config['address'] = '192.168.178.10'
+config['port'] = 10000
+config['listconfig'] = []
+config['listconfig'].append({'name': 'type2'})
+config['listconfig'].append({'name': 'typetest'})
+
+confdict = configtemplate_to_dict(config_template)
+print('config config', confdict)
+apply_config_to_dict(config, confdict)
+# configtree = redvypr.gui.redvypr_dictionary_widget(d)
+# configtree = redvypr.gui.redvypr_data_tree(d)
+print('Config: ', config)
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
@@ -16,42 +62,15 @@ def main():
     widget = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout(widget)
 
-    config_options = {'type': 'str','default':'test','options':['1','2','zehn'],'range':[0,2,1]}
 
-    config_template2 = {}
-    config_template2['name'] = 'type1'
-    config_template2['address'] = {'type': 'str', 'default': '127.0.0.1'}
-    config_template2['port'] = {'type': 'int', 'default': 18196}
-
-    config_template3 = {}
-    config_template3['name'] = 'type2'
-    config_template3['serial'] = {'type': 'str', 'default': 'COM0'}
-    config_template3['port'] = {'type': 'int', 'default': 18196}
-
-    config_template = {}
-    config_template['name']      = 'zeromq'
-    config_template['address']   = {'type': 'str','default':'127.0.0.1'}
-    config_template['port']      = {'type': 'int','default':18196}
-    config_template['direction'] = {'type': 'str', 'options': ['receive', 'publish'],'default':'receive'}
-    config_template['data'] = {'type': 'str'}
-    config_template['serialize'] = {'type': 'str', 'options': ['yaml', 'str'],'default':'yaml'}
-    config_template['listconfig'] = {'type': 'list', 'dynamic':True,'options': [config_template2, config_template2]}
-
-    config = {}
-    config['address'] = '192.168.178.10'
-    config['port'] = 10000
-
-    confdict = configtemplate_to_dict(config_template)
-    print('config config',confdict)
-    apply_config_to_dict(config, confdict)
-    #configtree = redvypr.gui.redvypr_dictionary_widget(d)
-    #configtree = redvypr.gui.redvypr_data_tree(d)
-    print('Config: ',config)
     configtree = redvypr.gui.redvypr_config_widget(config = config,template=config_template)
-    configtree.apply_config(config)
+    #configtree.apply_config(config)
     #configtree = redvypr.gui.redvypr_config_widget(template = config_template,config=config)
     #configtree.apply_config(config)
+    # Set the size
+
     layout.addWidget(configtree)
+    widget.resize(1000, 800)  # TODO, calculate the size of the widget
     widget.show()
     sys.exit(app.exec_())
 

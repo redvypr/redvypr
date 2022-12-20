@@ -11,7 +11,7 @@ import yaml
 import copy
 import os
 from redvypr.device import redvypr_device
-from redvypr.data_packets import get_data, device_in_data, compare_datastreams
+from redvypr.data_packets import get_data, addr_in_data, compare_datastreams
 import redvypr.version
 
 logging.basicConfig(stream=sys.stderr)
@@ -288,7 +288,7 @@ def start(datainqueue,dataqueue,comqueue,statusqueue,config={'filename':'','time
                 maxlen = 0
                 FLAG_save_packet = False
                 for datastream in datastreams:
-                    if(device_in_data(datastream, datapacket)):
+                    if(addr_in_data(datastream, datapacket)):
                         FLAG_save_packet = True
                         data     = get_data(datastream,datapacket)
                         data_tmp = copy.deepcopy(data)

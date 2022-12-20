@@ -26,14 +26,28 @@ class configdata():
     def __init__(self, value):
         self.value = value
 
-    def __reduce__(self):
+    def __reduce_ex__(self,protocol):
         """
-        The function returns only self.value and omits any additional information.
+        The function returns the reduce_ex of the self.value object
 
         Returns:
 
         """
-        return (type(self.value), (self.value, ))
+        return self.value.__reduce_ex__(protocol)
+
+    def __reduce__(self):
+        """
+        The function returns self.value and omits any additional information.
+
+        Returns:
+
+        """
+        return self.value.__reduce__()
+        # Legacy
+        #if self.value == None:
+        #    return (type(self.value), ())
+
+        #return (type(self.value), (self.value,))
 
     def __str__(self):
         rstr = 'configdata: {:s}'.format(str(self.value))
@@ -186,7 +200,23 @@ def get_data_providing_devices(devices,device):
 
 
 
-def __seq_iter__(obj):
+def seq_iter(obj):
+    """
+    To treat dictsionaries and lists equally this functions returns either the keys of dictionararies or the indices of a list.
+    This allows a
+    index = seq_iter(data)
+    for index in data:
+        data[index]
+
+    with index being a key or an int.
+
+    Args:
+        obj:
+
+    Returns:
+        list of indicies
+
+    """
     if isinstance(obj, dict):
         return obj
     elif isinstance(obj, list):
@@ -198,11 +228,11 @@ def __seq_iter__(obj):
 
 def configtemplate_to_dict(template):
     """
-    creates a dictionary out of of a configuration dictionary, the values of the dictionary are configdata objects that store the template information as well
-    a deepcopy of the dict will result in an ordinary dictionary.
+    creates a dictionary out of a configuration dictionary, the values of the dictionary are configdata objects that store the template information as well.
+    A deepcopy of the dict will result in an ordinary dictionary.
     """
     def loop_over_index(c):
-        for index in __seq_iter__(c):
+        for index in seq_iter(c):
             # Check first if we have a configuration dictionary with at least the type
             FLAG_CONFIG_DICT = False
             if(type(c[index]) == dict):
@@ -214,13 +244,17 @@ def configtemplate_to_dict(template):
                     default_type = c[index]['type']
                     default_value = ''
                     FLAG_CONFIG_DICT = True
+                    if(c[index]['type'] == 'list'): # Modifyiable list
+                        default_value = []
 
-            if ((__seq_iter__(c[index]) is not None) and (FLAG_CONFIG_DICT == False)):
+
+            # Iterate over a dictionary or list
+            if ((seq_iter(c[index]) is not None) and (FLAG_CONFIG_DICT == False)):
                 loop_over_index(c[index])
             else:
                 # Check if we have some default values like type etc ...
                 try:
-                    confdata = configdata(default_value)
+                    confdata = configdata(default_value) # Configdata object
                     confdata.template = c[index]
                     c[index] = confdata
                 except Exception as e:
@@ -247,8 +281,114 @@ def apply_config_to_dict(userconfig,configdict):
     """
 
     def loop_over_index(c,cuser):
-        for index in __seq_iter__(c):
-            if (__seq_iter__(c[index]) is not None):
+        for index in seq_iter(cuser): # Loop over the user config
+            #print('Hallo',index,getdata(c[index]))
+            try:
+                ctemp = c[index]
+            except:
+                ctemp = c.value[index]
+
+
+            if (seq_iter(ctemp) is not None):
+                try: # Check if the user data is existing as well
+                    cuser[index]
+                except:
+                    continue
+
+                loop_over_index(ctemp, cuser[index])
+            # Check if this is a configdata list, that can be modified
+            elif(type(getdata(ctemp)) == list):
+                print('List')
+                try:
+                    t = ctemp.template['type']
+                except Exception as e:
+                    print('Exception',e)
+                    t = ''
+
+                if(t == 'list'): # modifiable list, fill the template list with the types
+                    print('Got a list!!!')
+                    # First make the list equally long, the user list is either 0 or longer
+                    numitems = len(getdata(cuser[index]))
+                    dn = numitems - len(ctemp.value)
+                    print('dn',dn)
+                    for i in range(dn):
+                        ctemp.value.append(configdata(None))
+
+                    print('Numitems',numitems)
+                    # Fill the list with the right templates
+                    for i in range(numitems):
+                        try:
+                            nameuser = getdata(cuser[index][i]['name'])
+                        except:
+                            nameuser = ''
+
+                        print('ctemp',ctemp.template)
+                        print('nameuser',nameuser)
+                        FLAG_FOUND_VALID_OPTION = False
+                        for o in ctemp.template['options']:
+                            nameoption = o['name']
+                            print('Nameoption',nameoption)
+                            if(nameoption == nameuser):
+                                print('Found option',o)
+                                print(index,i)
+                                ctemp.value[i] = configtemplate_to_dict(o)
+                                FLAG_FOUND_VALID_OPTION = True
+                                break
+
+                        if(FLAG_FOUND_VALID_OPTION == False):
+                            cuser[index][i] = None
+
+                    print('ctemp', ctemp)
+                    print('ctemp', ctemp)
+                    print('ctemp', ctemp)
+                    # Loop again
+                    loop_over_index(ctemp, cuser[index])
+
+            else:
+                try:
+                    print('a')
+                    ctemp = c.value # If c is a configdata with a list (used for modifiable list)
+                except:
+                    print('b')
+                    ctemp = c
+
+                print('ctemp',ctemp,index,cuser[index])
+                try:  # Check if the user data is existing as well
+                    ctemp[index].value = cuser[index]
+                except: # Is this needed anymore? Everything should be configdata ...
+                    try:  # Check if the user data is existing as well
+                        ctemp[index] = cuser[index]
+                    except:
+                        pass
+                    pass
+
+                print('Ctemp',ctemp[index])
+                try:
+                    print('fdsfd',c.value[index])
+                except:
+                    pass
+
+    print('Configdict before:', configdict)
+    loop_over_index(configdict,userconfig)
+    print('Configdict after:', configdict)
+    return configdict
+
+
+# Legacy, hopefully to be deleted soon
+def apply_config_to_dict_static(userconfig,configdict):
+    """
+    Applies a user configuration to a dictionary created from a template
+    Args:
+        userconfig:
+        configdict:
+
+    Returns:
+        configdict: A with the userconfig modified configuration dictionary
+    """
+
+    def loop_over_index(c,cuser):
+        for index in seq_iter(c):
+            if (seq_iter(c[index]) is not None):
                 try: # Check if the user data is existing as well
                     cuser[index]
                 except:

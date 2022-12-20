@@ -36,12 +36,24 @@ class redvypr_address():
     """
     def __init__(self,addrstr,local_hostinfo=None):
         self.addressstr = addrstr
-        self.parsed_addrstr = parse_addrstr(addrstr, local_hostinfo=None)
+        self.parsed_addrstr = parse_addrstr(addrstr, local_hostinfo=local_hostinfo)
         self.strtypes = ['<key>','<key>/<device>','<key>/<device>:<host>','<key>/<device>:<host>@<addr>','<key>/<device>:<host>@<addr>::<uuid>','<key>/<device>::<uuid>']
         self.strtypes.append('<device>')
         self.strtypes.append('<host>')
         self.strtypes.append('<addr>')
         self.strtypes.append('<uuid>')
+
+        self.datakey      = self.parsed_addrstr['datakey']
+        self.devicename   = self.parsed_addrstr['devicename']
+        self.hostname     = self.parsed_addrstr['hostname']
+        self.addr         = self.parsed_addrstr['addr']
+        self.uuid         = self.parsed_addrstr['uuid']
+        self.deviceexpand = self.parsed_addrstr['deviceexpand']
+        self.hostexpand   = self.parsed_addrstr['hostexpand']
+        self.addrexpand   = self.parsed_addrstr['addrexpand']
+        self.uuidexpand   = self.parsed_addrstr['uuidexpand']
+        self.local        = self.parsed_addrstr['local']
+
     def get_strtypes(self):
         """
         Returns a list of available datastream str types
@@ -91,11 +103,43 @@ class redvypr_address():
 
         return 'NA2'
 
-    def __contains__(self, datadict):
+
+    def __str__(self):
+        astr2 = self.get_str('<key>/<device>:<host>@<addr>')
+        astr = ''
+        astr += 'addrstr: {:s}'.format(self.addressstr)
+        astr += '\n{:s}'.format(astr2)
+        return astr
+
+    def __contains__(self, datapacket):
         """ Checks if address is in datadict 
         """
-        
-        return True
+        print('Hallo, contains')
+        deviceflag = (self.devicename == datapacket['device']) or self.deviceexpand
+        hostflag = (self.hostname == datapacket['host']['hostname']) or self.hostexpand
+        addrflag = (self.addr == datapacket['host']['addr']) or self.addrexpand
+        uuidflag = (self.uuid == datapacket['host']['uuid']) or self.uuidexpand
+        localflag = datapacket['host']['local'] and self.local
+        #print('deviceflag', deviceflag)
+        #print('hostflag', deviceflag)
+        #print('addrflag', addrflag)
+        #print('uuidflag', uuidflag)
+        #print('localflag', localflag)
+        #print('uuidexpand', self.uuid,self.uuidexpand)
+        if(len(self.datakey) > 0):
+            if (self.datakey in datapacket.keys() or self.datakey == '*'):
+                pass
+            else:  # If the key does not fit, return False immidiately
+                return False
+
+        if (deviceflag and localflag and uuidflag):
+            return True
+        elif (deviceflag and hostflag and addrflag and uuidflag):
+            return True
+        elif (deviceflag and uuidflag):
+            return True
+
+        return False
 
 
 def create_data_statistic_dict():
@@ -152,45 +196,59 @@ def expand_address_string(addrstr):
     """ Expands an address string, i.e. it fills non existing entries with wildcards. 
     """
     devstring_full = addrstr
-    # Check first if we have a datastream string
-    if('/' in devstring_full):
-        s = devstring_full.split('/')
-        datakey   = s[0] + '/'
-        devstring = s[1]
-    else:
-        datakey   = ''
-        devstring = devstring_full
 
+    devstring = devstring_full
     local = True
-    # Check first if we have an UUID       
+    # Check first if we have an UUID
+    #'data/randdata_1:redvypr@192.168.178.26::04283d40-ef3c-11ec-ab8f-21d63600f1d0'
+    FLAG_ANY_SEPARATORS = False
     if('::' in devstring): # UUID
-        s         = devstring.split('::')
+        s         = devstring.split('::',1)
         devstring = s[0]
         uuid      = s[1]
         local     = False
+        FLAG_ANY_SEPARATORS = True
     else:
         uuid      = '*'
-        
+
+    if ('@' in devstring):
+        s = devstring.split('@',1)
+        addr = s[1]
+        devstring = s[0]
+        FLAG_ANY_SEPARATORS = True
+    else:
+        addr = '*'
+
     if(':' in devstring): # hostname
         local     = False
-        s = devstring.split(':')
-        devicename = s[0]
-        rest       = s[1]
-        if('@' in rest):
-            hostname = rest.split('@')[0]
-            addr     = rest.split('@')[1]
-        else:
-            hostname = rest
-            addr     = '*' # If only the hostname is defined, addr is expected to be expanded
+        s = devstring.split(':',1)
+        hostname  = s[1]
+        devstring = s[0]
+        FLAG_ANY_SEPARATORS = True
     else:
-        devicename = devstring
-        addr     = '*'
         hostname = '*'
 
-    if(local): # No UUID and addr
-        uuid = 'local'
-    # 'data/randdata_1:redvypr@192.168.178.26::04283d40-ef3c-11ec-ab8f-21d63600f1d0' 
-    address_string = datakey + devicename + ':' + hostname + '@' + addr + '::' + uuid
+    # Check first if we have a datastream string
+    if ('/' in devstring):
+        s = devstring.split('/',1)
+        datakey    = s[0]
+        devicename = s[1]
+        FLAG_ANY_SEPARATORS = True
+    else:
+        devicename = devstring
+        datakey   = '*'
+
+    # Is a sole string a datakey or a devicename
+    #if(FLAG_ANY_SEPARATORS == False) and (sole_devicename == False):
+    if (FLAG_ANY_SEPARATORS == False):
+        devicename = devstring
+        datakey = '*'
+
+
+    #if(local): # No UUID and addr
+    #    uuid = 'local'
+
+    address_string = datakey + '/' + devicename + ':' + hostname + '@' + addr + '::' + uuid
     return address_string
 
 
@@ -205,21 +263,16 @@ def parse_addrstr(address_string,local_hostinfo=None):
     devstring_full = expand_address_string(address_string)
     # Check first if we have a datastream
     datakeyexpanded = False
-    if('/' in devstring_full):
-        s = devstring_full.split('/')
-        datakey   = s[0]
-        devstring = s[1]
-        if(datakey == '*'):
-            datakeyexpanded = True
-    else:
-        #datakey   = None
-        datakey   = ''
-        devstring = devstring_full
+    s = devstring_full.split('/',1)
+    datakey   = s[0]
+    devstring = s[1]
+    if(datakey == '*'):
+        datakeyexpanded = True
 
-    s         = devstring.split('::')
+    s         = devstring.split('::',1)
     devstring = s[0]
     uuid      = s[1]
-    s = devstring.split(':')
+    s = devstring.split(':',1)
     devicename = s[0]
     rest       = s[1]
     hostname = rest.split('@')[0]
@@ -467,8 +520,8 @@ def get_data(datastream,datapacket):
 
 
 
-def device_in_data(devicestring, datapacket, get_devicename = False):
-    """ Checks if the devicestring (or datastream) is in the datapacket. 
+def addr_in_data(devicestring, datapacket, get_devicename = False):
+    """ Checks if the redvypr addr is in the datapacket.
     
     Examples of devicestrings:
         - Devicename: rand1
@@ -484,7 +537,7 @@ def device_in_data(devicestring, datapacket, get_devicename = False):
         
     An example data packet with different devicestrings::
 
-        from redvypr.data_packets import device_in_data
+        from redvypr.data_packets import addr_in_data
         
         data = {'t': 1648623649.1282434, 'data': 1.2414117419163326, '?data': {'unit': 'randomunit', 'type': 'f'}, 'device': 'testranddata', 'host': {'hostname': 'redvyprtest', 'tstart': 1648623606.2900488, 'addr': '192.168.132.74', 'uuid': '07b7a4de-aff7-11ec-9324-135f333bc2f6'}, 'numpacket': 212}
         devicestrings = ['testranddata']
@@ -499,9 +552,9 @@ def device_in_data(devicestring, datapacket, get_devicename = False):
         devicestrings.append('t/*')
         for devicestr in devicestrings:
             print('Devicestring',devicestr)
-            result = device_in_data(devicestr,data)
+            result = addr_in_data(devicestr,data)
             print(result)
-            result = device_in_data(devicestr,data,get_devicename=True)
+            result = addr_in_data(devicestr,data,get_devicename=True)
             print(result)
             print('-------')
     

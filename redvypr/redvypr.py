@@ -1165,9 +1165,18 @@ class redvypr(QtCore.QObject):
         if (type(devicereceiver) == str):
             devicereceiver = self.get_device_from_str(devicereceiver)
 
-        ret = addrm_device_as_data_provider(self.devices, deviceprovider, devicereceiver, remove=remove)
+        #print('Provider',deviceprovider,deviceprovider.name)
+        #print('Receiver', devicereceiver, devicereceiver.name)
+        if (devicereceiver is None) or (deviceprovider is None):
+            return None
+
+        if(devicereceiver.name == deviceprovider.name):
+            raise TypeError('Cannot connect device to itself {:s} and {:s}'.format(str(devicereceiver.name),str(deviceprovider.name)))
+        else:
+            ret = addrm_device_as_data_provider(self.devices, deviceprovider, devicereceiver, remove=remove)
         # Emit a connection signal
-        self.devices_connected.emit(deviceprovider.name, devicereceiver.name)
+        if(ret is not None):
+            self.devices_connected.emit(deviceprovider.name, devicereceiver.name)
         return ret
 
 

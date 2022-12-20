@@ -1,5 +1,12 @@
 import redvypr.data_packets
 
+data_packet = {'data': 'Hello World!', 'device': 'test_device_0', 'host': {'hostname': 'redvypr', 'tstart': 1670422195.4220772, 'addr': '192.168.178.26', 'uuid': '20221207150955.421856-93328248922693-013', 'local': True}, 't': 1670422215.8423817, 'numpacket': 3}
+print('Expanding address strings:')
+print(redvypr.data_packets.expand_address_string('test'))
+print(redvypr.data_packets.expand_address_string('data/randdata_1:redvypr@192.168.178.26::04283d40-ef3c-11ec-ab8f-21d63600f1d0'))
+print(redvypr.data_packets.expand_address_string('data/randdata_1::04283d40-ef3c-11ec-ab8f-21d63600f1d0'))
+print(redvypr.data_packets.expand_address_string('data:test/randata'))
+
 
 d = []
 d.append('data/rand1:randredvypr')
@@ -19,10 +26,11 @@ d.append('wrong number::of::@@::')
 
 
 
-for datastream in d:
+for i,datastream in enumerate(d):
+    print('i',i)
+    print('datastream orig:\t', datastream)
     d_expanded = redvypr.data_packets.expand_address_string(datastream)
     d_parsed = redvypr.data_packets.parse_addrstr(datastream)    
-    print('datastream orig:\t',datastream)
     print('datastream expanded:\t',d_expanded)
     print('datastream parsed:\t',d_parsed)    
     print('-----')
@@ -37,6 +45,22 @@ for stype in addr.strtypes:
 
 addr2 = redvypr.data_packets.redvypr_address('')
 print('strtpyes',addr2.get_strtypes())
+
+addr3 = redvypr.data_packets.redvypr_address('test')
+print(addr3)
+
+print('Test if address is in data_packet')
+#addr4 = redvypr.data_packets.redvypr_address('data/*::20221207150955.421856-93328248922693-013peter')
+addr4 = redvypr.data_packets.redvypr_address('data/*')
+inpacket = data_packet in addr4
+print('Addr4',addr4)
+print('in packet:',addr4,inpacket)
+
+
+
+
+
+
 
 
 

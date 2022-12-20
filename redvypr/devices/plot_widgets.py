@@ -11,7 +11,7 @@ import copy
 import pyqtgraph
 
 import redvypr.data_packets
-from redvypr.data_packets import device_in_data, get_keys_from_data, parse_addrstr
+from redvypr.data_packets import addr_in_data, get_keys_from_data, parse_addrstr
 from redvypr.gui import redvypr_devicelist_widget
 import redvypr.files as files
 from redvypr.utils import configtemplate_to_dict, configdata, getdata
@@ -37,20 +37,59 @@ logger.setLevel(logging.DEBUG)
 #
 #
 #
-class plotWidget(QtWidgets.QFrame):
+class redvypr_graph_widget(QtWidgets.QFrame):
     """ Widget is plotting realtimedata using the pyqtgraph functionality
     This widget can be configured with a configuration dictionary 
     """
-    def __init__(self,config):
+    def __init__(self,config=None):
         funcname = __name__ + '.init()'
         super(QtWidgets.QFrame, self).__init__()
+        self.description = 'Device that plots the received data'
+
+        self.config_template_line = {}
+        self.config_template_line['buffersize'] = {'type': 'int', 'default': 2000,'description':'The size of the buffer holding the data of the line'}
+        self.config_template_line['name'] = {'type': 'str', 'default': '', 'description': 'The name of the line, this is shown in the legend'}
+        self.config_template_line['x'] = {'type': 'datastream', 'default': 'NA',
+                                          'description': 'The x-data of the plot'}
+        self.config_template_line['y'] = {'type': 'datastream', 'default': 'NA',
+                                          'description': 'The y-data of the plot'}
+        self.config_template_line['color'] = {'type': 'color', 'default': 'r',
+                                          'description': 'The color of the plot'}
+        self.config_template_line['linewidth'] = {'type': 'int', 'default': 1,
+                                              'description': 'The linewidth of the line'}
+        self.config_template = {}
+        self.config_template['type'] = {'type': 'str', 'default': 'graph', 'modify': False}
+        self.config_template['backgroundcolor'] = {'type': 'color', 'default': 'lightgray'}
+        self.config_template['bordercolor'] = {'type': 'color', 'default': 'lightgray'}
+
+        self.config_template['useprops'] = {'type': 'bool', 'default': True,
+                                            'description': 'Use the properties to display units etc.'}
+        self.config_template['datetick'] = {'type': 'bool', 'default': True,
+                                            'description': 'x-axis is a date axis'}
+
+        self.config_template['title'] = {'type': 'str', 'default': ''}
+        self.config_template['xlabel'] = {'type': 'str', 'default': ''}
+        self.config_template['ylabel'] = {'type': 'str', 'default': ''}
+        l1 = copy.deepcopy(self.config_template_line)
+        l2 = copy.deepcopy(self.config_template_line)
+        self.config_template['lines'] = [l1,l2]
+        self.config_template['description'] = self.description
+
+
+        if(config == None): # Create a config from the template
+            config = configtemplate_to_dict(self.config_template)
+            config = copy.deepcopy(config)
+            self.config = config
+
+        logger.debug('plot widget config {:s}'.format(str(config)))
+
         try:
-            backcolor = config['background']
+            backcolor = config['backgroundcolor']
         except:
             backcolor = 'lightgray'
             
         try:
-            bordercolor = config['background']
+            bordercolor = config['bordercolor']
         except:
             bordercolor = 'black'
             
@@ -59,9 +98,25 @@ class plotWidget(QtWidgets.QFrame):
         except:
             config['useprops'] = True
             
-        self.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(backcolor,bordercolor))        
+        self.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(backcolor,bordercolor))
         self.layout = QtWidgets.QVBoxLayout(self)
         self.config = config
+        self.create_widgets()
+        self.apply_config()
+
+
+    def create_widgets(self):
+
+
+        """
+        Creates the configuration
+
+        Returns:
+
+        """
+        funcname = __name__ + '.create_widgets()'
+        config = self.config
+        print('Hallo!, Creating widgets')
         i = 0
         if True:
             logger.debug(funcname + ': Adding plot' + str(config))
@@ -92,19 +147,9 @@ class plotWidget(QtWidgets.QFrame):
                 axis = pyqtgraph.DateAxisItem(orientation='bottom')
                 plot.setAxisItems({"bottom": axis})
                 
-            # If a xlabel is defined                
-            try:
-                plot.setLabel('left', config['ylabel'] )
-            except:
-                pass
-            
-            # If a ylabel is defined                
-            try:
-                plot.setLabel('bottom', config['xlabel'] )
-            except:
-                pass
-                        
-            plot_dict = {'widget':plot,'lines':{}}
+
+
+            plot_dict = {'widget': plot, 'lines': []}
             # Add a lines with the actual data to the graph
             for iline, line in enumerate(config['lines']):
                 logger.debug(funcname + ':Adding a line to the plot:' + str(line))
@@ -118,31 +163,19 @@ class plotWidget(QtWidgets.QFrame):
                 try:
                     name = line['name']
                 except:
-                    name = line['device']
-                    
+                    name = 'line {:d}'.format(iline)
+
                 lineplot = pyqtgraph.PlotDataItem( name = name)
                 
                 try:
-                    device = line['device']
-                except:
-                    logger.warning(funcname + ': Could not find a device to plot, omitting entry:' + str(line))
-                    continue
-                    
-                
-                try:    
-                    plot_dict['lines'][device]
-                except Exception as e:
-                    plot_dict['lines'][device] = []
-                    
-                try:
                     x = line['x']
                 except:
-                    x = ""
+                    x = "t"
                     
                 try:
                     y = line['y']
                 except:
-                    y = ""
+                    y = "numpacket"
                     
                 try:
                     linewidth = line['linewidth']
@@ -157,95 +190,139 @@ class plotWidget(QtWidgets.QFrame):
                     color = QtGui.QColor(255,10,10)
                     
                 # Configuration of the line plot
-                lineconfig = {'device':device,'x':x,'y':y,'linewidth':linewidth,'color':color}
-                #lineconfig = {'device':testranddata,'x':'t','y':'data','linewidth':2,'color':QtGui.QColor(255,0,0)}
+                lineconfig = {'x':x,'y':y,'linewidth':linewidth,'color':color}
                 # Add the line and the configuration to the lines list
                 line_dict = {'line':lineplot,'config':lineconfig,'x':xdata,'y':ydata}
-                # The lines are sorted according to the devicenames, each device has a list of lines attached to it
-                plot_dict['lines'][lineconfig['device']].append(line_dict)
+
+                plot_dict['lines'].append(line_dict)
                 plot.addItem(lineplot)
                 # Configuration 
                 
                 
         self.plot_dict = plot_dict
+
+    def apply_config(self):
+        funcname = __name__ + '.apply_config()'
+        print('Hallo!, Apply config!')
+        print('config:', self.config)
+        plot = self.plot_dict['widget']
+        # Title
+        title = getdata(self.config['title'])
+        plot.setTitle(title)
+        # Label
+        # If a xlabel is defined
+        try:
+            plot.setLabel('left', getdata(self.config['ylabel']))
+        except:
+            pass
+
+        # If a ylabel is defined
+        try:
+            plot.setLabel('bottom', getdata(self.config['xlabel']))
+        except:
+            pass
+
+        # Update the line configuration
+        for iline, line in enumerate(self.config['lines']):
+            try:
+                lineconfig = self.plot_dict['lines'][iline]['config']
+                x = getdata(line['x'])
+                y = getdata(line['y'])
+                xaddr = redvypr.data_packets.redvypr_address(x)
+                yaddr = redvypr.data_packets.redvypr_address(y)
+                lineconfig['x'] = x
+                lineconfig['y'] = y
+                lineconfig['xaddr'] = xaddr
+                lineconfig['yaddr'] = yaddr
+
+                print('Set pen')
+                linewidget = self.plot_dict['lines'][iline]['line']  # The line to plot
+                color = getdata(self.config['lines'][iline]['color'])
+                linewidth = getdata(self.config['lines'][iline]['linewidth'])
+                pen = pyqtgraph.mkPen(color, width=linewidth)
+                linewidget.setPen(pen)
+            except Exception as e:
+                logger.debug('Exception config lines: {:s}'.format(str(e)))
+
+
+
+        print('Apply')
         
     def clear_buffer(self):
         """ Clears the buffer of all lines
         """
         # Check if the device is to be plotted
         
-        devicenames  = self.plot_dict['lines'].keys()
-        for devicename in devicenames:
-            for ind,line_dict in enumerate(self.plot_dict['lines'][devicename]): # Loop over all lines of the device to plot
-                line      = line_dict['line'] # The line to plot
-                config    = line_dict['config'] # The line to plot
-                line_dict['x'][:] = np.NaN 
-                line_dict['y'][:] = np.NaN 
+        for ind,line_dict in enumerate(self.plot_dict['lines']): # Loop over all lines of the device to plot
+            line      = line_dict['line'] # The line to plot
+            config    = line_dict['config'] # The line to plot
+            line_dict['x'][:] = np.NaN
+            line_dict['y'][:] = np.NaN
         
     def update_plot(self,data):
         """ Updates the plot based on the given data
         """
-        #print('Hallo',data)
+        print('Hallo',data)
         funcname = self.__class__.__name__ + '.update_plot():'
         tnow = time.time()
-        print(funcname + 'got data',data)
+        print(funcname + 'got data',data,tnow)
         # Always update
         update = True
-        try:
+        #try:
+        if True:
             # Loop over all plot axes
             if True:
                 plot_dict = self.plot_dict
                 # Check if the device is to be plotted
-                for devicename_plot in plot_dict['lines'].keys(): # Loop over all lines of the devices to plot
-                    if(device_in_data(devicename_plot,data)):
+                for line_dict in plot_dict['lines']:  # Loop over all lines of the devices to plot
+                    print('line dict',line_dict)
+                    xaddr = line_dict['config']['xaddr']
+                    yaddr = line_dict['config']['yaddr']
+                    print('adresses:',xaddr,yaddr)
+                    if(data in xaddr) and (data in yaddr):
                         pw        = plot_dict['widget'] # The plot widget
-                        for ind,line_dict in enumerate(plot_dict['lines'][devicename_plot]): # Loop over all lines of the device to plot
-                            line      = line_dict['line'] # The line to plot
-                            config    = line_dict['config'] # The line to plot
-                            x         = line_dict['x'] # The line to plot
-                            y         = line_dict['y'] # The line to plot
-                            # data can be a single float or a list
-                            newx = data[config['x']]
-                            newy = data[config['y']]
-                            if(type(newx) is not list):
-                                newx = [newx]
-                                newy = [newy]
-                            
-                            for inew in range(len(newx)): # TODO this can be optimized using indices instead of a loop
-                                x         = np.roll(x,-1)       
-                                y         = np.roll(y,-1)
-                                x[-1]    = float(newx[inew])
-                                y[-1]    = float(newy[inew])
-                                line_dict['x']  = x
-                                line_dict['y']  = y
-                            if(ind==0): # Use the first line for the ylabel
-                                if('useprops' in self.config.keys()):
-                                    if(self.config['useprops']):
-                                        propkey = '?' + config['y']
-                                        try:
-                                            unitstr ='[' + data[propkey]['unit'] + ']'
-                                            pw.setLabel('left', unitstr)
-                                        except:
-                                            pass
-                                            
-                                        
-                                        
+                        line      = line_dict['line'] # The line to plot
+                        config    = line_dict['config'] # The line to plot
+                        xdata     = line_dict['x'] # The line to plot
+                        ydata         = line_dict['y'] # The line to plot
+                        # data can be a single float or a list
+                        newx = data[xaddr.datakey]
+                        newy = data[yaddr.datakey]
+                        if(type(newx) is not list):
+                            newx = [newx]
+                            newy = [newy]
+
+                        for inew in range(len(newx)): # TODO this can be optimized using indices instead of a loop
+                            xdata         = np.roll(xdata,-1)
+                            ydata         = np.roll(ydata,-1)
+                            xdata[-1]    = float(newx[inew])
+                            ydata[-1]    = float(newy[inew])
+                            line_dict['x']  = xdata
+                            line_dict['y']  = ydata
+
+                        if('useprops' in self.config.keys()):
+                            if(self.config['useprops']):
+                                propkey = '?' + yaddr.datakey
+                                try:
+                                    unitstr ='[' + data[propkey]['unit'] + ']'
+                                    pw.setLabel('left', unitstr)
+                                except:
+                                    pass
+
+
+
             if(update):
-                if True:
-                    for devicename in plot_dict['lines'].keys():
-                        if True:
-                            for line_dict in plot_dict['lines'][devicename]:
-                                line      = line_dict['line'] # The line to plot
-                                config    = line_dict['config'] # The line to plot
-                                x         = line_dict['x'] # The line to plot
-                                y         = line_dict['y'] # The line to plot  
-                                line.setData(x=x,y=y,pen = pyqtgraph.mkPen(config['color'], width=config['linewidth']))
-                                
-                                #pw.setXRange(min(x[:ind]),max(x[:ind]))        
-    
-        except Exception as e:
-            #print(funcname + 'Exception:' + str(e))
-            logger.debug(funcname + 'Exception:' + str(e))
+                for line_dict in plot_dict['lines']:  # Loop over all lines of the devices to plot
+                    line      = line_dict['line'] # The line to plot
+                    config    = line_dict['config'] # The line to plot
+                    x         = line_dict['x'] # The line to plot
+                    y         = line_dict['y'] # The line to plot
+                    line.setData(x=x,y=y)
+                    #pw.setXRange(min(x[:ind]),max(x[:ind]))
+
+        #except Exception as e:
+        #    #print(funcname + 'Exception:' + str(e))
+        #    logger.debug(funcname + 'Exception:' + str(e))
 
 
 
@@ -268,8 +345,8 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         self.description = 'Device that plots the received data'
         self.config_template = {}
         self.config_template['type']            = {'type':'str','default': 'numdisp', 'modify': False}
-        self.config_template['backgroundcolor'] = {'type': 'str', 'default': 'lightgray'}
-        self.config_template['bordercolor']     = {'type': 'str', 'default': 'lightgray'}
+        self.config_template['backgroundcolor'] = {'type': 'color', 'default': 'lightgray'}
+        self.config_template['bordercolor']     = {'type': 'color', 'default': 'lightgray'}
         self.config_template['fontsize']        = {'type': 'int', 'default': 20}
         self.config_template['datastream']      = {'type': 'datastream', 'default': 'NA'}
         self.config_template['timeformat']      = {'type': 'str', 'default': '%d-%b-%Y %H:%M:%S'}
@@ -446,8 +523,8 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         datakey = parsed_stream['datakey']
         print('datastram', datastream)
         print('datakey', datakey)
-        print('in data',device_in_data(datastream, data))
-        if(device_in_data(datastream,data)):
+        print('in data',addr_in_data(datastream, data))
+        if(addr_in_data(datastream,data)):
             # data can be a single float or a list
             newdata = data[datakey]
             newt    = data['t']

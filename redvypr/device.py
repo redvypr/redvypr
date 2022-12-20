@@ -32,7 +32,7 @@ class redvypr_device(QtCore.QObject):
         """
         """
         super(redvypr_device, self).__init__()
-        self.publish     = publish   # publishes data, a typical device is doing this
+        self.publish     = publish   # publishes data, a typical sensor is doing this
         self.subscribe   = subscribe  # subscribing data, a typical datalogger is doing this
         self.datainqueue = datainqueue
         self.dataqueue   = dataqueue        

@@ -10,9 +10,11 @@ import yaml
 import copy
 import pyqtgraph
 import qtawesome as qta
-from redvypr.data_packets import device_in_data, get_keys_from_data
+
+import redvypr.data_packets
+from redvypr.data_packets import addr_in_data, get_keys_from_data
 from redvypr.gui import redvypr_devicelist_widget, redvypr_config_widget
-from redvypr.devices.plot_widgets import redvypr_numdisp_widget
+from redvypr.devices.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget
 import redvypr.files as files
 from redvypr.device import redvypr_device
 from redvypr.data_packets import do_data_statistics, create_data_statistic_dict, check_for_command, parse_addrstr
@@ -35,35 +37,6 @@ config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publish'] = False
 config_template['redvypr_device']['subscribe'] = True
 config_template['redvypr_device']['description'] = description
-
-
-def get_bare_graph_config():
-    """ Returns a valid bare configuration for a graph plot
-    """
-    plotdict_bare = {}
-    plotdict_bare['type'] = 'graph'
-    plotdict_bare['title'] = 'Graph title'
-    plotdict_bare['name'] = 'Graph'
-    plotdict_bare['location'] = [0, 0, 0, 0]
-    plotdict_bare['xlabel'] = 'x label'
-    plotdict_bare['ylabel'] = 'y label'
-    plotdict_bare['datetick'] = True
-    plotdict_bare['lines'] = []
-    plotdict_bare['lines'].append(get_bare_graph_line_config())
-    # plotdict_bare['lines'].append(get_bare_graph_line_config())
-    return plotdict_bare
-
-
-def get_bare_graph_line_config():
-    line_bare = {}
-    line_bare['device'] = 'add devicename here'
-    line_bare['name'] = 'this is a line'
-    line_bare['x'] = 't'
-    line_bare['y'] = 'data'
-    line_bare['linewidth'] = 2
-    line_bare['color'] = [255, 0, 0]
-    line_bare['buffersize'] = 5000
-    return line_bare
 
 
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
@@ -94,7 +67,7 @@ class Device(redvypr_device):
         super(Device, self).__init__(**kwargs)
         self.connect_devices()
         self.start = start
-        print('Hallo!!', self.config)
+        print('Hallo hallo hallo!!', self.config)
 
     def connect_devices(self):
         """ Connects devices, if they are not already connected
@@ -108,17 +81,28 @@ class Device(redvypr_device):
             print('plot',plot)
             if (str(getdata(plot['type'])).lower() == 'numdisp'):
                 datastream = getdata(plot['datastream'])
-
                 parsed_stream = parse_addrstr(datastream)
                 devicename = parsed_stream['devicename']
-                plot_devices.append(devicename)
+                if (devicename == self.name) or (devicename == '*'):
+                    pass
+                else:
+                    plot_devices.append(devicename)
 
             elif (str(plot['type']).lower() == 'graph'):
                 for l in plot['lines']:  # Loop over all lines in a plot
-                    name = l['device']
-                    plot_devices.append(name)
+                    xname = redvypr.data_packets.redvypr_address(l['x']).devicename
+                    yname = redvypr.data_packets.redvypr_address(l['y']).devicename
+                    print('xname',xname)
+                    print('yname',yname)
+                    if (xname == self.name) or (xname == '*'):
+                        pass
+                    else:
+                        plot_devices.append(xname)
+                    if (yname == self.name) or (yname == '*'):
+                        pass
+                    else:
+                        plot_devices.append(yname)
 
-                    # Add the device if not already done so
         if True:
             print('Plot devices',plot_devices,self.name)
             for name in plot_devices:
@@ -165,13 +149,26 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.status = {}
         self.status['last_update'] = time.time()
         self.init_configwidget()
+        self.apply_config()
+
+    def apply_config(self):
+        """
+        Applies the configuration, i.e. adding plots to the gridwidget
+        Returns:
+
+        """
+        #self.addPlot(addwidget_called, self.__add_location__[0], self.__add_location__[1],
+        #             self.__add_location__[2], self.__add_location__[3])
+        funcname = __name__ + '.apply_config()'
+        logger.debug(funcname)
+        print('Config',self.config)
 
     def init_configwidget(self):
         self.add_button = QtWidgets.QPushButton('Add Plot')
         self.add_button.clicked.connect(self.add_plot_clicked)
         self.add_button.setCheckable(True)
         self.addplot_combo = QtWidgets.QComboBox()  # (buticon, 'Plot')
-        self.addplot_combo.addItem('Plot')
+        self.addplot_combo.addItem('Graph')
         buticon = qta.icon('mdi6.chart-bell-curve-cumulative')  # Plot
         self.addplot_combo.setItemIcon(0, buticon)
         self.addplot_combo.addItem('Numeric Display')
@@ -211,6 +208,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.displaywidget.__add_plotwidget__ = RandomDataWidget
         elif ('num' in plottype.lower()):
             self.displaywidget.__add_plotwidget__ = redvypr_numdisp_widget
+        elif ('graph' in plottype.lower()):
+            self.displaywidget.__add_plotwidget__ = redvypr_graph_widget
         else:
             print('Not implemented yet: {:s}'.format(plottype))
 
@@ -337,8 +336,10 @@ class PlotGridWidget(QtWidgets.QWidget):
                     b.resize_signal.connect(self.resize_all_rubberbands)
 
         #testw = RandomDataWidget()
-        testw = redvypr_numdisp_widget()
-        self.addPlot(testw, 1, 1, 2, 2)
+        #testw = redvypr_numdisp_widget()
+        testg = redvypr_graph_widget()
+        #self.addPlot(testw, 1, 1, 2, 2)
+        self.addPlot(testg, 0, 3, 5, 3)
 
         self.rubberband = QtWidgets.QRubberBand(
             QtWidgets.QRubberBand.Rectangle, self)
@@ -520,9 +521,13 @@ class PlotGridWidget(QtWidgets.QWidget):
 
     def addPlot(self, plotwidget, j, i, height, width):
         """
-
+        Adds a plot to the gridwidget.
         Args:
-            plotwidget:
+            plotwidget: The widget to be added
+            j:
+            i:
+            height:
+            width:
 
         Returns:
 
@@ -533,6 +538,9 @@ class PlotGridWidget(QtWidgets.QWidget):
         config_widget.setWindowIcon(QtGui.QIcon(_icon_file))
         config_widget.config_changed_flag.connect(self.config_changed)
         config_widget.plotwidget = plotwidget
+
+        # Set the size
+        config_widget.resize(1000, 800) # TODO, calculate the size of the widget
         #plotwidget.config = config_widget.config
         plotwidget.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         # Add the configuration widget to the plotwidget

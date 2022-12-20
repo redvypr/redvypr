@@ -689,7 +689,8 @@ class redvypr_config_widget(QtWidgets.QWidget):
         logger.debug(funcname)
         self.configtree.clear()
         self.configtree.create_qtree()
-        logger.debug(funcname)
+        self.configtree.expandAll()
+        self.configtree.resizeColumnToContents(0)
 
     def load_config(self):
         funcname = __name__ + '.load_config():'
@@ -706,7 +707,9 @@ class redvypr_config_widget(QtWidgets.QWidget):
         fname_open = QtWidgets.QFileDialog.getSaveFileName(self, 'Save file', '',"YAML files (*.yaml);; All files (*)")
         if(len(fname_open[0]) > 0):
             logger.info(funcname + 'Save file file {:s}'.format(fname_open[0]))
+            print('Saving', self.configtree.data)
             config = copy.deepcopy(self.configtree.data)
+            print('Deepcopy', config)
             fname = fname_open[0]
             with open(fname, 'w') as yfile:
                 yaml.dump(config, yfile)
@@ -724,14 +727,33 @@ class redvypr_config_widget(QtWidgets.QWidget):
 
     def __open_config_gui(self,item):
         """
-
+        After an item was clicked this function checks if there is a configuration gui for that type of data, if yes open that configuration
+        widget
         Returns:
 
         """
+        funcname = __name__ + '.__open_config_gui():'
         data = item.__data__
-        if((type(data) == list) or (type(data) == dict)):
-            return
+        try:
+            options = item.__options__
+        except:
+            options = None
 
+        try:
+            modifiable = item.__modifiable__
+        except:
+            modifiable = False
+
+        try:
+            modifiable_parent = item.__parent__.__modifiable__
+        except:
+            modifiable_parent = False
+        print(funcname, type(data),modifiable,modifiable_parent)
+
+        if (type(data) == dict) and modifiable_parent: # A template dictionary item in a modifiable list
+            pass
+        elif((type(data) == list) or (type(data) == dict)) and not(modifiable):
+            return
 
         try:
             dtype = data.template['type']
@@ -746,12 +768,17 @@ class redvypr_config_widget(QtWidgets.QWidget):
 
         item.__datatype__ = dtype
         self.remove_input_widgets()
-        if(dtype == 'int'):
+        if (dtype == 'dict'):
+            print('Dictdictdict')
+            self.config_widget_dict(item)
+        elif(dtype == 'int'):
             self.config_widget_number(item,'int')
         elif (dtype == 'float'):
             self.config_widget_number(item,'float')
         elif (dtype == 'datastream'):
             self.config_widget_datastream(item)
+        elif (dtype == 'color'):
+            self.config_widget_color(item)
         elif (dtype == 'bool'):
             #
             data.template['options'] = ['False','True']
@@ -765,6 +792,10 @@ class redvypr_config_widget(QtWidgets.QWidget):
             except Exception as e:
                 print('Exception',e)
                 self.config_widget_str(item)
+        elif (dtype == 'list'): # Modifiable list
+            self.config_widget_list_combo(item)
+            print('List')
+
 
     def __config_widget_button(self):
         """
@@ -780,28 +811,71 @@ class redvypr_config_widget(QtWidgets.QWidget):
             dtype = item.__datatype__
             logger.debug(funcname + 'Apply')
             data = None
-            if (dtype == 'datastream'):
-                print('Datastream')
+            btntext = btn.text()
+            try:
+                flag_remove = btn.__removeitem__
+            except:
+                flag_remove = False
+            print('btntext',btntext)
+            if (flag_remove):  # Add/Remove from list
+                logger.debug(funcname + ' Removing item')
+                item.__dataparent__.remove(item.__data__)
+                self.reload_config()
+                return
+            if (dtype == 'list'):  # Add/Remove from list
+                print('Add to list')
+                templatename = str(self.__configwidget_input.currentText())
+                template_options = item.__options__
+                template_names = []
+                newitem_dict = redvypr.utils.configdata(None)
+                for t in template_options:
+                    if(templatename == t['name']):
+                        print('Found template')
+                        configdict = redvypr.utils.configtemplate_to_dict(t)
+                        newitem_dict = configdict
+
+
+                print(item.__dataparent__[item.__dataindex__])
+
+
+                print('tname',templatename)
+                template = item.__dataparent__[item.__dataindex__].template
+                print('Template')
+                item.__dataparent__[item.__dataindex__].value.append(newitem_dict)
+                print(item.__dataparent__[item.__dataindex__])
+                self.reload_config()
+                #config = self.get_config()
+                #self.config_changed_flag.emit()
+                #self.config_changed.emit(config)
+                return
+
+            elif (dtype == 'datastream'):
                 data = self.__configwidget_input.datastreamcustom.text()
 
+            elif (dtype == 'color'):
+                color = self.__configwidget_input.currentColor()
+                rgb = color.getRgb()
+                data = list(rgb)
+
+            # TODO, check what kind of widget we have here
             if (data is None):
                 try:
-                    data = self.__configwidget_input.value()
+                    data = self.__configwidget_input.value() # Works for int/float spinboxes
                 except:
                     pass
 
             if (data is None):
                 try:
-                    data = self.__configwidget_input.text()
+                    data = self.__configwidget_input.text() # Works for lineedits (str)
                 except:
                     pass
             if (data is None):
                 try:
-                    data = str(self.__configwidget_input.currentText())
+                    data = str(self.__configwidget_input.currentText()) # Works for comboboxes (combo_str)
                 except Exception as e:
                     pass
 
-                print('DATADATATAT',data,type(data),dtype,bool(data))
+                #print('DATADATATAT',data,type(data),dtype,bool(data))
                 # Test if we have a bool
                 if(dtype == 'bool'):
                     data = data.lower() == 'True'
@@ -820,6 +894,34 @@ class redvypr_config_widget(QtWidgets.QWidget):
         config = self.get_config()
         self.config_changed_flag.emit()
         self.config_changed.emit(config)
+
+    def config_widget_color(self, item):
+        """
+                Lets the user choose a color
+                Args:
+                    item:
+
+                Returns:
+
+                """
+        self.remove_input_widgets()
+
+        self.__configwidget_int = QtWidgets.QWidget()
+        self.__layoutwidget_int = QtWidgets.QVBoxLayout(self.__configwidget_int)
+        # The color dialog
+        colorwidget = QtWidgets.QColorDialog(self.__configwidget_int)
+        colorwidget.setOptions(QtWidgets.QColorDialog.NoButtons| QtWidgets.QColorDialog.DontUseNativeDialog)
+        colorwidget.setWindowFlags(QtCore.Qt.Widget)
+        self.__configwidget_input = colorwidget
+        self.__layoutwidget_int.addWidget(colorwidget)
+        # Buttons
+        self.__configwidget_apply = QtWidgets.QPushButton('Apply')
+        self.__configwidget_apply.clicked.connect(self.__config_widget_button)
+        self.__configwidget_apply.item = item
+        self.configgui_layout.addWidget(self.__configwidget_int)
+        self.__layoutwidget_int.addWidget(self.__configwidget_apply)
+        colorwidget.open()
+        #self.__layoutwidget_int.addWidget(self.w)
 
     def config_widget_datastream(self, item):
         """
@@ -928,6 +1030,63 @@ class redvypr_config_widget(QtWidgets.QWidget):
         self.configgui_layout.addWidget(self.__configwidget_int)
         self.__layoutwidget_int.addRow(self.__configwidget_apply)
 
+    def config_widget_list_combo(self, item):
+        """
+        Config widget for a modifiable list
+        Args:
+            item:
+
+        Returns:
+
+        """
+        index = item.__dataindex__
+        data = item.__data__
+        template_options = item.__options__
+        options = []
+        for t in template_options:
+            options.append(t['name'])
+        print('Options',options)
+        self.remove_input_widgets()
+        self.__configwidget_int = QtWidgets.QWidget()
+        self.__layoutwidget_int = QtWidgets.QFormLayout(self.__configwidget_int)
+        self.__configwidget_input = QtWidgets.QComboBox()
+        for option in options:
+            self.__configwidget_input.addItem(option)
+        self.__layoutwidget_int.addRow(QtWidgets.QLabel('Options for {:s}'.format(index)))
+        self.__layoutwidget_int.addRow(QtWidgets.QLabel('Value'), self.__configwidget_input)
+        # Buttons
+        self.__configwidget_apply = QtWidgets.QPushButton('Add')
+        self.__configwidget_apply.clicked.connect(self.__config_widget_button)
+        self.__configwidget_apply.item = item
+        self.configgui_layout.addWidget(self.__configwidget_int)
+        self.__layoutwidget_int.addRow(self.__configwidget_apply)
+
+
+    def config_widget_dict(self, item):
+        """
+        Config widget to edit (at the moment remove) a dictionary item
+        Args:
+            item:
+
+        Returns:
+
+        """
+
+        funcname = __name__ + '.config_widget_dict(): '
+        logger.debug(funcname)
+        index = item.__dataindex__
+        data  = item.__data__
+        self.remove_input_widgets()
+        self.__configwidget_int = QtWidgets.QWidget()
+        self.__layoutwidget_int = QtWidgets.QFormLayout(self.__configwidget_int)
+        # Buttons
+        self.__configwidget_apply = QtWidgets.QPushButton('Remove')
+        self.__configwidget_apply.clicked.connect(self.__config_widget_button)
+        self.__configwidget_apply.item = item
+        self.__configwidget_apply.__removeitem__ = True
+        self.configgui_layout.addWidget(self.__configwidget_int)
+        self.__layoutwidget_int.addRow(self.__configwidget_apply)
+
 
     def remove_input_widgets(self):
         """
@@ -958,12 +1117,15 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
         super().__init__()
 
         logger.debug(funcname + str(data))
+        self.setExpandsOnDoubleClick(False)
         # make only the first column editable
         #self.setEditTriggers(self.NoEditTriggers)
-        self.datatypes = [['int', int], ['float', float], ['str', str],['list',list],['dict',dict]] # The datatypes
-        self.datatypes_dict = {} # Make a dictionary out of it, thats easier to reference
-        for d in self.datatypes:
-            self.datatypes_dict[d[0]] = d[1]
+        # Legacy to be removed soon
+        if False:
+            self.datatypes = [['int', int], ['float', float], ['str', str],['list',list],['dict',dict]] # The datatypes
+            self.datatypes_dict = {} # Make a dictionary out of it, thats easier to reference
+            for d in self.datatypes:
+                self.datatypes_dict[d[0]] = d[1]
         #self.header().setVisible(False)
         self.setHeaderLabels(['Variable','Value','Type'])
         self.data     = data
@@ -980,12 +1142,7 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
         #self.itemCollapsed.connect(self.resize_view)
 
     def seq_iter(self,obj):
-        if isinstance(obj, dict):
-            return obj
-        elif isinstance(obj, list):
-            return range(0,len(obj))
-        else:
-            return None
+        return redvypr.utils.seq_iter(obj)
 
     def create_item(self, index, data, parent):
         """
@@ -998,14 +1155,22 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
         Returns:
 
         """
-        sequence = self.seq_iter(data)
+        print('data0',data)
+        try:
+            sequence = self.seq_iter(data.value)
+        except:
+            sequence = self.seq_iter(data)
+        print('Data',sequence)
         if(sequence == None): # Check if we have an item that is something with data (not a list or dict)
             data_value = data.value  # Data is a configdata object, or list or dict
             print('Data value',str(data_value),data)
+            flag_configdata = False
             try:
                 typestr = data.template['type']
+                flag_configdata = True
             except:
                 typestr = data_value.__class__.__name__
+
 
             item       = QtWidgets.QTreeWidgetItem([str(index), str(data_value),typestr])
             #item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)  # editable
@@ -1014,6 +1179,7 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
             item.__dataindex__    = index
             item.__datatypestr__  = typestr
             item.__parent__       = parent
+
             index_child = self.item_is_child(parent, item)
             if  index_child == None:  # Check if the item is already existing, if no add it
                 parent.addChild(item)
@@ -1021,15 +1187,40 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
                 parent.child(index_child).setText(1,str(data_value))
 
         else:
-            typestr = data.__class__.__name__
+            print('loop')
+            try:
+                datatmp = data.value
+            except:
+                datatmp = data
+
+
+            typestr = datatmp.__class__.__name__
+            flag_modifiable = False
+            try:
+                options = data.template['options'] # Modifiable list (configdata with value "list")
+                flag_modifiable = True
+            except:
+                options = None
+
             if(index is not None):
                 indexstr = index
             newparent = QtWidgets.QTreeWidgetItem([str(index), '',typestr])
             item = newparent
-            newparent.__data__         = data
+            newparent.__data__         = datatmp
             newparent.__dataindex__    = index
             newparent.__datatypestr__  = typestr
             newparent.__parent__       = parent
+            newparent.__modifiable__   = flag_modifiable
+            try:
+                newparent.__dataparent__ = parent.__data__  # can be used to reference the data (and change it)
+            except:
+                newparent.__dataparent__ = None
+            if (options is not None):  # Modifiable list
+                print('List item, adding options')
+                newparent.__options__ = options
+
+
+
             index_child = self.item_is_child(parent, newparent)
             if index_child == None:  # Check if the item is already existing, if no add it
                 parent.addChild(newparent)
@@ -1037,7 +1228,7 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
                 newparent = parent.child(index_child)
 
             for newindex in sequence:
-                newdata = data[newindex]
+                newdata = datatmp[newindex]
                 self.create_item(newindex,newdata,newparent)
 
     def item_is_child(self,parent,child):
@@ -1088,6 +1279,6 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
 
     def resize_view(self):
         pass
-        äprint('resize ...')
+        print('resize ...')
         #self.resizeColumnToContents(0)
 
