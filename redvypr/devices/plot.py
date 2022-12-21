@@ -14,7 +14,7 @@ import qtawesome as qta
 import redvypr.data_packets
 from redvypr.data_packets import addr_in_data, get_keys_from_data
 from redvypr.gui import redvypr_devicelist_widget, redvypr_config_widget
-from redvypr.devices.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget
+from redvypr.devices.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
 import redvypr.files as files
 from redvypr.device import redvypr_device
 from redvypr.data_packets import do_data_statistics, create_data_statistic_dict, check_for_command, parse_addrstr
@@ -31,7 +31,7 @@ logger.setLevel(logging.DEBUG)
 
 description = 'Device that plots the received data'
 config_template = {}
-config_template['plots'] = []
+config_template['plots'] = {'type': 'list', 'dynamic': True, 'options': [config_template_numdisp, config_template_graph]}
 config_template['dt_update'] = {'type':'float','default':0.25}
 config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publish'] = False

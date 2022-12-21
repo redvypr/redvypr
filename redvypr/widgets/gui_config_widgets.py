@@ -648,7 +648,7 @@ class redvypr_config_widget(QtWidgets.QWidget):
         except:
             configname = 'config'
 
-
+        self.template = template
         conftemplate = configtemplate_to_dict(template=template)
         if(config is not None):
             logger.debug(funcname + 'Applying config to template')
@@ -687,10 +687,7 @@ class redvypr_config_widget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.reload_config():'
         logger.debug(funcname)
-        self.configtree.clear()
-        self.configtree.create_qtree()
-        self.configtree.expandAll()
-        self.configtree.resizeColumnToContents(0)
+        self.configtree.reload_data(self.config)
 
     def load_config(self):
         funcname = __name__ + '.load_config():'
@@ -699,8 +696,14 @@ class redvypr_config_widget(QtWidgets.QWidget):
             logger.info(funcname + 'Opening file {:s}'.format(fname_open[0]))
             fname = fname_open[0]
             with open(fname, 'r') as yfile:
-                data_yaml = yaml.safe_load(yfile)
-                self.apply_config(data_yaml)
+                config = yaml.safe_load(yfile)
+                conftemplate = configtemplate_to_dict(template=self.template)
+                if (config is not None):
+                    logger.debug(funcname + 'Applying config to template')
+                    self.config = redvypr.utils.apply_config_to_dict(config, conftemplate)
+                    print('New config:',config)
+                    self.reload_config()
+
 
     def save_config(self):
         funcname = __name__ + '.save_config():'
@@ -821,6 +824,9 @@ class redvypr_config_widget(QtWidgets.QWidget):
                 logger.debug(funcname + ' Removing item')
                 item.__dataparent__.remove(item.__data__)
                 self.reload_config()
+                config = self.get_config()
+                self.config_changed_flag.emit()
+                self.config_changed.emit(config)
                 return
             if (dtype == 'list'):  # Add/Remove from list
                 print('Add to list')
@@ -829,7 +835,7 @@ class redvypr_config_widget(QtWidgets.QWidget):
                 template_names = []
                 newitem_dict = redvypr.utils.configdata(None)
                 for t in template_options:
-                    if(templatename == t['name']):
+                    if(templatename == t['template_name']):
                         print('Found template')
                         configdict = redvypr.utils.configtemplate_to_dict(t)
                         newitem_dict = configdict
@@ -844,9 +850,9 @@ class redvypr_config_widget(QtWidgets.QWidget):
                 item.__dataparent__[item.__dataindex__].value.append(newitem_dict)
                 print(item.__dataparent__[item.__dataindex__])
                 self.reload_config()
-                #config = self.get_config()
-                #self.config_changed_flag.emit()
-                #self.config_changed.emit(config)
+                config = self.get_config()
+                self.config_changed_flag.emit()
+                self.config_changed.emit(config)
                 return
 
             elif (dtype == 'datastream'):
@@ -1044,7 +1050,7 @@ class redvypr_config_widget(QtWidgets.QWidget):
         template_options = item.__options__
         options = []
         for t in template_options:
-            options.append(t['name'])
+            options.append(t['template_name'])
         print('Options',options)
         self.remove_input_widgets()
         self.__configwidget_int = QtWidgets.QWidget()
@@ -1120,12 +1126,6 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
         self.setExpandsOnDoubleClick(False)
         # make only the first column editable
         #self.setEditTriggers(self.NoEditTriggers)
-        # Legacy to be removed soon
-        if False:
-            self.datatypes = [['int', int], ['float', float], ['str', str],['list',list],['dict',dict]] # The datatypes
-            self.datatypes_dict = {} # Make a dictionary out of it, thats easier to reference
-            for d in self.datatypes:
-                self.datatypes_dict[d[0]] = d[1]
         #self.header().setVisible(False)
         self.setHeaderLabels(['Variable','Value','Type'])
         self.data     = data
@@ -1140,6 +1140,13 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
         self.create_qtree()
         #self.itemExpanded.connect(self.resize_view)
         #self.itemCollapsed.connect(self.resize_view)
+
+    def reload_data(self,data):
+        self.data = data
+        self.clear()
+        self.create_qtree()
+        self.expandAll()
+        self.resizeColumnToContents(0)
 
     def seq_iter(self,obj):
         return redvypr.utils.seq_iter(obj)

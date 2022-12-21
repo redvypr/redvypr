@@ -37,6 +37,41 @@ logger.setLevel(logging.DEBUG)
 #
 #
 #
+description_graph = 'Device that plots the received data'
+config_template_graph_line = {}
+config_template_graph_line['template_name'] = 'Line'
+config_template_graph_line['buffersize'] = {'type': 'int', 'default': 2000,
+                                           'description': 'The size of the buffer holding the data of the line'}
+config_template_graph_line['name'] = {'type': 'str', 'default': '',
+                                     'description': 'The name of the line, this is shown in the legend'}
+config_template_graph_line['x'] = {'type': 'datastream', 'default': 'NA',
+                                  'description': 'The x-data of the plot'}
+config_template_graph_line['y'] = {'type': 'datastream', 'default': 'NA',
+                                  'description': 'The y-data of the plot'}
+config_template_graph_line['color'] = {'type': 'color', 'default': 'r',
+                                      'description': 'The color of the plot'}
+config_template_graph_line['linewidth'] = {'type': 'int', 'default': 1,
+                                          'description': 'The linewidth of the line'}
+config_template_graph = {}
+config_template_graph['template_name'] = 'Realtime graph'
+config_template_graph['type'] = {'type': 'str', 'default': 'graph', 'modify': False}
+config_template_graph['backgroundcolor'] = {'type': 'color', 'default': 'lightgray'}
+config_template_graph['bordercolor'] = {'type': 'color', 'default': 'lightgray'}
+
+config_template_graph['useprops'] = {'type': 'bool', 'default': True,
+    'description': 'Use the properties to display units etc.'}
+config_template_graph['datetick'] = {'type': 'bool', 'default': True,
+    'description': 'x-axis is a date axis'}
+
+config_template_graph['title'] = {'type': 'str', 'default': ''}
+config_template_graph['xlabel'] = {'type': 'str', 'default': ''}
+config_template_graph['ylabel'] = {'type': 'str', 'default': ''}
+l1 = copy.deepcopy(config_template_graph_line)
+l2 = copy.deepcopy(config_template_graph_line)
+config_template_graph['lines'] = {'type': 'list', 'default': [l1], 'dynamic': True,
+                                 'options': [config_template_graph_line]}
+#config_template_graph['description'] = description_graph
+
 class redvypr_graph_widget(QtWidgets.QFrame):
     """ Widget is plotting realtimedata using the pyqtgraph functionality
     This widget can be configured with a configuration dictionary 
@@ -44,37 +79,8 @@ class redvypr_graph_widget(QtWidgets.QFrame):
     def __init__(self,config=None):
         funcname = __name__ + '.init()'
         super(QtWidgets.QFrame, self).__init__()
-        self.description = 'Device that plots the received data'
-
-        self.config_template_line = {}
-        self.config_template_line['buffersize'] = {'type': 'int', 'default': 2000,'description':'The size of the buffer holding the data of the line'}
-        self.config_template_line['name'] = {'type': 'str', 'default': '', 'description': 'The name of the line, this is shown in the legend'}
-        self.config_template_line['x'] = {'type': 'datastream', 'default': 'NA',
-                                          'description': 'The x-data of the plot'}
-        self.config_template_line['y'] = {'type': 'datastream', 'default': 'NA',
-                                          'description': 'The y-data of the plot'}
-        self.config_template_line['color'] = {'type': 'color', 'default': 'r',
-                                          'description': 'The color of the plot'}
-        self.config_template_line['linewidth'] = {'type': 'int', 'default': 1,
-                                              'description': 'The linewidth of the line'}
-        self.config_template = {}
-        self.config_template['type'] = {'type': 'str', 'default': 'graph', 'modify': False}
-        self.config_template['backgroundcolor'] = {'type': 'color', 'default': 'lightgray'}
-        self.config_template['bordercolor'] = {'type': 'color', 'default': 'lightgray'}
-
-        self.config_template['useprops'] = {'type': 'bool', 'default': True,
-                                            'description': 'Use the properties to display units etc.'}
-        self.config_template['datetick'] = {'type': 'bool', 'default': True,
-                                            'description': 'x-axis is a date axis'}
-
-        self.config_template['title'] = {'type': 'str', 'default': ''}
-        self.config_template['xlabel'] = {'type': 'str', 'default': ''}
-        self.config_template['ylabel'] = {'type': 'str', 'default': ''}
-        l1 = copy.deepcopy(self.config_template_line)
-        l2 = copy.deepcopy(self.config_template_line)
-        self.config_template['lines'] = [l1,l2]
-        self.config_template['description'] = self.description
-
+        self.description = description_graph
+        self.config_template = config_template_graph
 
         if(config == None): # Create a config from the template
             config = configtemplate_to_dict(self.config_template)
@@ -333,6 +339,25 @@ class redvypr_graph_widget(QtWidgets.QFrame):
 #
 #
 #
+description_numdisp = 'Device that plots the received data'
+rdvpraddr = redvypr.data_packets.redvypr_address('tmp')
+config_template_numdisp = {}
+config_template_numdisp['name'] = 'Numeric display'
+config_template_numdisp['type'] = {'type': 'str', 'default': 'numdisp', 'modify': False}
+config_template_numdisp['backgroundcolor'] = {'type': 'color', 'default': 'lightgray'}
+config_template_numdisp['bordercolor'] = {'type': 'color', 'default': 'lightgray'}
+config_template_numdisp['fontsize'] = {'type': 'int', 'default': 20}
+config_template_numdisp['datastream'] = {'type': 'datastream', 'default': 'NA'}
+config_template_numdisp['timeformat'] = {'type': 'str', 'default': '%d-%b-%Y %H:%M:%S'}
+config_template_numdisp['datastreamlabel'] = {'type': 'str', 'options': rdvpraddr.get_strtypes(),
+                                           'default': '<key>/<device>', 'description': 'Display the datastreamlabel'}
+config_template_numdisp['useprops'] = {'type': 'bool', 'default': True,
+                                    'description': 'Use the properties to display units etc.'}
+config_template_numdisp['dataformat'] = {'type': 'str', 'default': 'f',
+                                      'description': 'The format the data is shown, this will be interpreted as "{:dataformat}".format(data)'}
+config_template_numdisp['title'] = {'type': 'str', 'default': ''}
+config_template_numdisp['description'] = description_numdisp
+
 class redvypr_numdisp_widget(QtWidgets.QFrame):
     """ Widget is plotting realtimedata on a display
     """
@@ -342,20 +367,9 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         self.redvypr_addrtmp = redvypr.data_packets.redvypr_address('tmp')
         #self.setStyleSheet("border : 1px solid lightgray;background-color : lightgray")
         #self.setStyleSheet("backgrounNAd-color : red")
-        self.description = 'Device that plots the received data'
-        self.config_template = {}
-        self.config_template['type']            = {'type':'str','default': 'numdisp', 'modify': False}
-        self.config_template['backgroundcolor'] = {'type': 'color', 'default': 'lightgray'}
-        self.config_template['bordercolor']     = {'type': 'color', 'default': 'lightgray'}
-        self.config_template['fontsize']        = {'type': 'int', 'default': 20}
-        self.config_template['datastream']      = {'type': 'datastream', 'default': 'NA'}
-        self.config_template['timeformat']      = {'type': 'str', 'default': '%d-%b-%Y %H:%M:%S'}
-        self.config_template['datastreamlabel'] = {'type': 'str', 'options':self.redvypr_addrtmp.get_strtypes(), 'default': '<key>/<device>','description':'Display the datastreamlabel'}
-        self.config_template['useprops']        = {'type': 'bool', 'default': True,
-                                               'description': 'Use the properties to display units etc.'}
-        self.config_template['dataformat']      = {'type': 'str', 'default': 'f','description':'The format the data is shown, this will be interpreted as "{:dataformat}".format(data)'}
-        self.config_template['title']           = {'type': 'str', 'default': ''}
-        self.config_template['description']     = self.description
+        self.description = description_numdisp
+        self.config_template = config_template_numdisp
+
         if(config == None): # Create a config from the template
             config = configtemplate_to_dict(self.config_template)
             config = copy.deepcopy(config)
