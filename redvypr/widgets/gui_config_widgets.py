@@ -766,13 +766,13 @@ class redvypr_config_widget(QtWidgets.QWidget):
             else:
                 dtype = data.__class__.__name__
 
-            print('dtpye',dtype)
+            #print('dtpye',dtype)
             #dtype = 'str'
 
         item.__datatype__ = dtype
         self.remove_input_widgets()
         if (dtype == 'dict'):
-            print('Dictdictdict')
+            #print('Dictdictdict')
             self.config_widget_dict(item)
         elif(dtype == 'int'):
             self.config_widget_number(item,'int')
@@ -797,7 +797,7 @@ class redvypr_config_widget(QtWidgets.QWidget):
                 self.config_widget_str(item)
         elif (dtype == 'list'): # Modifiable list
             self.config_widget_list_combo(item)
-            print('List')
+            #print('List')
 
 
     def __config_widget_button(self):
@@ -819,7 +819,7 @@ class redvypr_config_widget(QtWidgets.QWidget):
                 flag_remove = btn.__removeitem__
             except:
                 flag_remove = False
-            print('btntext',btntext)
+            #print('btntext',btntext)
             if (flag_remove):  # Add/Remove from list
                 logger.debug(funcname + ' Removing item')
                 item.__dataparent__.remove(item.__data__)
@@ -829,26 +829,26 @@ class redvypr_config_widget(QtWidgets.QWidget):
                 self.config_changed.emit(config)
                 return
             if (dtype == 'list'):  # Add/Remove from list
-                print('Add to list')
+                #print('Add to list')
                 templatename = str(self.__configwidget_input.currentText())
                 template_options = item.__options__
                 template_names = []
                 newitem_dict = redvypr.utils.configdata(None)
                 for t in template_options:
                     if(templatename == t['template_name']):
-                        print('Found template')
+                        #print('Found template')
                         configdict = redvypr.utils.configtemplate_to_dict(t)
                         newitem_dict = configdict
 
 
-                print(item.__dataparent__[item.__dataindex__])
+                #print(item.__dataparent__[item.__dataindex__])
 
 
-                print('tname',templatename)
+                #print('tname',templatename)
                 template = item.__dataparent__[item.__dataindex__].template
-                print('Template')
+                #print('Template')
                 item.__dataparent__[item.__dataindex__].value.append(newitem_dict)
-                print(item.__dataparent__[item.__dataindex__])
+                #print(item.__dataparent__[item.__dataindex__])
                 self.reload_config()
                 config = self.get_config()
                 self.config_changed_flag.emit()
@@ -1162,15 +1162,15 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
         Returns:
 
         """
-        print('data0',data)
+       # print('data0',data)
         try:
             sequence = self.seq_iter(data.value)
         except:
             sequence = self.seq_iter(data)
-        print('Data',sequence)
+        #print('Data',sequence)
         if(sequence == None): # Check if we have an item that is something with data (not a list or dict)
             data_value = data.value  # Data is a configdata object, or list or dict
-            print('Data value',str(data_value),data)
+            #print('Data value',str(data_value),data)
             flag_configdata = False
             try:
                 typestr = data.template['type']
@@ -1194,7 +1194,7 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
                 parent.child(index_child).setText(1,str(data_value))
 
         else:
-            print('loop')
+            #print('loop')
             try:
                 datatmp = data.value
             except:
@@ -1223,7 +1223,7 @@ class redvypr_config_tree(QtWidgets.QTreeWidget):
             except:
                 newparent.__dataparent__ = None
             if (options is not None):  # Modifiable list
-                print('List item, adding options')
+                #print('List item, adding options')
                 newparent.__options__ = options
 
 

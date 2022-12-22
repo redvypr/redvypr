@@ -156,53 +156,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
 
 
             plot_dict = {'widget': plot, 'lines': []}
-            # Add a lines with the actual data to the graph
-            for iline, line in enumerate(config['lines']):
-                logger.debug(funcname + ':Adding a line to the plot:' + str(line))
-                try:
-                    buffersize = line['buffersize']
-                except:
-                    buffersize = self.buffersizestd
-                    
-                xdata = np.zeros(buffersize) * np.NaN
-                ydata = np.zeros(buffersize) * np.NaN
-                try:
-                    name = line['name']
-                except:
-                    name = 'line {:d}'.format(iline)
 
-                lineplot = pyqtgraph.PlotDataItem( name = name)
-                
-                try:
-                    x = line['x']
-                except:
-                    x = "t"
-                    
-                try:
-                    y = line['y']
-                except:
-                    y = "numpacket"
-                    
-                try:
-                    linewidth = line['linewidth']
-                except:
-                    linewidth = 1
-                    
-                try:
-                    colors = line['color']
-                    color = QtGui.QColor(colors[0],colors[1],colors[2])
-                except Exception as e:
-                    logger.debug('No color found:' + str(e))
-                    color = QtGui.QColor(255,10,10)
-                    
-                # Configuration of the line plot
-                lineconfig = {'x':x,'y':y,'linewidth':linewidth,'color':color}
-                # Add the line and the configuration to the lines list
-                line_dict = {'line':lineplot,'config':lineconfig,'x':xdata,'y':ydata}
-
-                plot_dict['lines'].append(line_dict)
-                plot.addItem(lineplot)
-                # Configuration 
                 
                 
         self.plot_dict = plot_dict
@@ -228,9 +182,62 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         except:
             pass
 
-        # Update the line configuration
-        for iline, line in enumerate(self.config['lines']):
+        plot_dict = self.plot_dict
+        config = self.config
+        # Add lines with the actual data to the graph
+        for iline, line in enumerate(getdata(config['lines'])):
+            print('Line',line)
+            logger.debug(funcname + ':Adding a line to the plot:' + str(line))
             try:
+                buffersize = getdata(line['buffersize'])
+            except:
+                buffersize = self.buffersizestd
+
+            xdata = np.zeros(buffersize) * np.NaN
+            ydata = np.zeros(buffersize) * np.NaN
+            try:
+                name = getdata(line['name'])
+            except:
+                name = 'line {:d}'.format(iline)
+
+            lineplot = pyqtgraph.PlotDataItem(name=name)
+
+            try:
+                x = getdata(line['x'])
+            except:
+                x = "t"
+
+            try:
+                y = getdata(line['y'])
+            except:
+                y = "numpacket"
+
+            try:
+                linewidth = getdata(line['linewidth'])
+            except:
+                linewidth = 1
+
+            try:
+                colors = getdata(line['color'])
+                color = QtGui.QColor(colors[0], colors[1], colors[2])
+            except Exception as e:
+                logger.debug('No color found:' + str(e))
+                color = QtGui.QColor(255, 10, 10)
+
+            # Configuration of the line plot
+            lineconfig = {'x': x, 'y': y, 'linewidth': linewidth, 'color': color}
+            # Add the line and the configuration to the lines list
+            line_dict = {'line': lineplot, 'config': lineconfig, 'x': xdata, 'y': ydata}
+
+            plot_dict['lines'].append(line_dict)
+            plot.addItem(lineplot)
+            # Configuration
+
+
+        # Update the line configuration
+        for iline, line in enumerate(getdata(self.config['lines'])):
+            try:
+                print('Line',line,iline)
                 lineconfig = self.plot_dict['lines'][iline]['config']
                 x = getdata(line['x'])
                 y = getdata(line['y'])
@@ -242,9 +249,12 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 lineconfig['yaddr'] = yaddr
 
                 print('Set pen')
-                linewidget = self.plot_dict['lines'][iline]['line']  # The line to plot
-                color = getdata(self.config['lines'][iline]['color'])
-                linewidth = getdata(self.config['lines'][iline]['linewidth'])
+                linewidget = getdata(self.plot_dict['lines'][iline])['line']  # The line to plot
+                print('Set pen 1')
+                color = getdata(getdata(self.config['lines'])[iline]['color'])
+                print('Set pen 2')
+                linewidth = getdata(getdata(self.config['lines'])[iline]['linewidth'])
+                print('Set pen 3')
                 pen = pyqtgraph.mkPen(color, width=linewidth)
                 linewidget.setPen(pen)
             except Exception as e:

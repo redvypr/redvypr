@@ -268,17 +268,15 @@ def configtemplate_to_dict(template):
                     default_value = ''
                     FLAG_CONFIG_DICT = True
                     if(c[index]['type'] == 'list'): # Modifiable list
-                        print('List')
+                        #print('List')
                         if ('default' in c[index].keys()): # The default values are templates and need to be converted to dicts
                             default_value_tmp = c[index]['default']
                             default_value = []
                             if (type(default_value_tmp) == list):
                                 for d in default_value_tmp:
-                                    print(d)
                                     if(valid_template(d)):
                                         default_value.append(configtemplate_to_dict(d))
                                     else:
-                                        print(d)
                                         raise TypeError("The list entry should be a valid redvypr template")
 
 
@@ -290,7 +288,7 @@ def configtemplate_to_dict(template):
 
             # Iterate over a dictionary or list
             if ((seq_iter(c[index]) is not None) and (FLAG_CONFIG_DICT == False)):
-                print('Loop')
+                #print('Loop')
                 loop_over_index(c[index])
             else:
                 # Check if we have some default values like type etc ...
@@ -324,9 +322,9 @@ def apply_config_to_dict(userconfig,configdict):
     def loop_over_index(c,cuser):
         for index in seq_iter(cuser): # Loop over the user config
             #print('Hallo',index,getdata(c[index]))
-            print('c', c, index)
+            #print('c', c, index)
             indices = seq_iter(c)
-            print('c', c, index,indices)
+            #print('c', c, index,indices)
             #print(index in indices)
             # Try to get the same index in the template
             try:
@@ -339,7 +337,7 @@ def apply_config_to_dict(userconfig,configdict):
 
 
             if (seq_iter(ctemp) is not None):
-                print('Hallo',cuser,index)
+                #print('Hallo',cuser,index)
                 try: # Check if the user data is existing as well
                     cuser[index]
                     if (seq_iter(cuser[index]) is not None):
