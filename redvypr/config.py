@@ -98,7 +98,8 @@ class configNumber(numbers.Integral):
     numeric type dunder methods just delegate to this current number.
 
     Note this is a fork of
-    https://github.com/markrages/python_mutable_number that includes deepcopy functionality
+    https://github.com/markrages/python_mutable_number
+    that includes a deepcopy functionality, i.e. returns the original data type if a copy.deepcopy() is called.
     """
 
     # Basic customization
