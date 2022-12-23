@@ -2,6 +2,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import redvypr.gui
 import sys
 from redvypr.utils import configtemplate_to_dict, apply_config_to_dict,configdata
+import redvypr.config
 import copy
 
 d =configdata([])
@@ -42,12 +43,14 @@ config['listconfig'] = []
 config['listconfig'].append({'name': 'type2'})
 config['listconfig'].append({'template_name': 'typetest'})
 
-confdict = configtemplate_to_dict(config_template)
-print('config config', confdict)
-apply_config_to_dict(config, confdict)
-# configtree = redvypr.gui.redvypr_dictionary_widget(d)
-# configtree = redvypr.gui.redvypr_data_tree(d)
+
+
+
+#confdict = configtemplate_to_dict(config_template)
+#print('config config', confdict)
+#apply_config_to_dict(config, confdict)
 print('Config: ', config)
+print('Type',type(config['port']))
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
@@ -62,8 +65,9 @@ def main():
     widget = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout(widget)
 
-
-    configtree = redvypr.gui.redvypr_config_widget(config = config,template=config_template)
+    #configtree = redvypr.gui.configQTreeWidget(data=config)
+    configtree = redvypr.gui.configWidget()
+    #configtree = redvypr.gui.redvypr_config_widget(config = config,template=config_template)
     #configtree.apply_config(config)
     #configtree = redvypr.gui.redvypr_config_widget(template = config_template,config=config)
     #configtree.apply_config(config)

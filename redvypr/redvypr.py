@@ -531,6 +531,11 @@ class redvypr(QtCore.QObject):
         """
         Function adds a device to redvypr
 
+        Configuration of the device can have options:
+        template and config:
+        template:
+        config:
+
         Args:
             devicemodulename:
             deviceconfig: A dictionary with the configuration, this is filled by i.e. a yaml file with the configuration or if clicked in the gui just the name of the device

@@ -240,9 +240,14 @@ def seq_iter(obj):
         list of indicies
 
     """
-    if isinstance(obj, dict):
+    try: # Test if we have an UserDict or UserList or configDict or configList
+        obj_test = obj.data
+    except:
+        obj_test = obj
+
+    if isinstance(obj_test, dict):
         return obj
-    elif isinstance(obj, list):
+    elif isinstance(obj_test, list):
         return range(0,len(obj))
     else:
         return None

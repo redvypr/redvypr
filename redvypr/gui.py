@@ -6,7 +6,7 @@ import yaml
 from PyQt5 import QtWidgets, QtCore, QtGui
 from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices,configtemplate_to_dict
 from redvypr.device import redvypr_device
-from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, redvypr_dictionary_widget, redvypr_qtreewidgetitem, redvypr_dictionary_tree, redvypr_data_tree, redvypr_config_widget
+from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, redvypr_config_widget, configQTreeWidget, configWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget
 from redvypr.widgets.devicelist_widget import redvypr_devicelist_widget
 import redvypr.utils

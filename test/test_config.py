@@ -104,7 +104,17 @@ print(d,type(d))
 try:
     print(redvypr.config.configdata_to_data('test'))
 except Exception as e:
-    print(e)
+    print('Conversion',e)
+
+configdict = redvypr.config.dict_to_configDict(config_template)
+configdict_template = redvypr.config.dict_to_configDict(config_template,process_template=True)
+print('Config dict',configdict)
+print('-----')
+print('-----')
+print('-----')
+print('Config dict template',configdict_template)
+
+#config2 = redvypr.config.configuration(config_template)
 
 if False:
     confdict = configtemplate_to_dict(config_template)
