@@ -31,10 +31,14 @@ config_template = {}
 config_template['template_name'] = 'zeromq'
 config_template['address'] = {'type': 'str', 'default': '127.0.0.1'}
 config_template['port'] = {'type': 'int', 'default': 18196}
+config_template['int_options'] = {'type': 'int', 'options': [4,5,6]}
 config_template['direction'] = {'type': 'str', 'options': ['receive', 'publish'], 'default': 'receive'}
 config_template['data'] = {'type': 'str'}
 config_template['serialize'] = {'type': 'str', 'options': ['yaml', 'str'], 'default': 'yaml'}
-config_template['listconfig'] = {'type': 'list', 'default':[config_template2], 'dynamic': True, 'options': [config_template2, config_template3, config_template4]}
+config_template['listconfig'] = {'type': 'list', 'default':[config_template2], 'options': [config_template2, config_template3, config_template4]}
+config_template['listnomod'] = {'type': 'list', 'default':[3,4,5],'modify':False}
+config_template['listmod'] = {'type': 'list', 'default':[3,4,5],'modify':True}
+config_template['listmod_datatype'] = {'type': 'list', 'default':[3,4,5],'modify':True,'options':['int','float']}
 
 config = {}
 config['address'] = '192.168.178.10'
@@ -115,6 +119,12 @@ print('-----')
 print('Config dict template',configdict_template)
 
 #config2 = redvypr.config.configuration(config_template)
+
+print('Converting data recursive')
+d = redvypr.config.data_to_configdata([3,5,6],recursive=True)
+print(d,type(d),type(d[0]))
+d = redvypr.config.data_to_configdata(3,recursive=True)
+print(d,type(d))
 
 if False:
     confdict = configtemplate_to_dict(config_template)

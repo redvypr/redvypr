@@ -1,4 +1,3 @@
-# TODO, improve keys!
 import datetime
 import logging
 import queue

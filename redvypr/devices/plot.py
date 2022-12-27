@@ -13,7 +13,7 @@ import qtawesome as qta
 
 import redvypr.data_packets
 from redvypr.data_packets import addr_in_data, get_keys_from_data
-from redvypr.gui import redvypr_devicelist_widget, redvypr_config_widget
+from redvypr.gui import redvypr_devicelist_widget, configWidget
 from redvypr.devices.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
 import redvypr.files as files
 from redvypr.device import redvypr_device
@@ -533,7 +533,7 @@ class PlotGridWidget(QtWidgets.QWidget):
 
         """
         # Create a config widget
-        config_widget = redvypr_config_widget(config=plotwidget.config, template=plotwidget.config_template,
+        config_widget = configWidget(config=plotwidget.config, template=plotwidget.config_template,
                                               loadsavebutton=False,redvypr_instance=self.redvypr)
         config_widget.setWindowIcon(QtGui.QIcon(_icon_file))
         config_widget.config_changed_flag.connect(self.config_changed)

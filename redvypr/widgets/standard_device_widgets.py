@@ -7,7 +7,7 @@ import logging
 import sys
 import yaml
 from redvypr.device import redvypr_device
-from redvypr.widgets.gui_config_widgets import redvypr_config_widget
+from redvypr.widgets.gui_config_widgets import configWidget
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr')
@@ -97,7 +97,7 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         self.layout = QtWidgets.QGridLayout(self)
         self.config_widgets = []
         self.device = device
-        self.config_widget = redvypr_config_widget(template=device.template, config=device.config)
+        self.config_widget = configWidget(template=device.template, config=device.config)
 
         self.config_widgets.append(self.config_widget)
 

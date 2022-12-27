@@ -11,6 +11,27 @@ The module provides modified objects that allow to store extra attributes.
 - bool, todo
 - None, todo
 
+Templates can be used to define the configuration
+A template is a dict with the keys defining entries that can be configured.
+Options are for lists and dicts datatypes that can be added, for int, float, str the values of the variable
+.. code-block::
+
+    config_template['list_options'] = {'type': 'list', 'options': ['int','float']}
+    config_template['int_options'] = {'type': 'int', 'options': [4,5,6]}
+
+As option also other templates can be used
+
+.. code-block::
+
+    template_option = {}
+    template_option['template_name'] = 'option1'
+    template_option['port'] = {'type': 'int'}
+
+    config_template['template_name'] = 'test_template'
+    config_template['list_options'] = {'type': 'list', 'options': ['int',template_option]}
+
+
+
 
 
 """
@@ -29,15 +50,19 @@ logger.setLevel(logging.DEBUG)
 
 
 template_types = []
-template_types.append({'type': 'dict'})
-template_types.append({'type': 'list'})
-template_types.append({'type': 'str'})
-template_types.append({'type': 'int'})
-template_types.append({'type': 'float'})
-template_types.append({'type': 'bool'})
-template_types.append({'type': 'datastream'})
-template_types.append({'type': 'color'})
+template_types.append({'type': 'dict','default':{}})
+template_types.append({'type': 'list','default':[]})
+template_types.append({'type': 'str','default':''})
+template_types.append({'type': 'int','default':0})
+template_types.append({'type': 'float','default':0.0})
+template_types.append({'type': 'bool','default':True})
+template_types.append({'type': 'datastream','default':'*','subtype':'datastream'}) # subtypes are used to distinguish between gernal types and more specialized
+template_types.append({'type': 'color','default':{'r':0,'g':0,'b':0},'subtype':'color'})
 #template_types.append({'type': 'ip'})
+
+template_types_dict = {}
+for t in template_types:
+    template_types_dict[t['type']] = t
 
 
 
@@ -81,7 +106,6 @@ class configString(collections.UserString):
 
     def __reduce__(self):
         return self.data.__reduce__()
-
 
 
 class configNumber(numbers.Integral):
@@ -244,7 +268,7 @@ class configNumber(numbers.Integral):
         return self.data.__reduce__()
 
 
-def data_to_configdata(data):
+def data_to_configdata(data,recursive = False):
     """
     Converts a known class to a configClass, that can additionally store attributes
     Args:
@@ -255,39 +279,43 @@ def data_to_configdata(data):
 
     """
     funcname = __name__ + '.to_configdata():'
-    typestr = str(type(data))
-    if(type(data) == list):
-        configData = configList(data)
-        return configData
-    elif (type(data) == dict):
-        configData = configDict(data)
-        return configData
-    elif (type(data) == str):
-        configData = configString(data)
-        return configData
-    elif (type(data) == int):
-        configData = configNumber(data)
-        return configData
-    elif (type(data) == float):
-        configData = configNumber(data)
-        return configData
-    elif (type(data) == bool):
-        configData = configNumber(data)
-        return configData
-    elif (data == None):
-        configData = configNumber(data)
-        return configData
-    # if they are already configClasses, return the same object
-    elif (type(data) == configList):
-        return data
-    elif (type(data) == configDict):
-        return data
-    elif (type(data) == configString):
-        return data
-    elif (type(data) == configNumber):
-        return data
-    else:
-        raise TypeError(funcname + 'Unknown data type {:s}'.format(typestr))
+    if recursive == False:
+        typestr = str(type(data))
+        if(type(data) == list):
+            configData = configList(data)
+            return configData
+        elif (type(data) == dict):
+            configData = configDict(data)
+            return configData
+        elif (type(data) == str):
+            configData = configString(data)
+            return configData
+        elif (type(data) == int):
+            configData = configNumber(data)
+            return configData
+        elif (type(data) == float):
+            configData = configNumber(data)
+            return configData
+        elif (type(data) == bool):
+            configData = configNumber(data)
+            return configData
+        elif (data == None):
+            configData = configNumber(data)
+            return configData
+        # if they are already configClasses, return the same object
+        elif (type(data) == configList):
+            return data
+        elif (type(data) == configDict):
+            return data
+        elif (type(data) == configString):
+            return data
+        elif (type(data) == configNumber):
+            return data
+        else:
+            raise TypeError(funcname + 'Unknown data type {:s}'.format(typestr))
+    else: # Call dict_to_configDict with data
+        configdata = dict_to_configDict({'data':data})['data']
+        return configdata
 
 
 def deepcopy_config(data,standard_datatypes=True):
@@ -344,12 +372,6 @@ def configdata_to_data(data):
     except:
         pass
 
-    try:  # Data is stored in n in the configNumber
-        standard_data = data.n
-        return standard_data
-    except:
-        pass
-
     raise TypeError(funcname + 'Could not return data for datatype {:s}'.format(str(type(data))))
 
 
@@ -367,6 +389,7 @@ def dict_to_configDict(data,process_template=False):
         for index in seq_iter(c):
             #print('c1', c[index])
             default_value = data_to_configdata(c[index]) # Brute conversion of everything
+            default_value.__parent__ = c
             c[index] = default_value
             if process_template:
                 c[index].template = copy.deepcopy(c[index])
@@ -388,18 +411,21 @@ def dict_to_configDict(data,process_template=False):
                         if ('default' in c[index].keys()): # The default values are templates and need to be converted to dicts
                             default_value_tmp = c[index]['default']
                             default_value = configList()
+                            default_value.__parent__ = c # Save the parent as attribute
+                            print('Default',default_value_tmp)
                             if (type(default_value_tmp) == list) or (type(default_value_tmp) == configList):
                                 print('Configlist',type(default_value_tmp))
                                 for d in default_value_tmp:
                                     print('d',d)
-                                    if(valid_template(d)):
-                                        print('Valid',d)
-                                        default_value.append(dict_to_configDict(d,process_template=process_template))
-                                        default_value.template = copy.deepcopy(c[index])
+                                    if valid_template(d):
+                                        print('Template', d)
+                                        dtmp = dict_to_configDict(d, process_template=process_template)
                                     else:
-                                        raise TypeError("The list entry should be a valid redvypr template")
-
-
+                                        print('Standard data', d)
+                                        dtmp = data_to_configdata(d,recursive=True)
+                                    dtmp.__parent__ = default_value # Save the parent as attribute
+                                    default_value.append(dtmp)
+                                    default_value.template = copy.deepcopy(c[index])
                             else:
                                 raise TypeError("The default value should be a list containing templates")
                         else:
@@ -422,6 +448,7 @@ def dict_to_configDict(data,process_template=False):
         data_dict = data_tmp
     else:
         raise TypeError(funcname + 'data must be a dictionary and not {:s}'.format(str(type(data))))
+    data_dict.__parent__ = None
     loop_over_index(data_dict)
     #print('Config:',config)
     return data_dict
