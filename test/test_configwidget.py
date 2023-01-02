@@ -24,7 +24,7 @@ config_template3['port'] = {'type': 'int', 'default': 18196}
 
 config_template4 = {}
 config_template4['template_name'] = 'type4'
-config_template4['listconfig'] = {'type': 'list', 'dynamic': True, 'options': [config_template2, config_template2]}
+config_template4['listconfig'] = {'type': 'list', 'modify': True, 'options': [config_template2, config_template2]}
 
 
 config_template = {}
@@ -35,7 +35,7 @@ config_template['direction'] = {'type': 'str', 'options': ['receive', 'publish']
 config_template['data'] = {'type': 'str'}
 config_template['int_option'] = {'type': 'int', 'options': [3,4,4], 'default': 3}
 config_template['int'] = {'type': 'int'}
-config_template['listconfig'] = {'type': 'list', 'default':[config_template2], 'dynamic': True, 'options': [config_template2, config_template3, config_template4]}
+config_template['listconfig'] = {'type': 'list', 'default':[config_template2,config_template4], 'modify': True, 'options': ['int',config_template2, config_template3, config_template4]}
 
 config = {}
 config['address'] = '192.168.178.10'
@@ -45,14 +45,8 @@ config['listconfig'].append({'name': 'type2'})
 config['listconfig'].append({'template_name': 'typetest'})
 
 
-
-
-#confdict = configtemplate_to_dict(config_template)
-#print('config config', confdict)
-#apply_config_to_dict(config, confdict)
-print('Config: ', config)
-print('Type',type(config['port']))
-
+configtest = redvypr.config.configuration(template=config_template,config=config)
+print('configtest',configtest)
 def main():
     app = QtWidgets.QApplication(sys.argv)
     screen = app.primaryScreen()
@@ -66,12 +60,7 @@ def main():
     widget = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout(widget)
 
-    #configtree = redvypr.gui.configQTreeWidget(data=config)
-    configtree = redvypr.gui.configWidget(template=config_template)
-    #configtree = redvypr.gui.redvypr_config_widget(config = config,template=config_template)
-    #configtree.apply_config(config)
-    #configtree = redvypr.gui.redvypr_config_widget(template = config_template,config=config)
-    #configtree.apply_config(config)
+    configtree = redvypr.gui.configWidget(config=configtest)
     # Set the size
 
     layout.addWidget(configtree)

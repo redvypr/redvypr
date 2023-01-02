@@ -388,7 +388,7 @@ def configdata_to_data(data):
 
 
 
-def dict_to_configDict(data,process_template=False):
+def dict_to_configDict(data,process_template=False,configdict=None):
     """
     creates a config dictionary out of a configuration template, the values of the dictionary are
     configList/configNumber objects that can be accessed like classical values but have the capability to store
@@ -428,6 +428,18 @@ def dict_to_configDict(data,process_template=False):
                         # Check if options are in the template, if not not add standard types
                         try:
                             c[index]['options']
+                            # Loop over the options and replace standard options with their dictionary types
+                            for i,o in enumerate(c[index]['options']):
+                                print('Option to be checked', o)
+                                # If the option is a str, try to find the correct template in the standard template
+                                if (type(o) == str) or (type(o) == configString):
+                                    print('Converting to standard option')
+                                    try:
+                                        c[index]['options'][i] = __template_types__modifiable_list_dict__[o]
+                                        print('Changed option')
+                                    except Exception as e:
+                                        print('Did not change because of',e)
+                                        continue
                         except:
                             c[index]['options'] = copy.deepcopy(__template_types__modifiable_list__)
                         if ('default' in c[index].keys()): # The default values are templates and need to be converted to dicts
@@ -464,17 +476,45 @@ def dict_to_configDict(data,process_template=False):
                 loop_over_index(c[index])
 
 
-    data_tmp = copy.deepcopy(data) # Copy the data first
-    if(type(data_tmp) == dict):
-        data_dict = configDict(data_tmp) #
-    elif (type(data_tmp) == configDict):
-        data_dict = data_tmp
+    if(configdict == None):
+        data_tmp = copy.deepcopy(data) # Copy the data first
+        if(type(data_tmp) == dict):
+            data_dict = configDict(data_tmp) #
+        elif (type(data_tmp) == configDict):
+            data_dict = data_tmp
+        else:
+            raise TypeError(funcname + 'data must be a dictionary and not {:s}'.format(str(type(data))))
     else:
-        raise TypeError(funcname + 'data must be a dictionary and not {:s}'.format(str(type(data))))
+        data_dict = configdict
+
     data_dict.__parent__ = None
     loop_over_index(data_dict)
     #print('Config:',config)
     return data_dict
+
+
+
+class configuration(configDict):
+    """
+    The class is a modified dictionary with extra functionality for configuration.
+    - history
+    """
+    def __init__(self,template={},config=None):
+        """
+        Args:
+            template:
+            config:
+        """
+        super().__init__(template)
+        #self.config_orig = config
+        #self.data = dict_to_configDict(template, process_template=True)
+        tmp = dict_to_configDict(template, process_template=True,configdict=self)
+
+        print('Applying')
+        if(config is not None):
+            test = apply_config_to_configDict(config,self)
+            print('test',test)
+
 
 
 
@@ -583,7 +623,7 @@ def apply_config_to_configDict(userconfig,configdict):
                 ctemp = c
 
                 try:  # Check if the user data is existing as well
-                    ctemp[index] = cuser[index]
+                    ctemp[index].data = cuser[index]
                 except Exception as e: # Is this needed anymore? Everything should be configdata ...
                     print('Exception exception',e)
                     pass
@@ -596,23 +636,7 @@ def apply_config_to_configDict(userconfig,configdict):
 
 
 
-class configuration(configDict):
-    """
-    The class is a modified dictionary with extra functionality for configuration.
-    - history
-    """
-    def __init__(self,template={},config=None):
-        """
-        Args:
-            template:
-            config:
-        """
-        self.data = dict_to_configDict(template, process_template=True)
-        print('Applying')
-        if(config is not None):
-            test = apply_config_to_configDict(config,self.data)
-            print('test',test)
-        #super().__init__(template_config)
+
 
 
 

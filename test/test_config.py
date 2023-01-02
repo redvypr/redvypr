@@ -135,12 +135,6 @@ config_template_small['listmod'] = {'type': 'list', 'default':[3,4,5,'hallo'],'m
 config_template_small['listmodopts'] = {'type': 'list', 'options':['int',config_template2],'modify':True}
 configsmall_template = redvypr.config.dict_to_configDict(config_template,process_template=True)
 
-
-#configuration_test = redvypr.config.configuration(template={})
-#print('Config test null',configuration_test)
-
-#configuration_test2 = redvypr.config.configuration(template=config_template_small)
-#print('Config test small',configuration_test2)
 print('------')
 config_small = {}
 config_small['listmod'] = ['Test1',1000]
@@ -148,12 +142,3 @@ config_small['listmod'] = ['Test1',1000]
 config_small['listmodopts'] = [{'template_name':'type2','address':'fsd'},9999,3.0]
 configuration_test3 = redvypr.config.configuration(config = config_small,template=config_template_small)
 print('Config test small mod',configuration_test3)
-
-if False:
-    confdict = configtemplate_to_dict(config_template)
-    print('config config', confdict)
-    apply_config_to_dict(config, confdict)
-    # configtree = redvypr.gui.redvypr_dictionary_widget(d)
-    # configtree = redvypr.gui.redvypr_data_tree(d)
-    print('Config: ', config)
-

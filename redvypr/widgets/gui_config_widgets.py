@@ -46,12 +46,13 @@ class redvypr_ip_widget(QtWidgets.QWidget):
 class configWidget(QtWidgets.QWidget):
     config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
-    def __init__(self, config={}, template={}, loadsavebutton=True,redvypr_instance=None):
+    def __init__(self, config=None, loadsavebutton=True,redvypr_instance=None):
         funcname = __name__ + '.__init__():'
+        if config == None:
+            config = redvypr.config.configuration({})
         super().__init__()
+        logger.debug(funcname)
         self.redvypr=redvypr_instance
-        config_tmp   = redvypr.config.dict_to_configDict(config)
-        template_tmp = redvypr.config.dict_to_configDict(template)
         self.layout = QtWidgets.QGridLayout(self)
         self.layout.setColumnStretch(0, 1)
         self.layout.setColumnStretch(1, 1)
@@ -60,8 +61,8 @@ class configWidget(QtWidgets.QWidget):
         except:
             configname = 'config'
 
-        logger.debug(funcname + 'Applying config to template')
-        self.config = redvypr.config.apply_config_to_configDict(config_tmp, template_tmp)
+        self.config = config
+        print('config',self.config,type(config))
         self.configtree = configQTreeWidget(data = self.config,dataname=configname)
         self.configtree.expandAll()
         self.configtree.resizeColumnToContents(0)
@@ -187,7 +188,7 @@ class configWidget(QtWidgets.QWidget):
         item.__datatype__ = dtype
         data = item.__data__
         self.remove_input_widgets()
-        if (dtype == 'configDict'):
+        if (dtype == 'configDict') or (dtype == 'configuration'):
             print(funcname + 'configDict')
             self.config_widget_dict(item)
         elif (dtype == 'configList'):  # Modifiable list
@@ -524,21 +525,34 @@ class configWidget(QtWidgets.QWidget):
         options_item = {} # A dictionary that helps to quickly get the item having the str
         try: # First have a look if there are template options
             options_tmp = data.template['options']
+            print('Template is', data.template)
             print('Using template options')
+            print('Options are', options_tmp)
             for o in options_tmp:
-                try:
-                    opt_tmp = redvypr.config.template_types_dict[o]
-                    options_str.append(opt_tmp['type'])
-                    data_item = opt_tmp['default']
-                    data_item = redvypr.config.data_to_configdata(data_item)
+                print('option',o)
+                print('------------------')
+                if('type' in o.keys()): # This is a default entry from redvypr.config.__template_types__modifiable_list_dict__
                     try:
-                        data_item.subtype = opt_tmp['subtype']
-                    except:
-                        pass
-                    options_item[opt_tmp['type']] = data_item
-                except Exception as e:
-                    print('Could not find template type for',o)
-        except Exception as e:
+                        tempname = o['type']
+                        #opt_tmp = redvypr.config.template_types_dict[tempname]
+                        data_item = o['default']
+                        data_item = redvypr.config.data_to_configdata(data_item)
+                        try:
+                            data_item.subtype = o['subtype']
+                        except:
+                            pass
+
+                        options_str.append(tempname)
+                        options_item[tempname] = data_item
+                    except Exception as e:
+                        print('Exception template',e)
+                        print('Could not find template type for',o)
+                elif('template_name' in o.keys()):
+                    tempname = o['template_name']
+                    data_item = redvypr.config.dict_to_configDict(o,process_template=True)
+                    options_str.append(tempname)
+                    options_item[tempname] = data_item
+        except Exception as e: # Do we still need this?
             print('Standard template option because of {:s}'.format(str(e)))
             logger.debug('Using standard options')
             options_standard = redvypr.config.template_types
@@ -551,7 +565,7 @@ class configWidget(QtWidgets.QWidget):
                     data_item.subtype = opt_tmp['subtype']
                 except:
                     pass
-                options_item[opt_tmp['type']] = data_item
+                options_item[tempname] = data_item
 
         self.__configwidget_input.__options__item__ = options_item
         for t in options_str:
@@ -700,7 +714,7 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
 
         """
         sequence = self.seq_iter(data)
-        #print('Data',sequence)
+        print('Data',data,sequence,index)
         if(sequence == None): # Check if we have an item that is something with data (not a list or dict)
             data_value = data  #
             #print('Data value',str(data_value),data)
