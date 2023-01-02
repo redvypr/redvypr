@@ -2,6 +2,7 @@
             - created example folder with configuration, needs to be cleaned
             - config module to harmonize configuration
             - added Internet of Redvype (iored) revice
+            - introduction of configuration class for device configuration
     -0.4.10:- rawdatalogger improved
             -
     -0.4.9: - autostart option in yaml config moved to deviceconfig
