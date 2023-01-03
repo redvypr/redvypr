@@ -533,8 +533,9 @@ class PlotGridWidget(QtWidgets.QWidget):
 
         """
         # Create a config widget
-        config_widget = configWidget(config=plotwidget.config, template=plotwidget.config_template,
-                                              loadsavebutton=False,redvypr_instance=self.redvypr)
+        #config_widget = configWidget(config=plotwidget.config, template=plotwidget.config_template,
+        #                                      loadsavebutton=False,redvypr_instance=self.redvypr)
+        config_widget = configWidget(config=plotwidget.config, loadsavebutton=False, redvypr_instance=self.redvypr)
         config_widget.setWindowIcon(QtGui.QIcon(_icon_file))
         config_widget.config_changed_flag.connect(self.config_changed)
         config_widget.plotwidget = plotwidget

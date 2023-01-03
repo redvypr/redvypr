@@ -494,26 +494,7 @@ def dict_to_configDict(data,process_template=False,configdict=None):
 
 
 
-class configuration(configDict):
-    """
-    The class is a modified dictionary with extra functionality for configuration.
-    - history
-    """
-    def __init__(self,template={},config=None):
-        """
-        Args:
-            template:
-            config:
-        """
-        super().__init__(template)
-        #self.config_orig = config
-        #self.data = dict_to_configDict(template, process_template=True)
-        tmp = dict_to_configDict(template, process_template=True,configdict=self)
 
-        print('Applying')
-        if(config is not None):
-            test = apply_config_to_configDict(config,self)
-            print('test',test)
 
 
 
@@ -632,6 +613,30 @@ def apply_config_to_configDict(userconfig,configdict):
     loop_over_index(configdict,userconfig)
     #print('Configdict after:', configdict)
     return configdict
+
+
+
+
+class configuration(configDict):
+    """
+    The class is a modified dictionary with extra functionality for configuration.
+    - history
+    """
+    def __init__(self,template={},config=None):
+        """
+        Args:
+            template:
+            config:
+        """
+        super().__init__(template)
+        #self.config_orig = config
+        #self.data = dict_to_configDict(template, process_template=True)
+        tmp = dict_to_configDict(template, process_template=True,configdict=self)
+
+        print('Applying')
+        if(config is not None):
+            test = apply_config_to_configDict(config,self)
+            print('test',test)
 
 
 

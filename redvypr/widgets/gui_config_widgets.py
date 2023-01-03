@@ -116,8 +116,9 @@ class configWidget(QtWidgets.QWidget):
 
     def save_config(self):
         funcname = __name__ + '.save_config():'
+        logger.debug(funcname)
         print('Save',self.config)
-        if False:
+        if True:
             fname_open = QtWidgets.QFileDialog.getSaveFileName(self, 'Save file', '',"YAML files (*.yaml);; All files (*)")
             if(len(fname_open[0]) > 0):
                 logger.info(funcname + 'Save file file {:s}'.format(fname_open[0]))

@@ -45,7 +45,8 @@ config['listconfig'].append({'name': 'type2'})
 config['listconfig'].append({'template_name': 'typetest'})
 
 
-configtest = redvypr.config.configuration(template=config_template,config=config)
+#configtest = redvypr.config.configuration(template=config_template,config=config)
+configtest = redvypr.config.configuration()
 print('configtest',configtest)
 def main():
     app = QtWidgets.QApplication(sys.argv)

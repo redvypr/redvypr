@@ -30,7 +30,8 @@ import redvypr.devices as redvyprdevices
 import redvypr.data_packets as data_packets
 from redvypr.gui import redvypr_ip_widget, redvyprConnectWidget, QPlainTextEditLogger, displayDeviceWidget_standard, \
     deviceinfoWidget, redvypr_devicelist_widget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget
-from redvypr.utils import addrm_device_as_data_provider, get_data_receiving_devices, get_data_providing_devices, configtemplate_to_dict, apply_config_to_dict
+from redvypr.utils import addrm_device_as_data_provider, get_data_receiving_devices, get_data_providing_devices#, configtemplate_to_dict, apply_config_to_dict
+from redvypr.config import configuration
 from redvypr.version import version
 import redvypr.files as files
 from redvypr.device import redvypr_device
@@ -555,17 +556,16 @@ class redvypr(QtCore.QObject):
             if (devicemodulename == smod['name']):
                 logger.debug('Trying to import device {:s}'.format(smod['name']))
                 devicemodule = smod['module']
-
                 # Try to get a configuration template
                 try:
                     config_template = devicemodule.config_template
                     logger.debug(funcname + ':Found configuation template of device {:s}'.format(str(devicemodule)))
-                    templatedict = configtemplate_to_dict(config_template)
+                    #templatedict = configtemplate_to_dict(config_template)
+                    FLAG_HAS_TEMPLATE = True
                 except Exception as e:
                     logger.debug(
                         funcname + ':No configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
-                    config_template = {}
-                    templatedict = None
+                    FLAG_HAS_TEMPLATE = False
 
                 # Try to get information about publish/subscribe capabilities described in the config_template
                 try:
@@ -644,14 +644,24 @@ class redvypr(QtCore.QObject):
                         startfunction = devicemodule.start
 
                     # Config used at all?
+                    print('GEtting config')
                     config = deviceconfig['config']
+                    print('Done')
                     # Merge the config with a potentially existing template to fill in default values
-                    if(templatedict is not None):
-                        config = apply_config_to_dict(config,templatedict)
-                        config = copy.deepcopy(config)
-                    print('Config', config)
+                    if FLAG_HAS_TEMPLATE:
+                        print('With template',config)
+                        #config = apply_config_to_dict(config,templatedict)
+                        #config = copy.deepcopy(config)
+                        #redvypr.config.dict_to_configDict(templatedict, process_template=True)
+                        configu = configuration(template=config_template,config=config)
+                    else: # Make a configuration without a template directly from the config dict
+                        print('Without template')
+                        configu = configuration(config)
+                        config_template = None
+
+                    print('Config', configuration)
                     print('loglevel', loglevel)
-                    device = Device(name=name, uuid=device_uuid, config=config, redvypr=self, dataqueue=dataqueue,
+                    device = Device(name=name, uuid=device_uuid, config=configu, redvypr=self, dataqueue=dataqueue,
                                     publish=publish,subscribe=subscribe,autostart=autostart,
                                     template=config_template, comqueue=comqueue, datainqueue=datainqueue,
                                     statusqueue=statusqueue, loglevel=loglevel, multiprocess=multiprocess,
@@ -1221,7 +1231,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.redvypr = redvypr()  # Configuration comes later after all widgets are initialized
 
         self.redvypr.device_path_changed.connect(self.__populate_devicepathlistWidget)
-        self.redvypr.device_added.connect(self._add_device)
+        self.redvypr.device_added.connect(self._add_device_gui)
         # Fill the layout
         self.devicetabs = QtWidgets.QTabWidget()
         self.devicetabs.setMovable(True)
@@ -1490,7 +1500,7 @@ class redvyprWidget(QtWidgets.QWidget):
         # Update the name
         self.__device_name()
 
-    def _add_device(self, devicelist):
+    def _add_device_gui(self, devicelist):
         """ Function is called via the redvypr.add_device signal and is adding
         all the gui functionality to the device
 

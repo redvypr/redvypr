@@ -139,6 +139,9 @@ print('------')
 config_small = {}
 config_small['listmod'] = ['Test1',1000]
 #config_small['listmodopts'] = [-9999,{'template_name':'type2','address':'fsd'}]
-config_small['listmodopts'] = [{'template_name':'type2','address':'fsd'},9999,3.0]
+#config_small['listmodopts'] = [{'template_name':'type2','address':'fsd'},9999,3.0]
 configuration_test3 = redvypr.config.configuration(config = config_small,template=config_template_small)
 print('Config test small mod',configuration_test3)
+
+configuration_test4 = redvypr.config.configuration(config_small)#,template={})
+print('Config test small 4',configuration_test4)
