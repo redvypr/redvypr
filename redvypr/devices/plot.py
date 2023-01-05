@@ -533,7 +533,7 @@ class PlotGridWidget(QtWidgets.QWidget):
         Returns:
 
         """
-        # Create a config widget
+        # Create a local config widget for that plot
         #config_widget = configWidget(config=plotwidget.config, template=plotwidget.config_template,
         #                                      loadsavebutton=False,redvypr_instance=self.redvypr)
         config_widget = configWidget(config=plotwidget.config, loadsavebutton=False, redvypr_instance=self.redvypr)

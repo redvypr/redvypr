@@ -128,7 +128,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             plot = pyqtgraph.PlotWidget(title=title,name=name)
             plot.register(name=name)
             # Add a legend
-            plot.addLegend()
+            legend = plot.addLegend()
 
             self.layout.addWidget(plot)
                 
@@ -143,18 +143,25 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 plot.setAxisItems({"bottom": axis})
                 
 
-
-            plot_dict = {'widget': plot, 'lines': []}
+            config.plot = plot
+            config.legend = legend
+            #plot_dict = {'widget': plot, 'lines': []}
 
                 
                 
-        self.plot_dict = plot_dict
+        #self.plot_dict = plot_dict
 
     def apply_config(self):
+        """
+        Function is called by the initialization or after the configuration was changed
+
+        Returns:
+
+        """
         funcname = __name__ + '.apply_config()'
         print('Hallo!, Apply config!')
         print('config:', self.config)
-        plot = self.plot_dict['widget']
+        plot = self.config.plot
         # Title
         title = self.config['title'].data
         plot.setTitle(title)
@@ -171,11 +178,18 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         except:
             pass
 
-        plot_dict = self.plot_dict
         config = self.config
         # Add lines with the actual data to the graph
         for iline, line in enumerate(self.config['lines']):
             print('Line',line)
+            #FLAG_HAVE_LINE = False
+            # check if we have already a lineplot
+            try:
+                line.lineplot
+                #FLAG_HAVE_LINE = True
+                continue
+            except:
+                pass
             logger.debug(funcname + ':Adding a line to the plot:' + str(line))
             buffersize = line['buffersize'].data
             xdata = np.zeros(buffersize) * np.NaN
@@ -186,7 +200,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 name = 'line {:d}'.format(iline)
 
             lineplot = pyqtgraph.PlotDataItem(name=name)
-
+            line.lineplot = lineplot # Add the line as an attribute to the configuration
             try:
                 x = line['x'].data
             except:
@@ -213,19 +227,19 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             lineconfig = {'x': x, 'y': y, 'linewidth': linewidth, 'color': color}
             # Add the line and the configuration to the lines list
             line_dict = {'line': lineplot, 'config': lineconfig, 'x': xdata, 'y': ydata}
-
-            plot_dict['lines'].append(line_dict)
+            line.line_dict = line_dict
             plot.addItem(lineplot)
             # Configuration
 
 
         # Update the line configuration
-        for iline, line in enumerate(getdata(self.config['lines'])):
+        self.config.legend.clear()
+        for iline, line in enumerate(self.config['lines']):
             try:
                 print('Line',line,iline)
-                lineconfig = self.plot_dict['lines'][iline]['config']
-                x = getdata(line['x'])
-                y = getdata(line['y'])
+                lineconfig = line.line_dict['config']
+                x = line['x']
+                y = line['y']
                 xaddr = redvypr.data_packets.redvypr_address(x)
                 yaddr = redvypr.data_packets.redvypr_address(y)
                 lineconfig['x'] = x
@@ -234,17 +248,23 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 lineconfig['yaddr'] = yaddr
 
                 print('Set pen')
-                linewidget = self.plot_dict['lines'][iline]['line']  # The line to plot
+                lineplot = line.line_dict['line']  # The line to plot
                 print('Set pen 1')
                 color = self.config['lines'][iline]['color'].data
                 print('Set pen 2')
                 linewidth = self.config['lines'][iline]['linewidth'].data
                 print('Set pen 3')
                 pen = pyqtgraph.mkPen(color, width=linewidth)
-                linewidget.setPen(pen)
+                lineplot.setPen(pen)
+                name = self.config['lines'][iline]['name'].data
+                print('Setting the name')
+                #lineplot.opts['name'] = name
+                #lineplot.setProperty('styleWasChanged', True)
+                self.config.legend.addItem(lineplot,name)
+                #lineplot.setName(name)
             except Exception as e:
+                logger.exception(e)
                 logger.debug('Exception config lines: {:s}'.format(str(e)))
-
 
 
         print('Apply')
