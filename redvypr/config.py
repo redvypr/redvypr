@@ -57,7 +57,7 @@ template_types.append({'type': 'int','default':0})
 template_types.append({'type': 'float','default':0.0})
 template_types.append({'type': 'bool','default':True})
 template_types.append({'type': 'datastream','default':'*','subtype':'datastream'}) # subtypes are used to distinguish between general types and more specialized
-template_types.append({'type': 'color','default':{'r':0,'g':0,'b':0},'subtype':'color'})
+template_types.append({'type': 'color','default':{'template_name':'colordict','r':0,'g':0,'b':0,'a':0},'subtype':'color'})
 #template_types.append({'type': 'ip'})
 
 
@@ -420,6 +420,7 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                         c[index].template = copy.deepcopy(template_types_dict[origtype])
                         c[index].template['default'] = origdata
             else: # Configuration dictionary
+
                 default_value = ''
                 # The if can be removed soon
                 if ('default' in c[index].keys()):
@@ -433,17 +434,28 @@ def dict_to_configDict(data,process_template=False,configdict=None):
 
                 # loop over all keys of standard types and add potentially missing information
                 if(c[index]['type'] in template_types_dict.keys()):
-                    print('Adding standard types')
+                    print('Adding keys of standard type')
                     standard_template = copy.deepcopy(template_types_dict[c[index]['type']])
                     for k in standard_template.keys():
                         print('k',k)
+
                         try:
                             c[index][k]
+                            print('c[index][k]',c[index][k])
                         except:
                             print('Adding',standard_template[k])
                             c[index][k] = standard_template[k]#
 
+                        if (k == 'default'):
+                            if valid_template(c[index]['default']):
+                                print('Template', c[index]['default'])
+                                dtmp = dict_to_configDict(c[index]['default'], process_template=process_template)
+                                default_value = dtmp
+                            else:
+                                default_value = data_to_configdata(c[index]['default'],recursive=True)
+
                 templatedata = copy.deepcopy(c[index])
+                #print('Hallo', c[index].template)
                 print('Templatedata',templatedata)
                 #if ('type' in c[index].keys()):
                 default_type = c[index]['type']

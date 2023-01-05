@@ -250,6 +250,7 @@ class configWidget(QtWidgets.QWidget):
                 index_add = self.__configwidget_input.currentIndex()  # combobox
                 data_add = redvypr.config.template_types[index_add]['default']
                 data_add = redvypr.config.data_to_configdata(data_add,recursive=True)
+                data_add.template = copy.deepcopy(redvypr.config.template_types[index_add])
                 data_add.__parent__ = data
                 try:
                     data_add.subtype = redvypr.config.template_types[index_add]['subtype']
@@ -321,6 +322,7 @@ class configWidget(QtWidgets.QWidget):
                 data['r'].data = rgb[0]
                 data['g'].data = rgb[1]
                 data['b'].data = rgb[2]
+                data['a'].data = rgb[3]
                 self.reload_config()
                 self.apply_config_change()
                 return
@@ -362,10 +364,14 @@ class configWidget(QtWidgets.QWidget):
 
         self.__configwidget_int = QtWidgets.QWidget()
         self.__layoutwidget_int = QtWidgets.QVBoxLayout(self.__configwidget_int)
+        color = QtGui.QColor(data['r'], data['g'], data['b'])#, data['a'])
+        #color = QtGui.QColor(255, 0, 0)  # , data['a'])
+        print('Color', data,color.getRgb())
         # The color dialog
         colorwidget = QtWidgets.QColorDialog(self.__configwidget_int)
         colorwidget.setOptions(QtWidgets.QColorDialog.NoButtons| QtWidgets.QColorDialog.DontUseNativeDialog)
         colorwidget.setWindowFlags(QtCore.Qt.Widget)
+        colorwidget.setCurrentColor(color)
         self.__configwidget_input = colorwidget
         self.__layoutwidget_int.addWidget(colorwidget)
         # Buttons
@@ -620,7 +626,10 @@ class configWidget(QtWidgets.QWidget):
         self.__configwidget_remove.item = item
         self.__configwidget_remove.__type__ = dtype
         self.__configwidget_remove.__removeitem__ = True
-        layout.addRow(self.__configwidget_remove)
+        try:
+            layout.addRow(self.__configwidget_remove)
+        except:
+            layout.addWidget(self.__configwidget_remove)
 
     def __add_apply_btn__(self, layout, item, dtype):
         self.__configwidget_apply = QtWidgets.QPushButton('Apply')
@@ -628,7 +637,10 @@ class configWidget(QtWidgets.QWidget):
         self.__configwidget_apply.item = item
         self.__configwidget_apply.__type__ = dtype
         self.__configwidget_apply.__removeitem__ = False
-        layout.addRow(self.__configwidget_apply)
+        try:
+            layout.addRow(self.__configwidget_apply)
+        except:
+            layout.addWidget(self.__configwidget_apply)
 
 
 
@@ -743,8 +755,11 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
             #print('loop')
             datatmp = data
 
-
-            typestr = datatmp.__class__.__name__
+            try:
+                typestr = datatmp.template['type']
+            except:
+                typestr = datatmp.__class__.__name__
+            #typestr = datatmp.__class__.__name__
             flag_modifiable = False
             try:
                 options = data.template['options'] # Modifiable list (configdata with value "list")

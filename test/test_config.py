@@ -190,7 +190,7 @@ print(configuration_plot)
 print('Hallo hallo hallo')
 config_template = {}
 config_template['test'] = {}
-config_template['test']['string_send']    = {'type': 'int'}
+config_template['test']['string_send'] = {'type': 'color'}
 print('Config template',config_template)
 c = redvypr.config.configuration(config_template)#,template={})
 print(c)

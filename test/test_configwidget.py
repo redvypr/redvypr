@@ -47,8 +47,8 @@ config['listconfig'].append({'template_name': 'typetest'})
 from redvypr.devices.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
 description = 'Device that plots the received data'
 config_template = {}
-config_template['plots'] = {'type': 'list', 'modify': True, 'options': [config_template_numdisp, config_template_graph]}
-config_template['dt_update'] = {'type':'float','default':0.25}
+#config_template['plots'] = {'type': 'list', 'modify': True, 'options': [config_template_numdisp, config_template_graph]}
+config_template['dt_update'] = {'type':'color'}
 config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publish'] = False
 config_template['redvypr_device']['subscribe'] = True
