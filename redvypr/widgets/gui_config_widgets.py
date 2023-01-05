@@ -272,17 +272,9 @@ class configWidget(QtWidgets.QWidget):
                 type_add  = self.__configwidget_input.currentText()  # combobox
                 options_items_add = self.__configwidget_input.__options__item__
                 data_add = options_items_add[type_add]
-                #index_add = self.__configwidget_input.currentIndex()  # combobox
-                #data_add  = redvypr.config.template_types[index_add]['default']
-                ## Peter
-                #data_add  = redvypr.config.data_to_configdata(data_add)
-                #data_add.__parent__ = data
-                #try:
-                #    data_add.subtype = redvypr.config.template_types[index_add]['subtype']
-                #except:
-                #    pass
-                ## Peter
                 print('Type to be added',type_add)
+                # TODO, this should be done in the append function of the configList
+                data_add.__parent__ = data
                 data.append(data_add)
                 self.reload_config()
                 self.apply_config_change()
@@ -540,6 +532,7 @@ class configWidget(QtWidgets.QWidget):
                         #opt_tmp = redvypr.config.template_types_dict[tempname]
                         data_item = o['default']
                         data_item = redvypr.config.data_to_configdata(data_item)
+                        data_item.template = o  # Add the template
                         try:
                             data_item.subtype = o['subtype']
                         except:
@@ -553,6 +546,7 @@ class configWidget(QtWidgets.QWidget):
                 elif('template_name' in o.keys()):
                     tempname = o['template_name']
                     data_item = redvypr.config.dict_to_configDict(o,process_template=True)
+                    data_item.template = o  # Add the template
                     options_str.append(tempname)
                     options_item[tempname] = data_item
         except Exception as e: # Do we still need this?

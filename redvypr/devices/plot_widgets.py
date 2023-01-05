@@ -183,10 +183,9 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         for iline, line in enumerate(self.config['lines']):
             print('Line',line)
             #FLAG_HAVE_LINE = False
-            # check if we have already a lineplot
+            # check if we have already a lineplot, if yes, dont bother
             try:
                 line.lineplot
-                #FLAG_HAVE_LINE = True
                 continue
             except:
                 pass
@@ -258,8 +257,6 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 lineplot.setPen(pen)
                 name = self.config['lines'][iline]['name'].data
                 print('Setting the name')
-                #lineplot.opts['name'] = name
-                #lineplot.setProperty('styleWasChanged', True)
                 self.config.legend.addItem(lineplot,name)
                 #lineplot.setName(name)
             except Exception as e:
