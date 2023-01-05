@@ -44,9 +44,19 @@ config['listconfig'] = []
 config['listconfig'].append({'name': 'type2'})
 config['listconfig'].append({'template_name': 'typetest'})
 
+from redvypr.devices.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
+description = 'Device that plots the received data'
+config_template = {}
+config_template['plots'] = {'type': 'list', 'modify': True, 'options': [config_template_numdisp, config_template_graph]}
+config_template['dt_update'] = {'type':'float','default':0.25}
+config_template['redvypr_device'] = {}
+config_template['redvypr_device']['publish'] = False
+config_template['redvypr_device']['subscribe'] = True
+config_template['redvypr_device']['description'] = description
+
 
 #configtest = redvypr.config.configuration(template=config_template,config=config)
-configtest = redvypr.config.configuration()
+configtest = redvypr.config.configuration(config_template)
 print('configtest',configtest)
 def main():
     app = QtWidgets.QApplication(sys.argv)

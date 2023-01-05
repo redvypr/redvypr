@@ -673,7 +673,9 @@ class redvypr(QtCore.QObject):
                     # If the device has a logger
                     devicelogger = device.logger
                 except Exception as e:
-                    print('Exception new style', str(e))
+                    logger.warning(funcname + ' Could not add device because of:')
+                    logger.exception(e)
+
 
                 devicedict = {'device': device, 'thread': None, 'dataout': [], 'gui': [], 'guiqueue': [guiqueue],
                               'statistics': statistics, 'logger': devicelogger}
@@ -1505,7 +1507,7 @@ class redvyprWidget(QtWidgets.QWidget):
         all the gui functionality to the device
 
         """
-        funcname = __name__ + '.add_device()'
+        funcname = __name__ + '._add_device_gui()'
         logger.debug(funcname)
         devicedict = devicelist[0]
         ind_devices = devicelist[1]
@@ -1526,7 +1528,8 @@ class redvyprWidget(QtWidgets.QWidget):
         try:
             deviceinitwidget = deviceinitwidget_bare(device)
         except Exception as e:
-            logger.warning(funcname + ': Widget does not have a deviceinitwidget:' + str(e))
+            logger.warning(funcname + ': Could not add deviceinitwidget because of:')
+            logger.exception(e)
             deviceinitwidget = QtWidgets.QWidget()  # Use a standard widget
 
         try:

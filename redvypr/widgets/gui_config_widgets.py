@@ -181,10 +181,11 @@ class configWidget(QtWidgets.QWidget):
             return
 
         try:
-            dtype = data.subtype # Special type like datastream or so
+            dtype = data.template['subtype']
         except:
             dtype = data.__class__.__name__
 
+        print(data.template)
         print(funcname, type(data), modifiable, modifiable_parent,dtype)
         item.__datatype__ = dtype
         data = item.__data__
@@ -206,6 +207,7 @@ class configWidget(QtWidgets.QWidget):
                 options = ['False', 'True']
                 self.config_widget_str_combo(item,options)
         elif (dtype == 'datastream'):
+            print('Datastream')
             self.config_widget_datastream(item)
         elif (dtype == 'color'):
             self.config_widget_color(item)

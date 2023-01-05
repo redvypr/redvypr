@@ -66,9 +66,7 @@ config_template_graph['datetick'] = {'type': 'bool', 'default': True,
 config_template_graph['title'] = {'type': 'str', 'default': ''}
 config_template_graph['xlabel'] = {'type': 'str', 'default': ''}
 config_template_graph['ylabel'] = {'type': 'str', 'default': ''}
-l1 = copy.deepcopy(config_template_graph_line)
-l2 = copy.deepcopy(config_template_graph_line)
-config_template_graph['lines'] = {'type': 'list', 'default': [l1], 'dynamic': True,
+config_template_graph['lines'] = {'type': 'list', 'default': [config_template_graph_line], 'modify': True,
                                  'options': [config_template_graph_line]}
 #config_template_graph['description'] = description_graph
 
@@ -83,30 +81,21 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         self.config_template = config_template_graph
 
         if(config == None): # Create a config from the template
-            config = configtemplate_to_dict(self.config_template)
-            config = copy.deepcopy(config)
-            self.config = config
+            self.config = redvypr.config.configuration(self.config_template)
+        else:
+            self.config = redvypr.config.configuration(self.config_template,config=config)
+            #config = configtemplate_to_dict(self.config_template)
+            #config = copy.deepcopy(config)
+            #self.config = config
 
-        logger.debug('plot widget config {:s}'.format(str(config)))
-
-        try:
-            backcolor = config['backgroundcolor']
-        except:
-            backcolor = 'lightgray'
-            
-        try:
-            bordercolor = config['bordercolor']
-        except:
-            bordercolor = 'black'
-            
-        try:
-            config['useprops']
-        except:
-            config['useprops'] = True
-            
-        self.setStyleSheet("background-color : {:s};border : 1px solid {:s};".format(backcolor,bordercolor))
+        logger.debug('plot widget config {:s}'.format(str(self.config)))
+        backcolor = str(self.config['backgroundcolor'])
+        bordercolor = str(self.config['bordercolor'])
+        print('backcolor',backcolor)
+        style = "background-color : {:s};border : 1px solid {:s};".format(backcolor, bordercolor)
+        print('Style:',style)
+        self.setStyleSheet(style)
         self.layout = QtWidgets.QVBoxLayout(self)
-        self.config = config
         self.create_widgets()
         self.apply_config()
 
@@ -127,12 +116,12 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         if True:
             logger.debug(funcname + ': Adding plot' + str(config))
             try:
-                title = getdata(config['title'])
+                title = config['title'].data
             except:
                 title = "Plot {:d}".format(i)
                 
             try:
-                name = config['name']
+                name = config['name'].data
             except:
                 name = "Plot {:d}".format(i)
             
@@ -145,7 +134,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 
             # Add time as date
             try:
-                datetick = config['datetick']
+                datetick = config['datetick'].data
             except:
                 datetick = False
                 
@@ -167,59 +156,55 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         print('config:', self.config)
         plot = self.plot_dict['widget']
         # Title
-        title = getdata(self.config['title'])
+        title = self.config['title'].data
         plot.setTitle(title)
         # Label
         # If a xlabel is defined
         try:
-            plot.setLabel('left', getdata(self.config['ylabel']))
+            plot.setLabel('left', self.config['ylabel'].data)
         except:
             pass
 
         # If a ylabel is defined
         try:
-            plot.setLabel('bottom', getdata(self.config['xlabel']))
+            plot.setLabel('bottom', self.config['xlabel'].data)
         except:
             pass
 
         plot_dict = self.plot_dict
         config = self.config
         # Add lines with the actual data to the graph
-        for iline, line in enumerate(getdata(config['lines'])):
+        for iline, line in enumerate(self.config['lines']):
             print('Line',line)
             logger.debug(funcname + ':Adding a line to the plot:' + str(line))
-            try:
-                buffersize = getdata(line['buffersize'])
-            except:
-                buffersize = self.buffersizestd
-
+            buffersize = line['buffersize'].data
             xdata = np.zeros(buffersize) * np.NaN
             ydata = np.zeros(buffersize) * np.NaN
             try:
-                name = getdata(line['name'])
+                name = line['name'].data
             except:
                 name = 'line {:d}'.format(iline)
 
             lineplot = pyqtgraph.PlotDataItem(name=name)
 
             try:
-                x = getdata(line['x'])
+                x = line['x'].data
             except:
                 x = "t"
 
             try:
-                y = getdata(line['y'])
+                y = line['y'].data
             except:
                 y = "numpacket"
 
             try:
-                linewidth = getdata(line['linewidth'])
+                linewidth = line['linewidth'].data
             except:
                 linewidth = 1
 
             try:
-                colors = getdata(line['color'])
-                color = QtGui.QColor(colors[0], colors[1], colors[2])
+                colors = line['color'].data
+                color = QtGui.QColor(colors['r'].data, colors['g'].data, colors['b'].data)
             except Exception as e:
                 logger.debug('No color found:' + str(e))
                 color = QtGui.QColor(255, 10, 10)
@@ -249,11 +234,11 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 lineconfig['yaddr'] = yaddr
 
                 print('Set pen')
-                linewidget = getdata(self.plot_dict['lines'][iline])['line']  # The line to plot
+                linewidget = self.plot_dict['lines'][iline]['line']  # The line to plot
                 print('Set pen 1')
-                color = getdata(getdata(self.config['lines'])[iline]['color'])
+                color = self.config['lines'][iline]['color'].data
                 print('Set pen 2')
-                linewidth = getdata(getdata(self.config['lines'])[iline]['linewidth'])
+                linewidth = self.config['lines'][iline]['linewidth'].data
                 print('Set pen 3')
                 pen = pyqtgraph.mkPen(color, width=linewidth)
                 linewidget.setPen(pen)

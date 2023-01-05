@@ -31,7 +31,7 @@ logger.setLevel(logging.DEBUG)
 
 description = 'Device that plots the received data'
 config_template = {}
-config_template['plots'] = {'type': 'list', 'dynamic': True, 'options': [config_template_numdisp, config_template_graph]}
+config_template['plots'] = {'type': 'list', 'modify': True, 'options': [config_template_numdisp, config_template_graph]}
 config_template['dt_update'] = {'type':'float','default':0.25}
 config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publish'] = False
@@ -78,6 +78,7 @@ class Device(redvypr_device):
         devices = self.redvypr.get_devices()  # Get all devices
         plot_devices = []
         for plot in self.config['plots']:  # Loop over all plots
+            print('Config',self.config)
             print('plot',plot)
             if (str(getdata(plot['type'])).lower() == 'numdisp'):
                 datastream = getdata(plot['datastream'])

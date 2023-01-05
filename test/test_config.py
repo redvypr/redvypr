@@ -145,3 +145,51 @@ print('Config test small mod',configuration_test3)
 
 configuration_test4 = redvypr.config.configuration(config_small)#,template={})
 print('Config test small 4',configuration_test4)
+
+
+description_graph = 'Device that plots the received data'
+config_template_graph_line = {}
+config_template_graph_line['template_name'] = 'Line'
+config_template_graph_line['buffersize'] = {'type': 'int', 'default': 2000,
+                                           'description': 'The size of the buffer holding the data of the line'}
+config_template_graph_line['name'] = {'type': 'str', 'default': '',
+                                     'description': 'The name of the line, this is shown in the legend'}
+config_template_graph_line['x'] = {'type': 'datastream', 'default': 'NA',
+                                  'description': 'The x-data of the plot'}
+config_template_graph_line['y'] = {'type': 'datastream', 'default': 'NA',
+                                  'description': 'The y-data of the plot'}
+config_template_graph_line['color'] = {'type': 'color', 'default': 'r',
+                                      'description': 'The color of the plot'}
+config_template_graph_line['linewidth'] = {'type': 'int', 'default': 1,
+                                          'description': 'The linewidth of the line'}
+config_template_graph = {}
+config_template_graph['template_name'] = 'Realtime graph'
+config_template_graph['type'] = {'type': 'str', 'default': 'graph', 'modify': False}
+config_template_graph['backgroundcolor'] = {'type': 'color', 'default': 'lightgray'}
+config_template_graph['bordercolor'] = {'type': 'color', 'default': 'lightgray'}
+
+config_template_graph['useprops'] = {'type': 'bool', 'default': True,
+    'description': 'Use the properties to display units etc.'}
+config_template_graph['datetick'] = {'type': 'bool', 'default': True,
+    'description': 'x-axis is a date axis'}
+
+config_template_graph['title'] = {'type': 'str', 'default': ''}
+config_template_graph['xlabel'] = {'type': 'str', 'default': ''}
+config_template_graph['ylabel'] = {'type': 'str', 'default': ''}
+config_template_graph['y'] = {'type': 'datastream', 'default': 'NA',
+                                  'description': 'The y-data of the plot'}
+config_template_graph['lines'] = {'type': 'list', 'default': [config_template_graph_line], 'modify': True,
+                                 'options': [config_template_graph_line]}
+
+
+configuration_plot = redvypr.config.configuration(config_template_graph)#,template={})
+print('plot')
+print(configuration_plot)
+
+
+print('Hallo hallo hallo')
+config_template = {}
+config_template['string_send']    = {'type': 'list','modify':True}
+print('Config template',config_template)
+c = redvypr.config.configuration(config_template)#,template={})
+print(c)
