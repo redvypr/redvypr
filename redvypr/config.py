@@ -486,6 +486,8 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                                 else:
                                     print('Standard data', d)
                                     dtmp = data_to_configdata(d,recursive=True)
+
+                                dtmp.template = copy.deepcopy(d)
                                 dtmp.__parent__ = default_value # Save the parent as attribute
                                 default_value.append(dtmp)
                                 default_value.template = copy.deepcopy(c[index])
