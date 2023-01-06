@@ -356,14 +356,14 @@ def valid_template(template):
         boold: True if valid, False otherwise
 
     """
-    funcname = __name__ + 'valid_template():'
+    funcname = __name__ + '.valid_template():'
     if(type(template) == dict):
         if('template_name' in template.keys()):
             return True
         else:
             logger.debug(funcname + 'key "template_name" missing')
     else:
-        logger.debug(funcname + 'template not a dictionary')
+        logger.debug(funcname + 'template not a dictionary {:s}'.format(str(type(template))))
 
     return False
 

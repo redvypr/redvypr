@@ -152,6 +152,27 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.status = {}
         self.status['last_update'] = time.time()
         self.init_configwidget()
+        # Remove the plots from the list, this is necessary because addPlot will add the plot to the list again
+        plots = []
+        for p in reversed(self.config['plots']):
+            print('p',p)
+            p2 = copy.deepcopy(p)
+            plots.append(p2)
+            self.config['plots'].remove(p)
+
+        for p in reversed(plots):
+            print('p',p)
+            x      = p['location']['x']
+            y      = p['location']['y']
+            width  = p['location']['width']
+            height = p['location']['height']
+            if p['type'] == 'graph':
+                w = redvypr_graph_widget(p)
+                self.displaywidget.addPlot(w, y, x, height, width)
+            elif p['type'] == 'numdisp':
+                w = redvypr_numdisp_widget(p)
+                self.displaywidget.addPlot(w, y, x, height, width)
+
 
     def init_configwidget(self):
         self.add_button = QtWidgets.QPushButton('Add Plot')
@@ -331,9 +352,9 @@ class PlotGridWidget(QtWidgets.QWidget):
 
         #testw = RandomDataWidget()
         #testw = redvypr_numdisp_widget()
-        testg = redvypr_graph_widget()
-        #self.addPlot(testw, 1, 1, 2, 2)
-        self.addPlot(testg, 0, 3, 5, 3)
+        # self.addPlot(testw, 1, 1, 2, 2)
+        #testg = redvypr_graph_widget()
+        #self.addPlot(testg, 0, 3, 5, 3)
 
         self.rubberband = QtWidgets.QRubberBand(
             QtWidgets.QRubberBand.Rectangle, self)
@@ -582,7 +603,10 @@ class PlotGridWidget(QtWidgets.QWidget):
             except:
                 configwidget_tmp = None
             if(configwidget_tmp is not self.configwidget_global): # Reload the configwidget, if its not the sender
-                p.config_widget.reload_config()
+                try:
+                    p.config_widget.reload_config()
+                except:
+                    pass
 
             try:
                 p.plotwidget.apply_config()
@@ -618,6 +642,30 @@ class PlotGridWidget(QtWidgets.QWidget):
                 break
 
         plotwidget.close()
+
+    def remAllPlots(self):
+        """
+        Removes all plotwidget from the grid
+
+        Args:
+
+        Returns:
+
+        """
+        self.layout.removeWidget(plotwidget)
+        for d in reversed(self.all_plots):
+            plotwidget = d['plot']
+            print('removing from list')
+            self.all_plots.remove(d)
+            self.device.config['plots'].remove(plotwidget.config)
+            try:
+                r = d['rubber']
+                r.close()
+            except:
+                pass
+
+            plotwidget.close()
+
 
     def commit_clicked(self):
         """
