@@ -18,6 +18,9 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr')
 logger.setLevel(logging.DEBUG)
 
+
+
+
 #
 #
 class redvypr_ip_widget(QtWidgets.QWidget):
@@ -44,7 +47,7 @@ class redvypr_ip_widget(QtWidgets.QWidget):
 #
 #
 class configWidget(QtWidgets.QWidget):
-    config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
+    #config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
     def __init__(self, config=None, loadsavebutton=True,redvypr_instance=None):
         funcname = __name__ + '.__init__():'
@@ -62,7 +65,6 @@ class configWidget(QtWidgets.QWidget):
             configname = 'config'
 
         self.config = config
-        print('config',self.config,type(config))
         self.configtree = configQTreeWidget(data = self.config,dataname=configname)
         self.configtree.expandAll()
         self.configtree.resizeColumnToContents(0)
@@ -96,7 +98,10 @@ class configWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.reload_config():'
         logger.debug(funcname)
+        print('Reload type',type(self.config))
+        self.remove_input_widgets()
         self.configtree.reload_data(self.config)
+        print('Reload type 5', type(self.config))
 
     def load_config(self):
         funcname = __name__ + '.load_config():'
@@ -145,9 +150,12 @@ class configWidget(QtWidgets.QWidget):
         Returns:
 
         """
+        funcname = __name__ + '.apply_config_change():'
         config = self.get_config()
+        print('Hallo apply1', type(self.config))
         self.config_changed_flag.emit()
-        self.config_changed.emit(config)
+
+        print('Hallo apply2', type(self.config))
 
 
     def __open_config_gui(self,item):
@@ -158,7 +166,9 @@ class configWidget(QtWidgets.QWidget):
 
         """
         funcname = __name__ + '.__open_config_gui():'
+        print('Hallo gui', type(self.config))
         data = item.__data__
+        print('Hallo gui data', type(data))
         try:
             options = item.__options__
         except:
@@ -185,8 +195,8 @@ class configWidget(QtWidgets.QWidget):
         except:
             dtype = data.__class__.__name__
 
-        print(data.template)
-        print(funcname, type(data), modifiable, modifiable_parent,dtype)
+        #print(data.template)
+        #print(funcname, type(data), modifiable, modifiable_parent,dtype)
         item.__datatype__ = dtype
         data = item.__data__
         self.remove_input_widgets()
@@ -287,6 +297,7 @@ class configWidget(QtWidgets.QWidget):
                 except:
                     pass
 
+                print('HALLO 1', type(self.config))
                 data.data = data_str
                 item.setText(1, str(data_str))
                 self.apply_config_change()
@@ -338,9 +349,8 @@ class configWidget(QtWidgets.QWidget):
         else:
             logger.debug(funcname + 'unknown button')
 
-        config = self.get_config()
-        self.config_changed_flag.emit()
-        self.config_changed.emit(config)
+        self.apply_config_change()
+        self.__configwidget_input.close()
 
 
     #
@@ -702,11 +712,15 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
         #self.itemCollapsed.connect(self.resize_view)
 
     def reload_data(self,data):
+        print('Reload type 1', type(data))
         self.data = data
+        print('Reload type 2', type(self.data))
         self.clear()
         self.create_qtree()
+        print('Reload type 3', type(self.data))
         self.expandAll()
         self.resizeColumnToContents(0)
+        print('Reload type 4', type(self.data))
 
     def seq_iter(self,obj):
         return redvypr.utils.seq_iter(obj)
@@ -723,7 +737,6 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
 
         """
         sequence = self.seq_iter(data)
-        print('Data',data,sequence,index)
         if(sequence == None): # Check if we have an item that is something with data (not a list or dict)
             data_value = data  #
             #print('Data value',str(data_value),data)

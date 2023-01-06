@@ -130,7 +130,7 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
 
-        self.config_widget.config_changed.connect(self.config_changed)
+        self.config_widget.config_changed_flag.connect(self.config_changed)
 
     def config_changed(self, config):
         """
@@ -142,7 +142,8 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         Returns:
 
         """
-        self.device.config = config
+        funcname = __name__ + '.config_changed():'
+        logger.debug(funcname)
 
     def kill_clicked(self):
         button = self.sender()

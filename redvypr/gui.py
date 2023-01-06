@@ -20,6 +20,16 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr')
 logger.setLevel(logging.DEBUG)
 
+def get_QColor(data):
+    funcname = __name__ + '.get_QColor():'
+    if(type(data.data) == str):
+        color = QtGui.QColor(data.data)
+    else:
+        colors = data.data
+        color = QtGui.QColor(colors['r'].data, colors['g'].data, colors['b'].data)
+
+    return color
+
 
 class redvyprConnectWidget(QtWidgets.QWidget):
     """A widget that lets the user connect the input and output queues of

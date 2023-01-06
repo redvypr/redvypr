@@ -12,11 +12,12 @@ import pyqtgraph
 
 import redvypr.data_packets
 from redvypr.data_packets import addr_in_data, get_keys_from_data, parse_addrstr
-from redvypr.gui import redvypr_devicelist_widget
+#from redvypr.gui import redvypr_devicelist_widget
+import redvypr.gui
 import redvypr.files as files
 from redvypr.utils import configtemplate_to_dict, configdata, getdata
-from redvypr.device import redvypr_device
-from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
+#from redvypr.device import redvypr_device
+#from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
 from copy import deepcopy as dc
 
 _logo_file = files.logo_file
@@ -37,6 +38,14 @@ logger.setLevel(logging.DEBUG)
 #
 #
 #
+
+config_template_grid_loc = {}
+config_template_grid_loc['template_name'] = 'gridloc'
+config_template_grid_loc['x'] = {'type': 'int', 'default': 0}
+config_template_grid_loc['y'] = {'type': 'int', 'default': 0}
+config_template_grid_loc['width'] = {'type': 'int', 'default': 1}
+config_template_grid_loc['height'] = {'type': 'int', 'default': 1}
+
 description_graph = 'Device that plots the received data'
 config_template_graph_line = {}
 config_template_graph_line['template_name'] = 'Line'
@@ -48,12 +57,12 @@ config_template_graph_line['x'] = {'type': 'datastream', 'default': 'NA',
                                   'description': 'The x-data of the plot'}
 config_template_graph_line['y'] = {'type': 'datastream', 'default': 'NA',
                                   'description': 'The y-data of the plot'}
-config_template_graph_line['color'] = {'type': 'color', 'default': 'r',
-                                      'description': 'The color of the plot'}
+config_template_graph_line['color'] = {'type': 'color', 'description': 'The color of the plot'}
 config_template_graph_line['linewidth'] = {'type': 'int', 'default': 1,
                                           'description': 'The linewidth of the line'}
 config_template_graph = {}
 config_template_graph['template_name'] = 'Realtime graph'
+config_template_graph['location'] = config_template_grid_loc
 config_template_graph['type'] = {'type': 'str', 'default': 'graph', 'modify': False}
 config_template_graph['backgroundcolor'] = {'type': 'color', 'default': 'lightgray'}
 config_template_graph['bordercolor'] = {'type': 'color', 'default': 'lightgray'}
@@ -160,7 +169,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         """
         funcname = __name__ + '.apply_config()'
         print('Hallo!, Apply config!')
-        print('config:', self.config)
+        print('config start:', type(self.config))
         plot = self.config.plot
         # Title
         title = self.config['title'].data
@@ -181,7 +190,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         config = self.config
         # Add lines with the actual data to the graph
         for iline, line in enumerate(self.config['lines']):
-            print('Line',line)
+            #print('Line',line)
             #FLAG_HAVE_LINE = False
             # check if we have already a lineplot, if yes, dont bother
             try:
@@ -216,8 +225,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 linewidth = 1
 
             try:
-                colors = line['color'].data
-                color = QtGui.QColor(colors['r'].data, colors['g'].data, colors['b'].data)
+                color = redvypr.gui.get_QColor(line['color'])
             except Exception as e:
                 logger.debug('No color found:' + str(e))
                 color = QtGui.QColor(255, 10, 10)
@@ -235,7 +243,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         self.config.legend.clear()
         for iline, line in enumerate(self.config['lines']):
             try:
-                print('Line',line,iline)
+                #print('Line',line,iline)
                 lineconfig = line.line_dict['config']
                 x = line['x']
                 y = line['y']
@@ -246,13 +254,14 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 lineconfig['xaddr'] = xaddr
                 lineconfig['yaddr'] = yaddr
 
-                print('Set pen')
+                #print('Set pen')
                 lineplot = line.line_dict['line']  # The line to plot
-                print('Set pen 1')
-                color = self.config['lines'][iline]['color'].data
-                print('Set pen 2')
+                #print('Set pen 1')
+                color = redvypr.gui.get_QColor(self.config['lines'][iline]['color'])
+                print('COLOR!!!!',color)
+                #print('Set pen 2')
                 linewidth = self.config['lines'][iline]['linewidth'].data
-                print('Set pen 3')
+                #print('Set pen 3')
                 pen = pyqtgraph.mkPen(color, width=linewidth)
                 lineplot.setPen(pen)
                 name = self.config['lines'][iline]['name'].data
@@ -264,7 +273,8 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 logger.debug('Exception config lines: {:s}'.format(str(e)))
 
 
-        print('Apply')
+        print('Apply done')
+        print('config start:', type(self.config))
         
     def clear_buffer(self):
         """ Clears the buffer of all lines

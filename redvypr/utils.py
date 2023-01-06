@@ -240,7 +240,7 @@ def seq_iter(obj):
         list of indicies
 
     """
-    try: # Test if we have an UserDict or UserList or configDict or configList
+    try: # Test if we have an UserDict or UserList or configDict or configList or configuration
         obj_test = obj.data
     except:
         obj_test = obj

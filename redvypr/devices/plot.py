@@ -33,6 +33,8 @@ description = 'Device that plots the received data'
 config_template = {}
 config_template['plots'] = {'type': 'list', 'modify': True, 'options': [config_template_numdisp, config_template_graph]}
 config_template['dt_update'] = {'type':'float','default':0.25}
+config_template['nx'] = {'type':'int','default':7}
+config_template['ny'] = {'type':'int','default':6}
 config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publish'] = False
 config_template['redvypr_device']['subscribe'] = True
@@ -150,19 +152,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.status = {}
         self.status['last_update'] = time.time()
         self.init_configwidget()
-        self.apply_config()
-
-    def apply_config(self):
-        """
-        Applies the configuration, i.e. adding plots to the gridwidget
-        Returns:
-
-        """
-        #self.addPlot(addwidget_called, self.__add_location__[0], self.__add_location__[1],
-        #             self.__add_location__[2], self.__add_location__[3])
-        funcname = __name__ + '.apply_config()'
-        logger.debug(funcname)
-        print('Config',self.config)
 
     def init_configwidget(self):
         self.add_button = QtWidgets.QPushButton('Add Plot')
@@ -303,6 +292,10 @@ class PlotGridWidget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         self.layout = QtWidgets.QGridLayout(self)
         self.configplotwidget = configplotwidget
+        if(device is not None):
+            initwidget = device.deviceinitwidget
+            self.configwidget_global = initwidget.config_widget # The configuration widget that is shown on the init widget
+            self.configwidget_global.config_changed_flag.connect(self.config_changed)
         self.displaywidget = displaywidget # The widget that is actually shown in the tabulator
         self.device = device
         self.redvypr = device.redvypr
@@ -311,8 +304,8 @@ class PlotGridWidget(QtWidgets.QWidget):
         self.flag_mod_plot = False
         self.flag_rem_plot = False
         self.__add_location__ = None
-        self.nx = 6
-        self.ny = 5
+        self.nx = self.device.config['nx'].data
+        self.ny = self.device.config['ny'].data
         for i in range(self.ny):
             self.layout.setRowStretch(i, 1)
 
@@ -548,19 +541,21 @@ class PlotGridWidget(QtWidgets.QWidget):
         # Add the configuration widget to the plotwidget
         plotwidget.config_widget = config_widget
         self.layout.addWidget(plotwidget, j, i, height, width)
+        # Add the location information
+        configuration = plotwidget.config
+        configuration['location']['x'].data = i
+        configuration['location']['y'].data = j
+        configuration['location']['height'].data = height
+        configuration['location']['width'].data = width
+        configuration.config_widget = config_widget
+        configuration.plotwidget = plotwidget
+        print('Added plot',type(configuration))
+        self.device.config['plots'].append(configuration)
         d = {'plot': plotwidget, 'config': config_widget}
-        initwidget = self.device.deviceinitwidget
-        configwidget_global = initwidget.config_widget # The configuration widget that is shown on the init widget
         self.all_plots.append(d)
-        self.update_config()
-
+        self.config_changed()
         plotwidget.show()
         
-    def update_config(self):
-        self.device.config['plots'] = []
-        for d in self.all_plots:
-            self.device.config['plots'].append(copy.deepcopy(d['config'].config))
-
     def config_changed(self):
         """
         Function is called whenever the configuration has been changed and updates the configuration of the plotwidget
@@ -571,17 +566,33 @@ class PlotGridWidget(QtWidgets.QWidget):
         Returns:
 
         """
-        config_widget = self.sender()
         funcname = self.__class__.__name__ + '.config_changed'
-        logger.debug(funcname + ' config: {:s}'.format(str(config_widget.config)))
-        # Copy the configuration to the plotwidget
-        config_widget.plotwidget.config = config_widget.config
-        config_widget.plotwidget.apply_config()
-        #
-        print('Config device',self.device.config['plots'])
-        logger.debug(funcname + ': Connecting devices')
-        self.update_config()
-        self.device.connect_devices()
+        configwidget = self.sender()
+        print('Global config')
+        print('config type start ', type(self.device.config))
+        if (configwidget is not self.configwidget_global):  # Reload the configwidget, if its not the sender
+            self.configwidget_global.reload_config()
+        print('config', self.device.config)
+        print('config type', type(self.device.config))
+        for p in self.device.config['plots']:
+            #print('Config for plot')
+            print('p',p,type(p))
+            try:
+                configwidget_tmp = p.config_widget
+            except:
+                configwidget_tmp = None
+            if(configwidget_tmp is not self.configwidget_global): # Reload the configwidget, if its not the sender
+                p.config_widget.reload_config()
+
+            try:
+                p.plotwidget.apply_config()
+            except Exception as e:
+                logger.exception(e)
+
+        print('config type end ', type(self.device.config))
+        #if True:
+        #    self.device.connect_devices()
+        print('config type end ', type(self.device.config))
 
     def remPlot(self, plotwidget):
         """

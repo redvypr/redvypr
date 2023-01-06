@@ -1523,6 +1523,7 @@ class redvyprWidget(QtWidgets.QWidget):
             deviceinitwidget_bare = devicemodule.initDeviceWidget
         except Exception as e:
             logger.debug(funcname + ': Widget does not have a deviceinitwidget using standard one:' + str(e))
+            logger.exception(e)
             deviceinitwidget_bare = redvypr_deviceInitWidget  # Use a standard widget
 
         try:

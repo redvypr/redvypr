@@ -509,7 +509,7 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                         default_value = configList()
                         default_value.template = copy.deepcopy(c[index])
 
-                print('Default value',default_value,FLAG_CONFIG_DICT,type(default_value))
+                #print('Default value',default_value,FLAG_CONFIG_DICT,type(default_value))
                 c[index] = data_to_configdata(default_value)
                 # Test if an template was already added above, otherwise add one
                 try:
@@ -560,10 +560,9 @@ def apply_config_to_configDict(userconfig,configdict):
         configdict_applied: A with the userconfig modified configuration dictionary
     """
     funcname = __name__ + '.apply_config_to_configDict():'
-    print('HAAAALLLLO')
+    logger.debug(funcname)
     def loop_over_index(c,cuser):
         for index in seq_iter(cuser): # Loop over the user config
-            print('Hallo',index,c[index])
             #print('c', c, index)
             indices = seq_iter(c)
             #print('c', c, index,indices)
@@ -596,7 +595,7 @@ def apply_config_to_configDict(userconfig,configdict):
                 except Exception as e:
                     t = ''
 
-                print('List',t,modifiable)
+                #print('List',t,modifiable)
                 if (t == 'list') and modifiable: # modifiable list
                     # First make the list equally long, the user list is either 0 or longer
                     numitems = len(cuser[index])
@@ -612,13 +611,13 @@ def apply_config_to_configDict(userconfig,configdict):
                             nameuser = cuser[index][i].__class__.__name__
 
                         FLAG_FOUND_VALID_OPTION = False
-                        print('Template options',ctemp.template)
-                        print('Nameuser',nameuser)
+                        #print('Template options',ctemp.template)
+                        #print('Nameuser',nameuser)
                         for o in ctemp.template['options']:
-                            print('Option',o)
+                            #print('Option',o)
                             # If the option is a str, try to find the correct template in the standard template
                             if(type(o) == str) or (type(o) == configString):
-                                print('Converting to standard option')
+                                #print('Converting to standard option')
                                 try:
                                     o = copy.deepcopy(__template_types__modifiable_list_dict__[o])
                                 except:
@@ -631,11 +630,11 @@ def apply_config_to_configDict(userconfig,configdict):
                                 nameoption = o['type']
                                 FLAG_TEMPLATE = False
 
-                            print('Nameoption',nameoption,FLAG_TEMPLATE)
+                            #print('Nameoption',nameoption,FLAG_TEMPLATE)
                             if(nameoption == nameuser) and FLAG_TEMPLATE:
-                                print('Converting the template')
+                                #print('Converting the template')
                                 ctemp[i] = dict_to_configDict(o,process_template=True)
-                                print('ctemp',ctemp[i])
+                                #print('ctemp',ctemp[i])
                                 FLAG_FOUND_VALID_OPTION = True
                                 break
                             elif nameoption == nameuser:
@@ -686,6 +685,9 @@ class configuration(configDict):
         if(config is not None):
             test = apply_config_to_configDict(config,self)
             print('test',test)
+
+
+
 
 
 
