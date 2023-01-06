@@ -230,7 +230,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             # Configuration of the line plot
             lineconfig = {'x': x, 'y': y, 'linewidth': linewidth, 'color': color}
             # Add the line and the configuration to the lines list
-            line_dict = {'line': lineplot, 'config': lineconfig, 'x': xdata, 'y': ydata}
+            line_dict = {'line': lineplot, 'config': lineconfig, 'xdata': xdata, 'ydata': ydata}
             line.line_dict = line_dict
             plot.addItem(lineplot)
             # Configuration
@@ -242,8 +242,8 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             try:
                 #print('Line',line,iline)
                 lineconfig = line.line_dict['config']
-                x = line['x']
-                y = line['y']
+                x = line['x'].data
+                y = line['y'].data
                 xaddr = redvypr.data_packets.redvypr_address(x)
                 yaddr = redvypr.data_packets.redvypr_address(y)
                 lineconfig['x'] = x
@@ -278,11 +278,13 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         """
         # Check if the device is to be plotted
         
-        for ind,line_dict in enumerate(self.plot_dict['lines']): # Loop over all lines of the device to plot
+        #for ind,line_dict in enumerate(self.plot_dict['lines']): # Loop over all lines of the device to plot
+        for iline, line in enumerate(self.config['lines']):
+            line_dict = line.line_dict
             line      = line_dict['line'] # The line to plot
             config    = line_dict['config'] # The line to plot
-            line_dict['x'][:] = np.NaN
-            line_dict['y'][:] = np.NaN
+            line_dict['xdata'][:] = np.NaN
+            line_dict['ydata'][:] = np.NaN
         
     def update_plot(self,data):
         """ Updates the plot based on the given data
@@ -297,19 +299,19 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         if True:
             # Loop over all plot axes
             if True:
-                plot_dict = self.plot_dict
                 # Check if the device is to be plotted
-                for line_dict in plot_dict['lines']:  # Loop over all lines of the devices to plot
+                for iline, line in enumerate(self.config['lines']):
+                    line_dict = line.line_dict
                     print('line dict',line_dict)
                     xaddr = line_dict['config']['xaddr']
                     yaddr = line_dict['config']['yaddr']
                     print('adresses:',xaddr,yaddr)
                     if(data in xaddr) and (data in yaddr):
-                        pw        = plot_dict['widget'] # The plot widget
+                        pw        = self.config.plot # The plot widget
                         line      = line_dict['line'] # The line to plot
                         config    = line_dict['config'] # The line to plot
-                        xdata     = line_dict['x'] # The line to plot
-                        ydata         = line_dict['y'] # The line to plot
+                        xdata     = line_dict['xdata'] # The line to plot
+                        ydata     = line_dict['ydata'] # The line to plot
                         # data can be a single float or a list
                         newx = data[xaddr.datakey]
                         newy = data[yaddr.datakey]
@@ -322,8 +324,8 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                             ydata         = np.roll(ydata,-1)
                             xdata[-1]    = float(newx[inew])
                             ydata[-1]    = float(newy[inew])
-                            line_dict['x']  = xdata
-                            line_dict['y']  = ydata
+                            line_dict['xdata']  = xdata
+                            line_dict['ydata']  = ydata
 
                         if('useprops' in self.config.keys()):
                             if(self.config['useprops']):
@@ -337,11 +339,12 @@ class redvypr_graph_widget(QtWidgets.QFrame):
 
 
             if(update):
-                for line_dict in plot_dict['lines']:  # Loop over all lines of the devices to plot
+                for iline, line in enumerate(self.config['lines']):
+                    line_dict = line.line_dict
                     line      = line_dict['line'] # The line to plot
                     config    = line_dict['config'] # The line to plot
-                    x         = line_dict['x'] # The line to plot
-                    y         = line_dict['y'] # The line to plot
+                    x         = line_dict['xdata'] # The line to plot
+                    y         = line_dict['ydata'] # The line to plot
                     line.setData(x=x,y=y)
                     #pw.setXRange(min(x[:ind]),max(x[:ind]))
 
@@ -507,7 +510,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         dataformat = self.config['dataformat'].data
         parsed_stream = parse_addrstr(datastream)
         datakey = parsed_stream['datakey']
-        print('datastram', datastream)
+        print('datastram', datastream,type(datastream))
         print('datakey', datakey)
         print('in data',addr_in_data(datastream, data))
         if(addr_in_data(datastream,data)):

@@ -278,6 +278,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         print('got data', data)
         print('status', self.status)
         print('config', self.config)
+        print(tnow,self.status['last_update'])
+        print((tnow - self.status['last_update']))
         # print('statistics',self.device.statistics)
         devicename = data['device']
         # Only plot the data in intervals of dt_update length, this prevents high CPU loads for fast devices
@@ -285,7 +287,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             update = (tnow - self.status['last_update']) > self.config['dt_update']
             print('update update', update)
             if (update):
-                self.status['last_update'] = tnow
+                #self.status['last_update'] = tnow
                 print('updating', update)
                 try:
                     for data in self.databuf:
@@ -298,6 +300,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     self.databuf = []
 
                 except Exception as e:
+                    logger.exception(e)
                     logger.debug(funcname + 'Exception:' + str(e))
 
 #
