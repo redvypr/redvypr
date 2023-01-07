@@ -13,7 +13,7 @@ import qtawesome as qta
 
 import redvypr.data_packets
 from redvypr.data_packets import addr_in_data, get_keys_from_data
-from redvypr.gui import redvypr_devicelist_widget, configWidget
+from redvypr.gui import configWidget
 from redvypr.devices.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
 import redvypr.files as files
 from redvypr.device import redvypr_device

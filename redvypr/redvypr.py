@@ -29,7 +29,7 @@ import platform
 import redvypr.devices as redvyprdevices
 import redvypr.data_packets as data_packets
 from redvypr.gui import redvypr_ip_widget, redvyprConnectWidget, QPlainTextEditLogger, displayDeviceWidget_standard, \
-    deviceinfoWidget, redvypr_devicelist_widget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget
+    deviceinfoWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget
 from redvypr.utils import addrm_device_as_data_provider, get_data_receiving_devices, get_data_providing_devices#, configtemplate_to_dict, apply_config_to_dict
 from redvypr.config import configuration
 from redvypr.version import version
@@ -1952,7 +1952,7 @@ Opens an "about" widget showing basic information.
         self._about_widget.show()
 
     def show_deviceselect(self):
-        self.__deviceselect__ = redvypr_devicelist_widget(redvypr=self.redvypr_widget.redvypr, deviceonly=True)
+        self.__deviceselect__ = datastreamWidget(redvypr=self.redvypr_widget.redvypr, deviceonly=True)
         self.__deviceselect__.show()
 
     def open_add_device_widget(self):

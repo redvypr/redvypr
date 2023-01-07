@@ -315,6 +315,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                         # data can be a single float or a list
                         newx = data[xaddr.datakey]
                         newy = data[yaddr.datakey]
+                        print('newx',newx)
                         if(type(newx) is not list):
                             newx = [newx]
                             newy = [newy]
@@ -362,7 +363,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
 #
 #
 description_numdisp = 'Device that plots the received data'
-rdvpraddr = redvypr.data_packets.redvypr_address('tmp')
+#rdvpraddr = redvypr.data_packets.redvypr_address('tmp')
 config_template_numdisp = {}
 config_template_numdisp['template_name'] = 'Numeric display'
 config_template_numdisp['type'] = {'type': 'str', 'default': 'numdisp', 'modify': False}
@@ -373,7 +374,7 @@ config_template_numdisp['fontsize'] = {'type': 'int', 'default': 20}
 config_template_numdisp['datastream'] = {'type': 'datastream', 'default': 'NA'}
 config_template_numdisp['timeformat'] = {'type': 'str', 'default': '%d-%b-%Y %H:%M:%S'}
 config_template_numdisp['unit'] = {'type': 'str', 'default': ''}
-config_template_numdisp['datastreamlabel'] = {'type': 'str', 'options': rdvpraddr.get_strtypes(),
+config_template_numdisp['datastreamlabel'] = {'type': 'str', 'options': redvypr.data_packets.addresstypes,
                                            'default': '<key>/<device>', 'description': 'Display the datastreamlabel'}
 config_template_numdisp['useprops'] = {'type': 'bool', 'default': True,
                                     'description': 'Use the properties to display units etc.'}

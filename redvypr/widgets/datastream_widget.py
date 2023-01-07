@@ -2,7 +2,8 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import logging
 import sys
 import redvypr.files as files
-from redvypr.data_packets import parse_addrstr
+from redvypr.data_packets import parse_addrstr, addresstypes as redvypr_addresstypes, redvypr_address
+
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -12,7 +13,7 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr')
 logger.setLevel(logging.DEBUG)
 #
-class redvypr_devicelist_widget(QtWidgets.QWidget):
+class datastreamWidget(QtWidgets.QWidget):
     """ Widget that lets the user choose available subscribed devices (if device is not None) and datakeys. This
     devicelock: The user cannot change the device anymore
     """
@@ -21,7 +22,7 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
     datakey_name_changed = QtCore.pyqtSignal(str)  # Signal notifying if the datakey has changed
 
     def __init__(self, redvypr, device=None, devicename_highlight=None, datakey=None, deviceonly=False,
-                 devicelock=False, subscribed_only=True, showapplybutton=True):
+                 devicelock=False, subscribed_only=True, showapplybutton=True,datastreamstring=''):
         """
         Args:
             redvypr:
@@ -36,6 +37,8 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         self.setWindowIcon(QtGui.QIcon(_icon_file))
         self.redvypr = redvypr
+        self.datastreamstring_orig = datastreamstring
+        self.datastreamstring      = datastreamstring
         self.layout = QtWidgets.QVBoxLayout(self)
         self.deviceonly = deviceonly
         if (devicename_highlight == None):
@@ -70,9 +73,19 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
             self.devicedatakeyslabel = QtWidgets.QLabel('Data keys of device')
             self.layout.addWidget(self.devicedatakeyslabel)
             self.layout.addWidget(self.datakeylist)
-            self.datakeycustom = QtWidgets.QLineEdit()
-            self.layout.addWidget(self.datakeycustom)
+
+            self.addrtype_combo = QtWidgets.QComboBox()  # Combo for the different combination types
+
+            for t in redvypr_addresstypes:
+                self.addrtype_combo.addItem(t)
+
+            self.addrtype_combo.setCurrentIndex(2)
+            self.addrtype_combo.currentIndexChanged.connect(self.__addrtype_changed__)
+            self.layout.addWidget(self.addrtype_combo)
+            #self.datakeycustom = QtWidgets.QLineEdit() #
+            #self.layout.addWidget(self.datakeycustom)
             self.datastreamcustom = QtWidgets.QLineEdit()
+            self.__addrtype_changed__() # Update the datastream addressstring
             self.layout.addWidget(self.datastreamcustom)
             self.datakeylist.itemDoubleClicked.connect(
                 self.datakey_clicked)  # TODO here should by an apply signal emitted
@@ -127,6 +140,20 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
         if (devicelock):
             self.devicelist.setEnabled(False)
 
+    def __addrtype_changed__(self):
+        """ Update the datakeylist whenever the device was changed
+        """
+        funcname = __name__ + '.__addrtype_changed__():'
+        logger.debug(funcname)
+        print('datastreamstring', self.datastreamstring)
+        addrtype = self.addrtype_combo.currentText()
+        print('datastreamstring', self.datastreamstring,addrtype)
+        raddr = redvypr_address(self.datastreamstring)
+        addrstring = raddr.get_str(addrtype)
+        print('addrstring',addrstring)
+        self.datastreamcustom.setText(addrstring)
+
+
     def update_datakeylist(self, devicename):
         """ Update the datakeylist whenever the device was changed
         """
@@ -165,13 +192,14 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
     def done_clicked(self):
         devicename = self.devicecustom.text()
         if (self.deviceonly == False):
-            datakey = self.datakeycustom.text()
+            #datakey = self.datakeycustom.text()
             datastream = self.datastreamcustom.text()
         else:
             datakey = None
             datastream = None
 
-        signal_dict = {'devicename': devicename, 'datakey': datakey, 'datastream': datastream}
+        #signal_dict = {'devicename': devicename, 'datakey': datakey, 'datastream': datastream}
+        signal_dict = {'devicename': devicename, 'datastream': datastream}
         self.apply.emit(signal_dict)
         self.close()
 
@@ -196,8 +224,10 @@ class redvypr_devicelist_widget(QtWidgets.QWidget):
         print('datakeys', self.datakeys)
         print('datastream', self.datastreams)
         print('index',index)
-        self.datakeycustom.setText(str(datakey))
-        self.datastreamcustom.setText(str(datastream))
+        self.datastreamstring = datastream
+        self.__addrtype_changed__()
+        #self.datakeycustom.setText(str(datakey))
+        #self.datastreamcustom.setText(str(datastream))
 
         self.datakey_name_changed.emit(item.text())
 

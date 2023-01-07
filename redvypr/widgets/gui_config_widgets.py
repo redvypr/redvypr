@@ -6,7 +6,7 @@ import yaml
 from PyQt5 import QtWidgets, QtCore, QtGui
 from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices,configtemplate_to_dict
 from redvypr.device import redvypr_device
-from redvypr.widgets.devicelist_widget import redvypr_devicelist_widget
+from redvypr.widgets.datastream_widget import datastreamWidget
 import redvypr.utils
 import redvypr.files as files
 
@@ -411,7 +411,7 @@ class configWidget(QtWidgets.QWidget):
         data = item.__data__
         parentparent = parent.__parent__
         self.remove_input_widgets()
-        datastreamwidget = redvypr_devicelist_widget(redvypr=self.redvypr, showapplybutton=False)
+        datastreamwidget = datastreamWidget(redvypr=self.redvypr, showapplybutton=False,datastreamstring=data.data)
         datastreamwidget.item     = item
         self.__configwidget_input = datastreamwidget
         self.__configwidget_int   = QtWidgets.QWidget()

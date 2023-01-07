@@ -97,7 +97,7 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         self.layout = QtWidgets.QGridLayout(self)
         self.config_widgets = []
         self.device = device
-        self.config_widget = configWidget(device.config)
+        self.config_widget = configWidget(device.config,redvypr_instance=self.device.redvypr)
 
         self.config_widgets.append(self.config_widget)
 

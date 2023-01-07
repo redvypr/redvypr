@@ -693,3 +693,8 @@ def check_for_command(datapacket=None,uuid=None,thread_uuid=None):
 
     return command
 
+
+
+__rdvpraddr__ = redvypr_address('tmp')
+addresstypes  = __rdvpraddr__.get_strtypes() # A list of all addresstypes
+

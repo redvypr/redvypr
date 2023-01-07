@@ -8,7 +8,7 @@ from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devic
 from redvypr.device import redvypr_device
 from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget
-from redvypr.widgets.devicelist_widget import redvypr_devicelist_widget
+from redvypr.widgets.datastream_widget import datastreamWidget
 import redvypr.utils
 import redvypr.files as files
 
