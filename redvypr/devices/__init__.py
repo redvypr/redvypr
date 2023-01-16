@@ -8,6 +8,7 @@ from . import plot_widgets
 from . import rawdatadisp
 from . import rawdatalogger
 from . import rawdatareplay
+from . import iored
 from . import test_device
 
 

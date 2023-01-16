@@ -18,21 +18,21 @@ import copy
 import uuid
 import multiprocessing
 import threading
-from redvypr.data_packets import compare_datastreams, parse_addrstr, commandpacket
+from redvypr.data_packets import compare_datastreams, parse_addrstr, commandpacket, redvypr_address
 
 logging.basicConfig(stream=sys.stderr)
 
 class redvypr_device(QtCore.QObject):
     thread_started = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     thread_stopped = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
-    status_signal = QtCore.pyqtSignal(dict)  # Signal with the status of the device
+    status_signal  = QtCore.pyqtSignal(dict)   # Signal with the status of the device
     connection_changed = QtCore.pyqtSignal()  # Signal notifying that a connection with another device has changed
 
     def __init__(self,name='redvypr_device',uuid = '', redvypr=None,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None,template = {},config = {},publish=False,subscribe=False,multiprocess='tread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False):
         """
         """
         super(redvypr_device, self).__init__()
-        self.publish     = publish   # publishes data, a typical sensor is doing this
+        self.publish     = publish    # publishes data, a typical sensor is doing this
         self.subscribe   = subscribe  # subscribing data, a typical datalogger is doing this
         self.datainqueue = datainqueue
         self.dataqueue   = dataqueue        
@@ -53,6 +53,8 @@ class redvypr_device(QtCore.QObject):
         self.data_receiver = []
         self.data_provider = []
 
+        self.__update_address__()
+
         # Adding the start function (the function that is executed as a thread or multiprocess and is doing all the work!)
         if(startfunction is not None):
             self.start = startfunction
@@ -68,6 +70,54 @@ class redvypr_device(QtCore.QObject):
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(loglevel)
 
+    def change_name(self,name):
+        """
+        Changes the name of the device
+
+        Args:
+            name:
+
+        Returns:
+
+        """
+        self.name = name
+        self.__update_address__()
+        # Clear the statistics
+        self.statistics['numpackets'] = 0
+        self.statistics['datakeys'] = []
+        self.statistics['devicekeys'] = {}
+        self.statistics['devices'] = []
+        self.statistics['datastreams'] = []
+        self.statistics['datastreams_dict'] = {}
+        self.statistics['datastreams_info'] = {}
+
+    def __update_address__(self):
+        self.address_str = self.name + ':' + self.redvypr.hostinfo['hostname'] + '@' + self.redvypr.hostinfo[
+            'addr'] + '::' + self.redvypr.hostinfo['uuid']
+        self.address = redvypr_address(self.address_str)
+
+    def address_string(self,strtype='<device>:<host>@<addr>::<uuid>'):
+        """
+        Returns the addressstring of the device
+        Returns:
+
+        """
+        astr = self.redvypr_address().get_str(strtype = strtype)
+        return astr
+
+    def got_subscription(self,dataprovider_address,datareceiver_address):
+        """
+        Function is called by self.redvypr if this device is connected with another one. The intention is to notify device
+        that a specific datastream/devce has been subscribed. This is a wrapper function and need to be reimplemented if needed.
+        See i.e. iored as an example
+        Args:
+            dataprovider_address:
+            datareceiver_address:
+
+        Returns:
+
+        """
+        pass
 
     def get_thread_status(self):
         """
@@ -88,7 +138,7 @@ class redvypr_device(QtCore.QObject):
         return info_dict
 
 
-    def command(self,command):
+    def __send_command__(self,command):
         """
         Sends a command to the running thread, either via the comqueue or the datainqueue
         Args:
@@ -108,6 +158,27 @@ class redvypr_device(QtCore.QObject):
             self.logger.debug(funcname + ': Terminating now')
             self.thread.kill()
 
+    def thread_command(self, command,data=None):
+        """
+        Sends a command to the device thread
+        Args:
+            command: string, i.e. "stop"
+            data: dictionary with additional data, the data will be incorporated into the command dict by executing command.update8(ata)
+
+        Returns:
+
+        """
+        funcname = __name__ + '.thread_command():'
+        self.logger.debug(funcname)
+        command = commandpacket(command=command, device_uuid=self.uuid, thread_uuid=self.thread_uuid,devicename=self.name,host=self.redvypr.hostinfo)
+        if(data is not None):
+            if type(data) == dict:
+                command.update(data)
+            else:
+                raise TypeError('data needs to be a dictionary')
+
+        print('Sending command')
+        self.__send_command__(command)
 
     def thread_stop(self):
         """
@@ -119,7 +190,7 @@ class redvypr_device(QtCore.QObject):
         self.logger.debug(funcname)
         command = commandpacket(command='stop', device_uuid=self.uuid,thread_uuid=self.thread_uuid)
         #print('Sending command',command)
-        self.command(command)
+        self.__send_command__(command)
         try:
             running2 = self.thread.is_alive()
         except:
@@ -137,7 +208,7 @@ class redvypr_device(QtCore.QObject):
 
         """
         funcname = __name__ + '.start_thread():'
-        print('Thread start')
+
         #logger.debug(funcname + 'Starting device: ' + str(device.name))
         self.logger.debug(funcname + 'Starting device: ' + str(self.name))
         sendict = {}
@@ -155,11 +226,14 @@ class redvypr_device(QtCore.QObject):
                     try:
                         # The arguments for the start function
                         thread_uuid = 'thread_' + str(uuid.uuid1())
-                        device_info = {'uuid':self.uuid,'thread_uuid':thread_uuid}
+                        device_info = {'uuid':self.uuid,'thread_uuid':thread_uuid,'hostinfo':self.redvypr.hostinfo}
                         args = (device_info,self.config, self.dataqueue, self.datainqueue, self.statusqueue)
+                        print('thread',self.mp)
                         if self.mp == 'thread':
+                            self.logger.info(funcname + 'Starting as thread')
                             self.thread = threading.Thread(target=self.start, args=args, daemon=True)
                         else:
+                            self.logger.info(funcname + 'Starting as process')
                             self.thread = multiprocessing.Process(target=self.start, args=args)
                             #self.logger.info(funcname + 'started {:s} as process with PID {:d}'.format(self.name, self.thread.pid))
 
@@ -212,20 +286,42 @@ class redvypr_device(QtCore.QObject):
                 self.subscribe_device(devicename)
                 self.subscribed_datastreams.append({'datastream':datastream,'device':devicename})
                 break
+
+    def publishing_to(self):
+        """
+
+        Returns:
+            List of devices this device is publishing to
+        """
+        devs = self.redvypr.get_data_receiving_devices(self)
+        return devs
+
+    def subscribed_to(self):
+        """
+
+        Returns:
+            List of devices this device is subscribed to
+        """
+        devs = self.redvypr.get_data_providing_devices(self)
+        return devs
             
     def subscribe_device(self,device):
         """
         """
         funcname = self.__class__.__name__ + '.subscribe_device()'
         self.logger.debug(funcname)
-        self.redvypr.addrm_device_as_data_provider(device,self,remove=False)
+        try:
+            self.redvypr.addrm_device_as_data_provider(device,self,remove=False)
+            return True
+        except Exception as e:
+            return False
             
     def unsubscribe_datastream(self,datastream):
         """
         """
         funcname = self.__class__.__name__ + '.unsubscribe_datastream()'
         self.logger.debug(funcname)
-        # TODO, think how to deal with datastreams instead of devices with datakeys 
+        # TODO, think how to deal with datastreams instead of devices with datakeys, check if there are other datastreams subscribed that need the device
         
         #dataprovider = self.get_data_providing_devices(device)
         #for provider in dataprovider:

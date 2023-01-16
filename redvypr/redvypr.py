@@ -30,6 +30,7 @@ import redvypr.devices as redvyprdevices
 import redvypr.data_packets as data_packets
 from redvypr.gui import redvypr_ip_widget, redvyprConnectWidget, QPlainTextEditLogger, displayDeviceWidget_standard, \
     deviceinfoWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget
+import redvypr.gui as gui
 from redvypr.utils import addrm_device_as_data_provider, get_data_receiving_devices, get_data_providing_devices#, configtemplate_to_dict, apply_config_to_dict
 from redvypr.config import configuration
 from redvypr.version import version
@@ -91,7 +92,8 @@ def create_hostinfo():
     funcname = __name__ + '.create_hostinfo()'
     logger.debug(funcname)
     randstr = '{:03d}'.format(random.randrange(2 ** 8))
-    redvyprid = datetime.datetime.now().strftime('%Y%m%d%H%M%S.%f-') + str(uuid.getnode()) + '-' + randstr
+    #redvyprid = datetime.datetime.now().strftime('%Y%m%d%H%M%S.%f-') + str(uuid.getnode()) + '-' + randstr
+    redvyprid = str(uuid.getnode()) + '-' + randstr
     hostinfo = {'hostname': 'redvypr', 'tstart': time.time(), 'addr': get_ip(), 'uuid': redvyprid, 'local': True}
     return hostinfo
 
@@ -102,6 +104,8 @@ def distribute_data(devices, hostinfo, infoqueue, dt=0.01):
     """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
     """
     funcname = __name__ + '.distribute_data()'
+    datastreams_all     = {'type':'datastreams'}
+    datastreams_all_old = {}
     dt_info = 1.0  # The time interval information will be sent
     dt_avg = 0  # Averaging of the distribution time needed
     navg = 0
@@ -130,7 +134,14 @@ def distribute_data(devices, hostinfo, infoqueue, dt=0.01):
                         devicedict['statistics'] = data_packets.do_data_statistics(data, devicedict['statistics'])
                         # Do a more detailed inspection for the datakey informations. This could be done less often if it turns out to be expensive
                         devicedict['statistics'] = data_packets.do_data_statistics_deep(data, devicedict['statistics'])
+                        # Create a dictionary of all datastreams
+                        datastreams_all.update(devicedict['statistics']['datastreams_dict'])
+                        if(len(datastreams_all.keys()) != len(datastreams_all_old.keys())):
+                            print('Datastreams changed',len(datastreams_all.keys()))
+                            datastreams_all_old.update(datastreams_all)
+                            infoqueue.put_nowait(copy.copy(datastreams_all))
                 except Exception as e:
+                    logger.exception(e)
                     logger.debug(funcname + ':Statistics:' + str(e))
 
                 if True:
@@ -157,7 +168,7 @@ def distribute_data(devices, hostinfo, infoqueue, dt=0.01):
         dt_sleep = max([0, dt - dt_dist])
         if ((tstop - tinfo) > dt_info):
             tinfo = tstop
-            info_dict = {'dt_avg': dt_avg / navg}
+            info_dict = {'type':'dt_avg','dt_avg': dt_avg / navg}
             # print(info_dict)
             try:
                 infoqueue.put_nowait(info_dict)
@@ -170,9 +181,11 @@ class redvypr(QtCore.QObject):
     are started and data is interchanged
 
     """
-    device_path_changed = QtCore.pyqtSignal()  # Signal notifying if the device path was changed
-    device_added = QtCore.pyqtSignal(list)  # Signal notifying if the device path was changed
-    devices_connected = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
+    device_path_changed        = QtCore.pyqtSignal()  # Signal notifying if the device path was changed
+    device_added               = QtCore.pyqtSignal(list)  # Signal notifying if the device path was changed
+    devices_connected          = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
+    status_update_signal       = QtCore.pyqtSignal()  # Signal notifying if the status of redvypr has been changed
+    datastreams_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
 
     def __init__(self, parent=None, config=None, nogui=False):
         # super(redvypr, self).__init__(parent)
@@ -181,16 +194,19 @@ class redvypr(QtCore.QObject):
         funcname = __name__ + '.__init__()'
         logger.debug(funcname)
         self.hostinfo = create_hostinfo()
+        self.hostinfo_opt = {} # Optional host information
         self.config = {}  # Might be overwritten by parse_configuration()
         self.properties = {}  # Properties that are distributed with the device
         self.numdevice = 0
         self.devices = []  # List containing dictionaries with information about all attached devices
         self.device_paths = []  # A list of pathes to be searched for devices
         self.device_modules = []
+        self.datastreams_dict = {}
 
         ## A timer to check the status of all threads
         self.devicethreadtimer = QtCore.QTimer()
-        self.devicethreadtimer.start(500)
+        self.devicethreadtimer.start(250)
+        self.devicethreadtimer.timeout.connect(self.update_status)  # Add to the timer another update
 
         ## A timer to print the status in the nogui environment
         if (nogui):
@@ -218,6 +234,25 @@ class redvypr(QtCore.QObject):
             for c in config:
                 logger.debug(funcname + ':Parsing configuration: ' + str(c))
                 self.parse_configuration(c)
+
+
+    def update_status(self):
+        while True:
+            try: # Reading data coming from distribute_data thread
+                data = self.datadistinfoqueue.get(block=False)
+                #print('Got data',data)
+                if('dt_avg' in data['type']):
+                    self.dt_avg_datadist = data['dt_avg']
+                    self.status_update_signal.emit()
+                elif('datastreams' in data['type']):
+                    data.pop('type') # Remove the type key
+                    print('datastreams changed',data)
+                    self.datastreams_dict = data
+                    self.datastreams_changed_signal.emit()
+
+            except Exception as e:
+                #logger.exception(e)
+                break
 
     def print_status(self):
         funcname = __name__ + '.print_status():'
@@ -398,17 +433,6 @@ class redvypr(QtCore.QObject):
 
         return True
 
-    def check_devicename(self, devicename_orig):
-        """
-        Args:
-            devicename_orig:
-            
-        Returns:
-            
-        """
-
-        return devicename
-
     def populate_device_path(self):
         """Searches all device paths for modules and creates a list with the
         found devices in self.device_modules
@@ -456,7 +480,7 @@ class redvypr(QtCore.QObject):
             for smod in device_module_tmp:
                 devicemodule = getattr(testmodule, smod[0])
                 if(devicemodule in other_modules):
-                    logger.debug(funcname + ': Module has been tested already ...')
+                    #logger.debug(funcname + ': Module has been tested already ...')
                     continue
                 # Check if the device is valid
                 valid_module = self.valid_device(devicemodule)
@@ -600,7 +624,7 @@ class redvypr(QtCore.QObject):
                 # Check for multiprocess options in configuration
                 if (thread == None):
                     try:
-                        multiprocess = deviceconfig['config']['mp'].lower()
+                        multiprocess = deviceconfig['mp'].lower()
                     except:
                         multiprocess = 'thread'
                 elif(thread):
@@ -608,8 +632,8 @@ class redvypr(QtCore.QObject):
                 else:
                     multiprocess = 'multiprocess'
 
-
-                if thread:  # Thread or multiprocess
+                print('Config multiprocess', multiprocess)
+                if multiprocess == 'thread':  # Thread or multiprocess
                     dataqueue = queue.Queue(maxsize=queuesize)
                     datainqueue = queue.Queue(maxsize=queuesize)
                     comqueue = queue.Queue(maxsize=queuesize)
@@ -629,6 +653,7 @@ class redvypr(QtCore.QObject):
                     loglevel = deviceconfig['loglevel']
 
                     numdevices = len(self.devices)
+                    # Could also create a UUID based on the hostinfo UUID str
                     device_uuid = '{:03d}--'.format(numdevices) + str(uuid.uuid1()) + '::' + self.hostinfo['uuid']
                     try:
                         devicemodule.Device
@@ -638,13 +663,22 @@ class redvypr(QtCore.QObject):
 
                     if (HASDEVICE):  # Module has its own device
                         Device = devicemodule.Device
-                        startfunction = None
+                        # Check if a startfunction is implemented
+                        try:
+                            Device.start
+                            startfunction = None
+                            logger.debug(
+                                funcname + ' Device has a start function')
+                        except:
+                            logger.debug(
+                                funcname + ' Device does not have a start function, will add the standard function')
+                            startfunction = devicemodule.start
                     else:
                         Device = redvypr_device
                         startfunction = devicemodule.start
 
                     # Config used at all?
-                    print('GEtting config')
+                    print('Getting config')
                     config = deviceconfig['config']
                     print('Done')
                     # Merge the config with a potentially existing template to fill in default values
@@ -704,7 +738,7 @@ class redvypr(QtCore.QObject):
                 ind_device = len(self.devices) - 1
 
                 if (autostart):
-                    logger.debug(funcname + ': Starting device')
+                    logger.info(funcname + ': Starting device')
                     self.start_device_thread(device)
 
                 devicelist = [devicedict, ind_device, devicemodule]
@@ -870,7 +904,8 @@ class redvypr(QtCore.QObject):
 
     def get_devicedict_from_str(self, devicestr):
         """
-        Returns the devicedict based on an devicestr, if not found returns None
+        Returns the devicedict (as found in the list self.devices) based on an devicestr, if not found returns None. If
+        the devicestr is from a remote redvypr instance (uuid differ) the devicedict of the forwarding device is returned.
         
         Args:
             devicestr (str): 
@@ -883,23 +918,39 @@ class redvypr(QtCore.QObject):
             
         
         """
-        deviceparsed = data_packets.parse_addrstr(devicestr, local_hostinfo=self.hostinfo)
+        #deviceparsed = data_packets.parse_addrstr(devicestr, local_hostinfo=self.hostinfo)
+        deviceaddr = data_packets.redvypr_address(devicestr)
+        # Check local devices first
         for d in self.devices:
-            flag_name = d['device'].name == deviceparsed['devicename']
-            flag_name = flag_name or deviceparsed['deviceexpand']
-
-            flag_hostname = self.hostinfo['hostname'] == deviceparsed['hostname']
-            flag_hostname = flag_hostname or deviceparsed['hostexpand']
-
-            flag_addr = self.hostinfo['addr'] == deviceparsed['addr']
-            flag_addr = flag_addr or deviceparsed['addrexpand']
-
-            flag_UUID = self.hostinfo['uuid'] == deviceparsed['uuid']
-            flag_UUID = flag_UUID or deviceparsed['uuidexpand']
-
-            flag_local = deviceparsed['local']
-            if (flag_name and flag_local) or (flag_name and flag_UUID) or (flag_name and flag_addr and flag_hostname):
+            dev = d['device']
+            daddr = dev.redvypr_address
+            if deviceaddr == daddr:
                 return d
+
+        # Check forwarded devices
+        for d in self.devices:
+            dev = d['device']
+            daddr = dev.redvypr_address
+            for dforward in dev.statistics['devices']:
+                if deviceaddr == daddr:
+                    return d
+
+            if False:
+                flag_name = d['device'].name == deviceparsed['devicename']
+                flag_name = flag_name or deviceparsed['deviceexpand']
+
+                flag_hostname = self.hostinfo['hostname'] == deviceparsed['hostname']
+                flag_hostname = flag_hostname or deviceparsed['hostexpand']
+
+                flag_addr = self.hostinfo['addr'] == deviceparsed['addr']
+                flag_addr = flag_addr or deviceparsed['addrexpand']
+
+                flag_UUID = self.hostinfo['uuid'] == deviceparsed['uuid']
+                flag_UUID = flag_UUID or deviceparsed['uuidexpand']
+
+                flag_local = deviceparsed['local']
+                if (flag_name and flag_local) or (flag_name and flag_UUID) or (flag_name and flag_addr and flag_hostname):
+                    return d
 
         return None
 
@@ -922,6 +973,12 @@ class redvypr(QtCore.QObject):
 
     def get_forwarded_devicenames(self, device=None):
         """
+
+        Args:
+            device: redvypr_device
+
+        Returns:
+           List with the devicenames of the forwarded devicenames
         """
         try:
             devicenames = device.statistics['devices']
@@ -1051,17 +1108,21 @@ class redvypr(QtCore.QObject):
 
         return None
 
-    def get_datastreams(self, device=None, format='uuid'):
+    def get_datastreams(self, device=None, format='uuid',local=False,add_lastseen=False):
         """
         Gets datastreams from a device (or all devices if device == None).
         Args:
             device: (redvypr_device or str):
             format:
+            local: If True: Return only datastreams that are local. This is important if datastreams from other redvypr instances are subscribed.
+            add_lastseen:
             
         Returns
         -------
-        list
+        list if add_lastseen == False
             A list containing the datastreams
+        dict: if add_lastseen == True
+            A dictionary with all datastreams as keys and the unix time as content specifying the last time the datastream has been received
         """
         funcname = self.__class__.__name__ + '.get_datastreams():'
         datastreamlist = []
@@ -1108,6 +1169,14 @@ class redvypr(QtCore.QObject):
             datastreamlist = device.statistics['datastreams']
             datastreamlist = list(set(datastreamlist))
 
+
+        if local:
+            for d in reversed(datastreamlist):
+                if self.hostinfo['uuid'] in d: # Check if the uuid is in
+                    pass
+                else:
+                    datastreamlist.remove(d)
+
         return datastreamlist
 
     def get_datakeys(self, device):
@@ -1137,6 +1206,15 @@ class redvypr(QtCore.QObject):
         return datakeys
 
     def get_data_receiving_devices(self, device):
+        """
+
+        Args:
+            device:
+
+        Returns:
+            List of devices the device is provding data
+        """
+
         funcname = self.__class__.__name__ + '.get_data_receiving_devices():'
         logger.debug(funcname)
         return get_data_receiving_devices(self.devices, device)
@@ -1177,10 +1255,16 @@ class redvypr(QtCore.QObject):
         remove: False for adding, True for removing
         """
         if (type(deviceprovider) == str):
+            deviceprovider_str = deviceprovider
             deviceprovider = self.get_device_from_str(deviceprovider)
+        else:
+            deviceprovider_str = deviceprovider.address_str
 
         if (type(devicereceiver) == str):
+            devicereceiver_str = devicereceiver
             devicereceiver = self.get_device_from_str(devicereceiver)
+        else:
+            devicereceiver_str = devicereceiver.address_str
 
         #print('Provider',deviceprovider,deviceprovider.name)
         #print('Receiver', devicereceiver, devicereceiver.name)
@@ -1194,6 +1278,8 @@ class redvypr(QtCore.QObject):
         # Emit a connection signal
         if(ret is not None):
             self.devices_connected.emit(deviceprovider.name, devicereceiver.name)
+            # Call local function of the devices itself. This makes sense to notify i.e. the providing device that a forwarded deviced was subsripted and the provider can take care for the forwarded data. See for example the iored device
+            deviceprovider.got_subscription(deviceprovider_str,devicereceiver_str)
         return ret
 
 
@@ -1321,7 +1407,7 @@ class redvyprWidget(QtWidgets.QWidget):
         for dev in self.redvypr.devices:
             devname = dev['device'].name
             if (devname == oldname):  # Found the device, lets rename it
-                dev['device'].name = name
+                dev['device'].change_name(name)
                 widget = dev['widget']
                 # Create a new infowidget
                 dev['infowidget'].close()
@@ -1644,7 +1730,8 @@ class redvyprWidget(QtWidgets.QWidget):
     def open_connect_widget(self, device=None):
         funcname = __name__ + '.open_connect_widget()'
         logger.debug(funcname + ':' + str(device))
-        self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
+        #self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
+        self.__con_widget = gui.redvyprConnectWidget2(redvypr=self.redvypr, device=device)
         self.__con_widget.show()
 
     def __hostname_changed_click(self):
@@ -1658,20 +1745,19 @@ class redvyprWidget(QtWidgets.QWidget):
             self.redvypr.config['hostname'] = hostname
             self.redvypr.hostinfo['hostname'] = hostname
 
-    def update_status(self):
-        while True:
-            try:
-                data = self.datadistinfoqueue.get(block=False)
-                self.dt_avg_datadist = data['dt_avg']
-            except Exception as e:
-                break
+    def __update_status_widget__(self):
+        """
+        Updates the status information
+        Returns:
+
+        """
         self.__status_dtneeded.setText(' (needed {:0.5f}s)'.format(self.redvypr.dt_avg_datadist))
 
     def create_statuswidget(self):
         """Creates the statuswidget
 
         """
-        self.redvypr.devicethreadtimer.timeout.connect(self.update_status)  # Add to the timer another update
+        self.redvypr.status_update_signal.connect(self.__update_status_widget__)
         self.__statuswidget = QtWidgets.QWidget()
         layout = QtWidgets.QFormLayout(self.__statuswidget)
         # dt
@@ -1952,7 +2038,7 @@ Opens an "about" widget showing basic information.
         self._about_widget.show()
 
     def show_deviceselect(self):
-        self.__deviceselect__ = datastreamWidget(redvypr=self.redvypr_widget.redvypr, deviceonly=True)
+        self.__deviceselect__ = redvypr.gui.datastreamWidget(redvypr=self.redvypr_widget.redvypr, deviceonly=True)
         self.__deviceselect__.show()
 
     def open_add_device_widget(self):
@@ -2029,9 +2115,20 @@ def redvypr_main():
         hostconfig = {'devices': []}
         print('devices', args.add_device)
         for d in args.add_device:
-            logger.info('Adding device {:s}'.format(d))
-            dev = {'devicemodulename': d}
+            autostart = False
+            multiprocess = 'thread'
+            if(',' in d):
+                options = d.split(',')[1]
+                d = d.split(',')[0]
+                if('s' in options):
+                    autostart = True
+                if('p' in options):
+                    multiprocess = 'multiprocess'
+
+            dev = {'devicemodulename': d, 'deviceconfig':{'autostart':autostart,'loglevel':logging_level,'mp':multiprocess}}
+
             hostconfig['devices'].append(dev)
+            logger.info('Adding device {:s}, autostart: {:s},'.format(d,str(autostart)))
 
         config_all.append(hostconfig)
 

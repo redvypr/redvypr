@@ -71,6 +71,7 @@ def raw_to_packet(datab,config):
         packets: A list of datapackets to be sent via the dataqueue
 
     """
+    funcname = __name__ + '.raw_to_packet()'
     t = time.time()
     packets = []
     if(config['serialize'] == 'yaml'):

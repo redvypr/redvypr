@@ -37,11 +37,13 @@ class redvypr_address():
     def __init__(self,addrstr,local_hostinfo=None):
         self.addressstr = addrstr
         self.parsed_addrstr = parse_addrstr(addrstr, local_hostinfo=local_hostinfo)
-        self.strtypes = ['<key>','<key>/<device>','<key>/<device>:<host>','<key>/<device>:<host>@<addr>','<key>/<device>:<host>@<addr>::<uuid>','<key>/<device>::<uuid>']
+        self.strtypes = ['<key>','<key>/<device>','<key>/<device>:<host>','<key>/<device>:<host>@<addr>','get_str<key>/<device>:<host>@<addr>::<uuid>','<key>/<device>::<uuid>']
+        self.strtypes.append('<device>:<host>@<addr>::<uuid>')
         self.strtypes.append('<device>')
         self.strtypes.append('<host>')
         self.strtypes.append('<addr>')
         self.strtypes.append('<uuid>')
+
 
         self.datakey      = self.parsed_addrstr['datakey']
         self.devicename   = self.parsed_addrstr['devicename']
@@ -95,6 +97,8 @@ class redvypr_address():
             elif (strtype == '<key>/<device>:<host>@<addr>::<uuid>'):
                 return self.parsed_addrstr['datakey'] + '/' + self.parsed_addrstr['devicename'] + ':' + self.parsed_addrstr[
                     'hostname'] + '@' + self.parsed_addrstr['addr'] + '::' + self.parsed_addrstr['uuid']
+            elif (strtype == '<device>:<host>@<addr>::<uuid>'):
+                return self.parsed_addrstr['devicename'] + ':' + self.parsed_addrstr['hostname'] + '@' + self.parsed_addrstr['addr'] + '::' + self.parsed_addrstr['uuid']
             elif (strtype == '<key>/<device>::<uuid>'):
                 return self.parsed_addrstr['datakey'] + '/' + self.parsed_addrstr['devicename'] + '::' + self.parsed_addrstr['uuid']
         except Exception as e:
@@ -110,6 +114,36 @@ class redvypr_address():
         astr += 'addrstr: {:s}'.format(self.addressstr)
         astr += '\n{:s}'.format(astr2)
         return astr
+
+    def __eq__(self, addr):
+        """
+        Compares a second address with this one
+        Args:
+            addr:
+
+        Returns:
+
+        """
+
+        datakeyflag = (self.datakey == addr.datakey) or self.datakeyexpand or addr.datakeyexpand
+        deviceflag  = (self.devicename == addr.devicename) or self.deviceexpand or addr.deviceexpand
+        hostflag    = (self.hostname == addr.hostname) or self.hostexpand or addr.hostexpand
+        addrflag = (self.addr == addr.addr) or self.addrexpand or addr.addrexpand
+        uuidflag = (self.uuid == addr.uuid) or self.uuidexpand or addr.uuidexpand
+        localflag = self.local and addr.local
+
+        # print('Datakeyflag',datakeyflag)
+        # print('Deviceflag',deviceflag)
+        # print('Hostflag',hostflag)
+        # print('addr',addrflag)
+        # print('uuidflag',uuidflag)
+        # print('localflag',localflag)
+
+        # matchflag1  = datakeyflag and deviceflag and hostflag and addrflag
+        # matchflag2 = datakeyflag  and deviceflag and uuidflag
+        matchflag3 = datakeyflag and deviceflag and hostflag and addrflag and uuidflag
+
+        return matchflag3  # 1 or matchflag2
 
     def __contains__(self, datapacket):
         """ Checks if address is in datadict 
@@ -150,6 +184,7 @@ def create_data_statistic_dict():
     statdict['devicekeys']      = {}
     statdict['devices']         = []
     statdict['datastreams']     = []
+    statdict['datastreams_dict']= {}
     statdict['datastreams_info']= {}
     return statdict
 
@@ -186,9 +221,10 @@ def do_data_statistics(data, statdict):
         statdict['devicekeys'][devicename_stat] = []
         
     statdict['devicekeys'][devicename_stat] = list(set(statdict['devicekeys'][devicename_stat] + list(data.keys())))
-    statdict['devices']     = list(set(statdict['devices'] + [devicename_stat]))
-    datastreams_stat        = get_datastreams_from_data(data,uuid=True)
-    statdict['datastreams'] = list(set(statdict['datastreams'] + datastreams_stat))
+    statdict['devices']                     = list(set(statdict['devices'] + [devicename_stat])) # This list collects all devices distributed by the actual device. This is helpful for brokers like iored or network.
+    [datastreams_stat,datastreams_dict]     = get_datastreams_from_data(data,uuid=True,add_dict=True)
+    statdict['datastreams']                 = list(set(statdict['datastreams'] + datastreams_stat))
+    statdict['datastreams_dict'].update(datastreams_dict)
     return statdict
 
 
@@ -383,27 +419,34 @@ def get_datastream_from_data(data,datakey,uuid=False):
             None
         
     
-def get_datastreams_from_data(data,uuid=False):
+def get_datastreams_from_data(data,uuid=False,add_dict=False):
     """ Returns all datastreams of the datapacket
     
     Args:
         data (dict): A redvypr data dictionary
         uuid (Optional[bool]): Default False. Returns the devicename with the uuid (True) or the hostname + IP-Address (False)
+        add_dict (Optional[bool]): Default False. Returns the devicename with the uuid (True) or the hostname + IP-Address (False)
         
     Returns:
         list: A list of all datastreams
     """
+    t = time.time()
     datastreams = []
+    datastreams_dict = {}
     datakeys = get_keys_from_data(data)
     devicename = get_devicename_from_data(data,uuid=True)
     for key in datakeys:
         datastream = key + '/' + devicename
         datastreams.append(datastream)
-        
-    return datastreams
+        datastreams_dict[datastream] = t
+
+    if(add_dict):
+        return [datastreams,datastreams_dict]
+    else:
+        return datastreams
 
 
-def get_datastream(datakey,data=None,device=None,hostinfo=None,style='short'):
+def get_address_from_data(datakey,data=None,device=None,hostinfo=None,style='short'):
     """ Returns a datastream string based either on a data packet or on hostname 
     
     Args:
@@ -444,7 +487,7 @@ def get_datastream(datakey,data=None,device=None,hostinfo=None,style='short'):
     return datastream
 
 
-def compare_datastreams(datastream1, datastream2,hostinfo=None):
+def compare_datastreams(datastream1, datastream2, hostinfo=None):
     """ Checks if the two datastreams match
     
     Examples of datastreams::
@@ -646,11 +689,12 @@ def datapacket(data,datakey=None,tu=None):
     return datadict
 
 
-def commandpacket(command='stop',device_uuid='',thread_uuid=''):
+def commandpacket(command='stop',device_uuid='',thread_uuid='',devicename = None, host = None):
     """
 
     Args:
         command: 'stop'
+        device: The device the command was sent from
         device_uuid:
         thread_uuid:
 
@@ -658,6 +702,10 @@ def commandpacket(command='stop',device_uuid='',thread_uuid=''):
          compacket: A redvypr dictionary with the command
     """
     compacket = datapacket(command,datakey='redvypr_device_command') # The command
+    if devicename is not None:
+        compacket['device'] = devicename  # The device the command was sent from
+    if host is not None:
+        compacket['host'] = host
     compacket['redvypr_device_uuid'] = device_uuid  # The uuid of the device the command is for
     compacket['redvypr_thread_uuid'] = thread_uuid  # The uuid of the thread of device the command is for
     return compacket

@@ -3,6 +3,7 @@
             - config module to harmonize configuration
             - added Internet of Redvype (iored) revice
             - introduction of configuration class for device configuration
+            - "s" for autostart and "p" or process in the -a option. Standard case is starting a device as a thread.
     -0.4.10:- rawdatalogger improved
             -
     -0.4.9: - autostart option in yaml config moved to deviceconfig

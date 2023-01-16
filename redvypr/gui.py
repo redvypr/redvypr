@@ -31,6 +31,251 @@ def get_QColor(data):
     return color
 
 
+class redvyprConnectWidget2(QtWidgets.QWidget):
+    """A widget that lets the user connect the input and output queues of
+    the devices with each other
+
+    """
+
+    def __init__(self, redvypr=None, device=None):
+        """
+
+        Args:
+            redvypr:
+            device:
+        """
+        super(redvyprConnectWidget2, self).__init__()
+        self.redvypr = redvypr
+        self.devices = self.redvypr.devices
+        if (len(self.devices) > 0):
+            if (device == None):  # Take the first one
+                device = self.devices[0]['device']
+
+        # Set icon
+        self.setWindowIcon(QtGui.QIcon(_icon_file))
+
+        layout = QtWidgets.QGridLayout(self)
+
+        font = QtGui.QFont('Arial', 20)
+        font.setBold(True)
+        lab = QtWidgets.QLabel('Connecting devices for data exchange')
+        lab.setFont(font)
+
+        self.device_label = QtWidgets.QLabel('Device')
+        self.dataprovider_label = QtWidgets.QLabel('Data providing devices')
+
+        self.devices_listallout = QtWidgets.QTreeWidget()  # All dataproviding devices
+        self.devices_listallout.setColumnCount(2)
+        self.devices_listallout.itemDoubleClicked.connect(self.__update_device_choice__)
+
+        self.devices_listcon = QtWidgets.QListWidget()  # The devices a connection is to be defined
+        self.devices_listcon.itemClicked.connect(self.itemcon_clicked)
+        self.devices_listcon.itemDoubleClicked.connect(self.itemcon_dclicked)
+
+        self.__commitbtn = QtWidgets.QPushButton('Subscribe')
+        self.__commitbtn.clicked.connect(self.commit_clicked)
+        self.__commitbtn.setEnabled(False)
+
+        layout.addWidget(lab, 0, 0,1,2)
+        layout.addWidget(self.dataprovider_label, 1, 0)
+        layout.addWidget(self.device_label, 1, 1)
+        layout.addWidget(self.devices_listallout, 2, 0)
+        layout.addWidget(self.devices_listcon, 2, 1)
+        layout.addWidget(self.__commitbtn,3,0,1,2)
+
+        if (len(self.devices) > 0):
+            self.update_list(device)
+
+    def __update_device_choice__(self,item):
+        """
+        A device was clicked, update all buttons
+        Args:
+            item:
+
+        Returns:
+
+        """
+        self.__commitbtn.setEnabled(True)
+        if(item.subscribed):
+            self.__commitbtn.setText('Unsubscribe')
+        else:
+            self.__commitbtn.setText('Subscribe')
+
+    def update_list(self, device):
+        """ Update the list
+        """
+
+        funcname = __name__ + '.update_list()'
+        logger.debug(funcname + ':update_list:' + str(device))
+        self.devices_listallout.clear()
+        self.devices_listcon.clear()
+        self.device = device
+
+        if (len(self.devices) > 0):
+            root = self.devices_listallout.invisibleRootItem()
+            # self.devices_listcon.addItem(str(device))
+            data_provider_all = self.redvypr.get_data_providing_devices()
+            subscribed_to = self.device.subscribed_to()
+            font1 = QtGui.QFont('Arial')
+            font1.setBold(True)
+            font0 = QtGui.QFont('Arial')
+
+
+            print('data provider',data_provider_all)
+            if (data_provider_all is not None):
+                for dev in data_provider_all:
+                    if dev == self.device:
+                        continue
+                    # Check if the device is connected already
+                    status = 'not connected'
+
+                    itm = QtWidgets.QTreeWidgetItem([dev.name, status])
+                    itm.device = dev
+                    if dev in subscribed_to:
+                        status = 'subscribed'
+                        itm.setFont(0,font1)
+                        itm.subscribed = True
+                    else:
+                        itm.setFont(0, font0)
+                        itm.subscribed = False
+
+                    root.addChild(itm)
+                    # Check for forwarded devices
+                    devs_forwarded = self.redvypr.get_forwarded_devicenames(dev)
+                    for dev_for in devs_forwarded:
+                        itmf = QtWidgets.QTreeWidgetItem([dev_for, ''])
+                        itmf.device = dev
+                        itm.addChild(itmf)
+
+            self.devices_listallout.expandAll()
+            self.devices_listallout.resizeColumnToContents(0)
+            if True:
+                # connecting devices
+                for s in self.devices:
+                    sen = s['device']
+                    itm = QtWidgets.QListWidgetItem(sen.name)
+                    itm.device = sen
+                    self.devices_listcon.addItem(itm)
+                    if (sen == device):
+                        self.devices_listcon.setCurrentItem(itm)
+            if False:
+                # data providing devices
+                if (device.subscribe):
+                    self.devices_listout.setEnabled(True)
+                    self.devices_listallout.setEnabled(True)
+                    for s in self.devices:
+                        sen = s['device']
+                        if (sen.publish == False):
+                            continue
+                        if (device == sen):  # Dont list the device itself
+                            continue
+
+                        itm = QtWidgets.QListWidgetItem(sen.name)
+                        itm.device = sen
+                        self.devices_listallout.addItem(itm)
+                else:
+                    self.devices_listout.setEnabled(False)
+                    self.devices_listallout.setEnabled(False)
+
+    def addrm_out(self):
+        """ Connecting publishing devices with device
+        """
+        funcname = 'addrm_in'
+        logger.debug(funcname)
+        button = self.sender()
+        if (button == self.arroutleft):
+            # print('remove')
+            ind = self.devices_listout.currentRow()
+            self.devices_listout.takeItem(ind)
+
+        if (button == self.arroutright):
+            # print('add')
+            itmadd = self.devices_listallout.currentItem()
+            sen = itmadd.device
+            itm = QtWidgets.QListWidgetItem(sen.name)
+            itm.device = sen
+            self.devices_listout.addItem(itm)
+            # print('add',itmadd.device)
+            # self.devices_listout.addItem(itmadd.text())
+
+    def addrm_in(self):
+        """ Connecting receiving devices with dataqueue of this device
+        """
+        funcname = 'addrm_in'
+        logger.debug(funcname)
+        button = self.sender()
+        if (button == self.arrinright):
+            logger.debug(funcname + ': remove')
+            ind = self.devices_listin.currentRow()
+            self.devices_listin.takeItem(ind)
+
+        elif (button == self.arrinleft):
+            logger.debug(funcname + ': add')
+            itmadd = self.devices_listallin.currentItem()
+            sen = itmadd.device
+            itm = QtWidgets.QListWidgetItem(sen.name)
+            itm.device = sen
+            self.devices_listin.addItem(itm)
+
+    def commit_clicked(self):
+        """ Apply changes to the publishing/receiving devices
+        """
+        funcname = 'commit_clicked'
+        logger.debug(funcname)
+        outdevices = []
+        # Add device as receiver for publishing devices
+        for inditm in range(self.devices_listout.count()):
+            itm = self.devices_listout.item(inditm)
+            sen = itm.device
+            outdevices.append(sen)
+            logger.debug(funcname + ':' + 'add as publisher:' + str(sen))
+            addrm_device_as_data_provider(self.devices, sen, self.device, remove=False)
+
+        # Check if there are devices to be removed
+        data_provider = get_data_providing_devices(self.devices, self.device)
+        for sen in data_provider:
+            device = sen['device']
+            if (device in outdevices):
+                pass
+            else:
+                logger.debug(funcname + ': Removing device {:s} as a data publisher for {:s} '.format(self.device.name,
+                                                                                                      device.name))
+                addrm_device_as_data_provider(self.devices, device, self.device, remove=True)
+
+        # Add device as publisher for receiving devices
+        indevices = []
+        for inditm in range(self.devices_listin.count()):
+            itm = self.devices_listin.item(inditm)
+            sen = itm.device
+            indevices.append(sen)
+            logger.debug(funcname + ':' + 'add as receiver:' + str(sen))
+            addrm_device_as_data_provider(self.devices, self.device, sen, remove=False)
+
+        # Check if there are devices to be removed
+        data_receiver = get_data_receiving_devices(self.devices, self.device)
+        for sen in data_receiver:
+            device = sen['device']
+            if (device in indevices):
+                pass
+            else:
+                logger.debug(funcname + ': Removing device {:s} as a data receiver from {:s} '.format(self.device.name,
+                                                                                                      device.name))
+                addrm_device_as_data_provider(self.devices, self.device, device, remove=True)
+
+
+
+    def disconnect_clicked(self):
+        logger.debug('Disconnect')
+
+    def itemcon_clicked(self, item):
+        # Update the connection list
+        self.update_list(item.device)
+
+    def itemcon_dclicked(self, item):
+        if (item.isSelected()):
+            item.setSelected(False)
+
+
 class redvyprConnectWidget(QtWidgets.QWidget):
     """A widget that lets the user connect the input and output queues of
 the devives with each other
@@ -278,7 +523,7 @@ the devives with each other
                     self.devices_listallin.addItem(itm)
                 
             else:
-                self.devices_listin.setEnabled(False)                
+                self.devices_listin.setEnabled(False)
                 self.devices_listallin.setEnabled(False)
                 
             # data providing devices
