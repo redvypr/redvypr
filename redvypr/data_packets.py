@@ -14,7 +14,7 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket):
     # Add deviceinformation to the data package
     if ('device' not in data.keys()):
         data['device'] = str(devicename)
-        data['host'] = hostinfo
+        data['host']   = hostinfo
     else:  # Check if we have a local data packet, i.e. a packet that comes from another redvypr instance with another UUID
         data['host']['local'] = data['host']['uuid'] == hostinfo['uuid']
 
@@ -186,6 +186,7 @@ def create_data_statistic_dict():
     statdict['datastreams']     = []
     statdict['datastreams_dict']= {}
     statdict['datastreams_info']= {}
+    statdict['hostinfos']        = {}
     return statdict
 
 def do_data_statistics_deep(datapacket, statdict):
@@ -225,6 +226,12 @@ def do_data_statistics(data, statdict):
     [datastreams_stat,datastreams_dict]     = get_datastreams_from_data(data,uuid=True,add_dict=True)
     statdict['datastreams']                 = list(set(statdict['datastreams'] + datastreams_stat))
     statdict['datastreams_dict'].update(datastreams_dict)
+    # Create a hostinfo information
+    try:
+        statdict['hostinfos'][data['host']['uuid']].update(data['host'])
+    except:
+        statdict['hostinfos'][data['host']['uuid']] = data['host']
+
     return statdict
 
 

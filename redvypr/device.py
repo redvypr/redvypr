@@ -226,7 +226,7 @@ class redvypr_device(QtCore.QObject):
                     try:
                         # The arguments for the start function
                         thread_uuid = 'thread_' + str(uuid.uuid1())
-                        device_info = {'uuid':self.uuid,'thread_uuid':thread_uuid,'hostinfo':self.redvypr.hostinfo}
+                        device_info = {'device':self.name,'uuid':self.uuid,'thread_uuid':thread_uuid,'hostinfo':self.redvypr.hostinfo}
                         args = (device_info,self.config, self.dataqueue, self.datainqueue, self.statusqueue)
                         print('thread',self.mp)
                         if self.mp == 'thread':

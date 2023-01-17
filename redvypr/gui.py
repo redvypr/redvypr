@@ -736,7 +736,7 @@ class QPlainTextEditLogger(logging.Handler):
 
 #
 #
-#
+# Widget shows the statistics of the device
 #
 #
 class redvypr_deviceInfoWidget(QtWidgets.QWidget):
@@ -755,6 +755,10 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         self.updatetimer.start(500)
 
     def __update_info(self):
+        funcname = __name__ + '.__update_info():'
+        prev_cursor = self.infowidget.textCursor()
+        pos  = self.infowidget.verticalScrollBar().value()
+        pos2 = self.infowidget.verticalScrollBar().value()
         self.infowidget.clear()
         sortstat = {}
         for i in sorted(self.device.statistics):
@@ -763,6 +767,11 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         sortstat['datakeys'] = sorted(sortstat['datakeys'])
         statstr = yaml.dump(sortstat)
         self.infowidget.insertPlainText(statstr + '\n')
+        #self.infowidget.moveCursor(QtGui.QTextCursor.End)
+        # cursor.setPosition(0)
+        # self.text.setTextCursor(prev_cursor)
+        if True:
+            self.infowidget.verticalScrollBar().setValue(pos)
 
 
 

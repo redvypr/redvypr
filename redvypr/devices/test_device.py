@@ -57,7 +57,7 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
                 logger.debug('Command is for me: {:s}'.format(str(command)))
                 break
 
-        dstr = config['string_send']
+        dstr = str(config['string_send'])
         print(dstr)
         dataqueue.put(dstr)
         dataqueue.put({'count':i})
