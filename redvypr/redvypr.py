@@ -100,11 +100,11 @@ def create_hostinfo():
 
 
 
-def distribute_data(devices, hostinfo, infoqueue, dt=0.01):
+def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
     """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
     """
     funcname = __name__ + '.distribute_data()'
-    datastreams_all     = {'type':'datastreams'}
+    datastreams_all = {}
     datastreams_all_old = {}
     dt_info = 1.0  # The time interval information will be sent
     dt_avg = 0  # Averaging of the distribution time needed
@@ -112,9 +112,13 @@ def distribute_data(devices, hostinfo, infoqueue, dt=0.01):
     tinfo = time.time()
     tstop = time.time()
     dt_sleep = dt
+
+
     while True:
         time.sleep(dt_sleep)
         tstart = time.time()
+        FLAG_DATASTREAMS_CHANGED = False
+        devices_changed = []
         for devicedict in devices:
             device = devicedict['device']
             while True:
@@ -122,24 +126,37 @@ def distribute_data(devices, hostinfo, infoqueue, dt=0.01):
                     data = device.dataqueue.get(block=False)
                     if(type(data) is not dict): # If data is not a dictionary, convert it to one
                         data = {'data':data}
+
                     devicedict['numpacket'] += 1
                 except Exception as e:
                     break
 
                 # Add additional information, if not present yet
                 data_packets.treat_datadict(data, device.name, hostinfo, devicedict['numpacket'], tstart)
+                # Check for a command packet, TODO, this will be lengthy in the future
+                command = data_packets.check_for_command(data)
+                if(command == 'device_status'): # status update
+                    print('Status update!!!')
+                    devices_changed.append(device.name)
+                    FLAG_DATASTREAMS_CHANGED = True
+
                 # Do statistics
                 try:
                     if devicedict['statistics']['inspect']:
                         devicedict['statistics'] = data_packets.do_data_statistics(data, devicedict['statistics'])
-                        # Do a more detailed inspection for the datakey informations. This could be done less often if it turns out to be expensive
-                        devicedict['statistics'] = data_packets.do_data_statistics_deep(data, devicedict['statistics'])
                         # Create a dictionary of all datastreams
-                        datastreams_all.update(devicedict['statistics']['datastreams_dict'])
-                        if(len(datastreams_all.keys()) != len(datastreams_all_old.keys())):
-                            print('Datastreams changed',len(datastreams_all.keys()))
+                        datastreams_all.update(devicedict['statistics']['datastream_redvypr'])
+                        try:
+                            deviceinfo_all[device.name].update(devicedict['statistics']['device_redvypr'])
+                        except:
+                            deviceinfo_all[device.name] = devicedict['statistics']['device_redvypr']
+
+                        if(list(datastreams_all.keys()) != list(datastreams_all_old.keys())):
+                            print('Datastreams changed', len(datastreams_all.keys()))
                             datastreams_all_old.update(datastreams_all)
-                            infoqueue.put_nowait(copy.copy(datastreams_all))
+                            devices_changed.append(device.name)
+                            FLAG_DATASTREAMS_CHANGED = True
+
                 except Exception as e:
                     logger.exception(e)
                     logger.debug(funcname + ':Statistics:' + str(e))
@@ -159,6 +176,16 @@ def distribute_data(devices, hostinfo, infoqueue, dt=0.01):
                         except Exception as e:
                             pass
                             # logger.debug(funcname + ':guiqueue of :' + devicedict['device'].name + ' full')
+
+        if FLAG_DATASTREAMS_CHANGED:
+            infoqueue.put_nowait(copy.copy(datastreams_all))
+            devall = copy.copy(deviceinfo_all)
+            devall['type'] = 'deviceinfo_all'
+            infoqueue.put_nowait(devall)
+            # Send an command to all devices
+            for devicedict in devices:
+                dev = devicedict['device']
+                dev.thread_command('deviceinfo_all', {'deviceinfo_all':deviceinfo_all,'devices_changed':list(set(devices_changed))})
 
         # Calculate the sleeping time
         tstop = time.time()
@@ -201,7 +228,8 @@ class redvypr(QtCore.QObject):
         self.devices = []  # List containing dictionaries with information about all attached devices
         self.device_paths = []  # A list of pathes to be searched for devices
         self.device_modules = []
-        self.datastreams_dict = {}
+        self.datastreams_dict = {} # Information about all datastreams, this is updated by distribute data
+        self.deviceinfo_all   = {} # Information about all devices, this is updated by distribute data
 
         ## A timer to check the status of all threads
         self.devicethreadtimer = QtCore.QTimer()
@@ -219,7 +247,7 @@ class redvypr(QtCore.QObject):
         self.datadistinfoqueue = queue.Queue(maxsize=1000)  # A queue to get informations from the datadistribution
         # Lets start the distribution!
         self.datadistthread = threading.Thread(target=distribute_data, args=(
-        self.devices, self.hostinfo, self.datadistinfoqueue, self.dt_datadist), daemon=True)
+        self.devices, self.hostinfo, self.deviceinfo_all, self.datadistinfoqueue, self.dt_datadist), daemon=True)
         self.datadistthread.start()
         logger.info(funcname + ':Searching for devices')
         self.populate_device_path()
@@ -235,6 +263,15 @@ class redvypr(QtCore.QObject):
                 logger.debug(funcname + ':Parsing configuration: ' + str(c))
                 self.parse_configuration(c)
 
+    def get_deviceinfo(self):
+        """
+
+        Returns:
+            A dictionary containing the deviceinfo of all devices seen by this redvypr instance
+
+        """
+
+        return copy.deepcopy(self.deviceinfo_all)
 
     def update_status(self):
         while True:
@@ -244,10 +281,9 @@ class redvypr(QtCore.QObject):
                 if('dt_avg' in data['type']):
                     self.dt_avg_datadist = data['dt_avg']
                     self.status_update_signal.emit()
-                elif('datastreams' in data['type']):
-                    data.pop('type') # Remove the type key
-                    print('datastreams changed',data)
-                    self.datastreams_dict = data
+                elif ('deviceinfo_all' in data['type']):
+                    data.pop('type')  # Remove the type key
+                    print('datastreams changed', data)
                     self.datastreams_changed_signal.emit()
 
             except Exception as e:
@@ -712,7 +748,7 @@ class redvypr(QtCore.QObject):
 
 
                 devicedict = {'device': device, 'thread': None, 'dataout': [], 'gui': [], 'guiqueue': [guiqueue],
-                              'statistics': statistics, 'logger': devicelogger}
+                              'statistics': statistics, 'logger': devicelogger,'comqueue':comqueue}
 
                 # Add the modulename
                 devicedict['devicemodulename'] = devicemodulename
@@ -1278,8 +1314,10 @@ class redvypr(QtCore.QObject):
         # Emit a connection signal
         if(ret is not None):
             self.devices_connected.emit(deviceprovider.name, devicereceiver.name)
-            # Call local function of the devices itself. This makes sense to notify i.e. the providing device that a forwarded deviced was subsripted and the provider can take care for the forwarded data. See for example the iored device
-            deviceprovider.got_subscription(deviceprovider_str,devicereceiver_str)
+            # Call local function of the devices itself. This makes sense to notify i.e. the providing device that a
+            # forwarded deviced was subscripted and the provider can take care for the forwarded data. See for example
+            # the iored device
+            deviceprovider.got_subscripted(deviceprovider_str,devicereceiver_str)
         return ret
 
 
@@ -1447,7 +1485,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.devicesummarywidget_layout.addStretch()
 
     def readguiqueue(self):
-        """This periodically called functions reads the guiqueue and calls
+        """This periodically called function reads the guiqueue and calls
         the widgets of the devices update function (if they exist)
 
         """
@@ -1609,7 +1647,7 @@ class redvyprWidget(QtWidgets.QWidget):
             deviceinitwidget_bare = devicemodule.initDeviceWidget
         except Exception as e:
             logger.debug(funcname + ': Widget does not have a deviceinitwidget using standard one:' + str(e))
-            logger.exception(e)
+            #logger.exception(e)
             deviceinitwidget_bare = redvypr_deviceInitWidget  # Use a standard widget
 
         try:

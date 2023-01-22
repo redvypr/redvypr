@@ -12,19 +12,21 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket):
     """ Treats a datadict received from a device and adds additional information from redvypr as hostinfo, numpackets etc.
     """
     # Add deviceinformation to the data package
-    if ('device' not in data.keys()):
-        data['device'] = str(devicename)
-        data['host']   = hostinfo
+    if ('_redvypr' not in data.keys()):
+        data['_redvypr'] = {}
+    if ('device' not in data['_redvypr'].keys()):
+        data['_redvypr']['device'] = str(devicename)
+        data['_redvypr']['host']   = hostinfo
     else:  # Check if we have a local data packet, i.e. a packet that comes from another redvypr instance with another UUID
-        data['host']['local'] = data['host']['uuid'] == hostinfo['uuid']
+        data['_redvypr']['host']['local'] = data['_redvypr']['host']['uuid'] == hostinfo['uuid']
 
     # Add the time to the datadict if its not already in
-    if ('t' not in data.keys()):
-        data['t'] = tpacket
+    if ('t' not in data['_redvypr'].keys()):
+        data['_redvypr']['t'] = tpacket
 
     # Add the packetnumber to the datadict
-    if ('numpacket' not in data.keys()):
-        data['numpacket'] = numpacket
+    if ('numpacket' not in data['_redvypr'].keys()):
+        data['_redvypr']['numpacket'] = numpacket
 
 #
 #
@@ -149,11 +151,11 @@ class redvypr_address():
         """ Checks if address is in datadict 
         """
         print('Hallo, contains')
-        deviceflag = (self.devicename == datapacket['device']) or self.deviceexpand
-        hostflag = (self.hostname == datapacket['host']['hostname']) or self.hostexpand
-        addrflag = (self.addr == datapacket['host']['addr']) or self.addrexpand
-        uuidflag = (self.uuid == datapacket['host']['uuid']) or self.uuidexpand
-        localflag = datapacket['host']['local'] and self.local
+        deviceflag = (self.devicename == datapacket['_redvypr']['device']) or self.deviceexpand
+        hostflag = (self.hostname == datapacket['_redvypr']['host']['hostname']) or self.hostexpand
+        addrflag = (self.addr == datapacket['_redvypr']['host']['addr']) or self.addrexpand
+        uuidflag = (self.uuid == datapacket['_redvypr']['host']['uuid']) or self.uuidexpand
+        localflag = datapacket['_redvypr']['host']['local'] and self.local
         #print('deviceflag', deviceflag)
         #print('hostflag', deviceflag)
         #print('addrflag', addrflag)
@@ -178,15 +180,21 @@ class redvypr_address():
 
 def create_data_statistic_dict():
     statdict = {}
-    statdict['inspect']         = True
-    statdict['numpackets']      = 0
-    statdict['datakeys']        = []
-    statdict['devicekeys']      = {}
-    statdict['devices']         = []
-    statdict['datastreams']     = []
-    statdict['datastreams_dict']= {}
-    statdict['datastreams_info']= {}
+    statdict['inspect']          = True
+    statdict['numpackets']       = 0
+    statdict['datakeys']         = []
+    statdict['devicekeys']       = {}
+    statdict['devices']          = []
+    statdict['devices_dict']     = {}
+    statdict['datastreams']      = []
+    statdict['datastreams_dict'] = {}
+    statdict['datastreams_info'] = {}
     statdict['hostinfos']        = {}
+    # New
+    statdict['datakey_info']       = {}
+    statdict['datastream_redvypr'] = {}
+    statdict['device_redvypr']     = {}
+    statdict['host_redvypr']       = {}
     return statdict
 
 def do_data_statistics_deep(datapacket, statdict):
@@ -209,6 +217,7 @@ def do_data_statistics(data, statdict):
         statdict:
     """
     statdict['numpackets'] += 1
+    uuid = data['_redvypr']['host']['uuid']
     # Create a unique list of datakeys
     statdict['datakeys'] = list(set(statdict['datakeys'] + list(data.keys())))
     # Create a unqiue list of devices, device can
@@ -223,14 +232,59 @@ def do_data_statistics(data, statdict):
         
     statdict['devicekeys'][devicename_stat] = list(set(statdict['devicekeys'][devicename_stat] + list(data.keys())))
     statdict['devices']                     = list(set(statdict['devices'] + [devicename_stat])) # This list collects all devices distributed by the actual device. This is helpful for brokers like iored or network.
+    try:
+        statdict['devices_dict'][devicename_stat]['host'].update(data['_redvypr']['host'])
+    except:
+        statdict['devices_dict'][devicename_stat] = {'host':data['_redvypr']['host']}
+
     [datastreams_stat,datastreams_dict]     = get_datastreams_from_data(data,uuid=True,add_dict=True)
     statdict['datastreams']                 = list(set(statdict['datastreams'] + datastreams_stat))
     statdict['datastreams_dict'].update(datastreams_dict)
     # Create a hostinfo information
     try:
-        statdict['hostinfos'][data['host']['uuid']].update(data['host'])
+        statdict['hostinfos'][uuid].update(data['_redvypr']['host'])
     except:
-        statdict['hostinfos'][data['host']['uuid']] = data['host']
+        statdict['hostinfos'][uuid] = data['_redvypr']['host']
+
+
+    # new
+    statdict['datastream_redvypr'].update(datastreams_dict)
+    # Create a hostinfo information
+    try:
+        statdict['host_redvypr'][uuid].update(data['_redvypr']['host'])
+    except:
+        statdict['host_redvypr'][uuid] = data['_redvypr']['host']
+
+    # Get datakeys from datapacket
+    datakeys = get_keys_from_data(data)
+    # Get datakeys from info (potentially)
+    try:
+        datakeys_info = get_keys_from_data(data['_keyinfo'])
+    except:
+        datakeys_info = []
+
+    try:
+        datakeys_new = list(set(statdict['device_redvypr'][devicename_stat]['datakeys'] + datakeys + datakeys_info))
+    except:
+        datakeys_new = datakeys
+
+    try:
+        statdict['device_redvypr'][devicename_stat]['_redvypr'].update(data['_redvypr'])
+        statdict['device_redvypr'][devicename_stat]['datakeys'] = datakeys_new
+    except: # Does not exist yet, create the entry
+        statdict['device_redvypr'][devicename_stat] = {'_redvypr': data['_redvypr'],'datakeys':datakeys,'_info':{},'_keyinfo':{}}
+
+    try:
+        statdict['device_redvypr'][devicename_stat]['_info'].update(data['_info'])
+    except:
+        pass
+
+    # Create status skeleton of not existing
+    try:
+        statdict['device_redvypr'][devicename_stat]['_redvypr']['status']
+    except:
+        statdict['device_redvypr'][devicename_stat]['_redvypr']['status'] = {}
+
 
     return statdict
 
@@ -357,33 +411,30 @@ def parse_addrstr(address_string,local_hostinfo=None):
 
 
 
-def get_keys_from_data(data,rem_standard=True,rem_tnum=False,rem_props=False):
+def get_keys_from_data(data):
     """
-    Returns the keys of a redvypr data dictionary without the standard
-    keys (host','device','numpacket') as well as keys with an
-    '@' in it.
+    Returns the keys of a redvypr data packet without the standard keys ('_host','_info').
     Args:
         data (dict): redvypr data dictionary 
-        rem_standard (bool): Remove host, device
-        rem_tnum (bool): Remove t, numpacket
-        rem_props (bool): Remove property keys (i.e. keys starting with a '?'?
-    
-        data (dict): 
-        rem_props (bool): 
+
     """
     keys = list(data.keys())
-    if rem_tnum:
-        keys.remove('t')
-        keys.remove('numpacket')
-    if rem_standard:        
-        keys.remove('host')
-        keys.remove('device')
-    if rem_props:
-        for k in keys:
-            if('?' in k):
-                keys.remove(k)
-            
+    keys.remove('_redvypr')
+    try:
+        keys.remove('_info')
+    except:
+        pass
+
+    try:
+        keys.remove('_keyinfo')
+    except:
+        pass
+
     return keys
+
+
+def get_deviceaddress_from_redvypr_meta(_redvypr,uuid=False):
+    return get_devicename_from_data({'_redvypr':_redvypr},uuid=uuid)
 
 def get_devicename_from_data(data,uuid=False):
     """ Returns a redvypr devicename string including the hostname, ip with the optional uuid.
@@ -396,9 +447,9 @@ def get_devicename_from_data(data,uuid=False):
         str: The full devicename
     """
     if(uuid):
-        devicename = data['device'] + ':' + data['host']['hostname'] + '@' + data['host']['addr'] + '::' + data['host']['uuid']
+        devicename = data['_redvypr']['device'] + ':' + data['_redvypr']['host']['hostname'] + '@' + data['_redvypr']['host']['addr'] + '::' + data['_redvypr']['host']['uuid']
     else:
-        devicename = data['device'] + ':' + data['host']['hostname'] + '@' + data['host']['addr']
+        devicename = data['_redvypr']['device'] + ':' + data['_redvypr']['host']['hostname'] + '@' + data['_redvypr']['host']['addr']
     return devicename
 
 
@@ -445,7 +496,7 @@ def get_datastreams_from_data(data,uuid=False,add_dict=False):
     for key in datakeys:
         datastream = key + '/' + devicename
         datastreams.append(datastream)
-        datastreams_dict[datastream] = t
+        datastreams_dict[datastream] = {'host':data['_redvypr']['host']}
 
     if(add_dict):
         return [datastreams,datastreams_dict]
@@ -471,10 +522,10 @@ def get_address_from_data(datakey,data=None,device=None,hostinfo=None,style='sho
         raise TypeError('Either data or device need to be not None')
     
     if(data is not None):
-        device = data['device']
-        hostname = data['host']['hostname']
-        addr = data['host']['addr']
-        uuid = data['host']['uuid']
+        device = data['_redvypr']['device']
+        hostname = data['_redvypr']['host']['hostname']
+        addr = data['_redvypr']['host']['addr']
+        uuid = data['_redvypr']['host']['uuid']
     else:
         if(hostinfo == None):
             hostname = '*'
@@ -691,7 +742,7 @@ def datapacket(data,datakey=None,tu=None):
     if(datakey == None):
         datakey = 'data'
         
-    datadict = {'t':tu}
+    datadict = {'_redvypr':{'t':tu}}
     datadict[datakey] = data
     return datadict
 
@@ -710,9 +761,9 @@ def commandpacket(command='stop',device_uuid='',thread_uuid='',devicename = None
     """
     compacket = datapacket(command,datakey='redvypr_device_command') # The command
     if devicename is not None:
-        compacket['device'] = devicename  # The device the command was sent from
+        compacket['_redvypr']['device'] = devicename  # The device the command was sent from
     if host is not None:
-        compacket['host'] = host
+        compacket['_redvypr']['host'] = host
     compacket['redvypr_device_uuid'] = device_uuid  # The uuid of the device the command is for
     compacket['redvypr_thread_uuid'] = thread_uuid  # The uuid of the thread of device the command is for
     return compacket

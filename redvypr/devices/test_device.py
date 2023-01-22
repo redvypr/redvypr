@@ -53,7 +53,7 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
         if(data is not None):
             command = check_for_command(data,thread_uuid=device_info['thread_uuid'])
             logger.debug('Got a command: {:s}'.format(str(data)))
-            if (command is not None):
+            if (command == 'stop'):
                 logger.debug('Command is for me: {:s}'.format(str(command)))
                 break
 

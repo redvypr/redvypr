@@ -52,7 +52,9 @@ class redvypr_device(QtCore.QObject):
         self.autostart   = autostart
         self.data_receiver = []
         self.data_provider = []
-
+        # Create a redvypr_address
+        # self.address_str
+        # self.address
         self.__update_address__()
 
         # Adding the start function (the function that is executed as a thread or multiprocess and is doing all the work!)
@@ -105,7 +107,7 @@ class redvypr_device(QtCore.QObject):
         astr = self.redvypr_address().get_str(strtype = strtype)
         return astr
 
-    def got_subscription(self,dataprovider_address,datareceiver_address):
+    def got_subscripted(self,dataprovider_address,datareceiver_address):
         """
         Function is called by self.redvypr if this device is connected with another one. The intention is to notify device
         that a specific datastream/devce has been subscribed. This is a wrapper function and need to be reimplemented if needed.
@@ -227,7 +229,8 @@ class redvypr_device(QtCore.QObject):
                         # The arguments for the start function
                         thread_uuid = 'thread_' + str(uuid.uuid1())
                         device_info = {'device':self.name,'uuid':self.uuid,'thread_uuid':thread_uuid,'hostinfo':self.redvypr.hostinfo}
-                        args = (device_info,self.config, self.dataqueue, self.datainqueue, self.statusqueue)
+                        config = copy.deepcopy(self.config) # The thread/multiprocess gets a copy
+                        args = (device_info,config, self.dataqueue, self.datainqueue, self.statusqueue)
                         print('thread',self.mp)
                         if self.mp == 'thread':
                             self.logger.info(funcname + 'Starting as thread')

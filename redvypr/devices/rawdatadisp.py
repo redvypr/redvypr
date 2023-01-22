@@ -25,27 +25,29 @@ config_template['redvypr_device']['description'] = description
 
 
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
-    funcname = __name__ + '.start()'        
-    while True:
-        try:
-            data = datainqueue.get(block=False)
-        except:
-            data = None
-        if (data is not None):
-            command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
-            logger.debug('Got a command: {:s}'.format(str(data)))
-            if (command is not None):
-                logger.debug('Command is for me: {:s}'.format(str(command)))
-                break
-
-        time.sleep(0.05)
-        while(datainqueue.empty() == False):
+    funcname = __name__ + '.start()'
+    FLAG_RUN = True
+    while FLAG_RUN:
+        while (datainqueue.empty() == False):
             try:
                 data = datainqueue.get(block=False)
+            except:
+                data = None
+
+            if (data is not None):
                 dataqueue.put(data)
 
-            except Exception as e:
-                logger.debug(funcname + ':Exception:' + str(e))            
+                command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
+                if (command =='stop'):
+                    logger.debug('Stop command for me: {:s}'.format(str(command)))
+                    FLAG_RUN = False
+                    break
+
+
+
+        time.sleep(0.05)
+
+
 
 
 class displayDeviceWidget(QtWidgets.QWidget):

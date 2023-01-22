@@ -1,6 +1,19 @@
 Design
 ======
 
+Misc notes
+----------
+
+- host
+- device
+- datapacket created by a device
+- datakey
+- datastream
+
+address can to a host, device or a datakey
+
+
+
 
 YAML configuration
 ------------------
@@ -110,9 +123,17 @@ Datakeys can have all characters that are supported by Python as dictionary keys
 except a number of keys that are used by redvypr to distinguish between datakeys, redvypr hostnames,
 IP adresses and UUIDs, these **non usable** characters are: "**@**", "**:**", "**/**", "**?**".
 redvypr uses as well a number of standard keys that cannot be used as they are added automatically:
-- host: Information about the host of the device
-- device: The devicename
-- numpacket: The packetnumber of that device
+
+- _redvypr: Information added/modified by redvypr about the datapacket and optionally about the datakeys
+  - t: The time the packet was seen the first time by a distribute data
+  - host: Information about the host of the device
+  - device: The devicename
+  - device_info: Information about the device, i.e. if it is subscribeable etc.
+  - numpacket: The packetnumber of that device, this is counted in distribute data
+- _info: Additional, optional, information about the datapacket, static information
+- _keyinfo: Additional, optional, information about the datakeys
+
+
 
 
 
