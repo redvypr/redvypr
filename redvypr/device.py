@@ -290,6 +290,15 @@ class redvypr_device(QtCore.QObject):
                 self.subscribed_datastreams.append({'datastream':datastream,'device':devicename})
                 break
 
+    def get_data_provider_info(self):
+        """
+        Returns information about the data providing devices
+        Returns:
+
+        """
+        d = copy.deepcopy(self.statistics['device_redvypr'])
+        return d
+
     def publishing_to(self):
         """
 

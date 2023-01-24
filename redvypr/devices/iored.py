@@ -160,8 +160,10 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue, config):
                 sub.setsockopt(zmq.SUBSCRIBE, substringb)
                 status['sub'].append(substring)
                 statusqueue.put(copy.deepcopy(status))
-                datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='', devicename=None, host=None)
-                datapacket['_redvypr']['status'] = {'subscribed':True,'zmq_subscriptions':status['sub']}
+                comdata = {}
+                comdata['deviceaddr']   = substring
+                comdata['devicestatus'] = {'subscribed': True} # TODO, this is the status of the iored deveice, 'zmq_subscriptions': status['sub']}
+                datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='', devicename=None, host=None,comdata=comdata)
                 dataqueue.put(datapacket)
                 # datastreams_dict is dictionary from the device, changed in a thread, use only atomic operations
                 try:
@@ -198,7 +200,13 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue, config):
                     pass
 
                 statusqueue.put(copy.deepcopy(status))
-                dataqueue.put({})
+                comdata = {}
+                comdata['deviceaddr'] = substring
+                comdata['devicestatus'] = { 'subscribed': False}
+                datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='',
+                                                        devicename=None, host=None, comdata=comdata)
+                dataqueue.put(datapacket)
+                dataqueue.put(datapacket)
 
 
         try:
@@ -693,20 +701,25 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
 
     def __item_changed__(self,new,old):
-        print('Item changed',new.subscribeable,new.subscribed)
-        try:
-            subscribed = new.subscribed
-        except:
-            subscribed = False
+        if(new is not None):
+            print('Item changed',new,old)
+            try:
+                print('Item changed', new.subscribeable, new.subscribed)
+            except:
+                print('Problem')
+            try:
+                subscribed = new.subscribed
+            except:
+                subscribed = False
 
-        if(new.subscribeable == False):
-            self.subbtn.setEnabled(False)
-        else:
-            self.subbtn.setEnabled(True)
-            if(subscribed):
-                self.subbtn.setText('Unsubscribe')
+            if(new.subscribeable == False):
+                self.subbtn.setEnabled(False)
             else:
-                self.subbtn.setText('Subscribe')
+                self.subbtn.setEnabled(True)
+                if(subscribed):
+                    self.subbtn.setText('Unsubscribe')
+                else:
+                    self.subbtn.setText('Subscribe')
 
 
     def __subscribe_clicked__(self):

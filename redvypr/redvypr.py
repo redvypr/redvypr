@@ -131,35 +131,58 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
                 except Exception as e:
                     break
 
+                #
                 # Add additional information, if not present yet
                 data_packets.treat_datadict(data, device.name, hostinfo, devicedict['numpacket'], tstart)
-                # Check for a command packet, TODO, this will be lengthy in the future
-                command = data_packets.check_for_command(data)
-                if(command == 'device_status'): # status update
-                    print('Status update!!!')
-                    devices_changed.append(device.name)
-                    FLAG_DATASTREAMS_CHANGED = True
 
                 # Do statistics
                 try:
                     if devicedict['statistics']['inspect']:
                         devicedict['statistics'] = data_packets.do_data_statistics(data, devicedict['statistics'])
-                        # Create a dictionary of all datastreams
-                        datastreams_all.update(devicedict['statistics']['datastream_redvypr'])
-                        try:
-                            deviceinfo_all[device.name].update(devicedict['statistics']['device_redvypr'])
-                        except:
-                            deviceinfo_all[device.name] = devicedict['statistics']['device_redvypr']
-
-                        if(list(datastreams_all.keys()) != list(datastreams_all_old.keys())):
-                            print('Datastreams changed', len(datastreams_all.keys()))
-                            datastreams_all_old.update(datastreams_all)
-                            devices_changed.append(device.name)
-                            FLAG_DATASTREAMS_CHANGED = True
-
                 except Exception as e:
                     logger.exception(e)
                     logger.debug(funcname + ':Statistics:' + str(e))
+
+                #
+                # Check for a command packet
+                #
+                [command, comdata] = data_packets.check_for_command(data, add_data=True)
+                if (command == 'device_status'):  # status update
+                    print('Comdata',comdata)
+                    try:
+                        devaddr   = comdata['data']['deviceaddr']
+                        devstatus = comdata['data']['devicestatus']
+                        print('Status update!!!', devaddr, devstatus)
+                    except:
+                        devaddr = None
+                        devstatus = None
+                        pass
+                    devices_changed.append(device.name)
+                    try: # Update the device
+                        print('Status',devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'])
+                        devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'].update(devstatus)
+                    except Exception as e:
+                        print('Could not update status',e)
+
+                    FLAG_DATASTREAMS_CHANGED = True
+
+                #
+                # Create a dictionary of all datastreams
+                #
+                datastreams_all.update(devicedict['statistics']['datastream_redvypr'])
+                try:
+                    deviceinfo_all[device.name].update(devicedict['statistics']['device_redvypr'])
+                except:
+                    deviceinfo_all[device.name] = devicedict['statistics']['device_redvypr']
+
+                if (list(datastreams_all.keys()) != list(datastreams_all_old.keys())):
+                    print('Datastreams changed', len(datastreams_all.keys()))
+                    datastreams_all_old.update(datastreams_all)
+                    devices_changed.append(device.name)
+                    FLAG_DATASTREAMS_CHANGED = True
+                #
+                #
+                #
 
                 if True:
                     # Feed the data into the modules/functions/objects and
@@ -1679,7 +1702,9 @@ class redvyprWidget(QtWidgets.QWidget):
             # devicedisplaywidget = displayDeviceWidget_standard
             devicedisplaywidget = None
 
+        # The widget shown in the tab
         devicewidget = QtWidgets.QWidget()
+        devicewidget.device = device # Add the device to the devicewidget
         devicelayout = QtWidgets.QVBoxLayout(devicewidget)
         devicetab = QtWidgets.QTabWidget()
         devicetab.setMovable(True)
@@ -1755,7 +1780,13 @@ class redvyprWidget(QtWidgets.QWidget):
     def connect_device_gui(self):
         """ Wrapper for the gui
         """
-        self.open_connect_widget(device=None)
+        # Get the current tab
+        curtab = self.devicetabs.currentWidget()
+        try:
+            device = curtab.device
+        except:
+            device = None
+        self.open_connect_widget(device=device)
 
     def connect_device(self, device):
         """ Handles the connect signal from devices, called when the connection between the device shall be changed

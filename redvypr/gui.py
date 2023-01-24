@@ -66,7 +66,7 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
 
         self.devices_listallout = QtWidgets.QTreeWidget()  # All dataproviding devices
         self.devices_listallout.setColumnCount(2)
-        self.devices_listallout.itemDoubleClicked.connect(self.__update_device_choice__)
+        self.devices_listallout.currentItemChanged.connect(self.__update_device_choice__)
 
         self.devices_listcon = QtWidgets.QListWidget()  # The devices a connection is to be defined
         self.devices_listcon.itemClicked.connect(self.itemcon_clicked)
@@ -76,17 +76,17 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
         self.__commitbtn.clicked.connect(self.commit_clicked)
         self.__commitbtn.setEnabled(False)
 
-        layout.addWidget(lab, 0, 0,1,2)
-        layout.addWidget(self.dataprovider_label, 1, 0)
-        layout.addWidget(self.device_label, 1, 1)
-        layout.addWidget(self.devices_listallout, 2, 0)
-        layout.addWidget(self.devices_listcon, 2, 1)
+        layout.addWidget(lab, 0, 1,1,2)
+        layout.addWidget(self.dataprovider_label, 1, 1)
+        layout.addWidget(self.devices_listallout, 2, 1)
+        layout.addWidget(self.device_label, 1, 0)
+        layout.addWidget(self.devices_listcon, 2, 0)
         layout.addWidget(self.__commitbtn,3,0,1,2)
 
         if (len(self.devices) > 0):
             self.update_list(device)
 
-    def __update_device_choice__(self,item):
+    def __update_device_choice__(self,newitem,olditem):
         """
         A device was clicked, update all buttons
         Args:
@@ -95,18 +95,26 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
         Returns:
 
         """
-        self.__commitbtn.setEnabled(True)
-        if(item.subscribed):
-            self.__commitbtn.setText('Unsubscribe')
+        if newitem is not None:
+            self.__commitbtn.setEnabled(newitem.subscribeable)
+            print('Item',newitem.text(0))
+            if(newitem.subscribed):
+                self.__commitbtn.setText('Unsubscribe')
+            else:
+                self.__commitbtn.setText('Subscribe')
         else:
-            self.__commitbtn.setText('Subscribe')
+            self.__commitbtn.setEnabled(False)
 
     def update_list(self, device):
         """ Update the list
         """
 
         funcname = __name__ + '.update_list()'
-        logger.debug(funcname + ':update_list:' + str(device))
+        try:
+            devname = device.name
+        except:
+            devname = 'NA'
+        logger.debug(funcname + ':update_list for device: {:s}, name {:s}'.format(str(device),devname))
         self.devices_listallout.clear()
         self.devices_listcon.clear()
         self.device = device
@@ -120,7 +128,7 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
             font1.setBold(True)
             font0 = QtGui.QFont('Arial')
 
-
+            # Fill the qtreewidget
             print('data provider',data_provider_all)
             if (data_provider_all is not None):
                 for dev in data_provider_all:
@@ -135,20 +143,35 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
                         status = 'subscribed'
                         itm.setFont(0,font1)
                         itm.subscribed = True
+                        itm.subscribeable = True
                     else:
                         itm.setFont(0, font0)
                         itm.subscribed = False
+                        itm.subscribeable = True
 
                     root.addChild(itm)
                     # Check for forwarded devices
-                    devs_forwarded = self.redvypr.get_forwarded_devicenames(dev)
-                    for dev_for in devs_forwarded:
-                        itmf = QtWidgets.QTreeWidgetItem([dev_for, ''])
+                    devs_forwarded = dev.get_data_provider_info()
+                    for devaddress in devs_forwarded.keys():
+                        print(devs_forwarded)
+                        print(devaddress)
+                        print('stat',devs_forwarded[devaddress]['_redvypr'])
+                        itmf = QtWidgets.QTreeWidgetItem([devaddress, ''])
                         itmf.device = dev
+                        try:
+                            itmf.subscribed = devs_forwarded[devaddress]['_redvypr']['subscribed']
+                            itmf.subscribeable = devs_forwarded[devaddress]['_redvypr']['subscribeable']
+                        except:
+                            itmf.subscribed = False
+                            itmf.subscribeable = False
+
                         itm.addChild(itmf)
 
             self.devices_listallout.expandAll()
             self.devices_listallout.resizeColumnToContents(0)
+
+            # Fill list of devices subscribing
+            devitm = None
             if True:
                 # connecting devices
                 for s in self.devices:
@@ -157,111 +180,38 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
                     itm.device = sen
                     self.devices_listcon.addItem(itm)
                     if (sen == device):
-                        self.devices_listcon.setCurrentItem(itm)
-            if False:
-                # data providing devices
-                if (device.subscribe):
-                    self.devices_listout.setEnabled(True)
-                    self.devices_listallout.setEnabled(True)
-                    for s in self.devices:
-                        sen = s['device']
-                        if (sen.publish == False):
-                            continue
-                        if (device == sen):  # Dont list the device itself
-                            continue
+                        devitm = itm
 
-                        itm = QtWidgets.QListWidgetItem(sen.name)
-                        itm.device = sen
-                        self.devices_listallout.addItem(itm)
-                else:
-                    self.devices_listout.setEnabled(False)
-                    self.devices_listallout.setEnabled(False)
-
-    def addrm_out(self):
-        """ Connecting publishing devices with device
-        """
-        funcname = 'addrm_in'
-        logger.debug(funcname)
-        button = self.sender()
-        if (button == self.arroutleft):
-            # print('remove')
-            ind = self.devices_listout.currentRow()
-            self.devices_listout.takeItem(ind)
-
-        if (button == self.arroutright):
-            # print('add')
-            itmadd = self.devices_listallout.currentItem()
-            sen = itmadd.device
-            itm = QtWidgets.QListWidgetItem(sen.name)
-            itm.device = sen
-            self.devices_listout.addItem(itm)
-            # print('add',itmadd.device)
-            # self.devices_listout.addItem(itmadd.text())
-
-    def addrm_in(self):
-        """ Connecting receiving devices with dataqueue of this device
-        """
-        funcname = 'addrm_in'
-        logger.debug(funcname)
-        button = self.sender()
-        if (button == self.arrinright):
-            logger.debug(funcname + ': remove')
-            ind = self.devices_listin.currentRow()
-            self.devices_listin.takeItem(ind)
-
-        elif (button == self.arrinleft):
-            logger.debug(funcname + ': add')
-            itmadd = self.devices_listallin.currentItem()
-            sen = itmadd.device
-            itm = QtWidgets.QListWidgetItem(sen.name)
-            itm.device = sen
-            self.devices_listin.addItem(itm)
-
+                if(devitm is not None):
+                    self.devices_listcon.setCurrentItem(devitm)
+    # End update_list()
     def commit_clicked(self):
-        """ Apply changes to the publishing/receiving devices
+        """ Apply changes to subscribe/unsubscribe
         """
         funcname = 'commit_clicked'
         logger.debug(funcname)
-        outdevices = []
-        # Add device as receiver for publishing devices
-        for inditm in range(self.devices_listout.count()):
-            itm = self.devices_listout.item(inditm)
-            sen = itm.device
-            outdevices.append(sen)
-            logger.debug(funcname + ':' + 'add as publisher:' + str(sen))
-            addrm_device_as_data_provider(self.devices, sen, self.device, remove=False)
 
-        # Check if there are devices to be removed
-        data_provider = get_data_providing_devices(self.devices, self.device)
-        for sen in data_provider:
-            device = sen['device']
-            if (device in outdevices):
-                pass
-            else:
-                logger.debug(funcname + ': Removing device {:s} as a data publisher for {:s} '.format(self.device.name,
-                                                                                                      device.name))
-                addrm_device_as_data_provider(self.devices, device, self.device, remove=True)
+        getSelected = self.devices_listcon.selectedItems()
+        if getSelected:
+            itm = getSelected[0]
+            try:
+                device = itm.device
+                devicename = device.name
+            except:
+                device = None
+                devicename = ''
 
-        # Add device as publisher for receiving devices
-        indevices = []
-        for inditm in range(self.devices_listin.count()):
-            itm = self.devices_listin.item(inditm)
-            sen = itm.device
-            indevices.append(sen)
-            logger.debug(funcname + ':' + 'add as receiver:' + str(sen))
-            addrm_device_as_data_provider(self.devices, self.device, sen, remove=False)
+            print('Device',device,devicename)
+            #    devstr = data_packets.get_deviceaddress_from_redvypr_meta(baseNode._redvypr, uuid=True)
+            #    if (self.subbtn.text() == 'Subscribe'):
+            #        print('Subscribing to', devstr)
+            #        self.device.thread_command('subscribe', {'device': devstr})
+            #    else:
+            #        print('Unsubscribing from', devstr)
+            #        self.device.thread_command('unsubscribe', {'device': devstr})
 
-        # Check if there are devices to be removed
-        data_receiver = get_data_receiving_devices(self.devices, self.device)
-        for sen in data_receiver:
-            device = sen['device']
-            if (device in indevices):
-                pass
-            else:
-                logger.debug(funcname + ': Removing device {:s} as a data receiver from {:s} '.format(self.device.name,
-                                                                                                      device.name))
-                addrm_device_as_data_provider(self.devices, self.device, device, remove=True)
-
+                # time.sleep(1)
+                # self.__update_devicelist__()
 
 
     def disconnect_clicked(self):

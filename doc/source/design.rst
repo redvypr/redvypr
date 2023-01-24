@@ -130,6 +130,7 @@ redvypr uses as well a number of standard keys that cannot be used as they are a
   - device: The devicename
   - device_info: Information about the device, i.e. if it is subscribeable etc.
   - numpacket: The packetnumber of that device, this is counted in distribute data
+- _redvypr_command: A command sent from one device to the host or another device
 - _info: Additional, optional, information about the datapacket, static information
 - _keyinfo: Additional, optional, information about the datakeys
 
