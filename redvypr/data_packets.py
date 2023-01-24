@@ -28,6 +28,8 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket):
     if ('numpacket' not in data['_redvypr'].keys()):
         data['_redvypr']['numpacket'] = numpacket
 
+    return data
+
 #
 #
 #
@@ -150,7 +152,7 @@ class redvypr_address():
     def __contains__(self, datapacket):
         """ Checks if address is in datadict 
         """
-        print('Hallo, contains')
+        #print('Hallo, contains')
         deviceflag = (self.devicename == datapacket['_redvypr']['device']) or self.deviceexpand
         hostflag = (self.hostname == datapacket['_redvypr']['host']['hostname']) or self.hostexpand
         addrflag = (self.addr == datapacket['_redvypr']['host']['addr']) or self.addrexpand

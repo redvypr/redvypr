@@ -107,7 +107,7 @@ class redvypr_device(QtCore.QObject):
         astr = self.redvypr_address().get_str(strtype = strtype)
         return astr
 
-    def got_subscripted(self,dataprovider_address,datareceiver_address):
+    def got_subscribed(self,dataprovider_address,datareceiver_address,):
         """
         Function is called by self.redvypr if this device is connected with another one. The intention is to notify device
         that a specific datastream/devce has been subscribed. This is a wrapper function and need to be reimplemented if needed.
@@ -119,6 +119,9 @@ class redvypr_device(QtCore.QObject):
         Returns:
 
         """
+        pass
+
+    def got_unsubscribed(self, dataprovider_address, datareceiver_address):
         pass
 
     def get_thread_status(self):
@@ -308,6 +311,26 @@ class redvypr_device(QtCore.QObject):
         devs = self.redvypr.get_data_receiving_devices(self)
         return devs
 
+    def publish_to(self,device,publishing_arguments):
+        try:
+            self.redvypr.addrm_device_as_data_provider(self, device, remove=False,
+                                                       subscription_arguments=publishing_arguments)
+            return True
+        except Exception as e:
+            self.logger.exception(e)
+            return False
+
+
+    def stop_publish_to(self, device, publishing_arguments):
+        try:
+            self.redvypr.addrm_device_as_data_provider(self, device, remove=True,
+                                                       subscription_arguments=publishing_arguments)
+            return True
+        except Exception as e:
+            self.logger.exception(e)
+            return False
+
+
     def subscribed_to(self):
         """
 
@@ -317,18 +340,19 @@ class redvypr_device(QtCore.QObject):
         devs = self.redvypr.get_data_providing_devices(self)
         return devs
             
-    def subscribe_device(self,device):
+    def subscribe_device(self,device,subscription_arguments=None):
         """
         """
         funcname = self.__class__.__name__ + '.subscribe_device()'
-        self.logger.debug(funcname)
+        self.logger.debug(funcname + ' subscribing to device {:s}'.format(str(device)))
         try:
-            self.redvypr.addrm_device_as_data_provider(device,self,remove=False)
+            self.redvypr.addrm_device_as_data_provider(device,self,remove=False,subscription_arguments=subscription_arguments)
             return True
         except Exception as e:
+            self.logger.exception(e)
             return False
             
-    def unsubscribe_datastream(self,datastream):
+    def unsubscribe_datastream(self,datastream,subscription_arguments=None):
         """
         """
         funcname = self.__class__.__name__ + '.unsubscribe_datastream()'
@@ -339,12 +363,12 @@ class redvypr_device(QtCore.QObject):
         #for provider in dataprovider:
         #    self.addrm_device_as_data_provider(provider,device,remove=True)
             
-    def unsubscribe_device(self,device):
+    def unsubscribe_device(self,device,subscription_arguments=None):
         """
         """
-        funcname = self.__class__.__name__ + '.subscribe_device()'
+        funcname = self.__class__.__name__ + '.unsubscribe_device()'
         self.logger.debug(funcname)
-        self.redvypr.addrm_device_as_data_provider(self,device,remove=True)
+        self.redvypr.addrm_device_as_data_provider(device,self,remove=True,subscription_arguments=subscription_arguments)
         
     def unsubscribe_all(self):
         """

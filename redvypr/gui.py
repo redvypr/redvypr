@@ -47,6 +47,9 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
         super(redvyprConnectWidget2, self).__init__()
         self.redvypr = redvypr
         self.devices = self.redvypr.devices
+        self.redvypr.devices_connected.connect(self.__devices_connected__)
+        self.redvypr.devices_disconnected.connect(self.__devices_connected__)
+        self.redvypr.device_status_changed_signal.connect(self.__devices_connected__)
         if (len(self.devices) > 0):
             if (device == None):  # Take the first one
                 device = self.devices[0]['device']
@@ -85,6 +88,11 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
 
         if (len(self.devices) > 0):
             self.update_list(device)
+
+    #def __devices_connected__(self, dev1, dev2):
+    def __devices_connected__(self, dev1=None, dev2=None):
+        print('Devices have been connected',dev1,dev2)
+        self.update_list(self.device)
 
     def __update_device_choice__(self,newitem,olditem):
         """
@@ -158,12 +166,18 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
                         print('stat',devs_forwarded[devaddress]['_redvypr'])
                         itmf = QtWidgets.QTreeWidgetItem([devaddress, ''])
                         itmf.device = dev
+                        itmf.address_forwarded = devaddress
                         try:
                             itmf.subscribed = devs_forwarded[devaddress]['_redvypr']['subscribed']
                             itmf.subscribeable = devs_forwarded[devaddress]['_redvypr']['subscribeable']
                         except:
                             itmf.subscribed = False
                             itmf.subscribeable = False
+
+                        if(itmf.subscribed):
+                            itmf.setFont(0, font1)
+                        else:
+                            itmf.setFont(0, font0)
 
                         itm.addChild(itmf)
 
@@ -191,7 +205,8 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
         funcname = 'commit_clicked'
         logger.debug(funcname)
 
-        getSelected = self.devices_listcon.selectedItems()
+
+        getSelected = self.devices_listallout.selectedItems()
         if getSelected:
             itm = getSelected[0]
             try:
@@ -200,6 +215,25 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
             except:
                 device = None
                 devicename = ''
+
+            # Get subscriber
+            subscriber_item  = self.devices_listcon.currentItem()
+            subscriber = subscriber_item.device
+            try:
+                address_forwarded = itm.address_forwarded
+            except:
+                address_forwarded = None
+            if(device is not None):
+                if (self.__commitbtn.text().lower() == 'subscribe'):
+                    print('Subscribing to device')
+                    device.publish_to(subscriber, publishing_arguments=address_forwarded)
+                    #subscriber.subscribe_device(device,subscription_arguments=address_forwarded)
+
+                else:
+                    print('Unsubscribing from device')
+                    device.stop_publish_to(subscriber, publishing_arguments=address_forwarded)
+                    #subscriber.unsubscribe_device(device,subscription_arguments=address_forwarded)
+
 
             print('Device',device,devicename)
             #    devstr = data_packets.get_deviceaddress_from_redvypr_meta(baseNode._redvypr, uuid=True)

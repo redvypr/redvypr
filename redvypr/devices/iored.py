@@ -586,18 +586,35 @@ class Device(redvypr_device):
         device_info['hostinfo_opt'] = copy.deepcopy(self.redvypr.hostinfo_opt)
         start(device_info,copy.deepcopy(config), dataqueue, datainqueue, statusqueue)
 
-    def subscribe_forwarded_device(self, address_string):
-        """
-        Subscribes a forwarded device in the
-        Args:
-            address_string:
+    def publish_to(self,device,publishing_arguments):
+        try:
+            self.redvypr.addrm_device_as_data_provider(self, device, remove=False,
+                                                       subscription_arguments=publishing_arguments)
 
-        Returns:
+            if (publishing_arguments is not None):
+                self.thread_command('subscribe', {'device': publishing_arguments})
+            return True
+        except Exception as e:
+            self.logger.exception(e)
+            return False
 
-        """
-        pass
 
-    def got_subscripted(self, dataprovider_address, datareceiver_address):
+    def stop_publish_to(self, device, publishing_arguments):
+        if (publishing_arguments is not None):
+            print('unsubscribing forwarded device')
+            self.thread_command('unsubscribe', {'device': publishing_arguments})
+        else:
+            print('unsubscribing myself')
+            try:
+                self.redvypr.addrm_device_as_data_provider(self, device, remove=True,
+                                                           subscription_arguments=publishing_arguments)
+                return True
+            except Exception as e:
+                self.logger.exception(e)
+                return False
+
+
+    def got_subscribed(self, dataprovider_address, datareceiver_address, subscription_arguments=None):
         """
         Function is called by redvypr.addrm_device_as_data_provider() after this device got_subscripted by another device
         Args:
@@ -608,11 +625,23 @@ class Device(redvypr_device):
 
         """
         print('Hallo got subscription',dataprovider_address, datareceiver_address)
+        if(subscription_arguments is not None):
+            self.thread_command('subscribe', {'device': subscription_arguments})
 
-        #devstr = baseNode.data_packets.redvypr_address.addressstr
-        #if (self.subbtn.text() == 'Subscribe'):
-        #    print('Subscribing to', devstr)
-        #    self.device.thread_command('subscribe', {'device': devstr})
+
+    def got_unsubscribed(self, dataprovider_address, datareceiver_address,subscription_arguments=None):
+        """
+        Function is called by redvypr.addrm_device_as_data_provider() after this device got unsubscribed by another device
+        Args:
+            dataprovider_address:
+            datareceiver_address:
+
+        Returns:
+
+        """
+        print('Hallo got unsubscription', dataprovider_address, datareceiver_address)
+        if (subscription_arguments is not None):
+            self.thread_command('unsubscribe', {'device': subscription_arguments})
 
     def __update_subscription__(self,devicelist):
         """

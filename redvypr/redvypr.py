@@ -68,7 +68,7 @@ queuesize = 10000
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 # https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib
@@ -117,7 +117,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
     while True:
         time.sleep(dt_sleep)
         tstart = time.time()
-        FLAG_DATASTREAMS_CHANGED = False
+        FLAG_device_status_changed = False
         devices_changed = []
         for devicedict in devices:
             device = devicedict['device']
@@ -164,7 +164,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
                     except Exception as e:
                         print('Could not update status',e)
 
-                    FLAG_DATASTREAMS_CHANGED = True
+                    FLAG_device_status_changed = True
 
                 #
                 # Create a dictionary of all datastreams
@@ -179,7 +179,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
                     print('Datastreams changed', len(datastreams_all.keys()))
                     datastreams_all_old.update(datastreams_all)
                     devices_changed.append(device.name)
-                    FLAG_DATASTREAMS_CHANGED = True
+                    FLAG_device_status_changed = True
                 #
                 #
                 #
@@ -200,7 +200,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
                             pass
                             # logger.debug(funcname + ':guiqueue of :' + devicedict['device'].name + ' full')
 
-        if FLAG_DATASTREAMS_CHANGED:
+        if FLAG_device_status_changed:
             infoqueue.put_nowait(copy.copy(datastreams_all))
             devall = copy.copy(deviceinfo_all)
             devall['type'] = 'deviceinfo_all'
@@ -234,8 +234,9 @@ class redvypr(QtCore.QObject):
     device_path_changed        = QtCore.pyqtSignal()  # Signal notifying if the device path was changed
     device_added               = QtCore.pyqtSignal(list)  # Signal notifying if the device path was changed
     devices_connected          = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
+    devices_disconnected       = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
     status_update_signal       = QtCore.pyqtSignal()  # Signal notifying if the status of redvypr has been changed
-    datastreams_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
+    device_status_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
 
     def __init__(self, parent=None, config=None, nogui=False):
         # super(redvypr, self).__init__(parent)
@@ -307,7 +308,7 @@ class redvypr(QtCore.QObject):
                 elif ('deviceinfo_all' in data['type']):
                     data.pop('type')  # Remove the type key
                     print('datastreams changed', data)
-                    self.datastreams_changed_signal.emit()
+                    self.device_status_changed_signal.emit()
 
             except Exception as e:
                 #logger.exception(e)
@@ -1306,7 +1307,7 @@ class redvypr(QtCore.QObject):
         for provider in dataprovider:
             self.addrm_device_as_data_provider(provider, device, remove=True)
 
-    def addrm_device_as_data_provider(self, deviceprovider, devicereceiver, remove=False):
+    def addrm_device_as_data_provider(self, deviceprovider, devicereceiver, remove=False,subscription_arguments=None):
         """ Adding/removing devices as dataprovider for the device devicereceiver
         Arguments:
         deviceprovider: The device (type Device) or devicename (type str Device.name)
@@ -1336,11 +1337,16 @@ class redvypr(QtCore.QObject):
             ret = addrm_device_as_data_provider(self.devices, deviceprovider, devicereceiver, remove=remove)
         # Emit a connection signal
         if(ret is not None):
-            self.devices_connected.emit(deviceprovider.name, devicereceiver.name)
+
             # Call local function of the devices itself. This makes sense to notify i.e. the providing device that a
             # forwarded deviced was subscripted and the provider can take care for the forwarded data. See for example
             # the iored device
-            deviceprovider.got_subscripted(deviceprovider_str,devicereceiver_str)
+            if(remove):
+                self.devices_disconnected.emit(deviceprovider.name, devicereceiver.name)
+                deviceprovider.got_unsubscribed(deviceprovider_str, devicereceiver_str,subscription_arguments)
+            else:
+                self.devices_connected.emit(deviceprovider.name, devicereceiver.name)
+                deviceprovider.got_subscribed(deviceprovider_str, devicereceiver_str,subscription_arguments)
         return ret
 
 
