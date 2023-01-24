@@ -183,22 +183,27 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
                 #
                 #
                 #
+                for devicedict_sub in devices:
+                    devicesub = devicedict_sub['device']
+                    if(devicesub == device):
+                        continue
 
-                if True:
-                    # Feed the data into the modules/functions/objects and
-                    # let them treat the data
-                    for dataout in devicedict['dataout']:
-                        devicedict['numpacketout'] += 1
-                        try:
-                            dataout.put_nowait(data) # These are the datainqueues of the subscribing devices
-                        except Exception as e:
-                            logger.debug(funcname + ':dataout of :' + devicedict['device'].name + ' full: ' + str(e))
-                    for guiqueue in devicedict['guiqueue']:  # Put data into the guiqueue, this queue does always exist
-                        try:
-                            guiqueue.put_nowait(data)
-                        except Exception as e:
-                            pass
-                            # logger.debug(funcname + ':guiqueue of :' + devicedict['device'].name + ' full')
+                    for addr in devicesub.subscribed_addresses:
+                        if data in addr:
+                            devicedict['numpacketout'] += 1
+                            try:
+                                devicesub.datainqueue.put_nowait(data) # These are the datainqueues of the subscribing devices
+                                break
+                            except Exception as e:
+                                logger.debug(funcname + ':dataout of :' + devicedict['device'].name + ' full: ' + str(e))
+
+                # The gui of the device
+                for guiqueue in devicedict['guiqueue']:  # Put data into the guiqueue, this queue does always exist
+                    try:
+                        guiqueue.put_nowait(data)
+                    except Exception as e:
+                        pass
+                        # logger.debug(funcname + ':guiqueue of :' + devicedict['device'].name + ' full')
 
         if FLAG_device_status_changed:
             infoqueue.put_nowait(copy.copy(datastreams_all))
@@ -783,10 +788,6 @@ class redvypr(QtCore.QObject):
                 devicedict['devicedisplaywidget'] = None
                 # device = devicedict['device']
 
-                # Add a priori datakeys to the statistics, if the device supports it
-                # TODO: Add this as a template parameter
-                self.update_statistics_from_apriori_datakeys(device)
-
                 # Check if the device wants a direct start after initialization
                 try:
                     autostart = device.autostart
@@ -813,34 +814,6 @@ class redvypr(QtCore.QObject):
 
         return devicelist
 
-    def update_statistics_from_apriori_datakeys(self, device):
-        """
-        """
-        funcname = self.__class__.__name__ + '.update_statistics_from_apriori_datakeys():'
-        logger.debug(funcname)
-        print('device', device)
-        # Add a priori datakeys to the statistics, if the device supports it
-        try:
-            datakeys = device.get_apriori_datakeys()
-            logger.debug(funcname + 'Adding datakeys received from .get_datakeys(): {:s}'.format(str(datakeys)))
-        except Exception as e:
-            logger.debug(funcname + 'Device does not have .get_apriori_datakeys(): {:s}'.format(str(e)))
-            datakeys = []
-
-        device.statistics['datakeys'] = list(set(datakeys))
-        if (len(device.statistics['datakeys']) > 0):
-            # Add also the datastreams
-            for dkey in datakeys:
-                dstream = self.construct_datastream_from_device_datakey(dkey, device)
-                try:
-                    info = device.get_apriori_datakey_info(dkey)
-                    device.statistics['datastreams_info'][dstream] = info
-                except Exception as e:
-                    pass
-
-                device.statistics['datastreams'].append(dstream)
-
-            device.statistics['datastreams'] = list(set(device.statistics['datastreams']))
 
     def start_device_thread(self, device):
         """ Functions starts the device thread that is the core of each device
@@ -933,25 +906,6 @@ class redvypr(QtCore.QObject):
             'uuid']
         return devicename
 
-    def construct_datastream_from_device_datakey(self, datakey, device):
-        """
-        Returns a full datastream from a redvypr device and datakey. Note that the datastream must no exist. 
-        Args:
-            datakey: str
-                The datakey
-            device: redvypr_device
-                The redvypr device 
-        
-        
-        Returns
-        -------
-        str
-            A str of the datastream
-            
-        """
-        devicename = self.get_devicename_from_device(device)
-        datastream = datakey + '/' + devicename
-        return datastream
 
     def get_device_from_str(self, devicestr):
         """ Returns the deviced based on an inputstr, if not found returns None
@@ -1154,7 +1108,7 @@ class redvypr(QtCore.QObject):
         #    datastreamlist.extend(dev['statistics']['datastreams'])
 
     def get_datastream_info(self, datastream):
-        """ Gets additional information to the datastream, namely the data that is stored in the ?[datakey] dictionary entry
+        """ Gets additional information to the datastream
         """
 
         datastreams = self.get_datastreams()
@@ -1295,59 +1249,7 @@ class redvypr(QtCore.QObject):
 
         return devices
 
-    def rm_all_data_provider(self, device):
-        """
-        Remove all devices that provide data
-        Args:
-            device: The redvypr device
-        """
-        funcname = self.__class__.__name__ + '.rm_all_data_provider():'
-        logger.debug(funcname)
-        dataprovider = self.get_data_providing_devices(device)
-        for provider in dataprovider:
-            self.addrm_device_as_data_provider(provider, device, remove=True)
 
-    def addrm_device_as_data_provider(self, deviceprovider, devicereceiver, remove=False,subscription_arguments=None):
-        """ Adding/removing devices as dataprovider for the device devicereceiver
-        Arguments:
-        deviceprovider: The device (type Device) or devicename (type str Device.name)
-        devicerreceiver: The device (type Device) or devicename (type str Device.name)
-        remove: False for adding, True for removing
-        """
-        if (type(deviceprovider) == str):
-            deviceprovider_str = deviceprovider
-            deviceprovider = self.get_device_from_str(deviceprovider)
-        else:
-            deviceprovider_str = deviceprovider.address_str
-
-        if (type(devicereceiver) == str):
-            devicereceiver_str = devicereceiver
-            devicereceiver = self.get_device_from_str(devicereceiver)
-        else:
-            devicereceiver_str = devicereceiver.address_str
-
-        #print('Provider',deviceprovider,deviceprovider.name)
-        #print('Receiver', devicereceiver, devicereceiver.name)
-        if (devicereceiver is None) or (deviceprovider is None):
-            return None
-
-        if(devicereceiver.name == deviceprovider.name):
-            raise TypeError('Cannot connect device to itself {:s} and {:s}'.format(str(devicereceiver.name),str(deviceprovider.name)))
-        else:
-            ret = addrm_device_as_data_provider(self.devices, deviceprovider, devicereceiver, remove=remove)
-        # Emit a connection signal
-        if(ret is not None):
-
-            # Call local function of the devices itself. This makes sense to notify i.e. the providing device that a
-            # forwarded deviced was subscripted and the provider can take care for the forwarded data. See for example
-            # the iored device
-            if(remove):
-                self.devices_disconnected.emit(deviceprovider.name, devicereceiver.name)
-                deviceprovider.got_unsubscribed(deviceprovider_str, devicereceiver_str,subscription_arguments)
-            else:
-                self.devices_connected.emit(deviceprovider.name, devicereceiver.name)
-                deviceprovider.got_subscribed(deviceprovider_str, devicereceiver_str,subscription_arguments)
-        return ret
 
 
 #
@@ -2244,3 +2146,133 @@ def redvypr_main():
 
 if __name__ == '__main__':
     redvypr_main()
+
+
+
+
+
+
+def distribute_data_LEGACY(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
+    """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
+    """
+    funcname = __name__ + '.distribute_data()'
+    datastreams_all = {}
+    datastreams_all_old = {}
+    dt_info = 1.0  # The time interval information will be sent
+    dt_avg = 0  # Averaging of the distribution time needed
+    navg = 0
+    tinfo = time.time()
+    tstop = time.time()
+    dt_sleep = dt
+
+
+    while True:
+        time.sleep(dt_sleep)
+        tstart = time.time()
+        FLAG_device_status_changed = False
+        devices_changed = []
+        for devicedict in devices:
+            device = devicedict['device']
+            while True:
+                try:
+                    data = device.dataqueue.get(block=False)
+                    if(type(data) is not dict): # If data is not a dictionary, convert it to one
+                        data = {'data':data}
+
+                    devicedict['numpacket'] += 1
+                except Exception as e:
+                    break
+
+                #
+                # Add additional information, if not present yet
+                data_packets.treat_datadict(data, device.name, hostinfo, devicedict['numpacket'], tstart)
+
+                # Do statistics
+                try:
+                    if devicedict['statistics']['inspect']:
+                        devicedict['statistics'] = data_packets.do_data_statistics(data, devicedict['statistics'])
+                except Exception as e:
+                    logger.exception(e)
+                    logger.debug(funcname + ':Statistics:' + str(e))
+
+                #
+                # Check for a command packet
+                #
+                [command, comdata] = data_packets.check_for_command(data, add_data=True)
+                if (command == 'device_status'):  # status update
+                    print('Comdata',comdata)
+                    try:
+                        devaddr   = comdata['data']['deviceaddr']
+                        devstatus = comdata['data']['devicestatus']
+                        print('Status update!!!', devaddr, devstatus)
+                    except:
+                        devaddr = None
+                        devstatus = None
+                        pass
+                    devices_changed.append(device.name)
+                    try: # Update the device
+                        print('Status',devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'])
+                        devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'].update(devstatus)
+                    except Exception as e:
+                        print('Could not update status',e)
+
+                    FLAG_device_status_changed = True
+
+                #
+                # Create a dictionary of all datastreams
+                #
+                datastreams_all.update(devicedict['statistics']['datastream_redvypr'])
+                try:
+                    deviceinfo_all[device.name].update(devicedict['statistics']['device_redvypr'])
+                except:
+                    deviceinfo_all[device.name] = devicedict['statistics']['device_redvypr']
+
+                if (list(datastreams_all.keys()) != list(datastreams_all_old.keys())):
+                    print('Datastreams changed', len(datastreams_all.keys()))
+                    datastreams_all_old.update(datastreams_all)
+                    devices_changed.append(device.name)
+                    FLAG_device_status_changed = True
+                #
+                #
+                #
+
+                if True:
+                    # Feed the data into the modules/functions/objects and
+                    # let them treat the data
+                    for dataout in devicedict['dataout']:
+                        devicedict['numpacketout'] += 1
+                        try:
+                            dataout.put_nowait(data) # These are the datainqueues of the subscribing devices
+                        except Exception as e:
+                            logger.debug(funcname + ':dataout of :' + devicedict['device'].name + ' full: ' + str(e))
+                    for guiqueue in devicedict['guiqueue']:  # Put data into the guiqueue, this queue does always exist
+                        try:
+                            guiqueue.put_nowait(data)
+                        except Exception as e:
+                            pass
+                            # logger.debug(funcname + ':guiqueue of :' + devicedict['device'].name + ' full')
+
+        if FLAG_device_status_changed:
+            infoqueue.put_nowait(copy.copy(datastreams_all))
+            devall = copy.copy(deviceinfo_all)
+            devall['type'] = 'deviceinfo_all'
+            infoqueue.put_nowait(devall)
+            # Send an command to all devices
+            for devicedict in devices:
+                dev = devicedict['device']
+                dev.thread_command('deviceinfo_all', {'deviceinfo_all':deviceinfo_all,'devices_changed':list(set(devices_changed))})
+
+        # Calculate the sleeping time
+        tstop = time.time()
+        dt_dist = tstop - tstart  # The time for all the looping
+        dt_avg += dt_dist
+        navg += 1
+        dt_sleep = max([0, dt - dt_dist])
+        if ((tstop - tinfo) > dt_info):
+            tinfo = tstop
+            info_dict = {'type':'dt_avg','dt_avg': dt_avg / navg}
+            # print(info_dict)
+            try:
+                infoqueue.put_nowait(info_dict)
+            except:
+                pass

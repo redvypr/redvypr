@@ -121,7 +121,7 @@ class redvypr_address():
 
     def __eq__(self, addr):
         """
-        Compares a second address with this one
+        Compares a second redvypr_address with this one
         Args:
             addr:
 

@@ -50,8 +50,6 @@ class redvypr_device(QtCore.QObject):
         self.statistics  = statistics
         self.mp          = multiprocess
         self.autostart   = autostart
-        self.data_receiver = []
-        self.data_provider = []
         # Create a redvypr_address
         # self.address_str
         # self.address
@@ -64,13 +62,25 @@ class redvypr_device(QtCore.QObject):
         # The queue that is used for the thread commmunication
         self.thread_communication = self.datainqueue
 
-        self.properties  = {}
-        self.__apriori_datakeys__     = {'t','numpacket'}
-        self.__apriori_datakey_info__ = {}
-        self.subscribed_datastreams   = []
+        self.subscribed_addresses = []
         
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(loglevel)
+
+    def subscribe_address(self, address):
+        """
+        """
+        funcname = self.__class__.__name__ + '.subscribe()'
+        self.logger.debug(funcname + ' subscribing to device {:s}'.format(str(address)))
+        print('Address',address,type(address))
+        if(type(address) == str):
+            raddr = redvypr_address(address)
+        else:
+            raddr = address
+
+        self.subscribed_addresses.append(raddr)
+        print(self.subscribed_addresses)
+
 
     def change_name(self,name):
         """
@@ -205,7 +215,6 @@ class redvypr_device(QtCore.QObject):
         info_dict['thread_status'] = running2
         self.thread_stopped.emit(info_dict)
 
-    #@property
     def thread_start(self):
         """ Starts the device thread
         Args:
@@ -273,26 +282,6 @@ class redvypr_device(QtCore.QObject):
     def finalize_init(self):
         pass
     
-    def subscribe_datastream(self,datastream):
-        """
-        
-        Subscribes the device that provides the datastream
-        
-        Args:
-            datastream:
-        """
-        funcname = self.__class__.__name__ + '.subscribe_datastream()'
-        self.logger.debug(funcname)
-        datastreams = self.redvypr.get_datastreams()
-        for datastream_tmp in datastreams:
-            if(compare_datastreams(datastream,datastream_tmp)):
-                datastream_parsed = parse_addrstr(datastream_tmp)
-                devicename = datastream_parsed['devicename']
-                self.logger.debug(funcname + ': Found matching datastream from device {:s}'.format(devicename))
-                self.subscribe_device(devicename)
-                self.subscribed_datastreams.append({'datastream':datastream,'device':devicename})
-                break
-
     def get_data_provider_info(self):
         """
         Returns information about the data providing devices
@@ -311,26 +300,6 @@ class redvypr_device(QtCore.QObject):
         devs = self.redvypr.get_data_receiving_devices(self)
         return devs
 
-    def publish_to(self,device,publishing_arguments):
-        try:
-            self.redvypr.addrm_device_as_data_provider(self, device, remove=False,
-                                                       subscription_arguments=publishing_arguments)
-            return True
-        except Exception as e:
-            self.logger.exception(e)
-            return False
-
-
-    def stop_publish_to(self, device, publishing_arguments):
-        try:
-            self.redvypr.addrm_device_as_data_provider(self, device, remove=True,
-                                                       subscription_arguments=publishing_arguments)
-            return True
-        except Exception as e:
-            self.logger.exception(e)
-            return False
-
-
     def subscribed_to(self):
         """
 
@@ -340,42 +309,12 @@ class redvypr_device(QtCore.QObject):
         devs = self.redvypr.get_data_providing_devices(self)
         return devs
             
-    def subscribe_device(self,device,subscription_arguments=None):
-        """
-        """
-        funcname = self.__class__.__name__ + '.subscribe_device()'
-        self.logger.debug(funcname + ' subscribing to device {:s}'.format(str(device)))
-        try:
-            self.redvypr.addrm_device_as_data_provider(device,self,remove=False,subscription_arguments=subscription_arguments)
-            return True
-        except Exception as e:
-            self.logger.exception(e)
-            return False
-            
-    def unsubscribe_datastream(self,datastream,subscription_arguments=None):
-        """
-        """
-        funcname = self.__class__.__name__ + '.unsubscribe_datastream()'
-        self.logger.debug(funcname)
-        # TODO, think how to deal with datastreams instead of devices with datakeys, check if there are other datastreams subscribed that need the device
-        
-        #dataprovider = self.get_data_providing_devices(device)
-        #for provider in dataprovider:
-        #    self.addrm_device_as_data_provider(provider,device,remove=True)
-            
-    def unsubscribe_device(self,device,subscription_arguments=None):
-        """
-        """
-        funcname = self.__class__.__name__ + '.unsubscribe_device()'
-        self.logger.debug(funcname)
-        self.redvypr.addrm_device_as_data_provider(device,self,remove=True,subscription_arguments=subscription_arguments)
-        
     def unsubscribe_all(self):
         """
         """
         funcname = self.__class__.__name__ + '.unsubscribe_all()'
         self.logger.debug(funcname)
-        self.redvypr.rm_all_data_provider(self)
+        self.subscribed_addresses = []
                     
         
     def set_apriori_datakeys(self,datakeys):
