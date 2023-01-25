@@ -1,7 +1,10 @@
-    -0.4.?? - removed config folder
+    -0.5.0  - redesigned distribute_data to check for subscriptions instead of dynamically connecting queues
+            - rewrote devices such that they work with the new design
+    -0.4.999
+            - removed config folder
             - created example folder with configuration, needs to be cleaned
             - config module to harmonize configuration
-            - added Internet of Redvype (iored) revice
+            - added Internet of Redvype (iored) device
             - introduction of configuration class for device configuration
             - "s" for autostart and "p" or process in the -a option. Standard case is starting a device as a thread.
     -0.4.10:- rawdatalogger improved

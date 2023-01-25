@@ -89,6 +89,7 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
         self.devices_listcon.itemDoubleClicked.connect(self.itemcon_dclicked)
 
         self.devices_listallsub = QtWidgets.QListWidget()  # The subscriptions of the device
+        self.devices_listallsub.itemClicked.connect(self.__itemsubscribed_clicked__)
 
         self.subscribe_edit = LineEditFocus()
         self.subscribe_edit.focusInSignal.connect(self.__focus_in__)
@@ -110,9 +111,15 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
         if (len(self.devices) > 0):
             self.update_list(device)
 
+    def __itemsubscribed_clicked__(self,item):
+        self.__commitbtn.setText('Remove')
+        self.__commitbtn.setEnabled(True)
+        self.__commitbtn.__status__ = 'remove'
+        self.__commitbtn.redvypr_addr_remove = item.redvypr_addr
+
     def __focus_in__(self):
         print('Focus in')
-        self.__commitbtn.setText('Add address')
+        self.__commitbtn.setText('Subscribe')
         self.__commitbtn.__status__ = 'add'
         self.__commitbtn.setEnabled(True)
 
@@ -120,7 +127,6 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
         print('Focus out')
         #self.__commitbtn.__status__ = None
 
-    #def __devices_connected__(self, dev1, dev2):
     def __devices_connected__(self, dev1=None, dev2=None):
         print('Devices have been connected',dev1,dev2)
         self.update_list(self.device)
@@ -135,12 +141,13 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
 
         """
         if newitem is not None:
-            self.__commitbtn.setEnabled(newitem.subscribeable)
+            devstr = newitem.device.address_str
+            self.subscribe_edit.setText(devstr)
+            print(devstr)
             print('Item',newitem.text(0))
-            if(newitem.subscribed):
-                self.__commitbtn.setText('Unsubscribe')
-            else:
-                self.__commitbtn.setText('Subscribe')
+            self.__commitbtn.setText('Subscribe')
+            self.__commitbtn.__status__ = 'add'
+            self.__commitbtn.setEnabled(True)
         else:
             self.__commitbtn.setEnabled(False)
 
@@ -175,6 +182,7 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
                     if dev == self.device:
                         continue
 
+                    # Check if the device is already subscribed
                     subscribed = False
                     for a in self.device.subscribed_addresses:
                         print('Test', a, dev.address)
@@ -241,7 +249,9 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
                 # connecting devices
                 for s in self.device.subscribed_addresses:
                     sstr = str(s)
-                    self.devices_listallsub.addItem(sstr)
+                    litm = QtWidgets.QListWidgetItem(sstr)
+                    litm.redvypr_addr = s
+                    self.devices_listallsub.addItem(litm)
 
     # End update_list()
     def commit_clicked(self):
@@ -259,6 +269,10 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
                     self.update_list(self.device)
                 else:
                     print('Nothing to add')
+            elif self.__commitbtn.__status__ == 'remove':
+                raddr = self.__commitbtn.redvypr_addr_remove
+                self.device.unsubscribe_address(raddr)
+                self.update_list(self.device)
 
 
         getSelected = self.devices_listallout.selectedItems()

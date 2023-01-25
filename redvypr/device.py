@@ -26,7 +26,7 @@ class redvypr_device(QtCore.QObject):
     thread_started = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     thread_stopped = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     status_signal  = QtCore.pyqtSignal(dict)   # Signal with the status of the device
-    connection_changed = QtCore.pyqtSignal()  # Signal notifying that a connection with another device has changed
+    subscription_changed_signal = QtCore.pyqtSignal()  # Signal notifying that a subscription changed
 
     def __init__(self,name='redvypr_device',uuid = '', redvypr=None,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None,template = {},config = {},publish=False,subscribe=False,multiprocess='tread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False):
         """
@@ -67,10 +67,22 @@ class redvypr_device(QtCore.QObject):
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(loglevel)
 
+    def subscription_changed_global(self,devchange):
+        """
+        Function is called by redvypr after another device emitted the subscription_changed_signal
+
+        Args:
+            devchange: redvypr_device that emitted the subscription changed signal
+
+        Returns:
+
+        """
+        print('Global subscription changed',self.name,devchange.name)
+
     def subscribe_address(self, address):
         """
         """
-        funcname = self.__class__.__name__ + '.subscribe()'
+        funcname = self.__class__.__name__ + '.subscribe_address()'
         self.logger.debug(funcname + ' subscribing to device {:s}'.format(str(address)))
         print('Address',address,type(address))
         if(type(address) == str):
@@ -78,9 +90,37 @@ class redvypr_device(QtCore.QObject):
         else:
             raddr = address
 
-        self.subscribed_addresses.append(raddr)
-        print(self.subscribed_addresses)
+        FLAG_NEW = True
+        # Test if the same address exists already
+        for a in self.subscribed_addresses:
+            if(a.addressstr == raddr.addressstr):
+                FLAG_NEW = False
+                break
 
+        if(FLAG_NEW):
+            self.subscribed_addresses.append(raddr)
+            # TODO, emit signals
+            self.subscription_changed_signal.emit()
+            print(self.subscribed_addresses)
+
+    def unsubscribe_address(self, address):
+        """
+        """
+        funcname = self.__class__.__name__ + '.unsubscribe_address()'
+        self.logger.debug(funcname + ' subscribing to device {:s}'.format(str(address)))
+        print('Address', address, type(address))
+        if (type(address) == str):
+            raddr = redvypr_address(address)
+        else:
+            raddr = address
+
+        try:
+            self.subscribed_addresses.remove(raddr)
+            self.subscription_changed_signal.emit()
+        except Exception as e:
+            self.logger.warning('Could not remove address {:s}: {:s}'.format(str(address),str(e)))
+
+        # TODO, emit signals
 
     def change_name(self,name):
         """

@@ -557,14 +557,9 @@ class Device(redvypr_device):
         self.__zmq_sub_threads__ = {} # Dictionary with uuid of the remote hosts collecting information of the subscribed threads
 
         self.logger.info(funcname + ' subscribing to devices')
-        for d in self.redvypr.devices:
-            dev = d['device']
-            self.subscribe_device(dev)
+        # Subscribe all
+        self.subscribe_address('*')
 
-        self.forwarded_devices_subscribed = {}
-
-        #self.redvypr.datastreams_changed_signal.connect(self.__update_datastreams__)
-        self.redvypr.device_added.connect(self.__update_subscription__)
 
     def start(self,device_info,config, dataqueue, datainqueue, statusqueue):
         """
@@ -643,25 +638,6 @@ class Device(redvypr_device):
         if (subscription_arguments is not None):
             self.thread_command('unsubscribe', {'device': subscription_arguments})
 
-    def __update_subscription__(self,devicelist):
-        """
-        Update the device subscriptions
-        Args:
-            devicelist:
-
-        Returns:
-
-        """
-        funcname = __name__ + '__update_subscription__()'
-
-        self.logger.info(funcname + ' updating subscription')
-        for d in self.redvypr.devices:
-            dev = d['device']
-            try:
-                self.subscribe_device(dev)
-            except Exception as e:
-                pass
-
 
     def __update_datastreams__(self):
         """
@@ -726,7 +702,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.reqbtn,2,0)
         layout.addWidget(self.sendbtn, 2, 1)
         self.__update_devicelist__()
-        self.device.redvypr.datastreams_changed_signal.connect(self.__update_devicelist__)
+
+        #self.device.redvypr.datastreams_changed_signal.connect(self.__update_devicelist__)
 
 
     def __item_changed__(self,new,old):

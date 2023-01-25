@@ -448,6 +448,7 @@ class redvypr(QtCore.QObject):
                 parsed_devices.append(dev_added)
 
         # Connecting devices ['connections']
+        # TODO, this needs to be changed to subscritpions
         try:
             iter(config['connections'])
             hascons = True
@@ -766,8 +767,7 @@ class redvypr(QtCore.QObject):
                                     statusqueue=statusqueue, loglevel=loglevel, multiprocess=multiprocess,
                                     numdevice=self.numdevice, statistics=statistics,startfunction=startfunction)
 
-
-
+                    device.subscription_changed_signal.connect(self.process_subscription_changed)
                     self.numdevice += 1
                     # If the device has a logger
                     devicelogger = device.logger
@@ -889,6 +889,21 @@ class redvypr(QtCore.QObject):
         if (folder not in self.device_paths):
             self.device_paths.remove(folder)
             self.device_path_changed.emit()  # Notify about the changes
+
+    def process_subscription_changed(self):
+        """
+        Process the subscription changed signals of the devices
+        Returns:
+
+        """
+        devsender = self.sender()
+        print('Subscribtion changed',devsender.name)
+        for d in self.devices:
+            dev = d['device']
+            if dev == devsender:
+                continue
+            dev.subscription_changed_global(devsender)
+
 
     def get_devicename_from_device(self, device):
         """
