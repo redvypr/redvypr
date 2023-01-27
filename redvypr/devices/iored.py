@@ -465,7 +465,6 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                     elif (command == 'deviceinfo_all'):
                         logger.info(funcname + ': Got devices update')
                         device_info['deviceinfo_all'].update(data['deviceinfo_all'])
-                        device_info['deviceinfo_all']
                         try:
                             if devicename in data['devices_changed']: # Check if devices except myself have been changed
                                 print('That was myself, will remove')
@@ -480,6 +479,9 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                         FLAG_MULTICAST_GETINFO = True
                     elif (command == 'unsubscribe'):
                         daddr = data_packets.redvypr_address(data['device'])
+                        zmq_url = hostinfos[daddr.uuid]['zmq_pub']
+                        logger.info(
+                            funcname + ': Subscribing to device {:s} at url {:s}'.format(data['device'], zmq_url))
                         try:  # Send the command to the corresponding thread
                             zmq_sub_threads[daddr.uuid]['comqueue'].put('unsub ' + data['device'])
                         except Exception as e:
@@ -488,7 +490,6 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                     elif (command == 'subscribe'):
                         try:
                             daddr = data_packets.redvypr_address(data['device'])
-                            print('fdsf',hostinfos[daddr.uuid]['host'])
                             zmq_url = hostinfos[daddr.uuid]['zmq_pub']
                             logger.info(
                                 funcname + ': Subscribing to device {:s} at url {:s}'.format(data['device'], zmq_url))
@@ -559,6 +560,8 @@ class Device(redvypr_device):
         self.logger.info(funcname + ' subscribing to devices')
         # Subscribe all
         self.subscribe_address('*')
+        self.zmq_subscribed_addresses = []
+
 
 
     def start(self,device_info,config, dataqueue, datainqueue, statusqueue):
@@ -577,66 +580,71 @@ class Device(redvypr_device):
         funcname = __name__ + '.start()'
         device_info['deviceinfo_all'] = self.redvypr.get_deviceinfo()
         device_info['devicename'] = self.name
+        device_info['devicemodulename'] = self.devicemodulename
         device_info['deviceuuid'] = self.uuid
         device_info['hostinfo_opt'] = copy.deepcopy(self.redvypr.hostinfo_opt)
         start(device_info,copy.deepcopy(config), dataqueue, datainqueue, statusqueue)
 
-    def publish_to(self,device,publishing_arguments):
-        try:
-            self.redvypr.addrm_device_as_data_provider(self, device, remove=False,
-                                                       subscription_arguments=publishing_arguments)
+    def zmq_subscribe(self,address):
+        funcname = __name__ + 'zmq_subscribe()'
+        self.logger.debug(funcname)
+        self.thread_command('subscribe', {'device': address})
+        self.zmq_subscribed_addresses.append(address)
+        for a in self.zmq_subscribed_addresses:
+            print('Subcribed to', a)
 
-            if (publishing_arguments is not None):
-                self.thread_command('subscribe', {'device': publishing_arguments})
-            return True
+    def zmq_unsubscribe(self, address):
+        funcname = __name__ + 'zmq_unsubscribe()'
+        self.logger.debug(funcname)
+        try:
+            print('unsubscribe',address)
+            self.zmq_subscribed_addresses.remove(address)
+            self.thread_command('unsubscribe', {'device': address})
         except Exception as e:
             self.logger.exception(e)
-            return False
 
-
-    def stop_publish_to(self, device, publishing_arguments):
-        if (publishing_arguments is not None):
-            print('unsubscribing forwarded device')
-            self.thread_command('unsubscribe', {'device': publishing_arguments})
-        else:
-            print('unsubscribing myself')
-            try:
-                self.redvypr.addrm_device_as_data_provider(self, device, remove=True,
-                                                           subscription_arguments=publishing_arguments)
-                return True
-            except Exception as e:
-                self.logger.exception(e)
-                return False
-
-
-    def got_subscribed(self, dataprovider_address, datareceiver_address, subscription_arguments=None):
+    def subscription_changed_global(self,devchange):
         """
-        Function is called by redvypr.addrm_device_as_data_provider() after this device got_subscripted by another device
+        Function is called by redvypr after another device emitted the subscription_changed_signal
+
         Args:
-            dataprovider_address:
-            datareceiver_address:
+            devchange: redvypr_device that emitted the subscription changed signal
 
         Returns:
 
         """
-        print('Hallo got subscription',dataprovider_address, datareceiver_address)
-        if(subscription_arguments is not None):
-            self.thread_command('subscribe', {'device': subscription_arguments})
+        self.logger.info('Global subscription changed {:s} {:s}'.format(self.name,devchange.name))
+        all_subscriptions = self.redvypr.get_all_subscriptions()
+        #print('All subscriptions',all_subscriptions)
+        subaddr_all = []
+        for subaddr,subdev in zip(all_subscriptions[0],all_subscriptions[1]):
+            print('Subaddress',subaddr,'subdev',subdev)
+            if(self.address_str == subdev):
+                print('Self doing nothing')
+            else:
+                subaddr_all.append(subaddr)
 
+        # Test if the subscriptions have anything to do with the forwarded devices
+        zmq_addresses_tmp = self.zmq_subscribed_addresses
+        for subaddr in reversed(subaddr_all):
+            for zmqa in reversed(zmq_addresses_tmp):
+                zmqa_redvypr = data_packets.redvypr_address(zmqa)
+                if zmqa_redvypr == subaddr: # Already subscribed
+                    subaddr_all.remove(subaddr)
+                    zmq_addresses_tmp.remove(zmqa)
 
-    def got_unsubscribed(self, dataprovider_address, datareceiver_address,subscription_arguments=None):
-        """
-        Function is called by redvypr.addrm_device_as_data_provider() after this device got unsubscribed by another device
-        Args:
-            dataprovider_address:
-            datareceiver_address:
+        # Subscribing to addresses
+        for a in subaddr_all:
+            astr = a.address_str
+            print('Subscribing to ', astr)
+            self.zmq_subscribe(astr)
 
-        Returns:
-
-        """
-        print('Hallo got unsubscription', dataprovider_address, datareceiver_address)
-        if (subscription_arguments is not None):
-            self.thread_command('unsubscribe', {'device': subscription_arguments})
+        print('Subscriptions that may be removed', zmq_addresses_tmp)
+        for a in zmq_addresses_tmp:
+            print('--------------')
+            print('Unsubscribing', a)
+            self.zmq_unsubscribe(a)
+            print('--------------')
 
 
     def __update_datastreams__(self):
@@ -682,6 +690,8 @@ class Device(redvypr_device):
 
         return devicedict
 
+
+
 class displayDeviceWidget(QtWidgets.QWidget):
     def __init__(self, device=None):
         super(QtWidgets.QWidget, self).__init__()
@@ -704,7 +714,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.__update_devicelist__()
 
         #self.device.redvypr.datastreams_changed_signal.connect(self.__update_devicelist__)
-
+        self.device.redvypr.device_status_changed_signal.connect(self.__update_devicelist__)
 
     def __item_changed__(self,new,old):
         if(new is not None):
@@ -741,10 +751,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 devstr = data_packets.get_deviceaddress_from_redvypr_meta(baseNode._redvypr,uuid=True)
                 if(self.subbtn.text() == 'Subscribe'):
                     print('Subscribing to',devstr)
-                    self.device.thread_command('subscribe', {'device': devstr})
+                    self.device.zmq_subscribe(devstr)
                 else:
                     print('Unsubscribing from',devstr)
-                    self.device.thread_command('unsubscribe', {'device': devstr})
+                    self.device.zmq_unsubscribe(devstr)
+
 
                 #time.sleep(1)
                 #self.__update_devicelist__()
@@ -764,25 +775,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         #print('End status update')
         self.device.thread_command('multicast_info', {})
 
-    def __subscribe_command__(self,device):
-        """
-        Command to the start thread to subscribe a certain device
-        Returns:
-
-        """
-        funcname = __name__ + '__subscribe_command__():'
-        logger.debug(funcname)
-        self.device.thread_command('subscribe', {'device':device})
-
-    def __unsubscribe_command__(self, device):
-        """
-        Command to the start thread to subscribe a certain device
-        Returns:
-
-        """
-        funcname = __name__ + '__unsubscribe_command__():'
-        logger.debug(funcname)
-        self.device.thread_command('unsubscribe', {'device': device})
+    def __iored_device_changed__(self):
+        print('IORED devices changed')
 
     def __update_devicelist__(self):
         """
@@ -798,25 +792,25 @@ class displayDeviceWidget(QtWidgets.QWidget):
         root = self.devicetree.invisibleRootItem()
         #devices = self.device.statistics['device_redvypr']
         devices = self.device.get_devices_by_host()
-        print('devices',devices)
+        #print('devices',devices)
         for hostnameuuid in devices.keys():
             hostuuid = hostnameuuid.split('::')[1]
             if(hostuuid == self.device.redvypr.hostinfo['uuid']): # Dont show own packets
-                print('Own device')
+                #print('Own device')
                 continue
             itm = QtWidgets.QTreeWidgetItem([hostnameuuid,''])
             itm.subscribeable = False
             itm.subscribed = False
             root.addChild(itm)
             for d in devices[hostnameuuid]:
-                print('Device d',d)
+                #print('Device d',d)
                 substr = 'not connected'
                 try:
                     FLAG_SUBSCRIBED = d['_redvypr']['subscribed']
                     if FLAG_SUBSCRIBED:
                         substr = 'subscribed'
                 except Exception as e:
-                    print('Subscribed?',e)
+                    #print('Subscribed?',e)
                     FLAG_SUBSCRIBED = False
 
                 devname = d['_redvypr']['device']

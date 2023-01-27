@@ -28,7 +28,7 @@ class redvypr_device(QtCore.QObject):
     status_signal  = QtCore.pyqtSignal(dict)   # Signal with the status of the device
     subscription_changed_signal = QtCore.pyqtSignal()  # Signal notifying that a subscription changed
 
-    def __init__(self,name='redvypr_device',uuid = '', redvypr=None,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None,template = {},config = {},publish=False,subscribe=False,multiprocess='tread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False):
+    def __init__(self,name='redvypr_device',uuid = '', redvypr=None,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None,template = {},config = {},publish=False,subscribe=False,multiprocess='tread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False,devicemodulename=''):
         """
         """
         super(redvypr_device, self).__init__()
@@ -42,6 +42,7 @@ class redvypr_device(QtCore.QObject):
         self.config      = config
         self.redvypr     = redvypr
         self.name        = name
+        self.devicemodulename = devicemodulename
         self.uuid        = uuid
         self.thread_uuid = ''
         self.loglevel    = loglevel
@@ -77,7 +78,8 @@ class redvypr_device(QtCore.QObject):
         Returns:
 
         """
-        print('Global subscription changed',self.name,devchange.name)
+        pass
+        #print('Global subscription changed',self.name,devchange.name)
 
     def subscribe_address(self, address):
         """
@@ -93,7 +95,7 @@ class redvypr_device(QtCore.QObject):
         FLAG_NEW = True
         # Test if the same address exists already
         for a in self.subscribed_addresses:
-            if(a.addressstr == raddr.addressstr):
+            if(a.address_str == raddr.address_str):
                 FLAG_NEW = False
                 break
 
@@ -150,7 +152,7 @@ class redvypr_device(QtCore.QObject):
 
     def address_string(self,strtype='<device>:<host>@<addr>::<uuid>'):
         """
-        Returns the addressstring of the device
+        Returns the address string of the device
         Returns:
 
         """
@@ -225,7 +227,7 @@ class redvypr_device(QtCore.QObject):
         """
         funcname = __name__ + '.thread_command():'
         self.logger.debug(funcname)
-        command = commandpacket(command=command, device_uuid=self.uuid, thread_uuid=self.thread_uuid,devicename=self.name,host=self.redvypr.hostinfo)
+        command = commandpacket(command=command, device_uuid=self.uuid, thread_uuid=self.thread_uuid,devicename=self.name,host=self.redvypr.hostinfo,devicemodulename=self.devicemodulename)
         if(data is not None):
             if type(data) == dict:
                 command.update(data)

@@ -8,7 +8,7 @@ logger.setLevel(logging.DEBUG)
 
 
 
-def treat_datadict(data, devicename, hostinfo, numpacket, tpacket):
+def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulename=''):
     """ Treats a datadict received from a device and adds additional information from redvypr as hostinfo, numpackets etc.
     """
     # Add deviceinformation to the data package
@@ -23,6 +23,10 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket):
     # Add the time to the datadict if its not already in
     if ('t' not in data['_redvypr'].keys()):
         data['_redvypr']['t'] = tpacket
+
+    # Add the time to the datadict if its not already in
+    if ('devicemodulename' not in data['_redvypr'].keys()):
+        data['_redvypr']['devicemodulename'] = devicemodulename
 
     # Add the packetnumber to the datadict
     if ('numpacket' not in data['_redvypr'].keys()):
@@ -39,7 +43,7 @@ class redvypr_address():
     """ redvypr address 
     """
     def __init__(self,addrstr,local_hostinfo=None):
-        self.addressstr = addrstr
+        self.address_str = addrstr
         self.parsed_addrstr = parse_addrstr(addrstr, local_hostinfo=local_hostinfo)
         self.strtypes = ['<key>','<key>/<device>','<key>/<device>:<host>','<key>/<device>:<host>@<addr>','get_str<key>/<device>:<host>@<addr>::<uuid>','<key>/<device>::<uuid>']
         self.strtypes.append('<device>:<host>@<addr>::<uuid>')
@@ -80,7 +84,7 @@ class redvypr_address():
         funcname = __name__ + '.get_str():'
         try:
             if(strtype == 'full'):
-                return self.addressstr
+                return self.address_str
             elif(strtype == '<key>'):
                 return self.parsed_addrstr['datakey']
             elif (strtype == '<device>'):
@@ -115,7 +119,7 @@ class redvypr_address():
     def __str__(self):
         astr2 = self.get_str('<key>/<device>:<host>@<addr>')
         astr = ''
-        astr += 'addrstr: {:s}'.format(self.addressstr)
+        astr += 'addrstr: {:s}'.format(self.address_str)
         astr += '\n{:s}'.format(astr2)
         return astr
 
@@ -755,7 +759,7 @@ def datapacket(data,datakey=None,tu=None):
     return datadict
 
 
-def commandpacket(command='stop',device_uuid='',thread_uuid='',devicename = None, host = None,comdata=None):
+def commandpacket(command='stop',device_uuid='',thread_uuid='',devicename = None, host = None, comdata=None,devicemodulename=None):
     """
 
     Args:
@@ -772,6 +776,8 @@ def commandpacket(command='stop',device_uuid='',thread_uuid='',devicename = None
         compacket['_redvypr']['device'] = devicename  # The device the command was sent from
     if host is not None:
         compacket['_redvypr']['host'] = host
+    if devicemodulename is not None:
+        compacket['_redvypr']['devicemodulename'] = devicemodulename  # The device the command was sent from
     compacket['_redvypr_command']['device_uuid'] = device_uuid  # The uuid of the device the command is for
     compacket['_redvypr_command']['thread_uuid'] = thread_uuid  # The uuid of the thread of device the command is for
     compacket['_redvypr_command']['data'] = comdata

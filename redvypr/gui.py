@@ -11,6 +11,7 @@ from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard
 from redvypr.widgets.datastream_widget import datastreamWidget
 import redvypr.utils
 import redvypr.files as files
+import redvypr.data_packets as data_packets
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -118,17 +119,15 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
         self.__commitbtn.redvypr_addr_remove = item.redvypr_addr
 
     def __focus_in__(self):
-        print('Focus in')
         self.__commitbtn.setText('Subscribe')
         self.__commitbtn.__status__ = 'add'
         self.__commitbtn.setEnabled(True)
 
     def __focus_out__(self):
-        print('Focus out')
-        #self.__commitbtn.__status__ = None
+        pass
 
     def __devices_connected__(self, dev1=None, dev2=None):
-        print('Devices have been connected',dev1,dev2)
+        #print('Devices have been connected',dev1,dev2)
         self.update_list(self.device)
 
     def __update_device_choice__(self,newitem,olditem):
@@ -141,13 +140,25 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
 
         """
         if newitem is not None:
-            devstr = newitem.device.address_str
-            self.subscribe_edit.setText(devstr)
-            print(devstr)
-            print('Item',newitem.text(0))
-            self.__commitbtn.setText('Subscribe')
-            self.__commitbtn.__status__ = 'add'
-            self.__commitbtn.setEnabled(True)
+            devstr = newitem.redvypr_address.get_str()
+
+            try:
+                subscribed = newitem.subscribed
+            except:
+                subscribed = False
+
+            if(subscribed):
+                self.__commitbtn.setText('Unsubscribe')
+                self.__commitbtn.__status__ = 'remove'
+                self.__commitbtn.setEnabled(True)
+                self.__commitbtn.redvypr_addr_remove = devstr
+            else:
+                self.subscribe_edit.setText(devstr)
+                print(devstr)
+                print('Item',newitem.text(0))
+                self.__commitbtn.setText('Subscribe')
+                self.__commitbtn.__status__ = 'add'
+                self.__commitbtn.setEnabled(True)
         else:
             self.__commitbtn.setEnabled(False)
 
@@ -176,7 +187,7 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
 
 
             # Fill the qtreewidget
-            print('data provider',data_provider_all)
+            #print('data provider',data_provider_all)
             if (data_provider_all is not None):
                 for dev in data_provider_all:
                     if dev == self.device:
@@ -184,15 +195,15 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
 
                     # Check if the device is already subscribed
                     subscribed = False
+                    #print('dev',dev.name,dev.redvypr.hostinfo)
                     for a in self.device.subscribed_addresses:
-                        print('Test', a, dev.address)
                         subscribed = dev.address == a
-                        print('Test', a, dev.address,subscribed)
                         if subscribed:
                             break
 
                     itm = QtWidgets.QTreeWidgetItem([dev.name, ''])
                     itm.device = dev
+                    itm.redvypr_address = dev.address
                     if subscribed:
                         status = 'subscribed'
                         itm.setFont(0,font1)
@@ -203,26 +214,26 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
 
                     root.addChild(itm)
                     # Check for forwarded devices
-                    if False:
+                    if True:
                         devs_forwarded = dev.get_data_provider_info()
                         for devaddress in devs_forwarded.keys():
-                            print(devs_forwarded)
-                            print(devaddress)
-                            print('stat',devs_forwarded[devaddress]['_redvypr'])
+                            devaddress_redvypr = data_packets.redvypr_address(devaddress)
+                            subscribed = False
+                            for a in self.device.subscribed_addresses:
+                                subscribed = devaddress_redvypr == a
+                                if subscribed:
+                                    break
+
                             itmf = QtWidgets.QTreeWidgetItem([devaddress, ''])
                             itmf.device = dev
+                            itmf.redvypr_address = devaddress_redvypr
                             itmf.address_forwarded = devaddress
-                            try:
-                                itmf.subscribed = devs_forwarded[devaddress]['_redvypr']['subscribed']
-                                itmf.subscribeable = devs_forwarded[devaddress]['_redvypr']['subscribeable']
-                            except:
-                                itmf.subscribed = False
-                                itmf.subscribeable = False
-
-                            if(itmf.subscribed):
+                            if(subscribed):
                                 itmf.setFont(0, font1)
+                                itmf.subscribed = True
                             else:
                                 itmf.setFont(0, font0)
+                                itmf.subscribed = False
 
                             itm.addChild(itmf)
 
@@ -248,7 +259,7 @@ class redvyprConnectWidget2(QtWidgets.QWidget):
             if True:
                 # connecting devices
                 for s in self.device.subscribed_addresses:
-                    sstr = str(s)
+                    sstr = s.address_str
                     litm = QtWidgets.QListWidgetItem(sstr)
                     litm.redvypr_addr = s
                     self.devices_listallsub.addItem(litm)
