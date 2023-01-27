@@ -255,6 +255,9 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
     Returns:
 
     """
+    logstart = logging.getLogger('iored_start')
+    logstart.setLevel(logging.DEBUG)
+
     funcname = __name__ + '.start():'
     hostuuid = device_info['hostinfo']['uuid']
     devicename = device_info['devicename']
@@ -311,7 +314,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
             sock_zmq_pub.bind(url)
         except Exception as e:
             pass
-        logger.info(funcname + ':Start publishing data at url {:s}'.format(url))
+        logstart.info(funcname + ':Start publishing data at url {:s}'.format(url))
         break
 
     sockets.append(sock_zmq_pub)
@@ -321,7 +324,6 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
     #
     while True:
         tstart = time.time()
-
         #
         # Trying to receive data from multicast
         #
@@ -336,7 +338,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                 try:
                     print('Getinfo request from {:s}::{:s}'.format(redvypr_info['host']['hostname'], redvypr_info['host']['uuid']))
                 except Exception as e:
-                    logger.exception(e)
+                    logstart.exception(e)
 
                 if redvypr_info['host']['uuid'] == device_info['hostinfo']['uuid']:
                     print('request from myself, doing nothing')
@@ -371,13 +373,16 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                                 if daddr.uuid == hostuuid: # This should not happen but anyways
                                     print('Own device, doing nothing')
                                     pass
+                                elif(d['_redvypr']['devicemodulename'] == 'iored'):
+                                    print('ioreddevice, doing nothing')
+                                    pass
                                 else:
                                     print('Remote device')
                                     #datastreams_uuid[uuid].append(d)
                                     datapacket = create_datapacket_from_deviceinfo(d)
                                     # Send the packet, distribute_data() will call do_data_statistics() and will add them to the available datastreams
                                     # This will again create on return a signal that the datastreams have been changed
-                                    print('Sending datapacket',datapacket)
+                                    print('Sending datapacket to inform redvypr about available devices',datapacket)
                                     dataqueue.put_nowait(datapacket)
 
                         try:
@@ -398,6 +403,9 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                 FLAG_MULTICAST_INFO = False
                 print('Sending multicast info',time.time())
                 # print('datastreams',datastreams)
+                print('Deviceinfo all')
+                print('deviceonfo all', device_info['deviceinfo_all'])
+                print('----- Deviceinfo all done -----')
                 multicast_packet = {'host': device_info['hostinfo'], 't': time.time(), 'zmq_pub': url,
                                     'deviceinfo_all': device_info['deviceinfo_all']}
                 print('--------------')
@@ -444,9 +452,9 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
 
             if data is not None:
                 command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
-                # logger.debug('Got a command: {:s}'.format(str(data)))
+                #logger.debug('Got a command: {:s}'.format(str(data)))
                 if command is not None:
-                    logger.debug('Command is for me: {:s}'.format(str(command)))
+                    logstart.debug('Command is for me: {:s}'.format(str(command)))
                     #queue_send_beacon.put_nowait(data)
                     #queue_recv_beacon.put_nowait(data)
                     if(command == 'stop'):
@@ -458,12 +466,12 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             try:  # Send the command to the corresponding thread
                                 zmq_sub_threads[uuidkey]['comqueue'].put('stop')
                             except Exception as e:
-                                logger.exception(e)
+                                logstart.exception(e)
 
-                        logger.info(funcname + ': Stopped')
+                        logstart.info(funcname + ': Stopped')
                         return
                     elif (command == 'deviceinfo_all'):
-                        logger.info(funcname + ': Got devices update')
+                        logstart.info(funcname + ': Got devices update')
                         device_info['deviceinfo_all'].update(data['deviceinfo_all'])
                         try:
                             if devicename in data['devices_changed']: # Check if devices except myself have been changed
@@ -472,7 +480,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             if(len(data['devices_changed']) > 0):
                                 FLAG_MULTICAST_INFO = True  # Send the information over multicast
                         except Exception as e:
-                            logger.debug(e)
+                            logstart.debug(e)
                     elif (command == 'multicast_info'): # Multicast send infocommand
                         FLAG_MULTICAST_INFO = True
                     elif (command == 'multicast_getinfo'):  # Multicast command requesting info from other redvypr instances
@@ -480,18 +488,18 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                     elif (command == 'unsubscribe'):
                         daddr = data_packets.redvypr_address(data['device'])
                         zmq_url = hostinfos[daddr.uuid]['zmq_pub']
-                        logger.info(
+                        logstart.info(
                             funcname + ': Subscribing to device {:s} at url {:s}'.format(data['device'], zmq_url))
                         try:  # Send the command to the corresponding thread
                             zmq_sub_threads[daddr.uuid]['comqueue'].put('unsub ' + data['device'])
                         except Exception as e:
-                            logger.exception(e)
+                            logstart.exception(e)
 
                     elif (command == 'subscribe'):
                         try:
                             daddr = data_packets.redvypr_address(data['device'])
                             zmq_url = hostinfos[daddr.uuid]['zmq_pub']
-                            logger.info(
+                            logstart.info(
                                 funcname + ': Subscribing to device {:s} at url {:s}'.format(data['device'], zmq_url))
                             try: # Lets check if the thread is already running
                                 zmq_sub_threads[daddr.uuid]['comqueue'].put('sub ' + data['device'])
@@ -501,7 +509,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                                 FLAG_START_SUB_THREAD = True
 
                             if FLAG_START_SUB_THREAD:
-                                logger.debug(funcname + ' Starting new thread')
+                                logstart.debug(funcname + ' Starting new thread')
                                 config_zmq = {}
                                 #config_zmq['subscribe'] = data['device'].encode('utf-8')
                                 config_zmq['zmq_sub'] = zmq_url
@@ -515,8 +523,8 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                                 zmq_sub_threads[daddr.uuid]['comqueue'].put('sub ' + data['device'])
 
                         except Exception as e:
-                            logger.error(funcname + ' Could not subscribe because of')
-                            logger.exception(e)
+                            logstart.error(funcname + ' Could not subscribe because of')
+                            logstart.exception(e)
 
                         # Start/update the thread zeromq sub thread
 
@@ -537,7 +545,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                 zmq_sub_threads[uuid]['sub'] = status['sub']
                 #print('Got status threads', zmq_sub_threads)
             except Exception as e:
-                #logger.exception(e)
+                #logstart.exception(e)
                 pass
 
         tend = time.time()
@@ -625,7 +633,7 @@ class Device(redvypr_device):
                 subaddr_all.append(subaddr)
 
         # Test if the subscriptions have anything to do with the forwarded devices
-        zmq_addresses_tmp = self.zmq_subscribed_addresses
+        zmq_addresses_tmp = copy.deepcopy(self.zmq_subscribed_addresses)
         for subaddr in reversed(subaddr_all):
             for zmqa in reversed(zmq_addresses_tmp):
                 zmqa_redvypr = data_packets.redvypr_address(zmqa)

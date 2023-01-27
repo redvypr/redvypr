@@ -234,8 +234,16 @@ class redvypr_device(QtCore.QObject):
             else:
                 raise TypeError('data needs to be a dictionary')
 
-        print('Sending command')
-        self.__send_command__(command)
+        try:
+            running = self.thread.is_alive()
+        except:
+            running = False
+
+        if(running):
+            print('Sending command',command)
+            self.__send_command__(command)
+        else:
+            self.logger.warning(funcname + ' thread is not running, doing nothing')
 
     def thread_stop(self):
         """
@@ -247,15 +255,23 @@ class redvypr_device(QtCore.QObject):
         self.logger.debug(funcname)
         command = commandpacket(command='stop', device_uuid=self.uuid,thread_uuid=self.thread_uuid)
         #print('Sending command',command)
-        self.__send_command__(command)
         try:
-            running2 = self.thread.is_alive()
+            running = self.thread.is_alive()
         except:
-            running2 = False
-        info_dict = {}
-        info_dict['uuid'] = self.uuid
-        info_dict['thread_status'] = running2
-        self.thread_stopped.emit(info_dict)
+            running = False
+
+        if(running):
+            self.__send_command__(command)
+            try:
+                running2 = self.thread.is_alive()
+            except:
+                running2 = False
+            info_dict = {}
+            info_dict['uuid'] = self.uuid
+            info_dict['thread_status'] = running2
+            self.thread_stopped.emit(info_dict)
+        else:
+            self.logger.warning(funcname + ' thread is not running, doing nothing')
 
     def thread_start(self):
         """ Starts the device thread
@@ -277,7 +293,7 @@ class redvypr_device(QtCore.QObject):
                     running = False
 
                 if(running):
-                    self.logger.info(funcname + ':thread/process is already running, doing nothing')
+                    self.logger.warning(funcname + ':thread/process is already running, doing nothing')
                 else:
                     try:
                         # The arguments for the start function
