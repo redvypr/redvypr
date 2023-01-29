@@ -504,15 +504,74 @@ class redvypr(QtCore.QObject):
 
         return True
 
+    def __populate_device_path_packages(self,package_names = ['vypr','vyper']):
+        """
+        Searches for installed packages containing redvypr devices. Packages do typically start with redvypr_package_name
+        and add them to the device path
+        Updates self.device_modules with dictionaries of type
+        devdict = {'module': module, 'name': module_name, 'source': module.__file__}
+        with module the imported module with module_name at the location __file__.
+
+        Args:
+            package_names: a list of package names that will be inspected
+        Returns:
+
+        """
+
+        funcname = '__populate_device_path_packages()'
+        logger.debug(funcname)
+        for d in pkg_resources.working_set:
+            FLAG_POTENTIAL_MODULE = False
+            #print(d.key)
+            for name in package_names:
+                if name in d.key:
+                    FLAG_POTENTIAL_MODULE = True
+                    print('maybe',d.key)
+            if d.key == 'redvypr':
+                print('its me')
+                FLAG_POTENTIAL_MODULE = False
+
+            if(FLAG_POTENTIAL_MODULE):
+                print('Found package',d.location, d.project_name, d.version, d.key)
+                libstr2 = d.key.replace('-','_')
+
+                try:
+                    testmodule = importlib.import_module(libstr2)
+                    device_module_tmp = inspect.getmembers(testmodule, inspect.ismodule)
+                    for smod in device_module_tmp:
+                        devicemodule = getattr(testmodule, smod[0])
+                        # Check if the device is valid
+                        valid_module = self.valid_device(devicemodule)
+                        if (valid_module['valid']):  # If the module is valid add it to devices
+                            devdict = {'module': devicemodule, 'name': smod[0], 'source': smod[1].__file__}
+                            # Test if the module is already there, otherwise append
+                            FLAG_MOD_APPEND = True
+                            for m in self.device_modules:
+                                if m['module'] == devicemodule:
+                                    FLAG_MOD_APPEND = False
+                                    break
+                            if (FLAG_MOD_APPEND):
+                                logger.debug(funcname + ' Found device package {:s}'.format(libstr2))
+                                self.device_modules.append(devdict)
+                except Exception as e:
+                    print('Could not import module',e)
+
     def populate_device_path(self):
-        """Searches all device paths for modules and creates a list with the
-        found devices in self.device_modules
+        """
+        Updates self.device_modules with dictionaries of type
+        devdict = {'module': module, 'name': module_name, 'source': module.__file__}
+        with module the imported module with module_name at the location __file__.
+        Returns:
+            None
 
         """
         funcname = 'populate_device_path()'
         logger.debug(funcname)
         self.device_modules = []  # Clear the list
-        # Add all devices from additional folders
+        #
+        # Add all devices from additionally folders
+        #
+        # https://docs.python.org/3/library/importlib.html#checking-if-a-module-can-be-imported
         for dpath in self.device_paths:
             python_files = glob.glob(dpath + "/*.py")
             logger.debug(funcname + ' will search in path for files: {:s}'.format(dpath))
@@ -527,19 +586,21 @@ class redvypr(QtCore.QObject):
                     logger.warning(funcname + ' could not import module: {:s} \nError: {:s}'.format(pfile, str(e)))
 
                 module_members = inspect.getmembers(module, inspect.isclass)
-                hasdevice = False
-                try:
-                    module.Device
-                    hasdevice = True
-                except:
-                    logger.debug(funcname + ' did not find Device class, will skip.')
-                    pass
-
-                if (hasdevice):
+                valid_module = self.valid_device(module)
+                if (valid_module['valid']):  # If the module is valid add it to devices
                     devdict = {'module': module, 'name': module_name, 'source': module.__file__}
-                    self.device_modules.append(devdict)
+                    # Test if the module is already there, otherwise append
+                    FLAG_MOD_APPEND = True
+                    for m in self.device_modules:
+                        if(m['module'] == module):
+                            FLAG_MOD_APPEND = False
+                            break
+                    if (FLAG_MOD_APPEND):
+                        self.device_modules.append(devdict)
 
-        # Add all devices from the device module
+        #
+        # Add all devices from the redvypr internal device module
+        #
         max_tries = 5000  # The maximum recursion of modules
         n_tries = 0
         testmodules = [redvyprdevices]
@@ -557,7 +618,15 @@ class redvypr(QtCore.QObject):
                 valid_module = self.valid_device(devicemodule)
                 if (valid_module['valid']):  # If the module is valid add it to devices
                     devdict = {'module': devicemodule, 'name': smod[0], 'source': smod[1].__file__}
-                    self.device_modules.append(devdict)
+                    # Test if the module is already there, otherwise append
+                    FLAG_MOD_APPEND = True
+                    for m in self.device_modules:
+                        if(m['module'] == devicemodule):
+                            FLAG_MOD_APPEND=False
+                            break
+                    if(FLAG_MOD_APPEND):
+                        self.device_modules.append(devdict)
+
                     valid_device_modules.append(devicemodule)
                 else:  # Check recursive if devices are found
                     n_tries += 1
@@ -566,11 +635,13 @@ class redvypr(QtCore.QObject):
 
             testmodules.pop(0)
 
+        self.__populate_device_path_packages()
+
     def valid_device(self, devicemodule):
         """ Checks if the module is a valid redvypr module
         """
-        funcname = 'valid_device()'
-        logger.debug('Checking device {:s}'.format(str(devicemodule)))
+        funcname = 'valid_device(): '
+        logger.debug(funcname + 'Checking device {:s}'.format(str(devicemodule)))
         try:
             devicemodule.Device
             hasdevice = True
