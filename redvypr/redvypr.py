@@ -248,14 +248,15 @@ class redvypr(QtCore.QObject):
     status_update_signal       = QtCore.pyqtSignal()  # Signal notifying if the status of redvypr has been changed
     device_status_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
 
-    def __init__(self, parent=None, config=None, hostname='redvypr',nogui=False):
+    def __init__(self, parent=None, config=None, hostname='redvypr',hostinfo_opt = {}, nogui=False):
         # super(redvypr, self).__init__(parent)
         super(redvypr, self).__init__()
         print(__platform__)
         funcname = __name__ + '.__init__()'
         logger.debug(funcname)
         self.hostinfo = create_hostinfo(hostname=hostname)
-        self.hostinfo_opt = {} # Optional host information
+        config_template = {'template_name':'hostinfo_opt','name':'hostinfo_opt'}
+        self.hostinfo_opt = configuration(config=hostinfo_opt,template=config_template) # Optional host information
         self.config = {}  # Might be overwritten by parse_configuration()
         self.properties = {}  # Properties that are distributed with the device
         self.numdevice = 0
@@ -1852,6 +1853,9 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__ip_line.setAlignment(QtCore.Qt.AlignRight)
         self.__ip_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         self.__ip_line.setText(self.redvypr.hostinfo['addr'])
+        # Optional hostinformation
+        self.__hostinfo_opt = gui.configWidget(self.redvypr.hostinfo_opt,loadsavebutton=False,redvypr_instance=self.redvypr)
+
         # Change the hostname
         self.__hostname_btn = QtWidgets.QPushButton('Change hostname')
         self.__hostname_btn.clicked.connect(self.__hostname_changed_click)
@@ -1859,6 +1863,7 @@ class redvyprWidget(QtWidgets.QWidget):
         layout.addRow(self.__hostname_label, self.__hostname_line)
         layout.addRow(self.__uuid_label, self.__uuid_line)
         layout.addRow(self.__ip_label, self.__ip_line)
+        layout.addRow(self.__hostinfo_opt)
         layout.addRow(self.__hostname_btn)
 
         self.__statuswidget_pathbtn = QtWidgets.QPushButton('Edit device path')

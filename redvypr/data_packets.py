@@ -285,6 +285,11 @@ def do_data_statistics(data, statdict):
     except:
         pass
 
+    try:
+        statdict['device_redvypr'][devicename_stat]['_keyinfo'].update(data['_keyinfo'])
+    except:
+        pass
+
     ## Create status skeleton if not existing
     #try:
     #    statdict['device_redvypr'][devicename_stat]['_redvypr']['status']

@@ -404,7 +404,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                 print('Sending multicast info',time.time())
                 # print('datastreams',datastreams)
                 print('Deviceinfo all')
-                print('deviceonfo all', device_info['deviceinfo_all'])
+                print('deviceinfo all', device_info['deviceinfo_all'])
                 print('----- Deviceinfo all done -----')
                 multicast_packet = {'host': device_info['hostinfo'], 't': time.time(), 'zmq_pub': url,
                                     'deviceinfo_all': device_info['deviceinfo_all']}

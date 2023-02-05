@@ -27,6 +27,9 @@ description = 'A simple test device'
 
 config_template = {}
 config_template['string_send']    = {'type': 'str','default':'Hello World!'}
+config_template['_keyinfo']    = {}
+config_template['_keyinfo']['data'] = {'unit':'string','description':'Some sentence sent'}
+config_template['_keyinfo']['count'] = {'datatype':'int','unit':'count','description':'Simple packetcount'}
 config_template['delay_s']        = {'type': 'float','default':2}
 config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publish']     = True
@@ -43,7 +46,10 @@ logger.setLevel(logging.DEBUG)
 def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
-    print('config',config)
+    print('Config',config)
+    data = {'_keyinfo':config['_keyinfo']}
+    dataqueue.put(data)
+    # Send a datapacket with information once (that will be put into the statistics)
     i = 0
     while True:
         try:
