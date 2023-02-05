@@ -1046,14 +1046,14 @@ class redvypr(QtCore.QObject):
         # Check local devices first
         for d in self.devices:
             dev = d['device']
-            daddr = dev.redvypr_address
+            daddr = dev.address
             if deviceaddr == daddr:
                 return d
 
         # Check forwarded devices
         for d in self.devices:
             dev = d['device']
-            daddr = dev.redvypr_address
+            daddr = dev.address
             for dforward in dev.statistics['devices']:
                 if deviceaddr == daddr:
                     return d
@@ -2111,7 +2111,7 @@ Opens an "about" widget showing basic information.
         self._about_widget.show()
 
     def show_deviceselect(self):
-        self.__deviceselect__ = redvypr.gui.datastreamWidget(redvypr=self.redvypr_widget.redvypr, deviceonly=True)
+        self.__deviceselect__ = gui.datastreamWidget(redvypr=self.redvypr_widget.redvypr, deviceonly=True)
         self.__deviceselect__.show()
 
     def open_add_device_widget(self):

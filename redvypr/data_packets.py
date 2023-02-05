@@ -261,24 +261,30 @@ def do_data_statistics(data, statdict):
     except:
         statdict['host_redvypr'][uuid] = data['_redvypr']['host']
 
+    # Create device_redvypr
+    try:
+        statdict['device_redvypr'][devicename_stat]
+    except:  # Does not exist yet, create the entry
+        statdict['device_redvypr'][devicename_stat] = {'_redvypr': {}, 'datakeys': [], '_info': {},
+                                                       '_keyinfo': {}}
+
     # Get datakeys from datapacket
     datakeys = get_keys_from_data(data)
     # Get datakeys from info (potentially)
     try:
         datakeys_info = get_keys_from_data(data['_keyinfo'])
-    except:
+    except Exception as e:
         datakeys_info = []
 
+    print('datakeys info',datakeys_info)
     try:
         datakeys_new = list(set(statdict['device_redvypr'][devicename_stat]['datakeys'] + datakeys + datakeys_info))
-    except:
+    except Exception as e:
+        logger.exception(e)
         datakeys_new = datakeys
 
-    try:
-        statdict['device_redvypr'][devicename_stat]['_redvypr'].update(data['_redvypr'])
-        statdict['device_redvypr'][devicename_stat]['datakeys'] = datakeys_new
-    except: # Does not exist yet, create the entry
-        statdict['device_redvypr'][devicename_stat] = {'_redvypr': data['_redvypr'],'datakeys':datakeys,'_info':{},'_keyinfo':{}}
+    statdict['device_redvypr'][devicename_stat]['_redvypr'].update(data['_redvypr'])
+    statdict['device_redvypr'][devicename_stat]['datakeys'] = datakeys_new
 
     try:
         statdict['device_redvypr'][devicename_stat]['_info'].update(data['_info'])
@@ -430,7 +436,10 @@ def get_keys_from_data(data):
 
     """
     keys = list(data.keys())
-    keys.remove('_redvypr')
+    try:
+        keys.remove('_redvypr')
+    except:
+        pass
 
     try:
         keys.remove('_redvypr_command')
