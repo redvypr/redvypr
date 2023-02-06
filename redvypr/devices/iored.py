@@ -530,7 +530,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
 
                 else: # data packet, lets send it
                     datab = yaml.dump(data,explicit_end=False,explicit_start=False).encode('utf-8')
-                    print('Got data from queue',data)
+                    #print('Got data from queue',data)
                     addrstr = data_packets.get_address_from_data('',data,style='full')
                     #datasend = addrstr[1:].encode('utf-8') + ' '.encode('utf-8') + datab
                     tsend = 't{:.6f}'.format(time.time()).encode('utf-8')
