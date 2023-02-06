@@ -60,14 +60,27 @@ class datastreamWidget(QtWidgets.QWidget):
             self.devicename = ''
 
         self.deviceavaillabel = QtWidgets.QLabel('Available devices')
-        self.layout.addWidget(self.deviceavaillabel)
+
 
         self.devicelist = QtWidgets.QTreeWidget()  # List of available devices
         self.devicelist.setColumnCount(1)
+        self.devicelist.itemClicked.connect(self.__device_clicked)
 
         self.addressline = QtWidgets.QLineEdit()
-        self.addressline.textChanged[str].connect(self.devicecustom_changed)
+
+
+        # A combobox to choose between different styles of the address
+        self.addrtype_combo = QtWidgets.QComboBox()  # Combo for the different combination types
+        for t in redvypr_addresstypes:
+            self.addrtype_combo.addItem(t)
+
+        self.addrtype_combo.setCurrentIndex(2)
+        self.addrtype_combo.currentIndexChanged.connect(self.__addrtype_changed__)
+
+        # Add widgets to layout
+        self.layout.addWidget(self.deviceavaillabel)
         self.layout.addWidget(self.devicelist)
+        self.layout.addWidget(self.addrtype_combo)
         self.layout.addWidget(self.addressline)
 
 
@@ -85,10 +98,25 @@ class datastreamWidget(QtWidgets.QWidget):
 
         self.__update_devicetree()
 
+    def __device_clicked(self,item):
+        """
+        Called when an item in the qtree is clicked
+        """
+        print('Item',item)
+
+        if(item.iskey): # If this is a datakey item
+            print('Key')
+            addrtype = self.addrtype_combo.currentText()
+            addrstring = item.datakey_address.get_str(addrtype)
+            self.addressline.setText(addrstring)
+            self.addressline.datakey_address = item.datakey_address
+            self.addressline.device = item.device
+            self.addressline.devaddress = item.devaddress
 
     def __update_devicetree(self):
 
         if True:
+            self.devicelist.clear()
             root = self.devicelist.invisibleRootItem()
             # self.devices_listcon.addItem(str(device))
             data_provider_all = self.redvypr.get_data_providing_devices()
@@ -107,21 +135,30 @@ class datastreamWidget(QtWidgets.QWidget):
                     itm.device = dev
                     itm.redvypr_address = dev.address
                     root.addChild(itm)
+                    itm.iskey = False
                     # Check for forwarded devices
                     if True:
                         devs_forwarded = dev.get_data_provider_info()
                         for devaddress in devs_forwarded.keys():
                             devaddress_redvypr = data_packets.redvypr_address(devaddress)
-                            itmf = QtWidgets.QTreeWidgetItem([devaddress])
+                            addrtype = 'full'
+                            addrstring = devaddress_redvypr.get_str(addrtype)
+                            itmf = QtWidgets.QTreeWidgetItem([addrstring])
                             itmf.device = dev
                             itmf.redvypr_address = devaddress_redvypr
                             itmf.address_forwarded = devaddress
                             itm.addChild(itmf)
+                            itmf.iskey = False
                             datakeys = devs_forwarded[devaddress]['datakeys']
                             print('Datakeys',datakeys,devs_forwarded[devaddress])
                             for dkey in datakeys:
                                 itmk = QtWidgets.QTreeWidgetItem([dkey])
+                                itmk.iskey = True
+                                itmk.device = dev
+                                itmk.devaddress = devaddress
+                                itmk.datakey_address = data_packets.redvypr_address(data_packets.modify_addrstr(devaddress,datakey=dkey))
                                 itmf.addChild(itmk)
+
 
             self.devicelist.expandAll()
             self.devicelist.resizeColumnToContents(0)
@@ -132,97 +169,29 @@ class datastreamWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.__addrtype_changed__():'
         logger.debug(funcname)
-        print('datastreamstring', self.datastreamstring)
         addrtype = self.addrtype_combo.currentText()
-        print('datastreamstring', self.datastreamstring,addrtype)
-        raddr = redvypr_address(self.datastreamstring)
-        addrstring = raddr.get_str(addrtype)
-        print('addrstring',addrstring)
-        self.datastreamcustom.setText(addrstring)
-
-
-    def update_datakeylist(self, devicename):
-        """ Update the datakeylist whenever the device was changed
-        """
-        funcname = __name__ + '.update_datakeylist():'
-        logger.debug(funcname)
-        self.datakeylist.clear()
-
         try:
-            self.datastreams = self.redvypr.get_datastreams(devicename)
-        except Exception as e:
-            print('Hallo', e)
-            self.datakeys = []
-            self.datastreams = []
-
-        self.datakeys = []
-        for d in self.datastreams:
-            d_parsed = parse_addrstr(d, self.redvypr.hostinfo)
-            datakey = d_parsed['datakey']
-            uuid = d_parsed['uuid']
-            devicename = d_parsed['devicename']
-            hostname = d_parsed['hostname']
-            addr = d_parsed['addr']
-            self.datakeys.append(datakey)
-
-
-        for key in self.datakeys:
-            # If a conversion to an int works, make quotations around it, otherwise leave it as it is
-            try:
-                keyint = int(key)
-                keystr = '"' + key + '"'
-            except:
-                keystr = key
-
-            self.datakeylist.addItem(keystr)
+            addrstring =  self.addressline.datakey_address.get_str(addrtype)
+        except:
+            addrstr = ''
+        self.addressline.setText(addrstring)
 
     def done_clicked(self):
-        devicename = self.devicecustom.text()
-        if (self.deviceonly == False):
-            #datakey = self.datakeycustom.text()
-            datastream = self.datastreamcustom.text()
-        else:
-            datakey = None
-            datastream = None
+        try:
+            datastream_address = self.addressline.datakey_address
+        except Exception as e:
+            logger.exception(e)
+            return
+        datastream_str = datastream_address.get_str()
+        device = self.addressline.device
+        device_address = self.addressline.devaddress
 
-        #signal_dict = {'devicename': devicename, 'datakey': datakey, 'datastream': datastream}
-        signal_dict = {'devicename': devicename, 'datastream': datastream}
+        signal_dict = {'device': device, 'device_address':device_address,'datastream_str': datastream_str,'datastream_address':datastream_address}
+        #print('Signal dict',signal_dict)
         self.apply.emit(signal_dict)
         self.close()
 
-    def device_clicked(self, item):
-        """ If the device was changed, update the datakeylist and emit a signal
-        """
-        funcname = self.__class__.__name__ + '.device_clicked():'
-        logger.debug(funcname)
-        devicename = item.text()
-        # print('Click',item.text())
-        if (self.deviceonly == False):
-            self.devicedatakeyslabel.setText('Data keys of device ' + str(devicename))
-            self.update_datakeylist(devicename)
-        self.devicecustom.setText(str(devicename))
-        self.device_name_changed.emit(item.text())
 
-    def datakey_clicked(self, item):
-        index = self.datakeylist.currentRow()
-        # datakey    = item.text()
-        datakey = self.datakeys[index]
-        datastream = self.datastreams[index]
-        print('datakeys', self.datakeys)
-        print('datastream', self.datastreams)
-        print('index',index)
-        self.datastreamstring = datastream
-        self.__addrtype_changed__()
-        #self.datakeycustom.setText(str(datakey))
-        #self.datastreamcustom.setText(str(datastream))
-
-        self.datakey_name_changed.emit(item.text())
-
-    def devicecustom_changed(self, text):
-        """ TODO
-        """
-        pass
-        # self.device_name_changed.emit(str(text))
 
 
 

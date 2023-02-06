@@ -153,21 +153,18 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
                 #
                 [command, comdata] = data_packets.check_for_command(data, add_data=True)
                 if (command == 'device_status'):  # status update
-                    print('Comdata',comdata)
                     try:
                         devaddr   = comdata['data']['deviceaddr']
                         devstatus = comdata['data']['devicestatus']
-                        print('Status update!!!', devaddr, devstatus)
                     except:
                         devaddr = None
                         devstatus = None
                         pass
                     devices_changed.append(device.name)
                     try: # Update the device
-                        #print('Status',devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'])
                         devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'].update(devstatus)
                     except Exception as e:
-                        print('Could not update status',e)
+                        logger.warning('Could not update status',e)
 
                     FLAG_device_status_changed = True
 
@@ -327,7 +324,7 @@ class redvypr(QtCore.QObject):
 
     def print_status(self):
         funcname = __name__ + '.print_status():'
-        print(funcname + self.status())
+        logger.debug(funcname + self.status())
 
     def status(self):
         """ Creates a statusstr of the devices
@@ -455,6 +452,8 @@ class redvypr(QtCore.QObject):
 
         # Connecting devices ['connections']
         # TODO, this needs to be changed to subscritpions
+        # TODO
+        # TODO
         try:
             iter(config['connections'])
             hascons = True
@@ -480,11 +479,6 @@ class redvypr(QtCore.QObject):
                     self.addrm_device_as_data_provider(deviceprovider, devicereceiver, remove=False)
                     sensprov = get_data_providing_devices(self.devices, devicereceiver)
                     sensreicv = get_data_receiving_devices(self.devices, deviceprovider)
-                    # print('provider',devicereceiver,sensprov)
-                    # print('receiver',deviceprovider,sensreicv)
-                    # print('provider',self.devices[indprovider])#,deviceprovider)
-                    # print('receiver',self.devices[indreceiver])
-                    # print(devicereceiver)
                 else:
                     logger.warning(
                         funcname + ':Could not create connection for devices: {:s} and {:s}'.format(devicenameprovider,
@@ -527,9 +521,9 @@ class redvypr(QtCore.QObject):
             for name in package_names:
                 if name in d.key:
                     FLAG_POTENTIAL_MODULE = True
-                    print('maybe',d.key)
+                    #print('maybe',d.key)
             if d.key == 'redvypr':
-                print('its me')
+                #print('its me')
                 FLAG_POTENTIAL_MODULE = False
 
             if(FLAG_POTENTIAL_MODULE):
@@ -555,7 +549,7 @@ class redvypr(QtCore.QObject):
                                 logger.debug(funcname + ' Found device package {:s}'.format(libstr2))
                                 self.device_modules.append(devdict)
                 except Exception as e:
-                    print('Could not import module',e)
+                    logger.info(funcname + ' Could not import module: ' + str(e))
 
     def populate_device_path(self):
         """
@@ -775,7 +769,6 @@ class redvypr(QtCore.QObject):
                 else:
                     multiprocess = 'multiprocess'
 
-                print('Config multiprocess', multiprocess)
                 if multiprocess == 'thread':  # Thread or multiprocess
                     dataqueue = queue.Queue(maxsize=queuesize)
                     datainqueue = queue.Queue(maxsize=queuesize)
@@ -1522,10 +1515,15 @@ class redvyprWidget(QtWidgets.QWidget):
                     while True:
                         try:
                             data = guiqueue.get(block=False)
+                        except Exception as e:
+                            # print('Exception gui',e)
+                            break
+                        try:
                             devicedict['gui'][i].update(data)
                         except Exception as e:
-                            #print('Exception gui',e)
                             break
+                            #logger.exception(e)
+
 
     def load_config(self):
         """ Loads a configuration file

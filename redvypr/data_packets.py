@@ -16,6 +16,7 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulena
         data['_redvypr'] = {}
     if ('device' not in data['_redvypr'].keys()):
         data['_redvypr']['device'] = str(devicename)
+    if ('host' not in data['_redvypr'].keys()):
         data['_redvypr']['host']   = hostinfo
     else:  # Check if we have a local data packet, i.e. a packet that comes from another redvypr instance with another UUID
         data['_redvypr']['host']['local'] = data['_redvypr']['host']['uuid'] == hostinfo['uuid']
@@ -23,6 +24,11 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulena
     # Add the time to the datadict if its not already in
     if ('t' not in data['_redvypr'].keys()):
         data['_redvypr']['t'] = tpacket
+
+    # Check if there was data sent (len(datakeys) > 0), if yes check if time is present, if not add it
+    datakeys = get_keys_from_data(data)
+    if (len(datakeys) > 0) and ('t' not in datakeys):
+        data['t'] = tpacket
 
     # Add the time to the datadict if its not already in
     if ('devicemodulename' not in data['_redvypr'].keys()):
@@ -42,11 +48,24 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulena
 class redvypr_address():
     """ redvypr address 
     """
-    def __init__(self,addrstr,local_hostinfo=None):
-        self.address_str = addrstr
-        self.parsed_addrstr = parse_addrstr(addrstr, local_hostinfo=local_hostinfo)
-        self.strtypes = ['<key>','<key>/<device>','<key>/<device>:<host>','<key>/<device>:<host>@<addr>','get_str<key>/<device>:<host>@<addr>::<uuid>','<key>/<device>::<uuid>']
+    def __init__(self,addrstr=None,local_hostinfo=None,datakey='',devicename='',hostname='',addr='',uuid=''):
+        if addrstr is not None: # Address from addrstr
+            self.address_str = addrstr
+        else: # addrsstr from single ingredients
+            self.address_str = create_addrstr(datakey,devicename,hostname,addr,uuid,local_hostinfo=local_hostinfo)
+            #print('Address string',self.address_str)
+
+
+        self.parsed_addrstr = parse_addrstr(self.address_str, local_hostinfo=local_hostinfo)
+        self.strtypes = ['<key>','<key>/<device>']
+        self.strtypes.append('<key>/<device>:<host>')
+        self.strtypes.append('<key>/<device>:<host>@<addr>')
+        self.strtypes.append('<key>/<device>:<host>@<addr>::<uuid>')
+        self.strtypes.append('<key>/<device>::<uuid>')
+        self.strtypes.append('<device>:<host>')
+        self.strtypes.append('<device>:<host>@<addr>')
         self.strtypes.append('<device>:<host>@<addr>::<uuid>')
+        self.strtypes.append('<device>:<host>::<uuid>')
         self.strtypes.append('<device>')
         self.strtypes.append('<host>')
         self.strtypes.append('<addr>')
@@ -105,6 +124,13 @@ class redvypr_address():
             elif (strtype == '<key>/<device>:<host>@<addr>::<uuid>'):
                 return self.parsed_addrstr['datakey'] + '/' + self.parsed_addrstr['devicename'] + ':' + self.parsed_addrstr[
                     'hostname'] + '@' + self.parsed_addrstr['addr'] + '::' + self.parsed_addrstr['uuid']
+            elif (strtype == '<device>:<host>'):
+                return self.parsed_addrstr['devicename'] + ':' + self.parsed_addrstr['hostname']
+            elif (strtype == '<device>:<host>@<addr>'):
+                return self.parsed_addrstr['devicename'] + ':' + self.parsed_addrstr['hostname'] + '@' + \
+                       self.parsed_addrstr['addr']
+            elif (strtype == '<device>:<host>::<uuid>'):
+                return self.parsed_addrstr['devicename'] + ':' + self.parsed_addrstr['hostname'] + '::' + self.parsed_addrstr['uuid']
             elif (strtype == '<device>:<host>@<addr>::<uuid>'):
                 return self.parsed_addrstr['devicename'] + ':' + self.parsed_addrstr['hostname'] + '@' + self.parsed_addrstr['addr'] + '::' + self.parsed_addrstr['uuid']
             elif (strtype == '<key>/<device>::<uuid>'):
@@ -276,7 +302,6 @@ def do_data_statistics(data, statdict):
     except Exception as e:
         datakeys_info = []
 
-    print('datakeys info',datakeys_info)
     try:
         datakeys_new = list(set(statdict['device_redvypr'][devicename_stat]['datakeys'] + datakeys + datakeys_info))
     except Exception as e:
@@ -365,6 +390,78 @@ def expand_address_string(addrstr):
     address_string = datakey + '/' + devicename + ':' + hostname + '@' + addr + '::' + uuid
     return address_string
 
+
+def modify_addrstr(addrstr,datakey='',devicename='',hostname='',addr='',uuid='',local_hostinfo=None):
+    """
+    Modifies address string with optionally given arguments. Note that missing parts are replaced by wildcards:
+    modify_addrstr('test') becomes */test:*@*::*.
+
+    Args:
+        addrstr: Address string to be modified
+        datakey:
+        devicename:
+        hostname:
+        addr:
+        uuid:
+        local_hostinfo:
+
+    Returns:
+        Modified address string
+    """
+
+    parsed_str = parse_addrstr(addrstr,local_hostinfo=local_hostinfo)
+    if len(datakey) > 0:
+        parsed_str['datakey'] = datakey
+    if len(devicename) > 0:
+        parsed_str['devicename'] = devicename
+    if len(hostname) > 0:
+        parsed_str['hostname'] = hostname
+    if len(addr) > 0:
+        parsed_str['addr'] = addr
+    if len(uuid) > 0:
+        parsed_str['uuid'] = uuid
+
+    addrstr_mod = create_addrstr(datakey=parsed_str['datakey'],devicename=parsed_str['devicename'],hostname=parsed_str['hostname'],addr=parsed_str['addr'],uuid=parsed_str['uuid'])
+    return addrstr_mod
+
+
+
+def create_addrstr(datakey='',devicename='',hostname='',addr='',uuid='',local_hostinfo=None):
+    """
+    Creates an address string from given ingredients
+    Args:
+        datakey:
+        devicename:
+        hostname:
+        addr:
+        uuid:
+        local_hostinfo:
+
+    Returns:
+
+    """
+    if local_hostinfo is not None:
+        if len(uuid) == 0:
+            uuid = local_hostinfo['uuid']
+        if len(addr) == 0:
+            addr = local_hostinfo['addr']
+        if len(hostname) == 0:
+            hostname = local_hostinfo['hostname']
+    else:
+        if len(uuid) == 0:
+            uuid = '*'
+        if len(addr) == 0:
+            addr = '*'
+        if len(hostname) == 0:
+            hostname = '*'
+
+    if len(datakey) > 0:
+        datakey = datakey + '/'
+    if len(devicename) > 0:
+        devicename = devicename + ':'
+
+    address_str = datakey + devicename + hostname + '@' + addr + '::' + uuid
+    return address_str
 
 
 def parse_addrstr(address_string,local_hostinfo=None):

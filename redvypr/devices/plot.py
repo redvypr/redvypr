@@ -59,6 +59,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                     logger.info(funcname + ': Stopped')
                     return
 
+                #print('Got data')
                 dataqueue.put(data)  # This has to be done, otherwise the gui does not get any data ...
 
 
@@ -76,8 +77,8 @@ class Device(redvypr_device):
         """
         funcname = self.__class__.__name__ + '.connect_devices():'
         logger.debug(funcname)
+        print('Connecting devices')
         # Check of devices have not been added
-        devices = self.redvypr.get_devices()  # Get all devices
         plot_devices = []
         for plot in self.config['plots']:  # Loop over all plots
             print('Config',self.config)
@@ -109,14 +110,12 @@ class Device(redvypr_device):
         if True:
             print('Plot devices',plot_devices,self.name)
             for name in plot_devices:
-                logger.info(funcname + 'Connecting device {:s}'.format(name))
-                ret = self.redvypr.addrm_device_as_data_provider(name, self, remove=False)
-                if (ret == None):
-                    logger.info(funcname + 'Device was not found')
-                elif (ret == False):
-                    logger.info(funcname + 'Device was already connected')
+                logger.info(funcname + 'Subscribing to device {:s}'.format(name))
+                ret = self.subscribe_address(name)
+                if (ret == False):
+                    logger.info(funcname + 'Device is already subscribed')
                 elif (ret == True):
-                    logger.info(funcname + 'Device was successfully connected')
+                    logger.info(funcname + 'Device subscribed')
 
 
 #
@@ -281,7 +280,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
         print(tnow,self.status['last_update'])
         print((tnow - self.status['last_update']))
         # print('statistics',self.device.statistics)
-        devicename = data['device']
         # Only plot the data in intervals of dt_update length, this prevents high CPU loads for fast devices
         if True:
             update = (tnow - self.status['last_update']) > self.config['dt_update']
@@ -617,8 +615,8 @@ class PlotGridWidget(QtWidgets.QWidget):
                 logger.exception(e)
 
         print('config type end ', type(self.device.config))
-        #if True:
-        #    self.device.connect_devices()
+        if True:
+            self.device.connect_devices()
         print('config type end ', type(self.device.config))
 
     def remPlot(self, plotwidget):

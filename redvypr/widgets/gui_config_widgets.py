@@ -323,7 +323,7 @@ class configWidget(QtWidgets.QWidget):
 
             elif btn.__type__ == 'datastream':
                 print('Datastream')
-                data.data = self.__configwidget_input.datastreamcustom.text()
+                data.data = self.__configwidget_input.addressline.text()
                 item.setText(1, str(data.data))
                 self.apply_config_change()
                 return

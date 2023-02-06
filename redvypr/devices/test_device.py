@@ -66,7 +66,8 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
         dstr = str(config['string_send'])
         print(dstr)
         dataqueue.put(dstr)
-        dataqueue.put({'count':i})
+        dataqueue.put({'count': i})
+        dataqueue.put({'count': i+10,'_redvypr':{'device':'t2'}})
         i+=1
         time.sleep(config['delay_s'])
         

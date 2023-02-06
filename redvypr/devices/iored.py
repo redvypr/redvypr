@@ -212,7 +212,7 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue, config):
         try:
             #datab = sub.recv(zmq.NOBLOCK)
             datab_all = sub.recv_multipart()
-            print('Got data',datab_all)
+            #print('Got data',datab_all)
             FLAG_DATA = True
         except Exception as e:
             #logger.debug(funcname + ':' + str(e))

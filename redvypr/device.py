@@ -81,6 +81,18 @@ class redvypr_device(QtCore.QObject):
         pass
         #print('Global subscription changed',self.name,devchange.name)
 
+    def address_from_datakey(self,datakey):
+        """
+        Returns a datastream string from the datakey and self.address
+        Args:
+            key:
+
+        Returns:
+            str: datastream strong
+        """
+        addr = redvypr_address(datakey = datakey,devicename=self.name,local_hostinfo=self.redvypr.hostinfo)
+        return addr
+
     def subscribe_address(self, address):
         """
         """
@@ -101,9 +113,11 @@ class redvypr_device(QtCore.QObject):
 
         if(FLAG_NEW):
             self.subscribed_addresses.append(raddr)
-            # TODO, emit signals
             self.subscription_changed_signal.emit()
             print(self.subscribed_addresses)
+            return True
+        else:
+            return False
 
     def unsubscribe_address(self, address):
         """
