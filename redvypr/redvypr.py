@@ -164,7 +164,8 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
                     try: # Update the device
                         devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'].update(devstatus)
                     except Exception as e:
-                        logger.warning('Could not update status',e)
+                        logger.warning('Could not update status ' + str(e))
+                        logger.exception(e)
 
                     FLAG_device_status_changed = True
 
@@ -191,7 +192,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
                         continue
 
                     for addr in devicesub.subscribed_addresses:
-                        if data in addr:
+                        if data in addr: # Check if data packet fits with addr
                             devicedict['numpacketout'] += 1
                             try:
                                 devicesub.datainqueue.put_nowait(data) # These are the datainqueues of the subscribing devices

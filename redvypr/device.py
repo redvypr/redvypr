@@ -44,6 +44,10 @@ class redvypr_device(QtCore.QObject):
         self.name        = name
         self.devicemodulename = devicemodulename
         self.uuid        = uuid
+        try:
+            self.host_uuid = redvypr.hostinfo['uuid']
+        except:
+            self.host_uuid = ''
         self.thread_uuid = ''
         self.loglevel    = loglevel
         self.numdevice   = numdevice
@@ -93,7 +97,7 @@ class redvypr_device(QtCore.QObject):
         addr = redvypr_address(datakey = datakey,devicename=self.name,local_hostinfo=self.redvypr.hostinfo)
         return addr
 
-    def subscribe_address(self, address):
+    def subscribe_address(self, address,force=False):
         """
         """
         funcname = self.__class__.__name__ + '.subscribe_address()'
@@ -117,13 +121,15 @@ class redvypr_device(QtCore.QObject):
             print(self.subscribed_addresses)
             return True
         else:
+            if force: # Resend the subscription signal
+                self.subscription_changed_signal.emit()
             return False
 
     def unsubscribe_address(self, address):
         """
         """
         funcname = self.__class__.__name__ + '.unsubscribe_address()'
-        self.logger.debug(funcname + ' subscribing to device {:s}'.format(str(address)))
+        self.logger.debug(funcname + ' unsubscribing from device {:s}'.format(str(address)))
         print('Address', address, type(address))
         if (type(address) == str):
             raddr = redvypr_address(address)
@@ -136,7 +142,6 @@ class redvypr_device(QtCore.QObject):
         except Exception as e:
             self.logger.warning('Could not remove address {:s}: {:s}'.format(str(address),str(e)))
 
-        # TODO, emit signals
 
     def change_name(self,name):
         """
@@ -254,7 +259,7 @@ class redvypr_device(QtCore.QObject):
             running = False
 
         if(running):
-            print('Sending command',command)
+            #print('Sending command',command)
             self.__send_command__(command)
         else:
             self.logger.warning(funcname + ' thread is not running, doing nothing')

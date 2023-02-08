@@ -56,8 +56,9 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 # logger.debug('Got a command: {:s}'.format(str(data)))
                 if (command is not None):
                     logger.debug('Command is for me: {:s}'.format(str(command)))
-                    logger.info(funcname + ': Stopped')
-                    return
+                    if(command == 'stop'):
+                        logger.info(funcname + ': Stopped')
+                        return
 
                 #print('Got data')
                 dataqueue.put(data)  # This has to be done, otherwise the gui does not get any data ...
@@ -68,9 +69,16 @@ class Device(redvypr_device):
         """
         """
         super(Device, self).__init__(**kwargs)
-        self.connect_devices()
         self.start = start
-        print('Hallo hallo hallo!!', self.config)
+
+    def thread_start(self):
+        """
+
+        Returns:
+
+        """
+        self.connect_devices()
+        super(Device,self).thread_start()
 
     def connect_devices(self):
         """ Connects devices, if they are not already connected
@@ -84,34 +92,24 @@ class Device(redvypr_device):
             print('Config',self.config)
             print('plot',plot)
             if (str(getdata(plot['type'])).lower() == 'numdisp'):
-                datastream = getdata(plot['datastream'])
-                parsed_stream = parse_addrstr(datastream)
-                devicename = parsed_stream['devicename']
-                if (devicename == self.name) or (devicename == '*'):
-                    pass
-                else:
-                    plot_devices.append(devicename)
+                datastream = plot['datastream'].data
+                if (len(datastream) > 0):
+                    address = redvypr.data_packets.redvypr_address(datastream)
+                    plot_devices.append(address)
 
             elif (str(plot['type']).lower() == 'graph'):
                 for l in plot['lines']:  # Loop over all lines in a plot
-                    xname = redvypr.data_packets.redvypr_address(l['x']).devicename
-                    yname = redvypr.data_packets.redvypr_address(l['y']).devicename
-                    print('xname',xname)
-                    print('yname',yname)
-                    if (xname == self.name) or (xname == '*'):
-                        pass
-                    else:
-                        plot_devices.append(xname)
-                    if (yname == self.name) or (yname == '*'):
-                        pass
-                    else:
-                        plot_devices.append(yname)
+                    if (len(l['x']) > 0) and (len(l['y']) > 0):
+                        xaddress = redvypr.data_packets.redvypr_address(l['x'])
+                        yaddress = redvypr.data_packets.redvypr_address(l['y'])
+                        plot_devices.append(xaddress)
+                        plot_devices.append(yaddress)
 
         if True:
             print('Plot devices',plot_devices,self.name)
             for name in plot_devices:
-                logger.info(funcname + 'Subscribing to device {:s}'.format(name))
-                ret = self.subscribe_address(name)
+                logger.info(funcname + 'Subscribing to device {:s}'.format(name.get_str()))
+                ret = self.subscribe_address(name.get_str(),force=True)
                 if (ret == False):
                     logger.info(funcname + 'Device is already subscribed')
                 elif (ret == True):
@@ -614,9 +612,6 @@ class PlotGridWidget(QtWidgets.QWidget):
             except Exception as e:
                 logger.exception(e)
 
-        print('config type end ', type(self.device.config))
-        if True:
-            self.device.connect_devices()
         print('config type end ', type(self.device.config))
 
     def remPlot(self, plotwidget):

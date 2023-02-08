@@ -13,6 +13,18 @@ sent over multicast and displayed in the gui.
 Zeromq pub/sub
 --------------
 
+The data that is published is a multipart packet::
+
+    [b'test_device_0:redvypr@192.168.236.188::93328248922693-217', b't1675787270.261712', b'_redvypr:\n  device: test_device_0\n  devicemodulename: test_device\n  host:\n    addr: 192.168.236.188\n    hostname: redvypr\n    local: true\n    tstart: 1675787257.351031\n    uuid: 93328248922693-217\n  numpacket: 4\n  t: 1675787257.50375\ndata: Hello World!\nt: 1675787257.50375\n']
+
+The first part is the address of the device "test_device_0:redvypr@192.168.236.188::93328248922693-217", the format is "'<device>:<host>@<addr>::<uuid>'"
+The second part the unix time as a string: "t1675787270.261712"
+The third part the data packet as a yaml string
+
+How subscriptions work:
+
+iored compares all subscriptions of this host with all online iored/redvyprs. If there is a match, the host will be subscribed.
+
 
 """
 
@@ -107,19 +119,14 @@ def create_datapacket_from_deviceinfo(device_info):
 
     """
     funcname = __name__ + '.create_datapackets_from_deviceinfo()'
-    print('hallo',device_info)
     d = device_info
     if True:
-        print('------------')
-        print('d', d)
         dpacket = {}
         dpacket['_redvypr']  = d['_redvypr']
         dpacket['_redvypr']['subscribeable'] = True
         dpacket['_redvypr']['subscribed'] = False
         dpacket['_info'] = d['_info']
         dpacket['_keyinfo']  = d['_keyinfo']
-        print('dpacket', dpacket)
-        print('------------')
         return dpacket
 
 
@@ -127,12 +134,12 @@ def create_datapacket_from_deviceinfo(device_info):
 
 
 
-def start_zmq_sub(dataqueue, comqueue, statusqueue, config):
+def start_zmq_sub(dataqueue, comqueue, statusqueue, config, remote_uuid):
     """ zeromq receiving data
     """
     funcname = __name__ + '.start_recv()'
     datastreams_dict = {}
-    status = {'sub':[]}
+    status = {'sub':[],'uuid':remote_uuid}
     sub = zmq_context.socket(zmq.SUB)
     url = config['zmq_sub']
     logger.debug(funcname + ':Start receiving data from url {:s}'.format(url))
@@ -187,7 +194,7 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue, config):
                 unsubstringb = unsubstring.encode('utf-8')
                 sub.setsockopt(zmq.UNSUBSCRIBE, unsubstringb)
                 try:
-                    status['sub'].remove(unsubstringb)
+                    status['sub'].remove(unsubstring)
                 except:
                     pass
 
@@ -206,7 +213,7 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue, config):
                 datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='',
                                                         devicename=None, host=None, comdata=comdata)
                 dataqueue.put(datapacket)
-                dataqueue.put(datapacket)
+                #dataqueue.put(datapacket)
 
 
         try:
@@ -267,7 +274,6 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
     dt_sleep  = 0.05
     queuesize = 100 # The queuesize for the subthreads
     sockets   = [] # List of all sockets that need to be closed when thread is stopped
-    datastreams_uuid = {} # A local list of datastreams, prohibing sending known datastreams again and again
     hostinfos = {}
     zmq_sub_threads = {} # Dictionary with all remote redvypr hosts subscribed
     #
@@ -295,7 +301,11 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
     # Multicast receive
     sock_multicast_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock_multicast_recv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock_multicast_recv.bind((MULTICASTADDRESS, MULTICASTPORT))
+    if sys.platform == 'win32': # had to add this on 07.02.2023, win10/anaconda python 3.9.16
+        sock_multicast_recv.bind(('', MULTICASTPORT))
+    else:
+        sock_multicast_recv.bind((MULTICASTADDRESS, MULTICASTPORT))
+
     mreq = struct.pack("4sl", socket.inet_aton(MULTICASTADDRESS), socket.INADDR_ANY)
     sock_multicast_recv.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
     sock_multicast_recv.settimeout(0)  # timeout for listening
@@ -325,10 +335,14 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
     while True:
         tstart = time.time()
         #
-        # Trying to receive data from multicast
+        # Start Trying to receive data from multicast
         #
         try:
             data_multicast_recv = sock_multicast_recv.recv(10240) # This could be a potential problem as this is finite
+        except:
+            data_multicast_recv = None
+
+        if(data_multicast_recv is not None):
             #print('Got multicast data',data_multicast_recv)
             print('Got multicast data')
             [multicast_command,redvypr_info] = process_multicast_packet(data_multicast_recv)
@@ -348,10 +362,6 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
             elif multicast_command == 'info':
                 try:
                     uuid = redvypr_info['host']['uuid']
-                    try:
-                        datastreams_uuid[uuid] = [] # Create a list for the uuid
-                    except:
-                        pass
                 except:
                     uuid = None
 
@@ -362,55 +372,55 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                     # Could be locked
                     hostinfos[uuid] = copy.deepcopy(redvypr_info) # Copy it to the hostinfo of the device. This should be thread safe
                     #
-                    print('redvypr_info',redvypr_info)
+                    #print('redvypr_info',redvypr_info)
                     if 'deviceinfo_all' in redvypr_info.keys():
                         for dkeyhost in redvypr_info['deviceinfo_all'].keys():  # This is the host device
                             for dkey in redvypr_info['deviceinfo_all'][dkeyhost].keys():  # This is the device, typically only one, the hostdevice itself
-                                print('devicekey', dkeyhost,dkey)
+                                #print('devicekey', dkeyhost,dkey)
                                 d = redvypr_info['deviceinfo_all'][dkeyhost][dkey]
-                                print('device', d)
+                                #print('device', d)
                                 daddr = data_packets.redvypr_address(dkey)
                                 if daddr.uuid == hostuuid: # This should not happen but anyways
-                                    print('Own device, doing nothing')
+                                    #print('Own device, doing nothing')
                                     pass
                                 elif(d['_redvypr']['devicemodulename'] == 'iored'):
-                                    print('ioreddevice, doing nothing')
+                                    #print('ioreddevice, doing nothing')
                                     pass
                                 else:
-                                    print('Remote device')
-                                    #datastreams_uuid[uuid].append(d)
+                                    #print('Remote device')
                                     datapacket = create_datapacket_from_deviceinfo(d)
                                     # Send the packet, distribute_data() will call do_data_statistics() and will add them to the available datastreams
                                     # This will again create on return a signal that the datastreams have been changed
-                                    print('Sending datapacket to inform redvypr about available devices',datapacket)
+                                    #print('Sending datapacket to inform redvypr about available devices',datapacket)
                                     dataqueue.put_nowait(datapacket)
 
                         try:
                             datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='', devicename=None, host=None)
-                            print('Sending statuscommand',datapacket)
+                            #print('Sending statuscommand',datapacket)
                             dataqueue.put_nowait(datapacket)
                         except Exception as e:
-                            print('oho',e)
+                            pass
             #print('Received multicast data!!', data_multicast_recv)
-        except:
-            pass
 
+        #
+        # END Trying to receive data from multicast
+        #
         #
         # START Sending multicast data
         #
         if (dtbeacon > 0) or FLAG_MULTICAST_INFO:
             if ((time.time() - tbeacon) > dtbeacon) or FLAG_MULTICAST_INFO:
                 FLAG_MULTICAST_INFO = False
-                print('Sending multicast info',time.time())
+                #print('Sending multicast info',time.time())
                 # print('datastreams',datastreams)
-                print('Deviceinfo all')
-                print('deviceinfo all', device_info['deviceinfo_all'])
-                print('----- Deviceinfo all done -----')
+                #print('Deviceinfo all')
+                #print('deviceinfo all', device_info['deviceinfo_all'])
+                #print('----- Deviceinfo all done -----')
                 multicast_packet = {'host': device_info['hostinfo'], 't': time.time(), 'zmq_pub': url,
                                     'deviceinfo_all': device_info['deviceinfo_all']}
-                print('--------------')
-                print('Multicast packet',multicast_packet)
-                print('--------------')
+                #print('--------------')
+                #print('Multicast packet',multicast_packet)
+                #print('--------------')
                 hostinfoy = yaml.dump(multicast_packet, explicit_end=True, explicit_start=True)
                 hostinfoy = hostinfoy.encode('utf-8')
                 datab = multicast_header['info'] + hostinfoy
@@ -420,7 +430,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                 # sock_zmq_pub.send_multipart([b'123',b'Hallo!'])
         if FLAG_MULTICAST_GETINFO:
             FLAG_MULTICAST_GETINFO = False
-            print('Sending multicast getinfo request')
+            #print('Sending multicast getinfo request')
             multicast_packet = {'host': device_info['hostinfo'], 't': time.time()}
             hostinfoy = yaml.dump(multicast_packet, explicit_end=True, explicit_start=True)
             hostinfoy = hostinfoy.encode('utf-8')
@@ -431,14 +441,19 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
         # END Sending multicast data
         #
 
-        # Try to receive subscription filter data from the xpub socket
+        #
+        # START Try to receive subscription filter data from the xpub socket
+        #
         try:
             data_pub = sock_zmq_pub.recv_multipart()
             receivers_subscribed.append(data_pub)
-            print('Received a subscription', data_pub,receivers_subscribed)
+            #print('Received a subscription', data_pub,receivers_subscribed)
         except Exception as e:
             #print('e',e)
             pass
+        #
+        # END Try to receive subscription filter data from the xpub socket
+        #
 
 
         #
@@ -475,7 +490,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                         device_info['deviceinfo_all'].update(data['deviceinfo_all'])
                         try:
                             if devicename in data['devices_changed']: # Check if devices except myself have been changed
-                                print('That was myself, will remove')
+                                #print('That was myself, will remove')
                                 data['devices_changed'].remove(devicename)
                             if(len(data['devices_changed']) > 0):
                                 FLAG_MULTICAST_INFO = True  # Send the information over multicast
@@ -486,41 +501,43 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                     elif (command == 'multicast_getinfo'):  # Multicast command requesting info from other redvypr instances
                         FLAG_MULTICAST_GETINFO = True
                     elif (command == 'unsubscribe'):
-                        daddr = data_packets.redvypr_address(data['device'])
-                        zmq_url = hostinfos[daddr.uuid]['zmq_pub']
+                        remote_uuid = data['remote_uuid']
+                        substring = data['substring']
+                        zmq_url = hostinfos[remote_uuid]['zmq_pub']
                         logstart.info(
-                            funcname + ': Subscribing to device {:s} at url {:s}'.format(data['device'], zmq_url))
+                            funcname + ': Unsubscribing from uuid {:s} at url {:s}'.format(remote_uuid, zmq_url))
                         try:  # Send the command to the corresponding thread
-                            zmq_sub_threads[daddr.uuid]['comqueue'].put('unsub ' + data['device'])
+                            zmq_sub_threads[remote_uuid]['comqueue'].put('unsub ' + substring)
                         except Exception as e:
                             logstart.exception(e)
 
                     elif (command == 'subscribe'):
                         try:
-                            daddr = data_packets.redvypr_address(data['device'])
-                            zmq_url = hostinfos[daddr.uuid]['zmq_pub']
+                            remote_uuid = data['remote_uuid']
+                            substring = data['substring']
+                            zmq_url = hostinfos[remote_uuid]['zmq_pub']
                             logstart.info(
-                                funcname + ': Subscribing to device {:s} at url {:s}'.format(data['device'], zmq_url))
+                                funcname + ': Subscribing to uuid {:s} at url {:s}'.format(remote_uuid, zmq_url))
                             try: # Lets check if the thread is already running
-                                zmq_sub_threads[daddr.uuid]['comqueue'].put('sub ' + data['device'])
+                                zmq_sub_threads[remote_uuid]['comqueue'].put('sub ' + substring)
                                 FLAG_START_SUB_THREAD = False
                             except Exception as e:
-                                zmq_sub_threads[daddr.uuid] = {}
+                                zmq_sub_threads[remote_uuid] = {}
                                 FLAG_START_SUB_THREAD = True
 
+                            # If not running, create a thread and subscribe to
                             if FLAG_START_SUB_THREAD:
                                 logstart.debug(funcname + ' Starting new thread')
                                 config_zmq = {}
-                                #config_zmq['subscribe'] = data['device'].encode('utf-8')
                                 config_zmq['zmq_sub'] = zmq_url
                                 comqueue = queue.Queue(maxsize=1000)
                                 statqueue = queue.Queue(maxsize=1000)
-                                zmq_sub_threads[daddr.uuid]['comqueue'] = comqueue
-                                zmq_sub_threads[daddr.uuid]['statqueue'] = statqueue
-                                zmq_sub_threads[daddr.uuid]['thread'] = threading.Thread(target=start_zmq_sub, args=(dataqueue, comqueue, statqueue, config_zmq))
-                                zmq_sub_threads[daddr.uuid]['thread'].start()
+                                zmq_sub_threads[remote_uuid]['comqueue']  = comqueue
+                                zmq_sub_threads[remote_uuid]['statqueue'] = statqueue
+                                zmq_sub_threads[remote_uuid]['thread']    = threading.Thread(target=start_zmq_sub, args=(dataqueue, comqueue, statqueue, config_zmq,remote_uuid))
+                                zmq_sub_threads[remote_uuid]['thread'].start()
                                 # Thread started, lets subscribe now
-                                zmq_sub_threads[daddr.uuid]['comqueue'].put('sub ' + data['device'])
+                                zmq_sub_threads[remote_uuid]['comqueue'].put('sub ' + substring)
 
                         except Exception as e:
                             logstart.error(funcname + ' Could not subscribe because of')
@@ -531,10 +548,12 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                 else: # data packet, lets send it
                     datab = yaml.dump(data,explicit_end=False,explicit_start=False).encode('utf-8')
                     #print('Got data from queue',data)
-                    addrstr = data_packets.get_address_from_data('',data,style='full')
+                    #
+                    addrstr = data_packets.get_address_from_data('',data,style='<device>:<host>@<addr>::<uuid>')
                     #datasend = addrstr[1:].encode('utf-8') + ' '.encode('utf-8') + datab
                     tsend = 't{:.6f}'.format(time.time()).encode('utf-8')
-                    sock_zmq_pub.send_multipart([addrstr[1:].encode('utf-8'), tsend,datab])
+                    datapacket = [addrstr[1:].encode('utf-8'), tsend, datab]
+                    sock_zmq_pub.send_multipart(datapacket)
 
 
         # Read the status of all sub threads and update the dictionary
@@ -543,6 +562,8 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                 status = zmq_sub_threads[uuid]['statqueue'].get(block=False)
                 #print('Got status',status)
                 zmq_sub_threads[uuid]['sub'] = status['sub']
+                # Put the subscription status into the statusqueue, this is used for the device to update
+                statusqueue.put({'subscribed':status['sub'],'uuid':uuid})
                 #print('Got status threads', zmq_sub_threads)
             except Exception as e:
                 #logstart.exception(e)
@@ -566,10 +587,10 @@ class Device(redvypr_device):
         self.__zmq_sub_threads__ = {} # Dictionary with uuid of the remote hosts collecting information of the subscribed threads
 
         self.logger.info(funcname + ' subscribing to devices')
+        self.autosubscribe = True # Automatically subscribe to remote devices if a local device subscription fits
         # Subscribe all
         self.subscribe_address('*')
-        self.zmq_subscribed_addresses = []
-
+        self.zmq_subscribed_to = {} # Dictionary with remote_uuid as key that hold all subscribed strings
 
 
     def start(self,device_info,config, dataqueue, datainqueue, statusqueue):
@@ -593,25 +614,96 @@ class Device(redvypr_device):
         device_info['hostinfo_opt'] = copy.deepcopy(self.redvypr.hostinfo_opt)
         start(device_info,copy.deepcopy(config), dataqueue, datainqueue, statusqueue)
 
-    def zmq_subscribe(self,address):
-        funcname = __name__ + 'zmq_subscribe()'
-        self.logger.debug(funcname)
-        self.thread_command('subscribe', {'device': address})
-        self.zmq_subscribed_addresses.append(address)
-        for a in self.zmq_subscribed_addresses:
-            print('Subcribed to', a)
+    def compare_zmq_subscription(self, subscription):
+        """
+        Compares if a redvypr_address is already subscribed or needs to be subscribed because a remote device is fitting
+        the address
+        Args:
+            subscription: redvypr address
 
-    def zmq_unsubscribe(self, address):
-        funcname = __name__ + 'zmq_unsubscribe()'
-        self.logger.debug(funcname)
-        try:
-            print('unsubscribe',address)
-            self.zmq_subscribed_addresses.remove(address)
-            self.thread_command('unsubscribe', {'device': address})
-        except Exception as e:
-            self.logger.exception(e)
+        Returns:
+             list: [FLAG_FIT, uuid, address string, FLAG_SUBSCRIBED]
+        """
+        # The dictionary keys of self.statistics['device_redvypr'] are the same as the zmq multipart identifier
+        all_remote_devices = self.statistics['device_redvypr'].keys()
+        FLAG_SUB_FITS = False
+        for address_string in all_remote_devices:
+            daddr = data_packets.redvypr_address(address_string)
+            FLAG_SUB_FITS = daddr in subscription
+            #print('Comparing',address_string,subscription.get_str())
+            if FLAG_SUB_FITS: # Comparing two redvpr_addresses
+                remote_uuid      = daddr.uuid
+                remote_device    = daddr.devicename
+                remote_substring = address_string
+                try:
+                    self.zmq_subscribed_to[remote_uuid]
+                except:
+                    self.zmq_subscribed_to[remote_uuid] = []
 
-    def subscription_changed_global(self,devchange):
+                # Test if the device has already been subscribed
+                FLAG_SUBSCRIBED = remote_substring in self.zmq_subscribed_to[remote_uuid]
+                break
+
+        if FLAG_SUB_FITS == False:
+            address_string = ''
+
+
+        return [FLAG_SUB_FITS,remote_uuid,address_string,FLAG_SUBSCRIBED]
+
+
+    def test_zmq_unsubscribe(self):
+        """
+        Tests if zmq subscriptions are not neccesary anymore
+
+        Returns:
+            list:
+
+        """
+        all_subscriptions = self.redvypr.get_all_subscriptions()
+        # Test if zmq subscriptions have to be removed
+        unsubscribe_addresses = []
+        for remote_uuid in self.zmq_subscribed_to.keys():
+            for substring_zmq in self.zmq_subscribed_to[remote_uuid]: # loop over all subscribe strings
+                subaddr_zmq = data_packets.redvypr_address(substring_zmq)
+                FLAG_REMOVE = True
+                for subaddr, subdev in zip(all_subscriptions[0], all_subscriptions[1]):
+                    # Omit own host
+                    #print('subdev',subdev)
+                    if (subdev == self.address_str):
+                        #print('Its me doing nothing unsub ... ')
+                        continue
+                    else:
+                        if subaddr in subaddr_zmq:
+                            FLAG_REMOVE = False
+                            break
+
+                if FLAG_REMOVE:
+                    unsubscribe_addresses.append([remote_uuid,substring_zmq])
+
+        return unsubscribe_addresses
+
+    def test_zmq_subscribe(self):
+        """
+        Tests if new zmq subscriptions have to be made.
+
+        Returns:
+            list with addresses that would need to be subscribed
+            each list entry consists of another list with [remote_uuid,address_string]
+        """
+        all_subscriptions = self.redvypr.get_all_subscriptions()
+        subscribe_addresses = []
+        for subaddr, subdev in zip(all_subscriptions[0], all_subscriptions[1]):
+            if(subdev == self.address_str): # Do nothing if its me
+                continue
+            else:
+                [FLAG_FIT, remote_uuid, address_string, FLAG_SUBSCRIBED] = self.compare_zmq_subscription(subaddr)
+            if (FLAG_FIT):  # Match of subscription with remote device
+                if FLAG_SUBSCRIBED == False:
+                    subscribe_addresses.append([remote_uuid,address_string])
+
+        return subscribe_addresses
+
+    def subscription_changed_global(self, devchange):
         """
         Function is called by redvypr after another device emitted the subscription_changed_signal
 
@@ -619,45 +711,106 @@ class Device(redvypr_device):
             devchange: redvypr_device that emitted the subscription changed signal
 
         Returns:
-
+            None
         """
         self.logger.info('Global subscription changed {:s} {:s}'.format(self.name,devchange.name))
-        all_subscriptions = self.redvypr.get_all_subscriptions()
-        #print('All subscriptions',all_subscriptions)
-        subaddr_all = []
-        for subaddr,subdev in zip(all_subscriptions[0],all_subscriptions[1]):
-            print('Subaddress',subaddr,'subdev',subdev)
-            if(self.address_str == subdev):
-                print('Self doing nothing')
-            else:
-                subaddr_all.append(subaddr)
+        unsubscribe_addresses = self.test_zmq_unsubscribe()
+        print('Unsubscribe addresses', unsubscribe_addresses)
+        for unsub_addr in unsubscribe_addresses:
+            remote_uuid = unsub_addr[0]
+            address_string = unsub_addr[1]
+            if self.autosubscribe:
+                self.zmq_unsubscribe(remote_uuid, address_string)
 
-        # Test if the subscriptions have anything to do with the forwarded devices
-        zmq_addresses_tmp = copy.deepcopy(self.zmq_subscribed_addresses)
-        for subaddr in reversed(subaddr_all):
-            for zmqa in reversed(zmq_addresses_tmp):
-                zmqa_redvypr = data_packets.redvypr_address(zmqa)
-                if zmqa_redvypr == subaddr: # Already subscribed
-                    subaddr_all.remove(subaddr)
-                    zmq_addresses_tmp.remove(zmqa)
+        # Test for new subscriptions
+        subscribe_addresses = self.test_zmq_subscribe()
+        print('Subscribe addresses', subscribe_addresses)
+        for sub_addr in subscribe_addresses:
+            remote_uuid    = sub_addr[0]
+            address_string = sub_addr[1]
+            if self.autosubscribe:
+                self.zmq_subscribe(remote_uuid, address_string)
 
-        # Subscribing to addresses
-        for a in subaddr_all:
-            astr = a.address_str
-            print('Subscribing to ', astr)
-            self.zmq_subscribe(astr)
+    def subscribe_all_remote(self):
+        """
+        Subscribes to all remote iored:redvypr devices
+        Returns:
 
-        print('Subscriptions that may be removed', zmq_addresses_tmp)
-        for a in zmq_addresses_tmp:
-            print('--------------')
-            print('Unsubscribing', a)
-            self.zmq_unsubscribe(a)
-            print('--------------')
+        """
+        self.autosubscribe = False
+        all_remote_devices = self.statistics['device_redvypr'].keys()
+        for address_string in all_remote_devices:
+            daddr = data_packets.redvypr_address(address_string)
+            if(daddr.uuid == self.host_uuid): # Only take remote uuids
+                continue
+            self.logger.info('Subscribing to {:s}'.format(daddr.uuid))
+            self.zmq_subscribe(daddr.uuid,'')
+
+    def unsubscribe_all_remote(self):
+        """
+        unsubscribes from all remote iored:redvypr devices
+        Returns:
+
+        """
+
+        all_remote_devices = self.statistics['device_redvypr'].keys()
+        for address_string in all_remote_devices:
+            daddr = data_packets.redvypr_address(address_string)
+            if(daddr.uuid == self.host_uuid): # Only take remote uuids
+                continue
+            self.logger.info('Unsubscribing from {:s}'.format(daddr.uuid))
+            self.zmq_unsubscribe(daddr.uuid,'')
+
+        self.autosubscribe = True
+
+    def zmq_subscribe(self,uuid,substring):
+        """
+        Subscribe command to a remote iored device with address.
+        Args:
+            address: address string that needs to have the form '<device>:<host>@<addr>::<uuid>'
+            remote_uuid = data['remote_uuid']
+            substring = data['substring']
+            zmq_url = hostinfos[remote_uuid]['zmq_pub']
+
+        Returns:
+
+        """
+        funcname = __name__ + 'zmq_subscribe()'
+        self.logger.debug(funcname)
+        if True:
+            self.thread_command('subscribe', {'remote_uuid': uuid, 'substring': substring})
+            try:
+                self.zmq_subscribed_to[uuid].append(substring)
+            except:
+                self.zmq_subscribed_to[uuid] = [substring]
+
+    def zmq_unsubscribe(self, uuid, substring):
+        """
+        Unsubscribe address from a remote iored device.
+
+        Args:
+            address:
+
+        Returns:
+
+        """
+        funcname = __name__ + 'zmq_unsubscribe()'
+        self.logger.debug(funcname)
+        if True:
+            #self.zmq_subscribed_addresses.remove(address)
+            #self.thread_command('unsubscribe', {'device': address})
+            self.thread_command('unsubscribe', {'remote_uuid': uuid, 'substring': substring})
+            try:
+                self.zmq_subscribed_to[uuid].remove(substring)
+            except Exception as e:
+                self.logger.exception(e)
 
 
     def __update_datastreams__(self):
         """
-        Whenever new signals arrived the datastreamlist needs to be updated
+        Whenever the datastreamlist of the redvypr hosts changes, iored sends an update with a multicast message,
+        this function is called by a redvypr signal and sends a update datastream command to the iored thread.
+
         Returns:
 
         """

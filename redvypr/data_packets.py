@@ -77,6 +77,7 @@ class redvypr_address():
         self.hostname     = self.parsed_addrstr['hostname']
         self.addr         = self.parsed_addrstr['addr']
         self.uuid         = self.parsed_addrstr['uuid']
+        self.datakeyexpand= self.parsed_addrstr['datakeyexpand']
         self.deviceexpand = self.parsed_addrstr['deviceexpand']
         self.hostexpand   = self.parsed_addrstr['hostexpand']
         self.addrexpand   = self.parsed_addrstr['addrexpand']
@@ -151,64 +152,83 @@ class redvypr_address():
 
     def __eq__(self, addr):
         """
-        Compares a second redvypr_address with this one
+        Compares a second redvypr_address with this one by comparing the
+        address_str, if they are equal the redvypr_addresses are defined as equal.
+        If a string is given, the string is compared to self.address_str, otherwise
+        False is returned
         Args:
             addr:
 
         Returns:
 
         """
+        if type(addr) == redvypr_address:
+            streq = self.address_str == addr.address_str
+            return streq
+        elif type(addr) == str:
+            streq = self.address_str == addr
+            return streq
+        else:
+            return False
 
-        datakeyflag = (self.datakey == addr.datakey) or self.datakeyexpand or addr.datakeyexpand
-        deviceflag  = (self.devicename == addr.devicename) or self.deviceexpand or addr.deviceexpand
-        hostflag    = (self.hostname == addr.hostname) or self.hostexpand or addr.hostexpand
-        addrflag = (self.addr == addr.addr) or self.addrexpand or addr.addrexpand
-        uuidflag = (self.uuid == addr.uuid) or self.uuidexpand or addr.uuidexpand
-        localflag = self.local and addr.local
 
-        # print('Datakeyflag',datakeyflag)
-        # print('Deviceflag',deviceflag)
-        # print('Hostflag',hostflag)
-        # print('addr',addrflag)
-        # print('uuidflag',uuidflag)
-        # print('localflag',localflag)
-
-        # matchflag1  = datakeyflag and deviceflag and hostflag and addrflag
-        # matchflag2 = datakeyflag  and deviceflag and uuidflag
-        matchflag3 = datakeyflag and deviceflag and hostflag and addrflag and uuidflag
-
-        return matchflag3  # 1 or matchflag2
-
-    def __contains__(self, datapacket):
-        """ Checks if address is in datadict 
+    def __contains__(self, data):
+        """ Depending on the type of data
+        - it checks if address is in data, if data is a redvypr data structure (datapacket)
+        - it checks if addresses match between self and data, if data is a redvypr_address
         """
-        #print('Hallo, contains')
-        deviceflag = (self.devicename == datapacket['_redvypr']['device']) or self.deviceexpand
-        hostflag = (self.hostname == datapacket['_redvypr']['host']['hostname']) or self.hostexpand
-        addrflag = (self.addr == datapacket['_redvypr']['host']['addr']) or self.addrexpand
-        uuidflag = (self.uuid == datapacket['_redvypr']['host']['uuid']) or self.uuidexpand
-        localflag = datapacket['_redvypr']['host']['local'] and self.local
-        #print('deviceflag', deviceflag)
-        #print('hostflag', deviceflag)
-        #print('addrflag', addrflag)
-        #print('uuidflag', uuidflag)
-        #print('localflag', localflag)
-        #print('uuidexpand', self.uuid,self.uuidexpand)
-        if(len(self.datakey) > 0):
-            if (self.datakey in datapacket.keys() or self.datakey == '*'):
-                pass
-            else:  # If the key does not fit, return False immidiately
-                return False
+        if (type(data) == dict):
+            datapacket = data
+            deviceflag = (self.devicename == datapacket['_redvypr']['device']) or self.deviceexpand
+            hostflag = (self.hostname == datapacket['_redvypr']['host']['hostname']) or self.hostexpand
+            addrflag = (self.addr == datapacket['_redvypr']['host']['addr']) or self.addrexpand
+            uuidflag = (self.uuid == datapacket['_redvypr']['host']['uuid']) or self.uuidexpand
+            localflag = datapacket['_redvypr']['host']['local'] and self.local
+            #print('deviceflag', deviceflag)
+            #print('hostflag', deviceflag)
+            #print('addrflag', addrflag)
+            #print('uuidflag', uuidflag)
+            #print('localflag', localflag)
+            #print('uuidexpand', self.uuid,self.uuidexpand)
+            if(len(self.datakey) > 0):
+                if (self.datakey in datapacket.keys() or self.datakey == '*'):
+                    pass
+                else:  # If the key does not fit, return False immidiately
+                    return False
 
-        if (deviceflag and localflag and uuidflag):
-            return True
-        elif (deviceflag and hostflag and addrflag and uuidflag):
-            return True
-        elif (deviceflag and uuidflag):
-            return True
+            if (deviceflag and localflag and uuidflag):
+                return True
+            elif (deviceflag and hostflag and addrflag and uuidflag):
+                return True
+            elif (deviceflag and uuidflag):
+                return True
 
-        return False
+            return False
 
+        elif(type(data) == redvypr_address):
+            addr = data
+            print('Redvypr address')
+            datakeyflag = (self.datakey == addr.datakey) or self.datakeyexpand or addr.datakeyexpand
+            deviceflag = (self.devicename == addr.devicename) or self.deviceexpand or addr.deviceexpand
+            hostflag = (self.hostname == addr.hostname) or self.hostexpand or addr.hostexpand
+            addrflag = (self.addr == addr.addr) or self.addrexpand or addr.addrexpand
+            uuidflag = (self.uuid == addr.uuid) or self.uuidexpand or addr.uuidexpand
+            localflag = self.local and addr.local
+
+            # print('Datakeyflag',datakeyflag)
+            # print('Deviceflag',deviceflag)
+            # print('Hostflag',hostflag)
+            # print('addr',addrflag)
+            # print('uuidflag',uuidflag)
+            # print('localflag',localflag)
+
+            # matchflag1  = datakeyflag and deviceflag and hostflag and addrflag
+            # matchflag2 = datakeyflag  and deviceflag and uuidflag
+            matchflag3 = datakeyflag and deviceflag and hostflag and addrflag and uuidflag
+
+            return matchflag3  # 1 or matchflag2
+        else:
+            raise ValueError('Unknown data type')
 
 def create_data_statistic_dict():
     statdict = {}
@@ -658,12 +678,14 @@ def get_address_from_data(datakey,data=None,device=None,hostinfo=None,style='sho
             hostname = hostinfo['hostname']
             uuid     = hostinfo['uuid']
             addr     = hostinfo['addr']
-        
-        
+
+
     if(style=='short'):
         datastream = datakey + '/' + device
-    elif(style=='full'):
+    elif (style=='full') or (style == '<device>:<host>@<addr>::<uuid>'):
         datastream = datakey + '/' + device + ':' + hostname + '@' + addr + '::' + uuid
+    else:
+        raise ValueError('Unknown style')
         
     return datastream
 
@@ -805,11 +827,11 @@ def addr_in_data(devicestring, datapacket, get_devicename = False):
         addr          = device_parsed['addr']
         
         
-        deviceflag  = (devicename  == datapacket['device'])            or device_parsed['deviceexpand']
-        hostflag    = (hostname    == datapacket['host']['hostname'])  or device_parsed['hostexpand'] 
-        addrflag    = (addr        == datapacket['host']['addr'])      or device_parsed['addrexpand'] 
-        uuidflag    = (uuid        == datapacket['host']['uuid'])      or device_parsed['uuidexpand']
-        localflag   = datapacket['host']['local']                      and device_parsed['local']
+        deviceflag  = (devicename  == datapacket['_redvypr']['device'])            or device_parsed['deviceexpand']
+        hostflag    = (hostname    == datapacket['_redvypr']['host']['hostname'])  or device_parsed['hostexpand']
+        addrflag    = (addr        == datapacket['_redvypr']['host']['addr'])      or device_parsed['addrexpand']
+        uuidflag    = (uuid        == datapacket['_redvypr']['host']['uuid'])      or device_parsed['uuidexpand']
+        localflag   = datapacket['_redvypr']['host']['local']                      and device_parsed['local']
         
         #if(datakey is not None):
         if (len(datakey) > 0):

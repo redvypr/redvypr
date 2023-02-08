@@ -53,9 +53,9 @@ config_template_graph_line['buffersize'] = {'type': 'int', 'default': 2000,
                                            'description': 'The size of the buffer holding the data of the line'}
 config_template_graph_line['name'] = {'type': 'str', 'default': '',
                                      'description': 'The name of the line, this is shown in the legend'}
-config_template_graph_line['x'] = {'type': 'datastream', 'default': 'NA',
+config_template_graph_line['x'] = {'type': 'datastream', 'default': '',
                                   'description': 'The x-data of the plot'}
-config_template_graph_line['y'] = {'type': 'datastream', 'default': 'NA',
+config_template_graph_line['y'] = {'type': 'datastream', 'default': '',
                                   'description': 'The y-data of the plot'}
 config_template_graph_line['color'] = {'type': 'color', 'description': 'The color of the plot'}
 config_template_graph_line['linewidth'] = {'type': 'int', 'default': 1,
@@ -488,8 +488,6 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
             self.unitdisp.hide()
 
 
-
-
     def get_timestr(self,unixtime,format=None):
         """ Returns a time string
         """
@@ -506,15 +504,11 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         logger.debug(funcname)
         tnow = time.time()
         print(funcname + ': got data', data)
-        print('config', self.config)
-        datastream = self.config['datastream'].data
         dataformat = self.config['dataformat'].data
-        parsed_stream = parse_addrstr(datastream)
-        datakey = parsed_stream['datakey']
-        print('datastram', datastream,type(datastream))
-        print('datakey', datakey)
-        print('in data',addr_in_data(datastream, data))
-        if(addr_in_data(datastream,data)):
+        FLAG_DATA = data in self.redvypr_addrconv
+        datakey = self.redvypr_addrconv.datakey
+        print('datakey',datakey,'FLAG_DATA',FLAG_DATA)
+        if(FLAG_DATA):
             # data can be a single float or a list
             newdata = data[datakey]
             newt    = data['t']
