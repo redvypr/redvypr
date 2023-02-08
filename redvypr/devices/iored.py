@@ -607,11 +607,12 @@ class Device(redvypr_device):
 
         """
         funcname = __name__ + '.start()'
-        device_info['deviceinfo_all'] = self.redvypr.get_deviceinfo()
-        device_info['devicename'] = self.name
+        # Deviceinfoall is used to announce all devices
+        device_info['deviceinfo_all']   = self.redvypr.get_deviceinfo(publish=True)
+        device_info['devicename']       = self.name
         device_info['devicemodulename'] = self.devicemodulename
-        device_info['deviceuuid'] = self.uuid
-        device_info['hostinfo_opt'] = copy.deepcopy(self.redvypr.hostinfo_opt)
+        device_info['deviceuuid']       = self.uuid
+        device_info['hostinfo_opt']     = copy.deepcopy(self.redvypr.hostinfo_opt)
         start(device_info,copy.deepcopy(config), dataqueue, datainqueue, statusqueue)
 
     def compare_zmq_subscription(self, subscription):

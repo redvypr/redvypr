@@ -30,7 +30,7 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulena
     if (len(datakeys) > 0) and ('t' not in datakeys):
         data['t'] = tpacket
 
-    # Add the time to the datadict if its not already in
+    # Add the devicemodulename to the redvypr
     if ('devicemodulename' not in data['_redvypr'].keys()):
         data['_redvypr']['devicemodulename'] = devicemodulename
 
@@ -249,18 +249,6 @@ def create_data_statistic_dict():
     statdict['host_redvypr']       = {}
     return statdict
 
-def do_data_statistics_deep(datapacket, statdict):
-    """
-    """
-    datastreams_stat        = get_datastreams_from_data(datapacket,uuid=True)
-    for datastream in datastreams_stat:
-        if(datastream[0] == '?'):
-            datastream_info = datastream[1:] # The datastream for the info
-            data_info       = get_data(datastream,datapacket)
-            statdict['datastreams_info'][datastream_info] = data_info
-    
-    return statdict
-            
 def do_data_statistics(data, statdict):
     """
     Fills in the statistics dictionary with the data packet information

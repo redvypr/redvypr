@@ -296,15 +296,28 @@ class redvypr(QtCore.QObject):
                 logger.debug(funcname + ':Parsing configuration: ' + str(c))
                 self.parse_configuration(c)
 
-    def get_deviceinfo(self):
+    def get_deviceinfo(self,publish=None,subscribe=None):
         """
+
+        Args:
+            publish:
+            subscribe:
 
         Returns:
             A dictionary containing the deviceinfo of all devices seen by this redvypr instance
-
         """
+        if (publish == None) and (subscribe == None):
+            return copy.deepcopy(self.deviceinfo_all)
+        else:
+            dinfo = {}
+            for d in self.devices:
+                dev = d['device']
+                FLAG_publish   =   (publish == dev.publish) or (publish == None)
+                FLAG_subscribe = (subscribe == dev.subscribe) or (subscribe == None)
+                if FLAG_publish and FLAG_subscribe:
+                    dinfo[dev.name] = dev.statistics['device_redvypr']
 
-        return copy.deepcopy(self.deviceinfo_all)
+            return dinfo
 
     def update_status(self):
         while True:
