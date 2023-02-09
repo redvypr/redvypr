@@ -833,7 +833,8 @@ class redvypr(QtCore.QObject):
                     print('Done')
                     # Merge the config with a potentially existing template to fill in default values
                     if FLAG_HAS_TEMPLATE:
-                        print('With template',config)
+                        print('With template', config_template)
+                        print('With configuration', config)
                         #config = apply_config_to_dict(config,templatedict)
                         #config = copy.deepcopy(config)
                         #redvypr.config.dict_to_configDict(templatedict, process_template=True)
@@ -843,7 +844,8 @@ class redvypr(QtCore.QObject):
                         configu = configuration(config)
                         config_template = None
 
-                    print('Config', configuration)
+                    print('Config', configu)
+                    print('Config type', type(configu))
                     print('loglevel', loglevel)
                     device = Device(name=name, uuid=device_uuid, config=configu, redvypr=self, dataqueue=dataqueue,
                                     publish=publish,subscribe=subscribe,autostart=autostart,

@@ -165,7 +165,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
 
         """
         funcname = __name__ + '.apply_config()'
-        print('Hallo!, Apply config!')
+        print('Hallo!',funcname)
         print('config start:', type(self.config))
         plot = self.config.plot
         # Title
@@ -184,7 +184,6 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         except:
             pass
 
-        config = self.config
         # Add lines with the actual data to the graph
         for iline, line in enumerate(self.config['lines']):
             #print('Line',line)
@@ -305,8 +304,10 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                     print('line dict',line_dict)
                     xaddr = line_dict['config']['xaddr']
                     yaddr = line_dict['config']['yaddr']
-                    print('adresses:',xaddr,yaddr)
-                    if(data in xaddr) and (data in yaddr):
+                    print('adresses:',xaddr.get_str(),yaddr.get_str())
+                    print('device',data['_redvypr']['device'])
+                    print('data in',(data in xaddr),(data in yaddr))
+                    if (data in xaddr) and (data in yaddr):
                         pw        = self.config.plot # The plot widget
                         line      = line_dict['line'] # The line to plot
                         config    = line_dict['config'] # The line to plot

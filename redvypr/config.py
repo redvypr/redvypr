@@ -403,7 +403,7 @@ def dict_to_configDict(data,process_template=False,configdict=None):
             FLAG_CONFIG_DICT = False
             if ((type(c[index]) == configDict) or (type(c[index]) == dict)) and process_template:
                 if ('type' in c[index].keys()) or ('default' in c[index].keys()):
-                    print('Configdict')
+                    #print('Configdict')
                     FLAG_CONFIG_DICT = True
             #print('c1', c[index])
             origdata = copy.deepcopy(c[index])
@@ -416,7 +416,7 @@ def dict_to_configDict(data,process_template=False,configdict=None):
             if(FLAG_CONFIG_DICT == False): # standard entry
                 if(process_template):
                     if(origtype in template_types_dict.keys()):
-                        print('Adding standard template to data')
+                        #print('Adding standard template to data')
                         c[index].template = copy.deepcopy(template_types_dict[origtype])
                         c[index].template['default'] = origdata
             else: # Configuration dictionary
@@ -434,30 +434,25 @@ def dict_to_configDict(data,process_template=False,configdict=None):
 
                 # loop over all keys of standard types and add potentially missing information
                 if(c[index]['type'] in template_types_dict.keys()):
-                    print('Adding keys of standard type')
+                    #print('Adding keys of standard type')
                     standard_template = copy.deepcopy(template_types_dict[c[index]['type']])
                     for k in standard_template.keys():
-                        print('k',k)
-
                         try:
                             c[index][k]
-                            print('c[index][k]',c[index][k])
+                            #print('c[index][k]',c[index][k])
                         except:
-                            print('Adding',standard_template[k])
+                            #print('Adding',standard_template[k])
                             c[index][k] = standard_template[k]#
 
                         if (k == 'default'):
                             if valid_template(c[index]['default']):
-                                print('Template', c[index]['default'])
+                                #print('Template', c[index]['default'])
                                 dtmp = dict_to_configDict(c[index]['default'], process_template=process_template)
                                 default_value = dtmp
                             else:
                                 default_value = data_to_configdata(c[index]['default'],recursive=True)
 
                 templatedata = copy.deepcopy(c[index])
-                #print('Hallo', c[index].template)
-                print('Templatedata',templatedata)
-                #if ('type' in c[index].keys()):
                 default_type = c[index]['type']
                 try:
                     modifiable = c[index]['modify']
@@ -465,19 +460,18 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                     modifiable = False
 
                 if(c[index]['type'] == 'list') and modifiable: # Modifiable list
-                    print('Modifiable list')
                     # Check if options are in the template, if not not add standard types
                     try:
                         c[index]['options']
                         # Loop over the options and replace standard options with their dictionary types
                         for i,o in enumerate(c[index]['options']):
-                            print('Option to be checked', o)
+                            #print('Option to be checked', o)
                             # If the option is a str, try to find the correct template in the standard template
                             if (type(o) == str) or (type(o) == configString):
-                                print('Converting to standard option')
+                                #print('Converting to standard option')
                                 try:
                                     c[index]['options'][i] = copy.deepcopy(__template_types__modifiable_list_dict__[o])
-                                    print('Changed option')
+                                    #print('Changed option')
                                 except Exception as e:
                                     print('Did not change because of',e)
                                     continue
@@ -487,16 +481,16 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                         default_value_tmp = c[index]['default']
                         default_value = configList()
                         default_value.__parent__ = c # Save the parent as attribute
-                        print('Default',default_value_tmp)
+                        #print('Default',default_value_tmp)
                         if (type(default_value_tmp) == list) or (type(default_value_tmp) == configList):
-                            print('Configlist',type(default_value_tmp))
+                            #print('Configlist',type(default_value_tmp))
                             for d in default_value_tmp:
-                                print('d',d)
+                                #print('d',d)
                                 if valid_template(d):
-                                    print('Template', d)
+                                    #print('Template', d)
                                     dtmp = dict_to_configDict(d, process_template=process_template)
                                 else:
-                                    print('Standard data', d)
+                                    #print('Standard data', d)
                                     dtmp = data_to_configdata(d,recursive=True)
 
                                 dtmp.template = copy.deepcopy(d)
@@ -515,7 +509,7 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                 try:
                     c[index].template
                 except:
-                    print('Adding template', origdata)
+                    #print('Adding template', origdata)
                     c[index].template = templatedata
 
 
@@ -681,10 +675,10 @@ class configuration(configDict):
         #self.data = dict_to_configDict(template, process_template=True)
         tmp = dict_to_configDict(template, process_template=True,configdict=self)
 
-        print('Applying')
+        #print('Applying')
         if(config is not None):
             test = apply_config_to_configDict(config,self)
-            print('test',test)
+            #print('test',test)
 
 
 

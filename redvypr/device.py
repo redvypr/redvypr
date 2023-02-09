@@ -71,6 +71,7 @@ class redvypr_device(QtCore.QObject):
         
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(loglevel)
+        print('-1', type(self.config))
 
     def subscription_changed_global(self,devchange):
         """

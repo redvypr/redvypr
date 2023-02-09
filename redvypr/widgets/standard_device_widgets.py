@@ -155,8 +155,6 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         if button.isChecked():
             logger.debug("button pressed")
             button.setText('Starting')
-            config = self.config_widget.get_config()
-            self.device.config = config
             self.device.thread_start()
             # self.device_start.emit(self.device)
         else:

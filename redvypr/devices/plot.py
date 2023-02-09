@@ -31,6 +31,7 @@ logger.setLevel(logging.DEBUG)
 
 description = 'Device that plots the received data'
 config_template = {}
+config_template['template_name']  = 'plot'
 config_template['plots'] = {'type': 'list', 'modify': True, 'options': [config_template_numdisp, config_template_graph]}
 config_template['dt_update'] = {'type':'float','default':0.25}
 config_template['nx'] = {'type':'int','default':7}
@@ -92,7 +93,7 @@ class Device(redvypr_device):
             print('Config',self.config)
             print('plot',plot)
             if (str(getdata(plot['type'])).lower() == 'numdisp'):
-                datastream = plot['datastream'].data
+                datastream = plot['datastream']
                 if (len(datastream) > 0):
                     address = redvypr.data_packets.redvypr_address(datastream)
                     plot_devices.append(address)
@@ -100,15 +101,15 @@ class Device(redvypr_device):
             elif (str(plot['type']).lower() == 'graph'):
                 for l in plot['lines']:  # Loop over all lines in a plot
                     if (len(l['x']) > 0) and (len(l['y']) > 0):
-                        xaddress = redvypr.data_packets.redvypr_address(l['x'])
-                        yaddress = redvypr.data_packets.redvypr_address(l['y'])
+                        xaddress = redvypr.data_packets.redvypr_address(str(l['x']))
+                        yaddress = redvypr.data_packets.redvypr_address(str(l['y']))
                         plot_devices.append(xaddress)
                         plot_devices.append(yaddress)
 
         if True:
             print('Plot devices',plot_devices,self.name)
             for name in plot_devices:
-                logger.info(funcname + 'Subscribing to device {:s}'.format(name.get_str()))
+                logger.info(funcname + 'Subscribing to device {:s}'.format(str(name)))
                 ret = self.subscribe_address(name.get_str(),force=True)
                 if (ret == False):
                     logger.info(funcname + 'Device is already subscribed')
@@ -272,22 +273,23 @@ class displayDeviceWidget(QtWidgets.QWidget):
         print('Plot update ...')
         tnow = time.time()
         self.databuf.append(data)
-        print('got data', data)
-        print('status', self.status)
-        print('config', self.config)
-        print(tnow,self.status['last_update'])
-        print((tnow - self.status['last_update']))
+
+        #print('got data', data)
+        #print('status', self.status)
+        #print('config', self.config)
+        #print(tnow,self.status['last_update'])
+        #print((tnow - self.status['last_update']))
         # print('statistics',self.device.statistics)
         # Only plot the data in intervals of dt_update length, this prevents high CPU loads for fast devices
         if True:
             update = (tnow - self.status['last_update']) > self.config['dt_update']
-            print('update update', update)
+            #print('update update', update)
             if (update):
                 #self.status['last_update'] = tnow
-                print('updating', update)
+                #print('updating', update)
                 try:
                     for data in self.databuf:
-                        print('data',data)
+                        #print('data',data)
                         for plotdict in self.all_plots:
                             plot = plotdict['plot']
                             print('Plot ...',plot,plot.update_plot)
@@ -551,7 +553,7 @@ class PlotGridWidget(QtWidgets.QWidget):
         #                                      loadsavebutton=False,redvypr_instance=self.redvypr)
         config_widget = configWidget(config=plotwidget.config, loadsavebutton=False, redvypr_instance=self.redvypr)
         config_widget.setWindowIcon(QtGui.QIcon(_icon_file))
-        config_widget.config_changed_flag.connect(self.config_changed)
+        config_widget.config_changed_flag.connect(self.config_changed) # whenever the configuration was changed, apply it for all plots with config_changed
         config_widget.plotwidget = plotwidget
 
         # Set the size
@@ -581,7 +583,6 @@ class PlotGridWidget(QtWidgets.QWidget):
         Function is called whenever the configuration has been changed and updates the configuration of the plotwidget
 
         Args:
-            config:
 
         Returns:
 
@@ -594,23 +595,24 @@ class PlotGridWidget(QtWidgets.QWidget):
             self.configwidget_global.reload_config()
         print('config', self.device.config)
         print('config type', type(self.device.config))
-        for p in self.device.config['plots']:
-            #print('Config for plot')
-            print('p',p,type(p))
-            try:
-                configwidget_tmp = p.config_widget
-            except:
-                configwidget_tmp = None
-            if(configwidget_tmp is not self.configwidget_global): # Reload the configwidget, if its not the sender
+        if True:
+            for p in self.device.config['plots']:
+                #print('Config for plot')
+                print('p',p,type(p))
                 try:
-                    p.config_widget.reload_config()
+                    configwidget_tmp = p.config_widget
                 except:
-                    pass
+                    configwidget_tmp = None
+                if(configwidget_tmp is not self.configwidget_global): # Reload the configwidget, if its not the sender
+                    try:
+                        p.config_widget.reload_config()
+                    except:
+                        pass
 
-            try:
-                p.plotwidget.apply_config()
-            except Exception as e:
-                logger.exception(e)
+                try:
+                    p.plotwidget.apply_config()
+                except Exception as e:
+                    logger.exception(e)
 
         print('config type end ', type(self.device.config))
 
@@ -648,11 +650,12 @@ class PlotGridWidget(QtWidgets.QWidget):
         Returns:
 
         """
-        self.layout.removeWidget(plotwidget)
+
         for d in reversed(self.all_plots):
             plotwidget = d['plot']
             print('removing from list')
             self.all_plots.remove(d)
+            self.layout.removeWidget(plotwidget)
             self.device.config['plots'].remove(plotwidget.config)
             try:
                 r = d['rubber']
@@ -670,6 +673,7 @@ class PlotGridWidget(QtWidgets.QWidget):
 
         """
         logger.debug('Commit')
+        # Plots have been moved
         if (self.flag_mod_plot):  # Flags are set by the gridwidget buttons
             for d in self.all_plots:
                 try:
@@ -695,6 +699,7 @@ class PlotGridWidget(QtWidgets.QWidget):
                     self.layout.removeWidget(plotwidget)
                     self.layout.addWidget(plotwidget, jnew, inew, dj, di)
 
+        # Plots have been added
         if (self.flag_add_plot):  # Flags are set by the gridwidget buttons
             self.get_selected_index()  # update self.__add_location__
             if self.__add_location__ is not None:
@@ -711,6 +716,7 @@ class PlotGridWidget(QtWidgets.QWidget):
             else:
                 logger.debug('Not a valid location for adding plot')
 
+        # Plots have been removed
         if (self.flag_rem_plot):  # Flags are set by the gridwidget buttons
             for d in reversed(self.all_plots):
                 try:
@@ -719,6 +725,10 @@ class PlotGridWidget(QtWidgets.QWidget):
                         self.remPlot(d['plot'])
                 except Exception as e:
                     logger.debug('Exception {:s}'.format(str(e)))
+
+        print('Calling config changed')
+        self.config_changed()
+
 
     def unselect_all(self):
         for child in self.findChildren(QtWidgets.QPushButton):

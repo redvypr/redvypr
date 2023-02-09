@@ -628,6 +628,7 @@ class Device(redvypr_device):
         # The dictionary keys of self.statistics['device_redvypr'] are the same as the zmq multipart identifier
         all_remote_devices = self.statistics['device_redvypr'].keys()
         FLAG_SUB_FITS = False
+        remote_uuid = None
         for address_string in all_remote_devices:
             daddr = data_packets.redvypr_address(address_string)
             FLAG_SUB_FITS = daddr in subscription

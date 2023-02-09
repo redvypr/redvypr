@@ -136,10 +136,10 @@ class configWidget(QtWidgets.QWidget):
 
     def get_config(self):
         """
-        Returns a configuation dictionary of the qtreewidgetitem
+        Returns a copy of the configuration dictionary of the qtreewidgetitem
 
         Returns:
-
+             config: config dictionary
         """
         config = copy.deepcopy(self.configtree.data)
         return config
@@ -151,12 +151,8 @@ class configWidget(QtWidgets.QWidget):
 
         """
         funcname = __name__ + '.apply_config_change():'
-        config = self.get_config()
-        print('Hallo apply1', type(self.config))
+        logger.debug(funcname)
         self.config_changed_flag.emit()
-
-        print('Hallo apply2', type(self.config))
-
 
     def __open_config_gui(self,item):
         """

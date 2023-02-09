@@ -55,6 +55,8 @@ class redvypr_address():
             self.address_str = create_addrstr(datakey,devicename,hostname,addr,uuid,local_hostinfo=local_hostinfo)
             #print('Address string',self.address_str)
 
+        if(type(self.address_str) is not str):
+            raise ValueError('Unsupported type of address str {:s}'.format(str(type(self.address_str))))
 
         self.parsed_addrstr = parse_addrstr(self.address_str, local_hostinfo=local_hostinfo)
         self.strtypes = ['<key>','<key>/<device>']
