@@ -213,7 +213,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
             devall = copy.copy(deviceinfo_all)
             devall['type'] = 'deviceinfo_all'
             infoqueue.put_nowait(devall)
-            # Send an command to all devices
+            # Send a command to all devices with the notification that something changed
             for devicedict in devices:
                 dev = devicedict['device']
                 dev.thread_command('deviceinfo_all', {'deviceinfo_all':deviceinfo_all,'devices_changed':list(set(devices_changed))})
@@ -315,7 +315,7 @@ class redvypr(QtCore.QObject):
                 FLAG_publish   =   (publish == dev.publish) or (publish == None)
                 FLAG_subscribe = (subscribe == dev.subscribe) or (subscribe == None)
                 if FLAG_publish and FLAG_subscribe:
-                    dinfo[dev.name] = dev.statistics['device_redvypr']
+                    dinfo[dev.name] = copy.deepcopy(dev.statistics['device_redvypr'])
 
             return dinfo
 
@@ -796,6 +796,8 @@ class redvypr(QtCore.QObject):
                     statusqueue = multiprocessing.Queue(maxsize=queuesize)
                     guiqueue = multiprocessing.Queue(maxsize=queuesize)
 
+                # Create a dictionary for the statistics and general information about the device
+                # This is used extensively in exchanging information about devices between redvypr instances and or other devices
                 statistics = data_packets.create_data_statistic_dict()
                 # Device do not necessarily have a statusqueue
                 try:
@@ -853,6 +855,10 @@ class redvypr(QtCore.QObject):
                                     statusqueue=statusqueue, loglevel=loglevel, multiprocess=multiprocess,
                                     numdevice=self.numdevice, statistics=statistics,startfunction=startfunction,devicemodulename=devicemodulename)
 
+                    # Update the statistics of the device itself
+                    #statistics['device_redvypr'][device.address_str] = copy.deepcopy(data_packets.device_redvypr_statdict)
+                    #statistics['device_redvypr'][device.address_str]['_redvypr']['host'] = self.hostinfo
+                    #statistics['device_redvypr'][device.address_str]['_deviceinfo'] = {'subscribe':subscribe,'publish':publish,'devicemodulename':devicemodulename}
                     device.subscription_changed_signal.connect(self.process_subscription_changed)
                     self.numdevice += 1
                     # If the device has a logger

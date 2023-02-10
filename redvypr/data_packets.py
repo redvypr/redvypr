@@ -1,3 +1,4 @@
+import copy
 import time
 import logging
 import sys
@@ -5,6 +6,10 @@ import sys
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('data_packets')
 logger.setLevel(logging.DEBUG)
+
+
+# A dictionary for the device_redvypr entry in the statistics
+device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {}}
 
 
 
@@ -301,8 +306,7 @@ def do_data_statistics(data, statdict):
     try:
         statdict['device_redvypr'][devicename_stat]
     except:  # Does not exist yet, create the entry
-        statdict['device_redvypr'][devicename_stat] = {'_redvypr': {}, 'datakeys': [], '_info': {},
-                                                       '_keyinfo': {}}
+        statdict['device_redvypr'][devicename_stat] = copy.deepcopy(device_redvypr_statdict)
 
     # Get datakeys from datapacket
     datakeys = get_keys_from_data(data)
@@ -322,7 +326,7 @@ def do_data_statistics(data, statdict):
     statdict['device_redvypr'][devicename_stat]['datakeys'] = datakeys_new
 
     try:
-        statdict['device_redvypr'][devicename_stat]['_info'].update(data['_info'])
+        statdict['device_redvypr'][devicename_stat]['_deviceinfo'].update(data['_deviceinfo'])
     except:
         pass
 
@@ -537,9 +541,16 @@ def parse_addrstr(address_string,local_hostinfo=None):
 
 def get_keys_from_data(data):
     """
-    Returns the keys of a redvypr data packet without the standard keys ('_host','_info').
+    Returns the keys of a redvypr data packet without the potentially existing standard keys:
+    -'_redvypr'
+    -'_redvypr_command'
+    -'_deviceinfo'
+    -'_keyinfo'
+
     Args:
-        data (dict): redvypr data dictionary 
+        data (dict): redvypr data dictionary
+    Returns:
+        list with the datakeys
 
     """
     keys = list(data.keys())
@@ -554,7 +565,7 @@ def get_keys_from_data(data):
         pass
 
     try:
-        keys.remove('_info')
+        keys.remove('_deviceinfo')
     except:
         pass
 

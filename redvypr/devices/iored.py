@@ -74,6 +74,27 @@ logger = logging.getLogger('iored')
 logger.setLevel(logging.DEBUG)
 
 
+def filter_deviceinfo(data):
+    """
+    Filters the deviceinfo_all data structure and removes devices that are not publishing
+    Returns:
+       data_filt dictionary with the devices filtered (at the moment if they publish)
+    """
+    data_filt = {}
+    for dev in data.keys():
+        for devfull in data[dev].keys():
+            try:
+                FLAG_PUBLISH = data[dev][devfull]['_deviceinfo']['publish']
+            except:
+                FLAG_PUBLISH = False
+
+            if(FLAG_PUBLISH):
+                data_filt[dev] = data[dev]
+                break
+
+    return data_filt
+
+
 def process_multicast_packet(datab):
     """
     Processes multicast information from a redvypr instance.
@@ -120,12 +141,13 @@ def create_datapacket_from_deviceinfo(device_info):
     """
     funcname = __name__ + '.create_datapackets_from_deviceinfo()'
     d = device_info
+    print('device info',d)
     if True:
         dpacket = {}
         dpacket['_redvypr']  = d['_redvypr']
         dpacket['_redvypr']['subscribeable'] = True
         dpacket['_redvypr']['subscribed'] = False
-        dpacket['_info'] = d['_info']
+        dpacket['_deviceinfo'] = d['_deviceinfo']
         dpacket['_keyinfo']  = d['_keyinfo']
         return dpacket
 
@@ -485,9 +507,14 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
 
                         logstart.info(funcname + ': Stopped')
                         return
+
+                    # The command is sent directly from redvypr.distribute_data() after it noticed a device change
                     elif (command == 'deviceinfo_all'):
                         logstart.info(funcname + ': Got devices update')
-                        device_info['deviceinfo_all'].update(data['deviceinfo_all'])
+                        # update only the devices that publish
+                        #device_info_all = filter_deviceinfo(data['deviceinfo_all'])
+                        device_info_all = data['deviceinfo_all']
+                        device_info['deviceinfo_all'].update(device_info_all)
                         try:
                             if devicename in data['devices_changed']: # Check if devices except myself have been changed
                                 #print('That was myself, will remove')
@@ -807,31 +834,6 @@ class Device(redvypr_device):
             except Exception as e:
                 self.logger.exception(e)
 
-
-    def __update_datastreams__(self):
-        """
-        Whenever the datastreamlist of the redvypr hosts changes, iored sends an update with a multicast message,
-        this function is called by a redvypr signal and sends a update datastream command to the iored thread.
-
-        Returns:
-
-        """
-        funcname = __name__ + '.__update_datastreams__():'
-        # check if the thread is running
-        try:
-            running = self.thread.is_alive()
-        except:
-            running = False
-
-        print('loglevel', self.logger.level)
-        if(running):
-            datastreams_dict = {'datastreams_dict':copy.copy(self.redvypr.datastreams_dict)}
-            print('Sending command')
-            self.thread_command('datastreams', datastreams_dict)
-        else:
-            print('not running')
-            self.logger.info(funcname + ' Thread is not running, doing nothing')
-            self.logger.debug(funcname + ' Thread is not running, doing nothing')
 
     def get_devices_by_host(self):
         """
