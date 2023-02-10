@@ -141,7 +141,7 @@ def create_datapacket_from_deviceinfo(device_info):
     """
     funcname = __name__ + '.create_datapackets_from_deviceinfo()'
     d = device_info
-    print('device info',d)
+    #print('device info',d)
     if True:
         dpacket = {}
         dpacket['_redvypr']  = d['_redvypr']
@@ -191,7 +191,7 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue, config, remote_uuid):
                 statusqueue.put(copy.deepcopy(status))
                 comdata = {}
                 comdata['deviceaddr']   = substring
-                comdata['devicestatus'] = {'subscribed': True} # TODO, this is the status of the iored deveice, 'zmq_subscriptions': status['sub']}
+                comdata['devicestatus'] = {'subscribed': True} # This is the status of the iored device, 'zmq_subscriptions': status['sub']}
                 datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='', devicename=None, host=None,comdata=comdata)
                 dataqueue.put(datapacket)
                 # datastreams_dict is dictionary from the device, changed in a thread, use only atomic operations
@@ -394,7 +394,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                     # Could be locked
                     hostinfos[uuid] = copy.deepcopy(redvypr_info) # Copy it to the hostinfo of the device. This should be thread safe
                     #
-                    #print('redvypr_info',redvypr_info)
+                    print('redvypr_info',redvypr_info)
                     if 'deviceinfo_all' in redvypr_info.keys():
                         for dkeyhost in redvypr_info['deviceinfo_all'].keys():  # This is the host device
                             for dkey in redvypr_info['deviceinfo_all'][dkeyhost].keys():  # This is the device, typically only one, the hostdevice itself
@@ -417,6 +417,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                                     dataqueue.put_nowait(datapacket)
 
                         try:
+                            # Sending a device_status command without any further information, this is triggering an upate in distrubute data
                             datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='', devicename=None, host=None)
                             #print('Sending statuscommand',datapacket)
                             dataqueue.put_nowait(datapacket)
@@ -441,7 +442,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                 multicast_packet = {'host': device_info['hostinfo'], 't': time.time(), 'zmq_pub': url,
                                     'deviceinfo_all': device_info['deviceinfo_all']}
                 #print('--------------')
-                #print('Multicast packet',multicast_packet)
+                print('Multicast packet',multicast_packet)
                 #print('--------------')
                 hostinfoy = yaml.dump(multicast_packet, explicit_end=True, explicit_start=True)
                 hostinfoy = hostinfoy.encode('utf-8')
@@ -512,8 +513,12 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                     elif (command == 'deviceinfo_all'):
                         logstart.info(funcname + ': Got devices update')
                         # update only the devices that publish
-                        #device_info_all = filter_deviceinfo(data['deviceinfo_all'])
-                        device_info_all = data['deviceinfo_all']
+                        print('Filtering')
+                        try:
+                            device_info_all = filter_deviceinfo(data['deviceinfo_all'])
+                        except Exception as e:
+                            logger.exception(e)
+                        #device_info_all = data['deviceinfo_all']
                         device_info['deviceinfo_all'].update(device_info_all)
                         try:
                             if devicename in data['devices_changed']: # Check if devices except myself have been changed

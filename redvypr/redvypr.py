@@ -161,11 +161,12 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
                         devstatus = None
                         pass
                     devices_changed.append(device.name)
-                    try: # Update the device
-                        devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'].update(devstatus)
-                    except Exception as e:
-                        logger.warning('Could not update status ' + str(e))
-                        logger.exception(e)
+                    if(devaddr is not None):
+                        try: # Update the device
+                            devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'].update(devstatus)
+                        except Exception as e:
+                            logger.warning('Could not update status ' + str(e))
+                            logger.exception(e)
 
                     FLAG_device_status_changed = True
 
@@ -855,10 +856,6 @@ class redvypr(QtCore.QObject):
                                     statusqueue=statusqueue, loglevel=loglevel, multiprocess=multiprocess,
                                     numdevice=self.numdevice, statistics=statistics,startfunction=startfunction,devicemodulename=devicemodulename)
 
-                    # Update the statistics of the device itself
-                    #statistics['device_redvypr'][device.address_str] = copy.deepcopy(data_packets.device_redvypr_statdict)
-                    #statistics['device_redvypr'][device.address_str]['_redvypr']['host'] = self.hostinfo
-                    #statistics['device_redvypr'][device.address_str]['_deviceinfo'] = {'subscribe':subscribe,'publish':publish,'devicemodulename':devicemodulename}
                     device.subscription_changed_signal.connect(self.process_subscription_changed)
                     self.numdevice += 1
                     # If the device has a logger
@@ -890,6 +887,12 @@ class redvypr(QtCore.QObject):
                 self.devices.append(devicedict)  # Add the device to the devicelist
                 ind_device = len(self.devices) - 1
 
+                # Update the statistics of the device itself
+                device.dataqueue.put(
+                    {'_deviceinfo': {'subscribe': subscribe, 'publish': publish, 'devicemodulename': devicemodulename}})
+                # Send a device_status packet to notify that a new device was added (deviceinfo_all) is updated
+                datapacket = data_packets.commandpacket(command='device_status')
+                device.dataqueue.put(datapacket)
                 if (autostart):
                     logger.info(funcname + ': Starting device')
                     self.start_device_thread(device)
