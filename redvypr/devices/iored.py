@@ -156,7 +156,7 @@ def create_datapacket_from_deviceinfo(device_info):
 
 
 
-def start_zmq_sub(dataqueue, comqueue, statusqueue, config, remote_uuid):
+def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid):
     """ zeromq receiving data
     """
     funcname = __name__ + '.start_recv()'
@@ -188,7 +188,7 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue, config, remote_uuid):
                 substringb = substring.encode('utf-8')
                 sub.setsockopt(zmq.SUBSCRIBE, substringb)
                 status['sub'].append(substring)
-                statusqueue.put(copy.deepcopy(status))
+                statusqueue_zmq.put(copy.deepcopy(status))
                 comdata = {}
                 comdata['deviceaddr']   = substring
                 comdata['devicestatus'] = {'subscribed': True} # This is the status of the iored device, 'zmq_subscriptions': status['sub']}
@@ -228,7 +228,7 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue, config, remote_uuid):
                 except:
                     pass
 
-                statusqueue.put(copy.deepcopy(status))
+                statusqueue_zmq.put(copy.deepcopy(status))
                 comdata = {}
                 comdata['deviceaddr'] = substring
                 comdata['devicestatus'] = { 'subscribed': False}
@@ -366,8 +366,10 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
 
         if(data_multicast_recv is not None):
             #print('Got multicast data',data_multicast_recv)
+            trecv = time.time()
             print('Got multicast data')
             [multicast_command,redvypr_info] = process_multicast_packet(data_multicast_recv)
+            redvypr_info['trecv'] = trecv
             #print('Command',multicast_command,redvypr_info)
             print('from uuid',redvypr_info['host']['uuid'])
             if multicast_command == 'getinfo':
@@ -381,6 +383,9 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                     pass
                 else:
                     FLAG_MULTICAST_INFO = True
+
+                    statusqueue.put_nowait({'type': 'getinfo', 'info': redvypr_info})
+
             elif multicast_command == 'info':
                 try:
                     uuid = redvypr_info['host']['uuid']
@@ -394,7 +399,8 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                     # Could be locked
                     hostinfos[uuid] = copy.deepcopy(redvypr_info) # Copy it to the hostinfo of the device. This should be thread safe
                     #
-                    print('redvypr_info',redvypr_info)
+                    #print('redvypr_info',redvypr_info)
+                    statusqueue.put_nowait({'type': 'info', 'info': redvypr_info})
                     if 'deviceinfo_all' in redvypr_info.keys():
                         for dkeyhost in redvypr_info['deviceinfo_all'].keys():  # This is the host device
                             for dkey in redvypr_info['deviceinfo_all'][dkeyhost].keys():  # This is the device, typically only one, the hostdevice itself
@@ -417,7 +423,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                                     dataqueue.put_nowait(datapacket)
 
                         try:
-                            # Sending a device_status command without any further information, this is triggering an upate in distrubute data
+                            # Sending a device_status command without any further information, this is triggering an upate in distribute_data
                             datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='', devicename=None, host=None)
                             #print('Sending statuscommand',datapacket)
                             dataqueue.put_nowait(datapacket)
@@ -623,6 +629,56 @@ class Device(redvypr_device):
         # Subscribe all
         self.subscribe_address('*')
         self.zmq_subscribed_to = {} # Dictionary with remote_uuid as key that hold all subscribed strings
+        self.__remote_info__ = {} # A dictionary of remote redvypr devices and information gathered, this is hidden because it is updated by get_remote_info
+
+
+    def get_remote_device_info(self,if_changed=False):
+        """
+
+        Args:
+            if_changed:
+
+
+        Returns:
+           remote_info: Dictionary with discovered devices and their information
+        """
+        funcname = __name__ + '.get_remote_info():'
+        data_all = []
+        FLAG_CHANGED = False
+        while True:
+            try:
+                data = self.statusqueue.get_nowait()
+                data_all.append(data)
+                try:
+                    if ('type' in data.keys()):
+                        FLAG_CHANGED = True
+                        if (data['type'] == 'getinfo') or (data['type'] == 'info'):
+                            raddr = data_packets.redvypr_address(local_hostinfo=data['info']['host'])
+                            try:
+                                self.__remote_info__[raddr.address_str]
+                            except:
+                                self.__remote_info__[raddr.address_str] = {}
+                            try:
+                                self.__remote_info__[raddr.address_str].update(data['info'])
+                            except:
+
+                                self.__remote_info__[raddr.address_str] = data['info']
+                except Exception as e:
+                    print('Exception',e)
+                    logger.exception(e)
+            except:
+                break
+
+        #print('data_all',data_all)
+        # Return None if nothing has been changed and if_changed argument has been set
+        if if_changed:
+            if FLAG_CHANGED:
+                return self.__remote_info__
+            else:
+                return None
+        else:
+            return self.__remote_info__
+
 
 
     def start(self,device_info,config, dataqueue, datainqueue, statusqueue):
@@ -867,6 +923,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         layout = QtWidgets.QGridLayout(self)
         self.device = device
+        self.deviceinfolabel = QtWidgets.QLabel('Discovered iored devices')
+        self.deviceinfotree = QtWidgets.QTreeWidget()
+        self.deviceinfotree.setHeaderLabels(['Address', 'Last seen'])
+
+        self.devicelabel = QtWidgets.QLabel('Remote data publishing devices')
         self.devicetree = QtWidgets.QTreeWidget()
         self.devicetree.currentItemChanged.connect(self.__item_changed__)
         self.reqbtn = QtWidgets.QPushButton('Get info')
@@ -877,11 +938,19 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.subbtn = QtWidgets.QPushButton('Subscribe')
         self.subbtn.clicked.connect(self.__subscribe_clicked__)
         self.subbtn.setEnabled(False)
-        layout.addWidget(self.devicetree,0,0,1,2)
-        layout.addWidget(self.subbtn, 1, 0,1,2)
-        layout.addWidget(self.reqbtn,2,0)
-        layout.addWidget(self.sendbtn, 2, 1)
+        layout.addWidget(self.deviceinfolabel, 0, 0)
+        layout.addWidget(self.deviceinfotree, 1, 0)
+        layout.addWidget(self.devicelabel, 2, 0)
+        layout.addWidget(self.devicetree,3,0,1,2)
+        layout.addWidget(self.subbtn, 4, 0,1,2)
+        layout.addWidget(self.reqbtn,5,0)
+        layout.addWidget(self.sendbtn, 5, 1)
         self.__update_devicelist__()
+
+        # A timer to gather all the data from the devices
+        self.updatetimer = QtCore.QTimer()
+        self.updatetimer.timeout.connect(self.__update_deviceinfolist__)
+        self.updatetimer.start(500)
 
         #self.device.redvypr.datastreams_changed_signal.connect(self.__update_devicelist__)
         self.device.redvypr.device_status_changed_signal.connect(self.__update_devicelist__)
@@ -945,8 +1014,26 @@ class displayDeviceWidget(QtWidgets.QWidget):
         #print('End status update')
         self.device.thread_command('multicast_info', {})
 
-    def __iored_device_changed__(self):
-        print('IORED devices changed')
+    def __update_deviceinfolist__(self):
+        """
+        Update the list of discovered devices
+        Returns:
+
+        """
+        devinfo = self.device.get_remote_device_info(if_changed=True)
+        if(devinfo is not None):
+            print('Hallo', devinfo)
+            self.deviceinfotree.clear()
+            self.deviceinfotree.setColumnCount(2)
+
+            root = self.deviceinfotree.invisibleRootItem()
+            for devaddress in devinfo.keys():
+                trecv = devinfo[devaddress]['trecv']
+                tstr = datetime.datetime.fromtimestamp(trecv).strftime('%d %b %Y %H:%M:%S')
+                itm = QtWidgets.QTreeWidgetItem([devaddress,tstr])
+                root.addChild(itm)
+
+            self.deviceinfotree.resizeColumnToContents(0)
 
     def __update_devicelist__(self):
         """
@@ -959,6 +1046,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         print('display widget update devicelist')
         self.devicetree.clear()
         self.devicetree.setColumnCount(2)
+        self.devicetree.setHeaderLabels(['Address', 'Subscribed'])
         root = self.devicetree.invisibleRootItem()
         #devices = self.device.statistics['device_redvypr']
         devices = self.device.get_devices_by_host()
@@ -1009,8 +1097,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         # If this is a local package
         if(data['host']['uuid'] == self.device.redvypr.hostinfo['uuid']):
             self.__update_devicelist__()
-        print('Update',data)
-        pass
+
+
 
 
 

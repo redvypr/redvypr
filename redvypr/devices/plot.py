@@ -103,6 +103,8 @@ class Device(redvypr_device):
                     if (len(l['x']) > 0) and (len(l['y']) > 0):
                         xaddress = redvypr.data_packets.redvypr_address(str(l['x']))
                         yaddress = redvypr.data_packets.redvypr_address(str(l['y']))
+                        xaddress = l['x'].xaddr
+                        yaddress = l['y'].yaddr
                         plot_devices.append(xaddress)
                         plot_devices.append(yaddress)
 
@@ -192,7 +194,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.mod_button.clicked.connect(self.mod_plot_clicked)
         self.mod_button.setCheckable(True)
 
-        self.rem_button = QtWidgets.QPushButton('Remove')
+        self.rem_button = QtWidgets.QPushButton('Remove plot')
         self.rem_button.clicked.connect(self.rem_plot_clicked)
         self.rem_button.setCheckable(True)
 
@@ -200,27 +202,20 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.commit_button.clicked.connect(self.commit_plot_clicked)
         # self.commit_button.setCheckable(True)
 
-        self.configlayout.addWidget(self.add_button, 0, 0)
-        self.configlayout.addWidget(self.addplot_combo, 0, 1)
-        self.configlayout.addWidget(self.mod_button, 1, 0)
+
+        self.configlayout.addWidget(self.addplot_combo, 0, 0,1,2)
+        self.configlayout.addWidget(self.add_button, 1, 0)
         self.configlayout.addWidget(self.rem_button, 1, 1)
-        self.configlayout.addWidget(self.commit_button, 2, 0, 1, 2)
+        self.configlayout.addWidget(self.mod_button, 2, 0,1,2)
+        self.configlayout.addWidget(self.commit_button, 3, 0,1,2)
         self.configlayout.setRowStretch(self.configlayout.rowCount(), 1)
-        self.configlayout.addWidget(self.configplotwidget, 3, 0, 3, 2)
+        #self.configlayout.addWidget(self.configplotwidget, 3, 0, 3, 2)
         # self.configlayout.setRowStretch()
 
     def add_plot_combo_changed(self):
         plottype = self.addplot_combo.currentText()
         print('Plottype', plottype)
-        self.displaywidget.__add_plottype__ = plottype
-        if ('random' in plottype.lower()):
-            self.displaywidget.__add_plotwidget__ = RandomDataWidget
-        elif ('num' in plottype.lower()):
-            self.displaywidget.__add_plotwidget__ = redvypr_numdisp_widget
-        elif ('graph' in plottype.lower()):
-            self.displaywidget.__add_plotwidget__ = redvypr_graph_widget
-        else:
-            print('Not implemented yet: {:s}'.format(plottype))
+
 
     def add_plot_clicked(self):
         self.add_plot_combo_changed()
@@ -519,20 +514,46 @@ class PlotGridWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         rubberband = self.sender()
         configplotwidget = rubberband.__config_widget__
-        if False: # Show the configuration in the widget, disabled because its not so much space and it does not work so well
-            layout = self.configplotwidget.layout()  # The layout of the configplotwidget
-            index = layout.count()
-            while (index >= 0):
-                widget = layout.itemAt(index)
-                print('Widget',widget)
-                if (widget is not None):
-                    layout.removeWidget(widget.widget())
-
-                index -= 1
-
-            layout.addWidget(configplotwidget)
-        else:
+        if True:
             configplotwidget.show()
+
+
+    def create_plot_widget(self,plottype):
+        """
+        Creates a plot widget of type plottype and returns the widget
+        Args:
+            plottype:
+
+        Returns:
+
+        """
+        funcname = __name__ + '.create_plot_widget():'
+
+        self.displaywidget.__add_plottype__ = plottype
+        if ('random' in plottype.lower()):
+            plotwidget_ = RandomDataWidget
+        elif ('num' in plottype.lower()):
+            plotwidget_ = redvypr_numdisp_widget
+        elif ('graph' in plottype.lower()):
+            plotwidget_ = redvypr_graph_widget
+        else:
+            print('Not implemented yet: {:s}'.format(plottype))
+
+        plotwidget = plotwidget_() # Call the plotwidget
+        config_widget = configWidget(config=plotwidget.config, loadsavebutton=False, redvypr_instance=self.redvypr)
+        config_widget.setWindowIcon(QtGui.QIcon(_icon_file))
+        config_widget.config_changed_flag.connect(
+            self.config_changed)  # whenever the configuration was changed, apply it for all plots with config_changed
+        config_widget.plotwidget = plotwidget
+        # Set the size
+        config_widget.resize(1000, 800)  # TODO, calculate the size of the widget
+        # plotwidget.config = config_widget.config
+        plotwidget.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+        # Add the configuration widget to the plotwidget
+        plotwidget.config_widget = config_widget
+
+        return plotwidget
+
 
 
     def addPlot(self, plotwidget, j, i, height, width):
@@ -548,20 +569,6 @@ class PlotGridWidget(QtWidgets.QWidget):
         Returns:
 
         """
-        # Create a local config widget for that plot
-        #config_widget = configWidget(config=plotwidget.config, template=plotwidget.config_template,
-        #                                      loadsavebutton=False,redvypr_instance=self.redvypr)
-        config_widget = configWidget(config=plotwidget.config, loadsavebutton=False, redvypr_instance=self.redvypr)
-        config_widget.setWindowIcon(QtGui.QIcon(_icon_file))
-        config_widget.config_changed_flag.connect(self.config_changed) # whenever the configuration was changed, apply it for all plots with config_changed
-        config_widget.plotwidget = plotwidget
-
-        # Set the size
-        config_widget.resize(1000, 800) # TODO, calculate the size of the widget
-        #plotwidget.config = config_widget.config
-        plotwidget.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
-        # Add the configuration widget to the plotwidget
-        plotwidget.config_widget = config_widget
         self.layout.addWidget(plotwidget, j, i, height, width)
         # Add the location information
         configuration = plotwidget.config
@@ -569,18 +576,20 @@ class PlotGridWidget(QtWidgets.QWidget):
         configuration['location']['y'].data = j
         configuration['location']['height'].data = height
         configuration['location']['width'].data = width
-        configuration.config_widget = config_widget
+        configuration.config_widget = plotwidget.config_widget
         configuration.plotwidget = plotwidget
         print('Added plot',type(configuration))
         self.device.config['plots'].append(configuration)
-        d = {'plot': plotwidget, 'config': config_widget}
+        d = {'plot': plotwidget, 'config': plotwidget.config_widget}
         self.all_plots.append(d)
         self.config_changed()
         plotwidget.show()
         
     def config_changed(self):
         """
-        Function is called whenever the configuration has been changed and updates the configuration of the plotwidget
+        Function is called whenever the configuration has been changed. It updates the configuration of the plotwidgets
+        and checkes the subscriptions
+
 
         Args:
 
@@ -589,12 +598,10 @@ class PlotGridWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.config_changed'
         configwidget = self.sender()
-        print('Global config')
-        print('config type start ', type(self.device.config))
+
         if (configwidget is not self.configwidget_global):  # Reload the configwidget, if its not the sender
             self.configwidget_global.reload_config()
-        print('config', self.device.config)
-        print('config type', type(self.device.config))
+
         if True:
             for p in self.device.config['plots']:
                 #print('Config for plot')
@@ -614,7 +621,8 @@ class PlotGridWidget(QtWidgets.QWidget):
                 except Exception as e:
                     logger.exception(e)
 
-        print('config type end ', type(self.device.config))
+        #(re)connecting the devices
+        self.device.connect_devices()
 
     def remPlot(self, plotwidget):
         """
@@ -703,10 +711,8 @@ class PlotGridWidget(QtWidgets.QWidget):
         if (self.flag_add_plot):  # Flags are set by the gridwidget buttons
             self.get_selected_index()  # update self.__add_location__
             if self.__add_location__ is not None:
-                addwidgetstr = self.__add_plottype__  # is set by the plotgridwidget combo changed signal
-                addwidget = self.__add_plotwidget__  # is set by the plotgridwidget combo changed signal
-                logger.debug('Adding widget {:s}'.format(addwidgetstr))
-                addwidget_called = addwidget()
+                plottype = self.displaywidget.addplot_combo.currentText()
+                addwidget_called = self.create_plot_widget(plottype)
                 self.addPlot(addwidget_called, self.__add_location__[0], self.__add_location__[1],
                              self.__add_location__[2], self.__add_location__[3])
 

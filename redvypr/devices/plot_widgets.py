@@ -51,9 +51,9 @@ config_template_graph_line = {}
 config_template_graph_line['template_name'] = 'Line'
 config_template_graph_line['buffersize'] = {'type': 'int', 'default': 2000,
                                            'description': 'The size of the buffer holding the data of the line'}
-config_template_graph_line['name'] = {'type': 'str', 'default': '',
+config_template_graph_line['name'] = {'type': 'str', 'default': '$y',
                                      'description': 'The name of the line, this is shown in the legend'}
-config_template_graph_line['x'] = {'type': 'datastream', 'default': '',
+config_template_graph_line['x'] = {'type': 'datastream', 'default': '$t(y)',
                                   'description': 'The x-data of the plot'}
 config_template_graph_line['y'] = {'type': 'datastream', 'default': '',
                                   'description': 'The y-data of the plot'}
@@ -208,12 +208,12 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             try:
                 x = line['x'].data
             except:
-                x = "t"
+                pass
 
             try:
                 y = line['y'].data
             except:
-                y = "numpacket"
+                pass
 
             try:
                 linewidth = line['linewidth'].data
@@ -243,8 +243,18 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 lineconfig = line.line_dict['config']
                 x = line['x'].data
                 y = line['y'].data
-                xaddr = redvypr.data_packets.redvypr_address(x)
                 yaddr = redvypr.data_packets.redvypr_address(y)
+                if(x == '$t(y)'):
+                    print('Using time variable of y')
+                    xtmp = redvypr.data_packets.modify_addrstr(yaddr.address_str,datakey='t')
+                    print('xtmp',xtmp)
+                    xaddr = redvypr.data_packets.redvypr_address(xtmp)
+                else:
+                    xaddr = redvypr.data_packets.redvypr_address(x)
+
+                # These attributes are used in plot.Device.connect_devices to actually subscribe to the fitting devices
+                line['x'].xaddr = xaddr
+                line['y'].yaddr = yaddr
                 lineconfig['x'] = x
                 lineconfig['y'] = y
                 lineconfig['xaddr'] = xaddr
@@ -261,6 +271,10 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 pen = pyqtgraph.mkPen(color, width=linewidth)
                 lineplot.setPen(pen)
                 name = self.config['lines'][iline]['name'].data
+                if(name.lower() == '$y'):
+                    print('Replacing with y')
+                    name = y
+
                 print('Setting the name')
                 self.config.legend.addItem(lineplot,name)
                 #lineplot.setName(name)
@@ -277,7 +291,6 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         """
         # Check if the device is to be plotted
         
-        #for ind,line_dict in enumerate(self.plot_dict['lines']): # Loop over all lines of the device to plot
         for iline, line in enumerate(self.config['lines']):
             line_dict = line.line_dict
             line      = line_dict['line'] # The line to plot
