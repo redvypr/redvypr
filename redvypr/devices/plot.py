@@ -166,12 +166,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
             y      = p['location']['y']
             width  = p['location']['width']
             height = p['location']['height']
-            if p['type'] == 'graph':
-                w = redvypr_graph_widget(p)
-                self.displaywidget.addPlot(w, y, x, height, width)
-            elif p['type'] == 'numdisp':
-                w = redvypr_numdisp_widget(p)
-                self.displaywidget.addPlot(w, y, x, height, width)
+            plotconfig = p
+            w = self.displaywidget.create_plot_widget(p['type'],config = plotconfig)
+            self.displaywidget.addPlot(w, y, x, height, width)
+
 
 
     def init_configwidget(self):
@@ -518,7 +516,7 @@ class PlotGridWidget(QtWidgets.QWidget):
             configplotwidget.show()
 
 
-    def create_plot_widget(self,plottype):
+    def create_plot_widget(self,plottype,config=None):
         """
         Creates a plot widget of type plottype and returns the widget
         Args:
@@ -539,7 +537,7 @@ class PlotGridWidget(QtWidgets.QWidget):
         else:
             print('Not implemented yet: {:s}'.format(plottype))
 
-        plotwidget = plotwidget_() # Call the plotwidget
+        plotwidget = plotwidget_(config=config) # Call the plotwidget
         config_widget = configWidget(config=plotwidget.config, loadsavebutton=False, redvypr_instance=self.redvypr)
         config_widget.setWindowIcon(QtGui.QIcon(_icon_file))
         config_widget.config_changed_flag.connect(
@@ -551,6 +549,11 @@ class PlotGridWidget(QtWidgets.QWidget):
         plotwidget.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         # Add the configuration widget to the plotwidget
         plotwidget.config_widget = config_widget
+        # Add a clear buffer button to the config widget if its a graph
+        if ('graph' in plottype.lower()):
+            config_widget.clearbtn = QtWidgets.QPushButton('Clear buffer')
+            config_widget.layout.addWidget(config_widget.clearbtn, 1, 0,1,2)
+            config_widget.clearbtn.clicked.connect(plotwidget.clear_buffer)
 
         return plotwidget
 
@@ -604,8 +607,6 @@ class PlotGridWidget(QtWidgets.QWidget):
 
         if True:
             for p in self.device.config['plots']:
-                #print('Config for plot')
-                print('p',p,type(p))
                 try:
                     configwidget_tmp = p.config_widget
                 except:
