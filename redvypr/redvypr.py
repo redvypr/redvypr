@@ -189,11 +189,12 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
                 #
                 for devicedict_sub in devices:
                     devicesub = devicedict_sub['device']
-                    if(devicesub == device):
+                    if(devicesub == device): # Not to itself
                         continue
 
                     for addr in devicesub.subscribed_addresses:
-                        if data in addr: # Check if data packet fits with addr
+                        numtag = data['_redvypr']['tag'][hostinfo['uuid']]
+                        if (data in addr) and (numtag < 2): # Check if data packet fits with addr and its not recirculated again
                             devicedict['numpacketout'] += 1
                             try:
                                 devicesub.datainqueue.put_nowait(data) # These are the datainqueues of the subscribing devices

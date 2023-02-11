@@ -19,12 +19,20 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulena
     # Add deviceinformation to the data package
     if ('_redvypr' not in data.keys()):
         data['_redvypr'] = {}
+    if ('tag' not in data['_redvypr'].keys()): # A tag of the uuid, counting the number of times the packet has been recirculated
+        data['_redvypr']['tag'] = {}
     if ('device' not in data['_redvypr'].keys()):
         data['_redvypr']['device'] = str(devicename)
     if ('host' not in data['_redvypr'].keys()):
         data['_redvypr']['host']   = hostinfo
     else:  # Check if we have a local data packet, i.e. a packet that comes from another redvypr instance with another UUID
         data['_redvypr']['host']['local'] = data['_redvypr']['host']['uuid'] == hostinfo['uuid']
+
+    # Tag the datapacket
+    try:
+        data['_redvypr']['tag'][hostinfo['uuid']] += 1
+    except:
+        data['_redvypr']['tag'][hostinfo['uuid']] = 1
 
     # Add the time to the datadict if its not already in
     if ('t' not in data['_redvypr'].keys()):
