@@ -705,6 +705,12 @@ class PlotGridWidget(QtWidgets.QWidget):
                     di = max(iall) - min(iall) + 1
                     jnew = min(jall)
                     dj = max(jall) - min(jall) + 1
+                    print('d',d['plot'].config)
+                    # Update the location of the configuration
+                    d['plot'].config['location']['x'].data = inew
+                    d['plot'].config['location']['y'].data = jnew
+                    d['plot'].config['location']['width'].data = di
+                    d['plot'].config['location']['height'].data = dj
                     self.layout.removeWidget(plotwidget)
                     self.layout.addWidget(plotwidget, jnew, inew, dj, di)
 
