@@ -372,6 +372,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
             redvypr_info['trecv'] = trecv
             #print('Command',multicast_command,redvypr_info)
             print('from uuid',redvypr_info['host']['uuid'])
+            # Information request sent by another iored device
             if multicast_command == 'getinfo':
                 try:
                     print('Getinfo request from {:s}::{:s}'.format(redvypr_info['host']['hostname'], redvypr_info['host']['uuid']))
@@ -385,7 +386,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                     FLAG_MULTICAST_INFO = True
 
                     statusqueue.put_nowait({'type': 'getinfo', 'info': redvypr_info})
-
+            # Information packet sent by another iored device
             elif multicast_command == 'info':
                 try:
                     uuid = redvypr_info['host']['uuid']
@@ -445,8 +446,9 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                 #print('Deviceinfo all')
                 #print('deviceinfo all', device_info['deviceinfo_all'])
                 #print('----- Deviceinfo all done -----')
+                # Create an information packet
                 multicast_packet = {'host': device_info['hostinfo'], 't': time.time(), 'zmq_pub': url,
-                                    'deviceinfo_all': device_info['deviceinfo_all']}
+                                    'deviceinfo_all': device_info['deviceinfo_all'],'hostinfo_opt': device_info['hostinfo_opt']}
                 #print('--------------')
                 print('Multicast packet',multicast_packet)
                 #print('--------------')
@@ -631,6 +633,17 @@ class Device(redvypr_device):
         self.zmq_subscribed_to = {} # Dictionary with remote_uuid as key that hold all subscribed strings
         self.__remote_info__ = {} # A dictionary of remote redvypr devices and information gathered, this is hidden because it is updated by get_remote_info
 
+        self.redvypr.hostconfig_changed_signal.connect(self.__update_hostinfo__)
+
+    def __update_hostinfo__(self):
+        """
+        Updates the hostinformation for the device
+
+        Returns:
+
+        """
+        funcname = __name__ + '.__update_hostinfo__():'
+        print(funcname)
 
     def get_remote_device_info(self,if_changed=False):
         """
@@ -1027,11 +1040,21 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.deviceinfotree.setColumnCount(2)
 
             root = self.deviceinfotree.invisibleRootItem()
+            print(devinfo)
             for devaddress in devinfo.keys():
                 trecv = devinfo[devaddress]['trecv']
                 tstr = datetime.datetime.fromtimestamp(trecv).strftime('%d %b %Y %H:%M:%S')
                 itm = QtWidgets.QTreeWidgetItem([devaddress,tstr])
                 root.addChild(itm)
+                # Check if there is additional information, if yes show that
+                if 'hostinfo_opt' in devinfo[devaddress].keys():
+                    for key in devinfo[devaddress]['hostinfo_opt']:
+                        keydatastr = str(devinfo[devaddress]['hostinfo_opt'][key])
+                        itm_info = QtWidgets.QTreeWidgetItem([key, keydatastr])
+                        itm.addChild(itm_info)
+
+
+
 
             self.deviceinfotree.resizeColumnToContents(0)
 

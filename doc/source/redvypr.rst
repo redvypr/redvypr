@@ -20,9 +20,13 @@ Introduction
 Sampling data does always require the similar tasks.
 
 - Reading data from sensors
-- Saving the data 
-- Adding metainformation to the dataset, that typically includes
-  information like time, location, experiment, responsible person(s),
+- Saving the data
+- Processing the raw data into meaningful units
+- Adding metainformation to the dataset, for example:
+    - time
+    - location
+    - experiment
+    - responsible person(s)
   project ...
 - Plotting data for a quicklook
 - Do a first dataanalysis

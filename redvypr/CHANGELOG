@@ -1,3 +1,5 @@
+    -0.5.2  - subscriptions as a config key for devices added
+            - improved configuration parsing
     -0.5.1  - added tag in _redvypr data packet to prevent an infinite recirculation
             - plot much more usable
             - many improvements in iored

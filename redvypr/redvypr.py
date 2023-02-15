@@ -33,6 +33,7 @@ from redvypr.gui import redvypr_ip_widget, redvyprConnectWidget, QPlainTextEditL
 import redvypr.gui as gui
 from redvypr.utils import addrm_device_as_data_provider, get_data_receiving_devices, get_data_providing_devices#, configtemplate_to_dict, apply_config_to_dict
 from redvypr.config import configuration
+import redvypr.config as redvyprconfig
 from redvypr.version import version
 import redvypr.files as files
 from redvypr.device import redvypr_device
@@ -241,12 +242,13 @@ class redvypr(QtCore.QObject):
     are started and data is interchanged
 
     """
-    device_path_changed        = QtCore.pyqtSignal()  # Signal notifying if the device path was changed
-    device_added               = QtCore.pyqtSignal(list)  # Signal notifying if the device path was changed
-    devices_connected          = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
-    devices_disconnected       = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
-    status_update_signal       = QtCore.pyqtSignal()  # Signal notifying if the status of redvypr has been changed
+    device_path_changed          = QtCore.pyqtSignal()  # Signal notifying if the device path was changed
+    device_added                 = QtCore.pyqtSignal(list)  # Signal notifying if the device path was changed
+    devices_connected            = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
+    devices_disconnected         = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
+    status_update_signal         = QtCore.pyqtSignal()  # Signal notifying if the status of redvypr has been changed
     device_status_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
+    hostconfig_changed_signal    = QtCore.pyqtSignal()  # Signal notifying if the configuration of the host changed (hostname, hostinfo_opt)
 
     def __init__(self, parent=None, config=None, hostname='redvypr',hostinfo_opt = {}, nogui=False):
         # super(redvypr, self).__init__(parent)
@@ -255,7 +257,7 @@ class redvypr(QtCore.QObject):
         funcname = __name__ + '.__init__()'
         logger.debug(funcname)
         self.hostinfo = create_hostinfo(hostname=hostname)
-        config_template = {'template_name':'hostinfo_opt','name':'hostinfo_opt'}
+        config_template = {'template_name':'hostinfo_opt'}
         self.hostinfo_opt = configuration(config=hostinfo_opt,template=config_template) # Optional host information
         self.config = {}  # Might be overwritten by parse_configuration()
         self.properties = {}  # Properties that are distributed with the device
@@ -289,14 +291,17 @@ class redvypr(QtCore.QObject):
         logger.info(funcname + ':Done searching for devices')
 
         # Configurating redvypr
-        if (config is not None):
-            logger.debug(funcname + ':Configuration: ' + str(config))
-            if (type(config) == str):
-                config = [config]
+        if False:
+            if (config is not None):
+                logger.debug(funcname + ':Configuration: ' + str(config))
+                if (type(config) == str):
+                    config = [config]
 
-            for c in config:
-                logger.debug(funcname + ':Parsing configuration: ' + str(c))
-                self.parse_configuration(c)
+                for c in config:
+                    logger.debug(funcname + ':Parsing configuration: ' + str(c))
+                    self.parse_configuration(c)
+        else:
+            self.parse_configuration(config)
 
     def get_deviceinfo(self,publish=None,subscribe=None):
         """
@@ -374,8 +379,9 @@ class redvypr(QtCore.QObject):
         """
         config = {}
 
-        config['hostname'] = self.hostinfo['hostname']
-        config['devicepath'] = []
+        config['hostname']     = self.hostinfo['hostname']
+        config['hostinfo_opt'] = copy.deepcopy(self.hostinfo_opt)
+        config['devicepath']   = []
         for p in self.device_paths:
             config['devicepath'].append(p)
         # Loglevel
@@ -387,132 +393,126 @@ class redvypr(QtCore.QObject):
             devsave = {'deviceconfig':{}}
             devsave['deviceconfig']['name']     = device.name
             devsave['deviceconfig']['loglevel'] = device.loglevel
-            devsave['deviceconfig']['autostart']= device.autostart
+            devsave['deviceconfig']['autostart'] = device.autostart
+
             devsave['devicemodulename']         = devicedict['devicemodulename']
             devconfig = device.config
             devsave['deviceconfig']['config'] = copy.deepcopy(devconfig)
+            # Treat subscriptions
+            devsave['deviceconfig']['subscriptions'] = []
+            for raddr in device.subscribed_addresses:
+                devsave['deviceconfig']['subscriptions'].append(raddr.address_str)
+
             config['devices'].append(devsave)
 
-        # Connections
-        config['connections'] = []
-        for devicedict in self.devices:
-            device = devicedict['device']
-            sensprov = get_data_providing_devices(self.devices, device)
-            for prov in sensprov:
-                condict = {'publish':prov['device'].name,'receive':device.name}
-                config['connections'].append(condict)
-            #sensreicv = get_data_receiving_devices(self.devices, device)
-            #print('Provider',sensprov)
-            #print('Receiver', sensreicv)
 
         return config
 
-    def parse_configuration(self, configfile=None):
+    def parse_configuration(self, redvypr_config=None):
         """ Parses a dictionary with a configuration, if the file does not exists it will return with false, otherwise self.config will be updated
 
         Arguments:
-            configfile (str or dict):
+            redvypr_config (str, dict or list of strs and dicts):
         Returns:
             True or False
         """
         funcname = "parse_configuration()"
         parsed_devices = []
         logger.debug(funcname)
-        if (type(configfile) == str):
-            logger.info(funcname + ':Opening yaml file: ' + str(configfile))
-            if (os.path.exists(configfile)):
-                fconfig = open(configfile)
-                config = yaml.load(fconfig, Loader=yaml.loader.SafeLoader)
-            else:
-                logger.warning(funcname + ':Yaml file: ' + str(configfile) + ' does not exist!')
-                return False
-        elif(type(configfile) == dict):
-            logger.info(funcname + ':Opening dictionary')
-            config = configfile
+
+        if (redvypr_config is not None):
+            logger.debug(funcname + ':Configuration: ' + str(redvypr_config))
+            if (type(redvypr_config) == str):
+                redvypr_config = [redvypr_config]
         else:
-            logger.warning(funcname + ':This should not happen')
+            return False
 
-        self.config = config
-        if ('loglevel' in config.keys()):
-            logger.setLevel(config['loglevel'])
-        # Add device path if found
-        if ('devicepath' in config.keys()):
-            devpath = config['devicepath']
-
-            if (type(devpath) == str):
-                devpath = [devpath]
-
-            for p in devpath:
-                if (p not in self.device_paths):
-                    self.device_paths.append(p)
-
-            self.populate_device_path()
-            self.device_path_changed.emit()  # Notify about the changes
-
-        # Adding the devices found in the config ['devices']
-        # Check if we have a list or something
-        try:
-            iter(config['devices'])
-            hasdevices = True
-        except:
-            hasdevices = False
-        if (hasdevices):
-            for device in config['devices']:
-                try:
-                    device['deviceconfig']
-                except:
-                    device['deviceconfig'] = {}
-
-                dev_added = self.add_device(devicemodulename=device['devicemodulename'], deviceconfig=device['deviceconfig'])
-                parsed_devices.append(dev_added)
-
-        # Connecting devices ['connections']
-        # TODO, this needs to be changed to subscritpions
-        # TODO
-        # TODO
-        try:
-            iter(config['connections'])
-            hascons = True
-        except:
-            hascons = False
-        if (hascons):
-            logger.debug('Connecting devices')
-            for con in config['connections']:
-                logger.debug('Connecting devices:' + str(con))
-                devicenameprovider = con['publish']
-                devicenamereceiver = con['receive']
-                indprovider = -1
-                indreceiver = -1
-                for i, s in enumerate(self.devices):
-                    if s['device'].name == devicenameprovider:
-                        deviceprovider = s['device']
-                        indprovider = i
-                    if s['device'].name == devicenamereceiver:
-                        devicereceiver = s['device']
-                        indreceiver = i
-
-                if ((indprovider > -1) and (indreceiver > -1)):
-                    self.addrm_device_as_data_provider(deviceprovider, devicereceiver, remove=False)
-                    sensprov = get_data_providing_devices(self.devices, devicereceiver)
-                    sensreicv = get_data_receiving_devices(self.devices, deviceprovider)
+        config = {} # This is a merged config of all configurations
+        for configraw in redvypr_config:
+            if (type(configraw) == str):
+                logger.info(funcname + ':Opening yaml file: ' + str(configraw))
+                if (os.path.exists(configraw)):
+                    fconfig = open(configraw)
+                    config_tmp = yaml.load(fconfig, Loader=yaml.loader.SafeLoader)
                 else:
-                    logger.warning(
-                        funcname + ':Could not create connection for devices: {:s} and {:s}'.format(devicenameprovider,
-                                                                                                    devicenamereceiver))
+                    logger.warning(funcname + ':Yaml file: ' + str(configraw) + ' does not exist!')
+                    continue
+            elif(type(configraw) == dict):
+                logger.info(funcname + ':Opening dictionary')
+                config_tmp = configraw
+            else:
+                logger.warning(funcname + ': Unknown type of configuration {:s}'.format(type(configraw)))
+                continue
 
-        # Add the hostname
-        try:
-            logger.info(funcname + ': Setting hostname to {:s}'.format(config['hostname']))
-            self.hostinfo['hostname'] = config['hostname']
-        except:
-            pass
+            # Merge the configuration into one big dictionary
+            config.update(config_tmp)
 
-        # Autostart the device, if wanted
-        #for dev in parsed_devices:
-        #    device = dev[0]['device']
-        #    if(device.autostart):
-        #        device.thread_start()
+        # Apply the merged configuration
+        if True:
+            #self.config = config
+            if ('loglevel' in config.keys()):
+                logger.setLevel(config['loglevel'])
+            # Add device path if found
+            if ('devicepath' in config.keys()):
+                devpath = config['devicepath']
 
+                if (type(devpath) == str):
+                    devpath = [devpath]
+
+                for p in devpath:
+                    if (p not in self.device_paths):
+                        self.device_paths.append(p)
+
+                self.populate_device_path()
+                self.device_path_changed.emit()  # Notify about the changes
+
+            # Check for hostinformation
+            # Add the hostname
+            try:
+                logger.info(funcname + ': Setting hostname to {:s}'.format(config['hostname']))
+                self.hostinfo['hostname'] = config['hostname']
+            except:
+                pass
+
+            try:
+                logger.info(funcname + ': Setting optional hostinfomation: {:s}'.format(str(config['hostinfo_opt'])))
+                c = redvyprconfig.dict_to_configDict(config['hostinfo_opt'])
+                self.hostinfo_opt.update(c)
+            except Exception as e:
+                logger.exception(e)
+                pass
+
+
+            # Adding the devices found in the config ['devices']
+            # Check if we have a list or something
+            try:
+                iter(config['devices'])
+                hasdevices = True
+            except:
+                hasdevices = False
+            if (hasdevices):
+                for device in config['devices']:
+                    try:
+                        device['deviceconfig']
+                    except:
+                        device['deviceconfig'] = {}
+
+                    dev_added = self.add_device(devicemodulename=device['devicemodulename'], deviceconfig=device['deviceconfig'])
+
+                    # Subscriptions
+                    # Name
+                    #
+                    parsed_devices.append(dev_added)
+
+
+            # Autostart the device, if wanted
+            #for dev in parsed_devices:
+            #    device = dev[0]['device']
+            #    if(device.autostart):
+            #        device.thread_start()
+
+            # Emit a signal that the configuration has been changed
+        self.hostconfig_changed_signal.emit()
         return True
 
     def __populate_device_path_packages(self,package_names = ['vypr','vyper']):
@@ -899,6 +899,17 @@ class redvypr(QtCore.QObject):
                     self.start_device_thread(device)
 
                 devicelist = [devicedict, ind_device, devicemodule]
+
+                #
+                # Subscribe to devices
+                #
+                try:
+                    subscribe_addresses =  deviceconfig['subscriptions']
+                except:
+                    subscribe_addresses = []
+
+                for a in subscribe_addresses:
+                    device.subscribe_address(a)
 
                 logger.debug(funcname + ': Emitting device signal')
                 self.device_added.emit(devicelist)
@@ -1436,17 +1447,9 @@ class redvyprWidget(QtWidgets.QWidget):
         if ((width is not None) and (height is not None)):
             self.resize(int(width), int(height))
 
-        if True:
-            # Configurating redvypr
-            if (config is not None):
-                if (type(config) == str):
-                    config = [config]
-
-                for c in config:
-                    self.redvypr.parse_configuration(c)
-
-                if ('hostname' in self.redvypr.config.keys()):
-                    self.hostname_changed(self.redvypr.config['hostname'])
+        self.redvypr.parse_configuration(config)
+        # Update hostinformation widgets
+        self.__update_hostinfo_widget__()
         self.__populate_devicepathlistWidget()
 
     def open_ipwidget(self):
@@ -1830,13 +1833,20 @@ class redvyprWidget(QtWidgets.QWidget):
     def __hostname_changed_click(self):
         hostname, ok = QtWidgets.QInputDialog.getText(self, 'redvypr hostname', 'Enter new hostname:')
         if ok:
-            self.hostname_changed(hostname)
-
-    def hostname_changed(self, hostname):
-        if True:
-            self.__hostname_line.setText(hostname)
-            self.redvypr.config['hostname'] = hostname
             self.redvypr.hostinfo['hostname'] = hostname
+            self.__hostname_line.setText(hostname)
+
+    def __update_hostinfo_widget__(self):
+        """
+        Updates the hostinformation
+        Returns:
+
+        """
+        funcname = __name__ + '.__update_hostinfo_widget__()'
+        print(funcname)
+        self.__hostname_line.setText(self.redvypr.hostinfo['hostname'])
+        self.__hostinfo_opt.reload_config()
+
 
     def __update_status_widget__(self):
         """
@@ -1851,6 +1861,7 @@ class redvyprWidget(QtWidgets.QWidget):
 
         """
         self.redvypr.status_update_signal.connect(self.__update_status_widget__)
+        self.redvypr.hostconfig_changed_signal.connect(self.__update_hostinfo_widget__)
         self.__statuswidget = QtWidgets.QWidget()
         layout = QtWidgets.QFormLayout(self.__statuswidget)
         # dt
@@ -2169,12 +2180,14 @@ def redvypr_main():
     config_help_path = 'add path to search for redvypr modules'
     config_help_hostname = 'hostname of redvypr, overwrites the hostname in a possible configuration '
     config_help_add = 'add device, can be called multiple times'
+    config_optional = 'optional information about the redvypr instance, multiple calls possible or separated by ",". Given as a key:data pair: --hostinfo location:lab --hostinfo lat:10.2,lon:30.4. The data is tried to be converted to an int, if that is not working as a float, if that is neither working at is passed as string'
     parser = argparse.ArgumentParser()
     parser.add_argument('--verbose', '-v', action='count')
     parser.add_argument('--config', '-c', help=config_help)
     parser.add_argument('--nogui', '-ng', help=config_help_nogui, action='store_true')
     parser.add_argument('--add_path', '-p', help=config_help_path)
     parser.add_argument('--hostname', '-hn', help=config_help_hostname)
+    parser.add_argument('--hostinfo', '-o', help=config_optional, action='append')
     parser.add_argument('--add_device', '-a', help=config_help_add, action='append')
     parser.set_defaults(nogui=False)
     args = parser.parse_args()
@@ -2189,7 +2202,7 @@ def redvypr_main():
     logger.setLevel(logging_level)
 
     # Check if we have a redvypr.yaml, TODO, add also default path
-    config_all = []
+    config_all = [] # Make a config all, the list can have several dictionaries that will be all processed by the redvypr initialization
     if (os.path.exists('redvypr.yaml')):
         config_all.append('redvypr.yaml')
 
@@ -2207,7 +2220,7 @@ def redvypr_main():
     if (config is not None):
         config_all.append(config)
 
-        # Add device
+    # Add device
     if (args.add_device is not None):
         hostconfig = {'devices': []}
         print('devices', args.add_device)
@@ -2234,6 +2247,36 @@ def redvypr_main():
         hostname = args.hostname
     else:
         hostname = 'redvypr'
+
+    # Add hostname
+    if (args.hostinfo is not None):
+        hostinfo = args.hostinfo
+    else:
+        hostinfo = []
+
+    # Add optional hostinformations
+    hostinfo_opt = {}
+    for i in hostinfo:
+        for info in i.split(','):
+            print('Info',info)
+            if(':' in info):
+                key = info.split(':')[0]
+                data = info.split(':')[1]
+                try:
+                    data = int(data)
+                except:
+                    try:
+                        data = float(data)
+                    except:
+                        pass
+
+                hostinfo_opt[key] = data
+            else:
+                logger.warning('Not a key:data pair in hostinfo, skipping {:sf}'.format(info))
+
+    config_all.append({'hostinfo_opt':hostinfo_opt})
+    print('Hostinfo', hostinfo)
+    print('Hostinfo', hostinfo_opt)
 
     logger.debug('Configuration:\n {:s}\n'.format(str(config_all)))
     QtCore.QLocale.setDefault(QtCore.QLocale(QtCore.QLocale.English, QtCore.QLocale.UnitedStates))

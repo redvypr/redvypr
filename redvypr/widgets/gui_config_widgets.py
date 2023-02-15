@@ -98,10 +98,8 @@ class configWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.reload_config():'
         logger.debug(funcname)
-        print('Reload type',type(self.config))
         self.remove_input_widgets()
         self.configtree.reload_data(self.config)
-        print('Reload type 5', type(self.config))
 
     def load_config(self):
         funcname = __name__ + '.load_config():'
@@ -710,15 +708,11 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
         #self.itemCollapsed.connect(self.resize_view)
 
     def reload_data(self,data):
-        print('Reload type 1', type(data))
         self.data = data
-        print('Reload type 2', type(self.data))
         self.clear()
         self.create_qtree()
-        print('Reload type 3', type(self.data))
         self.expandAll()
         self.resizeColumnToContents(0)
-        print('Reload type 4', type(self.data))
 
     def seq_iter(self,obj):
         return redvypr.utils.seq_iter(obj)
