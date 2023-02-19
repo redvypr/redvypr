@@ -19,6 +19,7 @@ import uuid
 import multiprocessing
 import threading
 from redvypr.data_packets import compare_datastreams, parse_addrstr, commandpacket, redvypr_address
+import redvypr.config as redvyprConfig
 
 logging.basicConfig(stream=sys.stderr)
 
@@ -100,12 +101,19 @@ class redvypr_device(QtCore.QObject):
 
     def subscribe_address(self, address,force=False):
         """
+        Subscribes to address
+        Args:
+            address:
+            force:
+
+        Returns:
+
         """
         funcname = self.__class__.__name__ + '.subscribe_address()'
         self.logger.debug(funcname + ' subscribing to device {:s}'.format(str(address)))
         print('Address',address,type(address))
-        if(type(address) == str):
-            raddr = redvypr_address(address)
+        if type(address) == str or (type(address) == redvyprConfig.configString):
+            raddr = redvypr_address(str(address))
         else:
             raddr = address
 
@@ -294,7 +302,9 @@ class redvypr_device(QtCore.QObject):
             self.logger.warning(funcname + ' thread is not running, doing nothing')
 
     def thread_start(self):
-        """ Starts the device thread
+        """ Starts the device thread, it calls the self.start function with the arguments
+
+        start(self, device_info, config, dataqueue, datainqueue, statusqueue)
         Args:
 
 

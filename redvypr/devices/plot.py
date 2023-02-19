@@ -147,6 +147,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.splitter)
         self.splitter.addWidget(self.configwidget)
         self.splitter.addWidget(self.displaywidget)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 10)
         self.databuf = []
         self.configlayout = QtWidgets.QGridLayout(self.configwidget)
         self.status = {}

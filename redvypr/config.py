@@ -420,7 +420,6 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                         c[index].template = copy.deepcopy(template_types_dict[origtype])
                         c[index].template['default'] = origdata
             else: # Configuration dictionary
-
                 default_value = ''
                 # The if can be removed soon
                 if ('default' in c[index].keys()):
@@ -453,13 +452,14 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                                 default_value = data_to_configdata(c[index]['default'],recursive=True)
 
                 templatedata = copy.deepcopy(c[index])
+                templatedata_orig = copy.deepcopy(c[index])
                 default_type = c[index]['type']
                 try:
                     modifiable = c[index]['modify']
                 except Exception as e:
                     modifiable = False
 
-                if(c[index]['type'] == 'list') and modifiable: # Modifiable list
+                if (c[index]['type'] == 'list') and modifiable: # Modifiable list
                     # Check if options are in the template, if not not add standard types
                     try:
                         c[index]['options']
@@ -468,15 +468,18 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                             #print('Option to be checked', o)
                             # If the option is a str, try to find the correct template in the standard template
                             if (type(o) == str) or (type(o) == configString):
-                                #print('Converting to standard option')
+                                print('Converting to standard option',o)
                                 try:
                                     c[index]['options'][i] = copy.deepcopy(__template_types__modifiable_list_dict__[o])
-                                    #print('Changed option')
+                                    print('Changed option', c[index]['options'][i])
+                                    print('Hallo', c)
                                 except Exception as e:
                                     print('Did not change because of',e)
                                     continue
-                    except:
+                    except: # If no options are given, simply copy all options as a choice
                         c[index]['options'] = copy.deepcopy(__template_types__modifiable_list__)
+
+                    templatedata['options'] = c[index]['options'] # Copy the modified options
                     if ('default' in c[index].keys()): # The default values are templates and need to be converted to dicts
                         default_value_tmp = c[index]['default']
                         default_value = configList()
@@ -511,6 +514,7 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                 except:
                     #print('Adding template', origdata)
                     c[index].template = templatedata
+                    c[index].__template_orig__ = templatedata_orig
 
 
             # Iterate over a dictionary or list
@@ -518,7 +522,7 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                 #print('Loop')
                 loop_over_index(c[index])
 
-
+    # Create a copy of the input dictionary and work with that
     if(configdict == None):
         data_tmp = copy.deepcopy(data) # Copy the data first
         if(type(data_tmp) == dict):
@@ -527,12 +531,14 @@ def dict_to_configDict(data,process_template=False,configdict=None):
             data_dict = data_tmp
         else:
             raise TypeError(funcname + 'data must be a dictionary and not {:s}'.format(str(type(data))))
-    else:
+    else: # Modify the original data
         data_dict = configdict
 
+    # Start the iterative processing now
     data_dict.__parent__ = None
     loop_over_index(data_dict)
     #print('Config:',config)
+    #print('Data dict',data_dict,type(data_dict))
     return data_dict
 
 

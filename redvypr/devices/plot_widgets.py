@@ -138,17 +138,6 @@ class redvypr_graph_widget(QtWidgets.QFrame):
 
             self.layout.addWidget(plot)
                 
-            # Add time as date
-            try:
-                datetick = config['datetick'].data
-            except:
-                datetick = False
-                
-            if(datetick):
-                axis = pyqtgraph.DateAxisItem(orientation='bottom')
-                plot.setAxisItems({"bottom": axis})
-                
-
             config.plot = plot
             config.legend = legend
             #plot_dict = {'widget': plot, 'lines': []}
@@ -171,6 +160,22 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         # Title
         title = self.config['title'].data
         plot.setTitle(title)
+
+        try:
+            datetick = self.config['datetick'].data
+        except:
+            datetick = False
+
+        if datetick:
+            print('Datetick')
+            axis = pyqtgraph.DateAxisItem(orientation='bottom',utcOffset=0)
+            plot.setAxisItems({"bottom": axis})
+        else:
+            print('No datetick')
+            axis = pyqtgraph.AxisItem(orientation='bottom')
+            plot.setAxisItems({"bottom": axis})
+
+
         # Label
         # If a xlabel is defined
         try:

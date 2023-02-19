@@ -10,5 +10,6 @@ from . import rawdatalogger
 from . import rawdatareplay
 from . import iored
 from . import test_device
+from . import sensor_raw2unit
 
 

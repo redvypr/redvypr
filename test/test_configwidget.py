@@ -55,8 +55,43 @@ config_template['redvypr_device']['subscribe'] = True
 config_template['redvypr_device']['description'] = description
 
 
-#configtest = redvypr.config.configuration(template=config_template,config=config)
-configtest = redvypr.config.configuration(config_template)
+
+
+config_template_poly = {}
+config_template_poly['template_name'] = 'polynom'
+config_template_poly['coefficients'] = {'type': 'list', 'modify': True, 'options': ['float','int']}
+#config_template_poly['coefficients'] = {'type': 'list', 'modify': True, 'options': ['float']}
+config_template_poly['unit'] = {'type':'str'}
+config_template_poly['datastream_in'] = {'type':'datastream'}
+config_template_poly['datastream_out'] = {'type':'datastream'}
+
+
+config_template_hf = {}
+config_template_hf['template_name'] = 'heatflow'
+config_template_hf['sensitivity'] = {'type':'float','default':1.0}
+config_template_hf['unit'] = {'type':'str'}
+config_template_hf['datastream_in'] = {'type':'datastream'}
+config_template_hf['datastream_out'] = {'type':'datastream'}
+
+
+
+
+config_template = {}
+config_template['template_name'] = "sensor_raw2unit"
+config_template['sensors'] = {'type': 'list', 'modify': True, 'default':[config_template_poly], 'options': [config_template_hf, config_template_poly]}
+config_template['redvypr_device'] = {}
+config_template['redvypr_device']['publish']     = True
+config_template['redvypr_device']['subscribe']   = True
+config_template['redvypr_device']['description'] = description
+
+
+
+#configtest_dict = redvypr.config.dict_to_configDict(config_template_poly,process_template=True)
+configtest_dict = redvypr.config.dict_to_configDict(config_template_poly,process_template=True)
+print('Coefficients dict options',configtest_dict['coefficients'].template['options'])
+configtest = redvypr.config.configuration(config_template_poly)
+print('Coefficients options',configtest['coefficients'].template['options'])
+input('fds')
 print('configtest',configtest)
 def main():
     app = QtWidgets.QApplication(sys.argv)

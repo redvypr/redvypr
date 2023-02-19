@@ -64,6 +64,7 @@ class configWidget(QtWidgets.QWidget):
         except:
             configname = 'config'
 
+
         self.config = config
         self.configtree = configQTreeWidget(data = self.config,dataname=configname)
         self.configtree.expandAll()
@@ -562,18 +563,22 @@ class configWidget(QtWidgets.QWidget):
                     options_str.append(tempname)
                     options_item[tempname] = data_item
         except Exception as e: # Do we still need this?
+            logger.exception(e)
             print('Standard template option because of {:s}'.format(str(e)))
             logger.debug('Using standard options')
             options_standard = redvypr.config.template_types
 
             for opt_tmp in options_standard:
-                options_str.append(opt_tmp['type'])
+                tempname = opt_tmp['type']
+                options_str.append(tempname)
                 data_item = opt_tmp['default']
                 data_item = redvypr.config.data_to_configdata(data_item)
                 try:
                     data_item.subtype = opt_tmp['subtype']
                 except:
                     pass
+
+                print('Tempname',tempname)
                 options_item[tempname] = data_item
 
         self.__configwidget_input.__options__item__ = options_item
@@ -684,7 +689,7 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
         if(type(data) == dict): # Convert to configDict to allow to store extra attributes
             data = redvypr.config.dict_to_configDict(data)
         elif (type(data) == redvypr.config.configDict) or (type(data) == redvypr.config.configuration):
-            print(funcname,'Type config')
+            #print(funcname,'Type config')
             pass
         else:
             raise TypeError(funcname + ' Expecting a dict or a configDict as data')
