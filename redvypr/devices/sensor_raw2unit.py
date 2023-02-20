@@ -16,6 +16,8 @@ import logging
 import sys
 import threading
 import copy
+
+import redvypr.data_packets
 from redvypr.device import redvypr_device
 from redvypr.data_packets import check_for_command
 
@@ -27,16 +29,19 @@ config_template_poly = {}
 config_template_poly['template_name']  = 'polynom'
 config_template_poly['coefficients']   = {'type': 'list', 'default':[0.0,1.0],'modify': True, 'options': ['float']}
 config_template_poly['unit'] = {'type':'str'}
-config_template_poly['datastream_in']  = {'type':'datastream'}
-config_template_poly['datastream_out'] = {'type':'datastream'}
+config_template_poly['address_in']  = {'type':'datastream'}
+config_template_poly['device_out'] = {'type':'str','default':'{device}'}
+config_template_poly['datakey_out'] = {'type':'str','default':'{datakey}'}
+
 
 
 config_template_hf = {}
 config_template_hf['template_name']  = 'heatflow'
 config_template_hf['sensitivity']    = {'type':'float','default':1.0}
 config_template_hf['unit'] = {'type':'str','default':'W kg-1'}
-config_template_hf['datastream_in']  = {'type':'datastream'}
-config_template_hf['datastream_out'] = {'type':'datastream'}
+config_template_hf['address_in']  = {'type':'datastream'}
+config_template_hf['device_out'] = {'type':'str'}
+config_template_hf['datakey_out'] = {'type':'str'}
 
 
 
@@ -53,12 +58,20 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('sensor_raw2unit')
 logger.setLevel(logging.DEBUG)
 
-
+def placeholder():
+    return np.NaN
 
 def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
     print('config',config)
+    # Configure the conversion functions
+    for sen in config['sensors']:
+        sen['function'] = placeholder # Add a placeholder function first
+        sen['raddr']    = redvypr.data_packets.redvypr_address(sen['address_in'])
+        if(sen['template_name'] == 'polynom'):
+            sen['function'] = np.polynomial.Polynomial(sen['coefficients'])
+
     i = 0
     while True:
         try:
@@ -67,14 +80,43 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
             data = None
         if(data is not None):
             command = check_for_command(data,thread_uuid=device_info['thread_uuid'])
-            logger.debug('Got a command: {:s}'.format(str(data)))
             if (command is not None):
+                logger.debug('Got a command: {:s}'.format(str(data)))
                 if(command == 'stop'):
                     logger.debug('Stopping: {:s}'.format(str(command)))
-                break
+                    break
             else:
                 print('Got data',data)
 
+
+        # loop over all sensors and check if there is a match
+        datapackets_by_device = {}
+        for sen in config['sensors']:
+            if(data in sen['raddr']):
+                print('Got a match')
+                rawdata_all = sen['raddr'].get_data(data)
+                for rawdata in rawdata_all:
+                    print('rawdata',rawdata)
+                    data_conv = sen['function'](rawdata[0])
+                    # "{datakey}{device_orig}{device}".format(datakey=rawdata[1],device_orig=data['_redvypr']['device'],device=device_info['device'])
+                    datakey_out = sen['datakey_out'].format(datakey=rawdata[1],device_orig=data['_redvypr']['device'],device=device_info['device'])
+                    device_out = sen['device_out'].format(datakey=rawdata[1],device_orig=data['_redvypr']['device'],device=device_info['device'])
+                    print('data_conv', data_conv)
+                    print('datakey_out', datakey_out)
+                    print('device_out', device_out)
+                    try:
+                        data_packet = datapackets_by_device[device_out]
+                    except:
+                        datapackets_by_device[device_out] = redvypr.data_packets.datapacket(device = device_out)
+                        data_packet = datapackets_by_device[device_out]
+
+                    data_packet[datakey_out] = data_conv
+
+        # Send all packets
+        for k in datapackets_by_device:
+            data_out = datapackets_by_device[k]
+            print('Sending packet',data_out)
+            dataqueue.put(data_out)
 
         #time.sleep(0.5)
 
@@ -102,6 +144,6 @@ class Device(redvypr_device):
         funcname = __name__ + '.start()'
         for s in self.config['sensors']:
             print('Subscribing to',s)
-            self.subscribe_address(s['datastream_in'])
+            self.subscribe_address(s['address_in'])
 
         start(device_info, config, dataqueue, datainqueue, statusqueue)

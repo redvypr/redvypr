@@ -132,7 +132,7 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
 
         self.config_widget.config_changed_flag.connect(self.config_changed)
 
-    def config_changed(self, config):
+    def config_changed(self):
         """
 
 

@@ -157,6 +157,28 @@ class redvypr_address():
 
         return 'NA2'
 
+    def get_data(self,datapacket):
+        """
+        Returns the data in the datapacket that fits with the address.
+
+        Args:
+            datapacket: redvypr_datapacket
+
+        Returns: list
+            List with each element containing a tuple with the first element being the data and the second element the datakey.
+        """
+        data = []
+        if self.datakeyexpand == False: # We have a defined datakey
+            data.append((datapacket[self.datakey],self.datakey))
+
+        else:
+            keys = get_keys_from_data(datapacket)
+            for k in keys:
+                datatuple = (datapacket[k], k)
+                data.append(datatuple)
+
+        return data
+
 
     def __str__(self):
         astr2 = self.get_str('<key>/<device>:<host>@<addr>')
@@ -888,7 +910,7 @@ def addr_in_data(devicestring, datapacket, get_devicename = False):
 
 
 
-def datapacket(data,datakey=None,tu=None):
+def datapacket(data=None,datakey=None,tu=None,device=None,hostinfo=None):
     """ A datapacket dictionary used as internal datastructure in redvypr
     """
     if(tu == None):
@@ -897,7 +919,16 @@ def datapacket(data,datakey=None,tu=None):
         datakey = 'data'
         
     datadict = {'_redvypr':{'t':tu}}
-    datadict[datakey] = data
+
+    if (device is not None):
+        datadict['_redvypr']['device'] = device
+
+    if (hostinfo is not None):
+        datadict['_redvypr']['host'] = hostinfo
+
+    if(data is not None):
+        datadict[datakey] = data
+
     return datadict
 
 
