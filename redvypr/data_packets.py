@@ -2,6 +2,8 @@ import copy
 import time
 import logging
 import sys
+import re
+import redvypr.config
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('data_packets')
@@ -59,7 +61,11 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulena
 #
 #
 class redvypr_address():
-    """ redvypr address 
+    """ redvypr address
+
+
+    addresses are equal if there .address_str are equal
+
     """
     def __init__(self,addrstr=None,local_hostinfo=None,datakey='',devicename='',hostname='',addr='',uuid=''):
         if addrstr is not None: # Address from addrstr
@@ -88,15 +94,20 @@ class redvypr_address():
 
 
         self.datakey      = self.parsed_addrstr['datakey']
+        self.datakeyexpand = self.parsed_addrstr['datakeyexpand']
+
         self.devicename   = self.parsed_addrstr['devicename']
-        self.hostname     = self.parsed_addrstr['hostname']
-        self.addr         = self.parsed_addrstr['addr']
-        self.uuid         = self.parsed_addrstr['uuid']
-        self.datakeyexpand= self.parsed_addrstr['datakeyexpand']
         self.deviceexpand = self.parsed_addrstr['deviceexpand']
-        self.hostexpand   = self.parsed_addrstr['hostexpand']
-        self.addrexpand   = self.parsed_addrstr['addrexpand']
-        self.uuidexpand   = self.parsed_addrstr['uuidexpand']
+
+        self.hostname     = self.parsed_addrstr['hostname']
+        self.hostexpand = self.parsed_addrstr['hostexpand']
+
+        self.addr         = self.parsed_addrstr['addr']
+        self.addrexpand = self.parsed_addrstr['addrexpand']
+
+        self.uuid         = self.parsed_addrstr['uuid']
+        self.uuidexpand = self.parsed_addrstr['uuidexpand']
+
         self.local        = self.parsed_addrstr['local']
 
     def get_strtypes(self):
@@ -213,6 +224,7 @@ class redvypr_address():
         """ Depending on the type of data
         - it checks if address is in data, if data is a redvypr data structure (datapacket)
         - it checks if addresses match between self and data, if data is a redvypr_address
+        - it converts a string or configString into a redvypr_address and checks if addresses match
         """
         if (type(data) == dict):
             datapacket = data
@@ -264,6 +276,11 @@ class redvypr_address():
             matchflag3 = datakeyflag and deviceflag and hostflag and addrflag and uuidflag
 
             return matchflag3  # 1 or matchflag2
+
+        elif (type(data) == str) or (type(data) == redvypr.config.configString):
+            raddr = redvypr_address(str(data))
+            contains = raddr in self
+            return contains
         else:
             raise ValueError('Unknown data type')
 

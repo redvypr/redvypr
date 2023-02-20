@@ -38,16 +38,16 @@ config_template_poly['datakey_out'] = {'type':'str','default':'{datakey}'}
 config_template_hf = {}
 config_template_hf['template_name']  = 'heatflow'
 config_template_hf['sensitivity']    = {'type':'float','default':1.0}
-config_template_hf['unit'] = {'type':'str','default':'W kg-1'}
-config_template_hf['address_in']  = {'type':'datastream'}
-config_template_hf['device_out'] = {'type':'str'}
-config_template_hf['datakey_out'] = {'type':'str'}
+config_template_hf['unit'] = {'type':'str','default':'W m-2'}
+config_template_hf['address_in']  = {'type':'datastream','default':'HF_mV/*'}
+config_template_hf['device_out'] = {'type':'str','default':'{device}'}
+config_template_hf['datakey_out'] = {'type':'str','default':'{datakey}'}
 
 
 
 config_template = {}
 config_template['template_name'] = "sensor_raw2unit"
-config_template['sensors'] = {'type': 'list', 'modify': True, 'default':[config_template_poly], 'options': [config_template_hf, config_template_poly]}
+config_template['sensors'] = {'type': 'list', 'modify': True, 'default':[config_template_hf], 'options': [config_template_hf, config_template_poly]}
 config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publish']     = True
 config_template['redvypr_device']['subscribe']   = True
