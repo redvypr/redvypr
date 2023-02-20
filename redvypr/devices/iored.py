@@ -730,8 +730,13 @@ class Device(redvypr_device):
         all_remote_devices = self.statistics['device_redvypr'].keys()
         FLAG_SUB_FITS = False
         remote_uuid = None
+        print('All remote devices',all_remote_devices)
+        sub_list = []
         for address_string in all_remote_devices:
             daddr = data_packets.redvypr_address(address_string)
+            if(daddr.uuid == self.host_uuid): # Test if this is the local host, if yes, continue
+                print('Thats this host')
+                continue
             FLAG_SUB_FITS = daddr in subscription
             #print('Comparing',address_string,subscription.get_str())
             if FLAG_SUB_FITS: # Comparing two redvpr_addresses
@@ -745,13 +750,12 @@ class Device(redvypr_device):
 
                 # Test if the device has already been subscribed
                 FLAG_SUBSCRIBED = remote_substring in self.zmq_subscribed_to[remote_uuid]
-                break
+                if FLAG_SUB_FITS == False:
+                    address_string = ''
 
-        if FLAG_SUB_FITS == False:
-            address_string = ''
+                sub_list.append([FLAG_SUB_FITS, remote_uuid, address_string, FLAG_SUBSCRIBED])
 
-
-        return [FLAG_SUB_FITS,remote_uuid,address_string,FLAG_SUBSCRIBED]
+        return sub_list
 
 
     def test_zmq_unsubscribe(self):
@@ -796,13 +800,22 @@ class Device(redvypr_device):
         all_subscriptions = self.redvypr.get_all_subscriptions()
         subscribe_addresses = []
         for subaddr, subdev in zip(all_subscriptions[0], all_subscriptions[1]):
+            print('Testing',subaddr,subdev)
             if(subdev == self.address_str): # Do nothing if its me
+                print('Thats me, doing nothing')
                 continue
             else:
-                [FLAG_FIT, remote_uuid, address_string, FLAG_SUBSCRIBED] = self.compare_zmq_subscription(subaddr)
-            if (FLAG_FIT):  # Match of subscription with remote device
-                if FLAG_SUBSCRIBED == False:
-                    subscribe_addresses.append([remote_uuid,address_string])
+                sub_list = self.compare_zmq_subscription(subaddr)
+                for s in sub_list:
+                    FLAG_FIT        = s[0]
+                    remote_uuid     = s[1]
+                    address_string  = s[2]
+                    FLAG_SUBSCRIBED = s[3]
+
+                    print('test',FLAG_FIT,remote_uuid,address_string,FLAG_SUBSCRIBED)
+                    if (FLAG_FIT):  # Match of subscription with remote device
+                        if FLAG_SUBSCRIBED == False:
+                            subscribe_addresses.append([remote_uuid,address_string])
 
         return subscribe_addresses
 

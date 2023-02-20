@@ -41,7 +41,7 @@ config_template_hf['sensitivity']    = {'type':'float','default':1.0}
 config_template_hf['unit'] = {'type':'str','default':'W m-2'}
 config_template_hf['address_in']  = {'type':'datastream','default':'HF_mV/*'}
 config_template_hf['device_out'] = {'type':'str','default':'{device}'}
-config_template_hf['datakey_out'] = {'type':'str','default':'{datakey}'}
+config_template_hf['datakey_out'] = {'type':'str','default':'HF_Wm2'}
 
 
 
@@ -58,7 +58,7 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('sensor_raw2unit')
 logger.setLevel(logging.DEBUG)
 
-def placeholder():
+def placeholder(data):
     return np.NaN
 
 def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=None):
@@ -71,6 +71,8 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
         sen['raddr']    = redvypr.data_packets.redvypr_address(sen['address_in'])
         if(sen['template_name'] == 'polynom'):
             sen['function'] = np.polynomial.Polynomial(sen['coefficients'])
+        if (sen['template_name'] == 'heatflow'):
+            sen['function'] = np.polynomial.Polynomial([0,sen['sensitivity']])
 
     i = 0
     while True:
