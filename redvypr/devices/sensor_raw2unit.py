@@ -28,7 +28,7 @@ description = 'Device converts raw data of a sensor to meaningful units.'
 config_template_poly = {}
 config_template_poly['template_name']  = 'polynom'
 config_template_poly['coefficients']   = {'type': 'list', 'default':[0.0,1.0],'modify': True, 'options': ['float']}
-config_template_poly['unit'] = {'type':'str'}
+config_template_poly['unit'] = {'type':'str','default':''}
 config_template_poly['address_in']  = {'type':'datastream'}
 config_template_poly['device_out'] = {'type':'str','default':'{device}'}
 config_template_poly['datakey_out'] = {'type':'str','default':'{datakey}'}
@@ -106,6 +106,7 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
                     print('data_conv', data_conv)
                     print('datakey_out', datakey_out)
                     print('device_out', device_out)
+                    # Is there already a datapacket, if yes use it for the new data, otherwise create one
                     try:
                         data_packet = datapackets_by_device[device_out]
                     except:
@@ -113,6 +114,9 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
                         data_packet = datapackets_by_device[device_out]
 
                     data_packet[datakey_out] = data_conv
+                    # Add _keyinfo
+                    if len(sen['unit']) > 0:
+                        redvypr.data_packets.add_keyinfo2datapacket(data_packet,unit=sen['unit'])
 
         # Send all packets
         for k in datapackets_by_device:

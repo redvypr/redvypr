@@ -141,7 +141,7 @@ Datakey info
 The type of data that is stored in a datakey can be described with the "_keyinfo" key, which is a dictionary with
 information for each datakey::
 
-    data['_keyinfo'] = {'data':{'unit':'Volt','description':'Voltage output of an ADC'}}
+    data['_keyinfo'] = {'adc_raw':{'unit':'V','description':'Voltage output of ADC'}}
 
 Each key in _keyinfo represents the key in the datapacket.
 

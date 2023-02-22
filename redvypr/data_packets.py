@@ -948,6 +948,40 @@ def datapacket(data=None,datakey=None,tu=None,device=None,hostinfo=None):
 
     return datadict
 
+def add_keyinfo2datapacket(datapacket,datakey,unit=None,description=None,infokey=None,info=None):
+    """
+
+    Args:
+        datapacket:
+        datakey:
+        unit:
+        description:
+        infokey:
+        info:
+
+    Returns:
+
+    """
+    try:
+        datapacket['_keyinfo']
+    except:
+        datapacket['_keyinfo'] = {}
+
+    try:
+        datapacket['_keyinfo'][datakey]
+    except:
+        datapacket['_keyinfo'][datakey] = {}
+
+    if(unit is not None):
+        datapacket['_keyinfo'][datakey]['unit'] = unit
+
+    if (description is not None):
+        datapacket['_keyinfo'][datakey]['description'] = description
+
+    if (infokey is not None):
+        datapacket['_keyinfo'][datakey][infokey] = info
+
+
 
 def commandpacket(command='stop',device_uuid='',thread_uuid='',devicename = None, host = None, comdata=None,devicemodulename=None):
     """
