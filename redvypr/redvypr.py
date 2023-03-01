@@ -101,7 +101,7 @@ def create_hostinfo(hostname='redvypr'):
 
 
 
-def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
+def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, dt=0.01):
     """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
     """
     funcname = __name__ + '.distribute_data()'
@@ -120,6 +120,20 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
         tstart = time.time()
         FLAG_device_status_changed = False
         devices_changed = []
+        devices_removed = []
+        # Read data from the main thread
+        try:
+            redvyprdata = redvyprqueue.get(block=False) # Data from the main thread
+        except Exception as e:
+            redvyprdata = None
+        # Process data from the main thread
+        if(redvyprdata is not None):
+            if(redvyprdata['type'] == 'device_removed'):
+                print('Device removed',redvyprdata)
+                FLAG_device_status_changed = True
+                devices_removed.append(redvyprdata['device'])
+
+
         for devicedict in devices:
             device = devicedict['device']
             data_all = []
@@ -219,7 +233,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, dt=0.01):
             # Send a command to all devices with the notification that something changed
             for devicedict in devices:
                 dev = devicedict['device']
-                dev.thread_command('deviceinfo_all', {'deviceinfo_all':deviceinfo_all,'devices_changed':list(set(devices_changed))})
+                dev.thread_command('deviceinfo_all', {'deviceinfo_all':deviceinfo_all,'devices_changed':list(set(devices_changed)),'devices_removed':devices_removed})
 
         # Calculate the sleeping time
         tstop = time.time()
@@ -243,7 +257,8 @@ class redvypr(QtCore.QObject):
 
     """
     device_path_changed          = QtCore.pyqtSignal()  # Signal notifying if the device path was changed
-    device_added                 = QtCore.pyqtSignal(list)  # Signal notifying if the device path was changed
+    device_added                 = QtCore.pyqtSignal(list)  # Signal notifying that a device was added
+    device_removed               = QtCore.pyqtSignal()  # Signal notifying that a device was removed
     devices_connected            = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
     devices_disconnected         = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
     status_update_signal         = QtCore.pyqtSignal()  # Signal notifying if the status of redvypr has been changed
@@ -281,10 +296,11 @@ class redvypr(QtCore.QObject):
 
         self.dt_datadist = 0.01  # The time interval of datadistribution
         self.dt_avg_datadist = 0.00  # The time interval of datadistribution
-        self.datadistinfoqueue = queue.Queue(maxsize=1000)  # A queue to get informations from the datadistribution
+        self.datadistinfoqueue = queue.Queue(maxsize=1000)  # A queue to get informations from the datadistthread
+        self.redvyprqueue = queue.Queue()  # A queue to send informations to the datadistthread
         # Lets start the distribution!
         self.datadistthread = threading.Thread(target=distribute_data, args=(
-        self.devices, self.hostinfo, self.deviceinfo_all, self.datadistinfoqueue, self.dt_datadist), daemon=True)
+        self.devices, self.hostinfo, self.deviceinfo_all, self.datadistinfoqueue, self.redvyprqueue, self.dt_datadist), daemon=True)
         self.datadistthread.start()
         logger.info(funcname + ':Searching for devices')
         self.populate_device_path()
@@ -1371,6 +1387,36 @@ class redvypr(QtCore.QObject):
 
         return devices
 
+    def rem_device(self,device):
+        """
+        Removes a device, after the removal a signal for device change is sent
+        Args:
+            device: redvypr_device
+
+        Returns:
+
+        """
+        funcname = self.__class__.__name__ + '.rem_device():'
+        logger.debug(funcname)
+        FLAG_REMOVED = False
+        for sendict in self.devices:
+            if(sendict['device'] == device):
+                print('Found device')
+                if (sendict['thread'] == None):
+                    pass
+                elif (sendict['thread'].is_alive()):
+                    device.comqueue.put('stop')
+
+                self.devices.remove(sendict)
+                FLAG_REMOVED = True
+                self.device_removed.emit()
+                device_changed_dict = {'type':'device_removed','device':device.name,'uuid':device.uuid}
+                self.redvyprqueue.put(device_changed_dict)
+                break
+
+        return FLAG_REMOVED
+
+
 
 
 
@@ -1967,24 +2013,21 @@ class redvyprWidget(QtWidgets.QWidget):
         self.redvypr.remdevicepath(rempath)
 
     def closeTab(self, currentIndex):
-        """ Closing a device tab and stopping the device
+        """ Closing a device tab and removing the device
         """
+        funcname = __name__ + '.closeTab()'
         logger.debug('Closing the tab now')
         currentWidget = self.devicetabs.widget(currentIndex)
         # Search for the corresponding device
         for sendict in self.redvypr.devices:
             if (sendict['widget'] == currentWidget):
                 device = sendict['device']
-                if (sendict['thread'] == None):
-                    pass
-                elif (sendict['thread'].is_alive()):
-                    device.comqueue.put('stop')
-
-                    # Close the widgets (init/display)
+                self.redvypr.rem_device(device)
+                # Close the widgets (init/display)
                 currentWidget.close()
                 # Info
                 sendict['infowidget'].close()
-                self.redvypr.devices.remove(sendict)
+
                 self.devicetabs.removeTab(currentIndex)
                 break
 
