@@ -65,17 +65,26 @@ class redvypr_address():
 
 
     addresses are equal if there .address_str are equal
+    TODO: let addrstr be another redvypr address and replace parts if datakay etc. is given
 
     """
-    def __init__(self,addrstr=None,local_hostinfo=None,datakey='',devicename='',hostname='',addr='',uuid=''):
+    def __init__(self,addrstr=None,datapacket=None,local_hostinfo=None, datakey='',devicename='',hostname='',addr='',uuid=''):
         if addrstr is not None: # Address from addrstr
+
             self.address_str = addrstr
+        elif datapacket is not None: # Address from datapacket
+            if(len(datakey)>0):
+                datakey_tmp = datakey
+            else:
+                datakey_tmp = None
+            self.address_str = get_datastream_from_data(datapacket,datakey = datakey_tmp,uuid=True)
         else: # addrsstr from single ingredients
             self.address_str = create_addrstr(datakey,devicename,hostname,addr,uuid,local_hostinfo=local_hostinfo)
             #print('Address string',self.address_str)
 
-        if(type(self.address_str) is not str):
+        if (type(self.address_str) is not str):
             raise ValueError('Unsupported type of address str {:s}'.format(str(type(self.address_str))))
+
 
         self.parsed_addrstr = parse_addrstr(self.address_str, local_hostinfo=local_hostinfo)
         self.strtypes = ['<key>','<key>/<device>']
@@ -695,8 +704,8 @@ def get_datastreams_from_data(data,uuid=False,add_dict=False):
         return datastreams
 
 
-def get_address_from_data(datakey,data=None,device=None,hostinfo=None,style='short'):
-    """ Returns a datastream string based either on a data packet or on hostname 
+def get_address_from_data(datakey,data=None,device=None,hostinfo=None,style='<datakey>/<device>'):
+    """ Returns an address string based either on a data packet or on hostname
     
     Args:
         datakey (str): The key for the datastream
@@ -707,6 +716,8 @@ def get_address_from_data(datakey,data=None,device=None,hostinfo=None,style='sho
     Returns:
         str: The full datastream
     """
+
+
     
     
     if((data == None) and (device == None)):
@@ -727,13 +738,14 @@ def get_address_from_data(datakey,data=None,device=None,hostinfo=None,style='sho
             uuid     = hostinfo['uuid']
             addr     = hostinfo['addr']
 
-
-    if(style=='short'):
-        datastream = datakey + '/' + device
-    elif (style=='full') or (style == '<device>:<host>@<addr>::<uuid>'):
-        datastream = datakey + '/' + device + ':' + hostname + '@' + addr + '::' + uuid
-    else:
-        raise ValueError('Unknown style')
+    raddr = redvypr_address(local_hostinfo=hostinfo, datakey=datakey, devicename=device)
+    datastream = raddr.get_str(style)
+    #if(style=='<datakey>/<device>'):
+    #    datastream = datakey + '/' + device
+    #elif (style=='full') or (style == '<device>:<host>@<addr>::<uuid>'):
+    #    datastream = datakey + '/' + device + ':' + hostname + '@' + addr + '::' + uuid
+    #else:
+    #    raise ValueError('Unknown style')
         
     return datastream
 

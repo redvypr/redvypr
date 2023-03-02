@@ -313,7 +313,9 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid):
                     try:
                         data = yaml.safe_load(databs)
                         #print(datab)
-                        #print(data)
+                        print('sub-------')
+                        print(data)
+                        print('sub-------')
                     except Exception as e:
                         logger.debug(funcname + ': Could not decode message {:s}'.format(str(datab)))
                         logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(str(config['data'])))
@@ -576,12 +578,16 @@ def zmq_publish_data(sock_zmq_pub,data,address_style='<device>:<host>@<addr>::<u
     datab = yaml.dump(data, explicit_end=False, explicit_start=False).encode('utf-8')
     # print('Got data from queue',data)
     #
-    addrstr = data_packets.get_address_from_data('', data, style=address_style)
+    #addrstr = data_packets.get_address_from_data('', data, style=address_style)
+    raddr = data_packets.redvypr_address(datapacket=data)
+    addrstr = raddr.get_str(address_style)
     # datasend = addrstr[1:].encode('utf-8') + ' '.encode('utf-8') + datab
     tsend = 't{:.6f}'.format(time.time()).encode('utf-8')
     datapacket = [addrstr[1:].encode('utf-8'), tsend, datab]
     sock_zmq_pub.send_multipart(datapacket)
-    print('Sent data')
+    #print('Sent data')
+    #print(datapacket)
+    #print('Sent data done')
     return datapacket
 
 
