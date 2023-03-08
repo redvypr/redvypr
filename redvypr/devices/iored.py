@@ -67,8 +67,8 @@ config_template['template_name']  = 'iored'
 config_template['redvypr_device'] = {}
 config_template['zmq_pub_port_start'] = 18196
 config_template['zmq_pub_port_end']   = 19000
-config_template['multicast_listen']   = {'type':'bool','default':True,'description':'Listening for multicast information'}
-config_template['multicast_send']     = {'type':'bool','default':True,'description':'Sending information via multicast (using multicast_address and multicast_port)'}
+config_template['multicast_listen']   = {'type':'bool','default':False,'description':'Listening for multicast information'}
+config_template['multicast_send']     = {'type':'bool','default':False,'description':'Sending information via multicast (using multicast_address and multicast_port)'}
 config_template['multicast_address']  = "239.255.255.239"
 config_template['multicast_dtbeacon']  = {'type':'int','default':-1,'description':'Time [s] a multicastinformation is sent, disable with negative number'}
 config_template['multicast_port']     = 18196
@@ -199,11 +199,30 @@ def create_datapacket_from_deviceinfo(device_info):
         return dpacket
 
 
+def connect_remote_host(remote_uuid,zmq_sub,dataqueue,statusqueue):
+    """
+    Connects to a remote iored by starting a thread
+    Args:
+        remote_uuid:
 
+    Returns:
 
+    """
+    remote_dict = {}
+    config_zmq = {}
+    config_zmq['zmq_sub'] = zmq_sub
+    comqueue = queue.Queue(maxsize=1000)
+    statqueue = queue.Queue(maxsize=1000)
+    remote_dict['comqueue'] = comqueue
+    remote_dict['statqueue'] = statqueue
+    remote_dict['thread'] = threading.Thread(target=start_zmq_sub, args=(dataqueue, comqueue, statqueue, config_zmq, remote_uuid,statusqueue),daemon=True)
+    remote_dict['thread'].start()
+    if(remote_dict['thread'].is_alive()):
+        return remote_dict
+    else:
+        return None
 
-
-def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid):
+def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, statusqueue):
     """ zeromq thread for receiving data from a remote redvypr/iored host with a zmq.PUB socket. Thread is started
     by the main start thread.
     """
@@ -218,9 +237,11 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid):
     datapackets = 0
     bytes_read  = 0
     npackets    = 0 # Number packets received
-    # Subscribe to the uuid, this is used for sending status updates and commands
+    # Subscribe to the uuid, this is used for sending status updates, commands and messages from the redvypr host
     remote_uuidb = remote_uuid.encode('utf-8')
+    print('Subscribing to',remote_uuidb)
     sub.setsockopt(zmq.SUBSCRIBE, remote_uuidb)
+    #sub.setsockopt(zmq.SUBSCRIBE, b'')
     status['sub'].append(remote_uuid)
     statusqueue_zmq.put(copy.deepcopy(status))
 
@@ -296,7 +317,7 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid):
         try:
             #datab = sub.recv(zmq.NOBLOCK)
             datab_all = sub.recv_multipart()
-            #print('Got data',datab_all)
+            print('Got data',datab_all)
             FLAG_DATA = True
         except Exception as e:
             #logger.debug(funcname + ':' + str(e))
@@ -322,8 +343,15 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid):
                         data = None
 
                     if((data is not None) and (type(data) == dict)):
-                        dataqueue.put(data)
-                        datapackets += 1
+                        # Check for command
+                        command = check_for_command(data)
+                        # logger.debug('Got a command: {:s}'.format(str(data)))
+                        if command is not None:
+                            print('Got a command from remote device')
+                            statusqueue.put(data)
+                        else:
+                            dataqueue.put(data)
+                            datapackets += 1
 
 
 def start_zmq_reply(config, device_info,url_pub,url_rep,thread_uuid):
@@ -529,40 +557,7 @@ def process_host_information(redvypr_info, hostuuid, hostinfos, statusqueue, dat
         #
         print('redvypr_info',redvypr_info)
         statusqueue.put_nowait({'type': 'info', 'info': redvypr_info})
-        # Check for devices
-        if 'deviceinfo_all' in redvypr_info.keys():
-            # Loop over the devicenames: i.e. iored_0, the devices have a dictionary with devices again that this
-            # device is hosting, this is at least one, the device itself, but can be more, for example if devices
-            # are forwarded
-            for dkeyhost in redvypr_info['deviceinfo_all'].keys():
-                # The datakeys as full redvypr addrstrings: 'iored_0:test1@192.168.1.112::190135457042106-110'
-                for dkey in redvypr_info['deviceinfo_all'][dkeyhost].keys():
-                    # print('devicekey', dkeyhost,dkey)
-                    d = redvypr_info['deviceinfo_all'][dkeyhost][dkey]
-                    # print('device', d)
-                    daddr = data_packets.redvypr_address(dkey)
-                    if daddr.uuid == hostuuid:  # This should not happen but anyways
-                        # print('Own device, doing nothing')
-                        pass
-                    #elif (d['_redvypr']['devicemodulename'] == 'iored'):
-                    #    # print('ioreddevice, doing nothing')
-                    #    pass
-                    else:
-                        # print('Remote device')
-                        datapacket = create_datapacket_from_deviceinfo(d)
-                        # Send the packet, distribute_data() will call do_data_statistics() and will add them to the available datastreams
-                        # This will again create on return a signal that the datastreams have been changed
-                        # print('Sending datapacket to inform redvypr about available devices',datapacket)
-                        dataqueue.put_nowait(datapacket)
 
-            try:
-                # Sending a device_status command without any further information, this is triggering an upate in distribute_data
-                datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='',
-                                                        devicename=None, host=None)
-                # print('Sending statuscommand',datapacket)
-                dataqueue.put_nowait(datapacket)
-            except Exception as e:
-                pass
 
 def zmq_publish_data(sock_zmq_pub,data,address_style='<device>:<host>@<addr>::<uuid>'):
     """
@@ -583,7 +578,8 @@ def zmq_publish_data(sock_zmq_pub,data,address_style='<device>:<host>@<addr>::<u
     addrstr = raddr.get_str(address_style)
     # datasend = addrstr[1:].encode('utf-8') + ' '.encode('utf-8') + datab
     tsend = 't{:.6f}'.format(time.time()).encode('utf-8')
-    datapacket = [addrstr[1:].encode('utf-8'), tsend, datab]
+    #datapacket = [addrstr[1:].encode('utf-8'), tsend, datab]
+    datapacket = [addrstr[:].encode('utf-8'), tsend, datab]
     sock_zmq_pub.send_multipart(datapacket)
     #print('Sent data')
     #print(datapacket)
@@ -591,28 +587,6 @@ def zmq_publish_data(sock_zmq_pub,data,address_style='<device>:<host>@<addr>::<u
     return datapacket
 
 
-def connect_remote_host(remote_uuid,zmq_sub,dataqueue):
-    """
-    Connects to a remote iored by starting a thread
-    Args:
-        remote_uuid:
-
-    Returns:
-
-    """
-    remote_dict = {}
-    config_zmq = {}
-    config_zmq['zmq_sub'] = zmq_sub
-    comqueue = queue.Queue(maxsize=1000)
-    statqueue = queue.Queue(maxsize=1000)
-    remote_dict['comqueue'] = comqueue
-    remote_dict['statqueue'] = statqueue
-    remote_dict['thread'] = threading.Thread(target=start_zmq_sub, args=(dataqueue, comqueue, statqueue, config_zmq, remote_uuid))
-    remote_dict['thread'].start()
-    if(remote_dict['thread'].is_alive()):
-        return remote_dict
-    else:
-        return None
 
 
 def start(device_info, config, dataqueue, datainqueue, statusqueue):
@@ -643,38 +617,40 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
     sockets   = [] # List of all sockets that need to be closed when thread is stopped
     hostinfos = {} # All known hostinfos as sent by create_info_packet are saved here, with the uuid as the key
     zmq_sub_threads = {} # Dictionary with all remote redvypr hosts subscribed
-    #
-    # The multicast send socket
-    #
-    MULTICASTADDRESS = config['multicast_address'] # "239.255.255.250" # The same as SSDP
-    MULTICASTPORT = config['multicast_port']
 
-    # Flags for multicast feature
-    MULTICASTFLAGS = {}
-    MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = True
-    MULTICASTFLAGS['FLAG_MULTICAST_GETINFO'] = True
-    MULTICASTFLAGS['tbeacon'] = 0
-    # socket.IP_MULTICAST_TTL
-    # ---------------------------------
-    # for all packets sent, after two hops on the network the packet will not
-    # be re-sent/broadcast (see https://www.tldp.org/HOWTO/Multicast-HOWTO-6.html)
-    MULTICAST_TTL = 2
-    sock_multicast_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    sock_multicast_send.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, MULTICAST_TTL)
-    sockets.append(sock_multicast_send)
-    FLAG_RUN = True
-    # Multicast receive
-    sock_multicast_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    sock_multicast_recv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    if sys.platform == 'win32': # had to add this on 07.02.2023, win10/anaconda python 3.9.16
-        sock_multicast_recv.bind(('', MULTICASTPORT))
-    else:
-        sock_multicast_recv.bind((MULTICASTADDRESS, MULTICASTPORT))
+    if (config['multicast_listen'] or config['multicast_send']):
+        #
+        # The multicast send socket
+        #
+        MULTICASTADDRESS = config['multicast_address'] # "239.255.255.250" # The same as SSDP
+        MULTICASTPORT = config['multicast_port']
 
-    mreq = struct.pack("4sl", socket.inet_aton(MULTICASTADDRESS), socket.INADDR_ANY)
-    sock_multicast_recv.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-    sock_multicast_recv.settimeout(0)  # timeout for listening
-    sockets.append(sock_multicast_recv)
+        # Flags for multicast feature
+        MULTICASTFLAGS = {}
+        MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = True
+        MULTICASTFLAGS['FLAG_MULTICAST_GETINFO'] = True
+        MULTICASTFLAGS['tbeacon'] = 0
+        # socket.IP_MULTICAST_TTL
+        # ---------------------------------
+        # for all packets sent, after two hops on the network the packet will not
+        # be re-sent/broadcast (see https://www.tldp.org/HOWTO/Multicast-HOWTO-6.html)
+        MULTICAST_TTL = 2
+        sock_multicast_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock_multicast_send.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, MULTICAST_TTL)
+        sockets.append(sock_multicast_send)
+        FLAG_RUN = True
+        # Multicast receive
+        sock_multicast_recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock_multicast_recv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if sys.platform == 'win32': # had to add this on 07.02.2023, win10/anaconda python 3.9.16
+            sock_multicast_recv.bind(('', MULTICASTPORT))
+        else:
+            sock_multicast_recv.bind((MULTICASTADDRESS, MULTICASTPORT))
+
+        mreq = struct.pack("4sl", socket.inet_aton(MULTICASTADDRESS), socket.INADDR_ANY)
+        sock_multicast_recv.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        sock_multicast_recv.settimeout(0)  # timeout for listening
+        sockets.append(sock_multicast_recv)
 
     #
     # Start the zeromq distribution and request/reply sockets by testing if a port is free and if yes start a thread
@@ -723,7 +699,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
         logstart.debug('Start reply thread')
         rep_thread_uuid = str(uuid_module.uuid1())  # Old
         # Note that the reply thread is directly reading the device_info, that is updated in this thread.
-        rep_thread = threading.Thread(target=start_zmq_reply, args=(config, device_info, url,url_rep, rep_thread_uuid))
+        rep_thread = threading.Thread(target=start_zmq_reply, args=(config, device_info, url,url_rep, rep_thread_uuid),daemon=True)
         rep_thread.start()
         time.sleep(0.1)
         rep_alive = rep_thread.is_alive()
@@ -837,6 +813,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                                 data['devices_changed'].remove(devicename)
                             if (len(data['devices_changed']) > 0) or (len(data['devices_removed']) > 0):
                                 # Send the information over zmq_pub socket to all connected devices
+                                # TODO, this needs to be consistent with device_info
                                 datapacket = zmq_publish_data(sock_zmq_pub, data,address_style='<uuid>')
                                 print('Sent device update',datapacket)
                                 print('----------')
@@ -879,7 +856,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             # If not running, create a thread and subscribe to
                             if FLAG_CONNECTED == False:
                                 logstart.debug(funcname + ' starting new thread for connecting')
-                                connect_dict = connect_remote_host(remote_uuid, zmq_url, dataqueue)
+                                connect_dict = connect_remote_host(remote_uuid, zmq_url, dataqueue,statusqueue)
                                 if (connect_dict is not None):
                                     zmq_sub_threads[remote_uuid] = connect_dict
 
@@ -962,6 +939,96 @@ class Device(redvypr_device):
 
         self.redvypr.hostconfig_changed_signal.connect(self.__update_hostinfo__)
 
+        self.statusthread = threading.Thread(target=self.__process_statusdata__, daemon=True)
+        self.statusthread.start()
+
+    def __process_statusdata__(self):
+        """
+        Reads the statusqueue and processes the data
+        Returns:
+
+        """
+        funcname = __name__ + '.__process_statusdata__():'
+        while True:
+            try:
+                data = self.statusqueue.get()
+                print('Got status data',data)
+                try:
+                    deviceinfo_all = None
+                    if ('type' in data.keys()):
+                        if (data['type'] == 'getinfo') or (data['type'] == 'info'):
+                            raddr = data_packets.redvypr_address(local_hostinfo=data['info']['host'])
+                            try:
+                                self.__remote_info__[raddr.address_str]
+                            except:
+                                self.__remote_info__[raddr.address_str] = {}
+                            try:
+                                self.__remote_info__[raddr.address_str].update(data['info'])
+                            except:
+
+                                self.__remote_info__[raddr.address_str] = data['info']
+
+                            # If deviceinfo_all in keys, update the statistics, this is done in a thread, atomix operations
+                            # in dictionaries should be threadsafe
+                            if 'deviceinfo_all' in data['info'].keys():
+                                deviceinfo_all = data['info']['deviceinfo_all']
+                    elif('deviceinfo_all' in data.keys()):
+                        deviceinfo_all = data['deviceinfo_all']
+
+                    if deviceinfo_all is not None:
+                        all_devices_tmp = []
+                        print('Updating device statistics')
+                        # Loop over the devicenames: i.e. iored_0, the devices have a dictionary with devices again that this
+                        # device is hosting, this is at least one, the device itself, but can be more, for example if devices
+                        # are forwarded
+                        for hostdevice in deviceinfo_all.keys():
+                            # The datakeys as full redvypr addrstrings: 'iored_0:test1@192.168.1.112::190135457042106-110'
+                            for deviceaddress in deviceinfo_all[hostdevice].keys():
+                                # print('devicekey', dkeyhost,dkey)
+                                d = deviceinfo_all[hostdevice][deviceaddress]
+                                # print('device', d)
+                                daddr = data_packets.redvypr_address(deviceaddress)
+                                if daddr.uuid == self.host_uuid:  # This should not happen but anyways
+                                    # print('Own device, doing nothing')
+                                    pass
+                                # elif (d['_redvypr']['devicemodulename'] == 'iored'):
+                                #    # print('ioreddevice, doing nothing')
+                                #    pass
+                                else:
+                                    print('Remote device update')
+                                    datapacket = create_datapacket_from_deviceinfo(d)
+                                    all_devices_tmp.append(data_packets.get_devicename_from_data(d,uuid=True))
+                                    print('datapacket',datapacket)
+                                    # update the statistics, this is typically done in redvypr.distribute_data(),
+                                    # after a packet was sent, here it is done within the device itself
+                                    data_packets.do_data_statistics(datapacket, self.statistics)
+                                    # Remove devices
+
+                        print('Remove devices')
+                        all_devices = self.statistics['device_redvypr'].keys()
+                        print('len all_devices',len(all_devices))
+                        print('len all_devices tmp', len(all_devices_tmp))
+                        #if 'devices_removed' in data['info'].keys():
+                        #    for device_removed in data['info']['devices_removed']:
+                        #        print('Removing device',device_removed)
+
+                        try:
+                            # Sending a device_status command without any further information, this is triggering an upate in distribute_data
+                            datapacket = data_packets.commandpacket(command='device_status', device_uuid='',
+                                                                    thread_uuid='',
+                                                                    devicename=None, host=None)
+                            # print('Sending statuscommand',datapacket)
+                            self.dataqueue.put_nowait(datapacket)
+                        except Exception as e:
+                            pass
+
+                except Exception as e:
+                    print('Exception',e)
+                    logger.exception(e)
+            except:
+                break
+
+
     def __update_hostinfo__(self):
         """
         Updates the hostinformation for the device
@@ -971,6 +1038,16 @@ class Device(redvypr_device):
         """
         funcname = __name__ + '.__update_hostinfo__():'
         print(funcname)
+
+
+    def process_statusinformation_from_threads(self):
+        """
+        This thread reads the statusqueue that is filled from the start thread/subprocess, with informations about devices
+        subscriptions etc.
+        
+        Returns:
+
+        """
 
     def get_remote_device_info(self,if_changed=False):
         """

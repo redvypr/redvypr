@@ -8,8 +8,6 @@ import sys
 import yaml
 import pkg_resources
 from PyQt5 import QtWidgets, QtCore, QtGui
-import pyqtgraph as pg
-import numpy as np
 import inspect
 import threading
 import multiprocessing
@@ -132,6 +130,8 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 print('Device removed',redvyprdata)
                 FLAG_device_status_changed = True
                 devices_removed.append(redvyprdata['device'])
+                devinfo_rem = deviceinfo_all.pop(redvyprdata['device'])
+                print('Devices len distribute data', len(devices))
 
 
         for devicedict in devices:
@@ -1408,6 +1408,7 @@ class redvypr(QtCore.QObject):
                     device.comqueue.put('stop')
 
                 self.devices.remove(sendict)
+                print('Devices len',len(self.devices))
                 FLAG_REMOVED = True
                 self.device_removed.emit()
                 device_changed_dict = {'type':'device_removed','device':device.name,'uuid':device.uuid}

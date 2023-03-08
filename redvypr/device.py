@@ -256,6 +256,7 @@ class redvypr_device(QtCore.QObject):
         funcname = __name__ + '.thread_command():'
         self.logger.debug(funcname)
         command = commandpacket(command=command, device_uuid=self.uuid, thread_uuid=self.thread_uuid,devicename=self.name,host=self.redvypr.hostinfo,devicemodulename=self.devicemodulename)
+        # TODO, this should be done by commandpacket
         if(data is not None):
             if type(data) == dict:
                 command.update(data)
