@@ -312,6 +312,27 @@ def create_data_statistic_dict():
     statdict['host_redvypr']       = {}
     return statdict
 
+
+def rem_device_from_statistics(deviceaddress, statdict):
+    """
+    Remove a deviceaddress from the statistic
+    Args:
+        deviceaddress:
+        statdict:
+
+    Returns:
+
+    """
+    keys_removed = []
+    for k in statdict.keys():
+        try:
+            statdict[k].pop(deviceaddress)
+            keys_removed.append(k)
+        except:
+            pass
+
+    return keys_removed
+
 def do_data_statistics(data, statdict):
     """
     Fills in the statistics dictionary with the data packet information

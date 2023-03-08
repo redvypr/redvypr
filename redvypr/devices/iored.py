@@ -1008,6 +1008,29 @@ class Device(redvypr_device):
                         all_devices = self.statistics['device_redvypr'].keys()
                         print('len all_devices',len(all_devices))
                         print('len all_devices tmp', len(all_devices_tmp))
+                        # Compare if devices need to be removed
+                        devices_rem = []
+                        for dold in all_devices:
+                            print('dold',dold)
+                            daddr = data_packets.redvypr_address(dold)
+                            print('daddr',daddr)
+                            if daddr.uuid == self.host_uuid:  # This should not happen but anyways
+                                print('Own device, doing nothing')
+                                pass
+                            elif(dold in all_devices_tmp):
+                                pass
+                            else:
+
+                                devices_rem.append(dold)
+
+                        for drem in devices_rem:
+                            print('Removing now', drem)
+                            try:
+                                keys_removed = data_packets.rem_device_from_statistics(drem, self.statistics)
+                            except Exception as e:
+                                print('Removing issue', e)
+                            print('removed from keys', keys_removed)
+
                         #if 'devices_removed' in data['info'].keys():
                         #    for device_removed in data['info']['devices_removed']:
                         #        print('Removing device',device_removed)
