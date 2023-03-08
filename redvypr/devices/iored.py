@@ -199,7 +199,7 @@ def create_datapacket_from_deviceinfo(device_info):
         return dpacket
 
 
-def connect_remote_host(remote_uuid,zmq_sub,dataqueue,statusqueue):
+def connect_remote_host(remote_uuid,zmq_url_pub,zmq_url_rep,dataqueue,statusqueue,hostuuid,hostinfos):
     """
     Connects to a remote iored by starting a thread
     Args:
@@ -210,30 +210,56 @@ def connect_remote_host(remote_uuid,zmq_sub,dataqueue,statusqueue):
     """
     remote_dict = {}
     config_zmq = {}
-    config_zmq['zmq_sub'] = zmq_sub
+    config_zmq['zmq_pub'] = zmq_url_pub
+    config_zmq['zmq_rep'] = zmq_url_rep
     comqueue = queue.Queue(maxsize=1000)
     statqueue = queue.Queue(maxsize=1000)
     remote_dict['comqueue'] = comqueue
     remote_dict['statqueue'] = statqueue
-    remote_dict['thread'] = threading.Thread(target=start_zmq_sub, args=(dataqueue, comqueue, statqueue, config_zmq, remote_uuid,statusqueue),daemon=True)
+    remote_dict['thread'] = threading.Thread(target=start_zmq_sub, args=(dataqueue, comqueue, statqueue, config_zmq, remote_uuid,statusqueue,hostuuid,hostinfos),daemon=True)
     remote_dict['thread'].start()
     if(remote_dict['thread'].is_alive()):
         return remote_dict
     else:
         return None
 
-def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, statusqueue):
+def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, statusqueue, hostuuid, hostinfos):
     """ zeromq thread for receiving data from a remote redvypr/iored host with a zmq.PUB socket. Thread is started
     by the main start thread.
     """
-    funcname = __name__ + '.start_recv()'
+    funcname = __name__ + '.start_recv(): '
     datastreams_dict = {}
     status = {'sub':[],'uuid':remote_uuid}
+    zmq_url_pub = config['zmq_pub']
+    zmq_url_rep = config['zmq_rep']
+    timeout_ms = 1000
+    #
+    socket_req = zmq_context.socket(zmq.REQ)
+    socket_req.setsockopt(zmq.RCVTIMEO, timeout_ms)  # milliseconds
+    try:
+        socket_req.connect(zmq_url_rep)
+        print(funcname + 'Connected (zmq.REQ) to url {:s}'.format(zmq_url_rep))
+    except Exception as e:
+        print('Could not connect (zmq.REQ) to url {:s}'.format(zmq_url_rep))
+        return None
+
+    socket_req.send(info_header['getinfo'])
+    try:
+        recv = socket_req.recv()
+        [packet_type, redvypr_info] = analyse_info_packet(recv) # Return data is [command, redvypr_info]
+    except Exception as e:
+        redvypr_info = None
+
+    print('Got data of type ', packet_type)
+    print('With information', redvypr_info)
+    if (redvypr_info is not None):  # Processing the information and sending it to redvypr
+        process_host_information(redvypr_info, hostuuid, hostinfos, statusqueue, dataqueue)
+
+    #
     sub = zmq_context.socket(zmq.SUB)
-    url = config['zmq_sub']
-    logger.debug(funcname + ':Start receiving data from url {:s}'.format(url))
+    logger.debug(funcname + ':Start receiving data (zmq.SUB) from url {:s}'.format(zmq_url_pub))
     sub.setsockopt(zmq.RCVTIMEO, 200)
-    sub.connect(url)
+    sub.connect(zmq_url_pub)
     datapackets = 0
     bytes_read  = 0
     npackets    = 0 # Number packets received
@@ -241,7 +267,7 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
     remote_uuidb = remote_uuid.encode('utf-8')
     print('Subscribing to',remote_uuidb)
     sub.setsockopt(zmq.SUBSCRIBE, remote_uuidb)
-    #sub.setsockopt(zmq.SUBSCRIBE, b'')
+    #sub.setsockopt(zmq.SUBSCRIBE, b'') # Subscribe to all
     status['sub'].append(remote_uuid)
     statusqueue_zmq.put(copy.deepcopy(status))
 
@@ -254,8 +280,9 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
         # Check if a command was sent from main thread
         if com is not None:
             if(com == 'stop'):
-                logger.info(funcname + ' stopping zmq socket to {:s}'.format(url))
+                logger.info(funcname + ' stopping zmq sockets {:s}, {:s}'.format(zmq_url_rep,zmq_url_pub))
                 sub.close()
+                socket_req.close()
                 break
 
             elif com.startswith('sub'):
@@ -281,7 +308,8 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
                 except:
                     datastreams_dict[substring]['status'] = {}
 
-                datastreams_dict[substring]['status']['zmq_url'] = url
+                datastreams_dict[substring]['status']['zmq_url_pub'] = zmq_url_pub
+                datastreams_dict[substring]['status']['zmq_url_rep'] = zmq_url_rep
                 datastreams_dict[substring]['status']['subscribeable'] = True
                 datastreams_dict[substring]['status']['subscribed'] = True
 
@@ -298,20 +326,20 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
 
                 # datastreams_dict is dictionary from the device, changed in a thread, use only atomic operations
                 try:
-                    datastreams_dict[unsubstring]['status']['zmq_url'] = url
-                    datastreams_dict[substring]['status']['subscribeable'] = True
+                    datastreams_dict[unsubstring]['status']['zmq_url_pub'] = zmq_url_pub
+                    datastreams_dict[unsubstring]['status']['zmq_url_rep'] = zmq_url_rep
+                    datastreams_dict[unsubstring]['status']['subscribeable'] = True
                     datastreams_dict[unsubstring]['status']['subscribed'] = False
                 except:
                     pass
 
                 statusqueue_zmq.put(copy.deepcopy(status))
                 comdata = {}
-                comdata['deviceaddr'] = substring
+                comdata['deviceaddr'] = unsubstring
                 comdata['devicestatus'] = { 'subscribed': False}
                 datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='',
                                                         devicename=None, host=None, comdata=comdata)
                 dataqueue.put(datapacket)
-                #dataqueue.put(datapacket)
 
         # Command finished, lets receive some data
         try:
@@ -844,10 +872,11 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                                 funcname + ': Connecting to uuid {:s}'.format(remote_uuid))
 
                             print('hostinfos', hostinfos.keys())
-                            zmq_url = hostinfos[remote_uuid]['zmq_pub']
+                            zmq_url_pub = hostinfos[remote_uuid]['zmq_pub']
+                            zmq_url_rep = hostinfos[remote_uuid]['zmq_rep']
 
                             logstart.info(
-                                funcname + ': at url {:s}'.format(zmq_url))
+                                funcname + ': at url {:s}'.format(zmq_url_pub))
                             try:  # Lets check if the thread is already running
                                 FLAG_CONNECTED = zmq_sub_threads[remote_uuid]['thread'].is_alive()
                             except Exception as e:
@@ -856,7 +885,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             # If not running, create a thread and subscribe to
                             if FLAG_CONNECTED == False:
                                 logstart.debug(funcname + ' starting new thread for connecting')
-                                connect_dict = connect_remote_host(remote_uuid, zmq_url, dataqueue,statusqueue)
+                                connect_dict = connect_remote_host(remote_uuid, zmq_url_pub, zmq_url_rep, dataqueue,statusqueue,hostuuid,hostinfos)
                                 if (connect_dict is not None):
                                     zmq_sub_threads[remote_uuid] = connect_dict
 
@@ -871,9 +900,10 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             logstart.info(
                                 funcname + ': Subscribing to uuid {:s}'.format(remote_uuid))
                             print('keys', hostinfos.keys())
-                            zmq_url = hostinfos[remote_uuid]['zmq_pub']
+                            zmq_url_pub = hostinfos[remote_uuid]['zmq_pub']
+                            zmq_url_rep = hostinfos[remote_uuid]['zmq_rep']
                             logstart.info(
-                                funcname + ': at url {:s}'.format(zmq_url))
+                                funcname + ': at url {:s}'.format(zmq_url_pub))
                             try: # Lets check if the thread is already running
                                 zmq_sub_threads[remote_uuid]['comqueue'].put('sub ' + substring)
                                 FLAG_START_SUB_THREAD = False
@@ -884,7 +914,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             # If not running, create a thread and subscribe to
                             if FLAG_START_SUB_THREAD:
                                 logstart.debug(funcname + ' Starting new thread')
-                                connect_dict = connect_remote_host(remote_uuid,zmq_url,dataqueue)
+                                connect_dict = connect_remote_host(remote_uuid,zmq_url_pub,zmq_url_rep,dataqueue)
                                 if(connect_dict is not None):
                                     zmq_sub_threads[remote_uuid] = connect_dict
 
