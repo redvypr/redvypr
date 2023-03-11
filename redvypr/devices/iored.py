@@ -101,7 +101,7 @@ def create_info_packet(device_info,url_pub,url_rep):
     """
 
     info_packet = {'host': device_info['hostinfo'], 't': time.time(), 'zmq_pub': url_pub, 'zmq_rep': url_rep,
-                   'deviceinfo_all': device_info['deviceinfo_all'], 'hostinfo_opt': device_info['hostinfo_opt']}
+                   'deviceinfo_all': device_info['deviceinfo_all'], 'hostinfo_opt': device_info['hostinfo_opt'],'devicename':device_info['devicename']}
 
     print('Device info',device_info)
     # print('--------------')
@@ -183,15 +183,16 @@ def create_datapacket_from_deviceinfo(device_info):
     """
     funcname = __name__ + '.create_datapacket_from_deviceinfo()'
     d = device_info
+    dpacket = {}
+    dpacket['_redvypr'] = d['_redvypr']
+    dpacket['_redvypr']['connected'] = None  # Used for zmq subscription
     if d['_redvypr']['devicemodulename'] == 'iored':
         subscribeable = False
+        dpacket['_redvypr']['connected'] = False
     else:
-        subscribeable = True
+        subscribeable = True # Flag if the device can be subscribed via zmq, the iored device itself cannot
     #print('device info',d)
     if True:
-        dpacket = {}
-        dpacket['_redvypr']  = d['_redvypr']
-
         dpacket['_redvypr']['subscribeable'] = subscribeable # Extra boolean used for zmq subscription
         dpacket['_redvypr']['subscribed'] = False   # Extra boolean used for zmq subscription
         dpacket['_deviceinfo'] = d['_deviceinfo']
@@ -228,10 +229,17 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
     by the main start thread.
     """
     funcname = __name__ + '.start_recv(): '
+    print('Hallo 1!', hostinfos)
+    print('Hallo!',hostinfos[remote_uuid])
+    raddr_iored_remote = data_packets.redvypr_address(local_hostinfo=hostinfos[remote_uuid]['host'],devicename=hostinfos[remote_uuid]['devicename'])
+    addrstr_iored_remote = raddr_iored_remote.get_str('<device>:<host>@<addr>::<uuid>')
+    print('raddr iored remote',raddr_iored_remote)
     datastreams_dict = {}
-    status = {'sub':[],'uuid':remote_uuid}
+    status = {'sub':[],'uuid':remote_uuid,'type':'status'}
     zmq_url_pub = config['zmq_pub']
     zmq_url_rep = config['zmq_rep']
+    status['zmq_pub'] = config['zmq_pub']
+    status['zmq_rep'] = config['zmq_rep']
     timeout_ms = 1000
     #
     socket_req = zmq_context.socket(zmq.REQ)
@@ -254,6 +262,10 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
     print('With information', redvypr_info)
     if (redvypr_info is not None):  # Processing the information and sending it to redvypr
         process_host_information(redvypr_info, hostuuid, hostinfos, statusqueue, dataqueue)
+    else:
+        status['status'] = 'notconnected'
+        statusqueue_zmq.put(copy.deepcopy(status))
+        return
 
     #
     sub = zmq_context.socket(zmq.SUB)
@@ -269,7 +281,17 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
     sub.setsockopt(zmq.SUBSCRIBE, remote_uuidb)
     #sub.setsockopt(zmq.SUBSCRIBE, b'') # Subscribe to all
     status['sub'].append(remote_uuid)
+    status['status'] = 'connected'
     statusqueue_zmq.put(copy.deepcopy(status))
+    # Status of iored packet
+    print('Sending status of redvypr iored connection')
+    comdata = {}
+    comdata['deviceaddr'] = addrstr_iored_remote
+    comdata['devicestatus'] = { 'connected': True}  # This is the status of the iored device
+    datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='', devicename=None,
+                                            host=None, comdata=comdata)
+    dataqueue.put(datapacket)
+
 
     while True:
         try:
@@ -339,6 +361,7 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
                 comdata['devicestatus'] = { 'subscribed': False}
                 datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='',
                                                         devicename=None, host=None, comdata=comdata)
+                # Send a device status packet to notify a device change
                 dataqueue.put(datapacket)
 
         # Command finished, lets receive some data
@@ -584,7 +607,7 @@ def process_host_information(redvypr_info, hostuuid, hostinfos, statusqueue, dat
             redvypr_info)  # Copy it to the hostinfo of the device. This should be thread safe
         #
         print('redvypr_info',redvypr_info)
-        statusqueue.put_nowait({'type': 'info', 'info': redvypr_info})
+        statusqueue.put({'type': 'info', 'info': redvypr_info})
 
 
 def zmq_publish_data(sock_zmq_pub,data,address_style='<device>:<host>@<addr>::<uuid>'):
@@ -824,6 +847,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             process_host_information(redvypr_info,hostuuid,hostinfos,statusqueue,dataqueue)
 
                         print('End query')
+
                     # The command is sent directly from redvypr.distribute_data() after it noticed a device change
                     elif (command == 'deviceinfo_all'):
                         logstart.info(funcname + ': Got devices update')
@@ -865,7 +889,27 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                         except Exception as e:
                             logstart.exception(e)
 
+                    # Connect command, either with a uuid or with a url. If its a url, first a query is done to test if
+                    # there is a iored host listening on the other side
                     elif (command == 'connect'):
+                        # Got an url, trying to connect first
+                        if 'url_connect' in data.keys():
+                            print('Trying to connect to {:s}'.format(data['url_connect']))
+                            print('Query')
+                            try:
+                                [packet_type, redvypr_info] = query_host(data['url_connect'])
+                            except Exception as e:
+                                logger.exception(e)
+                            print('Got data of type ', packet_type)
+                            print('With information', redvypr_info)
+                            if (redvypr_info is not None):  # Processing the information (i.e. adding to hostinfos) and sending it to redvypr
+                                data['remote_uuid'] = redvypr_info['host']['uuid'] # Add the uuid to data for connection
+                                process_host_information(redvypr_info, hostuuid, hostinfos, statusqueue, dataqueue)
+                            else:
+                                statusqueue.put(
+                                    {'type': 'status', 'status': 'connect fail', 'url_rep': data['url_connect']})
+
+                        # Try to connect to uuid
                         try:
                             remote_uuid = data['remote_uuid']
                             logstart.info(
@@ -885,13 +929,14 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             # If not running, create a thread and subscribe to
                             if FLAG_CONNECTED == False:
                                 logstart.debug(funcname + ' starting new thread for connecting')
-                                connect_dict = connect_remote_host(remote_uuid, zmq_url_pub, zmq_url_rep, dataqueue,statusqueue,hostuuid,hostinfos)
+                                connect_dict = connect_remote_host(remote_uuid, zmq_url_pub, zmq_url_rep, dataqueue, statusqueue, hostuuid, hostinfos)
                                 if (connect_dict is not None):
                                     zmq_sub_threads[remote_uuid] = connect_dict
 
-
                         except Exception as e:
+                            statusqueue.put({'type': 'status', 'status': 'connect fail','zmq_url_pub':zmq_url_pub,'zmq_url_rep':zmq_url_rep})
                             logstart.exception(e)
+
 
                     elif (command == 'subscribe'):
                         try:
@@ -952,6 +997,10 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
 
 
 class Device(redvypr_device):
+    """
+    iored device
+    """
+
     def __init__(self, **kwargs):
         """
         """
@@ -995,7 +1044,6 @@ class Device(redvypr_device):
                             try:
                                 self.__remote_info__[raddr.address_str].update(data['info'])
                             except:
-
                                 self.__remote_info__[raddr.address_str] = data['info']
 
                             # If deviceinfo_all in keys, update the statistics, this is done in a thread, atomix operations
@@ -1092,15 +1140,6 @@ class Device(redvypr_device):
         funcname = __name__ + '.__update_hostinfo__():'
         print(funcname)
 
-
-    def process_statusinformation_from_threads(self):
-        """
-        This thread reads the statusqueue that is filled from the start thread/subprocess, with informations about devices
-        subscriptions etc.
-        
-        Returns:
-
-        """
 
     def get_remote_device_info(self,if_changed=False):
         """
@@ -1416,6 +1455,27 @@ class Device(redvypr_device):
 
         return devicedict
 
+    def query_host(self,url_query):
+        """
+        Querying a remote host
+        Args:
+            url_query:
+
+        Returns:
+
+        """
+        self.thread_command('query', {'url_query': url_query})
+
+    def connect_host(self, url_connect):
+        """
+        Connects to a remote host
+        Args:
+            url_connect:
+
+        Returns:
+
+        """
+        self.thread_command('connect', {'url_connect': url_connect})
 
 
 class displayDeviceWidget(QtWidgets.QWidget):
@@ -1444,8 +1504,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.subbtn = QtWidgets.QPushButton('Subscribe')
         self.subbtn.clicked.connect(self.__subscribe_clicked__)
         self.subbtn.setEnabled(False)
-        layout.addWidget(self.deviceinfolabel, 0, 0)
-        layout.addWidget(self.deviceinfotree, 1, 0)
+        #layout.addWidget(self.deviceinfolabel, 0, 0)
+        #layout.addWidget(self.deviceinfotree, 1, 0)
         layout.addWidget(self.devicelabel, 2, 0)
         layout.addWidget(self.devicetree,3,0,1,2)
         layout.addWidget(self.subbtn, 4, 0,1,2)
@@ -1467,7 +1527,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '__query_command__():'
         url_query = self.queryaddr.text()
         logger.info(funcname + 'Querying {:s}'.format(url_query))
-        self.device.thread_command('query', {'url_query':url_query})
+        self.device.query_host(url_query)
 
 
     def __item_changed__(self,new,old):
@@ -1483,11 +1543,22 @@ class displayDeviceWidget(QtWidgets.QWidget):
             except:
                 subscribed = False
 
+            try:
+                connected = new.connected
+            except:
+                connected = None
+
             # Check if its a device item
-            if (new.parent() == None):
-                print('Got device')
-                self.subbtn.setText('Connect')
-                self.subbtn.setEnabled(True)
+            #if (new.parent() == None):
+            if (new.subscribeable==False) or (new.parent() == None):
+                print('Got device to connect')
+                print('Connected',connected)
+                if(connected == False):
+                    self.subbtn.setText('Connect')
+                    self.subbtn.setEnabled(True)
+                else:
+                    self.subbtn.setText('Disconnect')
+                    self.subbtn.setEnabled(True)
             elif(new.subscribeable == False):
                 self.subbtn.setText('Subscribe')
                 self.subbtn.setEnabled(False)
@@ -1599,7 +1670,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         print('display widget update devicelist')
         self.devicetree.clear()
         self.devicetree.setColumnCount(2)
-        self.devicetree.setHeaderLabels(['Address', 'Subscribed'])
+        self.devicetree.setHeaderLabels(['Address', 'Status'])
         root = self.devicetree.invisibleRootItem()
         devices = self.device.get_devices_by_host()
         print('devices',devices)
@@ -1616,18 +1687,48 @@ class displayDeviceWidget(QtWidgets.QWidget):
             root.addChild(itm)
             for d in devices[hostnameuuid]:
                 #print('Device d',d)
-                substr = 'not connected'
+
+                substr = 'not subscribed'
+                FLAG_SUBSCRIBED = None
+                FLAG_CONNECTED = None
+                if(d['_redvypr']['devicemodulename'] == 'iored'):
+                    # iored devices are connected, not subscribed
+                    print('dfds',d['_redvypr'])
+                    try:
+                        FLAG_CONNECTED = d['_redvypr']['connected']
+                        itm.connected = FLAG_CONNECTED
+                        if FLAG_CONNECTED:
+                            substr = 'connected'
+                            itm.setText(1, 'connected')
+                        else:
+                            substr = 'not connected'
+                            itm.setText(1, 'not connected' + str(FLAG_CONNECTED))
+
+                    except Exception as e:
+                        print('Subscribed?',e)
+                        #FLAG_CONNECTED = False
+
+                else:
+                    try:
+                        FLAG_SUBSCRIBED = d['_redvypr']['subscribed']
+                        if FLAG_SUBSCRIBED:
+                            substr = 'subscribed'
+                    except Exception as e:
+                        #print('Subscribed?',e)
+                        FLAG_SUBSCRIBED = False
+
                 try:
-                    FLAG_SUBSCRIBED = d['_redvypr']['subscribed']
-                    if FLAG_SUBSCRIBED:
-                        substr = 'subscribed'
+                    FLAG_SUBSCRIBEABLE = d['_redvypr']['subscribeable']
                 except Exception as e:
-                    #print('Subscribed?',e)
-                    FLAG_SUBSCRIBED = False
+                    # print('Subscribed?',e)
+                    FLAG_SUBSCRIBEABLE = False
+
 
                 devname = d['_redvypr']['device']
                 itmdevice = QtWidgets.QTreeWidgetItem([devname,substr])
+                itmdevice.subscribeable = FLAG_SUBSCRIBEABLE
                 itmdevice.subscribed = FLAG_SUBSCRIBED
+                itmdevice.connected = FLAG_CONNECTED
                 itmdevice.hostnameuuid = hostnameuuid
                 itmdevice._redvypr = d['_redvypr']
                 try:
