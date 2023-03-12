@@ -404,6 +404,15 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
                             dataqueue.put(data)
                             datapackets += 1
 
+    print('Thread stopped, sending status of redvypr iored connection')
+    comdata = {}
+    comdata['deviceaddr'] = addrstr_iored_remote
+    comdata['devicestatus'] = {'connected': False}  # This is the status of the iored device
+    datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='',
+                                            devicename=None,
+                                            host=None, comdata=comdata)
+    dataqueue.put(datapacket)
+
 
 def start_zmq_reply(config, device_info,url_pub,url_rep,thread_uuid):
     """ zeromq thread to reply for remote requests for information
@@ -894,10 +903,10 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                     elif (command == 'connect'):
                         # Got an url, trying to connect first
                         if 'url_connect' in data.keys():
-                            print('Trying to connect to {:s}'.format(data['url_connect']))
+                            print('Trying to connect to {:s}'.format(data['url']))
                             print('Query')
                             try:
-                                [packet_type, redvypr_info] = query_host(data['url_connect'])
+                                [packet_type, redvypr_info] = query_host(data['url'])
                             except Exception as e:
                                 logger.exception(e)
                             print('Got data of type ', packet_type)
@@ -907,7 +916,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                                 process_host_information(redvypr_info, hostuuid, hostinfos, statusqueue, dataqueue)
                             else:
                                 statusqueue.put(
-                                    {'type': 'status', 'status': 'connect fail', 'url_rep': data['url_connect']})
+                                    {'type': 'status', 'status': 'connect fail', 'url_rep': data['url']})
 
                         # Try to connect to uuid
                         try:
@@ -932,9 +941,43 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                                 connect_dict = connect_remote_host(remote_uuid, zmq_url_pub, zmq_url_rep, dataqueue, statusqueue, hostuuid, hostinfos)
                                 if (connect_dict is not None):
                                     zmq_sub_threads[remote_uuid] = connect_dict
+                            else:
+                                logstart.info(funcname + ': url {:s} already connected'.format(zmq_url_pub))
 
                         except Exception as e:
                             statusqueue.put({'type': 'status', 'status': 'connect fail','zmq_url_pub':zmq_url_pub,'zmq_url_rep':zmq_url_rep})
+                            logstart.exception(e)
+
+
+                    elif (command == 'disconnect'):
+                        # Got an url, trying to connect first
+                        if 'url_connect' in data.keys():
+                            print('Trying to disconnect to {:s}'.format(data['url']))
+                            print('Nood implemented yet')
+                        # Try to connect to uuid
+                        try:
+                            remote_uuid = data['remote_uuid']
+                            logstart.info(
+                                funcname + ': Disconnecting from uuid {:s}'.format(remote_uuid))
+
+                            print('hostinfos', hostinfos.keys())
+                            zmq_url_pub = hostinfos[remote_uuid]['zmq_pub']
+                            zmq_url_rep = hostinfos[remote_uuid]['zmq_rep']
+
+
+                            try:  # Lets check if the thread is already running
+                                FLAG_CONNECTED = zmq_sub_threads[remote_uuid]['thread'].is_alive()
+                            except Exception as e:
+                                FLAG_CONNECTED = False
+
+                            # If not running, create a thread and subscribe to
+                            if FLAG_CONNECTED:
+                                logstart.info(funcname + ': thread is alive, stopping it now')
+                                zmq_sub_threads[remote_uuid]['comqueue'].put('stop')
+
+                        except Exception as e:
+                            statusqueue.put({'type': 'status', 'status': 'disconnect fail', 'zmq_url_pub': zmq_url_pub,
+                                             'zmq_url_rep': zmq_url_rep})
                             logstart.exception(e)
 
 
@@ -1377,7 +1420,7 @@ class Device(redvypr_device):
 
     def zmq_connect(self, uuid):
         """
-        Connects to a remote iored device, that means that a thread is started the is continously reading the zmq.sub
+        Connects to a remote iored device, that means that a thread is started (start_zmq_sub) that is continously reading the zmq.sub
         socket of the remote device as well as a zmq.req socket to send requests to the device.
         self.get_devices_by_host()
 
@@ -1391,6 +1434,10 @@ class Device(redvypr_device):
         self.logger.debug(funcname)
         self.thread_command('connect', {'remote_uuid': uuid})
 
+    def zmq_disconnect(self, uuid):
+        funcname = __name__ + 'zmq_disconnect()'
+        self.logger.debug(funcname)
+        self.thread_command('disconnect', {'remote_uuid': uuid})
 
     def zmq_subscribe(self,uuid,substring):
         """
@@ -1475,7 +1522,7 @@ class Device(redvypr_device):
         Returns:
 
         """
-        self.thread_command('connect', {'url_connect': url_connect})
+        self.thread_command('connect', {'url': url_connect})
 
 
 class displayDeviceWidget(QtWidgets.QWidget):
@@ -1576,13 +1623,21 @@ class displayDeviceWidget(QtWidgets.QWidget):
         getSelected = self.devicetree.selectedItems()
         if getSelected:
             baseNode = getSelected[0]
-            if(baseNode.parent() == None):
-                print('Got device, connecting')
+            #if(baseNode.parent() == None):
+            if baseNode.subscribeable == False:
+
                 #uuid = baseNode._redvypr['host']['uuid']
                 hostnameuuid = baseNode.hostnameuuid
                 hostuuid = baseNode.hostuuid
                 print('uuid',hostuuid)
-                self.device.zmq_connect(hostuuid)
+                if (baseNode.connected == False):
+                    print('Got device, connecting')
+                    self.device.zmq_connect(hostuuid)
+                else:
+                    print('Got device, disconnecting')
+                    self.device.zmq_disconnect(hostuuid)
+
+
             else:
                 #devstr = baseNode.text(0)
                 devstr = data_packets.get_deviceaddress_from_redvypr_meta(baseNode._redvypr,uuid=True)
