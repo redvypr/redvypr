@@ -50,6 +50,7 @@ import zmq
 import socket
 import struct
 import uuid as uuid_module
+import hashlib
 
 import redvypr
 from redvypr.device import redvypr_device
@@ -67,8 +68,8 @@ config_template['template_name']  = 'iored'
 config_template['redvypr_device'] = {}
 config_template['zmq_pub_port_start'] = 18196
 config_template['zmq_pub_port_end']   = 19000
-config_template['multicast_listen']   = {'type':'bool','default':False,'description':'Listening for multicast information'}
-config_template['multicast_send']     = {'type':'bool','default':False,'description':'Sending information via multicast (using multicast_address and multicast_port)'}
+config_template['multicast_listen']   = {'type':'bool','default':True,'description':'Listening for multicast information'}
+config_template['multicast_send']     = {'type':'bool','default':True,'description':'Sending information via multicast (using multicast_address and multicast_port)'}
 config_template['multicast_address']  = "239.255.255.239"
 config_template['multicast_dtbeacon']  = {'type':'int','default':-1,'description':'Time [s] a multicastinformation is sent, disable with negative number'}
 config_template['multicast_port']     = 18196
@@ -79,6 +80,7 @@ config_template['redvypr_device']['description'] = description
 # Headers for network packets
 info_header = {}
 info_header['info']    = b'redvypr info'
+info_header['infomd5'] = b'redvypr md5info'
 info_header['getinfo'] = b'redvypr getinfo'
 
 logging.basicConfig(stream=sys.stderr)
@@ -110,6 +112,34 @@ def create_info_packet(device_info,url_pub,url_rep):
     hostinfoy = yaml.dump(info_packet, explicit_end=True, explicit_start=True)
     hostinfoy = hostinfoy.encode('utf-8')
     datab = info_header['info'] + hostinfoy
+
+    return datab
+
+def create_info_packet_md5(device_info,url_pub,url_rep):
+    """
+    Creates a binary information packet that is used by iored to send the information about the redvypr instance.
+    Args:
+        device_info:
+        url_pub:
+        url_rep:
+
+    Returns:
+         binary string containing the information
+    """
+    devtmp = yaml.dump(device_info['deviceinfo_all']).encode('utf-8')
+    deviceinfo_all_md5 = hashlib.md5(devtmp).hexdigest()
+    hosttmp = yaml.dump(device_info['hostinfo_opt']).encode('utf-8')
+    hostinfo_opt_md5 = hashlib.md5(hosttmp).hexdigest()
+    info_packet = {'host': device_info['hostinfo'], 't': time.time(), 'zmq_pub': url_pub, 'zmq_rep': url_rep,
+                   'deviceinfo_all_md5':deviceinfo_all_md5 , 'hostinfo_opt_md5':hostinfo_opt_md5,'devicename':device_info['devicename']}
+
+    print('Device info',device_info)
+    # print('--------------')
+    print('Multicast packet', info_packet)
+    # print('--------------')
+    hostinfoy = yaml.dump(info_packet, explicit_end=True, explicit_start=True)
+    hostinfoy = hostinfoy.encode('utf-8')
+    datab = info_header['infomd5'] + hostinfoy
 
     return datab
 
@@ -150,8 +180,18 @@ def analyse_info_packet(datab):
     redvypr_info = None
     trecv = time.time()
     if datab.startswith(info_header['info']): # Search for info packet
+        headerlen = len(info_header['info'])
         try:
-            headerlen = len(info_header['info'])
+            data = datab.decode('utf-8')
+            redvypr_info = yaml.safe_load(data[headerlen:])
+            redvypr_info['trecv'] = trecv
+            return ['info',redvypr_info]
+        except Exception as e:
+            redvypr_info = ['info',None]
+
+    elif datab.startswith(info_header['infomd5']):
+        headerlen = len(info_header['infomd5'])
+        try:
             data = datab.decode('utf-8')
             redvypr_info = yaml.safe_load(data[headerlen:])
             redvypr_info['trecv'] = trecv
@@ -466,10 +506,10 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
         if (data_multicast_recv is not None):
             # print('Got multicast data',data_multicast_recv)
             trecv = time.time()
-            print('Got multicast data')
+            print('Got multicast data',data_multicast_recv)
             [multicast_command, redvypr_info] = analyse_info_packet(data_multicast_recv)
 
-            # print('Command',multicast_command,redvypr_info)
+            print('Command',multicast_command,redvypr_info)
             print('from uuid', redvypr_info['host']['uuid'])
             # Information request sent by another iored device
             if multicast_command == 'getinfo':
@@ -483,7 +523,7 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
                     print('request from myself, doing nothing')
                     pass
                 else:
-                    FLAG_MULTICAST_INFO = True
+                    MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = True
                     statusqueue.put_nowait({'type': 'getinfo', 'info': redvypr_info})
             # Information packet sent by another iored device
             elif multicast_command == 'info':
@@ -515,7 +555,7 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
         # START Sending multicast data
         #
         if (config['multicast_dtbeacon'] > 0) or MULTICASTFLAGS['FLAG_MULTICAST_INFO']:
-            if ((time.time() - MULTICASTFLAGS['tbeacon']) > config['multicast_dtbeacon']) or FLAG_MULTICAST_INFO:
+            if ((time.time() - MULTICASTFLAGS['tbeacon']) > config['multicast_dtbeacon']) or MULTICASTFLAGS['FLAG_MULTICAST_INFO']:
                 MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = False
                 MULTICASTFLAGS['tbeacon'] = time.time()
                 print('Sending multicast info',time.time())
@@ -524,12 +564,14 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
                 # print('deviceinfo all', device_info['deviceinfo_all'])
                 # print('----- Deviceinfo all done -----')
                 # Create an information packet
-                datab = create_info_packet(device_info, url, url_rep)
+                datab = create_info_packet_md5(device_info, url, url_rep)
                 sock_multicast_send.sendto(datab, (MULTICASTADDRESS, MULTICASTPORT))
 
                 # print('Sending zmq data')
                 # sock_zmq_pub.send_multipart([b'123',b'Hallo!'])
+        #
         # Create a getinfo command and broadcast it over multicast
+        #
         if MULTICASTFLAGS['FLAG_MULTICAST_GETINFO']:
             MULTICASTFLAGS['FLAG_MULTICAST_GETINFO'] = False
             print('Sending multicast getinfo request')
@@ -1002,7 +1044,8 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             # If not running, create a thread and subscribe to
                             if FLAG_START_SUB_THREAD:
                                 logstart.debug(funcname + ' Starting new thread')
-                                connect_dict = connect_remote_host(remote_uuid,zmq_url_pub,zmq_url_rep,dataqueue)
+                                connect_dict = connect_remote_host(remote_uuid, zmq_url_pub, zmq_url_rep, dataqueue,
+                                                                   statusqueue, hostuuid, hostinfos)
                                 if(connect_dict is not None):
                                     zmq_sub_threads[remote_uuid] = connect_dict
 
@@ -1625,7 +1668,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
             baseNode = getSelected[0]
             #if(baseNode.parent() == None):
             if baseNode.subscribeable == False:
-
                 #uuid = baseNode._redvypr['host']['uuid']
                 hostnameuuid = baseNode.hostnameuuid
                 hostuuid = baseNode.hostuuid
@@ -1757,7 +1799,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                             itm.setText(1, 'connected')
                         else:
                             substr = 'not connected'
-                            itm.setText(1, 'not connected' + str(FLAG_CONNECTED))
+                            itm.setText(1, 'not connected')
 
                     except Exception as e:
                         print('Subscribed?',e)
@@ -1785,6 +1827,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 itmdevice.subscribed = FLAG_SUBSCRIBED
                 itmdevice.connected = FLAG_CONNECTED
                 itmdevice.hostnameuuid = hostnameuuid
+                itmdevice.hostuuid = hostuuid
                 itmdevice._redvypr = d['_redvypr']
                 try:
                     itmdevice.subscribeable = d['_redvypr']['subscribeable']
