@@ -760,6 +760,23 @@ class redvypr(QtCore.QObject):
                         funcname + ':No configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
                     FLAG_HAS_TEMPLATE = False
 
+                # Try to get information about the maximum number of devices
+                try:
+                    max_devices = config_template['redvypr_device']['max_devices']
+                except:
+                    max_devices = -1
+
+                if(max_devices > 0):
+                    ndevices = 0
+                    for d in self.devices:
+                        devname = d['device'].devicemodulename
+                        if(devname == devicemodulename):
+                            ndevices += 1
+
+                    if ndevices >= max_devices:
+                        logger.warning(funcname + ' Could not add {:s}, maximum number of {:d} devices reached'.format(devicemodulename,max_devices))
+                        return
+
                 # Try to get information about publish/subscribe capabilities described in the config_template
                 try:
                     publish = config_template['redvypr_device']['publish']

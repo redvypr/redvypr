@@ -71,6 +71,7 @@ config_template['multicast_send']     = {'type':'bool','default':False,'descript
 config_template['multicast_address']  = "239.255.255.239"
 config_template['multicast_dtbeacon'] = {'type':'int','default':-1,'description':'Time [s] a multicastinformation is sent, disable with negative number'}
 config_template['multicast_port']     = 18196
+config_template['redvypr_device']['max_devices']  = 1
 config_template['redvypr_device']['publish']   = True
 config_template['redvypr_device']['subscribe'] = True
 config_template['redvypr_device']['description'] = description
