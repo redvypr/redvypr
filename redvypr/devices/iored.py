@@ -276,7 +276,6 @@ def create_datapacket_from_deviceinfo(device_info,tlastseen=None):
     #print('device info',d)
     if True:
         dpacket['_redvypr']['subscribeable'] = subscribeable # Extra boolean used for zmq subscription
-        dpacket['_redvypr']['subscribed'] = False   # Extra boolean used for zmq subscription
         dpacket['_deviceinfo'] = d['_deviceinfo']
         dpacket['_keyinfo']  = d['_keyinfo']
         return dpacket
