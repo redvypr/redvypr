@@ -882,7 +882,7 @@ class redvypr(QtCore.QObject):
                     logger.exception(e)
 
 
-                devicedict = {'device': device, 'thread': None, 'dataout': [], 'gui': [], 'guiqueue': [guiqueue],
+                devicedict = {'device': device, 'dataout': [], 'gui': [], 'guiqueue': [guiqueue],
                               'statistics': statistics, 'logger': devicelogger,'comqueue':comqueue}
 
                 # Add the modulename
@@ -967,9 +967,9 @@ class redvypr(QtCore.QObject):
 
         for sendict in self.devices:
             if (sendict['device'] == device):
-                if (sendict['thread'] == None):
+                if (sendict['device'].thread == None):
                     return
-                elif (sendict['thread'].is_alive()):
+                elif (sendict['device'].thread.is_alive()):
                     try:
                         device.thread_stop()
                         return
@@ -981,12 +981,7 @@ class redvypr(QtCore.QObject):
                     except:
                         datainqueuestop = False
 
-                    if (datainqueuestop):
-                        logger.debug(funcname + ':Stopping device with datainqueue: ' + device.name)
-                        device.datainqueue.put({'command': 'stop'})
-                    else:
-                        logger.debug(funcname + ':Stopping device with comqueue: ' + device.name)
-                        device.comqueue.put('stop')
+                    device.thread_stop()
 
                 else:
                     logger.warning(funcname + ': Could not stop thread.')
@@ -1401,14 +1396,15 @@ class redvypr(QtCore.QObject):
         FLAG_REMOVED = False
         for sendict in self.devices:
             if(sendict['device'] == device):
-                print('Found device')
-                if (sendict['thread'] == None):
+                print('Sendict',sendict)
+                if (sendict['device'].thread == None):
+                    logger.debug(funcname + 'Thread is not runnung, doing nothing')
                     pass
-                elif (sendict['thread'].is_alive()):
-                    device.comqueue.put('stop')
+                elif (sendict['device'].thread.is_alive()):
+                    logger.debug(funcname + 'Sending stop command')
+                    device.thread_stop()
 
                 self.devices.remove(sendict)
-                print('Devices len',len(self.devices))
                 FLAG_REMOVED = True
                 self.device_removed.emit()
                 device_changed_dict = {'type':'device_removed','device':device.name,'uuid':device.uuid}
@@ -2049,7 +2045,7 @@ class redvyprWidget(QtWidgets.QWidget):
         time.sleep(1)
         for sendict in self.redvypr.devices:
             try:
-                sendict['thread'].kill()
+                sendict['device'].thread.kill()
             except:
                 pass
 

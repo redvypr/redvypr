@@ -18,7 +18,7 @@ import copy
 import uuid
 import multiprocessing
 import threading
-from redvypr.data_packets import compare_datastreams, parse_addrstr, commandpacket, redvypr_address
+from redvypr.data_packets import compare_datastreams, parse_addrstr, commandpacket, redvypr_address, do_data_statistics
 import redvypr.config as redvyprConfig
 
 logging.basicConfig(stream=sys.stderr)
@@ -50,16 +50,25 @@ class redvypr_device(QtCore.QObject):
         except:
             self.host_uuid = ''
         self.thread_uuid = ''
+        self.host        = redvypr.hostinfo
         self.loglevel    = loglevel
         self.numdevice   = numdevice
         self.description = 'redvypr_device'
         self.statistics  = statistics
         self.mp          = multiprocess
         self.autostart   = autostart
+        self.thread      = None
         # Create a redvypr_address
         # self.address_str
         # self.address
         self.__update_address__()
+
+        # Add myself to the statistics
+        datapacket = {'_redvypr':{}}
+        datapacket['_redvypr']['device'] = self.name
+        datapacket['_redvypr']['devicemodulename'] = self.devicemodulename
+        datapacket['_redvypr']['host']=self.host
+        do_data_statistics(datapacket,self.statistics)
 
         # Adding the start function (the function that is executed as a thread or multiprocess and is doing all the work!)
         if(startfunction is not None):
@@ -314,7 +323,7 @@ class redvypr_device(QtCore.QObject):
 
         #logger.debug(funcname + 'Starting device: ' + str(device.name))
         self.logger.debug(funcname + 'Starting device: ' + str(self.name))
-        sendict = {}
+        sendict = {}#self.__sendict__
         # Find the right thread to start
         if True:
             if True:
@@ -425,7 +434,8 @@ class redvypr_device(QtCore.QObject):
     
     
     def set_apriori_datakey_info(self,datakey,unit='NA',datatype='d',size=None,latlon=None,location=None,comment=None,serialnumber=None,sensortype=None):
-        """ 
+        """
+        LEGACY
         Sets the apriori datakey information, information should
 
                 datakey:

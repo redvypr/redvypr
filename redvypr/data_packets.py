@@ -66,13 +66,16 @@ class redvypr_address():
 
     addresses are equal if there .address_str are equal
     TODO: let addrstr be another redvypr address and replace parts if datakay etc. is given
+    TODO: let given datakey, devicename etc. replace the potentially defined address
 
     """
-    def __init__(self,addrstr=None,datapacket=None,local_hostinfo=None, datakey='',devicename='',hostname='',addr='',uuid=''):
-        if addrstr is not None: # Address from addrstr
+    def __init__(self,addrstr=None,datapacket=None,local_hostinfo=None, datakey='',devicename='',hostname='',addr='',uuid='',redvypr_meta=None):
 
+        if addrstr is not None: # Address from addrstr
             self.address_str = addrstr
-        elif datapacket is not None: # Address from datapacket
+        elif redvypr_meta is not None:  # Address from _redvypr meta information
+            self.address_str = get_deviceaddress_from_redvypr_meta(redvypr_meta, uuid=True)
+        elif datapacket is not None:  # Address from datapacket
             if(len(datakey)>0):
                 datakey_tmp = datakey
             else:
@@ -81,7 +84,6 @@ class redvypr_address():
         else: # addrsstr from single ingredients
             self.address_str = create_addrstr(datakey,devicename,hostname,addr,uuid,local_hostinfo=local_hostinfo)
             #print('Address string',self.address_str)
-
         if (type(self.address_str) is not str):
             raise ValueError('Unsupported type of address str {:s}'.format(str(type(self.address_str))))
 
