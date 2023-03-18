@@ -11,7 +11,7 @@ logger.setLevel(logging.DEBUG)
 
 
 # A dictionary for the device_redvypr entry in the statistics
-device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {}}
+device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {},'numpackets':0}
 
 
 
@@ -383,7 +383,7 @@ def do_data_statistics(data, statdict):
 
     # Create device_redvypr
     try:
-        statdict['device_redvypr'][devicename_stat]
+        statdict['device_redvypr'][devicename_stat]['numpackets'] += 1
     except:  # Does not exist yet, create the entry
         statdict['device_redvypr'][devicename_stat] = copy.deepcopy(device_redvypr_statdict)
 

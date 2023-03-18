@@ -1836,6 +1836,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 connected = None
 
             # Check if its a device item
+            try:
+                tlastseen = new.tlastseen
+            except:
+                tlastseen = 0
             #if (new.parent() == None):
             if (new.subscribeable==False) or (new.parent() == None):
                 print('Got device to connect')
@@ -1855,6 +1859,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     self.subbtn.setText('Unsubscribe')
                 else:
                     self.subbtn.setText('Subscribe')
+
+            if tlastseen <0:
+                self.subbtn.setEnabled(False)
 
 
     def __subscribe_clicked__(self):
@@ -1915,6 +1922,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
         """
         funcname = '__open_remote_device_info__'
         logger.debug(funcname)
+        try:
+            item.devname
+        except:
+            print('Not a device, doing nothing')
+            return
+
         print('address',item.devname)
         devtxt = str(item.devinfo)
         self.hostinfo_widget = QtWidgets.QPlainTextEdit()
@@ -2023,6 +2036,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 itmdevice.hostuuid = hostuuid
                 itmdevice.devname = devname
                 itmdevice.devinfo = d
+                itmdevice.tlastseen = tlastseen
                 #itmdevice.__devaddress__ = raddr.address_str
                 itmdevice._redvypr = d['_redvypr']
                 try:
