@@ -1767,6 +1767,7 @@ class redvyprWidget(QtWidgets.QWidget):
             logger.exception(e)
             deviceinitwidget = QtWidgets.QWidget()  # Use a standard widget
 
+        # Connect the connect signal with connect_device()
         try:
             logger.debug(funcname + ': Connect signal connected')
             deviceinitwidget.connect.connect(self.connect_device)
@@ -1887,7 +1888,7 @@ class redvyprWidget(QtWidgets.QWidget):
         funcname = __name__ + '.open_connect_widget()'
         logger.debug(funcname + ':' + str(device))
         #self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
-        self.__con_widget = gui.redvyprConnectWidget2(redvypr=self.redvypr, device=device)
+        self.__con_widget = gui.redvyprSubscribeWidget(redvypr=self.redvypr, device=device)
         self.__con_widget.show()
 
     def __hostname_changed_click(self):

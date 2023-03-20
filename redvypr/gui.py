@@ -59,7 +59,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
             redvypr:
             device:
         """
-        super(redvyprConnectWidget2, self).__init__()
+        super(redvyprSubscribeWidget, self).__init__()
         self.redvypr = redvypr
         self.devices = self.redvypr.devices
         self.redvypr.devices_connected.connect(self.__devices_connected__)
@@ -71,19 +71,26 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
 
         # Set icon
         self.setWindowIcon(QtGui.QIcon(_icon_file))
-
+        self.setWindowTitle("redvypr subscribe")
         layout = QtWidgets.QGridLayout(self)
 
         font = QtGui.QFont('Arial', 20)
         font.setBold(True)
-        lab = QtWidgets.QLabel('Connecting devices for data exchange')
+
+        lab = QtWidgets.QLabel('Device subscriptions')
         lab.setFont(font)
+        lab.setAlignment(QtCore.Qt.AlignCenter)
 
         self.device_label = QtWidgets.QLabel('Device')
+        self.device_label.setAlignment(QtCore.Qt.AlignCenter)
         self.dataprovider_label = QtWidgets.QLabel('Data providing devices')
+        self.dataprovider_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.subscribe_label = QtWidgets.QLabel('Subscribed')
+        self.subscribe_label.setAlignment(QtCore.Qt.AlignCenter)
 
         self.devices_listallout = QtWidgets.QTreeWidget()  # All dataproviding devices
         self.devices_listallout.setColumnCount(2)
+        self.devices_listallout.setHeaderHidden(True)
         self.devices_listallout.currentItemChanged.connect(self.__update_device_choice__)
 
         self.devices_listcon = QtWidgets.QListWidget()  # The devices a connection is to be defined
@@ -101,14 +108,16 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
         self.__commitbtn.clicked.connect(self.commit_clicked)
         self.__commitbtn.setEnabled(False)
 
-        layout.addWidget(lab, 0, 1,1,2)
+        #layout.addWidget(lab, 0, 1,1,3)
+        layout.addWidget(lab, 0, 0,1,3)
         layout.addWidget(self.device_label, 1, 0)
         layout.addWidget(self.devices_listcon, 2, 0)
+        layout.addWidget(self.subscribe_label, 1, 1)
         layout.addWidget(self.devices_listallsub, 2, 1)
         layout.addWidget(self.dataprovider_label, 1, 2)
         layout.addWidget(self.devices_listallout, 2, 2)
         layout.addWidget(self.subscribe_edit, 3, 0, 1, 3)
-        layout.addWidget(self.__commitbtn,4,0,1,2)
+        layout.addWidget(self.__commitbtn,4,0,1,3)
 
         if (len(self.devices) > 0):
             self.update_list(device)
@@ -198,7 +207,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
                     subscribed = False
                     #print('dev',dev.name,dev.redvypr.hostinfo)
                     for a in self.device.subscribed_addresses:
-                        subscribed = dev.address == a
+                        subscribed = a in dev.address
                         if subscribed:
                             break
 
@@ -221,7 +230,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
                             devaddress_redvypr = data_packets.redvypr_address(devaddress)
                             subscribed = False
                             for a in self.device.subscribed_addresses:
-                                subscribed = devaddress_redvypr == a
+                                subscribed = a in devaddress_redvypr
                                 if subscribed:
                                     break
 

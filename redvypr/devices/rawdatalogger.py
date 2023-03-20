@@ -17,14 +17,14 @@ logger.setLevel(logging.DEBUG)
 
 description = "Saves the raw redvypr packets into a file"
 config_template = {}
-config_template['name']      = 'rawdatalogger'
+config_template['name']              = 'rawdatalogger'
 config_template['dt_newfile']        = {'type':'int','default':0,'description':'Time after which a new file is created'}
 config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','options':['seconds','hours','days']}
 config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
 config_template['size_newfile_unit'] = {'type':'str','default':'bytes','options':['bytes','kB','MB']}
 config_template['fileextension']     = {'type':'str','default':'redvypr_yaml','description':'File extension, if empty not used'}
-config_template['fileprefix']       = {'type':'str','default':'redvypr','description':'If empty not used'}
-config_template['filepostfix']      = {'type':'str','default':'raw','description':'If empty not used'}
+config_template['fileprefix']        = {'type':'str','default':'redvypr','description':'If empty not used'}
+config_template['filepostfix']       = {'type':'str','default':'raw','description':'If empty not used'}
 config_template['filedateformat']    = {'type':'str','default':'%Y-%m-%d_%H%M%S','description':'Dateformat used in the filename, must be understood by datetime.strftime'}
 config_template['filecountformat']   = {'type':'str','default':'04','description':'Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}'}
 config_template['redvypr_device']    = {}
@@ -64,9 +64,10 @@ def create_logfile(config,count=0):
        
     return [f,filename]
 
-def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None, statusqueue=None):
+def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
+    print('Config',config)
     count = 0
     if True:
         try:
@@ -380,7 +381,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         button = self.sender()
         if(button == self.adddeviceinbtn):
-            self.connect.emit(self.device)
+            self.connect.emit(self.device) # The connect signal is connected with connect_device that will open a subscribe/connect widget
         elif(button == self.addallbtn):
             print('Add all')
             #devices = self.redvypr.get_data_providing_devices(self.device)

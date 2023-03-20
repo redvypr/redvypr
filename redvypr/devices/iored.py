@@ -1334,15 +1334,6 @@ class Device(redvypr_device):
                                     self.statistics['device_redvypr'][dold]['_redvypr']['tlastseen'] = -time.time()
 
 
-                        if False:
-                            for drem in devices_rem:
-                                print('Removing now', drem)
-                                try:
-                                    keys_removed = data_packets.rem_device_from_statistics(drem, self.statistics)
-                                except Exception as e:
-                                    print('Removing issue', e)
-                                print('removed from keys', keys_removed)
-
                         #if 'devices_removed' in data['info'].keys():
                         #    for device_removed in data['info']['devices_removed']:
                         #        print('Removing device',device_removed)
