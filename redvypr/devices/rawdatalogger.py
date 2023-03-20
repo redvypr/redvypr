@@ -37,21 +37,21 @@ def create_logfile(config,count=0):
     logger.debug(funcname)
     filename = ''
     if(len(config['fileprefix'])>0):
-        filename += config['fileprefix']
+        filename += config['fileprefix'].data
 
     if (len(config['filedateformat']) > 0):
-        tstr = datetime.datetime.now().strftime(config['filedateformat'])
+        tstr = datetime.datetime.now().strftime(config['filedateformat'].data)
         filename += '_' + tstr
 
     if (len(config['filecountformat']) > 0):
-        cstr = "{:" + config['filecountformat'] +"d}"
+        cstr = "{:" + config['filecountformat'].data +"d}"
         filename += '_' + cstr.format(count)
 
     if (len(config['filepostfix']) > 0):
-        filename += '_' + config['filepostfix']
+        filename += '_' + config['filepostfix'].data
 
     if (len(config['fileextension']) > 0):
-        filename += '.' + config['fileextension']
+        filename += '.' + config['fileextension'].data
 
     logger.info(funcname + ' Will create a new file: {:s}'.format(filename))
     if True:
@@ -70,8 +70,8 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     count = 0
     if True:
         try:
-            dtneworig  = config['dt_newfile']
-            dtunit     = config['dt_newfile_unit']
+            dtneworig  = config['dt_newfile'].data
+            dtunit     = config['dt_newfile_unit'].data
             if(dtunit.lower() == 'seconds'):
                 dtfac = 1.0
             elif(dtunit.lower() == 'hours'):
@@ -88,8 +88,8 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             dtnews = 0
             
         try:
-            sizeneworig  = config['size_newfile']
-            sizeunit     = config['size_newfile_unit']
+            sizeneworig  = config['size_newfile'].data
+            sizeunit     = config['size_newfile_unit'].data
             if(sizeunit.lower() == 'kb'):
                 sizefac = 1000.0
             elif(sizeunit.lower() == 'mb'):            
@@ -100,16 +100,16 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                 sizefac = 0
                 
             sizenewb     = sizeneworig * sizefac # Size in bytes
-            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
+            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'].data,config['size_newfile_unit'].data))
         except Exception as e:
             print('Exception',e)
             sizenewb = 0  # Size in bytes
             
             
     try:
-        config['dt_sync']
+        config['dt_sync'].data
     except:
-        config['dt_sync'] = 5
+        config['dt_sync'].data = 5
 
     print(funcname,'Config',config)    
     [f,filename] = create_logfile(config,count)
@@ -151,9 +151,10 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                     command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
                     #logger.debug('Got a command: {:s}'.format(str(data)))
                     if (command is not None):
-                        logger.debug('Command is for me: {:s}'.format(str(command)))
-                        FLAG_RUN = False
-                        return
+                        if(command == 'stop'):
+                            logger.debug('Stop command')
+                            FLAG_RUN = False
+                            return
 
                 statistics = do_data_statistics(data,statistics)
                 yamlstr = yaml.dump(data,explicit_end=True,explicit_start=True)
@@ -320,7 +321,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.config_to_widgets()
         self.connect_widget_signals()
         # Connect the signals that notify a change of the connection
-        self.device.connection_changed.connect(self.update_device_list)
+        self.device.redvypr.device_status_changed_signal.connect(self.update_device_list)
         #self.redvypr.devices_connected.connect(self.update_device_list)
 
         self.statustimer = QtCore.QTimer()
@@ -414,26 +415,26 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         config = self.device.config
         print('config',config)
-        self.dt_newfile.setText(str(config['dt_newfile']))
+        self.dt_newfile.setText(str(config['dt_newfile'].data))
         for i in range(self.newfiletimecombo.count()):
             self.newfiletimecombo.setCurrentIndex(i)
-            if(self.newfiletimecombo.currentText().lower() == config['dt_newfile_unit']):
+            if(self.newfiletimecombo.currentText().lower() == config['dt_newfile_unit'].data):
                 break
 
         for i in range(self.newfilesizecombo.count()):
             self.newfilesizecombo.setCurrentIndex(i)
-            if (self.newfilesizecombo.currentText().lower() == config['size_newfile_unit']):
+            if (self.newfilesizecombo.currentText().lower() == config['size_newfile_unit'].data):
                 break
 
-        self.size_newfile.setText(str(config['size_newfile']))
+        self.size_newfile.setText(str(config['size_newfile'].data))
 
         # Update filename and checkboxes
         filename_all = []
-        filename_all.append([config['fileextension'],self.extension_text,self.extension_check])
-        filename_all.append([config['fileprefix'],self.prefix_text,self.prefix_check])
-        filename_all.append([config['filepostfix'],self.postfix_text,self.postfix_check])
-        filename_all.append([config['filedateformat'],self.date_text,self.date_check])
-        filename_all.append([config['filecountformat'],self.count_text,self.count_check])
+        filename_all.append([config['fileextension'].data,self.extension_text,self.extension_check])
+        filename_all.append([config['fileprefix'].data,self.prefix_text,self.prefix_check])
+        filename_all.append([config['filepostfix'].data,self.postfix_text,self.postfix_check])
+        filename_all.append([config['filedateformat'].data,self.date_text,self.date_check])
+        filename_all.append([config['filecountformat'].data,self.count_text,self.count_check])
         for i in range(len(filename_all)):
             widgets = filename_all[i]
             if(len(widgets[0])==0):
@@ -452,35 +453,35 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = self.__class__.__name__ + '.widgets_to_config():'
         logger.debug(funcname)
         config = {}
-        config['dt_newfile']        = int(self.dt_newfile.text())
-        config['dt_newfile_unit']   = self.newfiletimecombo.currentText()
-        config['size_newfile']      = int(self.size_newfile.text())
-        config['size_newfile_unit'] = self.newfilesizecombo.currentText()
+        config['dt_newfile'].data        = int(self.dt_newfile.text())
+        config['dt_newfile_unit'].data   = self.newfiletimecombo.currentText()
+        config['size_newfile'].data      = int(self.size_newfile.text())
+        config['size_newfile_unit'].data = self.newfilesizecombo.currentText()
 
         if(self.extension_check.isChecked()):
-            config['fileextension'] = self.extension_text.text()
+            config['fileextension'].data = self.extension_text.text()
         else:
-            config['fileextension'] = ''
+            config['fileextension'].data = ''
 
         if(self.prefix_check.isChecked()):
-            config['fileprefix'] = self.prefix_text.text()
+            config['fileprefix'].data = self.prefix_text.text()
         else:
-            config['fileprefix'] = ''
+            config['fileprefix'].data = ''
 
         if(self.postfix_check.isChecked()):
-            config['filepostfix'] = self.postfix_text.text()
+            config['filepostfix'].data = self.postfix_text.text()
         else:
-            config['filepostfix'] = ''
+            config['filepostfix'].data = ''
 
         if(self.date_check.isChecked()):
-            config['filedateformat']    = self.date_text.text()
+            config['filedateformat'].data    = self.date_text.text()
         else:
-            config['filedateformat'] = ''
+            config['filedateformat'].data = ''
 
         if(self.count_check.isChecked()):
-            config['filecountformat'] = self.count_text.text()
+            config['filecountformat'].data = self.count_text.text()
         else:
-            config['filecountformat'] = ''
+            config['filecountformat'].data = ''
 
         print('Config',config)
         return config

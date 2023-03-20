@@ -1152,7 +1152,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             if FLAG_START_SUB_THREAD:
                                 logstart.debug(funcname + ' Starting new thread')
                                 connect_dict = connect_remote_host(remote_uuid, zmq_url_pub, zmq_url_rep, dataqueue,
-                                                                   statusqueue, hostuuid, hostinfos)
+                                                                   statusqueue, hostuuid, hostinfos,zmq_context)
                                 if(connect_dict is not None):
                                     zmq_sub_threads[remote_uuid] = connect_dict
 
