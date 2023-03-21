@@ -315,6 +315,11 @@ class redvypr_device(QtCore.QObject):
         """ Starts the device thread, it calls the self.start function with the arguments
 
         start(self, device_info, config, dataqueue, datainqueue, statusqueue)
+
+        config is a deepcopy of self.config: config = copy.deepcopy(self.config). The deepcopy converts the
+        configuration dictionary into an ordinary dictionary "forgetting" additional information and making the
+        configuration hashable as it is needed for a multiprocess.
+
         Args:
 
 

@@ -105,9 +105,10 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
     funcname = __name__ + '.distribute_data()'
     datastreams_all = {}
     datastreams_all_old = {}
-    dt_info = 1.0  # The time interval information will be sent
+    dt_info = 5.0  # The time interval information will be sent
     dt_avg = 0  # Averaging of the distribution time needed
     navg = 0
+    packets_processed = 0 # For statistics, count packets
     tinfo = time.time()
     tstop = time.time()
     dt_sleep = dt
@@ -145,7 +146,8 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     if(type(data) is not dict): # If data is not a dictionary, convert it to one
                         data = {'data':data}
 
-                    devicedict['numpacket'] += 1
+                    devicedict['packets_sent'] += 1
+                    packets_processed += 1
                     data_all.append(data)
                 except Exception as e:
                     break
@@ -153,7 +155,9 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
             for data in data_all:
                 #
                 # Add additional information, if not present yet
-                data_packets.treat_datadict(data, device.name, hostinfo, devicedict['numpacket'], tread,devicedict['devicemodulename'])
+                data_packets.treat_datadict(data, device.name, hostinfo, devicedict['packets_sent'], tread,devicedict['devicemodulename'])
+                # Get the devicename
+                devicename_stat = data_packets.get_devicename_from_data(data, uuid=True)
                 #
                 # Do statistics
                 try:
@@ -210,9 +214,10 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     for addr in devicesub.subscribed_addresses:
                         numtag = data['_redvypr']['tag'][hostinfo['uuid']]
                         if (data in addr) and (numtag < 2): # Check if data packet fits with addr and its not recirculated again
-                            devicedict['numpacketout'] += 1
                             try:
                                 devicesub.datainqueue.put_nowait(data) # These are the datainqueues of the subscribing devices
+                                devicedict['packets_received'] += 1
+                                devicedict['statistics']['device_redvypr'][devicename_stat]['packets_received'] += 1
                                 break
                             except Exception as e:
                                 logger.debug(funcname + ':dataout of :' + devicedict['device'].name + ' full: ' + str(e))
@@ -243,7 +248,8 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
         dt_sleep = max([0, dt - dt_dist])
         if ((tstop - tinfo) > dt_info):
             tinfo = tstop
-            info_dict = {'type':'dt_avg','dt_avg': dt_avg / navg}
+            info_dict = {'type':'dt_avg','dt_avg': dt_avg / navg,'packets_processed': packets_processed}
+            packets_processed = 0
             # print(info_dict)
             try:
                 infoqueue.put_nowait(info_dict)
@@ -283,16 +289,7 @@ class redvypr(QtCore.QObject):
         self.datastreams_dict = {} # Information about all datastreams, this is updated by distribute data
         self.deviceinfo_all   = {} # Information about all devices, this is updated by distribute data
 
-        ## A timer to check the status of all threads
-        self.devicethreadtimer = QtCore.QTimer()
-        self.devicethreadtimer.start(250)
-        self.devicethreadtimer.timeout.connect(self.update_status)  # Add to the timer another update
 
-        ## A timer to print the status in the nogui environment
-        if (nogui):
-            self.statustimer = QtCore.QTimer()
-            self.statustimer.timeout.connect(self.print_status)
-            self.statustimer.start(5000)
 
         self.dt_datadist = 0.01  # The time interval of datadistribution
         self.dt_avg_datadist = 0.00  # The time interval of datadistribution
@@ -306,18 +303,19 @@ class redvypr(QtCore.QObject):
         self.populate_device_path()
         logger.info(funcname + ':Done searching for devices')
 
-        # Configurating redvypr
-        if False:
-            if (config is not None):
-                logger.debug(funcname + ':Configuration: ' + str(config))
-                if (type(config) == str):
-                    config = [config]
+        # Parsing configuration
+        self.parse_configuration(config)
 
-                for c in config:
-                    logger.debug(funcname + ':Parsing configuration: ' + str(c))
-                    self.parse_configuration(c)
-        else:
-            self.parse_configuration(config)
+        ## A timer to check the status of all threads
+        self.devicethreadtimer = QtCore.QTimer()
+        self.devicethreadtimer.start(250)
+        self.devicethreadtimer.timeout.connect(self.update_status)  # Add to the timer another update
+
+        ## A timer to print the status in the nogui environment
+        if (nogui):
+            self.statustimer = QtCore.QTimer()
+            self.statustimer.timeout.connect(self.print_status)
+            self.statustimer.start(5000)
 
     def get_deviceinfo(self,publish=None,subscribe=None):
         """
@@ -343,12 +341,20 @@ class redvypr(QtCore.QObject):
             return dinfo
 
     def update_status(self):
+        funcname = __name__ + '.update_status():'
+        # Check if the distribution thread is running, if not warn the user
+        if self.datadistthread.is_alive() == False:
+            logger.warning('Datadistribution thread is not running! This is bad, consider restarting redvypr.')
+            self.status_update_signal.emit()
+            return
+
         while True:
             try: # Reading data coming from distribute_data thread
                 data = self.datadistinfoqueue.get(block=False)
                 #print('Got data',data)
                 if('dt_avg' in data['type']):
-                    self.dt_avg_datadist = data['dt_avg']
+                    self.dt_avg_datadist   = data['dt_avg']
+                    self.packets_processed = data['packets_processed']
                     self.status_update_signal.emit()
                 elif ('deviceinfo_all' in data['type']):
                     data.pop('type')  # Remove the type key
@@ -379,8 +385,8 @@ class redvypr(QtCore.QObject):
             else:
                 runstr = 'stopped'
 
-            statusstr += '\n\t' + sendict['device'].name + ':' + runstr + ': data packets: {:d}'.format(
-                sendict['numpacket'])
+            statusstr += '\n\t' + sendict['device'].name + ':' + runstr + ': data packets sent: {:d}' + ': data packets received: {:d}'.format(
+                sendict['packets_sent'],sendict['packets_received'])
             # statusstr += ': data packets received: {:d}'.format(sendict['numpacketout'])
 
         return statusstr
@@ -904,9 +910,9 @@ class redvypr(QtCore.QObject):
 
                 # Add the modulename
                 devicedict['devicemodulename'] = devicemodulename
-                # Add some statistics
-                devicedict['numpacket'] = 0
-                devicedict['numpacketout'] = 0
+                # Add some statistics (LEGACY)
+                devicedict['packets_received'] = 0
+                devicedict['packets_sent'] = 0
                 # The displaywcreate_idget, to be filled by redvyprWidget.add_device (optional)
                 devicedict['devicedisplaywidget'] = None
                 # device = devicedict['device']
@@ -922,8 +928,8 @@ class redvypr(QtCore.QObject):
                 ind_device = len(self.devices) - 1
 
                 # Update the statistics of the device itself
-                device.dataqueue.put(
-                    {'_deviceinfo': {'subscribe': subscribe, 'publish': publish, 'devicemodulename': devicemodulename}})
+                deviceinfo_packet = {'_redvypr':{},'_deviceinfo': {'subscribe': subscribe, 'publish': publish, 'devicemodulename': devicemodulename}}
+                device.dataqueue.put(deviceinfo_packet)
                 # Send a device_status packet to notify that a new device was added (deviceinfo_all) is updated
                 datapacket = data_packets.commandpacket(command='device_status')
                 device.dataqueue.put(datapacket)
@@ -1234,7 +1240,7 @@ class redvypr(QtCore.QObject):
         list
             A list containing redvypr dictionary containing the device and additional infrastructure::
                 redvypr.get_data_providing_devices()[0].keys()
-                dict_keys(['device', 'thread', 'dataout', 'gui', 'guiqueue', 'statistics', 'numpacket', 'numpacketout', 'devicedisplaywidget', 'logger', 'displaywidget', 'initwidget', 'widget', 'infowidget'])
+                dict_keys(['device', 'thread', 'dataout', 'gui', 'guiqueue', 'statistics', 'packets_sent', 'packets_received', 'devicedisplaywidget', 'logger', 'displaywidget', 'initwidget', 'widget', 'infowidget'])
         """
         if (device == None):
             devicedicts = []
@@ -1915,7 +1921,18 @@ class redvyprWidget(QtWidgets.QWidget):
         Returns:
 
         """
-        self.__status_dtneeded.setText(' (needed {:0.5f}s)'.format(self.redvypr.dt_avg_datadist))
+        if self.redvypr.datadistthread.is_alive() == False:
+            self.__status_dt.setText(
+                'Datadistribution thread is not running! This is bad, consider restarting redvypr.')
+            self.__status_dt.setStyleSheet("QLabel { background-color : white; color : red; }")
+            self.__status_dtneeded.setText('')
+        else:
+            npackets = self.redvypr.packets_processed
+            if(npackets > 0):
+                packets_pstr = npackets / self.redvypr.dt_avg_datadist
+            else:
+                packets_pstr = 0.0
+            self.__status_dtneeded.setText(' (needed {:0.5f}s, {:6.1f} packets/s)'.format(self.redvypr.dt_avg_datadist,packets_pstr))
 
     def create_statuswidget(self):
         """Creates the statuswidget

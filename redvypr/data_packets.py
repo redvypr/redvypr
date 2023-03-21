@@ -11,7 +11,7 @@ logger.setLevel(logging.DEBUG)
 
 
 # A dictionary for the device_redvypr entry in the statistics
-device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {},'numpackets':0}
+device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {},'packets_received':0,'packets_sent':0}
 
 
 
@@ -298,7 +298,8 @@ class redvypr_address():
 def create_data_statistic_dict():
     statdict = {}
     statdict['inspect']          = True
-    statdict['numpackets']       = 0
+    statdict['packets_sent']     = 0
+    statdict['packets_received'] = 0
     statdict['datakeys']         = []
     statdict['devicekeys']       = {}
     statdict['devices']          = []
@@ -342,7 +343,7 @@ def do_data_statistics(data, statdict):
         data:
         statdict:
     """
-    statdict['numpackets'] += 1
+    statdict['packets_sent'] += 1
     uuid = data['_redvypr']['host']['uuid']
     # Create a unique list of datakeys
     statdict['datakeys'] = list(set(statdict['datakeys'] + list(data.keys())))
@@ -383,9 +384,10 @@ def do_data_statistics(data, statdict):
 
     # Create device_redvypr
     try:
-        statdict['device_redvypr'][devicename_stat]['numpackets'] += 1
+        statdict['device_redvypr'][devicename_stat]['packets_sent'] += 1
     except:  # Does not exist yet, create the entry
         statdict['device_redvypr'][devicename_stat] = copy.deepcopy(device_redvypr_statdict)
+
 
     # Get datakeys from datapacket
     datakeys = get_keys_from_data(data)

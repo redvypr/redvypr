@@ -30,7 +30,7 @@ config_template['string_send']    = {'type': 'str','default':'Hello World!'}
 config_template['_keyinfo']    = {}
 config_template['_keyinfo']['data'] = {'unit':'string','description':'Some sentence sent'}
 config_template['_keyinfo']['count'] = {'datatype':'int','unit':'count','description':'Simple packetcount'}
-config_template['delay_s']        = {'type': 'float','default':2}
+config_template['delay_s']        = {'type': 'float','default':1.0}
 config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publish']     = True
 config_template['redvypr_device']['subscribe']   = False
@@ -64,7 +64,7 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
                 break
 
         dstr = str(config['string_send'])
-        print(dstr)
+        #print(dstr)
         dataqueue.put(dstr)
         dataqueue.put({'count': i})
         dataqueue.put({'count': i+10,'_redvypr':{'device':'t2'}})

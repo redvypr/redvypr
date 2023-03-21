@@ -18,6 +18,7 @@ logger.setLevel(logging.DEBUG)
 description = "Saves the raw redvypr packets into a file"
 config_template = {}
 config_template['name']              = 'rawdatalogger'
+config_template['dt_sync']           = {'type':'int','default':5,'description':'Time after which an open file is synced on disk'}
 config_template['dt_newfile']        = {'type':'int','default':0,'description':'Time after which a new file is created'}
 config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','options':['seconds','hours','days']}
 config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
@@ -37,21 +38,21 @@ def create_logfile(config,count=0):
     logger.debug(funcname)
     filename = ''
     if(len(config['fileprefix'])>0):
-        filename += config['fileprefix'].data
+        filename += config['fileprefix']
 
     if (len(config['filedateformat']) > 0):
-        tstr = datetime.datetime.now().strftime(config['filedateformat'].data)
+        tstr = datetime.datetime.now().strftime(config['filedateformat'])
         filename += '_' + tstr
 
     if (len(config['filecountformat']) > 0):
-        cstr = "{:" + config['filecountformat'].data +"d}"
+        cstr = "{:" + config['filecountformat'] +"d}"
         filename += '_' + cstr.format(count)
 
     if (len(config['filepostfix']) > 0):
-        filename += '_' + config['filepostfix'].data
+        filename += '_' + config['filepostfix']
 
     if (len(config['fileextension']) > 0):
-        filename += '.' + config['fileextension'].data
+        filename += '.' + config['fileextension']
 
     logger.info(funcname + ' Will create a new file: {:s}'.format(filename))
     if True:
@@ -71,8 +72,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     count = 0
     if True:
         try:
-            dtneworig  = config['dt_newfile'].data
-            dtunit     = config['dt_newfile_unit'].data
+            dtneworig  = config['dt_newfile']
+            dtunit     = config['dt_newfile_unit']
             if(dtunit.lower() == 'seconds'):
                 dtfac = 1.0
             elif(dtunit.lower() == 'hours'):
@@ -89,8 +90,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             dtnews = 0
             
         try:
-            sizeneworig  = config['size_newfile'].data
-            sizeunit     = config['size_newfile_unit'].data
+            sizeneworig  = config['size_newfile']
+            sizeunit     = config['size_newfile_unit']
             if(sizeunit.lower() == 'kb'):
                 sizefac = 1000.0
             elif(sizeunit.lower() == 'mb'):            
@@ -101,16 +102,16 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 sizefac = 0
                 
             sizenewb     = sizeneworig * sizefac # Size in bytes
-            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'].data,config['size_newfile_unit'].data))
+            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
         except Exception as e:
             print('Exception',e)
             sizenewb = 0  # Size in bytes
             
             
     try:
-        config['dt_sync'].data
+        config['dt_sync']
     except:
-        config['dt_sync'].data = 5
+        config['dt_sync'] = 5
 
     print(funcname,'Config',config)    
     [f,filename] = create_logfile(config,count)
@@ -445,7 +446,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 widgets[2].setChecked(True)
                 widgets[1].setText(widgets[0])
 
-    def widgets_to_config(self):
+    def widgets_to_config(self,config):
         """
         Reads the widgets and creates a config
         Returns:
@@ -453,7 +454,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.widgets_to_config():'
         logger.debug(funcname)
-        config = {}
         config['dt_newfile'].data        = int(self.dt_newfile.text())
         config['dt_newfile_unit'].data   = self.newfiletimecombo.currentText()
         config['size_newfile'].data      = int(self.size_newfile.text())
@@ -495,7 +495,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.update_device_config():'
         logger.debug(funcname)
-        self.device.config = self.widgets_to_config()
+        self.device.config = self.widgets_to_config(self.device.config)
 
     def start_clicked(self):
         funcname = self.__class__.__name__ + '.start_clicked():'
@@ -503,8 +503,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if button.isChecked():
             logger.debug(funcname + "button pressed")
-            config = self.widgets_to_config()
-            self.device.config = config
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')
