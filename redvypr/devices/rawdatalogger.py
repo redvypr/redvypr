@@ -19,8 +19,9 @@ description = "Saves the raw redvypr packets into a file"
 config_template = {}
 config_template['name']              = 'rawdatalogger'
 config_template['dt_sync']           = {'type':'int','default':5,'description':'Time after which an open file is synced on disk'}
-config_template['dt_newfile']        = {'type':'int','default':0,'description':'Time after which a new file is created'}
+config_template['dt_newfile']        = {'type':'int','default':20,'description':'Time after which a new file is created'}
 config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','options':['seconds','hours','days']}
+config_template['dt_update']         = {'type':'int','default':5,'description':'Time after which an upate is sent to the gui'}
 config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
 config_template['size_newfile_unit'] = {'type':'str','default':'bytes','options':['bytes','kB','MB']}
 config_template['fileextension']     = {'type':'str','default':'redvypr_yaml','description':'File extension, if empty not used'}
@@ -113,20 +114,29 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     except:
         config['dt_sync'] = 5
 
-    print(funcname,'Config',config)    
+    bytes_written = 0
+    packets_written = 0
+    bytes_written_total = 0
+    packets_written_total = 0
+
     [f,filename] = create_logfile(config,count)
+    data_stat = {'_deviceinfo': {}}
+    data_stat['_deviceinfo']['filename'] = filename
+    data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
+    data_stat['_deviceinfo']['created'] = time.time()
+    data_stat['_deviceinfo']['bytes_written'] = bytes_written
+    data_stat['_deviceinfo']['packets_written'] = packets_written
+    dataqueue.put(data_stat)
     count += 1
     statistics = create_data_statistic_dict()
     if(f == None):
        return None
     
-    bytes_written         = 0
-    packets_written       = 0
-    bytes_written_total   = 0
-    packets_written_total = 0
+
     
     tfile           = time.time() # Save the time the file was created
     tflush          = time.time() # Save the time the file was created
+    tupdate         = time.time() # Save the time for the update timing
     FLAG_RUN = True
     while FLAG_RUN:
         tcheck      = time.time()
@@ -136,12 +146,26 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
             if(FLAG_TIME or FLAG_SIZE):
                 f.close()
+                data_stat = {'_deviceinfo': {}}
+                data_stat['_deviceinfo']['filename'] = filename
+                data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
+                data_stat['_deviceinfo']['closed'] = time.time()
+                data_stat['_deviceinfo']['bytes_written'] = bytes_written
+                data_stat['_deviceinfo']['packets_written'] = packets_written
+                dataqueue.put(data_stat)
                 [f,filename] = create_logfile(config,count)
                 count += 1
                 statistics = create_data_statistic_dict()
                 tfile = tcheck   
                 bytes_written         = 0
                 packets_written       = 0
+                data_stat = {'_deviceinfo': {}}
+                data_stat['_deviceinfo']['filename'] = filename
+                data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
+                data_stat['_deviceinfo']['created'] = time.time()
+                data_stat['_deviceinfo']['bytes_written'] = bytes_written
+                data_stat['_deviceinfo']['packets_written'] = packets_written
+                dataqueue.put(data_stat)
 
 
 
@@ -169,13 +193,17 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     f.flush()
                     os.fsync(f.fileno())
                     tflush = time.time()
-                    
+
+
                 # Send statistics
-                data_stat = {}
-                data_stat['filename']        = filename
-                data_stat['bytes_written']   = bytes_written
-                data_stat['packets_written'] = packets_written                
-                #dataqueue.put(data_stat)
+                if ((time.time() - tupdate) > config['dt_update']):
+                    tupdate = time.time()
+                    data_stat = {'_deviceinfo':{}}
+                    data_stat['_deviceinfo']['filename']        = filename
+                    data_stat['_deviceinfo']['filename_full']   = os.path.realpath(filename)
+                    data_stat['_deviceinfo']['bytes_written']   = bytes_written
+                    data_stat['_deviceinfo']['packets_written'] = packets_written
+                    dataqueue.put(data_stat)
 
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))
@@ -193,6 +221,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)
         self.device   = device
+        self.redvypr  = device.redvypr
         self.label    = QtWidgets.QLabel("rawdatalogger setup")
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         self.label.setStyleSheet(''' font-size: 24px; font: bold''')
@@ -495,7 +524,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.update_device_config():'
         logger.debug(funcname)
-        self.device.config = self.widgets_to_config(self.device.config)
+        self.widgets_to_config(self.device.config)
 
     def start_clicked(self):
         funcname = self.__class__.__name__ + '.start_clicked():'
@@ -503,6 +532,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if button.isChecked():
             logger.debug(funcname + "button pressed")
+            self.update_device_config()
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')
@@ -538,24 +568,67 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def __init__(self):
         super(QtWidgets.QWidget, self).__init__()
         layout          = QtWidgets.QVBoxLayout(self)
-        hlayout         = QtWidgets.QHBoxLayout()        
-        self.text       = QtWidgets.QPlainTextEdit(self)
-        self.text.setReadOnly(True)
+        hlayout         = QtWidgets.QHBoxLayout()
+        self.filetable  = QtWidgets.QTableWidget()
+        headers = ['Filename','Bytes written','Packets written','Date created','Date closed','Full filepath']
+        self.filetable.setColumnCount(len(headers))
+        self.filetable.setHorizontalHeaderLabels(headers)
+        self.filetable.resizeColumnsToContents()
         self.filelab= QtWidgets.QLabel("File: ")
         self.byteslab   = QtWidgets.QLabel("Bytes written: ")
         self.packetslab = QtWidgets.QLabel("Packets written: ")
-        self.text.setMaximumBlockCount(10000)
         hlayout.addWidget(self.byteslab)
         hlayout.addWidget(self.packetslab)
         layout.addWidget(self.filelab)        
         layout.addLayout(hlayout)
-        layout.addWidget(self.text)
+        layout.addWidget(self.filetable)
         #self.text.insertPlainText("hallo!")        
 
     def update(self,data):
-        #print('data',data)
-        self.filelab.setText("File: {:s}".format(data['filename']))        
-        self.byteslab.setText("Bytes written: {:d}".format(data['bytes_written']))
-        self.packetslab.setText("Packets written: {:d}".format(data['packets_written']))
-        self.text.insertPlainText(str(data['data']))
+        funcname = __name__ + '.update()'
+        print('data',data)
+        try:
+            filename_table = self.filetable.item(0,0).text()
+        except:
+            filename_table = ''
+
+        print('Filename table',filename_table,data['_deviceinfo']['filename'])
+        try:
+            tclose = datetime.datetime.fromtimestamp(data['_deviceinfo']['closed']).strftime(
+                '%d-%m-%Y %H:%M:%S')
+            item = QtWidgets.QTableWidgetItem(tclose)
+            self.filetable.setItem(0, 4, item)
+        except:
+            pass
+
+        if filename_table != data['_deviceinfo']['filename']:
+            self.filetable.insertRow(0)
+            try:
+                #headers = ['Filename', 'Date created', 'Bytes written', 'Date closed']
+                item = QtWidgets.QTableWidgetItem(data['_deviceinfo']['filename'])
+                self.filetable.setItem(0,0,item)
+                item = QtWidgets.QTableWidgetItem(data['_deviceinfo']['filename_full'])
+                self.filetable.setItem(0, 5, item)
+                tcreate = datetime.datetime.fromtimestamp(data['_deviceinfo']['created']).strftime('%d-%m-%Y %H:%M:%S')
+                item = QtWidgets.QTableWidgetItem(tcreate)
+                self.filetable.setItem(0, 3, item)
+            except Exception as e:
+                logger.exception(e)
+
+        item = QtWidgets.QTableWidgetItem(str(data['_deviceinfo']['bytes_written']))
+        self.filetable.setItem(0, 1, item)
+        item = QtWidgets.QTableWidgetItem(str(data['_deviceinfo']['packets_written']))
+        self.filetable.setItem(0, 2, item)
+
+
+
+        self.filetable.resizeColumnsToContents()
+
+
+        self.filelab.setText("File: {:s}".format(data['_deviceinfo']['filename']))
+        self.byteslab.setText("Bytes written: {:d}".format(data['_deviceinfo']['bytes_written']))
+        self.packetslab.setText("Packets written: {:d}".format(data['_deviceinfo']['packets_written']))
+
+
+        #self.text.insertPlainText(str(data['_deviceinfo']['data']))
         
