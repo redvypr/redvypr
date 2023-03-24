@@ -4,7 +4,7 @@ import logging
 import sys
 import yaml
 from PyQt5 import QtWidgets, QtCore, QtGui
-from redvypr.utils import addrm_device_as_data_provider,get_data_receiving_devices,get_data_providing_devices,configtemplate_to_dict
+from redvypr.utils import configtemplate_to_dict
 from redvypr.device import redvypr_device
 from redvypr.widgets.datastream_widget import datastreamWidget
 import redvypr.utils

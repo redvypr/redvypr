@@ -119,7 +119,7 @@ class datastreamWidget(QtWidgets.QWidget):
             self.devicelist.clear()
             root = self.devicelist.invisibleRootItem()
             # self.devices_listcon.addItem(str(device))
-            data_provider_all = self.redvypr.get_data_providing_devices()
+            data_provider_all = self.redvypr.get_devices(local=True,publishes=True)
             font1 = QtGui.QFont('Arial')
             font1.setBold(True)
             font0 = QtGui.QFont('Arial')
@@ -138,7 +138,7 @@ class datastreamWidget(QtWidgets.QWidget):
                     itm.iskey = False
                     # Check for forwarded devices
                     if True:
-                        devs_forwarded = dev.get_data_provider_info()
+                        devs_forwarded = dev.get_device_info()
                         for devaddress in devs_forwarded.keys():
                             devaddress_redvypr = data_packets.redvypr_address(devaddress)
                             addrtype = 'full'

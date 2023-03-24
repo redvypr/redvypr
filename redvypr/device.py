@@ -29,12 +29,12 @@ class redvypr_device(QtCore.QObject):
     status_signal  = QtCore.pyqtSignal(dict)   # Signal with the status of the device
     subscription_changed_signal = QtCore.pyqtSignal()  # Signal notifying that a subscription changed
 
-    def __init__(self,name='redvypr_device',uuid = '', redvypr=None,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None,template = {},config = {},publish=False,subscribe=False,multiprocess='tread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False,devicemodulename=''):
+    def __init__(self,name='redvypr_device',uuid = '', redvypr=None,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None,template = {},config = {},publishes=False,subscribes=False,multiprocess='tread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False,devicemodulename=''):
         """
         """
         super(redvypr_device, self).__init__()
-        self.publish     = publish    # publishes data, a typical sensor is doing this
-        self.subscribe   = subscribe  # subscribing data, a typical datalogger is doing this
+        self.publishes   = publishes    # publishes data, a typical sensor is doing this
+        self.subscribes  = subscribes   # subscribes other devices data, a typical datalogger is doing this
         self.datainqueue = datainqueue
         self.dataqueue   = dataqueue        
         self.comqueue    = comqueue
@@ -181,6 +181,7 @@ class redvypr_device(QtCore.QObject):
         self.statistics['datastreams'] = []
         self.statistics['datastreams_dict'] = {}
         self.statistics['datastreams_info'] = {}
+        self.logger.warning('This chnages only the device name but will not restart the thread.')
 
     def __update_address__(self):
         self.address_str = self.name + ':' + self.redvypr.hostinfo['hostname'] + '@' + self.redvypr.hostinfo[
@@ -211,6 +212,15 @@ class redvypr_device(QtCore.QObject):
         pass
 
     def got_unsubscribed(self, dataprovider_address, datareceiver_address):
+        """
+
+        Args:
+            dataprovider_address:
+            datareceiver_address:
+
+        Returns:
+
+        """
         pass
 
     def get_thread_status(self):
@@ -383,12 +393,50 @@ class redvypr_device(QtCore.QObject):
         return self.description
     
     def finalize_init(self):
-        pass
-    
-    def get_data_provider_info(self):
         """
-        Returns information about the data providing devices
+        Dummy function, can be defined by the user. Function is called after the device is added to redvypr.
+
         Returns:
+
+        """
+        pass
+
+    def get_deviceaddresses(self,local=None):
+        """
+        Returns a list with redvypr_addresses of all devices that publish data via this device. This is in many cases
+        the device itself but can also forwarded devices (i.e. iored) or because the device publishes data with different
+        devicenames::
+           dataqueue.put({'count': i}) # Devicename as the device itself
+           dataqueue.put({'count': i+10,'_redvypr':{'device':'test2'}}) # Devicename is 'test2'
+
+        Args:
+            local:
+
+        Returns: List of redvypr_addresses
+
+        """
+        addr_str = list(self.statistics['device_redvypr'].keys())
+        addr_list = []
+        for a in addr_str:
+            raddr = redvypr_address(a)
+            if local is None:
+                addr_list.append(raddr)
+            else: # Check if we have a local or remote address
+                raddr_local = raddr.uuid == self.host_uuid
+                if local == raddr_local:
+                    addr_list.append(raddr)
+
+        return addr_list
+
+    
+
+    def get_device_info(self):
+        """
+        Returns a deepcopy that is saved in self.statistics['device_redvypr'] containing information about all devices
+        that have been sent by this device.
+        Note: name was def get_data_provider_info(self):
+
+        Returns: dictionary with the device addresses as keys
 
         """
         d = copy.deepcopy(self.statistics['device_redvypr'])
@@ -420,67 +468,6 @@ class redvypr_device(QtCore.QObject):
         self.subscribed_addresses = []
                     
         
-    def set_apriori_datakeys(self,datakeys):
-        """ Sets the apriori datakeys, useful if the user does already knows what the device will provide
-        """
-        for datakey in datakeys:
-            self.__apriori_datakeys__.add(datakey)         
-        
-        self.redvypr.update_statistics_from_apriori_datakeys(self)
-    
-    def get_apriori_datakeys(self):
-        """ Returns a list of datakey that the device has in their data dictionary
-        datakeys = ['t','data','?data','temperature']
-        """
-        if(self.publish): 
-            return list(self.__apriori_datakeys__)
-        else:
-            return []
-    
-    
-    def set_apriori_datakey_info(self,datakey,unit='NA',datatype='d',size=None,latlon=None,location=None,comment=None,serialnumber=None,sensortype=None):
-        """
-        LEGACY
-        Sets the apriori datakey information, information should
-
-                datakey:
-                unit:
-                datatype:
-                size:
-                latlon:
-                location:
-                comment:
-                serialnumber:
-                sensortype:
-        """
-        infodict = {'unit':unit,'datatype':datatype}
-        if(size is not None):
-            infocdict['size']         = size
-        if(latlon is not None):
-            infocdict['latlon']       = latlon
-        if(location is not None):
-            infocdict['location']     = location
-        if(comment is not None):
-            infocdict['comment']      = comment
-        if(serialnumber is not None):
-            infocdict['serialnumber'] = serialnumber
-        if(sensortype is not None):
-            infocdict['sensortyp']    = sensortype
-            
-        self.__apriori_datakey_info__[datakey] = infodict
-        
-        self.redvypr.update_statistics_from_apriori_datakeys(self)
-    
-    def get_apriori_datakey_info(self,datakey):
-        """ Returns 
-        """
-        try:
-            info = self.__apriori_datakey_info__[datakey]
-        except:
-            info = None
-            
-        return info
-
     def get_info(self):
         """
         Returns a dictionary with the essential info of the device

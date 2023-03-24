@@ -30,8 +30,8 @@ config_template['filepostfix']       = {'type':'str','default':'raw','descriptio
 config_template['filedateformat']    = {'type':'str','default':'%Y-%m-%d_%H%M%S','description':'Dateformat used in the filename, must be understood by datetime.strftime'}
 config_template['filecountformat']   = {'type':'str','default':'04','description':'Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}'}
 config_template['redvypr_device']    = {}
-config_template['redvypr_device']['publish']   = False
-config_template['redvypr_device']['subscribe'] = True
+config_template['redvypr_device']['publishes']   = False
+config_template['redvypr_device']['subscribes']  = True
 config_template['redvypr_device']['description'] = description
 
 def create_logfile(config,count=0):
@@ -229,10 +229,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         # Input output widget
         self.inlabel  = QtWidgets.QLabel("Input")
         self.inlist   = QtWidgets.QListWidget()
-        self.adddeviceinbtn   = QtWidgets.QPushButton("Add/Rem device")
+        self.adddeviceinbtn   = QtWidgets.QPushButton("Subscribe")
         self.adddeviceinbtn.clicked.connect(self.con_clicked)
-        self.addallbtn   = QtWidgets.QPushButton("Add all devices")
-        self.addallbtn.clicked.connect(self.con_clicked)                
         # The output widgets
         self.outlabel        = QtWidgets.QLabel("Logfile")
         self.outfilename     = QtWidgets.QLineEdit()
@@ -344,7 +342,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.inlabel,1,0)         
         layout.addWidget(self.inlist,2,0)      
         layout.addWidget(self.adddeviceinbtn,3,0)      
-        layout.addWidget(self.addallbtn,4,0)   
         layout.addWidget(self.outlabel,1,1)
         layout.addWidget(self.outwidget,2,1,3,1)   
         layout.addWidget(self.startbtn,6,0,2,2)
@@ -353,7 +350,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.connect_widget_signals()
         # Connect the signals that notify a change of the connection
         self.device.redvypr.device_status_changed_signal.connect(self.update_device_list)
-        #self.redvypr.devices_connected.connect(self.update_device_list)
+        #self.redvypr.devices_connected.connect
+        self.device.subscription_changed_signal.connect(self.update_device_list)
 
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_buttons)
@@ -412,27 +410,19 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if(button == self.adddeviceinbtn):
             self.connect.emit(self.device) # The connect signal is connected with connect_device that will open a subscribe/connect widget
-        elif(button == self.addallbtn):
-            print('Add all')
-            #devices = self.redvypr.get_data_providing_devices(self.device)
-            devices = self.redvypr.get_data_providing_devices()
-            for d in devices:
-                print('Adding',d.name)
-                self.redvypr.addrm_device_as_data_provider(d,self.device)
-            
             #self.update_device_list()
                             
-#    def update_device_list(self,devicestr_provider='',devicestr_receiver=''):
     def update_device_list(self):
         funcname = self.__class__.__name__ + '.update_device_list():'
         logger.debug(funcname)
         #print('Devices',devicestr_provider,devicestr_receiver)
-        devices = self.redvypr.get_data_providing_devices(self.device)
+        devices = self.device.subscribed_to()
+        print('Devices',devices)
         self.inlist.clear()
         for d in devices:
             print(d)
             devname = d.name
-            self.inlist.addItem(devname)
+
 
     def config_to_widgets(self):
         """

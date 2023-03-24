@@ -2,6 +2,8 @@
             - distribute_data has now connection to main thread via redvypr.redvyprqueue to check for updates done by main thread
             - maximum device threshold added: config_template['redvypr_device']['max_devices']  = 1
             - Added regular check if the distribute_data thread is still running, if not print a warning.
+            - changed device.publish/subscribe flags to devices.publishes/subscribes
+            - cleanup of api
     -0.5.2  - subscriptions as a config key for devices added
             - improved configuration parsing
             - iored with a rep/req information exchange instead of multicast. Multicast optional for broadcasting presence.

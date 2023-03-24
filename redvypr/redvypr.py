@@ -26,10 +26,9 @@ import platform
 
 import redvypr.devices as redvyprdevices
 import redvypr.data_packets as data_packets
-from redvypr.gui import redvypr_ip_widget, redvyprConnectWidget, QPlainTextEditLogger, displayDeviceWidget_standard, \
+from redvypr.gui import redvypr_ip_widget, QPlainTextEditLogger, displayDeviceWidget_standard, \
     deviceinfoWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget
 import redvypr.gui as gui
-from redvypr.utils import addrm_device_as_data_provider, get_data_receiving_devices, get_data_providing_devices#, configtemplate_to_dict, apply_config_to_dict
 from redvypr.config import configuration
 import redvypr.config as redvyprconfig
 from redvypr.version import version
@@ -317,25 +316,25 @@ class redvypr(QtCore.QObject):
             self.statustimer.timeout.connect(self.print_status)
             self.statustimer.start(5000)
 
-    def get_deviceinfo(self,publish=None,subscribe=None):
+    def get_deviceinfo(self,publishes=None,subscribes=None):
         """
 
         Args:
-            publish:
-            subscribe:
+            publishes:
+            subscribes:
 
         Returns:
             A dictionary containing the deviceinfo of all devices seen by this redvypr instance
         """
-        if (publish == None) and (subscribe == None):
+        if (publishes == None) and (subscribes == None):
             return copy.deepcopy(self.deviceinfo_all)
         else:
             dinfo = {}
             for d in self.devices:
                 dev = d['device']
-                FLAG_publish   =   (publish == dev.publish) or (publish == None)
-                FLAG_subscribe = (subscribe == dev.subscribe) or (subscribe == None)
-                if FLAG_publish and FLAG_subscribe:
+                FLAG_publishes   =   (publishes == dev.publishes) or (publishes == None)
+                FLAG_subscribes  = (subscribes == dev.subscribes) or (subscribes == None)
+                if FLAG_publishes and FLAG_subscribes:
                     dinfo[dev.name] = copy.deepcopy(dev.statistics['device_redvypr'])
 
             return dinfo
@@ -785,13 +784,13 @@ class redvypr(QtCore.QObject):
 
                 # Try to get information about publish/subscribe capabilities described in the config_template
                 try:
-                    publish = config_template['redvypr_device']['publish']
+                    publishes = config_template['redvypr_device']['publishes']
                 except:
-                    publish = False
+                    publishes = False
                 try:
-                    subscribe = config_template['redvypr_device']['subscribe']
+                    subscribes = config_template['redvypr_device']['subscribes']
                 except:
-                    subscribe = False
+                    subscribes = False
 
                 try:
                     deviceconfig['config']
@@ -891,7 +890,7 @@ class redvypr(QtCore.QObject):
                     print('Config type', type(configu))
                     print('loglevel', loglevel)
                     device = Device(name=name, uuid=device_uuid, config=configu, redvypr=self, dataqueue=dataqueue,
-                                    publish=publish,subscribe=subscribe,autostart=autostart,
+                                    publishes=publishes,subscribes=subscribes,autostart=autostart,
                                     template=config_template, comqueue=comqueue, datainqueue=datainqueue,
                                     statusqueue=statusqueue, loglevel=loglevel, multiprocess=multiprocess,
                                     numdevice=self.numdevice, statistics=statistics,startfunction=startfunction,devicemodulename=devicemodulename)
@@ -928,7 +927,7 @@ class redvypr(QtCore.QObject):
                 ind_device = len(self.devices) - 1
 
                 # Update the statistics of the device itself
-                deviceinfo_packet = {'_redvypr':{},'_deviceinfo': {'subscribe': subscribe, 'publish': publish, 'devicemodulename': devicemodulename}}
+                deviceinfo_packet = {'_redvypr':{},'_deviceinfo': {'subscribes': subscribes, 'publishes': publishes, 'devicemodulename': devicemodulename}}
                 device.dataqueue.put(deviceinfo_packet)
                 # Send a device_status packet to notify that a new device was added (deviceinfo_all) is updated
                 datapacket = data_packets.commandpacket(command='device_status')
@@ -1124,22 +1123,56 @@ class redvypr(QtCore.QObject):
 
         return None
 
-    def get_devices(self):
+    def get_devices(self, publishes = None, subscribes = None):
         """
-        Returns a list of the devices
+        Returns a list of all devices of this redvypr instance. Returns all devices if pulblishes or subscribes is None.
+        Otherwise according to the publishes/subscribes flags
+        Args:
+            publishes: True/False or None.
+            subscribes: True/False or None
 
-        Returns
-        -------
-        devicelist : TYPE
-            DESCRIPTION.
-
+        Returns: List with redvypr_devices
 
         """
+
         devicelist = []
         for d in self.devices:
-            devicelist.append(d['device'].name)
+            dev = d['device']
+            if publishes == True:
+                if(dev.publishes):
+                    devicelist.append(dev)
+            elif publishes is None:
+                devicelist.append(dev)
+
+            if (subscribes):
+                if (dev.subscribes):
+                    devicelist.append(dev)
+            elif subscribes is None:
+                devicelist.append(dev)
+
 
         return devicelist
+
+    def get_deviceaddresses(self, local = None, publishes = None, subscribes = None):
+        """
+        Returns a list of redvypr_addresses of all devices. If local == None all known devices are listed,
+        also of all remote devices that are forwarded by a local host device (i.e. iored device).
+
+
+        Args:
+            local [bool/None]: None: all known devices are listed, False: Remote devices are listed, True: local devices are listed
+
+        Returns: List of redvypr_addresses
+
+
+        """
+        logger.warning('will be removed soon')
+        raddrs = []
+        for dev in self.devices:
+            raddrs_tmp = dev['device'].get_deviceddresses(local,publishes,subscribes)
+            raddrs.append(raddrs_tmp)
+
+        return raddrs
 
     def get_forwarded_devicenames(self, device=None):
         """
@@ -1150,6 +1183,7 @@ class redvypr(QtCore.QObject):
         Returns:
            List with the devicenames of the forwarded devicenames
         """
+        logger.warning('will be removed soon')
         try:
             devicenames = device.statistics['devices']
         except:
@@ -1192,7 +1226,7 @@ class redvypr(QtCore.QObject):
             if (device == None):
                 for dev in self.devices:
                     devname = dev['device'].name
-                    if (dev['device'].publish):
+                    if (dev['device'].publishes):
                         devicenamelist.append(devname)
                         print('Devname test', devname)
                         devicenamelist_forward = self.get_forwarded_devicenames(dev['device'])
@@ -1223,6 +1257,7 @@ class redvypr(QtCore.QObject):
         list
             A list containing redvypr_devices
         """
+        logger.warning('LEGACY, will be removed soon')
         devicelist = []
         devicedicts = self.get_data_providing_devicedicts(device)
         for d in devicedicts:
@@ -1242,10 +1277,11 @@ class redvypr(QtCore.QObject):
                 redvypr.get_data_providing_devices()[0].keys()
                 dict_keys(['device', 'thread', 'dataout', 'gui', 'guiqueue', 'statistics', 'packets_sent', 'packets_received', 'devicedisplaywidget', 'logger', 'displaywidget', 'initwidget', 'widget', 'infowidget'])
         """
+        logger.warning('LEGACY, will be removed soon')
         if (device == None):
             devicedicts = []
             for dev in self.devices:
-                if (dev['device'].publish):
+                if (dev['device'].publishes):
                     devicedicts.append(dev)
         else:
             devicedicts = get_data_providing_devices(self.devices, device)

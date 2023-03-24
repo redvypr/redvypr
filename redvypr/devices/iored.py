@@ -72,8 +72,8 @@ config_template['multicast_address']  = "239.255.255.239"
 config_template['multicast_dtbeacon'] = {'type':'int','default':-1,'description':'Time [s] a multicastinformation is sent, disable with negative number'}
 config_template['multicast_port']     = 18196
 config_template['redvypr_device']['max_devices']  = 1
-config_template['redvypr_device']['publish']   = True
-config_template['redvypr_device']['subscribe'] = True
+config_template['redvypr_device']['publishes']  = True
+config_template['redvypr_device']['subscribes'] = True
 config_template['redvypr_device']['description'] = description
 
 # Headers for network packets
@@ -182,7 +182,7 @@ def filter_deviceinfo(data):
     for dev in data.keys():
         for devfull in data[dev].keys():
             try:
-                FLAG_PUBLISH = data[dev][devfull]['_deviceinfo']['publish']
+                FLAG_PUBLISH = data[dev][devfull]['_deviceinfo']['publishes']
             except:
                 FLAG_PUBLISH = False
 
@@ -1478,7 +1478,7 @@ class Device(redvypr_device):
         """
         funcname = __name__ + '.start()'
         # Deviceinfoall is used to announce all devices
-        device_info['deviceinfo_all']   = self.redvypr.get_deviceinfo(publish=True)
+        device_info['deviceinfo_all']   = self.redvypr.get_deviceinfo(publishes=True)
         device_info['devicename']       = self.name
         device_info['devicemodulename'] = self.devicemodulename
         device_info['deviceuuid']       = self.uuid
