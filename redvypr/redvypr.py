@@ -1008,15 +1008,6 @@ class redvypr(QtCore.QObject):
                 else:
                     logger.warning(funcname + ': Could not stop thread.')
 
-    def send_command(self, device, command):  # Legacy ?!!?!, used device.command instead ...
-        """ Sends a command to a device by putting it into the command queue
-        """
-        funcname = self.__class__.__name__ + '.send_command():'
-        dev = self.get_device_from_str(device)
-        print(funcname, device, command, dev)
-        logger.debug(funcname + 'Sending command')
-        dev.comqueue.put(command)
-
     def adddevicepath(self, folder):
         """Adds a path to the devicepathlist
         """
@@ -1062,70 +1053,9 @@ class redvypr(QtCore.QObject):
         return [all_subscriptions,all_devices]
 
 
-    def get_devicename_from_device(self, device):
-        """
-        Creates a redvypr devicename from device and the hostinfo.
-        Args:
-            device:
-        
-        Returns
-        -------
-        device : str
-            The devicestring
-            
-        """
-        devicename = device.name + ':' + self.hostinfo['hostname'] + '@' + self.hostinfo['addr'] + '::' + self.hostinfo[
-            'uuid']
-        return devicename
-
-
-    def get_device_from_str(self, devicestr):
-        """ Returns the deviced based on an inputstr, if not found returns None
-        """
-        devicedict = self.get_devicedict_from_str(devicestr)
-        if (devicedict == None):
-            return None
-        else:
-            return devicedict['device']
-
-    def get_devicedict_from_str(self, devicestr):
-        """
-        Returns the devicedict (as found in the list self.devices) based on an devicestr, if not found returns None. If
-        the devicestr is from a remote redvypr instance (uuid differ) the devicedict of the forwarding device is returned.
-        
-        Args:
-            devicestr (str): 
-            
-            
-        Returns
-        -------
-        device : dict
-            The redvypr devicedict corresponding to the devicestr.
-            
-        
-        """
-        #deviceparsed = data_packets.parse_addrstr(devicestr, local_hostinfo=self.hostinfo)
-        deviceaddr = data_packets.redvypr_address(devicestr)
-        # Check local devices first
-        for d in self.devices:
-            dev = d['device']
-            daddr = dev.address
-            if deviceaddr == daddr:
-                return d
-
-        # Check forwarded devices
-        for d in self.devices:
-            dev = d['device']
-            daddr = dev.address
-            for dforward in dev.statistics['devices']:
-                if deviceaddr == daddr:
-                    return d
-
-        return None
-
     def get_devices(self, publishes = None, subscribes = None):
         """
-        Returns a list of all devices of this redvypr instance. Returns all devices if pulblishes or subscribes is None.
+        Returns a list of all devices of this redvypr instance. Returns all devices if "publishes" or "subscribes" is None.
         Otherwise according to the publishes/subscribes flags
         Args:
             publishes: True/False or None.
@@ -1166,138 +1096,12 @@ class redvypr(QtCore.QObject):
 
 
         """
-        logger.warning('will be removed soon')
         raddrs = []
         for dev in self.devices:
-            raddrs_tmp = dev['device'].get_deviceddresses(local,publishes,subscribes)
-            raddrs.append(raddrs_tmp)
+            raddrs_tmp = dev['device'].get_deviceaddresses(local)
+            raddrs.extend(raddrs_tmp)
 
         return raddrs
-
-    def get_forwarded_devicenames(self, device=None):
-        """
-
-        Args:
-            device: redvypr_device
-
-        Returns:
-           List with the devicenames of the forwarded devicenames
-        """
-        logger.warning('will be removed soon')
-        try:
-            devicenames = device.statistics['devices']
-        except:
-            devicenames = []
-
-        return devicenames
-
-    def get_data_providing_devicenames(self, device=None, forwarded_devices=True):
-        """
-        Returns a list of the devices that provide data to device. This is either the subscribed devices itself or a device that forwards data packets (i.e. network device)
-
-        Args:
-            device: bool
-                None: Returns all data providing devices. 
-                Device:  Returns all data providing devices of device 
-            forwarded_devices: bool
-                A device might forward data packets from other devices. These devices can be listed as well, note that the device needs to have data packets received already to have them in their statistic.
-
-        Returns
-        -------
-        list
-            A list containing the names of the data providing devices
-
-        """
-        funcname = self.__class__.__name__ + '.get_data_providing_devices():'
-        logger.debug(funcname)
-        flag_device_itself = False
-        for devdict in self.devices:
-            if (devdict['device'] == device):
-                flag_device_itself = True
-                break
-
-        if (device == None):
-            flag_device_itself = True
-
-        if (flag_device_itself == False):
-            raise ValueError('Device not in redvypr')
-        else:
-            devicenamelist = []
-            if (device == None):
-                for dev in self.devices:
-                    devname = dev['device'].name
-                    if (dev['device'].publishes):
-                        devicenamelist.append(devname)
-                        print('Devname test', devname)
-                        devicenamelist_forward = self.get_forwarded_devicenames(dev['device'])
-                        print('Devname forward', devicenamelist_forward)
-                        devicenamelist.extend(devicenamelist_forward)
-
-            else:
-                devicelist = get_data_providing_devices(self.devices, device)
-                for dev in devicelist:
-                    devicenamelist.append(dev.name)
-
-                devicenamelist_forward = self.get_forwarded_devicenames(dev['device'])
-                devicenamelist.extend(devicenamelist_forward)
-
-            print('Devicelist 1', devicenamelist)
-            devicenamelist = list(set(devicenamelist))
-
-            return devicenamelist
-
-    def get_data_providing_devices(self, device=None):
-        """
-        Returns LOCAL devices that provide data, note that if forwarded devices are needed, use get_data_providing_devicenames!
-        Args:
-            device: redvypr_device or None, if none return all data providing devices
-            
-        Returns
-        -------
-        list
-            A list containing redvypr_devices
-        """
-        logger.warning('LEGACY, will be removed soon')
-        devicelist = []
-        devicedicts = self.get_data_providing_devicedicts(device)
-        for d in devicedicts:
-            devicelist.append(d['device'])
-        return devicelist
-
-    def get_data_providing_devicedicts(self, device=None):
-        """
-        Returns LOCAL devices that provide data, note that if forwarded devices are needed, use get_data_providing_devicenames!
-        Args:
-            device: redvypr_device or None, if none return all data providing devices
-            
-        Returns
-        -------
-        list
-            A list containing redvypr dictionary containing the device and additional infrastructure::
-                redvypr.get_data_providing_devices()[0].keys()
-                dict_keys(['device', 'thread', 'dataout', 'gui', 'guiqueue', 'statistics', 'packets_sent', 'packets_received', 'devicedisplaywidget', 'logger', 'displaywidget', 'initwidget', 'widget', 'infowidget'])
-        """
-        logger.warning('LEGACY, will be removed soon')
-        if (device == None):
-            devicedicts = []
-            for dev in self.devices:
-                if (dev['device'].publishes):
-                    devicedicts.append(dev)
-        else:
-            devicedicts = get_data_providing_devices(self.devices, device)
-
-        return devicedicts
-
-    def get_datastream_providing_device(self, datastream):
-        """ Gets the device that provides that datastream
-        Not fully implemented!!!
-        """
-        funcname = self.__class__.__name__ + '.get_datastream_providing_device():'
-        logger.debug(funcname)
-        datastreamparsed = data_packets.parse_addrstr(datastream, local_hostinfo=self.hostinfo)
-        devicename = datastreamparsed['devicename']
-        #for dev in self.devices:
-        #    datastreamlist.extend(dev['statistics']['datastreams'])
 
     def get_datastream_info(self, datastream):
         """ Gets additional information to the datastream
@@ -1314,116 +1118,6 @@ class redvypr(QtCore.QObject):
 
         return None
 
-    def get_datastreams(self, device=None, format='uuid',local=False,add_lastseen=False):
-        """
-        Gets datastreams from a device (or all devices if device == None).
-        Args:
-            device: (redvypr_device or str):
-            format:
-            local: If True: Return only datastreams that are local. This is important if datastreams from other redvypr instances are subscribed.
-            add_lastseen:
-            
-        Returns
-        -------
-        list if add_lastseen == False
-            A list containing the datastreams
-        dict: if add_lastseen == True
-            A dictionary with all datastreams as keys and the unix time as content specifying the last time the datastream has been received
-        """
-        funcname = self.__class__.__name__ + '.get_datastreams():'
-        datastreamlist = []
-
-        if (type(device) == str):
-            datastreams_all = []
-            for dev in self.devices:
-                datastreams_all.extend(dev['statistics']['datastreams'])
-            datastreams_all = list(set(datastreams_all))
-            # Parse the devicestring
-            deviceparsed = data_packets.parse_addrstr(device, local_hostinfo=self.hostinfo)
-            ##print('datastreams',datastreams_all)
-            ##print('deviceparsed',deviceparsed)
-            for stream in datastreams_all:
-                datastream_parsed = data_packets.parse_addrstr(stream, local_hostinfo=self.hostinfo)
-                ##print('datastream parsed',datastream_parsed)
-                flag_name = datastream_parsed['devicename'] == deviceparsed['devicename']
-                flag_name = flag_name or deviceparsed['deviceexpand']
-
-                flag_hostname = datastream_parsed['hostname'] == deviceparsed['hostname']
-                flag_hostname = flag_hostname or deviceparsed['hostexpand']
-
-                flag_addr = datastream_parsed['addr'] == deviceparsed['addr']
-                flag_addr = flag_addr or deviceparsed['addrexpand']
-
-                flag_uuid = datastream_parsed['uuid'] == deviceparsed['uuid']
-                flag_uuid = flag_uuid or deviceparsed['uuidexpand']
-
-                flag_local = datastream_parsed['local'] == deviceparsed['local']
-
-                ##print('name',flag_name,'hostname',flag_hostname,'addr',flag_addr,'uuid',flag_uuid)
-                if (flag_name and flag_local) or (flag_name and flag_uuid) or (
-                        flag_name and flag_addr and flag_hostname):
-                    datastreamlist.append(stream)
-
-            datastreamlist = list(set(datastreamlist))
-
-        elif (device == None):
-            for dev in self.devices:
-                datastreamlist.extend(dev['statistics']['datastreams'])
-            datastreamlist = list(set(datastreamlist))
-
-        else:
-            datastreamlist = device.statistics['datastreams']
-            datastreamlist = list(set(datastreamlist))
-
-
-        if local:
-            for d in reversed(datastreamlist):
-                if self.hostinfo['uuid'] in d: # Check if the uuid is in
-                    pass
-                else:
-                    datastreamlist.remove(d)
-
-        return datastreamlist
-
-    def get_datakeys(self, device):
-        """
-        Get the datakeys for the device. 
-        
-        
-        Args:
-            device (redvypr device or str):
-            
-        Returns:
-        --------
-        list
-            A list of the device datakeys
-         
-        """
-        funcname = self.__class__.__name__ + '.get_datakeys():'
-        logger.debug(funcname)
-        datakeys = []
-        datastreams = self.get_datastreams(device)  # Get datastreams of device
-        for stream in datastreams:
-            key = stream.split('/')[0]
-            datakeys.append(key)
-
-        datakeys = list(set(datakeys))
-
-        return datakeys
-
-    def get_data_receiving_devices(self, device):
-        """
-
-        Args:
-            device:
-
-        Returns:
-            List of devices the device is provding data
-        """
-
-        funcname = self.__class__.__name__ + '.get_data_receiving_devices():'
-        logger.debug(funcname)
-        return get_data_receiving_devices(self.devices, device)
 
     def get_known_devices(self):
         """ List all known devices that can be loaded by redvypr

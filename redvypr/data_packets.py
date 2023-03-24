@@ -201,12 +201,10 @@ class redvypr_address():
 
         return data
 
-
-    def __str__(self):
-        astr2 = self.get_str('<key>/<device>:<host>@<addr>')
-        astr = ''
-        astr += 'addrstr: {:s}'.format(self.address_str)
-        astr += '\n{:s}'.format(astr2)
+    def __repr__(self):
+        #astr2 = self.get_str('<key>/<device>:<host>@<addr>')
+        astr2 = self.address_str
+        astr = "redvypr_address('" + astr2 + "')"
         return astr
 
     def __eq__(self, addr):

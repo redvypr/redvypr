@@ -194,7 +194,7 @@ class redvypr_device(QtCore.QObject):
         Returns:
 
         """
-        astr = self.redvypr_address().get_str(strtype = strtype)
+        astr = self.address.get_str(strtype = strtype)
         return astr
 
     def got_subscribed(self,dataprovider_address,datareceiver_address,):
@@ -448,17 +448,30 @@ class redvypr_device(QtCore.QObject):
         Returns:
             List of devices this device is publishing to
         """
+        self.logger.warning('needs to be refurbished')
         devs = self.redvypr.get_data_receiving_devices(self)
         return devs
 
     def subscribed_to(self):
         """
+        List of redvypr devices this device has subscribed. This is different from self.subcribed_addresses as it
+        returns the existing devices, in self.subscribed_addresses also regular expressions can exist.
 
-        Returns:
-            List of devices this device is subscribed to
+        Returns: List of redvypr addresses
+
         """
-        devs = self.redvypr.get_data_providing_devices(self)
-        return devs
+
+        subaddresses = []
+        raddresses = self.redvypr.get_deviceaddresses()
+
+
+        for subaddr in self.subscribed_addresses:
+            for addr in raddresses:
+                if subaddr in reversed(addr):
+                    subaddresses.append(addr)
+                    raddresses.remove(addr)
+
+        return subaddresses
             
     def unsubscribe_all(self):
         """
@@ -489,5 +502,5 @@ class redvypr_device(QtCore.QObject):
         print('redvypr' + self.redvypr)  
         
     def __str__(self):
-        return self.description     
+        return 'redvypr_device (' + self.devicemodulename + ') ' + self.address_string()
 

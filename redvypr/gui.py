@@ -189,7 +189,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
         if (len(self.devices) > 0):
             root = self.devices_listallout.invisibleRootItem()
             # self.devices_listcon.addItem(str(device))
-            data_provider_all = self.redvypr.get_data_providing_devices()
+            data_provider_all = self.redvypr.get_devices(publishes=True)
             font1 = QtGui.QFont('Arial')
             font1.setBold(True)
             font0 = QtGui.QFont('Arial')
