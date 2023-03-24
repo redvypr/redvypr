@@ -2028,22 +2028,40 @@ def redvypr_main():
     # Add device
     if (args.add_device is not None):
         hostconfig = {'devices': []}
-        print('devices', args.add_device)
+        print('devices!', args.add_device)
         for d in args.add_device:
-            autostart = False
-            multiprocess = 'thread'
+            deviceconfig = {'autostart':False,'loglevel':logging_level,'mp':'thread','config':{}}
             if(',' in d):
-                options = d.split(',')[1]
-                d = d.split(',')[0]
-                if('s' in options):
-                    autostart = True
-                if('p' in options):
-                    multiprocess = 'multiprocess'
+                devicemodulename = d.split(',')[0]
+                options = d.split(',')[1:]
+                for option in options:
+                    print('Option',option)
+                    if(option == 's'):
+                        deviceconfig['autostart'] = True
+                    elif option == 'mp' or option == 'multiprocess':
+                        deviceconfig['mp'] = 'multiprocess'
+                    elif option == 'th' or option == 'thread':
+                        deviceconfig['mp'] = 'thread'
+                    elif(':' in option):
+                        key = option.split(':')[0]
+                        data = option.split(':')[1]
+                        try:
+                            data = int(data)
+                        except:
+                            try:
+                                data = float(data)
+                            except:
+                                pass
 
-            dev = {'devicemodulename': d, 'deviceconfig':{'autostart':autostart,'loglevel':logging_level,'mp':multiprocess}}
+                        if(key == 'name'):
+                            deviceconfig[key] = data
+                        else:
+                            deviceconfig['config'][key] = data
 
+            dev = {'devicemodulename': devicemodulename, 'deviceconfig':deviceconfig}
+            print('dev',dev)
             hostconfig['devices'].append(dev)
-            logger.info('Adding device {:s}, autostart: {:s},'.format(d,str(autostart)))
+            logger.info('Adding device {:s}, autostart: {:s},'.format(d,str(deviceconfig['autostart'])))
 
         config_all.append(hostconfig)
 

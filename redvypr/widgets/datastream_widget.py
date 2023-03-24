@@ -119,7 +119,7 @@ class datastreamWidget(QtWidgets.QWidget):
             self.devicelist.clear()
             root = self.devicelist.invisibleRootItem()
             # self.devices_listcon.addItem(str(device))
-            data_provider_all = self.redvypr.get_devices(local=True,publishes=True)
+            data_provider_all = self.redvypr.get_devices(publishes=True)
             font1 = QtGui.QFont('Arial')
             font1.setBold(True)
             font0 = QtGui.QFont('Arial')
