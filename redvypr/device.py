@@ -452,25 +452,48 @@ class redvypr_device(QtCore.QObject):
         devs = self.redvypr.get_data_receiving_devices(self)
         return devs
 
-    def subscribed_to(self):
+    def get_subscribed_devices(self):
         """
-        List of redvypr devices this device has subscribed. This is different from self.subcribed_addresses as it
+        Returns all redvypr.devices this device is subscribed to.
+
+        Returns:
+
+        """
+        funcname = __name__ + '.get_subscribed_devices()'
+        devs = self.redvypr.get_devices()
+
+        print('devices', devs)
+        print('subscribed addresses', self.subscribed_addresses)
+        devs_subscribed = []
+        for subaddr in self.subscribed_addresses:
+            for dev in reversed(devs):
+                if (subaddr in dev.address) and (dev is not self):
+                    devs_subscribed.append(dev)
+                    devs.remove(dev)
+
+        return devs_subscribed
+
+    def get_subscribed_deviceaddresses(self):
+        """
+        List of redvypr devices addresses this device has subscribed. This is different from self.subcribed_addresses as it
         returns the existing devices, in self.subscribed_addresses also regular expressions can exist.
 
         Returns: List of redvypr addresses
 
         """
-
+        funcname = __name__ + '.get_subscribed_deviceaddresses()'
         subaddresses = []
         raddresses = self.redvypr.get_deviceaddresses()
 
-
+        print('raddresses', raddresses)
+        print('subscribed addresses',self.subscribed_addresses)
         for subaddr in self.subscribed_addresses:
-            for addr in raddresses:
-                if subaddr in reversed(addr):
+            for addr in reversed(raddresses):
+                if subaddr in addr:
                     subaddresses.append(addr)
                     raddresses.remove(addr)
 
+        print('subaddresses', subaddresses)
         return subaddresses
             
     def unsubscribe_all(self):

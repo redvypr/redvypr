@@ -113,14 +113,14 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             for p in packets:
                 t_now = time.time()
                 dt = t_now - t_sent
-                dt_packet = (p['t'] - t_packet_old)/speedup
+                dt_packet = (p['_redvypr']['t'] - t_packet_old)/speedup
                 if(dt_packet < 0):
                     dt_packet = 0
 
                 if True:
                     time.sleep(dt_packet)
                     t_sent = time.time()
-                    t_packet_old = p['t']
+                    t_packet_old = p['_redvypr']['t']
                     dataqueue.put(p)
 
                 sstr = 'Sending packet in {:f} s.'.format(dt_packet)
@@ -255,8 +255,8 @@ class initDeviceWidget(QtWidgets.QWidget):
             f.close()
             for p in packets:
                 stat = do_data_statistics(p, stat)
-                tminlist = [stat['t_min'], p['t']]
-                tmaxlist = [stat['t_max'], p['t']]
+                tminlist = [stat['t_min'], p['_redvypr']['t']]
+                tmaxlist = [stat['t_max'], p['_redvypr']['t']]
                 stat['t_min'] = min(tminlist)
                 stat['t_max'] = max(tmaxlist)
 
@@ -293,7 +293,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         for i in rows:
             filename = self.inlist.item(i,0).text()
             stat = self.inspect_data(filename,rescan=False)
-            packetitem = QtWidgets.QTableWidgetItem(str(stat['numpackets']))
+            packetitem = QtWidgets.QTableWidgetItem(str(stat['packets_sent']))
             self.inlist.setItem(i,1,packetitem)
             tdmin = datetime.datetime.fromtimestamp(stat['t_min'])
             tminstr = str(tdmin)
@@ -328,7 +328,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.add_files()'
         logger.debug(funcname)
-        filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self,"Rawdatafiles","","redvypr raw (*.redvypr_raw);;All Files (*)")
+        filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self,"Rawdatafiles","","redvypr raw (*.redvypr_yaml);;All Files (*)")
         for f in filenames: 
             self.device.config['files'].append(f)
             

@@ -410,18 +410,17 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if(button == self.adddeviceinbtn):
             self.connect.emit(self.device) # The connect signal is connected with connect_device that will open a subscribe/connect widget
-            #self.update_device_list()
+            self.update_device_list()
                             
     def update_device_list(self):
         funcname = self.__class__.__name__ + '.update_device_list():'
         logger.debug(funcname)
         #print('Devices',devicestr_provider,devicestr_receiver)
-        devices = self.device.subscribed_to()
-        print('Devices',devices)
+        raddresses = self.device.get_subscribed_deviceaddresses()
+        print('Deviceaddresses',raddresses)
         self.inlist.clear()
-        for d in devices:
-            print(d)
-            devname = d.name
+        for raddr in raddresses:
+            self.inlist.addItem(raddr.address_str)
 
 
     def config_to_widgets(self):

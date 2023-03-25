@@ -1071,14 +1071,18 @@ class redvypr(QtCore.QObject):
             if publishes == True:
                 if(dev.publishes):
                     devicelist.append(dev)
+                    continue
             elif publishes is None:
                 devicelist.append(dev)
+                continue
 
             if (subscribes):
                 if (dev.subscribes):
                     devicelist.append(dev)
+                    continue
             elif subscribes is None:
                 devicelist.append(dev)
+                continue
 
 
         return devicelist
@@ -1984,7 +1988,7 @@ def redvypr_main():
     config_help_nogui = 'start redvypr without a gui'
     config_help_path = 'add path to search for redvypr modules'
     config_help_hostname = 'hostname of redvypr, overwrites the hostname in a possible configuration '
-    config_help_add = 'add device, can be called multiple times'
+    config_help_add = 'add device, can be called multiple times, options/configuration by commas separated, -a test_device,[s],[mp/th],name:test_1,delay_s:0.4'
     config_optional = 'optional information about the redvypr instance, multiple calls possible or separated by ",". Given as a key:data pair: --hostinfo location:lab --hostinfo lat:10.2,lon:30.4. The data is tried to be converted to an int, if that is not working as a float, if that is neither working at is passed as string'
     parser = argparse.ArgumentParser()
     parser.add_argument('--verbose', '-v', action='count')
@@ -2030,7 +2034,7 @@ def redvypr_main():
         hostconfig = {'devices': []}
         print('devices!', args.add_device)
         for d in args.add_device:
-            deviceconfig = {'autostart':False,'loglevel':logging_level,'mp':'thread','config':{}}
+            deviceconfig = {'autostart':False,'loglevel':logging_level,'mp':'thread','config':{},'subscriptions':[]}
             if(',' in d):
                 devicemodulename = d.split(',')[0]
                 options = d.split(',')[1:]
@@ -2055,9 +2059,13 @@ def redvypr_main():
 
                         if(key == 'name'):
                             deviceconfig[key] = data
+                        elif (key == 'subscribe'):
+                            print('Subscribe',data)
+                            deviceconfig['subscriptions'].append(data)
                         else:
                             deviceconfig['config'][key] = data
-
+            else:
+                devicemodulename = d
             dev = {'devicemodulename': devicemodulename, 'deviceconfig':deviceconfig}
             print('dev',dev)
             hostconfig['devices'].append(dev)
