@@ -17,20 +17,28 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('csvlogger')
 logger.setLevel(logging.DEBUG)
 
-def get_standard_config():
-    """
-    """
-    config                     = {}
-    config['datastreams']      = set()
-    config['datastreams_info'] = {}
-    config['dt_newfile']       = 0
-    config['dt_newfile_unit']
-    config['size_newfile']
-    config['size_newfile_unit']
-    config['dt_status'] = 1
-    config['separator'] = ','
-    
-    return config
+description = 'Writes data into a csv format, either into a file or publishes it as a "csv" datakey'
+config_template = {}
+config_template['name']              = 'csvlogger'
+config_template['datastreams_info']  = {'type':'dict','description':'Information about the files, to be filled by csvlogger'}
+config_template['datastreams']       = {'type':'list','description':'List of all datastreams'}
+config_template['dt_newfile']        = {'type':'int','default':20,'description':'Time after which a new file is created'}
+config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','options':['seconds','hours','days']}
+config_template['dt_update']         = {'type':'int','default':5,'description':'Time after which an upate is sent to the gui'}
+config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
+config_template['size_newfile_unit'] = {'type':'str','default':'bytes','options':['bytes','kB','MB']}
+config_template['fileextension']     = {'type':'str','default':'redvypr_yaml','description':'File extension, if empty not used'}
+config_template['fileprefix']        = {'type':'str','default':'redvypr','description':'If empty not used'}
+config_template['filepostfix']       = {'type':'str','default':'raw','description':'If empty not used'}
+config_template['filedateformat']    = {'type':'str','default':'%Y-%m-%d_%H%M%S','description':'Dateformat used in the filename, must be understood by datetime.strftime'}
+config_template['filecountformat']   = {'type':'str','default':'04','description':'Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}'}
+config_template['dt_status']         = 1
+config_template['separator']         = ','
+config_template['speedup']           = {'type':'float','description':'Speedup factor of the data'}
+config_template['redvypr_device']    = {}
+config_template['redvypr_device']['publish']     = True
+config_template['redvypr_device']['subscribe']   = True
+config_template['redvypr_device']['description'] = description
 
 def write_csv_header(f,config):
     funcname = __name__ + '.write_csv_header()'
@@ -409,94 +417,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         self.label.setStyleSheet(''' font-size: 24px; font: bold''')
         self.config_widgets = [] # A list of all widgets that can only be used of the device is not started yet
-        # The output tree widget
-        self.outfilebutton = QtWidgets.QPushButton("Choose file")
-        self.outfilebutton.clicked.connect(self.get_filename)
-        self.outfilename = QtWidgets.QLineEdit()
-        
-        self.config_widgets.append(self.outfilebutton)
-        self.config_widgets.append(self.outfilename)
-        try:
-            filename = self.device.config['filename']
-        except:
-            tnow = datetime.datetime.now()
-            filename = tnow.strftime("redvypr_data")
 
-        self.outfilename.setText(filename)
-        self.outfilename.editingFinished.connect(self.construct_filename)
-        
-        self.outfilename_time = QtWidgets.QLineEdit()
-        self.outfilename_time.setEnabled(False)
-        
-        self.filenameextcombo = QtWidgets.QComboBox()
-        self.filenameextcombo.addItem('custom')
-        self.filenameextcombo.addItem('csv')
-        self.filenameextcombo.setCurrentIndex(1)
-        self.filenameextcombo.currentIndexChanged.connect(self.__change_fileext__)
-        #self.filenameextcombo.currentTextChanged.connect(self.__change_fileext_text__)
-        
-        
-        # New file choice
-        # Delta t for new file
-        edit = QtWidgets.QLineEdit()
-        onlyInt = QtGui.QIntValidator()
-        edit.setValidator(onlyInt)
-        self.dt_newfile = edit
-        self.dt_newfile.setToolTip('Create a new file every N seconds.\nFilename is "filenamebase"_yyyy-mm-dd_HHMMSS."ext".\nUse 0 to disable feature.')
-        try:
-            self.dt_newfile.setText(str(self.device.config['dt_newfile']))
-        except Exception as e:
-            self.dt_newfile.setText('0')
-            
-        # Delta t for new file
-        edit = QtWidgets.QLineEdit()
-        onlyInt = QtGui.QIntValidator()
-        edit.setValidator(onlyInt)
-        self.size_newfile = edit
-        self.size_newfile.setToolTip('Create a new file every N bytes.\nFilename is "filenamebase"_yyyy-mm-dd_HHMMSS."ext".\nUse 0 to disable feature.')
-        try:
-            self.size_newfile.setText(str(self.device.config['size_newfile']))
-        except Exception as e:
-            self.size_newfile.setText('0')
-            
-        self.newfiletimecombo = QtWidgets.QComboBox()
-        self.newfiletimecombo.addItem('None')
-        self.newfiletimecombo.addItem('seconds')
-        self.newfiletimecombo.addItem('hours')
-        self.newfiletimecombo.addItem('days')
-        self.newfiletimecombo.setCurrentIndex(1)
-        self.newfiletimecombo.currentTextChanged.connect(self.construct_filename)
-        
-        self.newfilesizecombo = QtWidgets.QComboBox()
-        self.newfilesizecombo.addItem('None')
-        self.newfilesizecombo.addItem('Bytes')
-        self.newfilesizecombo.addItem('kB')
-        self.newfilesizecombo.addItem('MB')
-        self.newfilesizecombo.setCurrentIndex(2)
-        self.newfilesizecombo.currentTextChanged.connect(self.construct_filename)
-        
-        sizelabel = QtWidgets.QLabel('New file after')
-        
-        # Filename layout
-        self.filenamewidget = QtWidgets.QWidget()
-        layout = QtWidgets.QHBoxLayout(self.filenamewidget)
-        layout.addWidget(self.outfilebutton)
-        layout.addWidget(self.outfilename)
-        layout.addWidget(self.outfilename_time)
-        layout.addWidget(self.filenameextcombo)
-        # File change layout
-        self.newfilewidget = QtWidgets.QWidget() 
-        layout = QtWidgets.QHBoxLayout(self.newfilewidget)
-        #layout.addWidget(sizelabel)
-        layout.addWidget(self.dt_newfile)
-        layout.addWidget(self.newfiletimecombo)
-        layout.addWidget(self.size_newfile)
-        layout.addWidget(self.newfilesizecombo)
-        
-         # End new file
         
         self.create_datasteamwidget()
-        
+        self.create_outfilewidget()
+
         self.__infodict__ = {'format':'','unit':''}
         
         # The rest
@@ -505,28 +430,124 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.startbtn = QtWidgets.QPushButton("Write CSV-File")
         self.startbtn.clicked.connect(self.start_clicked)
         self.startbtn.setCheckable(True)
-        
+
+
         # The full layout
         layout = QtWidgets.QGridLayout(self)
         layout.addWidget(self.label,0,0,1,-1)  
-        layout.addWidget(QtWidgets.QLabel('Filename'),1,0)
-        layout.addWidget(self.filenamewidget,1,1,1,-1)
-        layout.addWidget(sizelabel,2,0)
-        layout.addWidget(self.newfilewidget,2,1,1,-1)
+        layout.addWidget(self.filewidget, 2, 1, 1, -1)
         layout.addWidget(self.datastreamwidget,3,0,1,-1)
         layout.addWidget(self.startbtn,5,0,1,-1)
         
-        self.construct_filename()
         self.update_datastreamwidget()
-        self.redvypr.device_added.connect(self.update_datastreamwidget)
+        self.redvypr.device_status_changed_signal.connect(self.update_datastreamwidget)
         
-    def finalize_init(self):
-        """ Util function that is called by redvypr after initializing all config (i.e. the configuration from a yaml file)
+
+    def create_outfilewidget(self):
         """
-        funcname = self.__class__.__name__ + '.finalize_init()'
-        logger.debug(funcname)
-        
-        
+        Creates the outfilewidget
+        Returns:
+
+        """
+
+        # The output widgets
+        self.outlabel = QtWidgets.QLabel("Logfile")
+        self.outfilename = QtWidgets.QLineEdit()
+        # Checkboxes
+        self.prefix_check = QtWidgets.QCheckBox('Prefix')
+        self.date_check = QtWidgets.QCheckBox('Date/Time')
+        self.count_check = QtWidgets.QCheckBox('Counter')
+        self.postfix_check = QtWidgets.QCheckBox('Postfix')
+        self.extension_check = QtWidgets.QCheckBox('Extension')
+
+        try:
+            filename = self.device.config['filename']
+        except:
+            filename = ''
+
+        self.outfilename.setText(filename)
+
+        # Delta t for new file
+        edit = QtWidgets.QLineEdit(self)
+        onlyInt = QtGui.QIntValidator()
+        edit.setValidator(onlyInt)
+        self.dt_newfile = edit
+        self.dt_newfile.setToolTip(
+            'Create a new file every N seconds.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
+        try:
+            self.dt_newfile.setText(str(self.device.config['dt_newfile']))
+        except Exception as e:
+            self.dt_newfile.setText('0')
+
+        # Delta t for new file
+        edit = QtWidgets.QLineEdit(self)
+        onlyInt = QtGui.QIntValidator()
+        edit.setValidator(onlyInt)
+        self.size_newfile = edit
+        self.size_newfile.setToolTip(
+            'Create a new file every N bytes.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
+        try:
+            self.size_newfile.setText(str(self.device.config['size_newfile']))
+        except Exception as e:
+            self.size_newfile.setText('0')
+
+        self.newfiletimecombo = QtWidgets.QComboBox()
+        self.newfiletimecombo.addItem('None')
+        self.newfiletimecombo.addItem('seconds')
+        self.newfiletimecombo.addItem('hours')
+        self.newfiletimecombo.addItem('days')
+        self.newfiletimecombo.setCurrentIndex(1)
+
+        self.newfilesizecombo = QtWidgets.QComboBox()
+        self.newfilesizecombo.addItem('None')
+        self.newfilesizecombo.addItem('Bytes')
+        self.newfilesizecombo.addItem('kB')
+        self.newfilesizecombo.addItem('MB')
+        self.newfilesizecombo.setCurrentIndex(2)
+
+        sizelabel = QtWidgets.QLabel('New file after')
+        # File change layout
+        self.newfilewidget = QtWidgets.QWidget()
+        self.newfilelayout = QtWidgets.QFormLayout(self.newfilewidget)
+        self.newfilelayout.addRow(sizelabel)
+        self.newfilelayout.addRow(self.dt_newfile, self.newfiletimecombo)
+        self.newfilelayout.addRow(self.size_newfile, self.newfilesizecombo)
+
+        # Filenamelayout
+        self.extension_text = QtWidgets.QLineEdit('csv')
+        self.prefix_text = QtWidgets.QLineEdit('')
+        self.date_text = QtWidgets.QLineEdit('%Y-%m-%d_%H%M%S')
+        self.count_text = QtWidgets.QLineEdit('04d')
+        self.postfix_text = QtWidgets.QLineEdit('')
+
+        self.prefix_check = QtWidgets.QCheckBox('Prefix')
+        self.date_check = QtWidgets.QCheckBox('Date/Time')
+        self.count_check = QtWidgets.QCheckBox('Counter')
+        self.postfix_check = QtWidgets.QCheckBox('Postfix')
+        self.extension_check = QtWidgets.QCheckBox('Extension')
+        # The outwidget
+        self.outwidget = QtWidgets.QWidget()
+        self.outlayout = QtWidgets.QGridLayout(self.outwidget)
+        # Checkboxes
+        self.outlayout.addWidget(self.prefix_check, 0, 0)
+        self.outlayout.addWidget(self.date_check, 0, 1)
+        self.outlayout.addWidget(self.count_check, 0, 2)
+        self.outlayout.addWidget(self.postfix_check, 0, 3)
+        self.outlayout.addWidget(self.extension_check, 0, 4)
+
+        self.outlayout.addWidget(self.prefix_text, 1, 0)
+        self.outlayout.addWidget(self.date_text, 1, 1)
+        self.outlayout.addWidget(self.count_text, 1, 2)
+        self.outlayout.addWidget(self.postfix_text, 1, 3)
+        self.outlayout.addWidget(self.extension_text, 1, 4)
+        #self.outlayout.addWidget(self.newfilewidget, 3, 0, 1, 4)
+
+        # The final widget
+        self.filewidget = QtWidgets.QWidget()
+        self.filelayout = QtWidgets.QHBoxLayout(self.filewidget)
+        self.filelayout.addWidget(self.outwidget)
+        self.filelayout.addWidget(self.newfilewidget)
+
     def create_datasteamwidget(self):
         """
         """
@@ -564,16 +585,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.config_widgets.append(self.remallbtn) 
         self.config_widgets.append(self.addallbtn) 
         
-        if False:
-            self.datastreamwidget_layout = QtWidgets.QGridLayout(self.datastreamwidget)
-            self.datastreamwidget_layout.addWidget(QtWidgets.QLabel('Available Datastreams'),0,0,1,2)
-            self.datastreamwidget_layout.addWidget(self.datastreamlist_all,1,0,6,2)
-            self.datastreamwidget_layout.addWidget(self.arrleft,5,2)
-            #self.datastreamwidget_layout.addWidget(self.remallbtn,4,2)
-            #self.datastreamwidget_layout.addWidget(self.addallbtn,3,2)
-            self.datastreamwidget_layout.addWidget(self.arrright,2,2)
-            self.datastreamwidget_layout.addWidget(QtWidgets.QLabel('Datastreams to log'),0,3,1,2)
-            self.datastreamwidget_layout.addWidget(self.datastreamlist_choosen,1,3,6,2)
         if True:
             self.datastreamwidget_layout = QtWidgets.QHBoxLayout(self.datastreamwidget)
             # all datastreams
@@ -595,24 +606,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             layout.addWidget(QtWidgets.QLabel('Datastreams to log'))
             layout.addWidget(self.datastreamlist_choosen)
             self.datastreamwidget_layout.addLayout(layout, stretch=2)
-        if False:
-            self.datastreamwidget_layout.addWidget(QtWidgets.QLabel('Available Datastreams'),0,0,1,4)
-            self.datastreamwidget_layout.addWidget(self.datastreamlist_all,1,0,1,4)
-            
-            self.datastreamwidget_layout.addWidget(self.arrleft,2,0)
-            self.datastreamwidget_layout.addWidget(self.remallbtn,2,1)
-            self.datastreamwidget_layout.addWidget(self.addallbtn,2,2)
-            self.datastreamwidget_layout.addWidget(self.arrright,2,3)
-            
-            self.datastreamwidget_layout.addWidget(QtWidgets.QLabel('Datastreams to log'),3,0,1,4)
-            self.datastreamwidget_layout.addWidget(self.datastreamlist_choosen,4,0,1,4)
-            
-            
-    def __change_fileext_text__(self):
-        funcname = self.__class__.__name__ + '.__change_fileext_text__():'
-        logger.debug(funcname)
-        self.construct_filename()
-        
+
     def __change_fileext__(self,itemindex):
         funcname = self.__class__.__name__ + '.__change_fileext__():'
         logger.debug(funcname)
@@ -647,32 +641,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 count = self.filenameextcombo.count()
                 self.filenameextcombo.setCurrentIndex(count-1)
                 
-            # Construct the filename
-            self.construct_filename()
-            
-            
-    def construct_filename(self):
-        funcname = self.__class__.__name__ + '.construct_filename():'
-        combo = self.sender()
-        logger.debug(funcname)
-        
-        filesize = self.newfilesizecombo.currentText()  
-        filetime = self.newfiletimecombo.currentText()
-        #print('text',itemtext,filesize,filetime)
-        if(filesize == 'None' and filetime == 'None'):
-            filenametimestr = '.'
-        else:
-            filenametimestr = '_yyyy-mm-dd_HHMMSS.'
-            
-        self.outfilename_time.setText(filenametimestr)
-        filename_constructed = self.outfilename.text() + self.outfilename_time.text() + self.filenameextcombo.currentText()
-        logger.debug(funcname + 'Filename {:s}'.format(filename_constructed))
-        self.device.config['filename']      = filename_constructed
-        self.device.config['filebase']      = self.outfilename.text()
-        self.device.config['filetime']      = filenametimestr
-        self.device.config['fileextension'] = self.filenameextcombo.currentText()
-        
-                
+
         
     def __table_choosen_changed__(self, item):
         """
@@ -784,7 +753,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             if(dshort[0] != '?'):
                 self.datastreamlist_all.addItem(dshort)
                 
-        datastreams_subscribed = self.device.config['datastreams']
+        datastreams_subscribed = self.device.config['datastreams'].data
         self.datastreamlist_choosen.setRowCount(len(datastreams_subscribed))
         for i,d in enumerate(datastreams_subscribed):
             item = QtWidgets.QTableWidgetItem(d)
@@ -835,7 +804,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         if button.isChecked():
             logger.debug("button pressed")
             # The filename
-            self.construct_filename()
             self.device.config['dt_newfile']        = int(self.dt_newfile.text())
             self.device.config['dt_newfile_unit']   = self.newfiletimecombo.currentText()
             self.device.config['size_newfile']      = int(self.size_newfile.text())

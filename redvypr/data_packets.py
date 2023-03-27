@@ -70,25 +70,56 @@ class redvypr_address():
 
     """
     def __init__(self,addrstr=None,datapacket=None,local_hostinfo=None, datakey='',devicename='',hostname='',addr='',uuid='',redvypr_meta=None):
+        """
 
+        Args:
+            addrstr:
+            datapacket:
+            local_hostinfo:
+            datakey:
+            devicename:
+            hostname:
+            addr:
+            uuid:
+            redvypr_meta:
+        """
+        FLAG_MODIFIABLE = False
         if addrstr is not None: # Address from addrstr
-            self.address_str = addrstr
+            print('addrstr',type(addrstr),type(self))
+            if type(addrstr) == type(self):
+                print('redvypr address')
+                self.address_str = addrstr.address_str
+            else:
+                self.address_str = addrstr
+            FLAG_MODIFIABLE=True
         elif redvypr_meta is not None:  # Address from _redvypr meta information
             self.address_str = get_deviceaddress_from_redvypr_meta(redvypr_meta, uuid=True)
+            FLAG_MODIFIABLE = True
         elif datapacket is not None:  # Address from datapacket
             if(len(datakey)>0):
                 datakey_tmp = datakey
             else:
                 datakey_tmp = None
             self.address_str = get_datastream_from_data(datapacket,datakey = datakey_tmp,uuid=True)
+            FLAG_MODIFIABLE = True
         else: # addrsstr from single ingredients
             self.address_str = create_addrstr(datakey,devicename,hostname,addr,uuid,local_hostinfo=local_hostinfo)
+            FLAG_MODIFIABLE = False
             #print('Address string',self.address_str)
         if (type(self.address_str) is not str):
             raise ValueError('Unsupported type of address str {:s}'.format(str(type(self.address_str))))
 
 
+
+        if FLAG_MODIFIABLE:
+            #modify_addrstr(addrstr, datakey='', devicename='', hostname='', addr='', uuid='', local_hostinfo=None):
+            if (len(datakey) > 0) or (len(devicename) > 0) or (len(hostname) > 0) or (len(addr) > 0 ) or (len(uuid) > 0):
+                self.__address_str_orig__ = self.address_str[:]
+                self.address_str = modify_addrstr(self.address_str, datakey=datakey, devicename = devicename, hostname = hostname, addr=addr)
+
+
         self.parsed_addrstr = parse_addrstr(self.address_str, local_hostinfo=local_hostinfo)
+
         self.strtypes = ['<key>','<key>/<device>']
         self.strtypes.append('<key>/<device>:<host>')
         self.strtypes.append('<key>/<device>:<host>@<addr>')

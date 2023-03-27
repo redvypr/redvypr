@@ -1107,6 +1107,23 @@ class redvypr(QtCore.QObject):
 
         return raddrs
 
+    def get_datastreams(self,local=None):
+        """
+
+        Args:
+            local:
+
+        Returns:
+
+        """
+        datastreams = []
+        for dev in self.devices:
+            raddrs_tmp = dev['device'].get_datastreams()
+            datastreams.extend(raddrs_tmp)
+
+        return datastreams
+
+
     def get_datastream_info(self, datastream):
         """ Gets additional information to the datastream
         """

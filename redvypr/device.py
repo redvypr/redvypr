@@ -410,7 +410,7 @@ class redvypr_device(QtCore.QObject):
            dataqueue.put({'count': i+10,'_redvypr':{'device':'test2'}}) # Devicename is 'test2'
 
         Args:
-            local:
+            local: None, True or False
 
         Returns: List of redvypr_addresses
 
@@ -428,7 +428,20 @@ class redvypr_device(QtCore.QObject):
 
         return addr_list
 
-    
+    def get_datastreams(self,local=None):
+
+        devaddrs = self.get_deviceaddresses(local)
+        datastreams = []
+        for devaddr in devaddrs:
+            dkeys = self.statistics['device_redvypr'][devaddr.address_str]['datakeys']
+            for dkey in dkeys:
+                print('dkey', dkey)
+                raddr = redvypr_address(devaddr,datakey=dkey)
+                dstr = raddr.get_str()
+                datastreams.append(dstr)
+
+
+        return datastreams
 
     def get_device_info(self):
         """
@@ -441,6 +454,8 @@ class redvypr_device(QtCore.QObject):
         """
         d = copy.deepcopy(self.statistics['device_redvypr'])
         return d
+
+
 
     def publishing_to(self):
         """
