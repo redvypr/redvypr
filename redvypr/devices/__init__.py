@@ -1,5 +1,6 @@
 from . import network
 from . import plot
+from . import test
 from . import serial_device
 from . import csvlogger
 from . import csvparser
