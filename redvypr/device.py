@@ -144,7 +144,6 @@ class redvypr_device_scan():
     def scan_redvypr(self):
         funcname = 'scan_redvypr():'
         self.logger.debug(funcname)
-        print(funcname,'fds')
         if True:
             try:
                 device_module_all = inspect.getmembers(redvyprdevices)
@@ -180,25 +179,19 @@ class redvypr_device_scan():
             for name in package_names:
                 if name in d.key:
                     FLAG_POTENTIAL_MODULE = True
-                    #print('maybe',d.key)
 
             # Dont import the redvypr module itself
             if d.key == 'redvypr':
-                print('its me')
+                #print('its me')
                 FLAG_POTENTIAL_MODULE = False
 
             if(FLAG_POTENTIAL_MODULE):
-                print('Found package',d.location, d.project_name, d.version, d.key)
+                #print('Found package',d.location, d.project_name, d.version, d.key)
                 libstr2 = d.key.replace('-','_') # Need to replace - with _, because - is not allowed in python
 
                 try:
                     testmodule = importlib.import_module(libstr2)
                     device_module_all = inspect.getmembers(testmodule)
-                    print('Hallo')
-                    for m in device_module_all:
-                        print(m)
-
-                    print('Scan module recursive')
                     self.scan_module_recursive(testmodule,self.redvypr_devices['redvypr_modules'])
                     # Clean empty dictionaries
 
@@ -310,7 +303,6 @@ class redvypr_device(QtCore.QObject):
         
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(loglevel)
-        print('-1', type(self.config))
 
     def subscription_changed_global(self,devchange):
         """
@@ -585,7 +577,6 @@ class redvypr_device(QtCore.QObject):
                         device_info = {'device':self.name,'uuid':self.uuid,'thread_uuid':thread_uuid,'hostinfo':self.redvypr.hostinfo}
                         config = copy.deepcopy(self.config) # The thread/multiprocess gets a copy
                         args = (device_info,config, self.dataqueue, self.datainqueue, self.statusqueue)
-                        print('thread',self.mp)
                         if self.mp == 'thread':
                             self.logger.info(funcname + 'Starting as thread')
                             self.thread = threading.Thread(target=self.start, args=args, daemon=True)
@@ -664,7 +655,6 @@ class redvypr_device(QtCore.QObject):
         for devaddr in devaddrs:
             dkeys = self.statistics['device_redvypr'][devaddr.address_str]['datakeys']
             for dkey in dkeys:
-                print('dkey', dkey)
                 raddr = redvypr_address(devaddr,datakey=dkey)
                 dstr = raddr.get_str()
                 datastreams.append(dstr)
@@ -705,9 +695,6 @@ class redvypr_device(QtCore.QObject):
         """
         funcname = __name__ + '.get_subscribed_devices()'
         devs = self.redvypr.get_devices()
-
-        print('devices', devs)
-        print('subscribed addresses', self.subscribed_addresses)
         devs_subscribed = []
         for subaddr in self.subscribed_addresses:
             for dev in reversed(devs):
@@ -729,15 +716,15 @@ class redvypr_device(QtCore.QObject):
         subaddresses = []
         raddresses = self.redvypr.get_deviceaddresses()
 
-        print('raddresses', raddresses)
-        print('subscribed addresses',self.subscribed_addresses)
+        #print('raddresses', raddresses)
+        #print('subscribed addresses',self.subscribed_addresses)
         for subaddr in self.subscribed_addresses:
             for addr in reversed(raddresses):
                 if subaddr in addr:
                     subaddresses.append(addr)
                     raddresses.remove(addr)
 
-        print('subaddresses', subaddresses)
+        #print('subaddresses', subaddresses)
         return subaddresses
             
     def unsubscribe_all(self):
