@@ -18,10 +18,274 @@ import copy
 import uuid
 import multiprocessing
 import threading
+import importlib
+import glob
+import pathlib
+import inspect
+import pkg_resources
+import redvypr
 from redvypr.data_packets import compare_datastreams, parse_addrstr, commandpacket, redvypr_address, do_data_statistics
 import redvypr.config as redvyprConfig
+import redvypr.devices as redvyprdevices
 
 logging.basicConfig(stream=sys.stderr)
+
+
+class redvypr_device_scan():
+    """
+    Searches for redvypr devices
+    """
+    def __init__(self, device_path = [],scan=True):
+        """
+
+        Args:
+            device_path:
+            scan: Flag if a scanning shall be performed at initialization
+        """
+        self.logger = logging.getLogger('redvypr_device_scan')
+        self.logger.setLevel(logging.DEBUG)
+        self.device_paths = device_path
+        #self.redvypr = redvypr
+        self.device_modules_path = []
+        self.device_modules = []
+        self.redvypr_devices = {'modules': {},'redvypr':{}}
+        self.redvypr_devices_flat = []
+        self.__modules_scanned__ = []
+        self.__modules_scanned__.append(redvypr) # Do not scan redvypr itself
+
+        # Start scanning
+        if(scan):
+            print('scanning redvypr')
+            self.scan_redvypr()
+            self.scan_modules()
+
+
+    def print_modules(self):
+        for m in self.device_modules:
+            print(m)
+
+
+    def scan_internal(self):
+        #
+        # Add all devices from the redvypr internal device module
+        #
+        max_tries = 5000  # The maximum recursion of modules
+        n_tries = 0
+        testmodules = [redvyprdevices]
+        valid_device_modules = [] #
+        other_modules = [] # The rest
+        while (len(testmodules) > 0) and (n_tries < max_tries):
+            testmodule = testmodules[0]
+            device_module_tmp = inspect.getmembers(testmodule, inspect.ismodule)
+            for smod in device_module_tmp:
+                devicemodule = getattr(testmodule, smod[0])
+                if(devicemodule in other_modules):
+                    #logger.debug(funcname + ': Module has been tested already ...')
+                    continue
+                # Check if the device is valid
+                valid_module = self.valid_device(devicemodule)
+                if (valid_module['valid']):  # If the module is valid add it to devices
+                    devdict = {'module': devicemodule, 'name': smod[0], 'source': smod[1].__file__}
+                    # Test if the module is already there, otherwise append
+                    FLAG_MOD_APPEND = True
+                    for m in self.device_modules:
+                        if(m['module'] == devicemodule):
+                            FLAG_MOD_APPEND=False
+                            break
+                    if(FLAG_MOD_APPEND):
+                        self.device_modules.append(devdict)
+
+                    valid_device_modules.append(devicemodule)
+                else:  # Check recursive if devices are found
+                    n_tries += 1
+                    testmodules.append(devicemodule)
+                    other_modules.append(devicemodule)
+
+    def scan_devicepath(self):
+        funcname = 'search_in_path()'
+        self.logger.debug(funcname)
+        self.device_modules = []  # Clear the list
+        #
+        # Add all devices from additionally folders
+        #
+        # https://docs.python.org/3/library/importlib.html#checking-if-a-module-can-be-imported
+        for dpath in self.device_paths:
+            python_files = glob.glob(dpath + "/*.py")
+            self.logger.debug(funcname + ' will search in path for files: {:s}'.format(dpath))
+            for pfile in python_files:
+                self.logger.debug(funcname + ' opening {:s}'.format(pfile))
+                module_name = pathlib.Path(pfile).stem
+                spec = importlib.util.spec_from_file_location(module_name, pfile)
+                module = importlib.util.module_from_spec(spec)
+                try:
+                    spec.loader.exec_module(module)
+                except Exception as e:
+                    self.logger.warning(funcname + ' could not import module: {:s} \nError: {:s}'.format(pfile, str(e)))
+
+                module_members = inspect.getmembers(module, inspect.isclass)
+                valid_module = self.valid_device(module)
+                if (valid_module['valid']):  # If the module is valid add it to devices
+                    devdict = {'module': module, 'name': module_name, 'source': module.__file__}
+                    # Test if the module is already there, otherwise append
+                    FLAG_MOD_APPEND = True
+                    for m in self.device_modules:
+                        if(m['module'] == module):
+                            FLAG_MOD_APPEND = False
+                            break
+                    if (FLAG_MOD_APPEND):
+                        self.device_modules.append(devdict)
+
+    def scan_module_recursive(self,testmodule, module_dict):
+        funcname = 'scan_module_recursive():'
+        # print(funcname,testmodule)
+        # Check if the device is valid
+        valid_module = self.valid_device(testmodule)
+        if (valid_module['valid']):  # If the module is valid add it to devices
+            print('Valid module', testmodule)
+            # print('Members',inspect.getmembers(testmodule, inspect.ismodule))
+            devdict = {'module': testmodule, 'name': testmodule.__name__, 'file': testmodule.__file__}
+            # module_dict[testmodule.__name__] = devdict
+            try:
+                module_dict['__devices__'].append(devdict)
+            except:
+                module_dict['__devices__'] = [devdict]
+
+            self.redvypr_devices_flat.append(devdict)
+        else:
+            self.__modules_scanned__.append(testmodule)
+
+        device_module_tmp = inspect.getmembers(testmodule, inspect.ismodule)
+        if len(device_module_tmp) > 0:
+            for smod in device_module_tmp:
+                testmodule2 = getattr(testmodule, smod[0])
+                if (testmodule2 in self.__modules_scanned__):
+                    # logger.debug(funcname + ': Module has been tested already ...')
+                    continue
+                else:
+                    try:
+                        module_dict[testmodule.__name__]
+                    except:
+                        module_dict[testmodule.__name__] = {}
+                    self.scan_module_recursive(testmodule2, module_dict[testmodule.__name__])
+                    # Cleanup modules without devices
+                    if len(module_dict[testmodule.__name__].keys()) == 0:
+                        module_dict.pop(testmodule.__name__)
+
+    def scan_redvypr(self):
+        funcname = 'scan_redvypr():'
+        self.logger.debug(funcname)
+        print(funcname,'fds')
+        if True:
+            try:
+                device_module_all = inspect.getmembers(redvyprdevices)
+                for m in device_module_all:
+                    print(m)
+
+                self.scan_module_recursive(redvyprdevices,self.redvypr_devices['redvypr'])
+                # Clean empty dictionaries
+                print('fd',self.redvypr_devices)
+
+            except Exception as e:
+                self.logger.exception(e)
+                #self.logger.info(funcname + ' Could not import module: ' + str(e))# If the module is valid add it to devices
+
+
+    def scan_modules(self,package_names = ['vypr','vyper']):
+        """
+        Searches for installed packages containing redvypr devices. Packages do typically start with redvypr_package_name
+        and add them to the device path
+        Updates self.device_modules with dictionaries of type
+        devdict = {'module': module, 'name': module_name, 'source': module.__file__}
+        with module the imported module with module_name at the location __file__.
+
+        Args:
+            package_names: a list of package names that will be inspected
+        Returns:
+
+        """
+
+        funcname = 'scan_modules():'
+        self.logger.debug(funcname)
+
+        # Loop over all modules and search for devices
+        for d in pkg_resources.working_set:
+            FLAG_POTENTIAL_MODULE = False
+            #print('Package', d.location, d.project_name, d.version, d.key)
+            #print(d.key)
+            for name in package_names:
+                if name in d.key:
+                    FLAG_POTENTIAL_MODULE = True
+                    #print('maybe',d.key)
+
+            # Dont import the redvypr module itself
+            if d.key == 'redvypr':
+                print('its me')
+                FLAG_POTENTIAL_MODULE = False
+
+            if(FLAG_POTENTIAL_MODULE):
+                print('Found package',d.location, d.project_name, d.version, d.key)
+                libstr2 = d.key.replace('-','_') # Need to replace - with _, because - is not allowed in python
+
+                try:
+                    testmodule = importlib.import_module(libstr2)
+                    device_module_all = inspect.getmembers(testmodule)
+                    print('Hallo')
+                    for m in device_module_all:
+                        print(m)
+
+                    print('Scan module recursive')
+                    self.scan_module_recursive(testmodule,self.redvypr_devices['modules'])
+                    # Clean empty dictionaries
+
+                except Exception as e:
+                    self.logger.info(funcname + ' Could not import module: ' + str(e))# If the module is valid add it to devices
+
+
+    def valid_device(self, devicemodule):
+        """ Checks if the module is a valid redvypr module
+        """
+        funcname = 'valid_device(): '
+        #self.logger.debug(funcname + 'Checking device {:s}'.format(str(devicemodule)))
+        try:
+            devicemodule.Device
+            hasdevice = True
+        except:
+            hasdevice = False
+
+        try:
+            devicemodule.start
+            hasstart = True
+        except:
+            hasstart = False
+
+        if (hasstart == False):
+            try:
+                devicemodule.Device.start
+                hasstart = True
+            except:
+                hasstart = False
+
+        try:
+            devicemodule.displayDeviceWidget
+            hasdisplaywidget = True
+        except:
+            hasdisplaywidget = False
+
+        try:
+            devicemodule.initDeviceWidget
+            hasinitwidget = True
+        except:
+            hasinitwidget = False
+
+        devicecheck = {}
+        devicecheck['valid'] = hasstart
+        devicecheck['Device'] = hasdevice
+        devicecheck['start'] = hasstart
+        devicecheck['initgui'] = hasinitwidget
+        devicecheck['displaygui'] = hasdisplaywidget
+
+        return devicecheck
+
 
 class redvypr_device(QtCore.QObject):
     thread_started = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started

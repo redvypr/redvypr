@@ -23,7 +23,6 @@ from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
 import platform
 # Import redvypr specific stuff
-
 import redvypr.devices as redvyprdevices
 import redvypr.data_packets as data_packets
 from redvypr.gui import redvypr_ip_widget, QPlainTextEditLogger, displayDeviceWidget_standard, \

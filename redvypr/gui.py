@@ -11,6 +11,7 @@ from redvypr.widgets.datastream_widget import datastreamWidget
 import redvypr.utils
 import redvypr.files as files
 import redvypr.data_packets as data_packets
+import redvypr.device as device
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -43,11 +44,75 @@ def get_QColor(data):
 
     return color
 
+class redvyprDeviceWidget(QtWidgets.QWidget):
+    """ A widget that lists all devices found in modules and in the python files included in the path list.
+    """
+    def __init__(self, redvypr_device_scan=None,redvypr=None):
+        """
+
+        Args:
+            redvypr:
+            device:
+        """
+        super(redvyprDeviceWidget, self).__init__()
+        if(redvypr_device_scan == None):
+            redvypr_device_scan = device.redvypr_device_scan()
+        self.redvypr_device_scan = redvypr_device_scan
+        lab = QtWidgets.QLabel('Devices')
+
+        self.create_tree_widget()
+        self.update_tree_widget()
+
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout.addWidget(lab)
+        self.layout.addWidget(self.devicetree)
+
+    def create_tree_widget(self):
+        self.devicetree = QtWidgets.QTreeWidget()  # All dataproviding devices
+        self.devicetree.setColumnCount(2)
+        self.devicetree.setHeaderHidden(True)
+
+    def update_tree_widget(self):
+        self.devicetree.clear()
+        root = self.devicetree.invisibleRootItem()
+        #moduleroot = QtWidgets.QTreeWidgetItem(['modules', ''])
+        #root.addChild(moduleroot)
+        def update_recursive(moddict,parentitem):
+            try:
+                keys = moddict.keys()
+            except:
+                keys = None
+
+            if(keys is None):
+                return
+            else:
+                for k in moddict.keys():
+                    if(k == '__devices__'): # List of devices in the module
+                        for devdict in moddict[k]:
+                            devicename = devdict['name']
+                            # remove trailing modules separated by '.'
+                            devicename = devicename.split('.')[-1]
+                            itm = QtWidgets.QTreeWidgetItem([devicename, ''])
+                            parentitem.addChild(itm)
+                    else:
+                        # remove trailing modules separated by '.'
+                        ktxt = k.split('.')[-1]
+                        itm = QtWidgets.QTreeWidgetItem([ktxt, ''])
+                        parentitem.addChild(itm)
+                        update_recursive(moddict[k],itm)
+
+        #update_recursive(self.redvypr_device_scan.redvypr_devices['modules'],moduleroot)
+        update_recursive(self.redvypr_device_scan.redvypr_devices, root)
+
+
+        self.devicetree.expandAll()
+        self.devicetree.resizeColumnToContents(0)
+
+
 
 class redvyprSubscribeWidget(QtWidgets.QWidget):
     """ A widget that lists all devices and datastreams as potential inputs and a second list of all the subscriptions
      of the
-
 
     """
 
