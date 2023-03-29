@@ -55,22 +55,48 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
             device:
         """
         super(redvyprDeviceWidget, self).__init__()
-        if(redvypr_device_scan == None):
+        self.redvypr = redvypr
+        if redvypr is not None:
+            self.redvypr_device_scan = redvypr.redvypr_device_scan
+        elif (redvypr_device_scan is not None):
+            self.redvypr_device_scan = redvypr_device_scan
+        else:
             redvypr_device_scan = device.redvypr_device_scan()
-        self.redvypr_device_scan = redvypr_device_scan
-        lab = QtWidgets.QLabel('Devices')
 
+        lab = QtWidgets.QLabel('Devices')
+        # Update the devicetree
         self.create_tree_widget()
         self.update_tree_widget()
+        # Create widgets for adding/removing devices
+        self.addbtn = QtWidgets.QPushButton('Add')
+        self.addbtn.clicked.connect(self.add_device_click)
+        self.devnamelabel = QtWidgets.QLabel('Devicename')
+        self.devname = QtWidgets.QLineEdit()
+        self.mp_label = QtWidgets.QLabel('Multiprocessing options')
+        self.mp_thread = QtWidgets.QRadioButton('Thread')
+        self.mp_multi = QtWidgets.QRadioButton('Multiprocessing')
+        self.mp_multi.setChecked(True)
+        self.mp_group = QtWidgets.QButtonGroup()
+        self.mp_group.addButton(self.mp_thread)
+        self.mp_group.addButton(self.mp_multi)
 
-        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout = QtWidgets.QFormLayout(self)
         self.layout.addWidget(lab)
-        self.layout.addWidget(self.devicetree)
+        self.layout.addRow(self.devicetree)
+        self.layout.addRow(self.mp_label)
+        self.layout.addRow(self.mp_thread, self.mp_multi)
+        self.layout.addRow(self.devnamelabel, self.devname)
+        self.layout.addRow(self.addbtn)
+
+        self.setWindowIcon(QtGui.QIcon(_icon_file))
+        self.setWindowTitle("redvypr devices")
 
     def create_tree_widget(self):
         self.devicetree = QtWidgets.QTreeWidget()  # All dataproviding devices
         self.devicetree.setColumnCount(2)
         self.devicetree.setHeaderHidden(True)
+        self.devicetree.currentItemChanged.connect(self.__item_changed__)
+        self.devicetree.itemDoubleClicked.connect(self.__apply_item__)
 
     def update_tree_widget(self):
         self.devicetree.clear()
@@ -93,11 +119,13 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
                             # remove trailing modules separated by '.'
                             devicename = devicename.split('.')[-1]
                             itm = QtWidgets.QTreeWidgetItem([devicename, ''])
+                            itm.devdict = devdict # Add device information
                             parentitem.addChild(itm)
                     else:
                         # remove trailing modules separated by '.'
                         ktxt = k.split('.')[-1]
                         itm = QtWidgets.QTreeWidgetItem([ktxt, ''])
+                        itm.devdict = None # Not a device
                         parentitem.addChild(itm)
                         update_recursive(moddict[k],itm)
 
@@ -107,6 +135,61 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
 
         self.devicetree.expandAll()
         self.devicetree.resizeColumnToContents(0)
+
+    def __item_changed__(self, new, old):
+        print('Item changed')
+        print('new',new,old)
+
+    def __apply_item__(self):
+        print('Apply')
+
+    def __device_info(self):
+        """ Populates the self.__devices_info widget with the info of the module
+        """
+        ind = int(self.__devices_list.currentRow())
+        infotxt = self.redvypr.device_modules[ind]['name']
+        self.__devices_info_sourcelabel2.setText(infotxt)
+        infotxt2 = self.redvypr.device_modules[ind]['source']
+        self.__devices_info_sourcelabel4.setText(infotxt2)
+        try:
+            desctxt = self.redvypr.device_modules[ind]['module'].description
+        except Exception as e:
+            desctxt = ''
+
+        self.__devices_info_sourcelabel6.setText(desctxt)
+
+    def __device_name(self):
+        devicemodulename = self.__devices_list.currentItem().text()
+        devicename = devicemodulename + '_{:d}'.format(self.redvypr.numdevice + 1)
+        self.__devices_devname.setText(devicename)
+        self.__device_info()
+
+    def add_device_click(self):
+        """
+        """
+        funcname = __name__ + 'add_device_click():'
+        logger.debug(funcname)
+        getSelected = self.devicetree.selectedItems()
+        if getSelected:
+            item = getSelected[0]
+
+        if item.devdict is not None:
+            devicemodulename = item.devdict['name']
+            thread = self.mp_thread.isChecked()
+            config = {'loglevel':logger.level}
+            devname = str(self.devname.text())
+            if len(devname) > 0:
+                config['name'] = devname
+            deviceconfig = {'config':config}
+            print('devicemodulename',devicemodulename)
+            print('Adding device, config',deviceconfig)
+            if self.redvypr is not None:
+                self.redvypr.add_device(devicemodulename=devicemodulename, thread=thread, deviceconfig=deviceconfig)
+            self.devname.clear()
+            # Update the name
+            #self.__device_name()
+        else:
+            print('Not a device')
 
 
 

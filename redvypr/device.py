@@ -65,42 +65,6 @@ class redvypr_device_scan():
             print(m)
 
 
-    def scan_internal(self):
-        #
-        # Add all devices from the redvypr internal device module
-        #
-        max_tries = 5000  # The maximum recursion of modules
-        n_tries = 0
-        testmodules = [redvyprdevices]
-        valid_device_modules = [] #
-        other_modules = [] # The rest
-        while (len(testmodules) > 0) and (n_tries < max_tries):
-            testmodule = testmodules[0]
-            device_module_tmp = inspect.getmembers(testmodule, inspect.ismodule)
-            for smod in device_module_tmp:
-                devicemodule = getattr(testmodule, smod[0])
-                if(devicemodule in other_modules):
-                    #logger.debug(funcname + ': Module has been tested already ...')
-                    continue
-                # Check if the device is valid
-                valid_module = self.valid_device(devicemodule)
-                if (valid_module['valid']):  # If the module is valid add it to devices
-                    devdict = {'module': devicemodule, 'name': smod[0], 'source': smod[1].__file__}
-                    # Test if the module is already there, otherwise append
-                    FLAG_MOD_APPEND = True
-                    for m in self.device_modules:
-                        if(m['module'] == devicemodule):
-                            FLAG_MOD_APPEND=False
-                            break
-                    if(FLAG_MOD_APPEND):
-                        self.device_modules.append(devdict)
-
-                    valid_device_modules.append(devicemodule)
-                else:  # Check recursive if devices are found
-                    n_tries += 1
-                    testmodules.append(devicemodule)
-                    other_modules.append(devicemodule)
-
     def scan_devicepath(self):
         funcname = 'search_in_path()'
         self.logger.debug(funcname)
