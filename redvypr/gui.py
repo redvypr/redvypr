@@ -61,12 +61,12 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
         elif (redvypr_device_scan is not None):
             self.redvypr_device_scan = redvypr_device_scan
         else:
-            redvypr_device_scan = device.redvypr_device_scan()
+            self.redvypr_device_scan = device.redvypr_device_scan()
 
-        lab = QtWidgets.QLabel('Devices')
         # Update the devicetree
         self.create_tree_widget()
         self.update_tree_widget()
+        self.create_deviceinfo_widget()
         # Create widgets for adding/removing devices
         self.addbtn = QtWidgets.QPushButton('Add')
         self.addbtn.clicked.connect(self.add_device_click)
@@ -81,8 +81,8 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
         self.mp_group.addButton(self.mp_multi)
 
         self.layout = QtWidgets.QFormLayout(self)
-        self.layout.addWidget(lab)
         self.layout.addRow(self.devicetree)
+        self.layout.addRow(self.deviceinfo)
         self.layout.addRow(self.mp_label)
         self.layout.addRow(self.mp_thread, self.mp_multi)
         self.layout.addRow(self.devnamelabel, self.devname)
@@ -91,12 +91,34 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
         self.setWindowIcon(QtGui.QIcon(_icon_file))
         self.setWindowTitle("redvypr devices")
 
+    def create_deviceinfo_widget(self):
+        """
+        Creates a widget that shows the device information
+        Returns:
+
+        """
+        self.deviceinfo = QtWidgets.QWidget()  #
+        self.deviceinfo_layout = QtWidgets.QFormLayout(self.deviceinfo)
+        self.__devices_info_sourcelabel2 = QtWidgets.QLabel()
+        self.__devices_info_sourcelabel4 = QtWidgets.QLabel()
+        self.__devices_info_sourcelabel6 = QtWidgets.QLabel()
+        self.deviceinfo_layout.addRow(QtWidgets.QLabel('Name'),self.__devices_info_sourcelabel2)
+        self.deviceinfo_layout.addRow(QtWidgets.QLabel('Source'),self.__devices_info_sourcelabel4)
+        self.deviceinfo_layout.addRow(QtWidgets.QLabel('Description'),self.__devices_info_sourcelabel6)
+
     def create_tree_widget(self):
+        """
+        Creates the QtreeWidget with the
+        Returns:
+
+        """
         self.devicetree = QtWidgets.QTreeWidget()  # All dataproviding devices
-        self.devicetree.setColumnCount(2)
-        self.devicetree.setHeaderHidden(True)
+        self.devicetree.setColumnCount(1)
+        #self.devicetree.setHeaderHidden(True)
+        self.devicetree.setHeaderLabels(['Device'])
         self.devicetree.currentItemChanged.connect(self.__item_changed__)
         self.devicetree.itemDoubleClicked.connect(self.__apply_item__)
+        self.devicetree.setSortingEnabled(True)
 
     def update_tree_widget(self):
         self.devicetree.clear()
@@ -116,6 +138,7 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
                     if(k == '__devices__'): # List of devices in the module
                         for devdict in moddict[k]:
                             devicename = devdict['name']
+                            print('devdict',devdict)
                             # remove trailing modules separated by '.'
                             devicename = devicename.split('.')[-1]
                             itm = QtWidgets.QTreeWidgetItem([devicename, ''])
@@ -123,7 +146,11 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
                             parentitem.addChild(itm)
                     else:
                         # remove trailing modules separated by '.'
-                        ktxt = k.split('.')[-1]
+                        if '/' in k: # Check if its a path or a module file
+                            ktxt = k
+                        else:
+                            ktxt = k.split('.')[-1]
+
                         itm = QtWidgets.QTreeWidgetItem([ktxt, ''])
                         itm.devdict = None # Not a device
                         parentitem.addChild(itm)
@@ -135,24 +162,30 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
 
         self.devicetree.expandAll()
         self.devicetree.resizeColumnToContents(0)
+        self.devicetree.sortByColumn(0, QtCore.Qt.AscendingOrder)
 
     def __item_changed__(self, new, old):
         print('Item changed')
         print('new',new,old)
+        if new.devdict is not None:
+            self.__update_device_info__(new.devdict)
+            self.addbtn.setEnabled(True)
+        else:
+            self.addbtn.setEnabled(False)
+
 
     def __apply_item__(self):
         print('Apply')
 
-    def __device_info(self):
+    def __update_device_info__(self,devdict):
         """ Populates the self.__devices_info widget with the info of the module
         """
-        ind = int(self.__devices_list.currentRow())
-        infotxt = self.redvypr.device_modules[ind]['name']
+        infotxt = devdict['name']
         self.__devices_info_sourcelabel2.setText(infotxt)
-        infotxt2 = self.redvypr.device_modules[ind]['source']
+        infotxt2 = devdict['file']
         self.__devices_info_sourcelabel4.setText(infotxt2)
         try:
-            desctxt = self.redvypr.device_modules[ind]['module'].description
+            desctxt = devdict['module'].description
         except Exception as e:
             desctxt = ''
 

@@ -48,7 +48,7 @@ class redvypr_device_scan():
         #self.redvypr = redvypr
         self.device_modules_path = []
         self.device_modules = []
-        self.redvypr_devices = {'modules': {},'redvypr':{}}
+        self.redvypr_devices = {'redvypr_modules': {},'redvypr':{},'files':{}}
         self.redvypr_devices_flat = []
         self.__modules_scanned__ = []
         self.__modules_scanned__.append(redvypr) # Do not scan redvypr itself
@@ -58,6 +58,7 @@ class redvypr_device_scan():
             print('scanning redvypr')
             self.scan_redvypr()
             self.scan_modules()
+            self.scan_devicepath()
 
 
     def print_modules(self):
@@ -89,15 +90,21 @@ class redvypr_device_scan():
                 module_members = inspect.getmembers(module, inspect.isclass)
                 valid_module = self.valid_device(module)
                 if (valid_module['valid']):  # If the module is valid add it to devices
-                    devdict = {'module': module, 'name': module_name, 'source': module.__file__}
+                    devdict = {'module': module, 'name': module_name, 'file': module.__file__,'type':'file'}
                     # Test if the module is already there, otherwise append
-                    FLAG_MOD_APPEND = True
-                    for m in self.device_modules:
-                        if(m['module'] == module):
-                            FLAG_MOD_APPEND = False
-                            break
-                    if (FLAG_MOD_APPEND):
-                        self.device_modules.append(devdict)
+                    if (module in self.__modules_scanned__):
+                        # logger.debug(funcname + ': Module has been tested already ...')
+                        continue
+                    else:
+                        try:
+                            self.redvypr_devices['files'][pfile] = {'__devices__': [devdict]}
+                        except Exception as e:
+                            self.logger.exception(e)
+
+                        self.redvypr_devices_flat.append(devdict)
+                        self.__modules_scanned__.append(module)
+
+
 
     def scan_module_recursive(self,testmodule, module_dict):
         funcname = 'scan_module_recursive():'
@@ -105,9 +112,8 @@ class redvypr_device_scan():
         # Check if the device is valid
         valid_module = self.valid_device(testmodule)
         if (valid_module['valid']):  # If the module is valid add it to devices
-            print('Valid module', testmodule)
             # print('Members',inspect.getmembers(testmodule, inspect.ismodule))
-            devdict = {'module': testmodule, 'name': testmodule.__name__, 'file': testmodule.__file__}
+            devdict = {'module': testmodule, 'name': testmodule.__name__, 'file': testmodule.__file__,'type':'module'}
             # module_dict[testmodule.__name__] = devdict
             try:
                 module_dict['__devices__'].append(devdict)
@@ -115,8 +121,8 @@ class redvypr_device_scan():
                 module_dict['__devices__'] = [devdict]
 
             self.redvypr_devices_flat.append(devdict)
-        else:
-            self.__modules_scanned__.append(testmodule)
+        # Always append as scanned
+        self.__modules_scanned__.append(testmodule)
 
         device_module_tmp = inspect.getmembers(testmodule, inspect.ismodule)
         if len(device_module_tmp) > 0:
@@ -142,12 +148,7 @@ class redvypr_device_scan():
         if True:
             try:
                 device_module_all = inspect.getmembers(redvyprdevices)
-                for m in device_module_all:
-                    print(m)
-
                 self.scan_module_recursive(redvyprdevices,self.redvypr_devices['redvypr'])
-                # Clean empty dictionaries
-                print('fd',self.redvypr_devices)
 
             except Exception as e:
                 self.logger.exception(e)
@@ -198,7 +199,7 @@ class redvypr_device_scan():
                         print(m)
 
                     print('Scan module recursive')
-                    self.scan_module_recursive(testmodule,self.redvypr_devices['modules'])
+                    self.scan_module_recursive(testmodule,self.redvypr_devices['redvypr_modules'])
                     # Clean empty dictionaries
 
                 except Exception as e:
