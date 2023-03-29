@@ -187,7 +187,7 @@ class redvypr_device_scan():
 
             if(FLAG_POTENTIAL_MODULE):
                 #print('Found package',d.location, d.project_name, d.version, d.key)
-                libstr2 = d.key.replace('-','_') # Need to replace - with _, because - is not allowed in python
+                libstr2 = d.key.replace('-','_')  # Need to replace - with _, because - is not allowed in python
 
                 try:
                     testmodule = importlib.import_module(libstr2)
@@ -196,7 +196,7 @@ class redvypr_device_scan():
                     # Clean empty dictionaries
 
                 except Exception as e:
-                    self.logger.info(funcname + ' Could not import module: ' + str(e))# If the module is valid add it to devices
+                    self.logger.info(funcname + ' Could not import module: ' + str(e))  # If the module is valid add it to devices
 
 
     def valid_device(self, devicemodule):
