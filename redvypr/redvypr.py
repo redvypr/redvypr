@@ -519,6 +519,18 @@ class redvypr(QtCore.QObject):
                     except:
                         device['deviceconfig'] = {}
 
+                    # Check if the devicemodulename kind of fits
+                    FLAG_MOD_DEVICEMODULENAME = True
+                    for smod in self.redvypr_device_scan.redvypr_devices_flat:
+                        if (device['devicemodulename'] == smod['name']):
+                            FLAG_MOD_DEVICEMODULENAME = False
+
+                    if FLAG_MOD_DEVICEMODULENAME:
+                        for smod in self.redvypr_device_scan.redvypr_devices_flat:
+                            if (device['devicemodulename'] in smod['name']): # This is a weaker test, can be potentially replaced by regex
+                                device['devicemodulename_orig'] = device['devicemodulename']
+                                device['devicemodulename'] = smod['name']
+
                     dev_added = self.add_device(devicemodulename=device['devicemodulename'], deviceconfig=device['deviceconfig'])
 
                     # Subscriptions
