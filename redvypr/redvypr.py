@@ -298,7 +298,6 @@ class redvypr(QtCore.QObject):
         self.datadistthread.start()
         logger.info(funcname + ':Searching for devices')
         self.redvypr_device_scan = redvypr_device_scan()
-        #self.populate_device_path() # LEGACY
         logger.info(funcname + ':Done searching for devices')
 
         # Parsing configuration
@@ -479,12 +478,15 @@ class redvypr(QtCore.QObject):
                 if (type(devpath) == str):
                     devpath = [devpath]
 
+                FLAG_NEW_DEVPATH=False
                 for p in devpath:
                     if (p not in self.device_paths):
                         self.device_paths.append(p)
+                        FLAG_NEW_DEVPATH = True
 
-                self.populate_device_path()
-                self.device_path_changed.emit()  # Notify about the changes
+                if FLAG_NEW_DEVPATH:
+                    self.redvypr_device_scan.scan_devicepath()
+                    self.device_path_changed.emit()  # Notify about the changes
 
             # Check for hostinformation
             # Add the hostname
@@ -1224,100 +1226,6 @@ class redvyprWidget(QtWidgets.QWidget):
     def open_add_device_widget(self):
         self.add_device_widget = gui.redvyprDeviceWidget(redvypr=self.redvypr)
         self.add_device_widget.show()
-
-    def open_add_device_widget_old(self):
-        """Opens a widget for the user to choose to add a device
-        TODO: make an own widget out of this
-
-        """
-        self.add_device_widget = QtWidgets.QWidget()
-        # Set icon    
-        self.add_device_widget.setWindowIcon(QtGui.QIcon(_icon_file))
-        layout = QtWidgets.QFormLayout(self.add_device_widget)
-        self.__devices_list = QtWidgets.QListWidget()
-        self.__devices_list.itemClicked.connect(self.__device_name)
-        self.__devices_list.currentItemChanged.connect(self.__device_name)
-        self.__devices_list.itemDoubleClicked.connect(self.add_device_click)
-        self.__devices_info = QtWidgets.QWidget()
-        self.__devices_addbtn = QtWidgets.QPushButton('Add')
-        self.__devices_addbtn.clicked.connect(self.add_device_click)
-        self.__devices_devnamelabel = QtWidgets.QLabel('Devicename')
-        self.__devices_devname = QtWidgets.QLineEdit()
-        self.__mp_label = QtWidgets.QLabel('Multiprocessing options')
-        self.__mp_thread = QtWidgets.QRadioButton('Thread')
-        self.__mp_multi = QtWidgets.QRadioButton('Multiprocessing')
-        self.__mp_multi.setChecked(True)
-        self.__mp_group = QtWidgets.QButtonGroup()
-        self.__mp_group.addButton(self.__mp_thread)
-        self.__mp_group.addButton(self.__mp_multi)
-
-        layout.addRow(self.__devices_info)
-        layout.addRow(self.__devices_list)
-        layout.addRow(self.__mp_label)
-        layout.addRow(self.__mp_thread, self.__mp_multi)
-        layout.addRow(self.__devices_devnamelabel, self.__devices_devname)
-        layout.addRow(self.__devices_addbtn)
-        # Searches for devices 
-        self.redvypr.populate_device_path()
-        # Create the info widget
-        infolayout = QtWidgets.QFormLayout(self.__devices_info)
-        self.__devices_info_sourcelabel1 = QtWidgets.QLabel('Source:')
-        self.__devices_info_sourcelabel2 = QtWidgets.QLabel('')
-        self.__devices_info_sourcelabel3 = QtWidgets.QLabel('Path:')
-        self.__devices_info_sourcelabel4 = QtWidgets.QLabel('')
-        self.__devices_info_sourcelabel5 = QtWidgets.QLabel('Description:')
-        self.__devices_info_sourcelabel6 = QtWidgets.QLabel('')
-        infolayout.addRow(self.__devices_info_sourcelabel1, self.__devices_info_sourcelabel2)
-        infolayout.addRow(self.__devices_info_sourcelabel3, self.__devices_info_sourcelabel4)
-        infolayout.addRow(self.__devices_info_sourcelabel5)
-        infolayout.addRow(self.__devices_info_sourcelabel6)
-
-        # Populate the device list
-        itms = []
-        known_devices = self.redvypr.get_known_devices()
-        for d in known_devices:
-            itm = QtWidgets.QListWidgetItem(d)
-            itms.append(itm)
-            self.__devices_list.addItem(itm)
-
-        self.__devices_list.setMinimumWidth(self.__devices_list.sizeHintForColumn(0))
-        # Set the first item as current and create a device name
-        self.__devices_list.setCurrentItem(itms[0])
-        self.__device_name()
-        self.add_device_widget.show()
-
-    def __device_info_old(self):
-        """ Populates the self.__devices_info widget with the info of the module
-        """
-        ind = int(self.__devices_list.currentRow())
-        infotxt = self.redvypr.device_modules[ind]['name']
-        self.__devices_info_sourcelabel2.setText(infotxt)
-        infotxt2 = self.redvypr.device_modules[ind]['source']
-        self.__devices_info_sourcelabel4.setText(infotxt2)
-        try:
-            desctxt = self.redvypr.device_modules[ind]['module'].description
-        except Exception as e:
-            desctxt = ''
-
-        self.__devices_info_sourcelabel6.setText(desctxt)
-
-    def __device_name_old(self):
-        devicemodulename = self.__devices_list.currentItem().text()
-        devicename = devicemodulename + '_{:d}'.format(self.redvypr.numdevice + 1)
-        self.__devices_devname.setText(devicename)
-        self.__device_info()
-
-    def add_device_click_old(self):
-        """
-        """
-        devicemodulename = self.__devices_list.currentItem().text()
-        thread = self.__mp_thread.isChecked()
-        config = {'name': str(self.__devices_devname.text()),'loglevel':logger.level}
-        deviceconfig = {'config':config}
-        print('Adding device, config',deviceconfig)
-        self.redvypr.add_device(devicemodulename=devicemodulename, thread=thread, deviceconfig=deviceconfig)
-        # Update the name
-        self.__device_name()
 
     def _add_device_gui(self, devicelist):
         """ Function is called via the redvypr.add_device signal and is adding
