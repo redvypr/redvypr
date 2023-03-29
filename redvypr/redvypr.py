@@ -230,13 +230,14 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
 
         if FLAG_device_status_changed:
             infoqueue.put_nowait(copy.copy(datastreams_all))
-            devall = copy.copy(deviceinfo_all)
-            devall['type'] = 'deviceinfo_all'
-            infoqueue.put_nowait(devall)
+            devinfo_send = {'type':'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all), 'devices_changed': list(set(devices_changed)),
+             'devices_removed': devices_removed}
+            infoqueue.put_nowait(devinfo_send)
+
             # Send a command to all devices with the notification that something changed
-            for devicedict in devices:
-                dev = devicedict['device']
-                dev.thread_command('deviceinfo_all', {'deviceinfo_all':deviceinfo_all,'devices_changed':list(set(devices_changed)),'devices_removed':devices_removed})
+            #for devicedict in devices:
+            #    dev = devicedict['device']
+            #    dev.thread_command('deviceinfo_all', {'deviceinfo_all':deviceinfo_all,'devices_changed':list(set(devices_changed)),'devices_removed':devices_removed})
 
         # Calculate the sleeping time
         tstop = time.time()
@@ -305,8 +306,9 @@ class redvypr(QtCore.QObject):
 
         ## A timer to check the status of all threads
         self.devicethreadtimer = QtCore.QTimer()
-        self.devicethreadtimer.start(250)
         self.devicethreadtimer.timeout.connect(self.update_status)  # Add to the timer another update
+        self.devicethreadtimer.start(250)
+
 
         ## A timer to print the status in the nogui environment
         if (nogui):

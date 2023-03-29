@@ -269,7 +269,7 @@ def create_datapacket_from_deviceinfo(device_info,tlastseen=None):
         dpacket['_redvypr']['tlastseen'] = tlastseen
 
     #dpacket['_redvypr']['connected'] = None  # Used for zmq subscription
-    if d['_redvypr']['devicemodulename'] == 'iored':
+    if 'iored' in d['_redvypr']['devicemodulename']:
         subscribeable = False
         #dpacket['_redvypr']['connected'] = False
     else:
@@ -1210,7 +1210,7 @@ class Device(redvypr_device):
         self.__remote_info__ = {} # A dictionary of remote redvypr devices and information gathered, this is hidden because it is updated by get_remote_info
 
         self.redvypr.hostconfig_changed_signal.connect(self.__update_hostinfo__)
-
+        self.redvypr.device_status_changed_signal.connect(self.send_deviceinfo_all_command)
         self.statusthread = threading.Thread(target=self.__process_statusdata__, daemon=True)
         self.statusthread.start()
 
@@ -1412,6 +1412,16 @@ class Device(redvypr_device):
         """
         funcname = __name__ + '.__update_hostinfo__():'
         print(funcname)
+
+    def send_deviceinfo_all_command(self):
+        """
+        Sends a deviceinfoall command to the thread
+        Returns:
+
+        """
+        funcname = __name__ + '.send_deviceinfo_all_command():'
+        self.logger.info(funcname)
+        self.thread_command('deviceinfo_all',{'deviceinfo_all': self.redvypr.get_deviceinfo()})
 
 
     def get_remote_device_info(self,if_changed=False):
@@ -1979,7 +1989,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 except:
                     tlastseen = 0
 
-                if(d['_redvypr']['devicemodulename'] == 'iored'):
+                if('iored' in d['_redvypr']['devicemodulename']):
                     # iored devices are connected, not subscribed
                     print('dfds',d['_redvypr'])
                     try:
