@@ -352,6 +352,9 @@ class PlotGridWidget(QtWidgets.QWidget):
         #testg = redvypr_graph_widget()
         #self.addPlot(testg, 0, 3, 5, 3)
 
+        graph = self.create_plot_widget('graph')
+        self.addPlot(graph, 0, 0, 6, 6)
+
         self.rubberband = QtWidgets.QRubberBand(
             QtWidgets.QRubberBand.Rectangle, self)
 

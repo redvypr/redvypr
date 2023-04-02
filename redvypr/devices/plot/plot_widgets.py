@@ -331,13 +331,17 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                         config    = line_dict['config'] # The line to plot
                         xdata     = line_dict['xdata'] # The line to plot
                         ydata     = line_dict['ydata'] # The line to plot
-                        # data can be a single float or a list
+                        # data can be a single float or a list, if its a list add it item by item
                         newx = data[xaddr.datakey]
                         newy = data[yaddr.datakey]
                         print('newx',newx)
                         if(type(newx) is not list):
                             newx = [newx]
+                        if (type(newy) is not list):
                             newy = [newy]
+
+                        if(len(newx) is not len(newy)):
+                            logger.warning('lengths of x and y data different (x:{:d}, y:{:d})'.format(len(newx),len(newy)))
 
                         for inew in range(len(newx)): # TODO this can be optimized using indices instead of a loop
                             xdata         = np.roll(xdata,-1)
