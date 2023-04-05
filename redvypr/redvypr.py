@@ -196,6 +196,9 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 except:
                     deviceinfo_all[device.name] = devicedict['statistics']['device_redvypr']
 
+                #
+                # Compare if datastreams changed
+                #
                 if (list(datastreams_all.keys()) != list(datastreams_all_old.keys())):
                     #print('Datastreams changed', len(datastreams_all.keys()))
                     datastreams_all_old.update(datastreams_all)
