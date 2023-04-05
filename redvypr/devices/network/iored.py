@@ -477,7 +477,6 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
                         #print('sub-------')
                     except Exception as e:
                         logger.debug(funcname + ': Could not decode message {:s}'.format(str(datab)))
-                        logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(str(config['data'])))
                         data = None
 
                     if((data is not None) and (type(data) == dict)):
@@ -714,7 +713,7 @@ def query_host_thread(urls,timeout_ms=200,queryqueue=None):
         redvypr_info = query_host(url,timeout_ms)
         queryqueue.put(redvypr_info)
 
-def query_host(url,zmq_context,timeout_ms=2000):
+def query_host(url,zmq_context,timeout_ms=5000):
     """
     Queries a host with url using a zmq req getinfo command
     Args:
@@ -1273,7 +1272,8 @@ class Device(redvypr_device):
                             self.__remove_host__(uuidstop)
 
                         elif data['type'] == 'own_info_packet':  # Information about the device info that is sent to other redvypr instances
-                            self.statistics['device_redvypr'][self.address_str]['redvypr_info_publish'] = data['redvypr_info']
+                            #self.statistics['device_redvypr'][self.address_str]['redvypr_info_publish'] = data['redvypr_info']
+                            self.__own_info_packet__ = data['redvypr_info']
 
                         elif (data['type'] == 'getinfo') or (data['type'] == 'info'):
                             print('remote host information')

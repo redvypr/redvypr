@@ -193,6 +193,9 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         for iline, line in enumerate(self.config['lines']):
             #print('Line',line)
             #FLAG_HAVE_LINE = False
+            buffersize = line['buffersize'].data
+            xdata = np.zeros(buffersize) * np.NaN
+            ydata = np.zeros(buffersize) * np.NaN
             # check if we have already a lineplot, if yes, dont bother
             try:
                 line.lineplot
@@ -200,9 +203,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             except:
                 pass
             logger.debug(funcname + ':Adding a line to the plot:' + str(line))
-            buffersize = line['buffersize'].data
-            xdata = np.zeros(buffersize) * np.NaN
-            ydata = np.zeros(buffersize) * np.NaN
+
             try:
                 name = line['name'].data
             except:
