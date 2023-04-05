@@ -47,8 +47,8 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
     funcname = __name__ + '.start():'
     logger.debug(funcname)
     print('Config',config)
-    data = {'_keyinfo':config['_keyinfo']}
-    dataqueue.put(data)
+    #data = {'_keyinfo':config['_keyinfo']}
+    #dataqueue.put(data)
     # Send a datapacket with information once (that will be put into the statistics)
     i = 0
     while True:
