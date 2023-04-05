@@ -527,11 +527,11 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         funcname = __name__ + '.update()'
         logger.debug(funcname)
         tnow = time.time()
-        print(funcname + ': got data', data)
+        #print(funcname + ': got data', data)
         dataformat = self.config['dataformat'].data
         FLAG_DATA = data in self.redvypr_addrconv
         datakey = self.redvypr_addrconv.datakey
-        print('datakey',datakey,'FLAG_DATA',FLAG_DATA)
+        #print('datakey',datakey,'FLAG_DATA',FLAG_DATA)
         if(FLAG_DATA):
             # data can be a single float or a list
             newdata = data[datakey]
