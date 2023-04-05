@@ -5,6 +5,7 @@
             - changed device.publish/subscribe flags to devices.publishes/subscribes
             - cleanup of api
             - complete rewrite of device scan with a device scan object ( redvypr_device_scan) instead of redvypr functions.
+            - rawdatalogger offers gzip functionality
     -0.5.2  - subscriptions as a config key for devices added
             - improved configuration parsing
             - iored with a rep/req information exchange instead of multicast. Multicast optional for broadcasting presence.
