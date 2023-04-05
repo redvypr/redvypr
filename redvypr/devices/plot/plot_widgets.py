@@ -334,7 +334,6 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                         # data can be a single float or a list, if its a list add it item by item
                         newx = data[xaddr.datakey]
                         newy = data[yaddr.datakey]
-                        print('newx',newx)
                         if(type(newx) is not list):
                             newx = [newx]
                         if (type(newy) is not list):
