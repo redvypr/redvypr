@@ -66,8 +66,8 @@ config_template['template_name']      = 'iored'
 config_template['redvypr_device']     = {}
 config_template['zmq_pub_port_start'] = 18196
 config_template['zmq_pub_port_end']   = 20000
-config_template['multicast_listen']   = {'type':'bool','default':True,'description':'Listening for multicast information'}
-config_template['multicast_send']     = {'type':'bool','default':True,'description':'Sending information via multicast (using multicast_address and multicast_port)'}
+config_template['multicast_listen']   = {'type':'bool','default':False,'description':'Listening for multicast information'}
+config_template['multicast_send']     = {'type':'bool','default':False,'description':'Sending information via multicast (using multicast_address and multicast_port)'}
 config_template['multicast_address']  = "239.255.255.239"
 config_template['multicast_dtbeacon'] = {'type':'int','default':-1,'description':'Time [s] a multicastinformation is sent, disable with negative number'}
 config_template['multicast_port']     = 18196
@@ -966,7 +966,8 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             MULTICASTFLAGS['FLAG_MULTICAST_DEVICESTOP'] = True
                             do_multicast(config, sock_multicast_recv, sock_multicast_send, MULTICASTADDRESS,
                                          MULTICASTPORT, device_info, logstart,
-                                         statusqueue, hostuuid, hostinfos, dataqueue, url_pub, url_rep, MULTICASTFLAGS)
+                                         statusqueue, hostuuid, hostinfos, dataqueue, url_pub, url_rep, MULTICASTFLAGS,
+                                         zmq_context)
 
                         print('publishing stop packet')
                         stoppacket = data_packets.commandpacket('stopped',host=device_info['hostinfo'],devicename=device_info['devicename'])
@@ -1006,7 +1007,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
 
                         print('End query')
 
-                    # The command is sent directly from redvypr.distribute_data() after it noticed a device change
+                    # The command is sent from the device whenever the device status changed: device added, removed, keys changed
                     elif (command == 'deviceinfo_all'):
                         logstart.info(funcname + ': Got devices update')
                         # update only the devices that publish

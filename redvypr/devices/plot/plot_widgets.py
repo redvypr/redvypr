@@ -342,6 +342,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
 
                         if(len(newx) is not len(newy)):
                             logger.warning('lengths of x and y data different (x:{:d}, y:{:d})'.format(len(newx),len(newy)))
+                            return
 
                         for inew in range(len(newx)): # TODO this can be optimized using indices instead of a loop
                             xdata         = np.roll(xdata,-1)

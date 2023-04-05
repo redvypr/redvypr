@@ -287,7 +287,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                         #print('data',data)
                         for plotdict in self.all_plots:
                             plot = plotdict['plot']
-                            print('Plot ...',plot,plot.update_plot)
+                            #print('Plot ...',plot,plot.update_plot)
                             plot.update_plot(data)
 
                     self.databuf = []
