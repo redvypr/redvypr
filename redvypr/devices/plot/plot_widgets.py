@@ -306,10 +306,9 @@ class redvypr_graph_widget(QtWidgets.QFrame):
     def update_plot(self,data):
         """ Updates the plot based on the given data
         """
-        print('Hallo',data)
         funcname = self.__class__.__name__ + '.update_plot():'
         tnow = time.time()
-        print(funcname + 'got data',data,tnow)
+        #print(funcname + 'got data',data,tnow)
         # Always update
         update = True
         #try:
@@ -319,12 +318,12 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 # Check if the device is to be plotted
                 for iline, line in enumerate(self.config['lines']):
                     line_dict = line.line_dict
-                    print('line dict',line_dict)
+                    #print('line dict',line_dict)
                     xaddr = line_dict['config']['xaddr']
                     yaddr = line_dict['config']['yaddr']
-                    print('adresses:',xaddr.get_str(),yaddr.get_str())
-                    print('device',data['_redvypr']['device'])
-                    print('data in',(data in xaddr),(data in yaddr))
+                    #print('adresses:',xaddr.get_str(),yaddr.get_str())
+                    #print('device',data['_redvypr']['device'])
+                    #print('data in',(data in xaddr),(data in yaddr))
                     if (data in xaddr) and (data in yaddr):
                         pw        = self.config.plot # The plot widget
                         line      = line_dict['line'] # The line to plot
@@ -478,10 +477,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
         if (getdata(self.config['datastreamlabel'])): # TODO, let the user choose the datastream display options (UUID, key, key + address ...)
             self.redvypr_addrconv = redvypr.data_packets.redvypr_address(self.config['datastream'].data)
             dstrlabel = self.config['datastreamlabel'].data
-            print('dffdsf',dstrlabel)
             dstr = self.redvypr_addrconv.get_str(dstrlabel)
-            print('Hallohallo',dstr)
-            print('parsed',self.redvypr_addrconv.parsed_addrstr)
             self.devicedisp.setText(dstr)
             self.devicedisp.setStyleSheet("border : 1px solid {:s};".format(self.config['backgroundcolor'].data))
             self.devicedisp.setAlignment(QtCore.Qt.AlignCenter)
