@@ -7,6 +7,7 @@ import logging
 import sys
 import yaml
 import copy
+import gzip
 import os
 from redvypr.device import redvypr_device
 from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
@@ -19,7 +20,7 @@ description = "Saves the raw redvypr packets into a file"
 config_template = {}
 config_template['name']              = 'rawdatalogger'
 config_template['dt_sync']           = {'type':'int','default':5,'description':'Time after which an open file is synced on disk'}
-config_template['dt_newfile']        = {'type':'int','default':20,'description':'Time after which a new file is created'}
+config_template['dt_newfile']        = {'type':'int','default':60,'description':'Time after which a new file is created'}
 config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','options':['seconds','hours','days']}
 config_template['dt_update']         = {'type':'int','default':5,'description':'Time after which an upate is sent to the gui'}
 config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
@@ -29,6 +30,7 @@ config_template['fileprefix']        = {'type':'str','default':'redvypr','descri
 config_template['filepostfix']       = {'type':'str','default':'raw','description':'If empty not used'}
 config_template['filedateformat']    = {'type':'str','default':'%Y-%m-%d_%H%M%S','description':'Dateformat used in the filename, must be understood by datetime.strftime'}
 config_template['filecountformat']   = {'type':'str','default':'04','description':'Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}'}
+config_template['filegzipformat']    = {'type':'str','default':'gz','description':'If empty, no compression done'}
 config_template['redvypr_device']    = {}
 config_template['redvypr_device']['publishes']   = False
 config_template['redvypr_device']['subscribes']  = True
@@ -55,8 +57,21 @@ def create_logfile(config,count=0):
     if (len(config['fileextension']) > 0):
         filename += '.' + config['fileextension']
 
+    if (len(config['filegzipformat']) > 0):
+        filename += '.' + config['filegzipformat']
+        FLAG_GZIP = True
+    else:
+        FLAG_GZIP = False
+
     logger.info(funcname + ' Will create a new file: {:s}'.format(filename))
-    if True:
+    if FLAG_GZIP:
+        try:
+            f = gzip.open(filename,'wt')
+            logger.debug(funcname + ' Opened file: {:s}'.format(filename))
+        except Exception as e:
+            logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
+            return None
+    else:
         try:
             f = open(filename,'w+')
             logger.debug(funcname + ' Opened file: {:s}'.format(filename))
@@ -87,7 +102,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             dtnews     = dtneworig * dtfac
             logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
         except Exception as e:
-            print('Exception',e)
+            logger.exception(e)
             dtnews = 0
             
         try:
@@ -105,7 +120,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             sizenewb     = sizeneworig * sizefac # Size in bytes
             logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
         except Exception as e:
-            print('Exception',e)
+            logger.exception(e)
             sizenewb = 0  # Size in bytes
             
             
@@ -206,6 +221,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     dataqueue.put(data_stat)
 
             except Exception as e:
+                logger.exception(e)
                 logger.debug(funcname + ':Exception:' + str(e))
                 #print(data)
 
@@ -311,12 +327,14 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.date_text = QtWidgets.QLineEdit('%Y-%m-%d_%H%M%S')
         self.count_text = QtWidgets.QLineEdit('04d')
         self.postfix_text = QtWidgets.QLineEdit('')
+        self.gzip_text = QtWidgets.QLineEdit('gz')
 
         self.prefix_check = QtWidgets.QCheckBox('Prefix')
         self.date_check = QtWidgets.QCheckBox('Date/Time')
         self.count_check = QtWidgets.QCheckBox('Counter')
         self.postfix_check = QtWidgets.QCheckBox('Postfix')
         self.extension_check = QtWidgets.QCheckBox('Extension')
+        self.gzip_check = QtWidgets.QCheckBox('gzip')
         # The outwidget
         self.outwidget = QtWidgets.QWidget()
         self.outlayout = QtWidgets.QGridLayout(self.outwidget)
@@ -326,12 +344,14 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.outlayout.addWidget(self.count_check, 0, 2)
         self.outlayout.addWidget(self.postfix_check, 0, 3)
         self.outlayout.addWidget(self.extension_check, 0, 4)
+        self.outlayout.addWidget(self.gzip_check, 0, 5)
 
         self.outlayout.addWidget(self.prefix_text, 1, 0)
         self.outlayout.addWidget(self.date_text, 1, 1)
         self.outlayout.addWidget(self.count_text, 1, 2)
         self.outlayout.addWidget(self.postfix_text, 1, 3)
         self.outlayout.addWidget(self.extension_text, 1, 4)
+        self.outlayout.addWidget(self.gzip_text, 1, 5)
 
         self.outlayout.addWidget(self.addfilebtn, 2, 0)
         self.outlayout.addWidget(self.newfilewidget,3,0,1,4)
@@ -382,7 +402,9 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.extension_text.editingFinished.connect(self.update_device_config)
             self.newfilesizecombo.currentIndexChanged.connect(self.update_device_config)
             self.newfiletimecombo.currentIndexChanged.connect(self.update_device_config)
+            self.gzip_check.stateChanged.connect(self.update_device_config)
         else:
+            self.gzip_check.stateChanged.disconnect()
             self.prefix_check.stateChanged.disconnect()
             self.postfix_check.stateChanged.disconnect()
             self.date_check.stateChanged.disconnect()
@@ -455,6 +477,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         filename_all.append([config['filepostfix'].data,self.postfix_text,self.postfix_check])
         filename_all.append([config['filedateformat'].data,self.date_text,self.date_check])
         filename_all.append([config['filecountformat'].data,self.count_text,self.count_check])
+        filename_all.append([config['filegzipformat'].data, self.gzip_text, self.gzip_check])
         for i in range(len(filename_all)):
             widgets = filename_all[i]
             if(len(widgets[0])==0):
@@ -501,6 +524,12 @@ class initDeviceWidget(QtWidgets.QWidget):
             config['filecountformat'].data = self.count_text.text()
         else:
             config['filecountformat'].data = ''
+
+        if (self.gzip_check.isChecked()):
+            config['filegzipformat'].data = self.gzip_text.text()
+        else:
+            config['filegzipformat'].data = ''
+
 
         print('Config',config)
         return config
