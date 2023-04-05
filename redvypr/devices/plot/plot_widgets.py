@@ -340,7 +340,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                         if (type(newy) is not list):
                             newy = [newy]
 
-                        if(len(newx) is not len(newy)):
+                        if(len(newx) != len(newy)):
                             logger.warning('lengths of x and y data different (x:{:d}, y:{:d})'.format(len(newx),len(newy)))
                             return
 

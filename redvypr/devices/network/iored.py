@@ -1306,7 +1306,7 @@ class Device(redvypr_device):
                                     # update the statistics, this is typically done in redvypr.distribute_data(),
                                     # after a packet was sent, here it is done within the device itself
                                     data_packets.do_data_statistics(datapacket, self.statistics)
-                                    # Remove devices
+
 
                         print('Remove devices')
                         all_devices = self.statistics['device_redvypr'].keys()
