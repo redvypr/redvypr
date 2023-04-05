@@ -66,8 +66,8 @@ config_template['template_name']      = 'iored'
 config_template['redvypr_device']     = {}
 config_template['zmq_pub_port_start'] = 18196
 config_template['zmq_pub_port_end']   = 20000
-config_template['multicast_listen']   = {'type':'bool','default':False,'description':'Listening for multicast information'}
-config_template['multicast_send']     = {'type':'bool','default':False,'description':'Sending information via multicast (using multicast_address and multicast_port)'}
+config_template['multicast_listen']   = {'type':'bool','default':True,'description':'Listening for multicast information'}
+config_template['multicast_send']     = {'type':'bool','default':True,'description':'Sending information via multicast (using multicast_address and multicast_port)'}
 config_template['multicast_address']  = "239.255.255.239"
 config_template['multicast_dtbeacon'] = {'type':'int','default':-1,'description':'Time [s] a multicastinformation is sent, disable with negative number'}
 config_template['multicast_port']     = 18196
@@ -714,7 +714,7 @@ def query_host_thread(urls,timeout_ms=200,queryqueue=None):
         redvypr_info = query_host(url,timeout_ms)
         queryqueue.put(redvypr_info)
 
-def query_host(url,zmq_context,timeout_ms=200):
+def query_host(url,zmq_context,timeout_ms=2000):
     """
     Queries a host with url using a zmq req getinfo command
     Args:
