@@ -1399,10 +1399,13 @@ class Device(redvypr_device):
             print('daddr', daddr)
             if daddr.uuid == uuidremove:  # If the uuids are the same
                 FLAG_CHANGED = True
-                print('Hallohallohallohallo')
-                print('Check if connected',self.statistics['device_redvypr'][dold]['_redvypr'])
-                if (self.statistics['device_redvypr'][dold]['_redvypr']['connected'] == True):
-                    print('Disconnecting')
+                print(funcname + 'Check if connected',self.statistics['device_redvypr'][dold]['_redvypr'])
+                try:
+                    connected = self.statistics['device_redvypr'][dold]['_redvypr']['connected']
+                except:
+                    connected = False
+                if connected:
+                    print(funcname + 'Disconnecting device {:s}'.format(str(daddr)))
                     self.zmq_disconnect(daddr.uuid)
 
                 self.statistics['device_redvypr'][dold]['_redvypr']['tlastseen'] = -time.time()
