@@ -1388,14 +1388,14 @@ class Device(redvypr_device):
         funcname = __name__ + '.__mark_host_as_removed__():'
         print('Stopping host {:s}'.format(uuidremove))
         all_devices = self.statistics['device_redvypr'].keys()
-        print('len all_devices', len(all_devices))
+        #print('len all_devices', len(all_devices))
         FLAG_CHANGED = False
         # Compare if devices need to be removed
         #
         for dold in all_devices:
-            print('dold', dold)
+            #print('dold', dold)
             daddr = data_packets.redvypr_address(dold)
-            print('daddr', daddr)
+            #print('daddr', daddr)
             if daddr.uuid == uuidremove:  # If the uuids are the same
                 FLAG_CHANGED = True
                 print(funcname + 'Check if connected',self.statistics['device_redvypr'][dold]['_redvypr'])
