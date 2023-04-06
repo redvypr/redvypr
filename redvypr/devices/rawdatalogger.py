@@ -25,6 +25,7 @@ config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','option
 config_template['dt_update']         = {'type':'int','default':5,'description':'Time after which an upate is sent to the gui'}
 config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
 config_template['size_newfile_unit'] = {'type':'str','default':'bytes','options':['bytes','kB','MB']}
+config_template['datafolder']        = {'type':'str','default':'./','description':'Folder the data is saved to'}
 config_template['fileextension']     = {'type':'str','default':'redvypr_yaml','description':'File extension, if empty not used'}
 config_template['fileprefix']        = {'type':'str','default':'redvypr','description':'If empty not used'}
 config_template['filepostfix']       = {'type':'str','default':'raw','description':'If empty not used'}
@@ -39,7 +40,15 @@ config_template['redvypr_device']['description'] = description
 def create_logfile(config,count=0):
     funcname = __name__ + '.create_logfile():'
     logger.debug(funcname)
+
     filename = ''
+    if len(config['datafolder']) > 0:
+        if os.path.isdir(config['datafolder']):
+            filename += config['datafolder']
+        else:
+            logger.warning(funcname + ' Data folder {:s} does not exist.'.format(filename))
+            return None
+
     if(len(config['fileprefix'])>0):
         filename += config['fileprefix']
 
@@ -264,9 +273,9 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         self.outfilename.setText(filename)
         
-        self.addfilebtn   = QtWidgets.QPushButton("Add file")
-        self.config_widgets.append(self.addfilebtn)       
-        self.addfilebtn.clicked.connect(self.get_filename)
+        self.folderbtn   = QtWidgets.QPushButton("Folder")
+        self.config_widgets.append(self.folderbtn)
+        self.folderbtn.clicked.connect(self.get_datafolder)
         
         # The rest
         #self.conbtn = QtWidgets.QPushButton("Connect logger to devices")
@@ -322,6 +331,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.newfilelayout.addRow(self.size_newfile,self.newfilesizecombo)
         
         # Filenamelayout
+        self.folder_text = QtWidgets.QLineEdit('')
         self.extension_text = QtWidgets.QLineEdit('redvypr_raw')
         self.prefix_text = QtWidgets.QLineEdit('')
         self.date_text = QtWidgets.QLineEdit('%Y-%m-%d_%H%M%S')
@@ -338,23 +348,26 @@ class initDeviceWidget(QtWidgets.QWidget):
         # The outwidget
         self.outwidget = QtWidgets.QWidget()
         self.outlayout = QtWidgets.QGridLayout(self.outwidget)
+        # Datafolder lineedit
+        self.outlayout.addWidget(self.folderbtn, 0, 0)
+        self.outlayout.addWidget(self.folder_text, 0, 1,1,3)
         # Checkboxes
-        self.outlayout.addWidget(self.prefix_check, 0, 0)
-        self.outlayout.addWidget(self.date_check, 0, 1)
-        self.outlayout.addWidget(self.count_check, 0, 2)
-        self.outlayout.addWidget(self.postfix_check, 0, 3)
-        self.outlayout.addWidget(self.extension_check, 0, 4)
-        self.outlayout.addWidget(self.gzip_check, 0, 5)
+        self.outlayout.addWidget(self.prefix_check, 1, 0)
+        self.outlayout.addWidget(self.date_check, 1, 1)
+        self.outlayout.addWidget(self.count_check, 1, 2)
+        self.outlayout.addWidget(self.postfix_check, 1, 3)
+        self.outlayout.addWidget(self.extension_check, 1, 4)
+        self.outlayout.addWidget(self.gzip_check, 1, 5)
 
-        self.outlayout.addWidget(self.prefix_text, 1, 0)
-        self.outlayout.addWidget(self.date_text, 1, 1)
-        self.outlayout.addWidget(self.count_text, 1, 2)
-        self.outlayout.addWidget(self.postfix_text, 1, 3)
-        self.outlayout.addWidget(self.extension_text, 1, 4)
-        self.outlayout.addWidget(self.gzip_text, 1, 5)
+        self.outlayout.addWidget(self.prefix_text, 2, 0)
+        self.outlayout.addWidget(self.date_text, 2, 1)
+        self.outlayout.addWidget(self.count_text, 2, 2)
+        self.outlayout.addWidget(self.postfix_text, 2, 3)
+        self.outlayout.addWidget(self.extension_text, 2, 4)
+        self.outlayout.addWidget(self.gzip_text, 2, 5)
 
-        self.outlayout.addWidget(self.addfilebtn, 2, 0)
-        self.outlayout.addWidget(self.newfilewidget,3,0,1,4)
+
+        self.outlayout.addWidget(self.newfilewidget,4,0,1,4)
 
         #self.outlayout.addStretch(1)
             
@@ -419,12 +432,14 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.newfiletimecombo.currentIndexChanged.disconnect()
 
 
-    def get_filename(self):
-        funcname = self.__class__.__name__ + '.get_filename():'
+    def get_datafolder(self):
+        funcname = self.__class__.__name__ + '.get_datafolder():'
         logger.debug(funcname)
-        filename, _ = QtWidgets.QFileDialog.getSaveFileName(self,"Logging file","","redvypr raw (*.redvypr_raw);;All Files (*)")
-        if filename:
-            self.prefix_text.setText(filename)
+        retdata = QtWidgets.QFileDialog.getExistingDirectory(self,"Choose datafolder")
+        #print('Datafolder',retdata)
+        datafolder = retdata
+        if datafolder:
+            self.folder_text.setText(datafolder)
             
     def con_clicked(self):
         funcname = self.__class__.__name__ + '.con_clicked():'
@@ -470,6 +485,8 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         self.size_newfile.setText(str(config['size_newfile'].data))
 
+        if len(config['datafolder'].data)>0:
+            self.folder_text.setText(config['datafolder'].data)
         # Update filename and checkboxes
         filename_all = []
         filename_all.append([config['fileextension'].data,self.extension_text,self.extension_check])

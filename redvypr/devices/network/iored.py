@@ -572,6 +572,7 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
     #
     if config['multicast_listen']:
         try:
+            print('multicast recv')
             data_multicast_recv = sock_multicast_recv.recv(10240)  # This could be a potential problem as this is finite
         except:
             data_multicast_recv = None
@@ -666,13 +667,14 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
             if ((time.time() - MULTICASTFLAGS['tbeacon']) > config['multicast_dtbeacon']) or MULTICASTFLAGS['FLAG_MULTICAST_INFO']:
                 MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = False
                 MULTICASTFLAGS['tbeacon'] = time.time()
-                print('Sending multicast info',time.time())
+
                 # print('datastreams',datastreams)
                 # print('Deviceinfo all')
                 # print('deviceinfo all', device_info['deviceinfo_all'])
                 # print('----- Deviceinfo all done -----')
                 # Create an information packet
                 datab = create_info_packet_md5(device_info, url, url_rep)
+                print('Sending multicast info with length {:d}'.format(len(datab)), time.time())
                 sock_multicast_send.sendto(datab, (MULTICASTADDRESS, MULTICASTPORT))
 
                 # print('Sending zmq data')
@@ -682,11 +684,11 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
         #
         if MULTICASTFLAGS['FLAG_MULTICAST_GETINFO']:
             MULTICASTFLAGS['FLAG_MULTICAST_GETINFO'] = False
-            print('Sending multicast getinfo request')
             multicast_packet = {'host': device_info['hostinfo'], 't': time.time()}
             hostinfoy = yaml.dump(multicast_packet, explicit_end=True, explicit_start=True)
             hostinfoy = hostinfoy.encode('utf-8')
             datab = info_header['getinfo'] + hostinfoy
+            print('Sending getinfo request info with length {:d}'.format(len(datab)), time.time())
             sock_multicast_send.sendto(datab, (MULTICASTADDRESS, MULTICASTPORT))
 
         if MULTICASTFLAGS['FLAG_MULTICAST_DEVICESTOP']: # Device is stopped
