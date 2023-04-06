@@ -1271,7 +1271,7 @@ class Device(redvypr_device):
                     if ('type' in data.keys()):
                         if data['type'] == 'stop': # Remote host has been stopped, remove it locally
                             uuidstop = data['info']['host']['uuid']
-                            self.__remove_host__(uuidstop)
+                            self.__mark_host_as_removed__(uuidstop)
 
                         elif data['type'] == 'own_info_packet':  # Information about the device info that is sent to other redvypr instances
                             #self.statistics['device_redvypr'][self.address_str]['redvypr_info_publish'] = data['redvypr_info']
