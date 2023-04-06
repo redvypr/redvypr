@@ -572,7 +572,6 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
     #
     if config['multicast_listen']:
         try:
-            print('multicast recv')
             data_multicast_recv = sock_multicast_recv.recv(10240)  # This could be a potential problem as this is finite
         except:
             data_multicast_recv = None
@@ -1403,6 +1402,7 @@ class Device(redvypr_device):
                 try:
                     connected = self.statistics['device_redvypr'][dold]['_redvypr']['connected']
                 except:
+                    self.statistics['device_redvypr'][dold]['_redvypr']['connected'] = False
                     connected = False
                 if connected:
                     print(funcname + 'Disconnecting device {:s}'.format(str(daddr)))
