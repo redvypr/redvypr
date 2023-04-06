@@ -577,6 +577,7 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
             data_multicast_recv = None
 
         if (data_multicast_recv is not None):
+            print('Got multicast data')
             # print('Got multicast data',data_multicast_recv)
             trecv = time.time()
             #print('Got multicast data',data_multicast_recv)
@@ -691,7 +692,7 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
         if MULTICASTFLAGS['FLAG_MULTICAST_DEVICESTOP']: # Device is stopped
             datab = create_stop_packet(device_info, url, url_rep)
             sock_multicast_send.sendto(datab, (MULTICASTADDRESS, MULTICASTPORT))
-            pass
+
         #
         # END Sending multicast data
         #
@@ -928,7 +929,6 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
     #
     while True:
         tstart = time.time()
-
         if(config['multicast_listen'] or config['multicast_send']):
             do_multicast(config,sock_multicast_recv, sock_multicast_send, MULTICASTADDRESS, MULTICASTPORT, device_info, logstart,
                      statusqueue, hostuuid, hostinfos, dataqueue, url_pub, url_rep, MULTICASTFLAGS,zmq_context)

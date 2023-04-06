@@ -21,8 +21,8 @@ description = "Replays a raw redvypr data file"
 description = "Saves the raw redvypr packets into a file"
 config_template = {}
 config_template['name']      = 'rawdatareplay'
-config_template['files']             = []#{'type':'list','description':'List of files ro replay'} # TODO, list
-config_template['loop']              = {'type':'int','description':'Loop over all files if set'} # TODO, bool
+config_template['files']             = {'type':'list','description':'List of files ro replay'} # TODO, list
+config_template['loop']              = {'type':'bool','default':True,'description':'Loop over all files if set'}
 config_template['speedup']           = {'type':'float','description':'Speedup factor of the data'}
 config_template['redvypr_device']    = {}
 config_template['redvypr_device']['publish']   = False
@@ -41,8 +41,7 @@ def get_packets(filestream=None):
                     packets.append(data)
                     
             except Exception as e:
-                logger.debug(funcname + ': Could not decode message {:s}'.format(str(datab)))
-                logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(str(config['data'])))
+                logger.debug(funcname + ': Could not decode message {:s}'.format(str(databs)))
                 data = None
     
         return packets
