@@ -484,7 +484,9 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
                         command = check_for_command(data)
                         # logger.debug('Got a command: {:s}'.format(str(data)))
                         if command is not None:
-                            print('Got a command from remote device')
+                            print('Got a command from remote device, hande it in the device')
+                            # TODO, this can be more fine grained if we want to allow commands to be received from remote
+                            # redvypr to this redvy instance
                             statusqueue.put(data)
                         else:
                             dataqueue.put(data)
@@ -1015,32 +1017,60 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
 
                         print('End query')
 
+                    # Whenever the hostinfo_opt has been changed
+                    elif (command == 'hostinfo_opt'):
+                        logstart.info(funcname + ': Got hostinfo update')
+                        device_info['hostinfo_opt'].update(data['hostinfo_opt'])
+                        if True:
+                            # Send the information over zmq_pub socket to all connected devices
+                            # TODO, this needs to be consistent with device_info
+                            datapacket = zmq_publish_data(sock_zmq_pub, data, address_style='<uuid>')
+                            print('Sent device update', datapacket)
+                            print('----------')
+                            print(data)
+                            print('----------')
+
+                        # This is creating at the moment a race condition
+                        #MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = True
                     # The command is sent from the device whenever the device status of any device of this redvypr
                     # instance changed: device added, removed, keys changed
                     elif (command == 'deviceinfo_all'):
                         logstart.info(funcname + ': Got devices update')
-                        # update only the devices that publish
                         print('Filtering')
                         try:
+                            # remove devices that do not publish
                             device_info_all = filter_deviceinfo(data['deviceinfo_all'])
                         except Exception as e:
                             logger.exception(e)
                         #device_info_all = data['deviceinfo_all']
                         device_info['deviceinfo_all'].update(device_info_all)
+
+                        print('Filtering done')
                         try:
-                            if devicename in data['devices_changed']: # Check if devices except myself have been changed
-                                #print('That was myself, will remove')
-                                data['devices_changed'].remove(devicename)
-                            if (len(data['devices_changed']) > 0) or (len(data['devices_removed']) > 0):
+                            # Check if the iored device itself has been changed
+                            try:
+                                if devicename in data['devices_changed']: # Check if devices except myself have been changed
+                                    print('That was myself, will remove')
+                                    data['devices_changed'].remove(devicename)
+                            except:
+                                pass
+                            # What about multicast?
+                            # TODO, think about a smart way to check for changes that should be announced
+                            #if (len(data['devices_changed']) > 0) or (len(data['devices_removed']) > 0):
+                            if True:
                                 # Send the information over zmq_pub socket to all connected devices
                                 # TODO, this needs to be consistent with device_info
-                                datapacket = zmq_publish_data(sock_zmq_pub, data,address_style='<uuid>')
+                                datapacket = zmq_publish_data(sock_zmq_pub, data, address_style='<uuid>')
                                 print('Sent device update',datapacket)
                                 print('----------')
                                 print(data)
                                 print('----------')
                         except Exception as e:
-                            logstart.debug(e)
+                            print('Dubidu')
+                            logstart.exception(e)
+
+                        # This is creating at the moment a race condition
+                        #MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = True
                     elif (command == 'multicast_info'): # Multicast send infocommand
                         print('Setting flag Multicast info')
                         MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = True
@@ -1219,14 +1249,16 @@ class Device(redvypr_device):
         self.zmq_subscribed_to = {} # Dictionary with remote_uuid as key that hold all subscribed strings
         self.__remote_info__ = {} # A dictionary of remote redvypr devices and information gathered, this is hidden because it is updated by get_remote_info
 
-        self.redvypr.hostconfig_changed_signal.connect(self.__update_hostinfo__)
-        self.redvypr.device_status_changed_signal.connect(self.send_deviceinfo_all_command)
+        #self.redvypr.hostconfig_changed_signal.connect(self.__update_hostinfo__)
+        self.redvypr.hostconfig_changed_signal.connect(self.__hostinfo_changed__)
+        self.redvypr.device_status_changed_signal.connect(self.__devicestatus_changed__)
         self.statusthread = threading.Thread(target=self.__process_statusdata__, daemon=True)
         self.statusthread.start()
 
     def __process_statusdata__(self):
         """
-        Reads the statusqueue and processes the data
+        Reads the statusqueue and processes the data, the data comes from the numoerous threads that receive data as
+        start(), start_zmq_sub()
         Returns:
 
         """
@@ -1265,7 +1297,20 @@ class Device(redvypr_device):
                                 logger.exception(e)
 
                         FLAG_SEND_DEVICE_STATUS = True
+                    elif com == 'deviceinfo_all':
+                        deviceinfo_all = data['deviceinfo_all'] # deviceinfo_all will be updated further down
 
+                    elif com == 'hostinfo_opt':
+                        print('Got hostinfo opt command')
+                        uuid = data['_redvypr']['host']['uuid']
+                        hostinfo_opt   = data['hostinfo_opt']
+                        # Update the remote_info
+                        try:
+                            self.__remote_info__[uuid]['hostinfo_opt'] = hostinfo_opt
+                        except Exception as e:
+                            logger.exception(e)
+
+                        FLAG_SEND_DEVICE_STATUS = True # Set the flag to update the status of this device
 
                     if ('type' in data.keys()):
                         if data['type'] == 'stop': # Remote host has been stopped, remove it locally
@@ -1280,20 +1325,19 @@ class Device(redvypr_device):
                             print('remote host information')
                             raddr = data_packets.redvypr_address(local_hostinfo=data['info']['host'])
                             try:
-                                self.__remote_info__[raddr.address_str]
+                                self.__remote_info__[raddr.uuid]
                             except:
-                                self.__remote_info__[raddr.address_str] = {}
+                                self.__remote_info__[raddr.uuid] = {}
                             try:
-                                self.__remote_info__[raddr.address_str].update(data['info'])
+                                self.__remote_info__[raddr.uuid].update(data['info'])
                             except:
-                                self.__remote_info__[raddr.address_str] = data['info']
+                                self.__remote_info__[raddr.uuid] = data['info']
 
                             # If deviceinfo_all in keys, update the statistics, this is done in a thread, atomic operations
                             # in dictionaries should be threadsafe
                             if 'deviceinfo_all' in data['info'].keys():
                                 deviceinfo_all = data['info']['deviceinfo_all']
-                    elif('deviceinfo_all' in data.keys()): # Command packet
-                        deviceinfo_all = data['deviceinfo_all']
+
 
                     if deviceinfo_all is not None:
                         all_devices_tmp = []
@@ -1422,29 +1466,39 @@ class Device(redvypr_device):
             except Exception as e:
                 pass
 
+    def __hostinfo_changed__(self):
+        funcname = __name__ + '.__hostinfo_changed__():'
+        self.logger.info(funcname)
+        self.send_hostinfo_command()
 
+    def __devicestatus_changed__(self):
+        funcname = __name__ + '.__devicestatus_changed__():'
+        self.logger.info(funcname)
+        self.send_deviceinfo_command()
 
-
-    def __update_hostinfo__(self):
-        """
-        Updates the hostinformation for the device
-
-        Returns:
-
-        """
-        funcname = __name__ + '.__update_hostinfo__():'
-        print(funcname)
-
-    def send_deviceinfo_all_command(self):
+    def send_hostinfo_command(self):
         """
         Sends a deviceinfoall command to the thread
         Returns:
 
         """
-        funcname = __name__ + '.send_deviceinfo_all_command():'
+        funcname = __name__ + '.send_hostinfo_command():'
         self.logger.info(funcname)
-        self.thread_command('deviceinfo_all',{'deviceinfo_all': self.redvypr.get_deviceinfo()})
+        hostinfo = {'hostinfo_opt': copy.deepcopy(self.redvypr.hostinfo_opt)}
+        print('hostinfo', hostinfo,time.time())
+        self.thread_command('hostinfo_opt', hostinfo)
 
+    def send_deviceinfo_command(self):
+        """
+        Sends a deviceinfoall command to the thread
+        Returns:
+
+        """
+        funcname = __name__ + '.send_deviceinfo_command():'
+        self.logger.info(funcname)
+        deviceinfo_all = {'deviceinfo_all': self.redvypr.get_deviceinfo()}
+        print('Deviceinfo all',deviceinfo_all)
+        self.thread_command('deviceinfo_all',deviceinfo_all)
 
     def get_remote_device_info(self,if_changed=False):
         """
@@ -1469,14 +1523,14 @@ class Device(redvypr_device):
                         if (data['type'] == 'getinfo') or (data['type'] == 'info'):
                             raddr = data_packets.redvypr_address(local_hostinfo=data['info']['host'])
                             try:
-                                self.__remote_info__[raddr.address_str]
+                                self.__remote_info__[raddr.uuid]
                             except:
-                                self.__remote_info__[raddr.address_str] = {}
+                                self.__remote_info__[raddr.uuid] = {}
                             try:
-                                self.__remote_info__[raddr.address_str].update(data['info'])
+                                self.__remote_info__[raddr.uuid].update(data['info'])
                             except:
 
-                                self.__remote_info__[raddr.address_str] = data['info']
+                                self.__remote_info__[raddr.uuid] = data['info']
                 except Exception as e:
                     print('Exception',e)
                     logger.exception(e)
@@ -1495,7 +1549,7 @@ class Device(redvypr_device):
 
 
 
-    def start(self,device_info,config, dataqueue, datainqueue, statusqueue):
+    def start(self, device_info, config, dataqueue, datainqueue, statusqueue):
         """
         Custom start function
         Args:
@@ -1945,19 +1999,32 @@ class displayDeviceWidget(QtWidgets.QWidget):
         """
         funcname = '__open_remote_device_info__'
         logger.debug(funcname)
+        FLAG_DEVICE = False
+        FLAG_HOST   = False
         try:
             item.devname
+            FLAG_DEVICE=True
         except:
             print('Not a device, doing nothing')
-            return
+            try:
+                item.hostinfo
+                FLAG_HOST = True
+            except:
+                return
+        if FLAG_DEVICE:
+            print('address',item.devname)
+            devtxt = str(item.devinfo)
 
-        print('address',item.devname)
-        devtxt = str(item.devinfo)
+        if FLAG_HOST:
+            print(item.hostinfo)
+            devtxt = str(item.hostinfo)
+
         self.hostinfo_widget = QtWidgets.QPlainTextEdit()
         self.hostinfo_widget.insertPlainText(str(devtxt))
         self.hostinfo_widget.setWindowIcon(QtGui.QIcon(_icon_file))
-        self.hostinfo_widget.setWindowTitle("redvypr remote host info")
+        self.hostinfo_widget.setWindowTitle("redvypr iored remote host info")
         self.hostinfo_widget.show()
+
 
     def __open_remote_host_info__(self,item):
         """
@@ -1991,6 +2058,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         devices = self.device.get_devices_by_host()
         #print('devices',devices)
         for hostnameuuid in devices.keys():
+            raddr = data_packets.redvypr_address(hostnameuuid)
             hostuuid = hostnameuuid.split('::')[1]
             if(hostuuid == self.device.redvypr.hostinfo['uuid']): # Dont show own packets
                 print('Own device')
@@ -2000,7 +2068,44 @@ class displayDeviceWidget(QtWidgets.QWidget):
             itm.subscribed = False
             itm.hostnameuuid = hostnameuuid
             itm.hostuuid = hostuuid
+            try:
+                itm.hostinfo = self.device.__remote_info__[hostuuid]
+            except:
+                itm.hostinfo = {}
+
+            try:
+                hostinfo_opt = itm.hostinfo['hostinfo_opt']
+            except:
+                hostinfo_opt = {}
+
             root.addChild(itm)
+            # Add deviceinfo parent
+            itminfoparent = QtWidgets.QTreeWidgetItem(['Info', ''])
+            itminfoparent.subscribeable = False
+            itminfoparent.subscribed = False
+            itminfoparent.hostnameuuid = hostnameuuid
+            itminfoparent.hostuuid = hostuuid
+            itm.addChild(itminfoparent)
+            # Populate host information
+            for k in hostinfo_opt.keys():
+                keydata = str(hostinfo_opt[k])
+                if(len(keydata)>0) and (k != 'template_name'):
+                    itminfo = QtWidgets.QTreeWidgetItem([k, keydata])
+                    itminfo.subscribeable = False
+                    itminfo.subscribed = False
+                    itminfo.hostnameuuid = hostnameuuid
+                    itminfo.hostuuid = hostuuid
+                    itminfoparent.addChild(itminfo)
+
+
+            # Add devices parent
+            itmdevparent = QtWidgets.QTreeWidgetItem(['Devices', ''])
+            itmdevparent.subscribeable = False
+            itmdevparent.subscribed = False
+            itmdevparent.hostnameuuid = hostnameuuid
+            itmdevparent.hostuuid = hostuuid
+            itm.addChild(itmdevparent)
+            # Populate devices
             for d in devices[hostnameuuid]:
                 #print('Device d',d)
                 substr = 'not subscribed'
@@ -2066,7 +2171,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     itmdevice.subscribeable = d['_redvypr']['subscribeable']
                 except:
                     itmdevice.subscribeable = False
-                itm.addChild(itmdevice)
+                itmdevparent.addChild(itmdevice)
 
                 if(tlastseen < 0):
                     itmdevice.setForeground(0, QtGui.QBrush(QtGui.QColor("red")))

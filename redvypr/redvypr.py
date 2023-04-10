@@ -280,8 +280,29 @@ class redvypr(QtCore.QObject):
         funcname = __name__ + '.__init__()'
         logger.debug(funcname)
         self.hostinfo = create_hostinfo(hostname=hostname)
-        config_template = {'template_name':'hostinfo_opt'}
-        self.hostinfo_opt = configuration(config=hostinfo_opt,template=config_template) # Optional host information
+        print('Hostinfo opt',hostinfo_opt)
+        try:
+            hostinfo_opt['description']
+        except:
+            hostinfo_opt['description'] = ''
+
+        try:
+            hostinfo_opt['location']
+        except:
+            hostinfo_opt['location'] = ''
+
+        try:
+            hostinfo_opt['lon']
+        except:
+            hostinfo_opt['lon'] = -9999.0
+
+        try:
+            hostinfo_opt['lat']
+        except:
+            hostinfo_opt['lat'] = -9999.0
+
+        self.hostinfo_opt = configuration(template=hostinfo_opt)
+
         self.config = {}  # Might be overwritten by parse_configuration()
         self.properties = {}  # Properties that are distributed with the device
         self.numdevice = 0
@@ -1055,7 +1076,7 @@ class redvyprWidget(QtWidgets.QWidget):
 
     """
 
-    def __init__(self, width=None, height=None, config=None,hostname='redvypr'):
+    def __init__(self, width=None, height=None, config=None,hostname='redvypr',hostinfo_opt={}):
         """ Args: 
             width:
             height:
@@ -1065,7 +1086,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.setGeometry(50, 50, 500, 300)
 
         # Lets create the heart of redvypr
-        self.redvypr = redvypr(hostname=hostname)  # Configuration comes later after all widgets are initialized
+        self.redvypr = redvypr(hostname=hostname,hostinfo_opt=hostinfo_opt)  # Configuration comes later after all widgets are initialized
 
         self.redvypr.device_path_changed.connect(self.__populate_devicepathlistWidget)
         self.redvypr.device_added.connect(self._add_device_gui)
@@ -1413,8 +1434,6 @@ class redvyprWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.__update_hostinfo_widget__()'
         print(funcname)
-        self.__hostname_line.setText(self.redvypr.hostinfo['hostname'])
-        self.__hostinfo_opt.reload_config()
 
 
     def __update_status_widget__(self):
@@ -1468,27 +1487,146 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__ip_line.setAlignment(QtCore.Qt.AlignRight)
         self.__ip_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         self.__ip_line.setText(self.redvypr.hostinfo['addr'])
-        # Optional hostinformation
-        self.__hostinfo_opt = gui.configWidget(self.redvypr.hostinfo_opt,loadsavebutton=False,redvypr_instance=self.redvypr)
+
+        # Location
+        try:
+            location = self.redvypr.hostinfo_opt['location'].data
+        except:
+            location = ''
+
+        self.__loc_label = QtWidgets.QLabel('Location:')
+        self.__loc_text = QtWidgets.QLineEdit(location)
+        self.__loc_text.textold = self.__loc_text.text() # the old text to check again
+        self.__loc_text.editingFinished.connect(self.__hostinfo_opt_changed_text)
+
+        # Description
+        try:
+            description = self.redvypr.hostinfo_opt['description'].data
+        except:
+            description = ''
+
+        self.__desc_label = QtWidgets.QLabel('Description:')
+        self.__desc_text = QtWidgets.QLineEdit(description)
+        self.__desc_text.textold = self.__desc_text.text()  # the old text to check again
+        self.__desc_text.editingFinished.connect(self.__hostinfo_opt_changed_text)
+
+        # Lon
+        try:
+            lon = self.redvypr.hostinfo_opt['lon'].data
+        except:
+            lon = -9999.0
+
+        # Lon/Lat
+        try:
+            lat = self.redvypr.hostinfo_opt['lat'].data
+        except:
+            lat = -9999.0
+
+
+        self.__lon_label = QtWidgets.QLabel('Longitude:')
+        self.__lat_label = QtWidgets.QLabel('Latitude:')
+        self.__lon_text = QtWidgets.QDoubleSpinBox()
+        self.__lon_text.setMinimum(-9999)
+        self.__lon_text.setMaximum(360)
+        self.__lon_text.setSingleStep(0.00001)
+        self.__lon_text.setDecimals(5)
+        self.__lon_text.setValue(lon)
+        self.__lon_text.oldvalue = self.__lon_text.value()
+        self.__lon_text.editingFinished.connect(self.__hostinfo_opt_changed_text)
+
+        self.__lat_text = QtWidgets.QDoubleSpinBox()
+        self.__lat_text.setMinimum(-9999)
+        self.__lat_text.setMaximum(90)
+        self.__lat_text.setSingleStep(0.00001)
+        self.__lat_text.setDecimals(5)
+        self.__lat_text.setValue(lat)
+        self.__lat_text.oldvalue = self.__lat_text.value()
+        self.__lat_text.editingFinished.connect(self.__hostinfo_opt_changed_text)
 
         # Change the hostname
-        self.__hostname_btn = QtWidgets.QPushButton('Change hostname')
-        self.__hostname_btn.clicked.connect(self.__hostname_changed_click)
+        self.__hostinfo_opt_btn = QtWidgets.QPushButton('Edit optional information')
+        self.__hostinfo_opt_btn.clicked.connect(self.__hostinfo_opt_changed_click)
+
+
+
+        self.__statuswidget_pathbtn = QtWidgets.QPushButton('Edit device path')
+        self.__statuswidget_pathbtn.clicked.connect(self.show_devicepathwidget)
 
         layout.addRow(self.__hostname_label, self.__hostname_line)
         layout.addRow(self.__uuid_label, self.__uuid_line)
         layout.addRow(self.__ip_label, self.__ip_line)
-        layout.addRow(self.__hostinfo_opt)
-        layout.addRow(self.__hostname_btn)
-
-        self.__statuswidget_pathbtn = QtWidgets.QPushButton('Edit device path')
-        self.__statuswidget_pathbtn.clicked.connect(self.show_devicepathwidget)
+        layout.addRow(self.__desc_label, self.__desc_text)
+        layout.addRow(self.__loc_label, self.__loc_text)
+        layout.addRow(self.__lon_label,self.__lon_text)
+        layout.addRow(self.__lat_label, self.__lat_text)
+        layout.addRow(self.__hostinfo_opt_btn)
         layout.addRow(self.__statuswidget_pathbtn)
 
         logo = QtGui.QPixmap(_logo_file)
         logolabel = QtWidgets.QLabel()
         logolabel.setPixmap(logo)
         # layout.addRow(logolabel)
+
+    def __hostinfo_opt_changed_text(self):
+        """
+        Called when the textedit was done, updates the hostinformation,
+        Returns:
+
+        """
+        funcname = __name__ + '.__hostinfo_opt_changed_text()'
+        print(funcname)
+        FLAG_CHANGE = False
+        # Location text
+        if self.__loc_text.textold == self.__loc_text.text():
+            print('Not really a change of the text')
+        else:
+            self.__loc_text.textold = self.__loc_text.text()
+            self.redvypr.hostinfo_opt['location'].data = self.__loc_text.text()
+            FLAG_CHANGE = True
+
+        # Location text
+        if self.__desc_text.textold == self.__desc_text.text():
+            print('Not really a change of the description text')
+        else:
+            self.__desc_text.textold = self.__desc_text.text()
+            self.redvypr.hostinfo_opt['description'].data = self.__desc_text.text()
+            FLAG_CHANGE = True
+
+        # Longitude
+        if self.__lon_text.oldvalue == self.__lon_text.value():
+            print('Not really a change of the longitude')
+        else:
+            self.__lon_text.oldvalue = self.__lon_text.value()
+            self.redvypr.hostinfo_opt['lon'].data = self.__lon_text.value()
+            FLAG_CHANGE = True
+
+        # Latitude
+        if self.__lat_text.oldvalue == self.__lat_text.value():
+            print('Not really a change of the latitude')
+        else:
+            self.__lat_text.oldvalue = self.__lat_text.value()
+            self.redvypr.hostinfo_opt['lat'].data = self.__lat_text.value()
+            FLAG_CHANGE = True
+
+        if FLAG_CHANGE:
+            print('Things have changed, lets send a signal')
+            try:
+                self.__hostinfo_opt_edit.reload_config()
+            except:
+                pass
+            self.redvypr.hostconfig_changed_signal.emit()
+
+    def __hostinfo_opt_changed_click(self):
+        """
+        Opens a widget that allow to change the optional hostinformation
+        Returns:
+
+        """
+        # Optional hostinformation
+        self.__hostinfo_opt_edit = gui.configWidget(self.redvypr.hostinfo_opt, loadsavebutton=False,
+                                               redvypr_instance=self.redvypr)
+
+        self.__hostinfo_opt_edit.show()
 
     def show_devicepathwidget(self):
         """A widget to show the pathes to search for additional devices
@@ -1600,15 +1738,17 @@ class redvyprWidget(QtWidgets.QWidget):
 #
 #
 class redvyprMainWidget(QtWidgets.QMainWindow):
-    def __init__(self, width=None, height=None, config=None,hostname='redvypr'):
+    def __init__(self, width=None, height=None, config=None,hostname='redvypr',hostinfo_opt={}):
         super(redvyprMainWidget, self).__init__()
         # self.setGeometry(0, 0, width, height)
 
-        self.setWindowTitle("redvypr")
+
+        #self.setWindowTitle("redvypr")
+        self.setWindowTitle(hostname)
         # Add the icon
         self.setWindowIcon(QtGui.QIcon(_icon_file))
 
-        self.redvypr_widget = redvyprWidget(config=config,hostname=hostname)
+        self.redvypr_widget = redvyprWidget(config=config,hostname=hostname,hostinfo_opt=hostinfo_opt)
         self.setCentralWidget(self.redvypr_widget)
         quitAction = QtWidgets.QAction("&Quit", self)
         quitAction.setShortcut("Ctrl+Q")
@@ -1873,9 +2013,9 @@ def redvypr_main():
             else:
                 logger.warning('Not a key:data pair in hostinfo, skipping {:sf}'.format(info))
 
-    config_all.append({'hostinfo_opt':hostinfo_opt})
+    #config_all.append({'hostinfo_opt':hostinfo_opt})
     print('Hostinfo', hostinfo)
-    print('Hostinfo', hostinfo_opt)
+    print('Hostinfo opt', hostinfo_opt)
 
     logger.debug('Configuration:\n {:s}\n'.format(str(config_all)))
     QtCore.QLocale.setDefault(QtCore.QLocale(QtCore.QLocale.English, QtCore.QLocale.UnitedStates))
@@ -1888,7 +2028,7 @@ def redvypr_main():
 
         signal.signal(signal.SIGINT, handleIntSignal)
         app = QtCore.QCoreApplication(sys.argv)
-        redvypr_obj = redvypr(config=config_all, hostname=hostname,nogui=True)
+        redvypr_obj = redvypr(config=config_all, hostinfo_opt=hostinfo_opt,hostname=hostname,nogui=True)
         sys.exit(app.exec_())
     else:
         app = QtWidgets.QApplication(sys.argv)
@@ -1902,7 +2042,7 @@ def redvypr_main():
 
         logger.debug(
             'Available screen size: {:d} x {:d} using {:d} x {:d}'.format(rect.width(), rect.height(), width, height))
-        ex = redvyprMainWidget(width=width, height=height, config=config_all,hostname=hostname)
+        ex = redvyprMainWidget(width=width, height=height, config=config_all,hostname=hostname,hostinfo_opt=hostinfo_opt)
 
         sys.exit(app.exec_())
 
