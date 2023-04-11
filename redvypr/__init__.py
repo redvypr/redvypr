@@ -1,5 +1,5 @@
 from .redvypr import *
-from .devices import *
+#from .devices import *
 from . import data_packets
 from . import gui
 from .widgets import *

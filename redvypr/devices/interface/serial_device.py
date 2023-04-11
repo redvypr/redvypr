@@ -46,7 +46,9 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     parity      = config['parity']    
     stopbits    = config['stopbits']    
     bytesize    = config['bytesize']    
-    dt_poll     = config['dt_poll']    
+    dt_poll     = config['dt_poll']
+
+    print('Starting',config)
     
     newpacket   = config['packetdelimiter']
     # Check if a delimiter shall be used (\n, \r\n, etc ...)
@@ -66,8 +68,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     serial_device = False
     if True:
         try:
-            serial_device = serial.Serial(serial_name,baud,parity=parity,stopbits=stopbits,bytesize=bytesize,timeout=0.05)
-            #print('Serial device 0',serial_device)            
+            serial_device = serial.Serial(serial_name,baud,parity=parity,stopbits=stopbits,bytesize=bytesize,timeout=0)
+            #print('Serial device 0',serial_device)
             #serial_device.timeout(0.05)
             #print('Serial device 1',serial_device)                        
         except Exception as e:
@@ -86,53 +88,61 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
             # logger.debug('Got a command: {:s}'.format(str(data)))
             if (command is not None):
-                sstr = funcname + ': Command is for me: {:s}'.format(str(command))
-                logger.debug(sstr)
-                try:
-                    statusqueue.put_nowait(sstr)
-                except:
-                    pass
-                break
+                if command == 'stop':
+                    serial_device.close()
+                    sstr = funcname + ': Command is for me: {:s}'.format(str(command))
+                    logger.debug(sstr)
+                    try:
+                        statusqueue.put_nowait(sstr)
+                    except:
+                        pass
+                    return
 
 
         time.sleep(dt_poll)
         ndata = serial_device.inWaiting()
-        if(ndata < 100):
-            ndata = 100
-            
-        rawdata_tmp = serial_device.read(ndata)
-        if(len(rawdata_tmp) > 0):
-            bytes_read  += rawdata_tmp
-            rawdata_all += rawdata_tmp
-            FLAG_CHUNK = len(rawdata_all) > chunksize
-            if(FLAG_CHUNK):
-                data               = {'t':time.time()}
-                data['data']       = rawdata_all
-                data['comport']    = serial_device.name
-                data['bytes_read'] = bytes_read
-                dataqueue.put(data)
-                rawdata_all = b''
-                
-            # Check if the newpacket character in the data
-            if(FLAG_DELIMITER):
-                FLAG_CHAR = newpacket in rawdata_all
-                if(FLAG_CHAR):
-                    rawdata_split = rawdata_all.split(newpacket)
-                    if(len(rawdata_split)>1):
-                        for ind in range(len(rawdata_split)-1): # The last packet does not have the split character
-                            raw = rawdata_split[ind] + newpacket # reconstruct the data
-                            data               = {'t':time.time()}
-                            data['data']       = raw
-                            data['comport']    = serial_device.name
-                            data['bytes_read'] = bytes_read
-                            dataqueue.put(data)
+        try:
+            rawdata_tmp = serial_device.read(ndata)
+        except Exception as e:
+            print(e)
+            print('rawdata_tmp', rawdata_tmp)
 
-                        rawdata_all = rawdata_split[-1]
+        nread = len(rawdata_tmp)
+        if True:
+            if nread > 0:
+                bytes_read  += nread
+                rawdata_all += rawdata_tmp
+                print('rawdata_all',rawdata_all)
+                FLAG_CHUNK = len(rawdata_all) > chunksize
+                if(FLAG_CHUNK):
+                    data               = {'t':time.time()}
+                    data['data']       = rawdata_all
+                    data['comport']    = serial_device.name
+                    data['bytes_read'] = bytes_read
+                    dataqueue.put(data)
+                    rawdata_all = b''
+
+                # Check if the newpacket character in the data
+                if(FLAG_DELIMITER):
+                    FLAG_CHAR = newpacket in rawdata_all
+                    if(FLAG_CHAR):
+                        rawdata_split = rawdata_all.split(newpacket)
+                        if(len(rawdata_split)>1):
+                            for ind in range(len(rawdata_split)-1): # The last packet does not have the split character
+                                raw = rawdata_split[ind] + newpacket # reconstruct the data
+                                data               = {'t':time.time()}
+                                data['data']       = raw
+                                data['comport']    = serial_device.name
+                                data['bytes_read'] = bytes_read
+                                dataqueue.put(data)
+
+                            rawdata_all = rawdata_split[-1]
         
             
             
         if((time.time() - t_update) > dt_update):
             dbytes = bytes_read - bytes_read_old
+            bytes_read_old = bytes_read
             bps = dbytes/dt_update# bytes per second
             #print('ndata',len(rawdata_all),'rawdata',rawdata_all,type(rawdata_all))
             print('bps',bps)
@@ -211,7 +221,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         #How to differentiate packets
         self._packet_ident_lab = QtWidgets.QLabel('Packet identification')
         self._packet_ident     = QtWidgets.QComboBox()
-        self._packet_ident.addItem('NMEA')
         self._packet_ident.addItem('newline \\n')
         self._packet_ident.addItem('newline \\r\\n')
         self._packet_ident.addItem('None')
@@ -266,35 +275,46 @@ class initDeviceWidget(QtWidgets.QWidget):
         #print('Start clicked')
         button = self._button_serial_openclose
         #print('Start clicked:' + button.text())
+        #config_template['comport'] = {'type': 'str'}
+        #config_template['baud'] = {'type': 'int', 'default': 4800}
+        #config_template['parity'] = {'type': 'int', 'default': serial.PARITY_NONE}
+        #config_template['stopbits'] = {'type': 'int', 'default': serial.STOPBITS_ONE}
+        #config_template['bytesize'] = {'type': 'int', 'default': serial.EIGHTBITS}
+        #config_template['dt_poll'] = {'type': 'float', 'default': 0.05}
+        #config_template['chunksize'] = {'type': 'int',
+        #                                'default': 1000}  # The maximum amount of bytes read with one chunk
+        #config_template['packetdelimiter'] = {'type': 'str',
+        #                                      'default': '\n'}  # The maximum amount of bytes read with one chunk
         if('Open' in button.text()):
             button.setText('Close')
             serial_name = str(self._combo_serial_devices.currentText())
             serial_baud = int(self._combo_serial_baud.currentText())
+            self.device.config['comport'].data = serial_name
+            self.device.config['baud'].data = serial_baud
             stopbits = self._combo_stopbits.currentText()
             if(stopbits=='1'):
-                self.device.stopbits =  serial.STOPBITS_ONE
+                self.device.config['stopbits'].data =  serial.STOPBITS_ONE
             elif(stopbits=='1.5'):
-                self.device.stopbits =  serial.STOPBITS_ONE_POINT_FIVE
+                self.device.config['stopbits'].data =  serial.STOPBITS_ONE_POINT_FIVE
             elif(stopbits=='2'):
-                self.device.stopbits =  serial.STOPBITS_TWO
+                self.device.config['stopbits'].data =  serial.STOPBITS_TWO
                 
             databits = int(self._combo_databits.currentText())
-            self.device.bytesize = databits
+            self.device.config['bytesize'].data = databits
 
             parity = self._combo_parity.currentText()
             if(parity=='None'):
-                self.device.parity = serial.PARITY_NONE
+                self.device.config['parity'] = serial.PARITY_NONE
             elif(parity=='Even'):                
-                self.device.parity = serial.PARITY_EVEN
+                self.device.config['parity'] = serial.PARITY_EVEN
             elif(parity=='Odd'):                
-                self.device.parity = serial.PARITY_ODD
+                self.device.config['parity'] = serial.PARITY_ODD
             elif(parity=='Mark'):                
-                self.device.parity = serial.PARITY_MARK
+                self.device.config['parity'] = serial.PARITY_MARK
             elif(parity=='Space'):                
-                self.device.parity = serial.PARITY_SPACE
+                self.device.config['parity'] = serial.PARITY_SPACE
                 
-            self.device.serial_name = serial_name
-            self.device.baud = serial_baud
+
             self.device.thread_start()
         else:
             self.stop_clicked()
@@ -325,10 +345,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.text)
 
     def update(self,data):
-        #print('data',data)
+        print('data',data)
         bstr = "Bytes read: {:d}".format(data['bytes_read'])
         lstr = "Lines read: {:d}".format(data['nmea_sentences_read'])
-        self.bytes_read.setText(bstr)
-        self.lines_read.setText(lstr)
-        self.text.insertPlainText(str(data['data']))
+        try:
+            self.bytes_read.setText(bstr)
+            self.lines_read.setText(lstr)
+            self.text.insertPlainText(str(data['data']))
+        except Exception as e:
+            logger.exception(e)
         

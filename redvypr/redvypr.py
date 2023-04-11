@@ -23,7 +23,6 @@ from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
 import platform
 # Import redvypr specific stuff
-import redvypr.devices as redvyprdevices
 import redvypr.data_packets as data_packets
 from redvypr.gui import redvypr_ip_widget, QPlainTextEditLogger, displayDeviceWidget_standard, \
     deviceinfoWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget
@@ -33,6 +32,7 @@ import redvypr.config as redvyprconfig
 from redvypr.version import version
 import redvypr.files as files
 from redvypr.device import redvypr_device, redvypr_device_scan
+import redvypr.devices as redvyprdevices
 import faulthandler
 faulthandler.enable()
 
@@ -322,7 +322,7 @@ class redvypr(QtCore.QObject):
         self.devices, self.hostinfo, self.deviceinfo_all, self.datadistinfoqueue, self.redvyprqueue, self.dt_datadist), daemon=True)
         self.datadistthread.start()
         logger.info(funcname + ':Searching for devices')
-        self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths)
+        self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths,redvypr_devices=redvyprdevices)
         logger.info(funcname + ':Done searching for devices')
 
         # Parsing configuration

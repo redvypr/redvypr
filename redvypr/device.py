@@ -26,7 +26,8 @@ import pkg_resources
 import redvypr
 from redvypr.data_packets import compare_datastreams, parse_addrstr, commandpacket, redvypr_address, do_data_statistics
 import redvypr.config as redvyprConfig
-import redvypr.devices as redvyprdevices
+
+
 
 logging.basicConfig(stream=sys.stderr)
 
@@ -35,7 +36,7 @@ class redvypr_device_scan():
     """
     Searches for redvypr devices
     """
-    def __init__(self, device_path = [],scan=True):
+    def __init__(self, device_path = [],scan=True,redvypr_devices = None):
         """
 
         Args:
@@ -56,7 +57,8 @@ class redvypr_device_scan():
         # Start scanning
         if(scan):
             print('scanning redvypr')
-            self.scan_redvypr()
+            if redvypr_devices is not None:
+                self.scan_redvypr(redvypr_devices)
             self.scan_modules()
             self.scan_devicepath()
 
@@ -141,7 +143,7 @@ class redvypr_device_scan():
                     if len(module_dict[testmodule.__name__].keys()) == 0:
                         module_dict.pop(testmodule.__name__)
 
-    def scan_redvypr(self):
+    def scan_redvypr(self,redvyprdevices):
         funcname = 'scan_redvypr():'
         self.logger.debug(funcname)
         if True:
