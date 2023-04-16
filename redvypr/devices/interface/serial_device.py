@@ -127,10 +127,12 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                     FLAG_CHAR = newpacket in rawdata_all
                     if(FLAG_CHAR):
                         rawdata_split = rawdata_all.split(newpacket)
-                        if(len(rawdata_split)>1):
+                        print('rawdata_all', rawdata_all)
+                        if(len(rawdata_split)>1): # If len==0 then character was not found
                             for ind in range(len(rawdata_split)-1): # The last packet does not have the split character
                                 sentences_read += 1
                                 raw = rawdata_split[ind] + newpacket # reconstruct the data
+                                print('raw', raw)
                                 data               = {'t':time.time()}
                                 data['data']       = raw
                                 data['comport']    = serial_device.name

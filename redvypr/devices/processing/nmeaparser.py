@@ -62,23 +62,26 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         data = datainqueue.get()
         command = check_for_command(data)
         if(command is not None):
-            print('Got a command',command)
-            break
+            if command == 'stop':
+                print('Got a stop command')
+                break
 
         #print('Data',data)
-        csvdata = data['data']
-        dicts = csv.parse_data(csvdata)
-        for packet in dicts: # Loop over the list and make a packet out of it
-            print('packet',packet)
-            try:
-                devicename = packet['deviceid']
-            except:
-                devicename = packet['name']
-            data_packets.treat_datadict(packet, devicename, hostinfo=data['_redvypr']['host'], numpacket = data['_redvypr']['numpacket'], tpacket=data['t'])
-            print('Putting',packet)
-            dataqueue.put(packet)
+        # Check if the datakey is in the datapacket
+        if config['datakey'] in data.keys():
+            csvdata = data['data']
+            dicts = csv.parse_data(csvdata)
+            for packet in dicts: # Loop over the list and make a packet out of it
+                print('packet',packet)
+                try:
+                    devicename = packet['deviceid']
+                except:
+                    devicename = packet['name']
+                data_packets.treat_datadict(packet, devicename, hostinfo=data['_redvypr']['host'], numpacket = data['_redvypr']['numpacket'], tpacket=data['t'])
+                print('Putting',packet)
+                dataqueue.put(packet)
 
-        #print(dicts)
+            #print(dicts)
 
     print('Hallo, stop!')
 
