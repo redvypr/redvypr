@@ -60,9 +60,9 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
         newpacket = newpacket.encode('utf-8')
         
     rawdata_all    = b''
-    sentences      = 0
     dt_update      = 1 # Update interval in seconds
     bytes_read     = 0
+    sentences_read = 0
     bytes_read_old = 0 # To calculate the amount of bytes read per second
     t_update       = time.time()
     serial_device = False
@@ -105,14 +105,14 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             rawdata_tmp = serial_device.read(ndata)
         except Exception as e:
             print(e)
-            print('rawdata_tmp', rawdata_tmp)
+            #print('rawdata_tmp', rawdata_tmp)
 
         nread = len(rawdata_tmp)
         if True:
             if nread > 0:
                 bytes_read  += nread
                 rawdata_all += rawdata_tmp
-                print('rawdata_all',rawdata_all)
+                #print('rawdata_all',rawdata_all)
                 FLAG_CHUNK = len(rawdata_all) > chunksize
                 if(FLAG_CHUNK):
                     data               = {'t':time.time()}
@@ -129,11 +129,13 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                         rawdata_split = rawdata_all.split(newpacket)
                         if(len(rawdata_split)>1):
                             for ind in range(len(rawdata_split)-1): # The last packet does not have the split character
+                                sentences_read += 1
                                 raw = rawdata_split[ind] + newpacket # reconstruct the data
                                 data               = {'t':time.time()}
                                 data['data']       = raw
                                 data['comport']    = serial_device.name
                                 data['bytes_read'] = bytes_read
+                                data['sentences_read'] = sentences_read
                                 dataqueue.put(data)
 
                             rawdata_all = rawdata_split[-1]
@@ -145,7 +147,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             bytes_read_old = bytes_read
             bps = dbytes/dt_update# bytes per second
             #print('ndata',len(rawdata_all),'rawdata',rawdata_all,type(rawdata_all))
-            print('bps',bps)
+            #print('bps',bps)
             t_update = time.time()
             
                 
@@ -345,13 +347,17 @@ class displayDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.text)
 
     def update(self,data):
-        print('data',data)
-        bstr = "Bytes read: {:d}".format(data['bytes_read'])
-        lstr = "Lines read: {:d}".format(data['nmea_sentences_read'])
+        #print('data',data)
+        try:
+            bstr = "Bytes read: {:d}".format(data['bytes_read'])
+            lstr = "Sentences read: {:d}".format(data['sentences_read'])
+        except Exception as e:
+            logger.exception(e)
         try:
             self.bytes_read.setText(bstr)
             self.lines_read.setText(lstr)
             self.text.insertPlainText(str(data['data']))
+            self.text.insertPlainText('\n')
         except Exception as e:
             logger.exception(e)
         
