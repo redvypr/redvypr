@@ -101,18 +101,28 @@ def create_info_packet(device_info,url_pub,url_rep):
     Returns:
          binary string containing the information
     """
-    devtmp = yaml.dump(device_info['deviceinfo_all']).encode('utf-8')
+    # Remove subdevices of the iored device, they are not interesting for the remote iored device
+    deviceinfo_all = copy.deepcopy(device_info['deviceinfo_all'])
+    uuid = device_info['hostinfo']['uuid']
+    #https://stackoverflow.com/questions/5384914/how-do-i-delete-items-from-a-dictionary-while-iterating-over-it
+    for subdevice in list(deviceinfo_all[device_info['devicename']].keys()):
+        subdevaddr = data_packets.redvypr_address(subdevice)
+        if subdevaddr.uuid != uuid: # Remove all remote devices from this iored device
+            deviceinfo_all[device_info['devicename']].pop(subdevice)
+
+
+    devtmp = yaml.dump(deviceinfo_all).encode('utf-8')
     deviceinfo_all_md5 = hashlib.md5(devtmp).hexdigest()
     hosttmp = yaml.dump(device_info['hostinfo_opt']).encode('utf-8')
     hostinfo_opt_md5 = hashlib.md5(hosttmp).hexdigest()
 
     info_packet = {'host': device_info['hostinfo'], 't': time.time(), 'zmq_pub': url_pub, 'zmq_rep': url_rep,
                    'deviceinfo_all_md5': deviceinfo_all_md5, 'hostinfo_opt_md5': hostinfo_opt_md5,
-                   'deviceinfo_all': device_info['deviceinfo_all'], 'hostinfo_opt': device_info['hostinfo_opt'],'devicename':device_info['devicename']}
+                   'deviceinfo_all': deviceinfo_all, 'hostinfo_opt': device_info['hostinfo_opt'],'devicename':device_info['devicename']}
 
     #print('Device info',device_info)
     # print('--------------')
-    #print('Multicast packet', info_packet)
+    print('Info packet', info_packet)
     # print('--------------')
     hostinfoy = yaml.dump(info_packet, explicit_end=True, explicit_start=True)
     hostinfoy = hostinfoy.encode('utf-8')
@@ -462,8 +472,8 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
             FLAG_DATA = False
 
         if FLAG_DATA:
-            device = datab_all[0]  # The message
-            t = datab_all[1] # The message
+            device = datab_all[0]  # The device address
+            t = datab_all[1] # The time the packet was sent
             datab = datab_all[2] # The message
             bytes_read += len(datab)
             # Check what data we are expecting and convert it accordingly
@@ -547,13 +557,13 @@ def start_zmq_reply(config, device_info,url_pub,zmq_ports,thread_uuid,replyqueue
         if data_zmq_req.startswith(info_header['getinfo']):  # getinfo request
             print(funcname + ' Getinfo request')
             datab = create_info_packet(device_info, url_pub, url_rep)
-            print(funcname + ' Sending')
+            print(funcname + ' Sending info packet')
+            print('data', datab)
+            print(funcname + ' Done sending info packet')
+            sock_zmq_rep.send(datab)
             # Sending the updated host information also to the statusqueue
             [packet_type, redvypr_info] = analyse_info_packet(datab)  # Return data is [command, redvypr_info]
             statusqueue.put({'type':'own_info_packet','redvypr_info':redvypr_info,'packet_type':packet_type})
-            print('data',datab)
-            sock_zmq_rep.send(datab)
-
         elif data_zmq_req == 'ping'.encode('utf-8'):
             sock_zmq_rep.send('pong'.encode('utf-8'))
         elif data_zmq_req.startswith(thread_uuid.encode('utf-8')):  # if the uuid is sent (this is only known by this instance), stop the thread
@@ -623,13 +633,16 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
                 except:
                     uuid = None
 
+                print('from',uuid)
+
                 if uuid == hostuuid:
                     #print('Own multicast packet')
                     pass
                 else:
                     #print('Info from {:s}::{:s} at address {:s}'.format(redvypr_info['host']['hostname'], redvypr_info['host']['uuid'], redvypr_info['zmq_rep']))
                     # Check if things have changed or if the uuid is existing at all
-                    FLAG_QUERY = False
+                    FLAG_QUERY = True
+                    # Dont bother about these cases
                     if(redvypr_info['host']['uuid'] not in hostinfos.keys()):
                         #print('Host is not registered yet in hostinfos, querying')
                         FLAG_QUERY = True
@@ -774,7 +787,9 @@ def process_host_information(redvypr_info, hostuuid, hostinfos, statusqueue, dat
         hostinfos[uuid] = copy.deepcopy(
             redvypr_info)  # Copy it to the hostinfo of the device. This should be thread safe
         # Send it to the statusqueue, the data is processed in the device.
-        print('redvypr_info',redvypr_info)
+        print(funcname + ' redvypr_info')
+        print(redvypr_info)
+        print(funcname + ' redvypr_info done')
         statusqueue.put({'type': 'info', 'info': redvypr_info})
 
 
@@ -1017,24 +1032,24 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
 
                         print('End query')
 
-                    # Whenever the hostinfo_opt has been changed
+                    # Whenever the hostinfo_opt has been changed, publish it to all other devices
                     elif (command == 'hostinfo_opt'):
                         logstart.info(funcname + ': Got hostinfo update')
                         device_info['hostinfo_opt'].update(data['hostinfo_opt'])
                         if True:
                             # Send the information over zmq_pub socket to all connected devices
-                            # TODO, this needs to be consistent with device_info
                             datapacket = zmq_publish_data(sock_zmq_pub, data, address_style='<uuid>')
-                            print('Sent device update', datapacket)
-                            print('----------')
-                            print(data)
-                            print('----------')
+                            #print('Sent device update', datapacket)
+                            #print('----------')
+                            #print(data)
+                            #print('----------')
 
                         # This is creating at the moment a race condition
-                        #MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = True
+                        MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = True
                     # The command is sent from the device whenever the device status of any device of this redvypr
                     # instance changed: device added, removed, keys changed
                     elif (command == 'deviceinfo_all'):
+                        FLAG_DEVICE_UPDATE = True
                         logstart.info(funcname + ': Got devices update')
                         print('Filtering')
                         try:
@@ -1043,34 +1058,35 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                         except Exception as e:
                             logger.exception(e)
                         #device_info_all = data['deviceinfo_all']
-                        device_info['deviceinfo_all'].update(device_info_all)
+                        #device_info['deviceinfo_all'].update(device_info_all)
+                        device_info['deviceinfo_all'] = device_info_all
 
                         print('Filtering done')
                         try:
                             # Check if the iored device itself has been changed
                             try:
+                                print('Devicename', devicename)
+                                print('Devices changed',data['devices_changed'])
                                 if devicename in data['devices_changed']: # Check if devices except myself have been changed
-                                    print('That was myself, will remove')
+                                    print('That was myself, will not publish')
                                     data['devices_changed'].remove(devicename)
+                                    FLAG_DEVICE_UPDATE = False
                             except:
                                 pass
-                            # What about multicast?
-                            # TODO, think about a smart way to check for changes that should be announced
-                            #if (len(data['devices_changed']) > 0) or (len(data['devices_removed']) > 0):
-                            if True:
+                            if FLAG_DEVICE_UPDATE:
+                                logstart.info(funcname + ': deviceinfo_all update, will publish update')
                                 # Send the information over zmq_pub socket to all connected devices
-                                # TODO, this needs to be consistent with device_info
                                 datapacket = zmq_publish_data(sock_zmq_pub, data, address_style='<uuid>')
-                                print('Sent device update',datapacket)
-                                print('----------')
-                                print(data)
-                                print('----------')
+                                #print('Sent device update',datapacket)
+                                #print('----------')
+                                #print(data)
+                                #print('----------')
                         except Exception as e:
                             print('Dubidu')
                             logstart.exception(e)
 
                         # This is creating at the moment a race condition
-                        #MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = True
+                        MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = True
                     elif (command == 'multicast_info'): # Multicast send infocommand
                         print('Setting flag Multicast info')
                         MULTICASTFLAGS['FLAG_MULTICAST_INFO'] = True
@@ -1375,15 +1391,17 @@ class Device(redvypr_device):
                         # Compare if devices need to be removed
                         devices_rem = []
                         for dold in all_devices:
-                            print('dold',dold)
+                            #print('dold',dold)
                             daddr = data_packets.redvypr_address(dold)
                             print('daddr',daddr)
                             if daddr.uuid == self.host_uuid:  # This should not happen but anyways
                                 print('Own device, doing nothing')
                                 pass
-                            elif(dold in all_devices_tmp):
+                            elif(dold in all_devices_tmp): # Device is still existing
+                                print('Device found, will not change')
                                 pass
                             else:
+                                print('Will remove device',dold)
                                 devices_rem.append(dold)
                                 # Check if the lastseen is already negative, if yes dont change, if no update
                                 try:
@@ -1403,7 +1421,9 @@ class Device(redvypr_device):
                     print('Exception', e)
                     logger.exception(e)
 
-                # Check if an update should be sent
+                # Check if an update should be sent, send a device_status command. That will trigger redvypr.distribute_data to
+                # send a 'deviceinfo_all' to the datadistinfoqueue, which is in turn creating a device_changed signal
+                # This is complicated but as this function
                 if FLAG_SEND_DEVICE_STATUS:
                     try:
                         # Sending a device_status command without any further information, this is triggering an upate in distribute_data
@@ -1474,7 +1494,17 @@ class Device(redvypr_device):
     def __devicestatus_changed__(self):
         funcname = __name__ + '.__devicestatus_changed__():'
         self.logger.info(funcname)
-        self.send_deviceinfo_command()
+
+        #devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
+        #                'devices_changed': list(set(devices_changed)),
+        #                'devices_removed': devices_removed}
+        deviceinfo_changed = copy.deepcopy(self.redvypr.__device_status_changed_data__)
+        print('Devices changes',deviceinfo_changed['devices_changed'])
+        print(self.name)
+        if self.name in deviceinfo_changed['devices_changed']:
+            print('Change came from me, will not send an deviceinfo_command to the thread')
+        else:
+            self.send_deviceinfo_command()
 
     def send_hostinfo_command(self):
         """
@@ -1500,7 +1530,8 @@ class Device(redvypr_device):
         print('Deviceinfo all',deviceinfo_all)
         self.thread_command('deviceinfo_all',deviceinfo_all)
 
-    def get_remote_device_info(self,if_changed=False):
+    # LEGACY, to be removed soon
+    def get_remote_device_info_legacy(self,if_changed=False):
         """
 
         Args:
@@ -2060,9 +2091,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
         for hostnameuuid in devices.keys():
             raddr = data_packets.redvypr_address(hostnameuuid)
             hostuuid = hostnameuuid.split('::')[1]
-            if(hostuuid == self.device.redvypr.hostinfo['uuid']): # Dont show own packets
+            if (hostuuid == self.device.redvypr.hostinfo['uuid']): # Dont show own packets
                 print('Own device')
                 continue
+            else:
+                # TODO, sort out iored remote devices
+                pass
+
             itm = QtWidgets.QTreeWidgetItem([hostnameuuid,''])
             itm.subscribeable = False
             itm.subscribed = False

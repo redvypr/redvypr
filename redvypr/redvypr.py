@@ -381,6 +381,9 @@ class redvypr(QtCore.QObject):
                     self.status_update_signal.emit()
                 elif ('deviceinfo_all' in data['type']):
                     data.pop('type')  # Remove the type key
+                    # Store the data of the changed devices
+                    self.__device_status_changed_data__ = data
+
                     #print('datastreams changed', data)
                     self.device_status_changed_signal.emit()
 
