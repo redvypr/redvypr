@@ -175,9 +175,9 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 if numtag < 2:  # Check if data packet fits with addr and its not recirculated again
                     [command, comdata] = data_packets.check_for_command(data, add_data=True)
                     if (command == 'device_status'):  # status update
-                        print('device status command',device.name)
-                        print('comdata',comdata)
-                        print('data', data)
+                        #print('device status command',device.name)
+                        #print('comdata',comdata)
+                        #print('data', data)
                         try:
                             devaddr   = comdata['data']['deviceaddr']
                             devstatus = comdata['data']['devicestatus']
@@ -212,7 +212,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 # Compare if datastreams changed
                 #
                 if (list(datastreams_all.keys()) != list(datastreams_all_old.keys())):
-                    print('Datastreams changed', len(datastreams_all.keys()))
+                    #print('Datastreams changed', len(datastreams_all.keys()))
                     datastreams_all_old.update(datastreams_all)
                     devices_changed.append(device.name)
                     # Send an information about the change, that will trigger an pyqt signal in the main thread
@@ -229,9 +229,10 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     if(devicesub == device): # Not to itself
                         continue
 
-                    for addr in devicesub.subscribed_addresses:
-                        #numtag = data['_redvypr']['tag'][hostinfo['uuid']]
-                        if (data in addr) and (numtag < 2): # Check if data packet fits with addr and its not recirculated again
+                    for addr in devicesub.subscribed_addresses: # Loop over all subscribed redvypr_addresses
+                        # This is the main functionality for sitribution, comparing a datapacket with a
+                        # redvypr_address using "in"
+                        if (data in addr) and (numtag < 2): # Check if data packet fits with addr and if its not recirculated again
                             try:
                                 devicesub.datainqueue.put_nowait(data) # These are the datainqueues of the subscribing devices
                                 devicedict['packets_received'] += 1
