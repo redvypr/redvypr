@@ -655,13 +655,15 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
                 except:
                     uuid = None
 
-                print('from',uuid)
+
 
                 if uuid == hostuuid:
+                    print('from me', uuid)
                     #print('Own multicast packet')
                     pass
                 else:
-                    #print('Info from {:s}::{:s} at address {:s}'.format(redvypr_info['host']['hostname'], redvypr_info['host']['uuid'], redvypr_info['zmq_rep']))
+                    print('from', uuid)
+                    print('Info from {:s}::{:s} at address {:s}'.format(redvypr_info['host']['hostname'], redvypr_info['host']['uuid'], redvypr_info['zmq_rep']))
                     # Check if things have changed or if the uuid is existing at all
                     FLAG_QUERY = True
                     # Dont bother about these cases
@@ -1225,11 +1227,14 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             logstart.info(
                                 funcname + ': at url {:s}'.format(zmq_url_pub))
                             try: # Lets check if the thread is already running
+                                zmq_sub_threads[remote_uuid]['comqueue']
+                                FLAG_START_SUB_THREAD = False
                                 try:
-                                    zmq_sub_threads[remote_uuid]['comqueue'].put('sub ' + substring)
+                                    zmq_sub_threads[remote_uuid]['comqueue'].put_nowait('sub ' + substring)
                                 except Exception as e:
                                     logstart.exception(e)
-                                FLAG_START_SUB_THREAD = False
+                                    raise IOError('Could not send subscribe command')
+
                             except Exception as e:
                                 zmq_sub_threads[remote_uuid] = {}
                                 FLAG_START_SUB_THREAD = True
@@ -1459,17 +1464,18 @@ class Device(redvypr_device):
 
                 # Check if an update should be sent, send a device_status command. That will trigger redvypr.distribute_data to
                 # send a 'deviceinfo_all' to the datadistinfoqueue, which is in turn creating a device_changed signal
-                # This is complicated but as this function
+                # this is complicated but as this function runs in a thread this is thread safe ...
                 if FLAG_SEND_DEVICE_STATUS:
                     try:
                         # Sending a device_status command without any further information, this is triggering an upate in distribute_data
+                        comdata = {'origin':'__process_statusqueue__','device':self.name}
                         datapacket = data_packets.commandpacket(command='device_status', device_uuid='',
                                                                 thread_uuid='',
-                                                                devicename=None, host=None)
+                                                                devicename=None, host=None,comdata=comdata)
                         # print('Sending statuscommand',datapacket)
                         self.dataqueue.put_nowait(datapacket)
                     except Exception as e:
-                        pass
+                        self.logger.exception(e)
 
 
             except Exception as e:
@@ -1514,9 +1520,10 @@ class Device(redvypr_device):
             try:
                 # Sending a device_status command without any further information
                 # this is triggering an upate in distribute_data
+                comdata = {'origin': '__mark_host_as_removed__', 'device': self.name}
                 datapacket = data_packets.commandpacket(command='device_status', device_uuid='',
                                                         thread_uuid='',
-                                                        devicename=None, host=None)
+                                                        devicename=None, host=None,comdata=comdata)
                 # print('Sending statuscommand',datapacket)
                 self.dataqueue.put_nowait(datapacket)
             except Exception as e:
@@ -1530,16 +1537,19 @@ class Device(redvypr_device):
     def __devicestatus_changed__(self):
         funcname = __name__ + '.__devicestatus_changed__():'
         self.logger.info(funcname)
-
         #devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
         #                'devices_changed': list(set(devices_changed)),
         #                'devices_removed': devices_removed}
         deviceinfo_changed = copy.deepcopy(self.redvypr.__device_status_changed_data__)
-        print('Devices changes',deviceinfo_changed['devices_changed'])
-        print(self.name)
-        if self.name in deviceinfo_changed['devices_changed']:
+        print('Deviceinfo changed',deviceinfo_changed)
+        print('Deviceinfo changed done')
+        # Check if the device change came from myself, if yes, dont bother, otherwise trigger an device change
+        if 'device_status' in deviceinfo_changed['change'] and deviceinfo_changed['device_changed'] == self.name:
+            print('The change was triggered by me, doing nothing')
+        elif self.name in deviceinfo_changed['devices_changed']:
             print('Change came from me, will not send an deviceinfo_command to the thread')
         else:
+            print('Sending deviceinfo command')
             self.send_deviceinfo_command()
 
     def send_hostinfo_command(self):

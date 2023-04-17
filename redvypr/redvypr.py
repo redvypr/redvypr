@@ -130,7 +130,10 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 FLAG_device_status_changed = True
                 devices_removed.append(redvyprdata['device'])
                 devinfo_rem = deviceinfo_all.pop(redvyprdata['device'])
-                print('Devices len distribute data', len(devices))
+                #print('Devices len distribute data', len(devices))
+                devinfo_send = {'type':'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all), 'devices_changed': list(set(devices_changed)),
+                'devices_removed': devices_removed,'change':'devrem','device_changed':redvyprdata['device']}
+                infoqueue.put_nowait(devinfo_send)
 
 
         for devicedict in devices:
@@ -168,24 +171,33 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 #
                 # Check for a command packet
                 #
-                [command, comdata] = data_packets.check_for_command(data, add_data=True)
-                if (command == 'device_status'):  # status update
-                    try:
-                        devaddr   = comdata['data']['deviceaddr']
-                        devstatus = comdata['data']['devicestatus']
-                    except:
-                        devaddr = None
-                        devstatus = None
-                        pass
-                    devices_changed.append(device.name)
-                    if(devaddr is not None):
-                        try: # Update the device
-                            devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'].update(devstatus)
-                        except Exception as e:
-                            logger.warning('Could not update status ' + str(e))
-                            logger.exception(e)
+                numtag = data['_redvypr']['tag'][hostinfo['uuid']]
+                if numtag < 2:  # Check if data packet fits with addr and its not recirculated again
+                    [command, comdata] = data_packets.check_for_command(data, add_data=True)
+                    if (command == 'device_status'):  # status update
+                        print('device status command',device.name)
+                        print('comdata',comdata)
+                        print('data', data)
+                        try:
+                            devaddr   = comdata['data']['deviceaddr']
+                            devstatus = comdata['data']['devicestatus']
+                        except:
+                            devaddr = None
+                            devstatus = None
 
-                    FLAG_device_status_changed = True
+                        devices_changed.append(device.name) # LEGACY ...
+                        if(devaddr is not None):
+                            try: # Update the device
+                                devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'].update(devstatus)
+                            except Exception as e:
+                                logger.warning('Could not update status ' + str(e))
+                                logger.exception(e)
+
+                        # Send an information about the change, that will trigger an pyqt signal in the main thread
+                        devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
+                                        'devices_changed': list(set(devices_changed)), 'device_changed':device.name,
+                                        'devices_removed': devices_removed, 'change': 'device_status command','comdata':comdata}
+                        infoqueue.put_nowait(devinfo_send)
 
                 #
                 # Create a dictionary of all datastreams
@@ -200,10 +212,15 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 # Compare if datastreams changed
                 #
                 if (list(datastreams_all.keys()) != list(datastreams_all_old.keys())):
-                    #print('Datastreams changed', len(datastreams_all.keys()))
+                    print('Datastreams changed', len(datastreams_all.keys()))
                     datastreams_all_old.update(datastreams_all)
                     devices_changed.append(device.name)
-                    FLAG_device_status_changed = True
+                    # Send an information about the change, that will trigger an pyqt signal in the main thread
+                    devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
+                                    'devices_changed': list(set(devices_changed)),
+                                    'devices_removed': devices_removed, 'change': 'datastreams changed','device_changed':device.name}
+                    infoqueue.put_nowait(devinfo_send)
+
                 #
                 # And finally: Distribute the data
                 #
@@ -213,7 +230,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         continue
 
                     for addr in devicesub.subscribed_addresses:
-                        numtag = data['_redvypr']['tag'][hostinfo['uuid']]
+                        #numtag = data['_redvypr']['tag'][hostinfo['uuid']]
                         if (data in addr) and (numtag < 2): # Check if data packet fits with addr and its not recirculated again
                             try:
                                 devicesub.datainqueue.put_nowait(data) # These are the datainqueues of the subscribing devices
@@ -231,16 +248,11 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         pass
                         # logger.debug(funcname + ':guiqueue of :' + devicedict['device'].name + ' full')
 
-        if FLAG_device_status_changed:
-            infoqueue.put_nowait(copy.copy(datastreams_all))
-            devinfo_send = {'type':'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all), 'devices_changed': list(set(devices_changed)),
-             'devices_removed': devices_removed}
-            infoqueue.put_nowait(devinfo_send)
-
-            # Send a command to all devices with the notification that something changed
-            #for devicedict in devices:
-            #    dev = devicedict['device']
-            #    dev.thread_command('deviceinfo_all', {'deviceinfo_all':deviceinfo_all,'devices_changed':list(set(devices_changed)),'devices_removed':devices_removed})
+        #if FLAG_device_status_changed:
+            #infoqueue.put_nowait(copy.copy(datastreams_all))
+            #devinfo_send = {'type':'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all), 'devices_changed': list(set(devices_changed)),
+            # 'devices_removed': devices_removed,''}
+            #infoqueue.put_nowait(devinfo_send)
 
         # Calculate the sleeping time
         tstop = time.time()
