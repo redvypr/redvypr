@@ -138,7 +138,7 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
                     if(k == '__devices__'): # List of devices in the module
                         for devdict in moddict[k]:
                             devicename = devdict['name']
-                            print('devdict',devdict)
+                            #print('devdict',devdict)
                             # remove trailing modules separated by '.'
                             devicename = devicename.split('.')[-1]
                             itm = QtWidgets.QTreeWidgetItem([devicename, ''])

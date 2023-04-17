@@ -29,8 +29,8 @@ config_template['dt_poll']   = {'type':'float','default':0.05}
 config_template['chunksize'] = {'type':'int','default':1000} # The maximum amount of bytes read with one chunk
 config_template['packetdelimiter'] = {'type':'str','default':'\n'} # The maximum amount of bytes read with one chunk
 config_template['redvypr_device'] = {}
-config_template['redvypr_device']['publish']   = True
-config_template['redvypr_device']['subscribe'] = False
+config_template['redvypr_device']['publishes']   = True
+config_template['redvypr_device']['subscribes'] = False
 config_template['redvypr_device']['description'] = description
 
 
