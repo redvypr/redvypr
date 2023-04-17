@@ -359,7 +359,10 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
         process_host_information(redvypr_info, hostuuid, hostinfos, statusqueue, dataqueue)
     else:
         status['status'] = 'notconnected'
-        statusqueue_zmq.put(copy.deepcopy(status))
+        try:
+            statusqueue_zmq.put_nowait(copy.deepcopy(status))
+        except Exception as e:
+            logger.exception(e)
         return
 
     #
@@ -377,7 +380,11 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
     #sub.setsockopt(zmq.SUBSCRIBE, b'') # Subscribe to all
     status['sub'].append(remote_uuid)
     status['status'] = 'connected'
-    statusqueue_zmq.put(copy.deepcopy(status))
+    try:
+        statusqueue_zmq.put_nowait(copy.deepcopy(status))
+    except Exception as e:
+        logger.exception(e)
+
     # Status of iored packet
     print('Sending status of redvypr iored connection')
     comdata = {}
@@ -385,7 +392,10 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
     comdata['devicestatus'] = { 'connected': True }  # This is the status of the iored device
     datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='', devicename=None,
                                             host=None, comdata=comdata)
-    statusqueue.put(datapacket)
+    try:
+        statusqueue.put_nowait(datapacket)
+    except Exception as e:
+        logger.exception(e)
 
 
     while True:
@@ -408,13 +418,16 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
                 substringb = substring.encode('utf-8')
                 sub.setsockopt(zmq.SUBSCRIBE, substringb)
                 status['sub'].append(substring)
-                statusqueue_zmq.put(copy.deepcopy(status))
+                try:
+                    statusqueue_zmq.put_nowait(copy.deepcopy(status))
+                except Exception as e:
+                    logger.exception(e)
                 comdata = {}
                 comdata['deviceaddr']   = substring
                 comdata['devicestatus'] = {'subscribed': True} # This is the status of the iored device, 'zmq_subscriptions': status['sub']}
                 datapacket = data_packets.commandpacket(command='device_status', device_uuid='', thread_uuid='', devicename=None, host=None,comdata=comdata)
                 #dataqueue.put(datapacket)
-                statusqueue.put(datapacket)
+                statusqueue.put_nowait(datapacket)
                 # datastreams_dict is dictionary from the device, changed in a thread, use only atomic operations
                 try:
                     datastreams_dict[substring]
@@ -585,11 +598,20 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
     if config['multicast_listen']:
         try:
             data_multicast_recv = sock_multicast_recv.recv(10240)  # This could be a potential problem as this is finite
-        except:
-            data_multicast_recv = None
+        except Exception as e:
+            if isinstance(e, BlockingIOError):
+                data_multicast_recv = None
+            else:
+                print('-----Exception start-------')
+                data_multicast_recv = None
+                logger.exception(e)
+                print('------Exception end------')
 
         if (data_multicast_recv is not None):
-            print('Got multicast data')
+            print('Got multicast data',len(data_multicast_recv))
+            if len(data_multicast_recv) == 0:
+                logger.critical('Multicast socket error')
+                print('received 0 bytes')
             # print('Got multicast data',data_multicast_recv)
             trecv = time.time()
             #print('Got multicast data',data_multicast_recv)
@@ -1177,11 +1199,17 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             # If not running, create a thread and subscribe to
                             if FLAG_CONNECTED:
                                 logstart.info(funcname + ': thread is alive, stopping it now')
-                                zmq_sub_threads[remote_uuid]['comqueue'].put('stop')
+                                try:
+                                    zmq_sub_threads[remote_uuid]['comqueue'].put_nowait('stop')
+                                except Exception as e:
+                                    logstart.exception(e)
 
                         except Exception as e:
-                            statusqueue.put({'type': 'status', 'status': 'disconnect fail', 'zmq_url_pub': zmq_url_pub,
+                            try:
+                                statusqueue.put_nowait({'type': 'status', 'status': 'disconnect fail', 'zmq_url_pub': zmq_url_pub,
                                              'zmq_url_rep': zmq_url_rep})
+                            except Exception as e:
+                                logstart.exception(e)
                             logstart.exception(e)
 
 
@@ -1197,7 +1225,10 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             logstart.info(
                                 funcname + ': at url {:s}'.format(zmq_url_pub))
                             try: # Lets check if the thread is already running
-                                zmq_sub_threads[remote_uuid]['comqueue'].put('sub ' + substring)
+                                try:
+                                    zmq_sub_threads[remote_uuid]['comqueue'].put('sub ' + substring)
+                                except Exception as e:
+                                    logstart.exception(e)
                                 FLAG_START_SUB_THREAD = False
                             except Exception as e:
                                 zmq_sub_threads[remote_uuid] = {}
@@ -1212,7 +1243,10 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                                     zmq_sub_threads[remote_uuid] = connect_dict
 
                                 # Thread started, lets subscribe now
-                                zmq_sub_threads[remote_uuid]['comqueue'].put('sub ' + substring)
+                                try:
+                                    zmq_sub_threads[remote_uuid]['comqueue'].put_nowait('sub ' + substring)
+                                except Exception as e:
+                                    logstart.exception(e)
 
                         except Exception as e:
                             logstart.error(funcname + ' Could not subscribe because of')
@@ -1230,7 +1264,10 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                 #print('Got status',status)
                 zmq_sub_threads[uuid]['sub'] = status['sub']
                 # Put the subscription status into the statusqueue, this is used for the device to update
-                statusqueue.put({'subscribed':status['sub'],'uuid':uuid})
+                try:
+                    statusqueue.put_nowait({'subscribed':status['sub'],'uuid':uuid})
+                except Exception as e:
+                    logstart.exception(e)
                 #print('Got status threads', zmq_sub_threads)
             except Exception as e:
                 #logstart.exception(e)
