@@ -1057,8 +1057,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                             device_info_all = filter_deviceinfo(data['deviceinfo_all'])
                         except Exception as e:
                             logger.exception(e)
-                        #device_info_all = data['deviceinfo_all']
-                        #device_info['deviceinfo_all'].update(device_info_all)
+
                         device_info['deviceinfo_all'] = device_info_all
 
                         print('Filtering done')
