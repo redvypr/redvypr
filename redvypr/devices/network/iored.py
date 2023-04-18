@@ -79,7 +79,7 @@ config_template['redvypr_device']['description'] = description
 # Headers for network packets
 info_header = {}
 info_header['info']    = b'redvypr info'
-info_header['infomd5'] = b'redvypr md5info'
+info_header['infoshort'] = b'redvypr shortinfo'
 info_header['getinfo'] = b'redvypr getinfo'
 info_header['stop']    = b'redvypr stop'
 
@@ -112,12 +112,9 @@ def create_info_packet(device_info,url_pub,url_rep):
 
 
     devtmp = yaml.dump(deviceinfo_all).encode('utf-8')
-    deviceinfo_all_md5 = hashlib.md5(devtmp).hexdigest()
     hosttmp = yaml.dump(device_info['hostinfo_opt']).encode('utf-8')
-    hostinfo_opt_md5 = hashlib.md5(hosttmp).hexdigest()
 
-    info_packet = {'host': device_info['hostinfo'], 't': time.time(), 'zmq_pub': url_pub, 'zmq_rep': url_rep,
-                   'deviceinfo_all_md5': deviceinfo_all_md5, 'hostinfo_opt_md5': hostinfo_opt_md5,
+    info_packet = {'host': device_info['hostinfo'], 't': time.time(), 'zmq_pub': url_pub, 'zmq_rep': url_rep,'tinfo':device_info['tinfo'],
                    'deviceinfo_all': deviceinfo_all, 'hostinfo_opt': device_info['hostinfo_opt'],'devicename':device_info['devicename']}
 
     #print('Device info',device_info)
@@ -130,7 +127,7 @@ def create_info_packet(device_info,url_pub,url_rep):
 
     return datab
 
-def create_info_packet_md5(device_info,url_pub,url_rep):
+def create_info_packet_short(device_info,url_pub,url_rep):
     """
     Creates a binary information packet that is used by iored to send the information about the redvypr instance.
     Args:
@@ -142,11 +139,9 @@ def create_info_packet_md5(device_info,url_pub,url_rep):
          binary string containing the information
     """
     devtmp = yaml.dump(device_info['deviceinfo_all']).encode('utf-8')
-    deviceinfo_all_md5 = hashlib.md5(devtmp).hexdigest()
     hosttmp = yaml.dump(device_info['hostinfo_opt']).encode('utf-8')
-    hostinfo_opt_md5 = hashlib.md5(hosttmp).hexdigest()
     info_packet = {'host': device_info['hostinfo'], 't': time.time(), 'zmq_pub': url_pub, 'zmq_rep': url_rep,
-                   'deviceinfo_all_md5':deviceinfo_all_md5 , 'hostinfo_opt_md5':hostinfo_opt_md5,'devicename':device_info['devicename']}
+                   'tinfo':device_info['tinfo'],'devicename':device_info['devicename']}
 
     #print('Device info',device_info)
     ## print('--------------')
@@ -154,7 +149,7 @@ def create_info_packet_md5(device_info,url_pub,url_rep):
     ## print('--------------')
     hostinfoy = yaml.dump(info_packet, explicit_end=True, explicit_start=True)
     hostinfoy = hostinfoy.encode('utf-8')
-    datab = info_header['infomd5'] + hostinfoy
+    datab = info_header['infoshort'] + hostinfoy
 
     return datab
 
@@ -227,8 +222,8 @@ def analyse_info_packet(datab):
         except Exception as e:
             redvypr_info = ['info',None]
 
-    elif datab.startswith(info_header['infomd5']): # info md5 packet
-        headerlen = len(info_header['infomd5'])
+    elif datab.startswith(info_header['infoshort']): # info md5 packet
+        headerlen = len(info_header['infoshort'])
         try:
             data = datab.decode('utf-8')
             redvypr_info = yaml.safe_load(data[headerlen:])
@@ -670,9 +665,11 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
                     if(redvypr_info['host']['uuid'] not in hostinfos.keys()):
                         #print('Host is not registered yet in hostinfos, querying')
                         FLAG_QUERY = True
-                    elif hostinfos[redvypr_info['host']['uuid']]['deviceinfo_all_md5'] != redvypr_info['deviceinfo_all_md5']:
-                        #print('md5 sums changed, querying again')
-                        FLAG_QUERY = True
+                    else:
+                        print('Host known')
+                        if hostinfos[uuid]['tinfo'] == redvypr_info['tinfo']:
+                            print('same creation time of info package, doing nothing')
+                            FLAG_QUERY = False
 
 
                     if FLAG_QUERY:
@@ -711,7 +708,7 @@ def do_multicast(config,sock_multicast_recv,sock_multicast_send,MULTICASTADDRESS
                 # print('deviceinfo all', device_info['deviceinfo_all'])
                 # print('----- Deviceinfo all done -----')
                 # Create an information packet
-                datab = create_info_packet_md5(device_info, url, url_rep)
+                datab = create_info_packet_short(device_info, url, url_rep)
                 print('Sending multicast info with length {:d}'.format(len(datab)), time.time())
                 sock_multicast_send.sendto(datab, (MULTICASTADDRESS, MULTICASTPORT))
 
@@ -1059,6 +1056,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                     # Whenever the hostinfo_opt has been changed, publish it to all other devices
                     elif (command == 'hostinfo_opt'):
                         logstart.info(funcname + ': Got hostinfo update')
+                        device_info['tinfo'] = time.time() # update the time information
                         device_info['hostinfo_opt'].update(data['hostinfo_opt'])
                         if True:
                             # Send the information over zmq_pub socket to all connected devices
@@ -1082,6 +1080,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
                         except Exception as e:
                             logger.exception(e)
 
+                        device_info['tinfo'] = time.time()  # update the time information
                         device_info['deviceinfo_all'] = device_info_all
 
                         print('Filtering done')
@@ -1641,6 +1640,7 @@ class Device(redvypr_device):
         """
         funcname = __name__ + '.start()'
         # Deviceinfoall is used to announce all devices
+        device_info['tinfo'] = time.time()  # update the time information
         device_info['deviceinfo_all']   = self.redvypr.get_deviceinfo(publishes=True)
         device_info['devicename']       = self.name
         device_info['devicemodulename'] = self.devicemodulename

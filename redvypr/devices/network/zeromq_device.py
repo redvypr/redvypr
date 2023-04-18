@@ -51,8 +51,8 @@ config_template['direction'] = {'type': 'str', 'options': ['receive', 'publish']
 config_template['data']      = {'type': 'str','default':'data'}
 config_template['serialize'] = {'type': 'str', 'options': ['yaml', 'str'],'default':'yaml'}
 config_template['redvypr_device'] = {}
-config_template['redvypr_device']['publish']   = True
-config_template['redvypr_device']['subscribe'] = False
+config_template['redvypr_device']['publishes']   = True
+config_template['redvypr_device']['subscribes'] = False
 config_template['redvypr_device']['description'] = description
 
 

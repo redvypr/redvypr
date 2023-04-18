@@ -19,8 +19,8 @@ description = 'Displays data as text received from connected devices'
 config_template = {}
 config_template['bufsize']        = {'type': 'int','default':10000,'description':'The buffer size of the text display (the MaximumBlockCount of the QPlainTextEdit)'}
 config_template['redvypr_device'] = {}
-config_template['redvypr_device']['publish']     = False
-config_template['redvypr_device']['subscribe']   = True
+config_template['redvypr_device']['publishes']     = False
+config_template['redvypr_device']['subscribes']   = True
 config_template['redvypr_device']['description'] = description
 
 

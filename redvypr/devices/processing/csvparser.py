@@ -22,8 +22,8 @@ config_template = {}
 config_template['name']              = 'csvparser'
 config_template['datakey']           = {'type':'str','default':'data'}
 config_template['redvypr_device']    = {}
-config_template['redvypr_device']['publish']   = True
-config_template['redvypr_device']['subscribe'] = True
+config_template['redvypr_device']['publishes']   = True
+config_template['redvypr_device']['subscribes'] = True
 config_template['redvypr_device']['description'] = description
 
 

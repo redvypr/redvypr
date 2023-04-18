@@ -49,8 +49,8 @@ config_template = {}
 config_template['template_name'] = "sensor_raw2unit"
 config_template['sensors'] = {'type': 'list', 'modify': True, 'default':[config_template_hf], 'options': [config_template_hf, config_template_poly]}
 config_template['redvypr_device'] = {}
-config_template['redvypr_device']['publish']     = True
-config_template['redvypr_device']['subscribe']   = True
+config_template['redvypr_device']['publishes']     = True
+config_template['redvypr_device']['subscribes']   = True
 config_template['redvypr_device']['description'] = description
 
 

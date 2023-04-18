@@ -162,6 +162,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
             plots.append(p2)
             self.config['plots'].remove(p)
 
+        if len(plots) == 0:
+            graph = self.displaywidget.create_plot_widget('graph')
+            self.displaywidget.addPlot(graph, 0, 0, 6, 6)
+
         for p in reversed(plots):
             print('p',p)
             x      = p['location']['x']
@@ -170,6 +174,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             height = p['location']['height']
             plotconfig = p
             w = self.displaywidget.create_plot_widget(p['type'],config = plotconfig)
+            print('Adding plot',w)
             self.displaywidget.addPlot(w, y, x, height, width)
 
 
@@ -352,8 +357,6 @@ class PlotGridWidget(QtWidgets.QWidget):
         #testg = redvypr_graph_widget()
         #self.addPlot(testg, 0, 3, 5, 3)
 
-        graph = self.create_plot_widget('graph')
-        self.addPlot(graph, 0, 0, 6, 6)
 
         self.rubberband = QtWidgets.QRubberBand(
             QtWidgets.QRubberBand.Rectangle, self)

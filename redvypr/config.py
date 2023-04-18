@@ -650,7 +650,7 @@ def apply_config_to_configDict(userconfig,configdict):
 
             else: # Apply the value
                 ctemp = c
-
+                # TODO, here a type check would be useful
                 try:  # Check if the user data is existing as well
                     ctemp[index].data = cuser[index]
                 except Exception as e: # Is this needed anymore? Everything should be configdata ...
