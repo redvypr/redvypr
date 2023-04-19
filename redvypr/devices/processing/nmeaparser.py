@@ -88,6 +88,8 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
 
 
 class initDeviceWidget(QtWidgets.QWidget):
+    connect = QtCore.pyqtSignal(
+        redvypr_device)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QVBoxLayout(self)
@@ -151,6 +153,7 @@ class initDeviceWidget(QtWidgets.QWidget):
     def subscribe_clicked(self):
         funcname = __name__ + '.subscribe_clicked()'
         print(funcname)
+        self.connect.emit(self.device)
 
     def update_buttons(self):
         """ Updating all buttons depending on the thread status (if its alive, graying out things)
