@@ -8,7 +8,7 @@ API
    :recursive:
 
 
-   redvypr
+   redvypr.config
 
    
    
