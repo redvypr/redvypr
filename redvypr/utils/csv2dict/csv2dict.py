@@ -1,6 +1,7 @@
 import yaml
 import re
 import pkg_resources
+import os
 import logging
 import sys
 import copy
@@ -13,22 +14,19 @@ from . import NMEA_functions
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 logger = logging.getLogger('csv2dict')
 
-# Get the version
-version_file = pkg_resources.resource_filename('csv2dict','VERSION')
-
-with open(version_file) as version_f:
-   version = version_f.read().strip()
-
+version='0.0.1'
 
 csvdefinitions = []
 
-NMEA_file = pkg_resources.resource_filename('csv2dict', 'NMEA.yaml')
-NMEA_f = open(NMEA_file)
-NMEA_definitions = yaml.load(NMEA_f, Loader=yaml.SafeLoader)
-NMEA_f.close()
-
-csvdefinitions.extend(NMEA_definitions)
-
+NMEA_file = pkg_resources.resource_filename('redvypr', 'utils/csv2dict/NMEA.yaml')
+if(os.path.exists(str(NMEA_file))):
+    NMEA_f = open(NMEA_file)
+    NMEA_definitions = yaml.load(NMEA_f, Loader=yaml.SafeLoader)
+    NMEA_f.close()
+    csvdefinitions.extend(NMEA_definitions)
+else:
+    NMEA_file = None
+    
 
 postprocessmodules = [NMEA_functions] # A list of postprocessmodules
 

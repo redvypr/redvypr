@@ -5,7 +5,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import time
 import numpy as np
 import sys
-import csv2dict
+import redvypr.utils.csv2dict as csv2dict
 import copy
 import redvypr.data_packets as data_packets
 from redvypr.device import redvypr_device

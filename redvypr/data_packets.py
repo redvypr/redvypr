@@ -85,7 +85,7 @@ class redvypr_address():
         """
         FLAG_MODIFIABLE = False
         if addrstr is not None: # Address from addrstr
-            print('addrstr',type(addrstr),type(self))
+            #print('addrstr',type(addrstr),type(self))
             if type(addrstr) == type(self):
                 print('redvypr address')
                 self.address_str = addrstr.address_str

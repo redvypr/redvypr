@@ -13,8 +13,8 @@ Welcome to redvypr's documentation!
    redvypr.rst
    design.rst
    api.rst
-   examples.rst      
-   installation.rst   
+..   examples.rst      
+..   installation.rst   
 
 Indices and tables
 ==================
