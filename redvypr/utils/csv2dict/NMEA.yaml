@@ -1,0 +1,107 @@
+- delimiter: ","
+  fielddescription: []
+  fieldformat:
+  - "str"
+  - "time HHMMSS"
+  - "NMEAlatstr"
+  - "NMEA NS"
+  - "NMEAlonstr"
+  - "NMEA EW"
+  - "str"
+  - "int"
+  - "float"
+  - "float"
+  - "str"
+  - "float"
+  - "str"
+  - "float"
+  - "str"
+  fieldname:
+  - identifier
+  - time
+  - latitude
+  - NS
+  - longitude
+  - EW
+  - gps_qual
+  - nsat
+  - horprec
+  - altitude
+  - altitude_units
+  - geoidsep
+  - geoidsep_units
+  - dgps_age
+  - dpgs_refstation_checksum
+  fieldunit:
+  - UTC
+  identifier: "\\$\\w\\wGGA"
+  identifier_field: 0
+  name: NMEA GGA
+  postprocess: NMEA_position
+  example_str: "\\$GPGGA,113206.82,4142.893603,N,05459.609748,W,5,10,1.0,-0.94,M,-8.89,M,1.0,0000*61"
+- delimiter: ","
+  fielddescription: []
+  fieldformat:
+  - "str"
+  - "time HHMMSS"
+  - "str"
+  - "NMEAlatstr"
+  - "NMEA NS"
+  - "NMEAlonstr"
+  - "NMEA EW"
+  - "float"
+  - "float"
+  - "time ddmmyy"
+  - "float"
+  - "str"
+  fieldname:
+  - identifier
+  - time
+  - status
+  - latitude
+  - NS
+  - longitude
+  - EW
+  - speed_over_ground
+  - track_angle
+  - date
+  - magnetic_variation
+  - checksum
+  fieldunit:
+  - UTC
+  identifier: "\\$\\w\\wRMC"
+  identifier_field: 0
+  name: NMEA RMC
+  postprocess: NMEA_position_date
+  example_str: "\\$GPRMC,173028.500,A,1128.3398,N,07451.2938,W,3.42,104.17,241022,,,A*7B"
+#- identifier: "\\$HF0"
+#  identifier_field: 0
+#  delimiter: ","
+#  fielddescription: []
+#  fieldformat:
+#  - "str"
+#  - "str"
+#  - "int"
+#  - "str"
+#  - "str"
+#  - "float"
+#  - "int"
+#  - "int"
+#  - "int"
+#  - "int"
+#  fieldname:
+#  - identifier
+#  - mac
+#  - serialnumber
+#  - sensortype
+#  - note
+#  - time
+#  - numsample
+#  - T_int_raw
+#  - NTC_raw
+#  - HF_raw
+#  fieldunit:
+#  name: heatflow counts
+#  deviceid: mac
+#  postprocess:
+#  example_str: "\\$HF0,801F12FFFEF9C46C,0,,,1665697823.250717,3860,2858,1075,492"
