@@ -44,7 +44,7 @@ autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","qu
 autodoc_mock_imports.append("QTextCursor")
 autodoc_mock_imports.append("zmq")
 #autodoc_mock_imports.append("redvypr.redvypr")
-#autodoc_mock_imports.append("redvypr.utils")
+autodoc_mock_imports.append("redvypr.utils")
 autodoc_mock_imports.append("redvypr.devices")
 #autodoc_mock_imports.append("redvypr.devices.fileio")
 #autodoc_mock_imports.append("redvypr.devices.db")
