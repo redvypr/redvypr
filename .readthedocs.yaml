@@ -5,3 +5,7 @@ build:
   tools:
     python: "3.11"
 
+# Explicitly set the version of Python and its requirements
+python:
+  install:
+    - requirements: docs/requirements.txt
