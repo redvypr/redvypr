@@ -43,14 +43,14 @@ autosummary_generate = True
 #autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","queue","yaml","PyQt5","pkg_resources","pyqtgraph","numpy","inspect","threading","multiprocessing","socket","argparse","importlib","glob","pathlib","signal","QtWidgets", "QtCore", "QtGui","netCDF4","copy","threading","socket","serial.tools.list_ports","redvypr.version","redvypr.files","pyqtconsole","redvypr.devices"]
 autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","queue","yaml","PyQt5","pkg_resources","pyqtgraph","numpy","inspect","threading","multiprocessing","socket","argparse","importlib","glob","pathlib","signal","QtWidgets", "QtCore", "QtGui","netCDF4","copy","threading","socket","serial.tools.list_ports","redvypr.version","redvypr.files","pyqtconsole","qtawesome"]
 autodoc_mock_imports.append("QTextCursor")
-#autodoc_mock_imports.append("redvypr.devices.fileio")
-#autodoc_mock_imports.append("redvypr.devices.db")
-#autodoc_mock_imports.append("redvypr.devices.develop")
-#autodoc_mock_imports.append("redvypr.devices.plot")
-#autodoc_mock_imports.append("redvypr.devices.processing")
-#autodoc_mock_imports.append("redvypr.devices.interface")
-#autodoc_mock_imports.append("redvypr.devices.network")
-#autodoc_mock_imports.append("redvypr.devices.test")
+autodoc_mock_imports.append("redvypr.devices.fileio")
+autodoc_mock_imports.append("redvypr.devices.db")
+autodoc_mock_imports.append("redvypr.devices.develop")
+autodoc_mock_imports.append("redvypr.devices.plot")
+autodoc_mock_imports.append("redvypr.devices.processing")
+autodoc_mock_imports.append("redvypr.devices.interface")
+autodoc_mock_imports.append("redvypr.devices.network")
+autodoc_mock_imports.append("redvypr.devices.test")
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
