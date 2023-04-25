@@ -18,15 +18,16 @@ version='0.0.1'
 
 csvdefinitions = []
 
-NMEA_file = pkg_resources.resource_filename('redvypr', 'utils/csv2dict/NMEA.yaml')
-if(os.path.exists(str(NMEA_file))):
+try:
+    NMEA_file = pkg_resources.resource_filename('redvypr', 'utils/csv2dict/NMEA.yaml')
+except:
+    NMEA_file = None
+if NMEA_file is not None:
     NMEA_f = open(NMEA_file)
     NMEA_definitions = yaml.load(NMEA_f, Loader=yaml.SafeLoader)
     NMEA_f.close()
     csvdefinitions.extend(NMEA_definitions)
-else:
-    NMEA_file = None
-    
+
 
 postprocessmodules = [NMEA_functions] # A list of postprocessmodules
 
