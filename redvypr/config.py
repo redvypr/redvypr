@@ -42,7 +42,7 @@ import copy
 import collections
 import numbers
 import math
-from redvypr.utils import seq_iter
+from redvypr.configdata import seq_iter
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.config')

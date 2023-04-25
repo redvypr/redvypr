@@ -3,7 +3,7 @@ import logging
 import copy
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.utils')
+logger = logging.getLogger('redvypr.configdata')
 logger.setLevel(logging.DEBUG)
 
 

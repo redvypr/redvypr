@@ -1311,6 +1311,29 @@ class Device(redvypr_device):
         self.statusthread = threading.Thread(target=self.__process_statusdata__, daemon=True)
         self.statusthread.start()
 
+    def start(self, device_info, config, dataqueue, datainqueue, statusqueue):
+        """
+        Custom start function
+        Args:
+            device_info:
+            config:
+            dataqueue:
+            datainqueue:
+            statusqueue:
+
+        Returns:
+
+        """
+        funcname = __name__ + '.start()'
+        # Deviceinfoall is used to announce all devices
+        device_info['tinfo'] = time.time()  # update the time information
+        device_info['deviceinfo_all']   = self.redvypr.get_deviceinfo(publishes=True)
+        device_info['devicename']       = self.name
+        device_info['devicemodulename'] = self.devicemodulename
+        device_info['deviceuuid']       = self.uuid
+        device_info['hostinfo_opt']     = copy.deepcopy(self.redvypr.hostinfo_opt)
+        start(device_info,copy.deepcopy(config), dataqueue, datainqueue, statusqueue)
+
     def __process_statusdata__(self):
         """
         Reads the statusqueue and processes the data, the data comes from the numoerous threads that receive data as
@@ -1394,7 +1417,7 @@ class Device(redvypr_device):
                             if 'deviceinfo_all' in data['info'].keys():
                                 deviceinfo_all = data['info']['deviceinfo_all']
 
-
+                    # a new deviceinfo_all
                     if deviceinfo_all is not None:
                         all_devices_tmp = []
                         print('Updating device statistics')
@@ -1452,7 +1475,7 @@ class Device(redvypr_device):
                                 if FLAG_ALREADY_REMOVED == False:
                                     self.statistics['device_redvypr'][dold]['_redvypr']['tlastseen'] = -time.time()
 
-
+                        # TODO, check if existing subscriptions match with the new deviceinfo_all, if yes send a subscribe command ...
                         #if 'devices_removed' in data['info'].keys():
                         #    for device_removed in data['info']['devices_removed']:
                         #        print('Removing device',device_removed)
@@ -1622,31 +1645,6 @@ class Device(redvypr_device):
                 return None
         else:
             return self.__remote_info__
-
-
-
-    def start(self, device_info, config, dataqueue, datainqueue, statusqueue):
-        """
-        Custom start function
-        Args:
-            device_info:
-            config:
-            dataqueue:
-            datainqueue:
-            statusqueue:
-
-        Returns:
-
-        """
-        funcname = __name__ + '.start()'
-        # Deviceinfoall is used to announce all devices
-        device_info['tinfo'] = time.time()  # update the time information
-        device_info['deviceinfo_all']   = self.redvypr.get_deviceinfo(publishes=True)
-        device_info['devicename']       = self.name
-        device_info['devicemodulename'] = self.devicemodulename
-        device_info['deviceuuid']       = self.uuid
-        device_info['hostinfo_opt']     = copy.deepcopy(self.redvypr.hostinfo_opt)
-        start(device_info,copy.deepcopy(config), dataqueue, datainqueue, statusqueue)
 
     def compare_zmq_subscription(self, subscription):
         """

@@ -4,10 +4,10 @@ import logging
 import sys
 import yaml
 from PyQt5 import QtWidgets, QtCore, QtGui
-from redvypr.utils import configtemplate_to_dict
+from redvypr.configdata import configtemplate_to_dict
 from redvypr.device import redvypr_device
 from redvypr.widgets.datastream_widget import datastreamWidget
-import redvypr.utils
+import redvypr.configdata
 import redvypr.files as files
 
 _logo_file = files.logo_file
@@ -113,7 +113,7 @@ class configWidget(QtWidgets.QWidget):
                 conftemplate = configtemplate_to_dict(template=self.template)
                 if (config is not None):
                     logger.debug(funcname + 'Applying config to template')
-                    self.config = redvypr.utils.apply_config_to_dict(config, conftemplate)
+                    self.config = redvypr.configdata.apply_config_to_dict(config, conftemplate)
                     print('New config:',config)
                     self.reload_config()
 
@@ -720,7 +720,7 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
         self.resizeColumnToContents(0)
 
     def seq_iter(self,obj):
-        return redvypr.utils.seq_iter(obj)
+        return redvypr.configdata.seq_iter(obj)
 
     def create_item(self, index, data, parent):
         """

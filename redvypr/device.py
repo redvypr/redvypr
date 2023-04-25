@@ -343,7 +343,7 @@ class redvypr_device(QtCore.QObject):
         """
         funcname = self.__class__.__name__ + '.subscribe_address()'
         self.logger.debug(funcname + ' subscribing to device {:s}'.format(str(address)))
-        print('Address',address,type(address))
+        #print('Address',address,type(address))
         if type(address) == str or (type(address) == redvyprConfig.configString):
             raddr = redvypr_address(str(address))
         else:

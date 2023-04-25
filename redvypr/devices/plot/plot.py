@@ -18,7 +18,7 @@ from redvypr.devices.plot.plot_widgets import redvypr_numdisp_widget, redvypr_gr
 import redvypr.files as files
 from redvypr.device import redvypr_device
 from redvypr.data_packets import do_data_statistics, create_data_statistic_dict, check_for_command, parse_addrstr
-from redvypr.utils import configdata, getdata
+from redvypr.configdata import configdata, getdata
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file

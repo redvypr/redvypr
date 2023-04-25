@@ -1,4 +1,5 @@
-    -0.5.3  - redvypr.rem_device() added and cleaned redvyprWidget.closeTab()
+    -0.5.3  - changed utils.py into configdata.py, added folder utils and utils/csv2dict
+            - redvypr.rem_device() added and cleaned redvyprWidget.closeTab()
             - distribute_data has now connection to main thread via redvypr.redvyprqueue to check for updates done by main thread
             - maximum device threshold added: config_template['redvypr_device']['max_devices']  = 1
             - Added regular check if the distribute_data thread is still running, if not print a warning.

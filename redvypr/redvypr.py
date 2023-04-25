@@ -543,7 +543,7 @@ class redvypr(QtCore.QObject):
                 c = redvyprconfig.dict_to_configDict(config['hostinfo_opt'])
                 self.hostinfo_opt.update(c)
             except Exception as e:
-                logger.exception(e)
+                #logger.exception(e)
                 pass
 
 
@@ -824,7 +824,9 @@ class redvypr(QtCore.QObject):
                 except:
                     subscribe_addresses = []
 
+                print('Subscribing to ...')
                 for a in subscribe_addresses:
+                    print('subscribing',a)
                     device.subscribe_address(a)
 
                 logger.debug(funcname + ': Emitting device signal')
@@ -1121,15 +1123,16 @@ class redvyprWidget(QtWidgets.QWidget):
         # A widget containing all connections
         self.create_devicewidgetsummary()  # Creates self.devicesummarywidget
         self.devicetabs.addTab(self.devicesummarywidget, 'Devices')  # Add device summary widget
-        # A logwidget
-        self.logwidget = QtWidgets.QPlainTextEdit()
-        self.logwidget.setReadOnly(True)
-        self.logwidget_handler = QPlainTextEditLogger()
-        self.logwidget_handler.add_widget(self.logwidget)
-        self.devicetabs.addTab(self.logwidget, 'Log')  # Add a logwidget
-        # Connect the logwidget to the logging
-        # logger.addHandler(self.logwidget_handler)
-        # self.logwidget.append("Hallo!")
+        if False:
+            # A logwidget
+            self.logwidget = QtWidgets.QPlainTextEdit()
+            self.logwidget.setReadOnly(True)
+            self.logwidget_handler = QPlainTextEditLogger()
+            self.logwidget_handler.add_widget(self.logwidget)
+            self.devicetabs.addTab(self.logwidget, 'Log')  # Add a logwidget
+            # Connect the logwidget to the logging
+            # logger.addHandler(self.logwidget_handler)
+            # self.logwidget.append("Hallo!")
 
         # A timer to gather all the data from the devices
         self.devicereadtimer = QtCore.QTimer()
@@ -1966,11 +1969,11 @@ def redvypr_main():
                     print('Option',option)
                     if(option == 's'):
                         deviceconfig['autostart'] = True
-                    elif option == 'mp' or option == 'multiprocess':
+                    elif (option == 'mp' or option == 'multiprocess') and (':' not in option):
                         deviceconfig['mp'] = 'multiprocess'
-                    elif option == 'th' or option == 'thread':
+                    elif (option == 'th' or option == 'thread') and (':' not in option):
                         deviceconfig['mp'] = 'thread'
-                    elif(':' in option):
+                    elif (':' in option):
                         key = option.split(':')[0]
                         data = option.split(':')[1]
                         try:
@@ -1983,6 +1986,17 @@ def redvypr_main():
 
                         if(key == 'name'):
                             deviceconfig[key] = data
+                        elif (key == 'loglevel') or (key == 'll'):
+                            try:
+                                loglevel_tmp = data
+                                loglevel_device = getattr(logging, loglevel_tmp.upper())
+                            except Exception as e:
+                                print(e)
+                                loglevel_tmp = 'INFO'
+                                loglevel_device = getattr(logging, loglevel_tmp.upper())
+
+                            print('Setting device {:s} to loglevel {:s}'.format(devicemodulename,loglevel_tmp))
+                            deviceconfig['loglevel'] = loglevel_device
                         elif (key == 'subscribe'):
                             print('Subscribe',data)
                             deviceconfig['subscriptions'].append(data)

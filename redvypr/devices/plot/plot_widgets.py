@@ -15,7 +15,7 @@ from redvypr.data_packets import addr_in_data, get_keys_from_data, parse_addrstr
 #from redvypr.gui import redvypr_devicelist_widget
 import redvypr.gui
 import redvypr.files as files
-from redvypr.utils import configtemplate_to_dict, configdata, getdata
+from redvypr.configdata import configtemplate_to_dict, configdata, getdata
 #from redvypr.device import redvypr_device
 #from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
 from copy import deepcopy as dc
