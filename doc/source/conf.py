@@ -42,6 +42,7 @@ autosummary_generate = True
 
 autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","queue","yaml","PyQt5","pkg_resources","pyqtgraph","numpy","inspect","threading","multiprocessing","socket","argparse","importlib","glob","pathlib","signal","QtWidgets", "QtCore", "QtGui","netCDF4","copy","threading","socket","serial.tools.list_ports","redvypr.version","redvypr.files","pyqtconsole","qtawesome"]
 autodoc_mock_imports.append("QTextCursor")
+autodoc_mock_imports.append("zmq")
 #autodoc_mock_imports.append("redvypr.redvypr")
 #autodoc_mock_imports.append("redvypr.utils")
 #autodoc_mock_imports.append("redvypr.devices")
