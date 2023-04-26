@@ -79,6 +79,7 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
         self.mp_group = QtWidgets.QButtonGroup()
         self.mp_group.addButton(self.mp_thread)
         self.mp_group.addButton(self.mp_multi)
+        self.mp_thread.setChecked(True)
 
         self.layout = QtWidgets.QFormLayout(self)
         self.layout.addRow(self.devicetree)

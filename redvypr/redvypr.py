@@ -2078,6 +2078,8 @@ def redvypr_main():
 
 
 if __name__ == '__main__':
+    #https://stackoverflow.com/questions/46335842/python-multiprocessing-throws-error-with-argparse-and-pyinstaller
+    multiprocessing.freeze_support()
     redvypr_main()
 
 

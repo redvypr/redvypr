@@ -1,3 +1,5 @@
+    -0.5.4  - added multiprocessing.freeze_support(), to have multiprocessing work with windows and pyinstaller
+            - test_device has sine_rand datakey
     -0.5.3  - changed utils.py into configdata.py, added folder utils and utils/csv2dict
             - redvypr.rem_device() added and cleaned redvyprWidget.closeTab()
             - distribute_data has now connection to main thread via redvypr.redvyprqueue to check for updates done by main thread
