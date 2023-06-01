@@ -353,11 +353,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
         try:
             bstr = "Bytes read: {:d}".format(data['bytes_read'])
             lstr = "Sentences read: {:d}".format(data['sentences_read'])
+            self.bytes_read.setText(bstr)
+            self.lines_read.setText(lstr)
         except Exception as e:
             logger.exception(e)
         try:
-            self.bytes_read.setText(bstr)
-            self.lines_read.setText(lstr)
             self.text.insertPlainText(str(data['data']))
             self.text.insertPlainText('\n')
         except Exception as e:

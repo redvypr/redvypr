@@ -15,7 +15,6 @@ logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 logger = logging.getLogger('csv2dict')
 
 version='0.0.1'
-
 csvdefinitions = []
 
 try:
@@ -64,6 +63,7 @@ class csv2dict():
         """
         funcname = __name__ + '__init__()'
         logger.debug(funcname + ': version: {:s}'.format(version))
+        self.__version__ = version
         self.csvdefinitions = []
         self.templatedictslist = []
         self.templatedictsdict = {}

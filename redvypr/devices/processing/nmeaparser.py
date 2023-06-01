@@ -46,7 +46,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
             if message in NMEA_message['name']:
                 NMEA_definitions_process.append(NMEA_message)
 
-    print('Version {:s}'.format(csv2dict.__version__))
+    print('Version {:s}'.format(csv2dict.version))
     csv = csv2dict.csv2dict()
     csv.add_csvdefinition(csv2dict.NMEA_definitions)
     csv.print_definitions()
@@ -95,7 +95,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout        = QtWidgets.QVBoxLayout(self)
         self.device   = device
 
-        print('Version {:s}'.format(csv2dict.__version__))
+        print('csv2dict Version {:s}'.format(csv2dict.version))
         self.csv = csv2dict.csv2dict()
         # Adding NMEA definitions
         self.csv.add_csvdefinition(copy.deepcopy(csv2dict.NMEA_definitions))
