@@ -342,6 +342,7 @@ def create_data_statistic_dict():
     statdict['datastream_redvypr'] = {}
     statdict['device_redvypr']     = {}
     statdict['host_redvypr']       = {}
+    statdict['packets'] = {} # Packets from subscribed devices
     return statdict
 
 
@@ -372,7 +373,7 @@ def do_data_statistics(data, statdict):
         data:
         statdict:
     """
-    statdict['packets_sent'] += 1
+
     uuid = data['_redvypr']['host']['uuid']
     # Create a unique list of datakeys
     statdict['datakeys'] = list(set(statdict['datakeys'] + list(data.keys())))
@@ -381,6 +382,15 @@ def do_data_statistics(data, statdict):
     # i.e. network devices do not change the name
     # of the transporting dictionary
     devicename_stat = get_devicename_from_data(data,uuid=True)
+    # Update the packets sent
+    statdict['packets_sent'] += 1
+    try:
+        statdict['packets'][devicename_stat]
+    except:
+        statdict['packets'][devicename_stat] = {'received':0,'sent':0}
+
+    statdict['packets'][devicename_stat]['sent'] += 1
+
     try:
         statdict['devicekeys'][devicename_stat]
     except:

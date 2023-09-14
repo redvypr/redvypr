@@ -13,13 +13,64 @@ sent over multicast and displayed in the gui.
 Zeromq pub/sub
 --------------
 
-The data that is published is a multipart packet::
+all communication is within the start() function, that is either executed as a thread or as a process. The iored device
+subscribes to all other devices, meaning that it receives all packets of the redvypr instance.
 
-    [b'test_device_0:redvypr@192.168.236.188::93328248922693-217', b't1675787270.261712', b'_redvypr:\n  device: test_device_0\n  devicemodulename: test_device\n  host:\n    addr: 192.168.236.188\n    hostname: redvypr\n    local: true\n    tstart: 1675787257.351031\n    uuid: 93328248922693-217\n  numpacket: 4\n  t: 1675787257.50375\ndata: Hello World!\nt: 1675787257.50375\n']
+Within the start() function iored opens several zeromq sockets
+ - sock_zmq_pub = zmq_context.socket(zmq.XPUB): The main socket to publish the datastreams
+   Each packet is sent as a multipart packet in yaml format with following the structure::
+   .. code-block::
+       [b'test_device_0:redvypr@192.168.236.188::93328248922693-217',
+       b't1675787270.261712', b'_redvypr:
+       device: test_device_0
+       devicemodulename: test_device
+       host:
+       addr: 192.168.236.188
+       hostname: redvypr
+       local: true
+       tstart: 1675787257.351031
+       uuid: 93328248922693-217
+       numpacket: 4
+       t: 1675787257.50375
+       data: Hello World!
+       t: 1675787257.50375']
 
-The first part is the address of the device "test_device_0:redvypr@192.168.236.188::93328248922693-217", the format is "'<device>:<host>@<addr>::<uuid>'"
-The second part the unix time as a string: "t1675787270.261712"
-The third part the data packet as a yaml string
+
+
+   The first part is the address of the device "test_device_0:redvypr@192.168.236.188::93328248922693-217", the format is "'<device>:<host>@<addr>::<uuid>'"
+
+   The second part the unix time as a string: "t1675787270.261712"
+
+   The third part the data packet as a yaml string
+
+   General information is sent with the uuid only, a remote redvypr instance is connecting by subscribing to the local uuid::
+
+       [b'118902019882015-181', b't1694692792.018030', b'_redvypr:
+         device: redvypr.devices.network.iored_0
+           host:
+           addr: 10.11.80.202
+           hostname: redvypr
+           local: true
+           tstart: 1694692784.0749292
+           uuid: 118902019882015-181
+           t: 1694692792.0174508
+           _redvypr_command:
+           command: stopped
+           data: null
+           device_uuid: ''
+           thread_uuid: ''
+           ']
+
+
+ - socket_req = zmq_context.socket(zmq.REQ):
+ - sub = zmq_context.socket(zmq.SUB):
+ - sock_zmq_rep = zmq_context.socket(zmq.REP): Socket is created within the thread start_zmq_reply().
+   This thread replies to an remote iored request for information. The remote iored instance is using its socket_req.
+
+The data that is published as a multipart packet::
+
+
+
 
 How subscriptions work:
 
@@ -32,8 +83,8 @@ The device infodata is a dictionary of this structure and is created by create_i
 
 
 """
-
-
+# Data packet published by xpub
+# [b'test_device_0:redvypr@192.168.236.188::93328248922693-217', b't1675787270.261712', b'_redvypr:\n  device: test_device_0\n  devicemodulename: test_device\n  host:\n    addr: 192.168.236.188\n    hostname: redvypr\n    local: true\n    tstart: 1675787257.351031\n    uuid: 93328248922693-217\n  numpacket: 4\n  t: 1675787257.50375\ndata: Hello World!\nt: 1675787257.50375\n']
 import datetime
 import logging
 import queue
@@ -980,7 +1031,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
         try:
             data_pub = sock_zmq_pub.recv_multipart()
             receivers_subscribed.append(data_pub)
-            #print('Received a subscription', data_pub,receivers_subscribed)
+            print('Received a subscription', data_pub,receivers_subscribed)
         except Exception as e:
             #print('e',e)
             pass
@@ -995,6 +1046,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
         while datainqueue.empty() == False:
             try:
                 data = datainqueue.get(block=False)
+                print('Got data',data['_redvypr']['device'])
             except:
                 data = None
 
@@ -1017,7 +1069,8 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
 
                         print('publishing stop packet')
                         stoppacket = data_packets.commandpacket('stopped',host=device_info['hostinfo'],devicename=device_info['devicename'])
-                        zmq_publish_data(sock_zmq_pub, stoppacket, address_style='<uuid>') # Sending only uuid means to everyone who is connected
+                        datapacket = zmq_publish_data(sock_zmq_pub, stoppacket, address_style='<uuid>') # Sending only uuid means to everyone who is connected
+                        print('Sent stop packet',datapacket)
                         print('Done')
                         # Close all sockets
                         for s in sockets:
@@ -1421,6 +1474,7 @@ class Device(redvypr_device):
                     if deviceinfo_all is not None:
                         all_devices_tmp = []
                         print('Updating device statistics')
+                        print('Deviceinfo all',deviceinfo_all)
                         # Loop over the devicenames: i.e. iored_0, the devices have a dictionary with devices again that this
                         # device is hosting, this is at least one, the device itself, but can be more, for example if devices
                         # are forwarded
@@ -1439,6 +1493,7 @@ class Device(redvypr_device):
                                 #    pass
                                 else:
                                     print('Remote device update')
+                                    print('d',d)
                                     datapacket = create_datapacket_from_deviceinfo(d,tlastseen=time.time())
                                     all_devices_tmp.append(data_packets.get_devicename_from_data(d,uuid=True))
                                     print('datapacket',datapacket)

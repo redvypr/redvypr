@@ -147,7 +147,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     if(type(data) is not dict): # If data is not a dictionary, convert it to one
                         data = {'data':data}
 
-                    devicedict['packets_sent'] += 1
+                    #devicedict['packets_sent'] += 1 # Do we still need this???
                     packets_processed += 1
                     data_all.append(data)
                 except Exception as e:
@@ -162,8 +162,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 #
                 # Do statistics
                 try:
-                    if devicedict['statistics']['inspect']:
-                        devicedict['statistics'] = data_packets.do_data_statistics(data, devicedict['statistics'])
+                    devicedict['statistics'] = data_packets.do_data_statistics(data, devicedict['statistics'])
                 except Exception as e:
                     logger.exception(e)
                     logger.debug(funcname + ':Statistics:' + str(e))
@@ -193,7 +192,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                                 logger.warning('Could not update status ' + str(e))
                                 logger.exception(e)
 
-                        # Send an information about the change, that will trigger an pyqt signal in the main thread
+                        # Send an information about the change, that will trigger a pyqt signal in the main thread
                         devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
                                         'devices_changed': list(set(devices_changed)), 'device_changed':device.name,
                                         'devices_removed': devices_removed, 'change': 'device_status command','comdata':comdata}
@@ -215,7 +214,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     #print('Datastreams changed', len(datastreams_all.keys()))
                     datastreams_all_old.update(datastreams_all)
                     devices_changed.append(device.name)
-                    # Send an information about the change, that will trigger an pyqt signal in the main thread
+                    # Send an information about the change, that will trigger a pyqt signal in the main thread
                     devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
                                     'devices_changed': list(set(devices_changed)),
                                     'devices_removed': devices_removed, 'change': 'datastreams changed','device_changed':device.name}
@@ -230,16 +229,24 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         continue
 
                     for addr in devicesub.subscribed_addresses: # Loop over all subscribed redvypr_addresses
-                        # This is the main functionality for sitribution, comparing a datapacket with a
+                        # This is the main functionality for distribution, comparing a datapacket with a
                         # redvypr_address using "in"
                         if (data in addr) and (numtag < 2): # Check if data packet fits with addr and if its not recirculated again
                             try:
+                                #print('data to be sent',data)
                                 devicesub.datainqueue.put_nowait(data) # These are the datainqueues of the subscribing devices
-                                devicedict['packets_received'] += 1
-                                devicedict['statistics']['device_redvypr'][devicename_stat]['packets_received'] += 1
+                                devicedict_sub['statistics']['packets_received'] += 1
+                                #print(devicedict_sub['statistics']['packets_received'])
+                                try:
+                                    devicedict_sub['statistics']['packets'][devicename_stat]
+                                except:
+                                    devicedict_sub['statistics']['packets'][devicename_stat] = {'received':0,'sent':0}
+                                devicedict_sub['statistics']['packets'][devicename_stat]['received'] += 1
+                                #print('Sent data to',devicename_stat,devicedict_sub['packets_received'])
                                 break
                             except Exception as e:
-                                logger.debug(funcname + ':dataout of :' + devicedict['device'].name + ' full: ' + str(e))
+                                logger.exception(e)
+                                logger.debug(funcname + ':dataout of :' + devicedict_sub['device'].name + ' full: ' + str(e))
 
                 # The gui of the device
                 for guiqueue in devicedict['guiqueue']:  # Put data into the guiqueue, this queue does always exist
@@ -1911,6 +1918,7 @@ Opens an "about" widget showing basic information.
 #
 def redvypr_main():
     redvypr_help = 'redvypr'
+    config_help_verbose = 'Verbosity, if argument is called at least once loglevel=DEBUG, otherwise loglevel=INFO'
     config_help = 'Using a yaml config file'
     config_help_nogui = 'start redvypr without a gui'
     config_help_path = 'add path to search for redvypr modules'
@@ -1918,7 +1926,7 @@ def redvypr_main():
     config_help_add = 'add device, can be called multiple times, options/configuration by commas separated, -a test_device,[s],[mp/th],name:test_1,delay_s:0.4'
     config_optional = 'optional information about the redvypr instance, multiple calls possible or separated by ",". Given as a key:data pair: --hostinfo location:lab --hostinfo lat:10.2,lon:30.4. The data is tried to be converted to an int, if that is not working as a float, if that is neither working at is passed as string'
     parser = argparse.ArgumentParser()
-    parser.add_argument('--verbose', '-v', action='count')
+    parser.add_argument('--verbose', '-v', action='count', help=config_help_verbose)
     parser.add_argument('--config', '-c', help=config_help)
     parser.add_argument('--nogui', '-ng', help=config_help_nogui, action='store_true')
     parser.add_argument('--add_path', '-p', help=config_help_path)
