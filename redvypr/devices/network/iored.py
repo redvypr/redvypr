@@ -1046,7 +1046,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
         while datainqueue.empty() == False:
             try:
                 data = datainqueue.get(block=False)
-                print('Got data',data['_redvypr']['device'])
+                #print('Got data',data['_redvypr']['device'])
             except:
                 data = None
 
@@ -1397,43 +1397,43 @@ class Device(redvypr_device):
         funcname = __name__ + '.__process_statusdata__():'
         FLAG_SEND_DEVICE_STATUS = False
         while True:
-            print('Hallo')
+            #print('Hallo')
             try:
                 data = self.statusqueue.get()
-                print('Got status data',data)
+                self.logger.debug(funcname + 'Got status data')
                 try:
                     deviceinfo_all = None
-                    print('Check for command')
+                    self.logger.debug( funcname + 'Check for command')
                     [com,comdata] = check_for_command(data,add_data=True)
-                    print('Check for command',com)
+                    self.logger.debug(funcname + 'Check for command {:s}'.format(str(com)))
                     if(com == 'stopped'):
-                        print('Device stopped command')
+                        self.logger.debug(funcname + 'Device stopped command')
                         uuidstop = data['_redvypr']['host']['uuid']
                         self.__mark_host_as_removed__(uuidstop)
                     elif(com == 'device_status'):
-                        print('Device status')
+                        self.logger.debug(funcname + 'Device status')
                         try:
                             devaddr = comdata['data']['deviceaddr']
                             devstatus = comdata['data']['devicestatus']
                         except Exception as e:
-                            logger.exception(e)
+                            self.logger.exception(e)
                             devaddr = None
                             devstatus = None
 
-                        print('devaddr/devstatus',devaddr,devstatus)
+                        self.logger.debug(funcname + 'devaddr {:s}. devstatus {:s}'.format(str(devaddr),str(devstatus)))
                         if (devaddr is not None):
                             try:  # Update the device
                                 self.statistics['device_redvypr'][devaddr]['_redvypr'].update(devstatus)
                             except Exception as e:
-                                logger.warning('Could not update status ' + str(e))
-                                logger.exception(e)
+                                self.logger.warning(funcname + 'Could not update status ' + str(e))
+                                self.logger.exception(e)
 
                         FLAG_SEND_DEVICE_STATUS = True
                     elif com == 'deviceinfo_all':
                         deviceinfo_all = data['deviceinfo_all'] # deviceinfo_all will be updated further down
 
                     elif com == 'hostinfo_opt':
-                        print('Got hostinfo opt command')
+                        self.logger.debug(funcname + 'Got hostinfo opt command')
                         uuid = data['_redvypr']['host']['uuid']
                         hostinfo_opt   = data['hostinfo_opt']
                         # Update the remote_info
@@ -1454,7 +1454,7 @@ class Device(redvypr_device):
                             self.__own_info_packet__ = data['redvypr_info']
 
                         elif (data['type'] == 'getinfo') or (data['type'] == 'info'):
-                            print('remote host information')
+                            self.logger.debug(funcname + 'remote host information')
                             raddr = data_packets.redvypr_address(local_hostinfo=data['info']['host'])
                             try:
                                 self.__remote_info__[raddr.uuid]
@@ -1473,8 +1473,8 @@ class Device(redvypr_device):
                     # a new deviceinfo_all
                     if deviceinfo_all is not None:
                         all_devices_tmp = []
-                        print('Updating device statistics')
-                        print('Deviceinfo all',deviceinfo_all)
+                        self.logger.debug(funcname + 'Updating device statistics')
+                        self.logger.debug(funcname + 'Deviceinfo all: {:s}'.format(str(deviceinfo_all)))
                         # Loop over the devicenames: i.e. iored_0, the devices have a dictionary with devices again that this
                         # device is hosting, this is at least one, the device itself, but can be more, for example if devices
                         # are forwarded
@@ -1492,34 +1492,34 @@ class Device(redvypr_device):
                                 #    # print('ioreddevice, doing nothing')
                                 #    pass
                                 else:
-                                    print('Remote device update')
-                                    print('d',d)
+                                    self.logger.debug(funcname + 'Remote device update')
+                                    #print('d',d)
                                     datapacket = create_datapacket_from_deviceinfo(d,tlastseen=time.time())
                                     all_devices_tmp.append(data_packets.get_devicename_from_data(d,uuid=True))
-                                    print('datapacket',datapacket)
+                                    #print('datapacket',datapacket)
                                     # update the statistics, this is typically done in redvypr.distribute_data(),
                                     # after a packet was sent, here it is done within the device itself
                                     data_packets.do_data_statistics(datapacket, self.statistics)
 
 
-                        print('Remove devices')
+                        self.logger.debug(funcname + 'Remove devices')
                         all_devices = self.statistics['device_redvypr'].keys()
-                        print('len all_devices',len(all_devices))
-                        print('len all_devices tmp', len(all_devices_tmp))
+                        #print('len all_devices',len(all_devices))
+                        #print('len all_devices tmp', len(all_devices_tmp))
                         # Compare if devices need to be removed
                         devices_rem = []
                         for dold in all_devices:
                             #print('dold',dold)
                             daddr = data_packets.redvypr_address(dold)
-                            print('daddr',daddr)
+                            #print('daddr',daddr)
                             if daddr.uuid == self.host_uuid:  # This should not happen but anyways
-                                print('Own device, doing nothing')
+                                self.logger.debug(funcname + 'Own device, doing nothing')
                                 pass
                             elif(dold in all_devices_tmp): # Device is still existing
-                                print('Device found, will not change')
+                                self.logger.debug(funcname + 'Device found, will not change')
                                 pass
                             else:
-                                print('Will remove device',dold)
+                                self.logger.debug(funcname + 'Will remove device {:s}'.format(str(dold)))
                                 devices_rem.append(dold)
                                 # Check if the lastseen is already negative, if yes dont change, if no update
                                 try:
@@ -1618,15 +1618,15 @@ class Device(redvypr_device):
         #                'devices_changed': list(set(devices_changed)),
         #                'devices_removed': devices_removed}
         deviceinfo_changed = copy.deepcopy(self.redvypr.__device_status_changed_data__)
-        print('Deviceinfo changed',deviceinfo_changed)
-        print('Deviceinfo changed done')
+        #print('Deviceinfo changed',deviceinfo_changed)
+        #print('Deviceinfo changed done')
         # Check if the device change came from myself, if yes, dont bother, otherwise trigger an device change
         if 'device_status' in deviceinfo_changed['change'] and deviceinfo_changed['device_changed'] == self.name:
-            print('The change was triggered by me, doing nothing')
+            self.logger.debug(funcname + 'The change was triggered by me, doing nothing')
         elif self.name in deviceinfo_changed['devices_changed']:
-            print('Change came from me, will not send an deviceinfo_command to the thread')
+            self.logger.debug(funcname + 'Change came from me, will not send an deviceinfo_command to the thread')
         else:
-            print('Sending deviceinfo command')
+            self.logger.debug(funcname + 'Sending deviceinfo command')
             self.send_deviceinfo_command()
 
     def send_hostinfo_command(self):

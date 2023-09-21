@@ -1288,7 +1288,18 @@ class redvyprWidget(QtWidgets.QWidget):
                     yaml.dump(data_save, fyaml)
 
     def open_add_device_widget(self):
+        """
+        Opens a widget to let the user add redvypr devices
+        """
+        app = QtWidgets.QApplication.instance()
+        screen = app.primaryScreen()
+        #print('Screen: %s' % screen.name())
+        size = screen.size()
+        #print('Size: %d x %d' % (size.width(), size.height()))
+        rect = screen.availableGeometry()
+        #print('Available: %d x %d' % (rect.width(), rect.height()))
         self.add_device_widget = gui.redvyprDeviceWidget(redvypr=self.redvypr)
+        self.add_device_widget.resize(int(rect.width()*0.75),int(rect.height()*0.75))
         self.add_device_widget.show()
 
     def _add_device_gui(self, devicelist):
@@ -1381,6 +1392,8 @@ class redvyprWidget(QtWidgets.QWidget):
                 tabname = 'Display data'
 
             # Check if the widget has included itself, otherwise add the displaytab
+            # This is usefull to have the displaywidget add several tabs
+            # by using the tabwidget argument of the initdict
             if (devicetab.indexOf(devicedisplaywidget_called)) < 0:
                 devicetab.addTab(devicedisplaywidget_called, tabname)
                 # Append the widget to the processing queue

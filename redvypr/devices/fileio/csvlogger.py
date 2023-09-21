@@ -10,15 +10,15 @@ import copy
 import gzip
 import os
 from redvypr.device import redvypr_device
-from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
+import redvypr.data_packets as data_packets
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('rawdatalogger')
+logger = logging.getLogger('csvlogger')
 logger.setLevel(logging.DEBUG)
 
-description = "Saves the raw redvypr packets into a file"
+description = "Saves subscribed datastreams in a comma separated value (csv) file"
 config_template = {}
-config_template['name']              = 'rawdatalogger'
+config_template['name']              = 'csvlogger'
 config_template['dt_sync']           = {'type':'int','default':5,'description':'Time after which an open file is synced on disk'}
 config_template['dt_newfile']        = {'type':'int','default':60,'description':'Time after which a new file is created'}
 config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','options':['seconds','hours','days']}
@@ -26,12 +26,12 @@ config_template['dt_update']         = {'type':'int','default':5,'description':'
 config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
 config_template['size_newfile_unit'] = {'type':'str','default':'bytes','options':['bytes','kB','MB']}
 config_template['datafolder']        = {'type':'str','default':'./','description':'Folder the data is saved to'}
-config_template['fileextension']     = {'type':'str','default':'redvypr_yaml','description':'File extension, if empty not used'}
+config_template['fileextension']     = {'type':'str','default':'csv','description':'File extension, if empty not used'}
 config_template['fileprefix']        = {'type':'str','default':'redvypr','description':'If empty not used'}
-config_template['filepostfix']       = {'type':'str','default':'raw','description':'If empty not used'}
+config_template['filepostfix']       = {'type':'str','default':'csvlogger','description':'If empty not used'}
 config_template['filedateformat']    = {'type':'str','default':'%Y-%m-%d_%H%M%S','description':'Dateformat used in the filename, must be understood by datetime.strftime'}
 config_template['filecountformat']   = {'type':'str','default':'04','description':'Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}'}
-config_template['filegzipformat']    = {'type':'str','default':'gz','description':'If empty, no compression done'}
+config_template['filegzipformat']    = {'type':'str','default':'','description':'If empty, no compression done'}
 config_template['redvypr_device']    = {}
 config_template['redvypr_device']['publishes']   = False
 config_template['redvypr_device']['subscribes']  = True
@@ -94,6 +94,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
     print('Config',config)
+    csvcolumns = [] # List of datastreams in each column
     count = 0
     if True:
         try:
@@ -152,7 +153,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     data_stat['_deviceinfo']['packets_written'] = packets_written
     dataqueue.put(data_stat)
     count += 1
-    statistics = create_data_statistic_dict()
+    statistics = data_packets.create_data_statistic_dict()
     if(f == None):
        return None
     
@@ -179,7 +180,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 dataqueue.put(data_stat)
                 [f,filename] = create_logfile(config,count)
                 count += 1
-                statistics = create_data_statistic_dict()
+                statistics = data_packets.create_data_statistic_dict()
                 tfile = tcheck   
                 bytes_written         = 0
                 packets_written       = 0
@@ -198,7 +199,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             try:
                 data = datainqueue.get(block=False)
                 if (data is not None):
-                    command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
+                    command = data_packets.check_for_command(data, thread_uuid=device_info['thread_uuid'])
                     #logger.debug('Got a command: {:s}'.format(str(data)))
                     if (command is not None):
                         if(command == 'stop'):
@@ -206,13 +207,30 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             FLAG_RUN = False
                             return
 
-                statistics = do_data_statistics(data,statistics)
-                yamlstr = yaml.dump(data,explicit_end=True,explicit_start=True)
+                statistics = data_packets.do_data_statistics(data,statistics)
+                datastreams = data_packets.get_datastreams_from_data(data)
+                if datastreams is not None:
+                    #datastreams = datastreams.sort()
+                    print('Datastreams',datastreams)
+                    # Check if the datastreams are in the list already
+                    for dstr in datastreams:
+                        streamdata = data_packets.get_data(dstr,data)
+                        if dstr not in csvcolumns:
+                            print('Adding datastream to file',dstr)
+                            print('dstr',str(dstr))
+                            csvcolumns.append(dstr)
+
+                print('csvcolumns',csvcolumns)
+
+
+
+                #yamlstr = yaml.dump(data,explicit_end=True,explicit_start=True)
+                #f.write(yamlstr)
+                yamlstr = ''
                 bytes_written         += len(yamlstr)
                 packets_written       += 1
                 bytes_written_total   += len(yamlstr)
                 packets_written_total += 1
-                f.write(yamlstr)
                 if((time.time() - tflush) > config['dt_sync']):
                     f.flush()
                     os.fsync(f.fileno())

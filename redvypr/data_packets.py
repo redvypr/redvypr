@@ -268,11 +268,11 @@ class redvypr_address():
         """
         if (type(data) == dict):
             datapacket = data
-            deviceflag = (self.devicename == datapacket['_redvypr']['device']) or self.deviceexpand
-            hostflag = (self.hostname == datapacket['_redvypr']['host']['hostname']) or self.hostexpand
-            addrflag = (self.addr == datapacket['_redvypr']['host']['addr']) or self.addrexpand
-            uuidflag = (self.uuid == datapacket['_redvypr']['host']['uuid']) or self.uuidexpand
-            localflag = datapacket['_redvypr']['host']['local'] and self.local
+            deviceflag = compare_address_substrings(self.devicename,datapacket['_redvypr']['device'])
+            hostflag   = compare_address_substrings(self.hostname, datapacket['_redvypr']['host']['hostname'])
+            addrflag   = compare_address_substrings(self.addr, datapacket['_redvypr']['host']['addr'])
+            uuidflag   = compare_address_substrings(self.uuid, datapacket['_redvypr']['host']['uuid'])
+            localflag  = datapacket['_redvypr']['host']['local'] and self.local
             #print('deviceflag', deviceflag)
             #print('hostflag', deviceflag)
             #print('addrflag', addrflag)
@@ -280,9 +280,15 @@ class redvypr_address():
             #print('localflag', localflag)
             #print('uuidexpand', self.uuid,self.uuidexpand)
             if(len(self.datakey) > 0):
-                if (self.datakey in datapacket.keys() or self.datakey == '*'):
+                if self.datakey == '*': # always valid
                     pass
-                else:  # If the key does not fit, return False immidiately
+                elif len(self.datakey)>1 and self.datakey.startswith('§') and self.datakey.endswith('§'): # Regular expression
+                    for k in datapacket.keys(): # Test every key
+                        if compare_address_substrings(self.datakey,k):
+                            break
+                elif (self.datakey in datapacket.keys()):
+                    pass
+                else:  # If the key does not fit, return False immediately
                     return False
 
             if (deviceflag and localflag and uuidflag):
@@ -297,12 +303,12 @@ class redvypr_address():
         elif(type(data) == redvypr_address):
             addr = data
             print('Redvypr address')
-            datakeyflag = (self.datakey == addr.datakey) or self.datakeyexpand or addr.datakeyexpand
-            deviceflag = (self.devicename == addr.devicename) or self.deviceexpand or addr.deviceexpand
-            hostflag = (self.hostname == addr.hostname) or self.hostexpand or addr.hostexpand
-            addrflag = (self.addr == addr.addr) or self.addrexpand or addr.addrexpand
-            uuidflag = (self.uuid == addr.uuid) or self.uuidexpand or addr.uuidexpand
-            localflag = self.local and addr.local
+            datakeyflag = compare_address_substrings(self.datakey, addr.datakey)
+            deviceflag  = compare_address_substrings(self.devicename, addr.devicename)
+            hostflag    = compare_address_substrings(self.hostname, addr.hostname)
+            addrflag    = compare_address_substrings(self.addr, addr.addr)
+            uuidflag    = compare_address_substrings(self.uuid, addr.uuid)
+            localflag   = self.local and addr.local
 
             # print('Datakeyflag',datakeyflag)
             # print('Deviceflag',deviceflag)
@@ -323,6 +329,23 @@ class redvypr_address():
             return contains
         else:
             raise ValueError('Unknown data type')
+
+def compare_address_substrings(str1,str2):
+    if str1 == '*' or str2 == '*':
+        return True
+    elif str1.startswith('§') and str1.endswith('§') and len(str1)>1:
+        if str2.startswith('§') and str2.endswith('§'):
+            return str1 == str2
+        else:
+            flag_re = re.fullmatch(str1[1:-1],str2) is not None
+            return flag_re
+    elif str2.startswith('§') and str2.endswith('§') and len(str2)>1:
+        flag_re = re.fullmatch(str2[1:-1], str1) is not None
+        return flag_re
+    else:
+        flag_cmp = str1 == str2
+        return flag_cmp
+
 
 def create_data_statistic_dict():
     statdict = {}
@@ -611,8 +634,7 @@ def parse_addrstr(address_string,local_hostinfo=None):
     s = devstring_full.split('/',1)
     datakey   = s[0]
     devstring = s[1]
-    if(datakey == '*'):
-        datakeyexpanded = True
+
 
     s         = devstring.split('::',1)
     devstring = s[0]
@@ -623,6 +645,7 @@ def parse_addrstr(address_string,local_hostinfo=None):
     hostname = rest.split('@')[0]
     addr     = rest.split('@')[1]
 
+    datakeyexpanded = (datakey == '*')
     hostexpanded   = (hostname == '*')
     addrexpanded   = (addr == '*')
     deviceexpanded = (devicename == '*')
@@ -652,6 +675,62 @@ def parse_addrstr(address_string,local_hostinfo=None):
     parsed_data['uuidexpand']   = uuidexpanded            
     parsed_data['local']        = local
     
+    return parsed_data
+
+
+def parse_addrstr_legacy(address_string, local_hostinfo=None):
+    """
+     Parses as redvypr address string and returns a dictionary with the parsed result
+
+        address_string: the devicestring
+        local_hostinfo: if the devicestring is local, the local hostinfo is used to fill in hostname, ip and UUID etc.
+    """
+    devstring_full = expand_address_string(address_string)
+    # Check first if we have a datastream
+    datakeyexpanded = False
+    s = devstring_full.split('/', 1)
+    datakey = s[0]
+    devstring = s[1]
+
+    s = devstring.split('::', 1)
+    devstring = s[0]
+    uuid = s[1]
+    s = devstring.split(':', 1)
+    devicename = s[0]
+    rest = s[1]
+    hostname = rest.split('@')[0]
+    addr = rest.split('@')[1]
+
+    datakeyexpanded = (datakey == '*')
+    hostexpanded = (hostname == '*')
+    addrexpanded = (addr == '*')
+    deviceexpanded = (devicename == '*')
+    uuidexpanded = (uuid == '*')
+    local = uuid == 'local'
+    if (local and (local_hostinfo is not None)):
+        hostname = local_hostinfo['hostname']
+        addr = local_hostinfo['addr']
+        uuid = local_hostinfo['uuid']
+        uuidexpanded = False
+        addrexpanded = False
+        deviceexpanded = False
+
+    # Fill a dictionary
+    parsed_data = {}
+    parsed_data['address_string'] = address_string
+    parsed_data['address_string_expanded'] = devstring_full
+    parsed_data['hostname'] = hostname
+    parsed_data['addr'] = addr
+    parsed_data['devicename'] = devicename
+    parsed_data['uuid'] = uuid
+    parsed_data['datakey'] = datakey
+    parsed_data['hostexpand'] = hostexpanded
+    parsed_data['datakeyexpand'] = datakeyexpanded
+    parsed_data['addrexpand'] = addrexpanded
+    parsed_data['deviceexpand'] = deviceexpanded
+    parsed_data['uuidexpand'] = uuidexpanded
+    parsed_data['local'] = local
+
     return parsed_data
 
 
