@@ -608,7 +608,9 @@ class redvypr_device(QtCore.QObject):
                         return self.thread
 
                     except Exception as e:
-                        self.logger.warning(funcname + 'Could not start thread, reason: {:s}'.format(str(e)))
+                        self.logger.warning(funcname + 'Could not start thread, reason:')
+                        self.logger.exception(e)
+
                         return None
 
     def __str__(self):
@@ -651,7 +653,9 @@ class redvypr_device(QtCore.QObject):
         return addr_list
 
     def get_datastreams(self,local=None):
-
+        """
+        Returns all datastreams this device is providing
+        """
         devaddrs = self.get_deviceaddresses(local)
         datastreams = []
         for devaddr in devaddrs:
@@ -688,6 +692,24 @@ class redvypr_device(QtCore.QObject):
         devs = self.redvypr.get_data_receiving_devices(self)
         return devs
 
+    def get_subscribed_datastreams(self):
+        """
+        Returns all datastreams of the subscribed devices
+
+        """
+        funcname = __name__ + '.get_subscribed_datastreams()'
+        datastreams = []
+        devs = self.redvypr.get_devices()
+        for subaddr in self.subscribed_addresses:
+            for dev in reversed(devs):
+                datastreams_dev = dev.get_datastreams()
+                for d in datastreams_dev:
+                    daddr = redvypr_address(d)
+                    if (subaddr in daddr) and (dev is not self):
+                        datastreams.append(d)
+
+        return datastreams
+
     def get_subscribed_devices(self):
         """
         Returns all redvypr.devices this device is subscribed to.
@@ -696,6 +718,7 @@ class redvypr_device(QtCore.QObject):
 
         """
         funcname = __name__ + '.get_subscribed_devices()'
+        self.logger.debug(funcname)
         devs = self.redvypr.get_devices()
         devs_subscribed = []
         for subaddr in self.subscribed_addresses:
@@ -709,7 +732,7 @@ class redvypr_device(QtCore.QObject):
     def get_subscribed_deviceaddresses(self):
         """
         List of redvypr devices addresses this device has subscribed. This is different from self.subcribed_addresses as it
-        returns the existing devices, in self.subscribed_addresses also regular expressions can exist.
+        returns the existing devices that provide data to this evice, in self.subscribed_addresses also regular expressions can exist.
 
         Returns: List of redvypr addresses
 

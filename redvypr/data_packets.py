@@ -87,7 +87,6 @@ class redvypr_address():
         if addrstr is not None: # Address from addrstr
             #print('addrstr',type(addrstr),type(self))
             if type(addrstr) == type(self):
-                print('redvypr address')
                 self.address_str = addrstr.address_str
             else:
                 self.address_str = addrstr
@@ -302,7 +301,6 @@ class redvypr_address():
 
         elif(type(data) == redvypr_address):
             addr = data
-            print('Redvypr address')
             datakeyflag = compare_address_substrings(self.datakey, addr.datakey)
             deviceflag  = compare_address_substrings(self.devicename, addr.devicename)
             hostflag    = compare_address_substrings(self.hostname, addr.hostname)

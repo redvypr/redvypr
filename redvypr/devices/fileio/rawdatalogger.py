@@ -621,13 +621,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def update(self,data):
         funcname = __name__ + '.update()'
-        print('data',data)
+        #print('data',data)
         try:
             filename_table = self.filetable.item(0,0).text()
         except:
             filename_table = ''
 
-        print('Filename table',filename_table,data['_deviceinfo']['filename'])
+        #print('Filename table',filename_table,data['_deviceinfo']['filename'])
         try:
             tclose = datetime.datetime.fromtimestamp(data['_deviceinfo']['closed']).strftime(
                 '%d-%m-%Y %H:%M:%S')

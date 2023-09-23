@@ -1,3 +1,4 @@
+import ast
 import copy
 import os
 import time
@@ -19,6 +20,7 @@ import pathlib
 import signal
 import uuid
 import random
+import re
 from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
 import platform
@@ -1923,6 +1925,29 @@ Opens an "about" widget showing basic information.
         self.close_application()
 
 
+def split_quotedstring(qstr,separator=','):
+    """ Splits a string
+    """
+    r = re.compile("'.+?'") # Single quoted string
+
+    d = qstr[:]
+    quoted_list = r.findall(d)
+    quoted_dict = {}
+    for fstr in quoted_list:
+        u1 = uuid.uuid4()
+        d = d.replace(fstr,u1.hex,1)
+        quoted_dict[u1.hex] = fstr
+
+
+    ds = d.split(separator)
+    for i,dpart in enumerate(ds):
+        for k in quoted_dict.keys():
+            dpart = dpart.replace(k,quoted_dict[k])
+            ds[i] = dpart
+
+    return ds
+
+
 #
 #
 # Main function called from os
@@ -1984,10 +2009,15 @@ def redvypr_main():
         for d in args.add_device:
             deviceconfig = {'autostart':False,'loglevel':logging_level,'mp':'thread','config':{},'subscriptions':[]}
             if(',' in d):
-                devicemodulename = d.split(',')[0]
-                options = d.split(',')[1:]
-                for option in options:
-                    print('Option',option)
+                #devicemodulename = d.split(',')[0]
+                #options = d.split(',')[1:]
+                # Split the string, using csv reader to have quoted strings conserved
+                options_all = split_quotedstring(d)
+                devicemodulename = options_all[0]
+                options = options_all[1:]
+                #print('options', options,type(options))
+                for indo,option in enumerate(options):
+                    #print('Option',option,len(option),indo)
                     if(option == 's'):
                         deviceconfig['autostart'] = True
                     elif (option == 'mp' or option == 'multiprocess') and (':' not in option):
@@ -1997,14 +2027,28 @@ def redvypr_main():
                     elif (':' in option):
                         key = option.split(':')[0]
                         data = option.split(':')[1]
-                        try:
-                            data = int(data)
-                        except:
+                        print('data before',data,key)
+                        if (data[0] == "'") and (data[-1] == "'"):
                             try:
-                                data = float(data)
-                            except:
-                                pass
+                                data = ast.literal_eval(data[1:-1])
+                            except Exception as e:
+                                print(e)
 
+                        else:
+                            try:
+                                data = int(data)
+                            except:
+                                try:
+                                    data = float(data)
+                                except:
+                                    pass
+
+
+
+                        print('Data', data)
+                        print('type Data', type(data))
+                        print('Data', data)
+                        print('Data', data)
                         if(key == 'name'):
                             deviceconfig[key] = data
                         elif (key == 'loglevel') or (key == 'll'):

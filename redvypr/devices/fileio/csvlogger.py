@@ -32,6 +32,7 @@ config_template['filepostfix']       = {'type':'str','default':'csvlogger','desc
 config_template['filedateformat']    = {'type':'str','default':'%Y-%m-%d_%H%M%S','description':'Dateformat used in the filename, must be understood by datetime.strftime'}
 config_template['filecountformat']   = {'type':'str','default':'04','description':'Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}'}
 config_template['filegzipformat']    = {'type':'str','default':'','description':'If empty, no compression done'}
+config_template['datastreams']       = {'type':'list','default':['§HF.*§','§.*§'],'description':'List of all datastreams to be saved'}
 config_template['redvypr_device']    = {}
 config_template['redvypr_device']['publishes']   = False
 config_template['redvypr_device']['subscribes']  = True
@@ -199,28 +200,37 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             try:
                 data = datainqueue.get(block=False)
                 if (data is not None):
-                    command = data_packets.check_for_command(data, thread_uuid=device_info['thread_uuid'])
+                    [command,comdata] = data_packets.check_for_command(data, thread_uuid=device_info['thread_uuid'],add_data=True)
                     #logger.debug('Got a command: {:s}'.format(str(data)))
                     if (command is not None):
                         if(command == 'stop'):
                             logger.debug('Stop command')
                             FLAG_RUN = False
                             return
+                        elif (command == 'csvcolumns'):
+                            logger.debug(funcname + ' Got csvcolumns command')
+                            print('COMDATA')
+                            #print('Comdata',comdata)
+                            csvcolumns = data['csvcolumns']
+
 
                 statistics = data_packets.do_data_statistics(data,statistics)
                 datastreams = data_packets.get_datastreams_from_data(data)
                 if datastreams is not None:
                     #datastreams = datastreams.sort()
-                    print('Datastreams',datastreams)
+                    #print('Datastreams',datastreams)
                     # Check if the datastreams are in the list already
                     for dstr in datastreams:
                         streamdata = data_packets.get_data(dstr,data)
                         if dstr not in csvcolumns:
-                            print('Adding datastream to file',dstr)
-                            print('dstr',str(dstr))
-                            csvcolumns.append(dstr)
+                            daddr = data_packets.redvypr_address(dstr)
+                            for dconf in config['datastreams']:
+                                print('Hallo',dconf)
+                                #print('Adding datastream to file',dstr)
+                                #print('dstr',str(dstr))
+                                #csvcolumns.append(dstr)
 
-                print('csvcolumns',csvcolumns)
+                #print('csvcolumns',csvcolumns)
 
 
 
@@ -253,6 +263,61 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 #print(data)
 
 
+
+
+
+class Device(redvypr_device):
+    """
+    csvlogger device
+    """
+
+    def __init__(self, **kwargs):
+        """
+        """
+        funcname = __name__ + '__init__()'
+        super(Device, self).__init__(**kwargs)
+
+        self.redvypr.device_status_changed_signal.connect(self.update_datastreamlist)
+        self.csvcolumns = []       # List with the columns, containing dictionaries with the format
+        self.csvcolumns_info = []  # List with the columns, containing dictionaries with the format
+
+        for dconf in self.config['datastreams']:
+            print('Subscribing')
+            self.subscribe_address(dconf)
+            print('Datastream conf',dconf)
+            print('Hallo')
+            print('Hallo')
+            print('Hallo')
+
+    def create_csvcolumns(self):
+        funcname = __name__ + 'create_csvcolumns():'
+        logger.debug(funcname)
+        flag_new_datastream = False
+        datastreams_subscribed = self.get_subscribed_datastreams()
+        print('datastreams subscribed', datastreams_subscribed)
+        for i, d in enumerate(datastreams_subscribed):
+            cdict = {'addr':d}
+            if d in self.csvcolumns:
+                pass
+            else:
+                self.csvcolumns.append(d)
+                self.csvcolumns_info.append(cdict)
+                flag_new_datastream = True
+
+        if flag_new_datastream:
+            logger.debug(funcname + 'New csvcolumns')
+            self.thread_command('csvcolumns', data={'csvcolumns':self.csvcolumns})
+
+
+
+    def update_datastreamlist(self):
+        funcname = __name__ + 'update_datastreamlist()'
+        logger.debug(funcname)
+        self.create_csvcolumns()
+
+
+
+
 #
 #
 # The init widget
@@ -265,13 +330,22 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout        = QtWidgets.QGridLayout(self)
         self.device   = device
         self.redvypr  = device.redvypr
-        self.label    = QtWidgets.QLabel("rawdatalogger setup")
+        self.label    = QtWidgets.QLabel("Csvlogger setup")
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         self.label.setStyleSheet(''' font-size: 24px; font: bold''')
         self.config_widgets= [] # A list of all widgets that can only be used of the device is not started yet
         # Input output widget
         self.inlabel  = QtWidgets.QLabel("Input")
         self.inlist   = QtWidgets.QListWidget()
+        #
+        self.datastreamtable = QtWidgets.QTableWidget()
+        columns = ['Columnnr.','Datakey','Device','Format','Full Address String']
+
+        #self.datastreamtable.setRowCount(len(rows))
+        self.datastreamtable.setColumnCount(len(columns))
+        self.datastreamtable.setHorizontalHeaderLabels(columns)
+        self.datastreamtable.resizeColumnToContents(-1)
+        #
         self.adddeviceinbtn   = QtWidgets.QPushButton("Subscribe")
         self.adddeviceinbtn.clicked.connect(self.con_clicked)
         # The output widgets
@@ -391,16 +465,18 @@ class initDeviceWidget(QtWidgets.QWidget):
             
         layout.addWidget(self.label,0,0,1,2)
         layout.addWidget(self.inlabel,1,0)         
-        layout.addWidget(self.inlist,2,0)      
-        layout.addWidget(self.adddeviceinbtn,3,0)      
+        layout.addWidget(self.inlist,2,0)
+        layout.addWidget(self.datastreamtable, 3, 0,1,4)
         layout.addWidget(self.outlabel,1,1)
-        layout.addWidget(self.outwidget,2,1,3,1)   
-        layout.addWidget(self.startbtn,6,0,2,2)
+        layout.addWidget(self.outwidget,2,2,1,1)
+        layout.addWidget(self.adddeviceinbtn, 4, 0)
+        layout.addWidget(self.startbtn,4,1,1,2)
 
         self.config_to_widgets()
         self.connect_widget_signals()
         # Connect the signals that notify a change of the connection
         self.device.redvypr.device_status_changed_signal.connect(self.update_device_list)
+        self.device.redvypr.device_status_changed_signal.connect(self.update_datastream_table)
         #self.redvypr.devices_connected.connect
         self.device.subscription_changed_signal.connect(self.update_device_list)
 
@@ -466,6 +542,25 @@ class initDeviceWidget(QtWidgets.QWidget):
         if(button == self.adddeviceinbtn):
             self.connect.emit(self.device) # The connect signal is connected with connect_device that will open a subscribe/connect widget
             self.update_device_list()
+
+    def update_datastream_table(self):
+        """
+
+        """
+        # columns = ['Columnnr.', 'Datakey', 'Device', 'Format', 'Full Address String']
+        funcname = self.__class__.__name__ + '.update_datastream_table():'
+        print(funcname)
+        datastreams_subscribed = self.device.get_subscribed_datastreams()
+        print('datastreams subscribed',datastreams_subscribed)
+        self.datastreamtable.clear()
+        self.datastreamtable.setRowCount(len(datastreams_subscribed))
+        for i,d in enumerate(datastreams_subscribed):
+            dadr = data_packets.redvypr_address(d)
+            item = QtWidgets.QTableWidgetItem(d)
+            self.datastreamtable.setItem(i,4,item)
+
+        self.datastreamtable.resizeColumnToContents(0)
+        print('Table Done')
                             
     def update_device_list(self):
         funcname = self.__class__.__name__ + '.update_device_list():'
@@ -639,7 +734,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def update(self,data):
         funcname = __name__ + '.update()'
-        print('data',data)
+        #print('data',data)
         try:
             filename_table = self.filetable.item(0,0).text()
         except:
