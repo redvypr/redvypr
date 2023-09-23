@@ -608,8 +608,8 @@ class redvypr_device(QtCore.QObject):
                         return self.thread
 
                     except Exception as e:
-                        self.logger.warning(funcname + 'Could not start thread, reason:')
                         self.logger.exception(e)
+                        self.logger.warning(funcname + 'Could not start thread.')
 
                         return None
 
