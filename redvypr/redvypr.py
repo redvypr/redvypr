@@ -2027,7 +2027,7 @@ def redvypr_main():
                     elif (':' in option):
                         key = option.split(':')[0]
                         data = option.split(':')[1]
-                        print('data before',data,key)
+                        #print('data before',data,key)
                         if (data[0] == "'") and (data[-1] == "'"):
                             try:
                                 data = ast.literal_eval(data[1:-1])
@@ -2043,12 +2043,10 @@ def redvypr_main():
                                 except:
                                     pass
 
-
-
-                        print('Data', data)
-                        print('type Data', type(data))
-                        print('Data', data)
-                        print('Data', data)
+                        #print('Data', data)
+                        #print('type Data', type(data))
+                        #print('Data', data)
+                        #print('Data', data)
                         if(key == 'name'):
                             deviceconfig[key] = data
                         elif (key == 'loglevel') or (key == 'll'):
