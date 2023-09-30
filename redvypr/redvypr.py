@@ -27,7 +27,7 @@ import platform
 # Import redvypr specific stuff
 import redvypr.data_packets as data_packets
 from redvypr.gui import redvypr_ip_widget, QPlainTextEditLogger, displayDeviceWidget_standard, \
-    deviceinfoWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget
+    deviceinfoWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget, deviceTabWidget
 import redvypr.gui as gui
 from redvypr.config import configuration
 import redvypr.config as redvyprconfig
@@ -1363,12 +1363,24 @@ class redvyprWidget(QtWidgets.QWidget):
         devicewidget.device = device # Add the device to the devicewidget
         devicelayout = QtWidgets.QVBoxLayout(devicewidget)
         devicetab = QtWidgets.QTabWidget()
+        #devicetab = deviceTabWidget()
+        #devicetab.setStyleSheet("QTabBar::tab:disabled {"+\
+        #                "width: 200px;"+\
+        #                "color: transparent;"+\
+        #                "background: transparent;}")
         devicetab.setMovable(True)
         devicelayout.addWidget(devicetab)
 
         # Add init widget
-        devicetab.addTab(deviceinitwidget, 'Init')
-        devicetab.addTab(deviceinfowidget, 'Info')
+        try:
+            tablabelinit = str(device.config['redvypr_device']['gui_tablabel_init'])
+        except:
+            tablabelinit = 'Init'
+        #print('Device hallo hallo',device.config)
+        # device.config['redvypr_device']['gui_tablabel_status']
+
+        devicetab.addTab(deviceinitwidget, tablabelinit)
+
         # Devices can have their specific display objects, if one is
         # found, initialize it, otherwise just the init Widget
         if (devicedisplaywidget is not None):
@@ -1389,15 +1401,18 @@ class redvyprWidget(QtWidgets.QWidget):
             device.devicedisplaywidget = devicedisplaywidget_called
             # Test if the widget has a tabname
             try:
-                tabname = devicedisplaywidget_called.tabname
+                tablabeldisplay = devicedisplaywidget_called.tabname
             except:
-                tabname = 'Display data'
+                 try:
+                     tablabeldisplay = str(device.config['redvypr_device']['gui_tablabel_display'])
+                 except:
+                    tablabeldisplay= 'Display data'
 
             # Check if the widget has included itself, otherwise add the displaytab
             # This is usefull to have the displaywidget add several tabs
             # by using the tabwidget argument of the initdict
             if (devicetab.indexOf(devicedisplaywidget_called)) < 0:
-                devicetab.addTab(devicedisplaywidget_called, tabname)
+                devicetab.addTab(devicedisplaywidget_called, tablabeldisplay)
                 # Append the widget to the processing queue
             self.redvypr.devices[ind_devices]['gui'].append(devicedisplaywidget_called)
             self.redvypr.devices[ind_devices]['displaywidget'] = self.redvypr.devices[ind_devices]['gui'][0]
@@ -1423,6 +1438,14 @@ class redvyprWidget(QtWidgets.QWidget):
 
 
         self.devicetabs.addTab(devicewidget, device.name)
+        ## Add transparent, disabled widget to have the info widget on the right hand side
+        #emptyWidget = QtWidgets.QWidget()
+        #devicetab.addTab(emptyWidget, 'Empty')
+        #iwidget = devicetab.indexOf(emptyWidget)
+        #devicetab.setTabEnabled(iwidget, False)
+        #
+        devicetab.addTab(deviceinfowidget, 'Device status')
+
         self.devicetabs.setCurrentWidget(devicewidget)
 
         # All set, now call finalizing functions

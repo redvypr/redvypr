@@ -21,9 +21,9 @@ config_template = {}
 config_template['name']              = 'csvlogger'
 config_template['dt_sync']           = {'type':'int','default':5,'description':'Time after which an open file is synced on disk'}
 config_template['dt_waitbeforewrite']= {'type':'int','default':10,'description':'Time after which the first write to a file is done, this is useful to collect datastreams'}
-config_template['dt_newfile']        = {'type':'int','default':15,'description':'Time after which a new file is created'}
+config_template['dt_newfile']        = {'type':'int','default':60,'description':'Time after which a new file is created'}
 config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','options':['seconds','hours','days']}
-config_template['dt_update']         = {'type':'int','default':5,'description':'Time after which an upate is sent to the gui'}
+config_template['dt_update']         = {'type':'int','default':2,'description':'Time after which an upate is sent to the gui'}
 config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
 config_template['size_newfile_unit'] = {'type':'str','default':'bytes','options':['bytes','kB','MB']}
 config_template['datafolder']        = {'type':'str','default':'./','description':'Folder the data is saved to'}
@@ -39,6 +39,8 @@ config_template['redvypr_device']    = {}
 config_template['redvypr_device']['publishes']   = False
 config_template['redvypr_device']['subscribes']  = True
 config_template['redvypr_device']['description'] = description
+config_template['redvypr_device']['gui_tablabel_init'] = 'Setup'
+config_template['redvypr_device']['gui_tablabel_display'] = 'File status'
 
 def create_logfile(config,count=0):
     funcname = __name__ + '.create_logfile():'
@@ -98,6 +100,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     logger.debug(funcname + ':Opening writing:')
     print('Config',config)
 
+    header_datatype = []
     header_datakeys = []
     header_device   = []
     header_host     = []
@@ -194,9 +197,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     datastr_all += '\n'
 
                     f.write(datastr_all)
-                    bytes_written += len(l)
+                    bytes_written += len(datastr_all)
                     packets_written += 1
-                    bytes_written_total += len(l)
+                    bytes_written_total += len(datastr_all)
                     packets_written_total += 1
 
                 data_write_to_file = []
@@ -225,7 +228,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             break
                         elif (command == 'csvcolumns'):
                             logger.debug(funcname + ' Got csvcolumns command')
-                            print('COMDATA')
+                            #print('COMDATA')
                             #print('Comdata',comdata)
                             #csvcolumns = data['csvcolumns']
                             continue
@@ -236,7 +239,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 data_write = ['']*len(csvcolumns)
                 FLAG_WRITE_PACKET = False
                 if datastreams is not None:
-                    #datastreams = datastreams.sort()
+                    datastreams.sort() # Sort the datastreams alphabetically
                     #print('Datastreams',datastreams)
                     data_time = data['_redvypr']['t']
                     # Check if the datastreams are in the list already
@@ -256,8 +259,11 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                                     header_device.append(daddr.devicename)
                                     header_host.append(daddr.hostname)
                                     header_ip.append(daddr.addr)
+
                                     header_uuid.append(daddr.uuid)
                                     csvcolumns.append(dstr)
+                                    # The datatype and the format
+                                    header_datatype.append(type(streamdata).__name__)
                                     csvformat.append('{:s}')
                                     # Create format string
                                     csvformats = ''
@@ -266,6 +272,17 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
                                     csvformats = csvformats[:-len(config['separator'])]
                                     data_write.append('') # Add another field
+                                    # Make an update about the change of the csvcolumns
+                                    data_stat = {'_deviceinfo': {}}
+                                    data_stat['_deviceinfo']['csvcolumns'] = csvcolumns
+                                    data_stat['_deviceinfo']['csvformat'] = csvformat
+                                    data_stat['_deviceinfo']['header_datakeys'] = header_datakeys
+                                    data_stat['_deviceinfo']['header_device']   = header_device
+                                    data_stat['_deviceinfo']['header_host']     = header_host
+                                    data_stat['_deviceinfo']['header_ip']       = header_ip
+                                    data_stat['_deviceinfo']['header_datatype'] = header_datatype
+
+                                    dataqueue.put(data_stat)
 
                         #print('csvcolumns',csvcolumns)
                         index = csvcolumns.index(dstr)
@@ -807,57 +824,117 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.filelab= QtWidgets.QLabel("File: ")
         self.byteslab   = QtWidgets.QLabel("Bytes written: ")
         self.packetslab = QtWidgets.QLabel("Packets written: ")
+        # Table that displays all datastreams and the format as it is written to the file
+        self.datastreamtable = QtWidgets.QTableWidget()
+        self.datastreamtable_columns = ['Columnnr.', 'Datakey', 'Device', 'Datatype', 'Format', 'Address']
+
+        # self.datastreamtable.setRowCount(len(rows))
+        self.datastreamtable.setColumnCount(len(self.datastreamtable_columns))
+        self.datastreamtable.setHorizontalHeaderLabels(self.datastreamtable_columns)
+        self.datastreamtable.resizeColumnToContents(-1)
+        self.datastreamtable.verticalHeader().hide()
+
+
         hlayout.addWidget(self.byteslab)
         hlayout.addWidget(self.packetslab)
         layout.addWidget(self.filelab)        
         layout.addLayout(hlayout)
         layout.addWidget(self.filetable)
+        layout.addWidget(self.datastreamtable)
         #self.text.insertPlainText("hallo!")        
 
     def update(self,data):
-        funcname = __name__ + '.update()'
-        #print('data',data)
         try:
-            filename_table = self.filetable.item(0,0).text()
-        except:
-            filename_table = ''
-
-        print('Filename table',filename_table,data['_deviceinfo']['filename'])
-        try:
-            tclose = datetime.datetime.fromtimestamp(data['_deviceinfo']['closed']).strftime(
-                '%d-%m-%Y %H:%M:%S')
-            item = QtWidgets.QTableWidgetItem(tclose)
-            self.filetable.setItem(0, 4, item)
-        except:
-            pass
-
-        if filename_table != data['_deviceinfo']['filename']:
-            self.filetable.insertRow(0)
+            funcname = __name__ + '.update()'
+            #print('data',data)
             try:
-                #headers = ['Filename', 'Date created', 'Bytes written', 'Date closed']
-                item = QtWidgets.QTableWidgetItem(data['_deviceinfo']['filename'])
-                self.filetable.setItem(0,0,item)
-                item = QtWidgets.QTableWidgetItem(data['_deviceinfo']['filename_full'])
-                self.filetable.setItem(0, 5, item)
-                tcreate = datetime.datetime.fromtimestamp(data['_deviceinfo']['created']).strftime('%d-%m-%Y %H:%M:%S')
-                item = QtWidgets.QTableWidgetItem(tcreate)
-                self.filetable.setItem(0, 3, item)
-            except Exception as e:
-                logger.exception(e)
+                filename_table = self.filetable.item(0,0).text()
+            except:
+                filename_table = ''
 
-        item = QtWidgets.QTableWidgetItem(str(data['_deviceinfo']['bytes_written']))
-        self.filetable.setItem(0, 1, item)
-        item = QtWidgets.QTableWidgetItem(str(data['_deviceinfo']['packets_written']))
-        self.filetable.setItem(0, 2, item)
+            try:
+                data['_deviceinfo']['filename']
+                FLAG_FILEUPDATE = True
+            except:
+                FLAG_FILEUPDATE = False
 
+            try:
+                data['_deviceinfo']['csvcolumns']
+                FLAG_CSVCOLUMNUPDATE = True
+            except:
+                FLAG_CSVCOLUMNUPDATE = False
 
+            if FLAG_CSVCOLUMNUPDATE:
+                print('csv column update')
+                csvcolumns = data['_deviceinfo']['csvcolumns']
+                nrows = len(csvcolumns)
+                self.datastreamtable.setRowCount(nrows)
+                iaddr = self.datastreamtable_columns.index('Address')
+                idatatype = self.datastreamtable_columns.index('Datatype')
+                idatakey = self.datastreamtable_columns.index('Datakey')
+                idevice = self.datastreamtable_columns.index('Device')
+                iformat = self.datastreamtable_columns.index('Format')
+                icolnr = self.datastreamtable_columns.index('Columnnr.')
+                #self.datastreamtable_columns = ['Columnnr.', 'Datakey', 'Device', 'Datatype', 'Format', 'Address']
 
-        self.filetable.resizeColumnsToContents()
+                for i,c in enumerate(csvcolumns):
+                    item = QtWidgets.QTableWidgetItem(str(i))
+                    self.datastreamtable.setItem(i, icolnr, item)
 
+                    datatype = data['_deviceinfo']['header_datatype'][i]
+                    item = QtWidgets.QTableWidgetItem(datatype)
+                    self.datastreamtable.setItem(i, idatatype, item)
 
-        self.filelab.setText("File: {:s}".format(data['_deviceinfo']['filename']))
-        self.byteslab.setText("Bytes written: {:d}".format(data['_deviceinfo']['bytes_written']))
-        self.packetslab.setText("Packets written: {:d}".format(data['_deviceinfo']['packets_written']))
+                    datakey = data['_deviceinfo']['header_datakeys'][i]
+                    item = QtWidgets.QTableWidgetItem(datakey)
+                    self.datastreamtable.setItem(i, idatakey, item)
+
+                    dataformat = data['_deviceinfo']['csvformat'][i]
+                    item = QtWidgets.QTableWidgetItem(dataformat)
+                    self.datastreamtable.setItem(i, iformat, item)
+
+                    datadevice = data['_deviceinfo']['header_device'][i]
+                    item = QtWidgets.QTableWidgetItem(datadevice)
+                    self.datastreamtable.setItem(i, idevice, item)
+
+                    item = QtWidgets.QTableWidgetItem(str(c))
+                    self.datastreamtable.setItem(i, iaddr, item)
+
+                self.datastreamtable.resizeColumnsToContents()
+            if FLAG_FILEUPDATE:
+                print('Filename table',filename_table,data['_deviceinfo']['filename'])
+                try:
+                    tclose = datetime.datetime.fromtimestamp(data['_deviceinfo']['closed']).strftime(
+                        '%d-%m-%Y %H:%M:%S')
+                    item = QtWidgets.QTableWidgetItem(tclose)
+                    self.filetable.setItem(0, 4, item)
+                except:
+                    pass
+
+                if filename_table != data['_deviceinfo']['filename']:
+                    self.filetable.insertRow(0)
+                    try:
+                        #headers = ['Filename', 'Date created', 'Bytes written', 'Date closed']
+                        item = QtWidgets.QTableWidgetItem(data['_deviceinfo']['filename'])
+                        self.filetable.setItem(0,0,item)
+                        item = QtWidgets.QTableWidgetItem(data['_deviceinfo']['filename_full'])
+                        self.filetable.setItem(0, 5, item)
+                        tcreate = datetime.datetime.fromtimestamp(data['_deviceinfo']['created']).strftime('%d-%m-%Y %H:%M:%S')
+                        item = QtWidgets.QTableWidgetItem(tcreate)
+                        self.filetable.setItem(0, 3, item)
+                    except Exception as e:
+                        logger.exception(e)
+
+                item = QtWidgets.QTableWidgetItem(str(data['_deviceinfo']['bytes_written']))
+                self.filetable.setItem(0, 1, item)
+                item = QtWidgets.QTableWidgetItem(str(data['_deviceinfo']['packets_written']))
+                self.filetable.setItem(0, 2, item)
+                self.filetable.resizeColumnsToContents()
+                self.filelab.setText("File: {:s}".format(data['_deviceinfo']['filename']))
+                self.byteslab.setText("Bytes written: {:d}".format(data['_deviceinfo']['bytes_written']))
+                self.packetslab.setText("Packets written: {:d}".format(data['_deviceinfo']['packets_written']))
+        except Exception as e:
+            logger.exception(e)
 
 
         #self.text.insertPlainText(str(data['_deviceinfo']['data']))

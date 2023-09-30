@@ -21,6 +21,19 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr')
 logger.setLevel(logging.DEBUG)
 
+
+class deviceTabWidget(QtWidgets.QTabWidget):
+    def resizeEvent(self, event):
+        print("Window has been resized",event)
+        print('fds',event.size().width())
+        wtran = event.size().width()-500
+        print('fsfsd',self.widget(1).width())
+        self.setStyleSheet("QTabBar::tab:disabled {"+\
+                        "width: {:d}px;".format(wtran)+\
+                        "color: transparent;"+\
+                        "background: transparent;}")
+        super(deviceTabWidget, self).resizeEvent(event)
+
 class LineEditFocus(QtWidgets.QLineEdit):
     focusInSignal = QtCore.pyqtSignal()
     focusOutSignal = QtCore.pyqtSignal()
