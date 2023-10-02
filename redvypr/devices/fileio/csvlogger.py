@@ -1,3 +1,14 @@
+"""
+
+Logger that writes csv files (comma separated value)
+
+Configuration
+-------------
+- separator
+- format of the data
+
+"""
+
 import datetime
 import logging
 import queue
@@ -35,12 +46,49 @@ config_template['filecountformat']   = {'type':'str','default':'04','description
 config_template['filegzipformat']    = {'type':'str','default':'','description':'If empty, no compression done'}
 config_template['datastreams']       = {'type':'list','default':['§HF.*§','§.*§'],'description':'List of all datastreams to be saved'}
 config_template['separator']         = {'type':'str','default':',','description':'Separator between the columns'}
+config_template['datatypeformat']    = {'type':'dict','default':{'str':[['*','"{:s}"']],'float':[['t/t2','{:1.2f}'],['*','{:f}']],'int':[['*','{:d}']]},'description':'Format description for the different datatypes and subscriptions'}
 config_template['redvypr_device']    = {}
 config_template['redvypr_device']['publishes']   = False
 config_template['redvypr_device']['subscribes']  = True
 config_template['redvypr_device']['description'] = description
 config_template['redvypr_device']['gui_tablabel_init'] = 'Setup'
 config_template['redvypr_device']['gui_tablabel_display'] = 'File status'
+
+
+def get_strformat(config,data,redvypr_addr,csvformatdict):
+    funcname = 'get_strformat'
+    logger.debug(funcname)
+    typestr = type(data).__name__
+    print('Typestr',typestr)
+    try:
+        csvformatdict[typestr]
+    except:
+        csvformatdict[typestr] = {}
+
+    try:
+        csvformatdict[typestr][redvypr_addr]
+        FLAG_FINDFORMAT = False
+    except:
+        csvformatdict[typestr][redvypr_addr] = ''
+        FLAG_FINDFORMAT = True
+
+    if FLAG_FINDFORMAT:
+        # Get all subscriptions for the datatype and search for the valid one
+        subscriptions = config['datatypeformat'][typestr]
+        for sub in subscriptions:
+            saddr = data_packets.redvypr_address(sub[0])
+            if redvypr_addr in saddr:
+                csvformatdict[typestr][redvypr_addr] = sub[1]
+                break
+
+    print('strformat',csvformatdict)
+    try:
+        formatstr = csvformatdict[typestr][redvypr_addr]
+    except:
+        formatstr = '{:s}'
+    return formatstr
+
+
 
 def create_logfile(config,count=0):
     funcname = __name__ + '.create_logfile():'
@@ -106,10 +154,13 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     header_host     = []
     header_ip       = []
     header_uuid     = []
+    header_address  = []
+
     header_data = [header_datakeys,header_device,header_host,header_ip,header_uuid]
     data_write_to_file = [] # List of columns to be written to file
     csvcolumns = []  # List of datastreams in each column
-    csvformat  = []  # List of datastreams in each column
+    csvformat  = []  # List of datastreams in each column, LEGACY?
+    csvformatdict = {}  # Dictionary of all datastreams and their formats
     count = 0
     if True:
         try:
@@ -185,12 +236,14 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             if len(data_write_to_file) > 0:
                 logger.debug('Writing {:d} lines to file now'.format(len(data_write_to_file)))
                 for l in data_write_to_file:
-                    data_time = l[0]
-                    data_line = l[1]
+                    data_time = l[0] # Time
+                    data_line = l[1] # Data
                     # Convert data to str
                     datastr_all = str(data_time) + config['separator']
                     for index,streamdata in enumerate(data_line):
-                        dtxt = csvformat[index].format(str(streamdata))
+                        redvypr_addr = header_address[index]
+                        strformat = get_strformat(config,streamdata,redvypr_addr,csvformatdict)
+                        dtxt = strformat.format(streamdata)
                         datastr_all += dtxt + config['separator']
 
                     datastr_all = datastr_all[:-len(config['separator'])]
@@ -259,18 +312,13 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                                     header_device.append(daddr.devicename)
                                     header_host.append(daddr.hostname)
                                     header_ip.append(daddr.addr)
-
+                                    header_address.append(dstr)
                                     header_uuid.append(daddr.uuid)
                                     csvcolumns.append(dstr)
                                     # The datatype and the format
                                     header_datatype.append(type(streamdata).__name__)
-                                    csvformat.append('{:s}')
-                                    # Create format string
-                                    csvformats = ''
-                                    for ci in csvformats:
-                                        csvformats += ci + config['separator']
-
-                                    csvformats = csvformats[:-len(config['separator'])]
+                                    strformat = get_strformat(config, streamdata, dstr, csvformatdict)
+                                    csvformat.append(strformat)
                                     data_write.append('') # Add another field
                                     # Make an update about the change of the csvcolumns
                                     data_stat = {'_deviceinfo': {}}
@@ -437,16 +485,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.inlabel  = QtWidgets.QLabel("Input")
         self.inlist   = QtWidgets.QListWidget()
         #
-        self.datastreamtable = QtWidgets.QTableWidget()
-        columns = ['Columnnr.','Datakey','Device','Format','Full Address String']
-
-        #self.datastreamtable.setRowCount(len(rows))
-        self.datastreamtable.setColumnCount(len(columns))
-        self.datastreamtable.setHorizontalHeaderLabels(columns)
-        self.datastreamtable.resizeColumnToContents(-1)
+        self.dataformattable = QtWidgets.QTableWidget()
+        # Populate the table
+        self.populate_dataformattable()
         #
         self.adddeviceinbtn   = QtWidgets.QPushButton("Subscribe")
         self.adddeviceinbtn.clicked.connect(self.con_clicked)
+        self.adddeviceinbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         # The output widgets
         self.outlabel        = QtWidgets.QLabel("Logfile")
         self.outfilename     = QtWidgets.QLineEdit()
@@ -565,7 +610,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.label,0,0,1,2)
         layout.addWidget(self.inlabel,1,0)         
         layout.addWidget(self.inlist,2,0)
-        layout.addWidget(self.datastreamtable, 3, 0,1,4)
+        layout.addWidget(self.dataformattable, 3, 0,1,4)
         layout.addWidget(self.outlabel,1,1)
         layout.addWidget(self.outwidget,2,2,1,1)
         layout.addWidget(self.adddeviceinbtn, 4, 0)
@@ -575,13 +620,49 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.connect_widget_signals()
         # Connect the signals that notify a change of the connection
         self.device.redvypr.device_status_changed_signal.connect(self.update_device_list)
-        self.device.redvypr.device_status_changed_signal.connect(self.update_datastream_table)
         #self.redvypr.devices_connected.connect
         self.device.subscription_changed_signal.connect(self.update_device_list)
 
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
+
+    def populate_dataformattable(self):
+        """
+        Populates the dataformattable with information self.config['datatypeformat']
+        """
+        funcname = self.__class__.__name__ + '.populate_dataformattable():'
+        logger.debug(funcname)
+        print('Hallo',self.device.config['datatypeformat'])
+        columns = []
+        nrows = 0
+        for dtype in self.device.config['datatypeformat'].keys():
+            print('d',dtype)
+            d = self.device.config['datatypeformat'][dtype]
+            columns.append('Subscription for {:s}'.format(dtype))
+            columns.append('Format for {:s}'.format(dtype))
+
+            nrows = max([len(d),nrows])
+
+        print('Columns',columns)
+        ncols = len(columns)
+        self.dataformattable.setColumnCount(ncols)
+        self.dataformattable.setRowCount(nrows)
+        self.dataformattable.setHorizontalHeaderLabels(columns)
+        # And now the data itself
+        for i,dtype in enumerate(self.device.config['datatypeformat'].keys()):
+            print('d',dtype)
+            d = self.device.config['datatypeformat'][dtype]
+            for irow,dsub in enumerate(d):
+                print('dsub',dsub)
+                item0 = QtWidgets.QTableWidgetItem(str(dsub[0]))
+                item1 = QtWidgets.QTableWidgetItem(str(dsub[1]))
+                self.dataformattable.setItem(irow, i * 2,item0)
+                self.dataformattable.setItem(irow, i * 2 + 1, item1)
+
+        self.dataformattable.resizeColumnsToContents()
+
+
 
     def connect_widget_signals(self,connect=True):
         """
