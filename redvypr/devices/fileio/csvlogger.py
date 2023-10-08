@@ -46,7 +46,7 @@ config_template['filecountformat']   = {'type':'str','default':'04','description
 config_template['filegzipformat']    = {'type':'str','default':'','description':'If empty, no compression done'}
 config_template['datastreams']       = {'type':'list','default':['§HF.*§','§.*§'],'description':'List of all datastreams to be saved'}
 config_template['separator']         = {'type':'str','default':',','description':'Separator between the columns'}
-config_template['datatypeformat']    = {'type':'dict','default':{'str':[['*','"{:s}"']],'float':[['t/t2','{:1.2f}'],['*','{:f}']],'int':[['*','{:d}']]},'description':'Format description for the different datatypes and subscriptions'}
+config_template['datatypeformat']    = {'type':'dict','default':{'str':[['*','"{:s}"']],'float':[['t/*','{:06.6f}'],['*','{:f}']],'int':[['*','{:d}']],'bytes':[['*','"{:s}"']]},'description':'Format description for the different datatypes and subscriptions'}
 config_template['redvypr_device']    = {}
 config_template['redvypr_device']['publishes']   = False
 config_template['redvypr_device']['subscribes']  = True
@@ -243,6 +243,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     for index,streamdata in enumerate(data_line):
                         redvypr_addr = header_address[index]
                         strformat = get_strformat(config,streamdata,redvypr_addr,csvformatdict)
+                        if ":s" in strformat: # Convert to str if str format is choosen, this is useful for datatypes different of str (i.e. bytes)
+                            streamdata = str(streamdata)
+                        # TODO, here errors in conversion should be treated more carefully
                         dtxt = strformat.format(streamdata)
                         datastr_all += dtxt + config['separator']
 
@@ -739,9 +742,8 @@ class initDeviceWidget(QtWidgets.QWidget):
             item = QtWidgets.QTableWidgetItem(d)
             self.datastreamtable.setItem(i,4,item)
 
-        self.datastreamtable.resizeColumnToContents(0)
-        print('Table Done')
-                            
+        self.datastreamtable.resizeColumnsToContents()
+
     def update_device_list(self):
         funcname = self.__class__.__name__ + '.update_device_list():'
         logger.debug(funcname)
@@ -912,7 +914,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         # self.datastreamtable.setRowCount(len(rows))
         self.datastreamtable.setColumnCount(len(self.datastreamtable_columns))
         self.datastreamtable.setHorizontalHeaderLabels(self.datastreamtable_columns)
-        self.datastreamtable.resizeColumnToContents(-1)
+        self.datastreamtable.resizeColumnsToContents()
         self.datastreamtable.verticalHeader().hide()
 
 
