@@ -32,7 +32,7 @@ config_template = {}
 config_template['name']              = 'csvlogger'
 config_template['dt_sync']           = {'type':'int','default':5,'description':'Time after which an open file is synced on disk'}
 config_template['dt_waitbeforewrite']= {'type':'int','default':10,'description':'Time after which the first write to a file is done, this is useful to collect datastreams'}
-config_template['dt_newfile']        = {'type':'int','default':60,'description':'Time after which a new file is created'}
+config_template['dt_newfile']        = {'type':'int','default':300,'description':'Time after which a new file is created'}
 config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','options':['seconds','hours','days']}
 config_template['dt_update']         = {'type':'int','default':2,'description':'Time after which an upate is sent to the gui'}
 config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
@@ -57,9 +57,9 @@ config_template['redvypr_device']['gui_tablabel_display'] = 'File status'
 
 def get_strformat(config,data,redvypr_addr,csvformatdict):
     funcname = 'get_strformat'
-    logger.debug(funcname)
+    #logger.debug(funcname)
     typestr = type(data).__name__
-    print('Typestr',typestr)
+    #print('Typestr',typestr)
     try:
         csvformatdict[typestr]
     except:
@@ -81,7 +81,7 @@ def get_strformat(config,data,redvypr_addr,csvformatdict):
                 csvformatdict[typestr][redvypr_addr] = sub[1]
                 break
 
-    print('strformat',csvformatdict)
+    #print('strformat',csvformatdict)
     try:
         formatstr = csvformatdict[typestr][redvypr_addr]
     except:
@@ -234,7 +234,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
         # Write data to file if available
         if (time.time() - tfile) > config['dt_waitbeforewrite']:
             if len(data_write_to_file) > 0:
-                logger.debug('Writing {:d} lines to file now'.format(len(data_write_to_file)))
+                #logger.debug('Writing {:d} lines to file now'.format(len(data_write_to_file)))
                 for l in data_write_to_file:
                     data_time = l[0] # Time
                     data_line = l[1] # Data
@@ -306,11 +306,11 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         else: # If not, check if it should be added
                             daddr = data_packets.redvypr_address(dstr)
                             for dconf in config['datastreams']:
-                                print('Hallo',dconf)
+                                #print('Hallo',dconf)
                                 dconfaddr = data_packets.redvypr_address(dconf)
                                 if dstr in dconfaddr: # Found a match, will add it to the file
                                     FLAG_WRITE_PACKET = True
-                                    print('Adding datastream to file',dstr)
+                                    #print('Adding datastream to file',dstr)
                                     header_datakeys.append(daddr.datakey)
                                     header_device.append(daddr.devicename)
                                     header_host.append(daddr.hostname)
@@ -376,13 +376,13 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         hstr += '"' + h + '"' + config['separator']
 
                     hstr = hstr[:-len(config['separator'])] + '\n'
-                print('Writing hstr', hstr)
+                #print('Writing hstr', hstr)
                 f.seek(0)
                 lines = f.read() # read old content
                 f.seek(0)
-                print('Writing hstr', hstr)
+                #print('Writing hstr', hstr)
                 f.write(hstr)
-                print('Writing original data', lines)
+                #print('Writing original data', lines)
                 f.write(lines)
                 f.close()
                 data_stat = {'_deviceinfo': {}}
@@ -392,19 +392,20 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 data_stat['_deviceinfo']['bytes_written'] = bytes_written
                 data_stat['_deviceinfo']['packets_written'] = packets_written
                 dataqueue.put(data_stat)
-                [f, filename] = create_logfile(config, count)
-                count += 1
-                statistics = data_packets.create_data_statistic_dict()
-                tfile = tcheck
-                bytes_written = 0
-                packets_written = 0
-                data_stat = {'_deviceinfo': {}}
-                data_stat['_deviceinfo']['filename'] = filename
-                data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
-                data_stat['_deviceinfo']['created'] = time.time()
-                data_stat['_deviceinfo']['bytes_written'] = bytes_written
-                data_stat['_deviceinfo']['packets_written'] = packets_written
-                dataqueue.put(data_stat)
+                if FLAG_RUN:
+                    [f, filename] = create_logfile(config, count)
+                    count += 1
+                    statistics = data_packets.create_data_statistic_dict()
+                    tfile = tcheck
+                    bytes_written = 0
+                    packets_written = 0
+                    data_stat = {'_deviceinfo': {}}
+                    data_stat['_deviceinfo']['filename'] = filename
+                    data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
+                    data_stat['_deviceinfo']['created'] = time.time()
+                    data_stat['_deviceinfo']['bytes_written'] = bytes_written
+                    data_stat['_deviceinfo']['packets_written'] = packets_written
+                    dataqueue.put(data_stat)
 
 
 
@@ -435,16 +436,16 @@ class Device(redvypr_device):
         self.csvcolumns_info = []  # List with the columns, containing dictionaries with the format
 
         for dconf in self.config['datastreams']:
-            print('Subscribing')
+            #print('Subscribing')
             self.subscribe_address(dconf)
-            print('Datastream conf',dconf)
+            #print('Datastream conf',dconf)
 
     def create_csvcolumns(self):
         funcname = __name__ + 'create_csvcolumns():'
         logger.debug(funcname)
         flag_new_datastream = False
         datastreams_subscribed = self.get_subscribed_datastreams()
-        print('datastreams subscribed', datastreams_subscribed)
+        #print('datastreams subscribed', datastreams_subscribed)
         for i, d in enumerate(datastreams_subscribed):
             cdict = {'addr':d}
             if d in self.csvcolumns:
@@ -948,7 +949,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 FLAG_CSVCOLUMNUPDATE = False
 
             if FLAG_CSVCOLUMNUPDATE:
-                print('csv column update')
+                #print('csv column update')
                 csvcolumns = data['_deviceinfo']['csvcolumns']
                 nrows = len(csvcolumns)
                 self.datastreamtable.setRowCount(nrows)
@@ -985,7 +986,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
                 self.datastreamtable.resizeColumnsToContents()
             if FLAG_FILEUPDATE:
-                print('Filename table',filename_table,data['_deviceinfo']['filename'])
+                #print('Filename table',filename_table,data['_deviceinfo']['filename'])
                 try:
                     tclose = datetime.datetime.fromtimestamp(data['_deviceinfo']['closed']).strftime(
                         '%d-%m-%Y %H:%M:%S')
