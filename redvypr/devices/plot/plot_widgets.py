@@ -64,6 +64,7 @@ config_template_graph = {}
 config_template_graph['template_name'] = 'Realtime graph'
 config_template_graph['location'] = config_template_grid_loc
 config_template_graph['type'] = {'type': 'str', 'default': 'graph', 'modify': False}
+config_template_graph['interactive'] = {'type': 'str', 'default': 'mouse', 'modify': True,'description':'Interactive modes'}
 config_template_graph['backgroundcolor'] = {'type': 'color', 'default': 'lightgray'}
 config_template_graph['bordercolor'] = {'type': 'color', 'default': 'lightgray'}
 
@@ -86,6 +87,8 @@ class redvypr_graph_widget(QtWidgets.QFrame):
     def __init__(self,config=None):
         funcname = __name__ + '.init()'
         super(QtWidgets.QFrame, self).__init__()
+        self.logger = logging.getLogger('plot_graph_widget')
+        self.logger.setLevel(logging.DEBUG)
         self.description = description_graph
         self.config_template = config_template_graph
 
@@ -94,7 +97,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         else:
             self.config = redvypr.config.configuration(self.config_template,config=config)
 
-        logger.debug('plot widget config {:s}'.format(str(self.config)))
+        self.logger.debug('plot widget config {:s}'.format(str(self.config)))
         backcolor = str(self.config['backgroundcolor'])
         bordercolor = str(self.config['bordercolor'])
         print('backcolor',backcolor)
@@ -135,6 +138,18 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             plot.register(name=name)
             # Add a legend
             legend = plot.addLegend()
+            if config['interactive'].lower() == 'mouse':
+                self.logger.debug('Adding interactive mouse (vertical line)')
+                plot.scene().sigMouseMoved.connect(self.mouseMoved)
+                plot.scene().sigMouseClicked.connect(self.mouseClicked)
+                self.vb = plot.plotItem.vb
+                # Add a vertical line
+                color = QtGui.QColor(200,100,100)
+                linewidth = 2
+                pen = pyqtgraph.mkPen(color, width=linewidth)
+                self.vLineMouse = pyqtgraph.InfiniteLine(angle=90, movable=False, pen=pen)
+                #print('Set pen 3')
+                plot.addItem(self.vLineMouse, ignoreBounds=True)
 
             self.layout.addWidget(plot)
                 
@@ -145,6 +160,23 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 
                 
         #self.plot_dict = plot_dict
+
+    def mouseMoved(self,evt):
+        """Function if mouse has been moved
+        """
+        pos = (evt.x(),evt.y())
+        mousePoint = self.vb.mapSceneToView(evt)
+        #print('mouse moved',mousePoint.x())
+        self.vLineMouse.setPos(mousePoint.x())
+        #for vline in self.vlines:
+        #    vline.setPos(mousePoint.x())
+
+    def mouseClicked(self,evt):
+        #col =
+        #col = pg.mkPen(0.5,width=3)
+        #colsymbol = pg.mkPen(color=QtGui.QColor(150,150,150),width=4)
+        #print('Clicked: ' + str(evt.scenePos()))
+        pass
 
     def apply_config(self):
         """
@@ -202,6 +234,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 pass
             logger.debug(funcname + ':Adding a line to the plot:' + str(line))
             buffersize = line['buffersize'].data
+            tdata = np.zeros(buffersize) * np.NaN
             xdata = np.zeros(buffersize) * np.NaN
             ydata = np.zeros(buffersize) * np.NaN
 
@@ -236,7 +269,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             # Configuration of the line plot
             lineconfig = {'x': x, 'y': y, 'linewidth': linewidth, 'color': color}
             # Add the line and the configuration to the lines list
-            line_dict = {'line': lineplot, 'config': lineconfig, 'xdata': xdata, 'ydata': ydata}
+            line_dict = {'line': lineplot, 'config': lineconfig, 'xdata': xdata, 'ydata': ydata,'tdata':tdata}
             line.line_dict = line_dict
             plot.addItem(lineplot)
             # Configuration
@@ -251,11 +284,13 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 lineconfig = line.line_dict['config']
                 print('Lineconfig',lineconfig)
                 # The data buffer
+                tdata = line.line_dict['tdata']
                 xdata = line.line_dict['xdata']
                 ydata = line.line_dict['ydata']
                 if(len(xdata) != line['buffersize']):
                     buffersize = line['buffersize']
                     print('Updating the buffersize')
+                    line.line_dict['tdata'] = np.zeros(buffersize) * np.NaN
                     line.line_dict['xdata'] = np.zeros(buffersize) * np.NaN
                     line.line_dict['ydata'] = np.zeros(buffersize) * np.NaN
 
@@ -314,8 +349,35 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             line_dict = line.line_dict
             line      = line_dict['line'] # The line to plot
             config    = line_dict['config'] # The line to plot
+            line_dict['tdata'][:] = np.NaN
             line_dict['xdata'][:] = np.NaN
             line_dict['ydata'][:] = np.NaN
+
+    def get_data(self, xlim):
+        """
+        Gets the data of the buffer in the limits of xlim
+        """
+        tdata = []
+        xdata = []
+        ydata = []
+        for iline, line in enumerate(self.config['lines']):
+            line_dict = line.line_dict
+            line = line_dict['line']  # The line to plot
+            config = line_dict['config']  # The line to plot
+            t = line_dict['tdata']  # The line to plot
+            x = line_dict['xdata']  # The line to plot
+            y = line_dict['ydata']  # The line to plot
+            ind = (x > xlim[0]) & (x < xlim[1])
+            tdata_tmp = t[ind]
+            xdata_tmp = x[ind]
+            ydata_tmp = y[ind]
+            tdata.append(tdata_tmp)
+            xdata.append(xdata_tmp)
+            ydata.append(ydata_tmp)
+
+        return {'x':xdata,'y':ydata,'t':tdata}
+
+
         
     def update_plot(self,data):
         """ Updates the plot based on the given data
@@ -342,9 +404,11 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                         pw        = self.config.plot # The plot widget
                         line      = line_dict['line'] # The line to plot
                         config    = line_dict['config'] # The line to plot
+                        tdata     = line_dict['tdata']  # The line to plot
                         xdata     = line_dict['xdata'] # The line to plot
                         ydata     = line_dict['ydata'] # The line to plot
                         # data can be a single float or a list, if its a list add it item by item
+                        newt = data['_redvypr']['t'] # Add also the time of the packet
                         newx = data[xaddr.datakey]
                         newy = data[yaddr.datakey]
                         if(type(newx) is not list):
@@ -357,13 +421,17 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                             return
 
                         for inew in range(len(newx)): # TODO this can be optimized using indices instead of a loop
-                            xdata         = np.roll(xdata,-1)
-                            ydata         = np.roll(ydata,-1)
+                            tdata        = np.roll(tdata, -1)
+                            xdata        = np.roll(xdata,-1)
+                            ydata        = np.roll(ydata,-1)
+                            tdata[-1]    = float(newt)
                             xdata[-1]    = float(newx[inew])
                             ydata[-1]    = float(newy[inew])
+                            line_dict['tdata']  = tdata
                             line_dict['xdata']  = xdata
                             line_dict['ydata']  = ydata
 
+                        # Show the unit in the legend, if wished by the user
                         if('useprops' in self.config.keys()):
                             if(self.config['useprops']):
                                 propkey = '?' + yaddr.datakey

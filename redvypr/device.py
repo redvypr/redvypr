@@ -758,8 +758,12 @@ class redvypr_device(QtCore.QObject):
         funcname = self.__class__.__name__ + '.unsubscribe_all()'
         self.logger.debug(funcname)
         self.subscribed_addresses = []
-                    
-        
+
+    def get_config(self):
+        """
+        Returns a copy of the configuration as a dict, not as a configuration object
+        """
+        return copy.deepcopy(self.config)
     def get_info(self):
         """
         Returns a dictionary with the essential info of the device
