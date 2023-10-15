@@ -20,6 +20,7 @@ import sys
 import threading
 import copy
 from redvypr.device import redvypr_device
+import redvypr.data_packets
 from redvypr.data_packets import check_for_command
 
 
@@ -48,8 +49,17 @@ def start(device_info,config=None,dataqueue=None,datainqueue=None,statusqueue=No
     logger.debug(funcname)
     print('Config',config)
     #data = {'_keyinfo':config['_keyinfo']}
-    #dataqueue.put(data)
+    # dataqueue.put(data)
     # Send a datapacket with information once (that will be put into the statistics)
+    datapacket_info = redvypr.data_packets.add_keyinfo2datapacket(datapacket={}, datakey='sine_rand', unit='random unit', description='sinus with random data', infokey='mac', info='ABCDEF1234')
+    dataqueue.put(datapacket_info)
+
+    datapacket_info_t2 = redvypr.data_packets.datapacket(device='t2')
+    datapacket_info_t2 = redvypr.data_packets.add_keyinfo2datapacket(datapacket=datapacket_info_t2, datakey='count',
+                                                                  unit='just a number',
+                                                                  description='A simple count', infokey='mac',
+                                                                  info='FEABCDEF1234')
+    dataqueue.put(datapacket_info_t2)
     i = 0
     while True:
         try:

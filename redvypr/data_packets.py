@@ -1134,6 +1134,8 @@ def add_keyinfo2datapacket(datapacket,datakey,unit=None,description=None,infokey
     if (infokey is not None):
         datapacket['_keyinfo'][datakey][infokey] = info
 
+    return datapacket
+
 
 
 def commandpacket(command='stop',device_uuid='',thread_uuid='',devicename = None, host = None, comdata=None,devicemodulename=None):
