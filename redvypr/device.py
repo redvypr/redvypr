@@ -768,20 +768,19 @@ class redvypr_device(QtCore.QObject):
         Returns:
 
         """
-        funcname =self.__class__.__name__ + '.get_datakeyinfo()'
+        funcname = self.__class__.__name__ + '.get_datakeyinfo()'
         self.logger.debug(funcname)
         daddr = redvypr.data_packets.redvypr_address(datastream)
         d = copy.deepcopy(self.statistics['device_redvypr'])
         print('Datastream',datastream,daddr)
         datakeyinfo = {}
         for device in d:
-            for datakey in d[device]['_keyinfo'].keys():
-                dstreamaddr_info = redvypr.data_packets.redvypr_address(device,datakey = datakey)
+            for dkey in d[device]['_keyinfo'].keys():
+                dstreamaddr_info = redvypr.data_packets.redvypr_address(device,datakey = dkey)
                 print('dstreamddr_info',dstreamaddr_info)
                 if daddr in dstreamaddr_info:
                     print('Match')
-                    datakeyinfo[dstreamaddr_info.get_str()] = d[device]['_keyinfo'][datakey]
-
+                    datakeyinfo[dstreamaddr_info.get_str()] = d[device]['_keyinfo'][dkey]
 
         return datakeyinfo
     def get_config(self):
