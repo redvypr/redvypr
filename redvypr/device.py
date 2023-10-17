@@ -772,14 +772,14 @@ class redvypr_device(QtCore.QObject):
         self.logger.debug(funcname)
         daddr = redvypr.data_packets.redvypr_address(datastream)
         d = copy.deepcopy(self.statistics['device_redvypr'])
-        print('Datastream',datastream,daddr)
+        #print('Datastream',datastream,daddr)
         datakeyinfo = {}
         for device in d:
             for dkey in d[device]['_keyinfo'].keys():
                 dstreamaddr_info = redvypr.data_packets.redvypr_address(device,datakey = dkey)
-                print('dstreamddr_info',dstreamaddr_info)
+                #print('dstreamddr_info',dstreamaddr_info)
                 if daddr in dstreamaddr_info:
-                    print('Match')
+                    #print('Match')
                     datakeyinfo[dstreamaddr_info.get_str()] = d[device]['_keyinfo'][dkey]
 
         return datakeyinfo
