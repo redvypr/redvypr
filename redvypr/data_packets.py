@@ -14,7 +14,8 @@ logger.setLevel(logging.DEBUG)
 device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {},'packets_received':0,'packets_sent':0}
 
 
-
+regex_symbol_start = '{'
+regex_symbol_end = '}'
 def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulename=''):
     """ Treats a datadict received from a device and adds additional information from redvypr as hostinfo, numpackets etc.
     """
@@ -83,6 +84,7 @@ class redvypr_address():
             uuid:
             redvypr_meta:
         """
+
         FLAG_MODIFIABLE = False
         if addrstr is not None: # Address from addrstr
             #print('addrstr',type(addrstr),type(self))
@@ -278,10 +280,11 @@ class redvypr_address():
             #print('uuidflag', uuidflag)
             #print('localflag', localflag)
             #print('uuidexpand', self.uuid,self.uuidexpand)
+            # Loop over all datakeys in the packet
             if(len(self.datakey) > 0):
                 if self.datakey == '*': # always valid
                     pass
-                elif len(self.datakey)>1 and self.datakey.startswith('§') and self.datakey.endswith('§'): # Regular expression
+                elif len(self.datakey)>1 and self.datakey.startswith(regex_symbol_start) and self.datakey.endswith(regex_symbol_end): # Regular expression
                     for k in datapacket.keys(): # Test every key
                         if compare_address_substrings(self.datakey,k):
                             break
@@ -331,13 +334,13 @@ class redvypr_address():
 def compare_address_substrings(str1,str2):
     if str1 == '*' or str2 == '*':
         return True
-    elif str1.startswith('§') and str1.endswith('§') and len(str1)>1:
-        if str2.startswith('§') and str2.endswith('§'):
+    elif str1.startswith(regex_symbol_start) and str1.endswith(regex_symbol_end) and len(str1)>1:
+        if str2.startswith(regex_symbol_start) and str2.endswith(regex_symbol_end):
             return str1 == str2
         else:
             flag_re = re.fullmatch(str1[1:-1],str2) is not None
             return flag_re
-    elif str2.startswith('§') and str2.endswith('§') and len(str2)>1:
+    elif str2.startswith(regex_symbol_start) and str2.endswith(regex_symbol_end) and len(str2)>1:
         flag_re = re.fullmatch(str2[1:-1], str1) is not None
         return flag_re
     else:

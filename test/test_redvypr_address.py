@@ -26,7 +26,7 @@ for stype in addr.strtypes:
     print('Address:',addr.get_str(stype))
 
 
-addr_ntc_re = redvypr.data_packets.redvypr_address('§(NTC[0-9])|(T)§/§DHF_raw.*§')
+addr_ntc_re = redvypr.data_packets.redvypr_address('{(NTC[0-9])|(T)}/{DHF_raw.*}')
 for dstream in Taddrs:
     print('Datastream',dstream)
     addrtmp = redvypr.data_packets.redvypr_address(dstream)

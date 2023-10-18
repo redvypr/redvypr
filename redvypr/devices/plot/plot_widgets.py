@@ -178,6 +178,12 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         #print('Clicked: ' + str(evt.scenePos()))
         pass
 
+    def set_title(self,title):
+        funcname = __name__ + '.set_title()'
+        logger.debug(funcname)
+        self.config['title'].data = title
+        self.config.plot.setTitle(title)
+
     def apply_config(self):
         """
         Function is called by the initialization or after the configuration was changed
@@ -186,8 +192,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
 
         """
         funcname = __name__ + '.apply_config()'
-        print('Hallo!',funcname)
-        print('config start:', type(self.config))
+        logger.debug(funcname)
         plot = self.config.plot
         # Title
         title = self.config['title'].data
@@ -279,10 +284,10 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         self.config.legend.clear()
         for iline, line in enumerate(self.config['lines']):
             try:
-                print('Line',line,iline)
+                #print('Line',line,iline)
 
                 lineconfig = line.line_dict['config']
-                print('Lineconfig',lineconfig)
+                #print('Lineconfig',lineconfig)
                 # The data buffer
                 tdata = line.line_dict['tdata']
                 xdata = line.line_dict['xdata']
@@ -299,9 +304,9 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 y = line['y'].data
                 yaddr = redvypr.data_packets.redvypr_address(y)
                 if(x == '$t(y)'):
-                    print('Using time variable of y')
+                    logger.debug(funcname + ' Using time variable of y')
                     xtmp = redvypr.data_packets.modify_addrstr(yaddr.address_str,datakey='t')
-                    print('xtmp',xtmp)
+                    #print('xtmp',xtmp)
                     xaddr = redvypr.data_packets.redvypr_address(xtmp)
                 else:
                     xaddr = redvypr.data_packets.redvypr_address(x)
@@ -318,7 +323,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 lineplot = line.line_dict['line']  # The line to plot
                 #print('Set pen 1')
                 color = redvypr.gui.get_QColor(self.config['lines'][iline]['color'])
-                print('COLOR!!!!',color)
+                #print('COLOR!!!!',color)
                 #print('Set pen 2')
                 linewidth = self.config['lines'][iline]['linewidth'].data
                 #print('Set pen 3')
@@ -326,10 +331,10 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 lineplot.setPen(pen)
                 name = self.config['lines'][iline]['name'].data
                 if(name.lower() == '$y'):
-                    print('Replacing with y')
+                    logger.debug(funcname + ' Replacing with y')
                     name = y
 
-                print('Setting the name')
+                logger.debug(funcname + ' Setting the name')
                 self.config.legend.addItem(lineplot,name)
                 #lineplot.setName(name)
             except Exception as e:
@@ -337,8 +342,8 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 logger.debug('Exception config lines: {:s}'.format(str(e)))
 
 
-        print('Apply done')
-        print('config start:', type(self.config))
+        logger.debug(funcname  + ' done.')
+
         
     def clear_buffer(self):
         """ Clears the buffer of all lines
