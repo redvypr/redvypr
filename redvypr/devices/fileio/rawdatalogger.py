@@ -42,12 +42,7 @@ def create_logfile(config,count=0):
     logger.debug(funcname)
 
     filename = ''
-    if len(config['datafolder']) > 0:
-        if os.path.isdir(config['datafolder']):
-            filename += config['datafolder']
-        else:
-            logger.warning(funcname + ' Data folder {:s} does not exist.'.format(filename))
-            return None
+
 
     if(len(config['fileprefix'])>0):
         filename += config['fileprefix']
@@ -71,6 +66,14 @@ def create_logfile(config,count=0):
         FLAG_GZIP = True
     else:
         FLAG_GZIP = False
+
+    if len(config['datafolder']) > 0:
+        if os.path.isdir(config['datafolder']):
+            #filename += config['datafolder']
+            filename = os.path.join(config['datafolder'],filename)
+        else:
+            logger.warning(funcname + ' Data folder {:s} does not exist.'.format(filename))
+            return None
 
     logger.info(funcname + ' Will create a new file: {:s}'.format(filename))
     if FLAG_GZIP:
