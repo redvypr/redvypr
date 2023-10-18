@@ -9,6 +9,7 @@ import yaml
 import copy
 import gzip
 import os
+import queue
 from redvypr.device import redvypr_device
 from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
 
@@ -571,6 +572,14 @@ class initDeviceWidget(QtWidgets.QWidget):
         if button.isChecked():
             logger.debug(funcname + "button pressed")
             self.update_device_config()
+            logger.debug(funcname + " Clearing datainqueue")
+            q = self.device.datainqueue
+            while not q.empty():
+                try:
+                    q.get(block=False)
+                except queue.Empty:
+                    continue
+                q.task_done()
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')

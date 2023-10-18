@@ -9,6 +9,7 @@ import sys
 import yaml
 import copy
 import os
+import gzip
 from redvypr.device import redvypr_device
 from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
 
@@ -21,7 +22,7 @@ description = "Replays a raw redvypr data file"
 description = "Saves the raw redvypr packets into a file"
 config_template = {}
 config_template['name']      = 'rawdatareplay'
-config_template['files']             = {'type':'list','description':'List of files ro replay'} # TODO, list
+config_template['files']             = {'type':'list','description':'List of files ro replay'}
 config_template['loop']              = {'type':'bool','default':True,'description':'Loop over all files if set'}
 config_template['speedup']           = {'type':'float','description':'Speedup factor of the data'}
 config_template['redvypr_device']    = {}
@@ -47,8 +48,80 @@ def get_packets(filestream=None):
         return packets
     else:
         return None
-        
-    
+
+
+class packetreader():
+    def __init__(self,filename=None, npackets = 10, chunksize=1024,statusqueue=None):
+        funcname = self.__class__.__name__ + '.__init__()'
+        self.filename = filename
+        sstr = 'Opening file {:s}'.format(filename)
+        try:
+            statusqueue.put_nowait(sstr)
+        except:
+            pass
+        logger.info(sstr)
+        if filename.lower().endswith('.gz'):
+            FLAG_GZIP = True
+        else:
+            FLAG_GZIP = False
+
+        if FLAG_GZIP:
+            try:
+                filestream = gzip.open(filename, 'rt')
+                logger.debug(funcname + ' Opened file: {:s}'.format(filename))
+            except Exception as e:
+                logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
+                return None
+        else:
+            try:
+                filestream = open(filename)
+                logger.debug(funcname + ' Opened file: {:s}'.format(filename))
+            except Exception as e:
+                logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
+                return None
+
+        self.filestream = filestream
+        self.npackets = npackets
+        self.chunksize = chunksize
+        self.data_buffer = ''
+        self.flag_eof = False
+
+    def get_packets(self,npackets = 10):
+        funcname = self.__class__.__name__ + '.get_packets()'
+        packets = []
+        nread = 0
+        data = ''
+
+        if (self.filestream is not None):
+            while True:
+                data_read = self.filestream.read(self.chunksize)
+                #print('data read', data_read)
+                nread += len(data_read)
+                #print('len', len(data_read))
+                if len(data_read) < self.chunksize:
+                    self.flag_eof = True
+
+                # Add potentially old data and the newly read data
+                self.data_buffer += data_read
+                data_chunk_before = ''
+                data_split = self.data_buffer.split('...\n')
+                data_parse = data_split[:-1]  # The last part is the res
+                self.data_buffer = data_split[-1]
+                for databs in data_parse:  # Split the text into single subpackets
+                    try:
+                        data_packet = yaml.safe_load(databs)
+                        if (data is not None):
+                            packets.append(data_packet)
+                    except Exception as e:
+                        logger.debug(funcname + ': Could not decode message {:s}'.format(str(databs)))
+                        return packets
+                if len(packets) >= self.npackets:
+                    return packets
+                elif self.flag_eof:
+                    logger.debug(funcname + ': EOF, closing file {:s}'.format(self.filename))
+                    self.filestream.close()
+                    return packets
+
 
 
 def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None, statusqueue=None):
@@ -82,7 +155,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     
     tfile           = time.time() # Save the time the file was created
     tflush          = time.time() # Save the time the file was created
-    f = None    
+    FLAG_NEW_FILE = True
     nfile = 0
     while True:
         tcheck      = time.time()
@@ -92,7 +165,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             data = None
         if (data is not None):
             command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
-            # logger.debug('Got a command: {:s}'.format(str(data)))
+            logger.debug('Got a command: {:s}'.format(str(data)))
             if (command is not None):
                 sstr = funcname + ': Command is for me: {:s}'.format(str(command))
                 logger.debug(sstr)
@@ -102,12 +175,32 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                     pass
                 break
 
-        packets = get_packets(f)
-        if(packets is None):
-            FLAG_NEW_FILE = True
-        else:
-            FLAG_NEW_FILE = False
-            
+        if (FLAG_NEW_FILE):
+            if (nfile >= len(files)):
+                if (loop == False):
+                    sstr = funcname + ': All files read, stopping now.'
+                    try:
+                        statusqueue.put_nowait(sstr)
+                    except:
+                        pass
+                    logger.info(sstr)
+                    break
+                else:
+                    sstr = funcname + ': All files read, loop again.'
+                    try:
+                        statusqueue.put_nowait(sstr)
+                    except:
+                        pass
+
+                    logger.info(sstr)
+                    nfile = 0
+
+            filename = files[nfile]
+            preader = packetreader(filename=filename, statusqueue=statusqueue)
+            nfile += 1
+
+        packets = preader.get_packets()
+        FLAG_NEW_FILE = preader.flag_eof
         if(packets is not None):
             for p in packets:
                 t_now = time.time()
@@ -130,38 +223,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                     pass
 
 
-            FLAG_NEW_FILE = True
-            f.close()
-            
-        if(FLAG_NEW_FILE):
-            if(nfile >= len(files)):
-                if(loop == False):
-                    sstr = funcname + ': All files read, stopping now.'
-                    try:
-                        statusqueue.put_nowait(sstr)
-                    except:
-                        pass
-                    logger.info(sstr)
-                    break
-                else:
-                    sstr = funcname + ': All files read, loop again.'
-                    try:
-                        statusqueue.put_nowait(sstr)
-                    except:
-                        pass
 
-                    logger.info(sstr)
-                    nfile = 0
-            
-            filename = files[nfile]
-            sstr = 'Opening file {:s}'.format(filename)
-            try:
-                statusqueue.put_nowait(sstr)
-            except:
-                pass
-            logger.info(sstr)
-            f = open(filename)
-            nfile += 1
         
         time.sleep(0.05)
 
@@ -249,7 +311,26 @@ class initDeviceWidget(QtWidgets.QWidget):
             # Create tmin/tmax in statistics
             stat['t_min'] = 1e12
             stat['t_max'] = -1e12
-            f = open(filename)
+            if filename.lower().endswith('.gz'):
+                FLAG_GZIP = True
+            else:
+                FLAG_GZIP = False
+
+            if FLAG_GZIP:
+                try:
+                    f = gzip.open(filename,'rt')
+                    logger.debug(funcname + ' Opened file: {:s}'.format(filename))
+                except Exception as e:
+                    logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
+                    return None
+            else:
+                try:
+                    f = open(filename)
+                    logger.debug(funcname + ' Opened file: {:s}'.format(filename))
+                except Exception as e:
+                    logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
+                    return None
+
             packets = get_packets(f)
             f.close()
             for p in packets:
@@ -327,7 +408,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.add_files()'
         logger.debug(funcname)
-        filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self,"Rawdatafiles","","redvypr raw (*.redvypr_yaml);;All Files (*)")
+        filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self,"Rawdatafiles","","redvypr raw gzip (*.redvypr_yaml.gz);;redvypr raw (*.redvypr_yaml);;All Files (*)")
         for f in filenames: 
             self.device.config['files'].append(f)
             
