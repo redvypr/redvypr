@@ -54,7 +54,11 @@ class packetreader():
     def __init__(self,filename=None, npackets = 10, chunksize=1024,statusqueue=None):
         funcname = self.__class__.__name__ + '.__init__()'
         self.filename = filename
-        sstr = 'Opening file {:s}'.format(filename)
+        self.statusqueue = statusqueue
+        t = time.time()
+        td = datetime.datetime.fromtimestamp(t)
+        tdstr = td.strftime("%Y-%m-%d %H:%M:%S.%f")
+        sstr = '{:s}: Opening file {:s}'.format(tdstr, filename)
         try:
             statusqueue.put_nowait(sstr)
         except:
@@ -117,8 +121,16 @@ class packetreader():
                         return packets
                 if len(packets) >= self.npackets:
                     return packets
-                elif self.flag_eof:
+                elif self.flag_eof: # EOF, cleanup
                     logger.debug(funcname + ': EOF, closing file {:s}'.format(self.filename))
+                    t = time.time()
+                    td = datetime.datetime.fromtimestamp(t)
+                    tdstr = td.strftime("%Y-%m-%d %H:%M:%S.%f")
+                    sstr = '{:s}: EOF, Closing file {:s}'.format(tdstr, self.filename)
+                    try:
+                        self.statusqueue.put_nowait(sstr)
+                    except:
+                        pass
                     self.filestream.close()
                     return packets
 
@@ -128,6 +140,9 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening reading:')
     files = config['files']
+    t_status = time.time()
+    #dt_status = 2 # Status update
+    dt_status = .5  # Status update
     t_sent = 0 # The time the last packets was sent
     t_packet_old = 1e12 # The time the last packet had (internally)
     #
@@ -149,7 +164,8 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     statistics = create_data_statistic_dict()
     
     bytes_read         = 0
-    packets_read       = 0
+    packets_sent       = 0
+    dt_packet_sum      = 0
     bytes_read_total   = 0
     packets_read_total = 0
     
@@ -201,26 +217,40 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
 
         packets = preader.get_packets()
         FLAG_NEW_FILE = preader.flag_eof
+        packets = [None] + packets # Add a None so that there is at least one packet
         if(packets is not None):
             for p in packets:
-                t_now = time.time()
-                dt = t_now - t_sent
-                dt_packet = (p['_redvypr']['t'] - t_packet_old)/speedup
-                if(dt_packet < 0):
-                    dt_packet = 0
+                # Status update
+                if (time.time() - t_status) > dt_status:
+                    t_status = time.time()
+                    td = datetime.datetime.fromtimestamp(t_status)
+                    tdstr = td.strftime("%Y-%m-%d %H:%M:%S.%f")
+                    dt_avg = dt_packet_sum / packets_sent
+                    sstr = '{:s}: Sent {:d} packets with an avg dt of {:.3f}s.'.format(tdstr, packets_sent, dt_avg)
+                    logger.debug(sstr)
+                    try:
+                        statusqueue.put_nowait(sstr)
+                    except:
+                        pass
 
-                if True:
-                    time.sleep(dt_packet)
-                    t_sent = time.time()
-                    t_packet_old = p['_redvypr']['t']
-                    dataqueue.put(p)
+                if p is None:
+                    continue
+                else:
+                    t_now = time.time()
+                    dt = t_now - t_sent
+                    dt_packet = (p['_redvypr']['t'] - t_packet_old)/speedup
+                    if(dt_packet < 0):
+                        dt_packet = 0
 
-                sstr = 'Sending packet in {:f} s.'.format(dt_packet)
-                logger.debug(sstr)
-                try:
-                    statusqueue.put_nowait(sstr)
-                except:
-                    pass
+                    if True:
+                        time.sleep(dt_packet)
+                        t_sent = time.time()
+                        t_packet_old = p['_redvypr']['t']
+                        dataqueue.put(p)
+                        packets_sent += 1
+                        dt_packet_sum += dt_packet
+
+
 
 
 
@@ -501,23 +531,21 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout          = QtWidgets.QVBoxLayout(self)
-        hlayout         = QtWidgets.QHBoxLayout()
+        hlayout         = QtWidgets.QFormLayout()
         self.device     = device
         self.text       = QtWidgets.QPlainTextEdit(self)
         self.text.setReadOnly(True)
-        self.filelab= QtWidgets.QLabel("File: ")
-        self.byteslab   = QtWidgets.QLabel("Bytes written: ")
-        self.packetslab = QtWidgets.QLabel("Packets written: ")
+        self.scrollchk  = QtWidgets.QCheckBox('Scroll to end')
+        self.scrollchk.setChecked(True)
+        self.statuslab= QtWidgets.QLabel("Status")
         self.text.setMaximumBlockCount(10000)
-        hlayout.addWidget(self.byteslab)
-        hlayout.addWidget(self.packetslab)
-        layout.addWidget(self.filelab)        
+        hlayout.addRow(self.statuslab)
         layout.addLayout(hlayout)
         layout.addWidget(self.text)
-        #self.text.insertPlainText("hallo!")
+        layout.addWidget(self.scrollchk)
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update)
-        self.statustimer.start(500)
+        self.statustimer.start(250)
 
     def update(self):
         statusqueue = self.device.statusqueue
@@ -527,9 +555,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
             except:
                 break
 
+            pos = self.text.verticalScrollBar().value() # Original position of scrollbar
+            self.text.moveCursor(QtGui.QTextCursor.End)
             self.text.insertPlainText(str(data) + '\n')
 
-        #self.byteslab.setText("Bytes written: {:d}".format(data['bytes_written']))
-        #self.packetslab.setText("Packets written: {:d}".format(data['packets_written']))
-        #self.text.insertPlainText(str(data['data']))
-        
+            if(self.scrollchk.isChecked()):
+                self.text.verticalScrollBar().setValue(self.text.verticalScrollBar().maximum())
+            else:
+                self.text.verticalScrollBar().setValue(pos)
+
+

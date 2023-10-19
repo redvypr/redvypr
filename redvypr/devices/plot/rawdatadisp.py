@@ -58,7 +58,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.text     = QtWidgets.QPlainTextEdit(self)
         self.clearbtn = QtWidgets.QPushButton('Clear')
         self.clearbtn.clicked.connect(self.cleartext)
-        self.scrollchk= QtWidgets.QCheckBox('Scroll to end')
+        self.scrollchk = QtWidgets.QCheckBox('Scroll to end')
         self.text.setReadOnly(True)
         self.text.setMaximumBlockCount(self.device.config['bufsize'])
         layout.addRow(self.text)
