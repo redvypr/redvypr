@@ -1,3 +1,4 @@
+    -0.6.3  - major cleanup of config utilities and rawdatareplay
     -0.6.2  - changed regular expression from non-ascii § to {}
     -0.6.0  - added regular expressions into redvypr_address
             - command line arguments can now be more elaborate python data structure, that can be parsed by ast.literal_eval

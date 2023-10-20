@@ -1,13 +1,12 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 import redvypr.gui
 import sys
-from redvypr.utils import configtemplate_to_dict, apply_config_to_dict,configdata
 import redvypr.config
 import copy
 
-d =configdata([])
-d.value.append(configdata(None))
-copy.deepcopy(configdata(None))
+#d =configdata([])
+#d.value.append(configdata(None))
+#copy.deepcopy(configdata(None))
 #copy.deepcopy(d)
 
 config_options = {'type': 'str', 'default': 'test', 'options': ['1', '2', 'zehn'], 'range': [0, 2, 1]}

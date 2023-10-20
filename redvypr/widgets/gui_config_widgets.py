@@ -753,6 +753,8 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
             item.__datatypestr__  = typestr
             item.__parent__       = parent
             # Add the item to the data
+            print('data',data)
+            print('data',type(data))
             data.__item__ = item
 
             index_child = self.item_is_child(parent, item)

@@ -10,6 +10,8 @@ import yaml
 import copy
 import os
 import gzip
+
+import redvypr.config
 from redvypr.device import redvypr_device
 from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
 
@@ -21,8 +23,8 @@ description = "Replays a raw redvypr data file"
 
 description = "Saves the raw redvypr packets into a file"
 config_template = {}
-config_template['name']      = 'rawdatareplay'
-config_template['files']             = {'type':'list','description':'List of files ro replay'}
+config_template['name']              = 'rawdatareplay'
+config_template['files']             = {'type':'list','description':'List of files to replay'}
 config_template['loop']              = {'type':'bool','default':True,'description':'Loop over all files if set'}
 config_template['speedup']           = {'type':'float','description':'Speedup factor of the data'}
 config_template['redvypr_device']    = {}
@@ -139,7 +141,7 @@ class packetreader():
 def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening reading:')
-    files = config['files']
+    files = list(config['files'])
     t_status = time.time()
     #dt_status = 2 # Status update
     dt_status = .5  # Status update
@@ -320,9 +322,39 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.speedup_edit,6,2,1,1,QtCore.Qt.AlignRight)
         layout.addWidget(self.startbtn,7,0,2,-1)
 
+
+        # Update the widgets depending on the configuration
+        self.update_filenamelist()
+
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
+
+    def update_filenamelist(self):
+        """ Update the filetable
+        """
+        funcname = self.__class__.__name__ + '.update_filenamelist()'
+        logger.debug(funcname)
+        print('Config',self.device.config)
+        self.inlist.clear()
+        self.inlist.setHorizontalHeaderLabels(self.__filelistheader__)
+        nfiles = len(self.device.config['files'])
+        self.inlist.setRowCount(nfiles)
+
+        rows = []
+        for i, f in enumerate(self.device.config['files']):
+            item = QtWidgets.QTableWidgetItem(str(f))
+            self.inlist.setItem(i, 0, item)
+            rows.append(i)
+
+        self.scan_files(rows)
+        self.inlist.resizeColumnsToContents()
+
+        # Loop flag
+        loop = bool(self.device.config['loop'])
+        self.loop_checkbox.setChecked(loop)
+        speedupstr = "{:.1f}".format(float(self.device.config['speedup']))
+        self.speedup_edit.setText(speedupstr)
 
     def inspect_data(self, filename, rescan=False):
         """ Inspects the files for possible datastreams in the file with the filename located in config['files'][fileindex].
@@ -446,25 +478,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.update_filenamelist()
         self.inlist.sortItems(0, QtCore.Qt.AscendingOrder)
             
-    def update_filenamelist(self):
-        """ Update the filetable 
-        """
-        funcname = self.__class__.__name__ + '.add_files()'
-        logger.debug(funcname)
-        self.inlist.clear()
-        self.inlist.setHorizontalHeaderLabels(self.__filelistheader__)
-        nfiles = len(self.device.config['files'])
-        self.inlist.setRowCount(nfiles)
 
-        rows = []        
-        for i,f in enumerate(self.device.config['files']):
-            item = QtWidgets.QTableWidgetItem(f)
-            self.inlist.setItem(i,0,item)
-            rows.append(i)
-            
-            
-        self.scan_files(rows)
-        self.inlist.resizeColumnsToContents()
         
     def resort_files(self):
         """ Resorts the files in config['files'] according to the sorting in the table
@@ -475,7 +489,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             filename = self.inlist.item(i,0).text()
             files_new.append(filename)
             
-        self.device.config['files'] = files_new
+        self.device.config['files'] = redvypr.config.configList(files_new)
         
     def con_clicked(self):
         funcname = self.__class__.__name__ + '.con_clicked():'
@@ -493,9 +507,9 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.resort_files()
             loop = self.loop_checkbox.isChecked()
             # Loop
-            self.device.config['loop']    = loop
+            self.device.config['loop'].data    = loop
             # Speedup
-            self.device.config['speedup'] = float(self.speedup_edit.text())
+            self.device.config['speedup'].data = float(self.speedup_edit.text())
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')
@@ -545,7 +559,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.scrollchk)
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update)
-        self.statustimer.start(250)
+        self.statustimer.start(500)
 
     def update(self):
         statusqueue = self.device.statusqueue

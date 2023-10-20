@@ -3,17 +3,22 @@
 redvypr configuration module
 
 The module provides modified objects that allow to store extra attributes.
-- dict
-- list
-- str, todo
-- int, todo
-- float, todo
-- bool, todo
+- dict: configDict
+- list: configList
+- str, configString
+- int, configNumber
+- float, configNumber
+- bool, configNumber
 - None, todo
+
+This is a very useful feature if a configuration is associated with local data of the device or widgets and makes it much
+easier to have a gui synchronized with the configuration. A main feature of the configuration is that it can be easily
+converted into standard Python datatypes. During the process all extra attributes are lost. The advantage is that each
+configuration can be stored as a yaml file and be read again for later use.
 
 Templates can be used to define the configuration
 A template is a dict with the keys defining entries that can be configured.
-Options are for lists and dicts datatypes that can be added, for int, float, str the values of the variable
+Options are for lists an dicts datatypes that can be added, for int, float, str the values of the variable
 .. code-block::
 
     config_template['list_options'] = {'type': 'list', 'options': ['int','float']}
@@ -47,6 +52,16 @@ from redvypr.configdata import seq_iter
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.config')
 logger.setLevel(logging.DEBUG)
+#https://stackoverflow.com/questions/2183233/how-to-add-a-custom-loglevel-to-pythons-logging-facility/13638084#13638084
+DEBUG_LEVELV_NUM = 9
+logging.addLevelName(DEBUG_LEVELV_NUM, "DEBUGV")
+def debugv(self, message, *args, **kws):
+    if self.isEnabledFor(DEBUG_LEVELV_NUM):
+        # Yes, logger takes its '*args' as 'args'.
+        self._log(DEBUG_LEVELV_NUM, message, args, **kws)
+logging.Logger.debugv = debugv
+
+#logger.setLevel(DEBUG_LEVELV_NUM)
 
 
 template_types = []
@@ -90,6 +105,9 @@ class configDict(collections.UserDict):
     def __reduce__(self):
         return self.data.__reduce__()
 
+    def __repr__(self):
+        return "configDict({:s})".format(str(self.data.__repr__()))
+
 
 class configList(collections.UserList):
     """
@@ -106,11 +124,14 @@ class configList(collections.UserList):
     def __reduce__(self):
         return self.data.__reduce__()
 
+    def __repr__(self):
+        return "configList({:s})".format(str(self.data.__repr__()))
+
 
 class configString(collections.UserString):
     """
-    The class is a modified dictionary that allows to add attributes. If a deepcopy of the class is done, a standard
-    dictionary will be returned.
+    The class is a modified UserString that allows to add attributes. If a deepcopy of the class is done, a standard
+    str will be returned.
     """
     def __reduce_ex__(self,protocol):
 
@@ -118,6 +139,9 @@ class configString(collections.UserString):
 
     def __reduce__(self):
         return self.data.__reduce__()
+
+    def __repr__(self):
+        return "configString({:s})".format(self.data.__repr__())
 
 
 class configNumber(numbers.Integral):
@@ -140,7 +164,9 @@ class configNumber(numbers.Integral):
 
     # Basic customization
     def __init__(self, n=None): self.data=n
-    def __repr__(self): return repr(self.data)
+    def __repr__(self):
+        return "configNumber({:s})".format(str(self.data.__repr__()))
+        #return repr(self.data)
     def __str__(self): return str(self.data)
     # def __bytes__(self): unimplemented
     def __format__(self, format_spec): self.data.__format__(format_spec)
@@ -353,7 +379,7 @@ def valid_template(template):
         template: dictionary
 
     Returns:
-        boold: True if valid, False otherwise
+        bool: True if valid, False otherwise
 
     """
     funcname = __name__ + '.valid_template():'
@@ -361,9 +387,9 @@ def valid_template(template):
         if('template_name' in template.keys()):
             return True
         else:
-            logger.debug(funcname + 'key "template_name" missing')
+            logger.debugv(funcname + 'key "template_name" missing')
     else:
-        logger.debug(funcname + 'template not a dictionary {:s}'.format(str(type(template))))
+        logger.debugv(funcname + 'template not a dictionary {:s}'.format(str(type(template))))
 
     return False
 
@@ -388,7 +414,7 @@ def configdata_to_data(data):
 
 
 
-def dict_to_configDict(data,process_template=False,configdict=None):
+def dict_to_configDict(data, process_template=False, configdict=None, standard_option_modifiable=True):
     """
     creates a config dictionary out of a configuration template, the values of the dictionary are
     configList/configNumber objects that can be accessed like classical values but have the capability to store
@@ -397,7 +423,7 @@ def dict_to_configDict(data,process_template=False,configdict=None):
     """
     funcname = __name__ + 'dict_to_configDict():'
     def loop_over_index(c):
-        #print('c',c,seq_iter(c))
+        logger.debugv('c {:s} {:s}'.format(str(c),str(seq_iter(c))))
         for index in seq_iter(c):
             # Check first if we have a configuration dictionary entry
             FLAG_CONFIG_DICT = False
@@ -405,6 +431,8 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                 if ('type' in c[index].keys()) or ('default' in c[index].keys()):
                     #print('Configdict')
                     FLAG_CONFIG_DICT = True
+
+            logger.debugv(funcname + 'Index "{:s}": FLAG_CONFIG_DICT {:s}'.format(str(index),str(FLAG_CONFIG_DICT)))
             #print('c1', c[index])
             origdata = copy.deepcopy(c[index])
             origtype = c[index].__class__.__name__
@@ -444,6 +472,7 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                             c[index][k] = standard_template[k]#
 
                         if (k == 'default'):
+                            #print('Test valid template')
                             if valid_template(c[index]['default']):
                                 #print('Template', c[index]['default'])
                                 dtmp = dict_to_configDict(c[index]['default'], process_template=process_template)
@@ -451,13 +480,15 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                             else:
                                 default_value = data_to_configdata(c[index]['default'],recursive=True)
 
+                            #print('Default value',default_value)
+
                 templatedata = copy.deepcopy(c[index])
                 templatedata_orig = copy.deepcopy(c[index])
                 default_type = c[index]['type']
                 try:
                     modifiable = c[index]['modify']
                 except Exception as e:
-                    modifiable = False
+                    modifiable = standard_option_modifiable
 
                 if (c[index]['type'] == 'list') and modifiable: # Modifiable list
                     # Check if options are in the template, if not not add standard types
@@ -468,13 +499,13 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                             #print('Option to be checked', o)
                             # If the option is a str, try to find the correct template in the standard template
                             if (type(o) == str) or (type(o) == configString):
-                                print('Converting to standard option',o)
+                                #print('Converting to standard option',o)
                                 try:
                                     c[index]['options'][i] = copy.deepcopy(__template_types__modifiable_list_dict__[o])
-                                    print('Changed option', c[index]['options'][i])
-                                    print('Hallo', c)
+                                    #print('Changed option', c[index]['options'][i])
+                                    #print('Hallo', c)
                                 except Exception as e:
-                                    print('Did not change because of',e)
+                                    #print('Did not change because of',e)
                                     continue
                     except: # If no options are given, simply copy all options as a choice
                         c[index]['options'] = copy.deepcopy(__template_types__modifiable_list__)
@@ -522,12 +553,18 @@ def dict_to_configDict(data,process_template=False,configdict=None):
                 #print('Loop')
                 loop_over_index(c[index])
 
+    #
+    # Start the iterative process
+    #
     # Create a copy of the input dictionary and work with that
+    logger.debugv(funcname + ' Starting to convert to configdict')
     if(configdict == None):
         data_tmp = copy.deepcopy(data) # Copy the data first
         if(type(data_tmp) == dict):
+            logger.debugv(funcname + ' Creating configdict')
             data_dict = configDict(data_tmp) #
         elif (type(data_tmp) == configDict):
+            logger.debugv(funcname + ' Configdict already')
             data_dict = data_tmp
         else:
             raise TypeError(funcname + 'data must be a dictionary and not {:s}'.format(str(type(data))))
@@ -549,7 +586,7 @@ def dict_to_configDict(data,process_template=False,configdict=None):
 
 
 
-def apply_config_to_configDict(userconfig,configdict):
+def apply_config_to_configDict(userconfig,configdict, standard_option_modifiable=True):
     """
     Applies a user configuration to a dictionary created from a template
     Args:
@@ -571,40 +608,70 @@ def apply_config_to_configDict(userconfig,configdict):
             try:
                 ctemp = c[index]
             except:
+                # Here one could change the template to add the userdata, if wished
                 continue
 
             try:
                 modifiable = ctemp.template['modify']
             except Exception as e:
-                modifiable = False
+                modifiable = standard_option_modifiable
 
-            if (seq_iter(ctemp) is not None) and (modifiable == False):
-                #print('Hallo',cuser,index)
-                try: # Check if the user data is existing as well
+            #print('index', index,type(ctemp),cuser)
+            # Check if we have to loop again
+            #print('type',index,type(ctemp),modifiable,ctemp.template)
+            # Generic loop, this is legacy
+            #if (seq_iter(ctemp) is not None) and (modifiable == False):
+            #    print('Need to loop again')
+            #    #print('Hallo',cuser,index)
+            #    try: # Check if the user data is existing as well
+            #        cuser[index]
+            #        if (seq_iter(cuser[index]) is not None):
+            #            loop_over_index(ctemp, cuser[index])
+            #    except Exception as e:
+            #        logger.debug(funcname + ': cuser[index]: ' + str(e))
+            #        continue
+            # Check for different types that can need to be looped
+            if (type(ctemp) == configDict):  # dictionary
+                logger.debugv(funcname + ' configDict loop')
+                try:  # Check if the user data is existing as well
                     cuser[index]
                     if (seq_iter(cuser[index]) is not None):
                         loop_over_index(ctemp, cuser[index])
                 except Exception as e:
-                    logger.debug(funcname + ': cuser[index]: ' + str(e))
+                    logger.debug(funcname + ': cuser[index]: ')
+                    logger.exception(e)
+                    continue
+            elif (type(ctemp) == configList) and not(modifiable):  # non modifiable list:
+                logger.debugv(funcname + ' configList loop (nonmod)')
+                try:  # Check if the user data is existing as well
+                    cuser[index]
+                    if (seq_iter(cuser[index]) is not None):
+                        loop_over_index(ctemp, cuser[index])
+                except Exception as e:
+                    logger.debug(funcname + ': cuser[index]: ')
+                    logger.exception(e)
                     continue
 
             # Check if this is a configdata list, that can be modified
-            elif(type(ctemp) == configList):
+            elif(type(ctemp) == configList) and modifiable: # modifiable list:
+                logger.debugv(funcname + ' configList loop (mod)')
                 try:
                     t = ctemp.template['type']
                 except Exception as e:
                     t = ''
 
-                #print('List',t,modifiable)
-                if (t == 'list') and modifiable: # modifiable list
+                if True:
                     # First make the list equally long, the user list is either 0 or longer
                     numitems = len(cuser[index])
                     dn = numitems - len(ctemp)
+                    logger.debugv(funcname + ' Making the list as long as cuser {:d} {:d}'.format(numitems,dn))
                     for i in range(dn):
                         ctemp.append(None)
 
                     # Fill the list with the right templates
                     for i in range(numitems):
+                        #print('Filling now {:d}'.format(i))
+                        # Try to find the template_name the user has saved
                         try:
                             nameuser = cuser[index][i]['template_name']
                         except:
@@ -613,8 +680,9 @@ def apply_config_to_configDict(userconfig,configdict):
                         FLAG_FOUND_VALID_OPTION = False
                         #print('Template options',ctemp.template)
                         #print('Nameuser',nameuser)
+                        #print('Options',ctemp.template['options'])
                         for o in ctemp.template['options']:
-                            #print('Option',o)
+                            #print('Option',o,type(o))
                             # If the option is a str, try to find the correct template in the standard template
                             if(type(o) == str) or (type(o) == configString):
                                 #print('Converting to standard option')
@@ -625,20 +693,22 @@ def apply_config_to_configDict(userconfig,configdict):
 
                             try: # Check if this is a template
                                 nameoption = o['template_name']
-                                FLAG_TEMPLATE=True
+                                FLAG_TEMPLATE = True
                             except: # or a standard template
                                 nameoption = o['type']
                                 FLAG_TEMPLATE = False
 
                             #print('Nameoption',nameoption,FLAG_TEMPLATE)
                             if(nameoption == nameuser) and FLAG_TEMPLATE:
-                                #print('Converting the template')
-                                ctemp[i] = dict_to_configDict(o,process_template=True)
-                                #print('ctemp',ctemp[i])
+                                logger.debugv('Converting the template')
+                                template_tmp = dict_to_configDict(o, process_template=True)
+                                ctemp[i] = template_tmp
                                 FLAG_FOUND_VALID_OPTION = True
                                 break
                             elif nameoption == nameuser:
-                                ctemp[i] = o['default']
+                                logger.debugv('Elif nameoption {:s}'.format(nameoption))
+                                #ctemp[i] = o['default']
+                                ctemp[i] = data_to_configdata(o['default'])
                                 FLAG_FOUND_VALID_OPTION = True
                                 break
 
@@ -648,18 +718,25 @@ def apply_config_to_configDict(userconfig,configdict):
                     # Loop again
                     loop_over_index(ctemp, cuser[index])
 
-            else: # Apply the value
+            else: # No loop, so apply the value
                 ctemp = c
+                try:  # Check if this is a template
+                    ctemp[index]['template_name']
+                    FLAG_TEMPLATE_TO_BE_FILLED = True
+                except:  # or a standard template
+                    FLAG_TEMPLATE_TO_BE_FILLED = False
                 # TODO, here a type check would be useful
                 try:  # Check if the user data is existing as well
-                    ctemp[index].data = cuser[index]
+                    if FLAG_TEMPLATE_TO_BE_FILLED:
+                        ctemp[index] = apply_config_to_configDict(cuser[index],ctemp[index])
+                    else:
+                        logger.debugv(funcname + ' Applying data now at index {:s}'.format(str(index)))
+                        ctemp[index].data = cuser[index]
                 except Exception as e: # Is this needed anymore? Everything should be configdata ...
-                    print('Exception exception',e)
+                    logger.exception(e)
                     pass
 
-    #print('Configdict before:', configdict)
     loop_over_index(configdict,userconfig)
-    #print('Configdict after:', configdict)
     return configdict
 
 
@@ -676,13 +753,16 @@ class configuration(configDict):
             template:
             config:
         """
+        logger.debugv(self.__class__.__name__ + '.init()')
         super().__init__(template)
         #self.config_orig = config
         #self.data = dict_to_configDict(template, process_template=True)
+        logger.debugv(self.__class__.__name__ + ' converting to configdict')
         tmp = dict_to_configDict(template, process_template=True,configdict=self)
 
         #print('Applying')
         if(config is not None):
+            logger.debugv(self.__class__.__name__ + ' applying config')
             test = apply_config_to_configDict(config,self)
             #print('test',test)
 
