@@ -574,7 +574,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         files_new = []
         nfiles = len(self.device.config['files'])
         for i in range(nfiles):
-            filename = self.inlist.item(i,0).text()
+            filename = self.inlist.item(i,self.col_fname).text()
             files_new.append(filename)
             
         self.device.config['files'] = redvypr.config.configList(files_new)

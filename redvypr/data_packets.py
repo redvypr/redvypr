@@ -26,10 +26,14 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulena
         data['_redvypr']['tag'] = {}
     if ('device' not in data['_redvypr'].keys()):
         data['_redvypr']['device'] = str(devicename)
+
     if ('host' not in data['_redvypr'].keys()):
         data['_redvypr']['host']   = hostinfo
-    else:  # Check if we have a local data packet, i.e. a packet that comes from another redvypr instance with another UUID
+    else:  # Update the local flag, check if we have a local data packet, i.e. a packet that comes from another redvypr instance with another UUID
         data['_redvypr']['host']['local'] = data['_redvypr']['host']['uuid'] == hostinfo['uuid']
+
+    # Add the last publishing device
+    data['_redvypr']['lpd'] = str(devicename)
 
     # Tag the datapacket
     try:
