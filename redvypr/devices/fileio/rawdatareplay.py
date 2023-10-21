@@ -25,6 +25,7 @@ description = "Saves the raw redvypr packets into a file"
 config_template = {}
 config_template['name']              = 'rawdatareplay'
 config_template['files']             = {'type':'list','description':'List of files to replay'}
+config_template['replay_index']      = {'type':'list','default':['0,1,-1'],'description':'The index of the packets to be replayed'}
 config_template['loop']              = {'type':'bool','default':True,'description':'Loop over all files if set'}
 config_template['speedup']           = {'type':'float','description':'Speedup factor of the data'}
 config_template['redvypr_device']    = {}
@@ -56,7 +57,12 @@ class packetreader():
     def __init__(self,filename=None, npackets = 10, chunksize=1024,statusqueue=None):
         funcname = self.__class__.__name__ + '.__init__()'
         self.filename = filename
+        self.packet_index = []
+        self.npackets_read = 0
+        self.nread = 0 # Amount of data read
         self.statusqueue = statusqueue
+
+
         t = time.time()
         td = datetime.datetime.fromtimestamp(t)
         tdstr = td.strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -87,14 +93,66 @@ class packetreader():
                 return None
 
         self.filestream = filestream
+        # Get the size of the data (within the file, this is different to the filesize, which can be gzipped
+        self.fsize = os.path.getsize(filename)
+        f = self.filestream
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        self.datasize = size
+        self.filestream.seek(0)
+
         self.npackets = npackets
         self.chunksize = chunksize
         self.data_buffer = ''
         self.flag_eof = False
 
-    def get_packets(self,npackets = 10):
+    def close_file(self):
+        self.filestream.close()
+    def inspect_file(self):
+        """
+        Inspects the whole file
+        """
+        funcname = self.__class__.__name__ + '.inspect_file()'
+        logger.debug(funcname)
+        stat = {}
+        stat = create_data_statistic_dict()
+        # Create tmin/tmax in statistics
+        stat['t_min'] = 1e12
+        stat['t_max'] = -1e12
+        stat['t_all'] = []
+        self.filestream.seek(0)
+        npackets = 0
+
+        while True:
+            [packets,packets_ind] = self.get_packets(npackets=100, send_status=False)
+            npackets += len(packets)
+            pcread = self.nread / self.datasize * 100
+            tdstr = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+            logger.debug(funcname + ' {:s}: Read {:d} packets {:d} bytes from {:d} ({:.2f}%)'.format(tdstr,npackets,self.nread,self.datasize,pcread))
+
+            if self.flag_eof:
+                logger.debug(funcname + ' EOF reached')
+                self.filestream.seek(0)
+                self.flag_eof = False
+                break
+
+
+            for p in packets:
+                stat = do_data_statistics(p, stat)
+                tminlist = [stat['t_min'], p['_redvypr']['t']]
+                tmaxlist = [stat['t_max'], p['_redvypr']['t']]
+                stat['t_min'] = min(tminlist)
+                stat['t_max'] = max(tmaxlist)
+                stat['t_all'].append(p['_redvypr']['t'])
+
+        self.file_statistics = stat
+        #print('Hallo',stat)
+        return stat
+
+    def get_packets(self, npackets = 10, close_file_at_EOF=False, send_status=True):
         funcname = self.__class__.__name__ + '.get_packets()'
         packets = []
+        packet_ind = []
         nread = 0
         data = ''
 
@@ -102,7 +160,9 @@ class packetreader():
             while True:
                 data_read = self.filestream.read(self.chunksize)
                 #print('data read', data_read)
-                nread += len(data_read)
+                lendata = len(data_read)
+                nread += lendata
+                self.nread += lendata
                 #print('len', len(data_read))
                 if len(data_read) < self.chunksize:
                     self.flag_eof = True
@@ -116,13 +176,16 @@ class packetreader():
                 for databs in data_parse:  # Split the text into single subpackets
                     try:
                         data_packet = yaml.safe_load(databs)
-                        if (data is not None):
+                        if (data_packet is not None):
                             packets.append(data_packet)
+                            packet_ind.append(self.npackets_read)
+                            self.packet_index.append(self.npackets_read)
+                            self.npackets_read += 1
                     except Exception as e:
                         logger.debug(funcname + ': Could not decode message {:s}'.format(str(databs)))
-                        return packets
-                if len(packets) >= self.npackets:
-                    return packets
+                        return [packets,packet_ind]
+                if len(packets) >= npackets:
+                    return [packets, packet_ind]
                 elif self.flag_eof: # EOF, cleanup
                     logger.debug(funcname + ': EOF, closing file {:s}'.format(self.filename))
                     t = time.time()
@@ -130,11 +193,15 @@ class packetreader():
                     tdstr = td.strftime("%Y-%m-%d %H:%M:%S.%f")
                     sstr = '{:s}: EOF, Closing file {:s}'.format(tdstr, self.filename)
                     try:
-                        self.statusqueue.put_nowait(sstr)
+                        if send_status:
+                            self.statusqueue.put_nowait(sstr)
                     except:
                         pass
-                    self.filestream.close()
-                    return packets
+
+                    if close_file_at_EOF:
+                        self.close_file()
+
+                    return [packets, packet_ind]
 
 
 
@@ -217,11 +284,11 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             preader = packetreader(filename=filename, statusqueue=statusqueue)
             nfile += 1
 
-        packets = preader.get_packets()
+        [packets,packets_ind] = preader.get_packets(close_file_at_EOF=True)
         FLAG_NEW_FILE = preader.flag_eof
         packets = [None] + packets # Add a None so that there is at least one packet
         if(packets is not None):
-            for p in packets:
+            for p,pind in zip(packets,packets_ind):
                 # Status update
                 if (time.time() - t_status) > dt_status:
                     t_status = time.time()
@@ -280,12 +347,25 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.inlabel  = QtWidgets.QLabel("Filenames") 
         self.inlabel.setStyleSheet(''' font-size: 20px; font: bold''')
         self.inlist   = QtWidgets.QTableWidget()
-        self.inlist.setColumnCount(4)
+
         self.inlist.setRowCount(1)
         self.inlist.setSortingEnabled(True)
-        
-        self.__filelistheader__ = ['Name','Packets','First date','Last date']
+        self.col_replaypackets = 0
+        self.col_npackets = 1
+        self.col_tmin = 2
+        self.col_tmax = 3
+        self.col_fname = 4
+        self.ncols = 5
+        self.inlist.setColumnCount(self.ncols)
+        self.__filelistheader__ = [[]] * self.ncols
+        self.__filelistheader__[self.col_tmax] = 'Last date'
+        self.__filelistheader__[self.col_tmin] = ' First date'
+        self.__filelistheader__[self.col_npackets] = 'Packets'
+        self.__filelistheader__[self.col_replaypackets] = 'Replay Packets'
+        self.__filelistheader__[self.col_fname] = 'Filename'
         self.inlist.setHorizontalHeaderLabels(self.__filelistheader__)
+        
+
         self.addfilesbtn   = QtWidgets.QPushButton("Add files")
         self.addfilesbtn.clicked.connect(self.add_files)
         self.remfilesbtn   = QtWidgets.QPushButton("Rem files")
@@ -294,6 +374,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.scanfilesbtn.clicked.connect(self.scan_files_clicked)
         self.config_widgets.append(self.inlist)
         self.config_widgets.append(self.addfilesbtn)
+
+
         # Looping the data?
         self.loop_checkbox = QtWidgets.QCheckBox('Loop')
         # Speedup
@@ -344,7 +426,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         rows = []
         for i, f in enumerate(self.device.config['files']):
             item = QtWidgets.QTableWidgetItem(str(f))
-            self.inlist.setItem(i, 0, item)
+            self.inlist.setItem(i, self.col_fname, item)
             rows.append(i)
 
         self.scan_files(rows)
@@ -361,6 +443,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.inspect_data()'
         logger.debug(funcname)
+
+        p = packetreader(filename)
+        p.inspect_file()
+
         try:
             stat = self.file_statistics[filename]
             FLAG_HASSTAT = True
@@ -394,6 +480,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                     return None
 
             packets = get_packets(f)
+            stat['t_all'] = []
             f.close()
             for p in packets:
                 stat = do_data_statistics(p, stat)
@@ -401,6 +488,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 tmaxlist = [stat['t_max'], p['_redvypr']['t']]
                 stat['t_min'] = min(tminlist)
                 stat['t_max'] = max(tmaxlist)
+                stat['t_all'].append(p['_redvypr']['t'])
 
             self.file_statistics[filename] = stat
         else:
@@ -433,18 +521,18 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
 
         for i in rows:
-            filename = self.inlist.item(i,0).text()
+            filename = self.inlist.item(i,self.col_fname).text()
             stat = self.inspect_data(filename,rescan=False)
             packetitem = QtWidgets.QTableWidgetItem(str(stat['packets_sent']))
-            self.inlist.setItem(i,1,packetitem)
+            self.inlist.setItem(i,self.col_npackets,packetitem)
             tdmin = datetime.datetime.fromtimestamp(stat['t_min'])
             tminstr = str(tdmin)
             tdmax = datetime.datetime.fromtimestamp(stat['t_max'])
             tmaxstr = str(tdmax)
             t_min_item = QtWidgets.QTableWidgetItem(tminstr)
             t_max_item = QtWidgets.QTableWidgetItem(tmaxstr)
-            self.inlist.setItem(i,2,t_min_item)
-            self.inlist.setItem(i,3,t_max_item)
+            self.inlist.setItem(i,self.col_tmin,t_min_item)
+            self.inlist.setItem(i,self.col_tmax,t_max_item)
             
         self.inlist.resizeColumnsToContents()
             
