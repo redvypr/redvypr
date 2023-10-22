@@ -25,7 +25,7 @@ description = "Saves the raw redvypr packets into a file"
 config_template = {}
 config_template['name']              = 'rawdatareplay'
 config_template['files']             = {'type':'list','description':'List of files to replay'}
-config_template['replay_index']      = {'type':'list','default':['0,1,-1'],'description':'The index of the packets to be replayed'}
+config_template['replay_index']      = {'type':'list','default':['0,-1,1'],'description':'The index of the packets to be replayed [start, end, nth]'}
 config_template['loop']              = {'type':'bool','default':True,'description':'Loop over all files if set'}
 config_template['speedup']           = {'type':'float','description':'Speedup factor of the data'}
 config_template['redvypr_device']    = {}
@@ -54,14 +54,41 @@ def get_packets(filestream=None):
 
 
 class packetreader():
-    def __init__(self,filename=None, npackets = 10, chunksize=1024,statusqueue=None):
+    def __init__(self,filename=None, replay_index = '0,-1,1', npackets = 10, chunksize=1024,statusqueue=None):
         funcname = self.__class__.__name__ + '.__init__()'
         self.filename = filename
+        #
+        self.ipacket = -1
         self.packet_index = []
         self.npackets_read = 0
         self.nread = 0 # Amount of data read
         self.statusqueue = statusqueue
+        # Parse replay index
+        rs = replay_index.split(',')
+        self.istart = int(rs[0])
+        self.iend   = int(rs[1])
+        self.istep  = int(rs[2])
+        if self.iend < -1:
+            logger.debug(funcname + 'Need to scan file to calculate absolute end index')
+            stat = self.inspect_file()
+            npackets = stat['npackets']
+            self.iend_abs = npackets - self.iend
+        elif self.iend == -1:
+            self.iend_abs = 1e12 # A very big number
+        else:
+            self.iend_abs = self.iend
 
+        if self.istart < 0:
+            logger.debug(funcname + 'Need to scan file to calculate absolute start index')
+            try:
+                npackets
+            except:
+                stat = self.inspect_file()
+                npackets = stat['npackets']
+
+            self.istart_abs = npackets - self.istart
+        else:
+            self.istart_abs = self.istart
 
         t = time.time()
         td = datetime.datetime.fromtimestamp(t)
@@ -114,6 +141,11 @@ class packetreader():
         """
         funcname = self.__class__.__name__ + '.inspect_file()'
         logger.debug(funcname)
+        self.ipacket = -1
+        self.packet_index = []
+        self.npackets_read = 0
+        self.nread = 0  # Amount of data read
+
         stat = {}
         stat = create_data_statistic_dict()
         # Create tmin/tmax in statistics
@@ -141,12 +173,19 @@ class packetreader():
                 stat = do_data_statistics(p, stat)
                 tminlist = [stat['t_min'], p['_redvypr']['t']]
                 tmaxlist = [stat['t_max'], p['_redvypr']['t']]
+                stat['npackets'] = npackets
                 stat['t_min'] = min(tminlist)
                 stat['t_max'] = max(tmaxlist)
                 stat['t_all'].append(p['_redvypr']['t'])
 
         self.file_statistics = stat
         #print('Hallo',stat)
+
+        self.ipacket = -1
+        self.packet_index = []
+        self.npackets_read = 0
+        self.nread = 0  # Amount of data read
+
         return stat
 
     def get_packets(self, npackets = 10, close_file_at_EOF=False, send_status=True):
@@ -177,14 +216,22 @@ class packetreader():
                     try:
                         data_packet = yaml.safe_load(databs)
                         if (data_packet is not None):
-                            packets.append(data_packet)
-                            packet_ind.append(self.npackets_read)
-                            self.packet_index.append(self.npackets_read)
+                            packet_ind_tmp = self.npackets_read
+                            if (packet_ind_tmp >= self.istart_abs) and (packet_ind_tmp <= self.iend_abs):
+                                packets.append(data_packet)
+                                packet_ind.append(packet_ind_tmp)
+                                self.packet_index.append(self.npackets_read)
+                                if packet_ind_tmp >= self.iend_abs:  # Last packet read, lets say EOF
+                                    self.flag_eof = True
+                                    break
+
                             self.npackets_read += 1
+                            self.ipacket += 1
                     except Exception as e:
                         logger.debug(funcname + ': Could not decode message {:s}'.format(str(databs)))
                         return [packets,packet_ind]
-                if len(packets) >= npackets:
+
+                if (len(packets) >= npackets) and (self.flag_eof == False):
                     return [packets, packet_ind]
                 elif self.flag_eof: # EOF, cleanup
                     logger.debug(funcname + ': EOF, closing file {:s}'.format(self.filename))
@@ -209,6 +256,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening reading:')
     files = list(config['files'])
+    replay_index = list(config['replay_index'])
     t_status = time.time()
     #dt_status = 2 # Status update
     dt_status = .5  # Status update
@@ -281,10 +329,12 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                     nfile = 0
 
             filename = files[nfile]
-            preader = packetreader(filename=filename, statusqueue=statusqueue)
+            rindex = replay_index[nfile]
+            preader = packetreader(filename=filename, replay_index = rindex, statusqueue=statusqueue)
             nfile += 1
 
         [packets,packets_ind] = preader.get_packets(close_file_at_EOF=True)
+        print('Packet ind',packets_ind)
         FLAG_NEW_FILE = preader.flag_eof
         packets = [None] + packets # Add a None so that there is at least one packet
         if(packets is not None):
@@ -407,45 +457,85 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         # Update the widgets depending on the configuration
         self.update_filenamelist()
-
+        self.inlist.cellChanged.connect(self.table_changed)
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
 
+    def table_changed(self,row,col):
+        funcname = self.__class__.__name__ + '.table_changed()'
+        logger.debug(funcname)
+        #print('Row',row,'Col',col)
+        item = self.inlist.item(row,col)
+
+        if col == self.col_replaypackets: # If the replay index was changed
+            rindex = item.text()
+            try:
+                rs = rindex.split(',')
+                istart = int(rs[0])
+                iend = int(rs[1])
+                istep = int(rs[2])
+                self.device.config['replay_index'][item.replay_index] = rindex
+                item.replay_index_str = rindex
+            except Exception as e:
+                logger.exception(e)
+                replay_index_str = item.replay_index_str
+                itemold = QtWidgets.QTableWidgetItem(str(replay_index_str))
+                itemold.replay_index_str = replay_index_str
+                self.inlist.cellChanged.disconnect(self.table_changed)
+                self.inlist.setItem(row, col, itemold)
+                self.inlist.cellChanged.connect(self.table_changed)
+
+
     def update_filenamelist(self):
         """ Update the filetable
         """
-        funcname = self.__class__.__name__ + '.update_filenamelist()'
-        logger.debug(funcname)
-        print('Config',self.device.config)
-        self.inlist.clear()
-        self.inlist.setHorizontalHeaderLabels(self.__filelistheader__)
-        nfiles = len(self.device.config['files'])
-        self.inlist.setRowCount(nfiles)
+        try:
+            funcname = self.__class__.__name__ + '.update_filenamelist()'
+            logger.debug(funcname)
+            self.inlist.cellChanged.disconnect(self.table_changed)
+            self.inlist.clear()
+            self.inlist.setHorizontalHeaderLabels(self.__filelistheader__)
+            nfiles = len(self.device.config['files'])
+            self.inlist.setRowCount(nfiles)
+            rows = []
+            for i, f in enumerate(self.device.config['files']):
+                if len(self.device.config['replay_index']) < (i+1):
+                    self.device.config['replay_index'].append(self.device.config['replay_index'][-1])
+                    replayindex = self.device.config['replay_index'][-1]
+                else:
+                    replayindex = self.device.config['replay_index'][i]
 
-        rows = []
-        for i, f in enumerate(self.device.config['files']):
-            item = QtWidgets.QTableWidgetItem(str(f))
-            self.inlist.setItem(i, self.col_fname, item)
-            rows.append(i)
+                item = QtWidgets.QTableWidgetItem(str(replayindex))
+                item.replay_index = i
+                item.replay_index_str = replayindex
+                self.inlist.setItem(i, self.col_replaypackets, item)
+                # Filename
+                item = QtWidgets.QTableWidgetItem(str(f))
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                self.inlist.setItem(i, self.col_fname, item)
+                rows.append(i)
 
-        self.scan_files(rows)
-        self.inlist.resizeColumnsToContents()
+            # Add the packetnumber etc etc
+            self.scan_files(rows)
+            self.inlist.resizeColumnsToContents()
 
-        # Loop flag
-        loop = bool(self.device.config['loop'])
-        self.loop_checkbox.setChecked(loop)
-        speedupstr = "{:.1f}".format(float(self.device.config['speedup']))
-        self.speedup_edit.setText(speedupstr)
+            # Loop flag
+            loop = bool(self.device.config['loop'])
+            self.loop_checkbox.setChecked(loop)
+            speedupstr = "{:.1f}".format(float(self.device.config['speedup']))
+            self.speedup_edit.setText(speedupstr)
+            self.inlist.cellChanged.connect(self.table_changed)
+        except Exception as e:
+            logger.exception(e)
+
+
 
     def inspect_data(self, filename, rescan=False):
         """ Inspects the files for possible datastreams in the file with the filename located in config['files'][fileindex].
         """
         funcname = self.__class__.__name__ + '.inspect_data()'
         logger.debug(funcname)
-
-        p = packetreader(filename)
-        p.inspect_file()
 
         try:
             stat = self.file_statistics[filename]
@@ -455,41 +545,8 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         if (rescan or (FLAG_HASSTAT == False)):
             logger.debug(funcname + ': Scanning file {:s}'.format(filename))
-            stat = create_data_statistic_dict()
-            # Create tmin/tmax in statistics
-            stat['t_min'] = 1e12
-            stat['t_max'] = -1e12
-            if filename.lower().endswith('.gz'):
-                FLAG_GZIP = True
-            else:
-                FLAG_GZIP = False
-
-            if FLAG_GZIP:
-                try:
-                    f = gzip.open(filename,'rt')
-                    logger.debug(funcname + ' Opened file: {:s}'.format(filename))
-                except Exception as e:
-                    logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
-                    return None
-            else:
-                try:
-                    f = open(filename)
-                    logger.debug(funcname + ' Opened file: {:s}'.format(filename))
-                except Exception as e:
-                    logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
-                    return None
-
-            packets = get_packets(f)
-            stat['t_all'] = []
-            f.close()
-            for p in packets:
-                stat = do_data_statistics(p, stat)
-                tminlist = [stat['t_min'], p['_redvypr']['t']]
-                tmaxlist = [stat['t_max'], p['_redvypr']['t']]
-                stat['t_min'] = min(tminlist)
-                stat['t_max'] = max(tmaxlist)
-                stat['t_all'].append(p['_redvypr']['t'])
-
+            p = packetreader(filename)
+            stat = p.inspect_file()
             self.file_statistics[filename] = stat
         else:
             logger.debug(funcname + ': No rescan of {:s}'.format(filename))
@@ -524,13 +581,16 @@ class initDeviceWidget(QtWidgets.QWidget):
             filename = self.inlist.item(i,self.col_fname).text()
             stat = self.inspect_data(filename,rescan=False)
             packetitem = QtWidgets.QTableWidgetItem(str(stat['packets_sent']))
+            packetitem.setFlags(packetitem.flags() & ~QtCore.Qt.ItemIsEditable)
             self.inlist.setItem(i,self.col_npackets,packetitem)
             tdmin = datetime.datetime.fromtimestamp(stat['t_min'])
             tminstr = str(tdmin)
             tdmax = datetime.datetime.fromtimestamp(stat['t_max'])
             tmaxstr = str(tdmax)
             t_min_item = QtWidgets.QTableWidgetItem(tminstr)
+            t_min_item.setFlags(t_min_item.flags() & ~QtCore.Qt.ItemIsEditable)
             t_max_item = QtWidgets.QTableWidgetItem(tmaxstr)
+            t_max_item.setFlags(t_max_item.flags() & ~QtCore.Qt.ItemIsEditable)
             self.inlist.setItem(i,self.col_tmin,t_min_item)
             self.inlist.setItem(i,self.col_tmax,t_max_item)
             
@@ -560,11 +620,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self,"Rawdatafiles","","redvypr raw gzip (*.redvypr_yaml.gz);;redvypr raw (*.redvypr_yaml);;All Files (*)")
         for f in filenames: 
-            self.device.config['files'].append(f)
+            self.device.config['files'].append(redvypr.config.configString(f))
             
-        
         self.update_filenamelist()
-        self.inlist.sortItems(0, QtCore.Qt.AscendingOrder)
+        self.inlist.sortItems(self.col_fname, QtCore.Qt.AscendingOrder)
             
 
         
@@ -592,12 +651,38 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if button.isChecked():
             logger.debug(funcname + "button pressed")
+            # Update the config for replay
             self.resort_files()
             loop = self.loop_checkbox.isChecked()
             # Loop
             self.device.config['loop'].data    = loop
             # Speedup
             self.device.config['speedup'].data = float(self.speedup_edit.text())
+            # Replay index
+            nfiles = len(self.device.config['files'])
+            replay_index = []
+            for i in range(nfiles):
+                rindex = self.inlist.item(i, self.col_replaypackets).text()
+                npackets = int(self.inlist.item(i, self.col_npackets).text())
+                rs = rindex.split(',')
+                istart = int(rs[0])
+                iend = int(rs[1])
+                istep = int(rs[2])
+                if iend < 0:
+                    iend_abs = npackets - iend
+                else:
+                    iend_abs = iend
+
+                if istart < 0:
+                    istart_abs = npackets - istart
+                else:
+                    istart_abs = istart
+
+                rindex_abs = '{:d},{:d},{:d}'.format(istart_abs,iend_abs,iend_abs)
+                replay_index.append(rindex_abs)
+
+            self.device.config['replay_index'] = redvypr.config.configList(replay_index)
+
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')
