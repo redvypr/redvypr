@@ -79,14 +79,14 @@ def create_logfile(config,count=0):
     logger.info(funcname + ' Will create a new file: {:s}'.format(filename))
     if FLAG_GZIP:
         try:
-            f = gzip.open(filename,'wt')
+            f = gzip.open(filename,'w')
             logger.debug(funcname + ' Opened file: {:s}'.format(filename))
         except Exception as e:
             logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
             return None
     else:
         try:
-            f = open(filename,'w+')
+            f = open(filename,'wb+')
             logger.debug(funcname + ' Opened file: {:s}'.format(filename))
         except Exception as e:
             logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
@@ -216,7 +216,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 packets_written       += 1
                 bytes_written_total   += len(yamlstr)
                 packets_written_total += 1
-                f.write(yamlstr)
+                f.write(yamlstr.encode('utf-8'))
+                f.write(b'\0')
                 if((time.time() - tflush) > config['dt_sync']):
                     f.flush()
                     os.fsync(f.fileno())

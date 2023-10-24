@@ -1,3 +1,5 @@
+    -0.6.5  - repaired numpacket in distribute_data
+            - rawdatareplay works now with indices
     -0.6.4  - rawdatareplay packetreader improved for potential thread based file inspection and user choice of packets to be read
             - added last publishing device (lpd) to treat_datatict(). This allows to have the future feature of subscribing to a local publishing device
     -0.6.3  - major cleanup of config utilities and rawdatareplay

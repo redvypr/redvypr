@@ -544,7 +544,7 @@ class redvypr_device(QtCore.QObject):
         else:
             self.logger.warning(funcname + ' thread is not running, doing nothing')
 
-    def thread_start(self):
+    def thread_start(self, config=None):
         """ Starts the device thread, it calls the self.start function with the arguments
 
         start(self, device_info, config, dataqueue, datainqueue, statusqueue)
@@ -554,6 +554,7 @@ class redvypr_device(QtCore.QObject):
         configuration hashable as it is needed for a multiprocess.
 
         Args:
+            config [default=None]: confuguration dictionary, if none a deepcopy of self.config is used, otherwise config
 
 
         """
@@ -577,7 +578,12 @@ class redvypr_device(QtCore.QObject):
                         # The arguments for the start function
                         thread_uuid = 'thread_' + str(uuid.uuid1())
                         device_info = {'device':self.name,'uuid':self.uuid,'thread_uuid':thread_uuid,'hostinfo':self.redvypr.hostinfo}
-                        config = copy.deepcopy(self.config) # The thread/multiprocess gets a copy
+                        if config is None:
+                            self.logger.debug('Using internal configuration')
+                            config = copy.deepcopy(self.config) # The thread/multiprocess gets a copy
+                        else:
+                            self.logger.debug('Using external configuration')
+
                         args = (device_info,config, self.dataqueue, self.datainqueue, self.statusqueue)
                         if self.mp == 'thread':
                             self.logger.info(funcname + 'Starting as thread')

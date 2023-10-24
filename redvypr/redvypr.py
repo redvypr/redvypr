@@ -109,6 +109,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
     dt_avg = 0  # Averaging of the distribution time needed
     navg = 0
     packets_processed = 0 # For statistics, count packets
+    packet_counter = 0 # Global counter of packets received by the redvypr instance
     tinfo = time.time()
     tstop = time.time()
     dt_sleep = dt
@@ -150,15 +151,18 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         data = {'data':data}
 
                     #devicedict['packets_sent'] += 1 # Do we still need this???
-                    packets_processed += 1
-                    data_all.append(data)
+                    packets_processed += 1 # Counter for the statistics
+                    packet_counter += 1 # Global counter of packets received by the redvypr instance
+                    data_all.append([data,packet_counter])
                 except Exception as e:
                     break
             # Process read packets
-            for data in data_all:
+            for data_list in data_all:
+                data = data_list[0]
+                numpacket = data_list[1]
                 #
                 # Add additional information, if not present yet
-                data_packets.treat_datadict(data, device.name, hostinfo, devicedict['packets_sent'], tread,devicedict['devicemodulename'])
+                data_packets.treat_datadict(data, device.name, hostinfo, numpacket, tread,devicedict['devicemodulename'])
                 # Get the devicename
                 devicename_stat = data_packets.get_devicename_from_data(data, uuid=True)
                 #
@@ -1277,7 +1281,7 @@ class redvyprWidget(QtWidgets.QWidget):
         funcname = self.__class__.__name__ + '.save_config():'
         logger.debug(funcname)
         data_save = self.redvypr.get_config()
-        print('data_save',data_save)
+        #print('data_save',data_save)
         if True:
             tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
             fname_suggestion = 'config_' + self.redvypr.hostinfo['hostname'] + '_' +tstr + '.yaml'
