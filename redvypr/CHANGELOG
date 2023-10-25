@@ -1,3 +1,5 @@
+    -0.6.6  - rawdatareplay: replace_time flag
+            - plot_widgets: clear buffer is now also clearing the line to plot
     -0.6.5  - repaired numpacket in distribute_data
             - rawdatareplay works now with indices
     -0.6.4  - rawdatareplay packetreader improved for potential thread based file inspection and user choice of packets to be read
