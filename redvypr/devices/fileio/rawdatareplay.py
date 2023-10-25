@@ -26,9 +26,10 @@ description = "Saves the raw redvypr packets into a file"
 config_template = {}
 config_template['name']              = 'rawdatareplay'
 config_template['files']             = {'type':'list','description':'List of files to replay'}
-config_template['replay_index']      = {'type':'list','default':['-10,-1,1'],'description':'The index of the packets to be replayed [start, end, nth]'}
-config_template['loop']              = {'type':'bool','default':True,'description':'Loop over all files if set'}
+config_template['replay_index']      = {'type':'list','default':['0,-1,1'],'description':'The index of the packets to be replayed [start, end, nth]'}
+config_template['loop']              = {'type':'bool','default':False,'description':'Loop over all files if set'}
 config_template['speedup']           = {'type':'float','default':1.0,'description':'Speedup factor of the data'}
+config_template['replace_time']      = {'type':'bool','default':True,'description':'Replaces the original time in the packet with the time the packet was read.'}
 config_template['redvypr_device']    = {}
 config_template['redvypr_device']['publish']   = False
 config_template['redvypr_device']['subscribe'] = True
@@ -435,14 +436,19 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                     if (dt_packet > 10):
                         logger.warning(funcname + ' Long dt_packet of {:f} seconds'.format(dt_packet))
 
-                    if True:
-                        #print('dt_packet',dt_packet)
-                        time.sleep(dt_packet)
-                        t_sent = time.time()
-                        t_packet_old = p['_redvypr']['t']
-                        dataqueue.put(p)
-                        packets_sent += 1
-                        dt_packet_sum += dt_packet
+
+                    #print('dt_packet',dt_packet)
+                    time.sleep(dt_packet)
+                    t_sent = time.time()
+                    t_packet_old = p['_redvypr']['t']
+                    if config['replace_time']:
+                        tnow = time.time()
+                        p['t'] = tnow
+                        p['_redvypr']['t'] = tnow
+
+                    dataqueue.put(p)
+                    packets_sent += 1
+                    dt_packet_sum += dt_packet
 
         # Status update
         if (time.time() - t_status) > dt_status:
@@ -514,6 +520,13 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         # Looping the data?
         self.loop_checkbox = QtWidgets.QCheckBox('Loop')
+        loopflag = bool(self.device.config['loop'])
+        self.loop_checkbox.setChecked(loopflag)
+        self.loop_checkbox.stateChanged.connect(self.speedup_changed)
+        self.replace_time_checkbox = QtWidgets.QCheckBox('Replace time')
+        replace_time_flag = bool(self.device.config['replace_time'])
+        self.replace_time_checkbox.setChecked(replace_time_flag)
+        self.replace_time_checkbox.stateChanged.connect(self.speedup_changed)
         # Speedup
         self.speedup_edit  = QtWidgets.QLineEdit(self)
         onlyDouble = QtGui.QDoubleValidator()
@@ -538,8 +551,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.inlabel,4,0,1,-1,QtCore.Qt.AlignCenter)         
         layout.addWidget(self.inlist,5,0,1,-1)
         layout.addWidget(self.loop_checkbox,6,0)
-        layout.addWidget(self.speedup_label,6,1,1,1,QtCore.Qt.AlignRight)
-        layout.addWidget(self.speedup_edit,6,2,1,1,QtCore.Qt.AlignRight)
+        layout.addWidget(self.replace_time_checkbox, 6, 1)
+        layout.addWidget(self.speedup_label,6,2,1,1,QtCore.Qt.AlignRight)
+        layout.addWidget(self.speedup_edit,6,3,1,1,QtCore.Qt.AlignRight)
         layout.addWidget(self.startbtn,7,0,2,-1)
 
 
@@ -554,6 +568,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         # Speedup
         self.device.config['speedup'].data = float(self.speedup_edit.text())
+        loopflag = self.loop_checkbox.isChecked()
+        replace_time_flag = self.replace_time_checkbox.isChecked()
+        self.device.config['loop'].data = loopflag
+        self.device.config['replace_time'].data = replace_time_flag
 
     def table_changed(self,row,col):
         funcname = self.__class__.__name__ + '.table_changed()'

@@ -357,6 +357,10 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             line_dict['tdata'][:] = np.NaN
             line_dict['xdata'][:] = np.NaN
             line_dict['ydata'][:] = np.NaN
+            # Set the data
+            x = line_dict['xdata']  # The line to plot
+            y = line_dict['ydata']  # The line to plot
+            line.setData(x=x, y=y)
 
     def get_data(self, xlim):
         """
