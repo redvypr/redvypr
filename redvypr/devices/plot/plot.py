@@ -270,7 +270,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def update(self, data):
         funcname = __name__ + '.update():'
-        print('Plot update ...')
+        logger.debug(funcname)
         tnow = time.time()
         self.databuf.append(data)
 

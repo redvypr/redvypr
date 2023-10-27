@@ -29,7 +29,7 @@ config_template['files']             = {'type':'list','description':'List of fil
 config_template['replay_index']      = {'type':'list','default':['0,-1,1'],'description':'The index of the packets to be replayed [start, end, nth]'}
 config_template['loop']              = {'type':'bool','default':False,'description':'Loop over all files if set'}
 config_template['speedup']           = {'type':'float','default':1.0,'description':'Speedup factor of the data'}
-config_template['replace_time']      = {'type':'bool','default':True,'description':'Replaces the original time in the packet with the time the packet was read.'}
+config_template['replace_time']      = {'type':'bool','default':False,'description':'Replaces the original time in the packet with the time the packet was read.'}
 config_template['redvypr_device']    = {}
 config_template['redvypr_device']['publish']   = False
 config_template['redvypr_device']['subscribe'] = True
@@ -872,12 +872,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         if button.isChecked():
             logger.debug(funcname + "button pressed")
             # Update the config for replay
-            #self.resort_files()
-            loop = self.loop_checkbox.isChecked()
-            # Loop
-            self.device.config['loop'].data    = loop
-            # Speedup
-            self.device.config['speedup'].data = float(self.speedup_edit.text())
+            # update loop, replace_time and speedup
+            self.speedup_changed()
             # Replay index
             nfiles = len(self.device.config['files'])
             replay_index_abs = []

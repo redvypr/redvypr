@@ -383,6 +383,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             tdata.append(tdata_tmp)
             xdata.append(xdata_tmp)
             ydata.append(ydata_tmp)
+            print('get_data',datetime.datetime.utcfromtimestamp(tdata_tmp[0]),datetime.datetime.utcfromtimestamp(xdata_tmp[0]))
 
         return {'x':xdata,'y':ydata,'t':tdata}
 
