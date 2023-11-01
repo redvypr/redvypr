@@ -688,10 +688,18 @@ class redvypr(QtCore.QObject):
                 except:
                     deviceconfig['config'] = {}
                 # If the device does not have a name, add a standard but unique one
+                # Peter
+                devicenames = self.get_all_devicenames()
                 try:
-                    deviceconfig['name']
+                    devicename_tmp = deviceconfig['name']
                 except:
-                    deviceconfig['name'] = devicemodulename + '_' + str(self.numdevice)
+                    devicename_tmp = devicemodulename.split('.')[-1]# + '_' + str(self.numdevice)
+
+                if devicename_tmp in devicenames:
+                    logger.warning(funcname + ' Devicename {:s} exists already, will add {:d} to the name.'.format(devicename_tmp,self.numdevice))
+                    devicename_tmp += '_' + str(self.numdevice)
+
+                deviceconfig['name'] = devicename_tmp
 
                 try:
                     deviceconfig['loglevel']
@@ -944,6 +952,16 @@ class redvypr(QtCore.QObject):
             all_devices.extend([dev.address_str]*nsub)
 
         return [all_subscriptions,all_devices]
+
+    def get_all_devicenames(self):
+        """
+        Returns a list with the devicenames
+        """
+        devicenames = []
+        for d in self.devices:
+            devicenames.append(d['device'].name)
+
+        return devicenames
 
 
     def get_devices(self, publishes = None, subscribes = None):

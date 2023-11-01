@@ -70,11 +70,9 @@ class redvypr_address():
 
 
     addresses are equal if there .address_str are equal
-    TODO: let addrstr be another redvypr address and replace parts if datakay etc. is given
-    TODO: let given datakey, devicename etc. replace the potentially defined address
 
     """
-    def __init__(self,addrstr=None,datapacket=None,local_hostinfo=None, datakey='',devicename='',hostname='',addr='',uuid='',redvypr_meta=None):
+    def __init__(self, addrstr=None, datapacket=None, local_hostinfo=None, datakey='', devicename='', hostname='', addr='', uuid='', redvypr_meta=None):
         """
 
         Args:
@@ -92,7 +90,7 @@ class redvypr_address():
         FLAG_MODIFIABLE = False
         if addrstr is not None: # Address from addrstr
             #print('addrstr',type(addrstr),type(self))
-            if type(addrstr) == type(self):
+            if type(addrstr) == type(self): # If addrstr is redvypr_address, convert it to str
                 self.address_str = addrstr.address_str
             else:
                 self.address_str = addrstr

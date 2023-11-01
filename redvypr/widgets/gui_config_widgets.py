@@ -49,16 +49,15 @@ class redvypr_ip_widget(QtWidgets.QWidget):
 class configWidget(QtWidgets.QWidget):
     #config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
-    def __init__(self, config=None, loadsavebutton=True,redvypr_instance=None):
+    def __init__(self, config=None, loadsavebutton=False, redvypr_instance=None, show_datatype = False, editable = True):
         funcname = __name__ + '.__init__():'
         if config == None:
             config = redvypr.config.configuration({})
         super().__init__()
         logger.debug(funcname)
-        self.redvypr=redvypr_instance
+        self.redvypr= redvypr_instance
         self.layout = QtWidgets.QGridLayout(self)
-        self.layout.setColumnStretch(0, 1)
-        self.layout.setColumnStretch(1, 1)
+
         try:
             configname = config['name']
         except:
@@ -66,13 +65,14 @@ class configWidget(QtWidgets.QWidget):
 
 
         self.config = config
-        self.configtree = configQTreeWidget(data = self.config,dataname=configname)
+        self.configtree = configQTreeWidget(data = self.config, dataname=configname, show_datatype = show_datatype)
         self.configtree.expandAll()
         self.configtree.resizeColumnToContents(0)
 
         #self.itemExpanded.connect(self.resize_view)
         #self.itemCollapsed.connect(self.resize_view)
-        self.configtree.itemDoubleClicked.connect(self.__open_config_gui)
+        if editable:
+            self.configtree.itemDoubleClicked.connect(self.__open_config_gui)
         #self.configtree.itemChanged.connect(self.item_changed)  # If an item is changed
         #self.configtree.currentItemChanged.connect(self.current_item_changed)  # If an item is changed
         self.configgui = QtWidgets.QWidget() # Widget where the user can modify the content
@@ -85,8 +85,11 @@ class configWidget(QtWidgets.QWidget):
             self.save_button = QtWidgets.QPushButton('Save')
             self.save_button.clicked.connect(self.save_config)
 
-        self.layout.addWidget(self.configtree,0,0)
-        self.layout.addWidget(self.configgui, 0, 1)
+        self.layout.addWidget(self.configtree, 0, 0)
+        if editable:
+            self.layout.addWidget(self.configgui, 0, 1)
+            self.layout.setColumnStretch(0, 1)
+            self.layout.setColumnStretch(1, 1)
         if (loadsavebutton):
             self.layout.addWidget(self.load_button, 1, 0)
             self.layout.addWidget(self.save_button, 1, 1)
@@ -114,21 +117,21 @@ class configWidget(QtWidgets.QWidget):
                 if (config is not None):
                     logger.debug(funcname + 'Applying config to template')
                     self.config = redvypr.configdata.apply_config_to_dict(config, conftemplate)
-                    print('New config:',config)
+                    logger.debug(funcname + 'New config: {:s}'.format(str(config)))
                     self.reload_config()
 
 
     def save_config(self):
         funcname = __name__ + '.save_config():'
         logger.debug(funcname)
-        print('Save',self.config)
+        #print('Save',self.config)
         if True:
             fname_open = QtWidgets.QFileDialog.getSaveFileName(self, 'Save file', '',"YAML files (*.yaml);; All files (*)")
             if(len(fname_open[0]) > 0):
                 logger.info(funcname + 'Save file file {:s}'.format(fname_open[0]))
-                print('Saving', self.configtree.data)
+                #print('Saving', self.configtree.data)
                 config = copy.deepcopy(self.configtree.data)
-                print('Deepcopy', config)
+                #print('Deepcopy', config)
                 fname = fname_open[0]
                 with open(fname, 'w') as yfile:
                     yaml.dump(config, yfile)
@@ -161,9 +164,10 @@ class configWidget(QtWidgets.QWidget):
 
         """
         funcname = __name__ + '.__open_config_gui():'
-        print('Hallo gui', type(self.config))
+        logger.debug(funcname)
+        #print('Hallo gui', type(self.config))
         data = item.__data__
-        print('Hallo gui data', type(data))
+        #print('Hallo gui data', type(data))
         try:
             options = item.__options__
         except:
@@ -196,14 +200,14 @@ class configWidget(QtWidgets.QWidget):
         data = item.__data__
         self.remove_input_widgets()
         if (dtype == 'configDict') or (dtype == 'configuration'):
-            print(funcname + 'configDict')
+            logger.debug(funcname + 'configDict')
             self.config_widget_dict(item)
         elif (dtype == 'configList'):  # Modifiable list
-            print('configList')
+            logger.debug(funcname + 'configList')
             self.config_widget_list_combo(item)
         elif (dtype == 'configNumber'):
             dtype_data = type(data.data)
-            print('configNumber',dtype_data)
+            logger.debug(funcname + 'configNumber {:s}'.format(str(dtype_data)))
             if(dtype_data == int):
                 self.config_widget_number(item,'int')
             elif (dtype_data == float):
@@ -212,7 +216,7 @@ class configWidget(QtWidgets.QWidget):
                 options = ['False', 'True']
                 self.config_widget_str_combo(item,options)
         elif (dtype == 'datastream'):
-            print('Datastream')
+            logger.debug(funcname + 'Datastream')
             self.config_widget_datastream(item)
         elif (dtype == 'color'):
             self.config_widget_color(item)
@@ -224,7 +228,7 @@ class configWidget(QtWidgets.QWidget):
                 self.config_widget_str_combo(item)
             # Let the user enter
             except Exception as e:
-                print('Exception',e)
+                logger.exception(e)
                 self.config_widget_str(item)
 
 
@@ -247,10 +251,10 @@ class configWidget(QtWidgets.QWidget):
 
             dtype = item.__datatype__
             logger.debug(funcname + 'Apply')
-            print('dtype',dtype)
+            logger.debug(funcname + 'dtype {:s}'.format(str(dtype)))
             btntext = btn.text()
             if (btn.__type__ == 'dict'):  # Add/Remove from dictionary
-                print('dict')
+                logger.debug(funcname + 'dict')
                 type_add = self.__configwidget_input.currentText()  # line edit
                 index_add = self.__configwidget_input.currentIndex()  # combobox
                 data_add = redvypr.config.template_types[index_add]['default']
@@ -262,10 +266,10 @@ class configWidget(QtWidgets.QWidget):
                 except:
                     pass
                 key_add  = self.__configwidget_key.text()
-                print('Type to be added',type_add)
-                print('Key to be added', key_add)
+                logger.debug(funcname + 'Type to be added {:s}'.format(str(type_add)))
+                logger.debug(funcname + 'Key to be added'.format(str(key_add)))
                 if(key_add not in data.keys()):
-                    print('Adding key',key_add,index_add,data_add)
+                    logger.debug('Adding key {:s} index add: {:s} data_add {:s}'.format(str(key_add),str(index_add),str(data_add)))
                     data[key_add] = data_add
                 else:
                     logger.debug(funcname + 'key {:s} does already exist'.format(key_add))
@@ -274,11 +278,11 @@ class configWidget(QtWidgets.QWidget):
                 self.apply_config_change()
                 return
             if (btn.__type__ == 'list'):  # Add/Remove from list
-                #print('Add to list')
+                logger.debug(funcname + 'Add to list')
                 type_add  = self.__configwidget_input.currentText()  # combobox
                 options_items_add = self.__configwidget_input.__options__item__
                 data_add = options_items_add[type_add]
-                print('Type to be added',type_add)
+                logger.debug(funcname + 'Type to be added {:s}'.format(str(type_add)))
                 # TODO, this should be done in the append function of the configList
                 data_add.__parent__ = data
                 data.append(data_add)
@@ -292,7 +296,7 @@ class configWidget(QtWidgets.QWidget):
                 except:
                     pass
 
-                print('HALLO 1', type(self.config))
+                logger.debug(funcname + ' str {:s}'.format(str(type(self.config))))
                 data.data = data_str
                 item.setText(1, str(data_str))
                 self.apply_config_change()
@@ -317,14 +321,14 @@ class configWidget(QtWidgets.QWidget):
                 return
 
             elif btn.__type__ == 'datastream':
-                print('Datastream')
+                logger.debug( funcname + 'Datastream')
                 data.data = self.__configwidget_input.addressline.text()
                 item.setText(1, str(data.data))
                 self.apply_config_change()
                 return
 
             elif btn.__type__ == 'color':
-                print('Color')
+                logger.debug( funcname + 'Color')
                 color = self.__configwidget_input.currentColor()
                 rgb = color.getRgb()
                 data['r'].data = rgb[0]
@@ -337,11 +341,11 @@ class configWidget(QtWidgets.QWidget):
 
         elif btn == self.__configwidget_remove:
             #if (btn.__type__ == 'dict'):  # Add/Remove from list
-            print('Removing item')
-            print('parent',data.__parent__,type(data.__parent__))
-            print('index',dataindex)
+            logger.debug( funcname + 'Removing item')
+            #print('parent',data.__parent__,type(data.__parent__))
+            #print('index',dataindex)
             data.__parent__.pop(dataindex)
-            print('config',self.get_config())
+            #print('config',self.get_config())
             self.reload_config()
         else:
             logger.debug(funcname + 'unknown button')
@@ -362,7 +366,7 @@ class configWidget(QtWidgets.QWidget):
                 Returns:
 
         """
-
+        funcname = __name__ + '.config_widget_color():'
         index = item.__dataindex__
         parent = item.__parent__
         data = item.__data__
@@ -373,7 +377,7 @@ class configWidget(QtWidgets.QWidget):
         self.__layoutwidget_int = QtWidgets.QVBoxLayout(self.__configwidget_int)
         color = QtGui.QColor(data['r'], data['g'], data['b'])#, data['a'])
         #color = QtGui.QColor(255, 0, 0)  # , data['a'])
-        print('Color', data,color.getRgb())
+        print(funcname + 'Color', data,color.getRgb())
         # The color dialog
         colorwidget = QtWidgets.QColorDialog(self.__configwidget_int)
         colorwidget.setOptions(QtWidgets.QColorDialog.NoButtons| QtWidgets.QColorDialog.DontUseNativeDialog)
@@ -400,7 +404,7 @@ class configWidget(QtWidgets.QWidget):
 
         """
         funcname = __name__ + '.config_widget_datastream():'
-        print(funcname)
+        logger.debug(funcname)
         index = item.__dataindex__
         parent = item.__parent__
         data = item.__data__
@@ -683,7 +687,7 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
     """ Qtreewidget that display a configDict data structure
     """
 
-    def __init__(self, data={}, dataname='data'):
+    def __init__(self, data={}, dataname='data', show_datatype = True):
         funcname = __name__ + '.__init__():'
         super().__init__()
         if(type(data) == dict): # Convert to configDict to allow to store extra attributes
@@ -709,6 +713,10 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
         self.root.__parent__ = None
         self.setColumnCount(3)
         self.create_qtree()
+
+        # Show the datatpye column
+        if show_datatype == False:
+            self.header().hideSection(2)
         #self.itemExpanded.connect(self.resize_view)
         #self.itemCollapsed.connect(self.resize_view)
 
@@ -753,8 +761,8 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
             item.__datatypestr__  = typestr
             item.__parent__       = parent
             # Add the item to the data
-            print('data',data)
-            print('data',type(data))
+            #print('data',data)
+            #print('data',type(data))
             data.__item__ = item
 
             index_child = self.item_is_child(parent, item)
@@ -853,6 +861,8 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
         self.dataitem = self.root.child(0)
         self.resizeColumnToContents(0)
         self.blockSignals(False)
+
+
 
     def resize_view(self):
         pass

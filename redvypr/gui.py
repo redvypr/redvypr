@@ -48,12 +48,20 @@ class LineEditFocus(QtWidgets.QLineEdit):
         super(LineEditFocus, self).focusOutEvent(event)
 
 def get_QColor(data):
+    """
+    Returns a qcolor based on the data input, data can be either a string, a list of rgb or a dictionary of type {'r':250,'g':100,'b':0}
+    """
     funcname = __name__ + '.get_QColor():'
-    if(type(data.data) == str):
-        color = QtGui.QColor(data.data)
+    logger.debug(funcname)
+    colordata = copy.deepcopy(data)
+
+    if(type(colordata) == str):
+        color = QtGui.QColor(colordata)
+    elif (type(colordata) == list):
+        color = QtGui.QColor(colordata[0], colordata[1], colordata[2])
     else:
-        colors = data.data
-        color = QtGui.QColor(colors['r'].data, colors['g'].data, colors['b'].data)
+        colors = colordata
+        color = QtGui.QColor(colors['r'], colors['g'], colors['b'])
 
     return color
 

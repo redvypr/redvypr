@@ -87,7 +87,9 @@ class redvypr_device_scan():
                 try:
                     spec.loader.exec_module(module)
                 except Exception as e:
-                    self.logger.warning(funcname + ' could not import module: {:s} \nError: {:s}'.format(pfile, str(e)))
+                    self.logger.warning(funcname + ' could not import module: {:s}\n--------------------------------------------\n'.format(pfile))
+                    self.logger.exception(e)
+                    self.logger.warning(funcname + '\n--------------------------------------------\n')
 
                 module_members = inspect.getmembers(module, inspect.isclass)
                 valid_module = self.valid_device(module)

@@ -70,6 +70,9 @@ config_template_graph['bordercolor'] = {'type': 'color', 'default': 'lightgray'}
 
 config_template_graph['useprops'] = {'type': 'bool', 'default': True,
     'description': 'Use the properties to display units etc.'}
+
+config_template_graph['showunits'] = {'type': 'bool', 'default': True,
+    'description': 'Add the unit of the y-data to the legend, queried from the datakey.'}
 config_template_graph['datetick'] = {'type': 'bool', 'default': True,
     'description': 'x-axis is a date axis'}
 
@@ -80,13 +83,16 @@ config_template_graph['lines'] = {'type': 'list', 'default': [config_template_gr
                                  'options': [config_template_graph_line]}
 #config_template_graph['description'] = description_graph
 
+
+
 class redvypr_graph_widget(QtWidgets.QFrame):
     """ Widget is plotting realtimedata using the pyqtgraph functionality
     This widget can be configured with a configuration dictionary 
     """
-    def __init__(self,config=None):
-        funcname = __name__ + '.init()'
+    def __init__(self,config=None, redvypr_device = None):
+        funcname = __name__ + '.init():'
         super(QtWidgets.QFrame, self).__init__()
+        self.device = redvypr_device
         self.logger = logging.getLogger('plot_graph_widget')
         self.logger.setLevel(logging.DEBUG)
         self.description = description_graph
@@ -100,9 +106,9 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         self.logger.debug('plot widget config {:s}'.format(str(self.config)))
         backcolor = str(self.config['backgroundcolor'])
         bordercolor = str(self.config['bordercolor'])
-        print('backcolor',backcolor)
+        logger.debug(funcname + 'backcolor {:s}'.format(str(backcolor)))
         style = "background-color : {:s};border : 1px solid {:s};".format(backcolor, bordercolor)
-        print('Style:',style)
+        logger.debug(funcname + 'Style: {:s}'.format(str(style)))
         self.setStyleSheet(style)
         self.layout = QtWidgets.QVBoxLayout(self)
         self.create_widgets()
@@ -120,7 +126,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         """
         funcname = __name__ + '.create_widgets()'
         config = self.config
-        print('Hallo!, Creating widgets')
+        logger.debug(funcname)
         i = 0
         if True:
             logger.debug(funcname + ': Adding plot' + str(config))
@@ -133,8 +139,14 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 name = config['name'].data
             except:
                 name = "Plot {:d}".format(i)
-            
+
+            # https://stackoverflow.com/questions/44402399/how-to-disable-the-default-context-menu-of-pyqtgraph
             plot = pyqtgraph.PlotWidget(title=title,name=name)
+            menu = plot.plotItem.vb.menu.addMenu('Redvypr config')
+            action = menu.addAction('Line config')
+            action.triggered.connect(self.pyqtgraphRedvyprAction)
+
+            #plot = redvyprPlotWidget(title=title,name=name)
             plot.register(name=name)
             # Add a legend
             legend = plot.addLegend()
@@ -161,6 +173,19 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 
         #self.plot_dict = plot_dict
 
+
+    def pyqtgraphRedvyprAction(self,hallo):
+        """
+
+        """
+        funcname = __name__ + '.pyqtgraphRedvyprAction()'
+        logger.debug(funcname)
+        self.configWidget = redvypr.gui.configWidget(self.config)
+        self.configWidget.setWindowIcon(QtGui.QIcon(_icon_file))
+        self.configWidget.config_changed_flag.connect(self.apply_config)
+        self.configWidget.show()
+
+
     def mouseMoved(self,evt):
         """Function if mouse has been moved
         """
@@ -179,10 +204,58 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         pass
 
     def set_title(self,title):
+        """
+        Sets the title of the plot
+        """
         funcname = __name__ + '.set_title()'
         logger.debug(funcname)
         self.config['title'].data = title
         self.config.plot.setTitle(title)
+
+    def set_line(self, index, y, name='$y', x='$t(y)', color=[255, 0, 0], linewidth=1, bufsize=2000):
+        """
+        Sets the line at index to the parameters
+        """
+
+        self.add_line(y, name, x, color, linewidth, bufsize, index = index)
+
+    def add_line(self,y,name='$y',x='$t(y)', color=[255,0,0], linewidth=1, bufsize=2000, index = None):
+        """
+        Adds a line to the plot
+        """
+        funcname = __name__ + '.add_line()'
+        logger.debug(funcname)
+        if index is None:
+            rconfig = redvypr.config.configuration(config_template_graph_line)
+            self.config['lines'].data.append(rconfig)
+            index = len(self.config['lines']) - 1
+
+        config_line = {}
+        self.config['lines'][index]['buffersize'].data = bufsize
+        self.config['lines'][index]['linewidth'].data = linewidth
+        qcolor_tmp = redvypr.gui.get_QColor(color)
+        self.config['lines'][index]['color']['r'].data = qcolor_tmp.red()
+        self.config['lines'][index]['color']['g'].data = qcolor_tmp.green()
+        self.config['lines'][index]['color']['b'].data = qcolor_tmp.blue()
+        self.config['lines'][index]['x'].data = x
+        self.config['lines'][index]['y'].data = y
+        self.config['lines'][index]['name'].data = name
+
+        self.apply_config()
+
+        #config_template_graph_line = {}
+        #config_template_graph_line['template_name'] = 'Line'
+        #config_template_graph_line['buffersize'] = {'type': 'int', 'default': 2000,
+        #                                            'description': 'The size of the buffer holding the data of the line'}
+        #config_template_graph_line['name'] = {'type': 'str', 'default': '$y',
+        #                                      'description': 'The name of the line, this is shown in the legend'}
+        #config_template_graph_line['x'] = {'type': 'datastream', 'default': '$t(y)',
+        #                                   'description': 'The x-data of the plot'}
+        #config_template_graph_line['y'] = {'type': 'datastream', 'default': '',
+        #                                   'description': 'The y-data of the plot'}
+        #config_template_graph_line['color'] = {'type': 'color', 'description': 'The color of the plot'}
+        #config_template_graph_line['linewidth'] = {'type': 'int', 'default': 1,
+        #                                           'description': 'The linewidth of the line'}
 
     def apply_config(self):
         """
@@ -204,11 +277,11 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             datetick = False
 
         if datetick:
-            print('Datetick')
+            logger.debug(funcname + 'Datetick')
             axis = pyqtgraph.DateAxisItem(orientation='bottom',utcOffset=0)
             plot.setAxisItems({"bottom": axis})
         else:
-            print('No datetick')
+            logger.debug(funcname + ' No Datetick')
             axis = pyqtgraph.AxisItem(orientation='bottom')
             plot.setAxisItems({"bottom": axis})
 
@@ -237,7 +310,8 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 continue
             except:
                 pass
-            logger.debug(funcname + ':Adding a line to the plot:' + str(line))
+
+            logger.debug(funcname + ': Adding a line to the plot:' + str(line))
             buffersize = line['buffersize'].data
             tdata = np.zeros(buffersize) * np.NaN
             xdata = np.zeros(buffersize) * np.NaN
@@ -268,13 +342,14 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             try:
                 color = redvypr.gui.get_QColor(line['color'])
             except Exception as e:
-                logger.debug('No color found:' + str(e))
+                logger.debug('Definition of color not usable:')
+                logger.exception(e)
                 color = QtGui.QColor(255, 10, 10)
 
             # Configuration of the line plot
             lineconfig = {'x': x, 'y': y, 'linewidth': linewidth, 'color': color}
             # Add the line and the configuration to the lines list
-            line_dict = {'line': lineplot, 'config': lineconfig, 'xdata': xdata, 'ydata': ydata,'tdata':tdata}
+            line_dict = {'line': lineplot, 'config': lineconfig, 'xdata': xdata, 'ydata': ydata, 'tdata':tdata}
             line.line_dict = line_dict
             plot.addItem(lineplot)
             # Configuration
@@ -284,6 +359,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         self.config.legend.clear()
         for iline, line in enumerate(self.config['lines']):
             try:
+                logger.debug(funcname + ': Updating line {:d}'.format(iline))
                 #print('Line',line,iline)
 
                 lineconfig = line.line_dict['config']
@@ -336,7 +412,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
 
                 logger.debug(funcname + ' Setting the name')
                 self.config.legend.addItem(lineplot,name)
-                #lineplot.setName(name)
+                lineplot.setData(name=name)
             except Exception as e:
                 logger.exception(e)
                 logger.debug('Exception config lines: {:s}'.format(str(e)))
@@ -389,7 +465,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
 
 
         
-    def update_plot(self,data):
+    def update_plot(self, data):
         """ Updates the plot based on the given data
         """
         funcname = self.__class__.__name__ + '.update_plot():'
@@ -441,16 +517,29 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                             line_dict['xdata']  = xdata
                             line_dict['ydata']  = ydata
 
-                        # Show the unit in the legend, if wished by the user
-                        if('useprops' in self.config.keys()):
-                            if(self.config['useprops']):
-                                propkey = '?' + yaddr.datakey
-                                try:
-                                    unitstr ='[' + data[propkey]['unit'] + ']'
-                                    pw.setLabel('left', unitstr)
-                                except:
-                                    pass
+                        # Show the unit in the legend, if wished by the user and we have access to the device that can give us the metainformation
+                        if (self.config['showunits']) and (self.device is not None):
+                            try:
+                                line.datakeys # datakeys found, doing nothing
+                            except:
+                                line.datakeys = self.device.get_datakeyinfo(yaddr)
+                                logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line.datakeys)))
+                                unit = None
+                                for k in line.datakeys.keys():
+                                    #print('key',k,yaddr,k in yaddr)
+                                    if k in yaddr:
+                                        print('fsfsd')
+                                        try:
+                                            unit = line.datakeys[k]['unit']
+                                            break
+                                        except:
+                                            unit = None
 
+                                if unit is not None:
+                                    name = line.name()
+                                    name_new = name + ' [{:s}]'.format(unit)
+                                    self.config['lines'][iline]['name'].data = name_new
+                                    self.apply_config()
 
 
             if(update):
