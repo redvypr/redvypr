@@ -517,6 +517,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.widgets_to_config():'
         logger.debug(funcname)
+        config['datafolder'].data        = self.folder_text.text()
         config['dt_newfile'].data        = int(self.dt_newfile.text())
         config['dt_newfile_unit'].data   = self.newfiletimecombo.currentText()
         config['size_newfile'].data      = int(self.size_newfile.text())

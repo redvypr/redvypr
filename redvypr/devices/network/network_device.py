@@ -41,6 +41,31 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('network_device')
 logger.setLevel(logging.DEBUG)
 
+#self.config['address'] = get_ip()
+#self.config['port'] = 18196
+#self.config['protocol'] = 'tcp' # TCP/UDP
+#self.config['direction'] = 'publish'  # publish/receive
+#self.config['data'] = 'data'  # datakey
+#self.config['serialize'] = 'raw'  # yaml/str/raw
+
+description = "Send and receive data using standard network protocols as TCP or UDP"
+config_template = {}
+config_template['name']              = 'network_device'
+config_template['address']           = {'type':'str','default':'<IP>','description':'The IP address, this can be also <IP> or <broadcast>'}
+config_template['port']        = {'type':'int','default':18196,'description':'The network port used.'}
+config_template['protocol']   = {'type':'str','default':'tcp','options':['tcp','udp'],'description':'The network protocol used.'}
+config_template['direction']         = {'type':'str','default':'publish','options':['publish','receive'],'description':'Publishing or receiving data.'}
+config_template['data']      = {'type':'str','default':'data','description':'Datakey to store data, this is used if serialize is raw or str'}
+config_template['serialize'] = {'type':'str','default':'raw','options':['yaml','str','raw'],'description':'Method to serialize (convert) original data into binary data.'}
+config_template['queuesize']        = {'type':'int','default':10000,'description':'Size of the queues for transfer between threads'}
+config_template['dtstatus']     = {'type':'float','default':2.0,'description':'Send a status message every dtstatus seconds'}
+config_template['tcp_reconnect']        = {'type':'bool','default':True,'description':'Reconnecting to TCP Port if connection was closed by host'}
+config_template['tcp_numreconnect']       = {'type':'int','default':10,'description':'The number of reconnection attempts before giving up'}
+config_template['redvypr_device']    = {}
+config_template['redvypr_device']['publishes']   = True
+config_template['redvypr_device']['subscribes']  = True
+config_template['redvypr_device']['description'] = description
+
 #https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib
 def get_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -493,93 +518,89 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
 
     logger.info(funcname + ' stopped')
 
+
+
+def start(device_info, config, dataqueue, datainqueue, statusqueue):
+    """
+
+    Args:
+        device_info:
+        config:
+        dataqueue:
+        datainqueue:
+        statusqueue:
+
+    Returns:
+
+    """
+    funcname = __name__ + '.start():'
+    logger.debug(funcname + config['protocol'])
+    if(config['direction'] == 'publish'):
+        if(config['protocol'] == 'tcp'):
+            logger.info(__name__ + ':Start to serve data on address (TCP):' + str(config))
+            start_tcp_send(dataqueue,datainqueue,statusqueue,config=config,device_info=device_info)
+        elif(config['protocol'] == 'udp'):
+            logger.info(__name__ + ':Start to serve data on address (UDP broadcast)')
+            #start_udp_send(dataqueue,datainqueue,statusqueue,config=config)
+            start_udp_send(dataqueue, datainqueue, statusqueue, config=config,
+                           device_info=device_info)
+    elif(config['direction'] == 'receive'):
+        if(config['protocol'] == 'tcp'):
+            logger.info('Start to receive data from address (TCP):' + str(config))
+            start_tcp_recv(dataqueue,datainqueue,statusqueue,config=config,device_info=device_info)
+        elif(config['protocol'] == 'udp'):
+            logger.info('Start to receive data from address (UDP):' + str(config))
+            start_udp_recv(dataqueue,datainqueue,statusqueue,config=config,device_info=device_info)
+
 class Device(redvypr_device):
     def __init__(self, **kwargs):
         """
         """
         super(Device, self).__init__(**kwargs)
-        self.publish = True
-        self.subscribe = True
-        self.description = 'network device'
-        self.thread_communication = self.datainqueue  # Change the commandqueue to the datainqueue
         self.check_and_fill_config() # Add standard stuff
-        
-    def start(self, device_info, config, dataqueue, datainqueue, statusqueue):
-        """
 
-        Args:
-            device_info:
-            config:
-            dataqueue:
-            datainqueue:
-            statusqueue:
-
-        Returns:
-
-        """
-        funcname = __name__ + '.start():'
-        self.check_and_fill_config()
-        logger.debug(funcname + self.config['protocol'])
-        if(self.config['direction'] == 'publish'):
-            if(self.config['protocol'] == 'tcp'):
-                logger.info(__name__ + ':Start to serve data on address (TCP):' + str(self.config))
-                start_tcp_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config,device_info=device_info)
-            elif(self.config['protocol'] == 'udp'):
-                logger.info(__name__ + ':Start to serve data on address (UDP broadcast)')
-                #start_udp_send(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config)
-                start_udp_send(self.dataqueue, self.datainqueue, self.statusqueue, config=self.config,
-                               device_info=device_info)
-        elif(self.config['direction'] == 'receive'):
-            if(self.config['protocol'] == 'tcp'):
-                logger.info('Start to receive data from address (TCP):' + str(self.config))
-                start_tcp_recv(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config,device_info=device_info)
-            elif(self.config['protocol'] == 'udp'):
-                logger.info('Start to receive data from address (UDP):' + str(self.config))
-                start_udp_recv(self.dataqueue,self.datainqueue,self.statusqueue,config=self.config,device_info=device_info)
-                
-    
     def check_and_fill_config(self):
         """ Fills a config, if essential entries are missing
         """
         try:
             self.config['address']
         except:
-            self.config['address'] = get_ip()
+            self.config['address'].data = get_ip()
 
 
         if(self.config['address'] == None):
-            self.config['address'] = get_ip()
-        elif(self.config['address'] == ''):
-            self.config['address'] = get_ip()
-        elif(self.config['address'] == '<ip>'):
-            self.config['address'] = get_ip()
-        elif(self.config['address'] == '<IP>'):
-            self.config['address'] = get_ip()                        
+            self.config['address'].data = get_ip()
+        elif(self.config['address'].data == ''):
+            self.config['address'].data = get_ip()
+        elif(self.config['address'].data == '<ip>'):
+            self.config['address'].data = get_ip()
+        elif(self.config['address'].data == '<IP>'):
+            self.config['address'].data = get_ip()
             
         try:
-            self.config['port']
+            self.config['port'].data
         except:
-            self.config['port']=18196
+            self.config['port'].data = 18196
             
         try:
-            self.config['protocol']
+            self.config['protocol'].data
         except:
-            self.config['protocol'] = 'tcp'
+            self.config['protocol'].data = 'tcp'
         
         try:    
-            self.config['direction']
+            self.config['direction'].data
         except:
-            self.config['direction'] = 'publish' # publish/receive
+            self.config['direction'].data = 'publish' # publish/receive
             
         try:
-            self.config['data']
+            self.config['data'].data
         except: 
-            self.config['data'] = 'data' #
+            self.config['data'].data = 'data' #
 
         try:
-            self.config['serialize']
+            self.config['serialize'].data
         except:
-            self.config['serialize'] = 'raw' # yaml/str/raw
+            self.config['serialize'].data = 'raw' # yaml/str/raw
 
     def status(self):
         funcname = 'status()'
@@ -721,17 +742,17 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         # Disconnect all signals
         self.connect_signals_options(connect=False)
-        if (self.device.config['protocol'] == 'tcp'):
+        if (self.device.config['protocol'].data == 'tcp'):
             self._combo_proto.setCurrentIndex(0)
         else:
             self._combo_proto.setCurrentIndex(1)
 
-        if(self.device.config['address'] is not None):
-            self.addressline.setText(self.device.config['address'])
-        if(self.device.config['port'] is not None):
-            self.portline.setText(str(self.device.config['port']))
+        if(self.device.config['address'].data is not None):
+            self.addressline.setText(self.device.config['address'].data)
+        if(self.device.config['port'].data is not None):
+            self.portline.setText(str(self.device.config['port'].data))
             
-        if(self.device.config['direction'] == 'publish'):
+        if(self.device.config['direction'].data == 'publish'):
             self._combo_inout.setCurrentIndex(0)
         else:
             self._combo_inout.setCurrentIndex(1)
@@ -739,18 +760,18 @@ class initDeviceWidget(QtWidgets.QWidget):
         for i in range(self._combo_ser.count()):
             self._combo_ser.setCurrentIndex(i)
             txt = self._combo_ser.currentText()
-            print('txt',i,txt)
-            if(txt.lower() == self.device.config['serialize'].lower()):
-                print('break')
+            #print('txt',i,txt)
+            if(txt.lower() == self.device.config['serialize'].data.lower()):
+                #print('break')
                 break
 
-        if(self.device.config['serialize'].lower() == 'all'):
+        if(self.device.config['serialize'].data.lower() == 'all'):
             self._data_pub_all.setChecked(True)
         else:
             self._data_pub_dict.setChecked(True)
 
 
-        self.dataentry.setText(self.device.config['data'])
+        self.dataentry.setText(self.device.config['data'].data)
         self.connect_signals_options(connect=True)
             
     def process_options(self):
@@ -758,21 +779,22 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.process_options()'
         config   = {}
-        print('Process options')
+        logger.debug(funcname)
+        config = self.device.config
 
-        config['address']   = self.addressline.text()
-        config['direction'] = self._combo_inout.currentText().lower()
-        config['protocol']  = self._combo_proto.currentText().lower()
+        config['address'].data   = self.addressline.text()
+        config['direction'].data = self._combo_inout.currentText().lower()
+        config['protocol'].data  = self._combo_proto.currentText().lower()
         if(self._data_pub_all.isChecked()): # sending/receiving YAML dictionaries
             self.dataentry.setEnabled(False)
             self._combo_ser.setEnabled(False)
-            config['serialize'] = 'yaml'
-            config['data']      = 'all'
+            config['serialize'].data = 'yaml'
+            config['data'].data      = 'all'
         else:
             self.dataentry.setEnabled(True)
             self._combo_ser.setEnabled(True)
-            config['serialize'] = self._combo_ser.currentText().lower()
-            config['data']      = self.dataentry.text()
+            config['serialize'].data = self._combo_ser.currentText().lower()
+            config['data'].data      = self.dataentry.text()
 
         # Change the GUI according to send/receive
         if(self._combo_inout.currentText() == 'Publish'):
@@ -788,14 +810,14 @@ class initDeviceWidget(QtWidgets.QWidget):
             logger.warning(funcname + ': Broadcast works only with UDP')
 
         try:
-            config['port'] = int(self.portline.text())
+            config['port'].data = int(self.portline.text())
         except:
             logger.warning(funcname + ': Port is not an int')
 
 
         self.device.config = config
         logger.debug(funcname + ': config: ' + str(config))
-        return config
+
 
     def thread_status(self,status):
         self.update_buttons(status['threadalive'])
@@ -828,19 +850,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if button.isChecked():
             try:
-                config = self.process_options()
+                self.process_options()
             except:
                 logger.warning(funcname + ': Invalid settings')
                 self.startbtn.setChecked(False)
                 return
 
-            if(config == None):
-                self.startbtn.setChecked(False)
-                return
-            
             # Setting the configuration
-            #print('Starting network with config',config)
-            self.device.config = config
             self.device.thread_start()
             button.setText("Starting")
         else:

@@ -377,7 +377,7 @@ class configWidget(QtWidgets.QWidget):
         self.__layoutwidget_int = QtWidgets.QVBoxLayout(self.__configwidget_int)
         color = QtGui.QColor(data['r'], data['g'], data['b'])#, data['a'])
         #color = QtGui.QColor(255, 0, 0)  # , data['a'])
-        print(funcname + 'Color', data,color.getRgb())
+        logger.debug(funcname + 'Color {:s}, {:s}'.format(str(data),str(color.getRgb())))
         # The color dialog
         colorwidget = QtWidgets.QColorDialog(self.__configwidget_int)
         colorwidget.setOptions(QtWidgets.QColorDialog.NoButtons| QtWidgets.QColorDialog.DontUseNativeDialog)
@@ -519,6 +519,7 @@ class configWidget(QtWidgets.QWidget):
         Returns:
 
         """
+        funcname = __name__ + '.config_widget_list_combo():'
         index = item.__dataindex__
         data = item.__data__
         parent = item.__parent__
@@ -537,12 +538,12 @@ class configWidget(QtWidgets.QWidget):
         options_item = {} # A dictionary that helps to quickly get the item having the str
         try: # First have a look if there are template options
             options_tmp = data.template['options']
-            print('Template is', data.template)
-            print('Using template options')
-            print('Options are', options_tmp)
+            logger.debug(funcname + 'Template is'.format(str(data.template)))
+            logger.debug(funcname + 'Using template options')
+            logger.debug(funcname + 'Options are {:s}'.format(str(options_tmp)))
             for o in options_tmp:
-                print('option',o)
-                print('------------------')
+                #print('option',o)
+                #print('------------------')
                 if('type' in o.keys()): # This is a default entry from redvypr.config.__template_types__modifiable_list_dict__
                     try:
                         tempname = o['type']
@@ -558,8 +559,8 @@ class configWidget(QtWidgets.QWidget):
                         options_str.append(tempname)
                         options_item[tempname] = data_item
                     except Exception as e:
-                        print('Exception template',e)
-                        print('Could not find template type for',o)
+                        logger.exception(e)
+                        logger.debug(funcname + 'Could not find template type for {:s}'.format(str(o)))
                 elif('template_name' in o.keys()):
                     tempname = o['template_name']
                     data_item = redvypr.config.dict_to_configDict(o,process_template=True)
@@ -568,8 +569,7 @@ class configWidget(QtWidgets.QWidget):
                     options_item[tempname] = data_item
         except Exception as e: # Do we still need this?
             logger.exception(e)
-            print('Standard template option because of {:s}'.format(str(e)))
-            logger.debug('Using standard options')
+            logger.debug(funcname + 'Standard template option because of {:s}'.format(str(e)))
             options_standard = redvypr.config.template_types
 
             for opt_tmp in options_standard:
@@ -582,7 +582,7 @@ class configWidget(QtWidgets.QWidget):
                 except:
                     pass
 
-                print('Tempname',tempname)
+                #print('Tempname',tempname)
                 options_item[tempname] = data_item
 
         self.__configwidget_input.__options__item__ = options_item
@@ -866,6 +866,5 @@ class configQTreeWidget(QtWidgets.QTreeWidget):
 
     def resize_view(self):
         pass
-        print('resize ...')
         #self.resizeColumnToContents(0)
 
