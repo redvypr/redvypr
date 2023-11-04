@@ -1,14 +1,11 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 import redvypr.gui
 import sys
-from redvypr.utils import configtemplate_to_dict, apply_config_to_dict,configdata
+#from redvypr.utils import configtemplate_to_dict, apply_config_to_dict,configdata
 import redvypr.config
 import copy
 
-d =configdata([])
-d.value.append(configdata(None))
-copy.deepcopy(configdata(None))
-#copy.deepcopy(d)
+
 
 config_options = {'type': 'str', 'default': 'test', 'options': ['1', '2', 'zehn'], 'range': [0, 2, 1]}
 
@@ -44,7 +41,7 @@ config['listconfig'] = []
 config['listconfig'].append({'name': 'type2'})
 config['listconfig'].append({'template_name': 'typetest'})
 
-from redvypr.devices.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
+from redvypr.devices.plot.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
 description = 'Device that plots the received data'
 config_template = {}
 #config_template['plots'] = {'type': 'list', 'modify': True, 'options': [config_template_numdisp, config_template_graph]}
@@ -86,13 +83,29 @@ config_template['redvypr_device']['description'] = description
 
 
 
-#configtest_dict = redvypr.config.dict_to_configDict(config_template_poly,process_template=True)
-configtest_dict = redvypr.config.dict_to_configDict(config_template_poly,process_template=True)
-print('Coefficients dict options',configtest_dict['coefficients'].template['options'])
-configtest = redvypr.config.configuration(config_template_poly)
-print('Coefficients options',configtest['coefficients'].template['options'])
-input('fds')
-print('configtest',configtest)
+
+
+calibration_template_channel = {}
+calibration_template_channel['template_name']  = 'channelconfiguration'
+calibration_template_channel['sn_mac'] = {'type': 'str', 'default': '', 'modify': True, 'description':'The serial number and/or MAC address of the sensor that is attached to the channel'}
+
+calibration_template_sensor = {}
+calibration_template_sensor['template_name']  = 'sensorconfiguration'
+calibration_template_sensor['sn_mac'] = {'type': 'str', 'default': '', 'modify': True, 'description':'The serial number and/or MAC address of the logger to which sensor are attached'}
+calibration_template_sensor['channels'] = {'type': 'dict', 'default': {}, 'options': [calibration_template_channel],'modify': True, 'description':'The configuration of the individual channels'}
+
+config_template = {}
+config_template['STR'] = {'type': 'str', 'default': 'BALR','modify': True}
+config_template['DM'] = {'type': 'dict', 'default': {}, 'options': [calibration_template_sensor,'str'],'modify': True}
+config_template['D'] = {'type': 'dict', 'default': {}, 'options': [calibration_template_sensor,'str'],'modify': False}
+config_template['LM'] = {'type': 'list', 'default': [], 'options': [calibration_template_sensor,'str','bool'],'modify': True}
+config_template['L'] = {'type': 'list', 'default': [], 'options': [calibration_template_sensor],'modify': False}
+
+
+
+
+configtest = redvypr.config.configuration(config_template)
+
 def main():
     app = QtWidgets.QApplication(sys.argv)
     screen = app.primaryScreen()

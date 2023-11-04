@@ -422,8 +422,9 @@ def dict_to_configDict(data, process_template=False, configdict=None, standard_o
 
     """
     funcname = __name__ + 'dict_to_configDict():'
-    def loop_over_index(c):
+    def loop_over_index(c, children_removable = True):
         logger.debugv('c {:s} {:s}'.format(str(c),str(seq_iter(c))))
+        c.children_removable = children_removable
         for index in seq_iter(c):
             # Check first if we have a configuration dictionary entry
             FLAG_CONFIG_DICT = False
@@ -490,62 +491,93 @@ def dict_to_configDict(data, process_template=False, configdict=None, standard_o
                 except Exception as e:
                     modifiable = standard_option_modifiable
 
-                if (c[index]['type'] == 'list') and modifiable: # Modifiable list
-                    # Check if options are in the template, if not not add standard types
-                    try:
-                        c[index]['options']
-                        # Loop over the options and replace standard options with their dictionary types
-                        for i,o in enumerate(c[index]['options']):
-                            #print('Option to be checked', o)
-                            # If the option is a str, try to find the correct template in the standard template
-                            if (type(o) == str) or (type(o) == configString):
-                                #print('Converting to standard option',o)
-                                try:
-                                    c[index]['options'][i] = copy.deepcopy(__template_types__modifiable_list_dict__[o])
-                                    #print('Changed option', c[index]['options'][i])
-                                    #print('Hallo', c)
-                                except Exception as e:
-                                    #print('Did not change because of',e)
-                                    continue
-                    except: # If no options are given, simply copy all options as a choice
-                        c[index]['options'] = copy.deepcopy(__template_types__modifiable_list__)
 
-                    templatedata['options'] = c[index]['options'] # Copy the modified options
-                    if ('default' in c[index].keys()): # The default values are templates and need to be converted to dicts
-                        default_value_tmp = c[index]['default']
-                        default_value = configList()
-                        default_value.__parent__ = c # Save the parent as attribute
-                        #print('Default',default_value_tmp)
-                        if (type(default_value_tmp) == list) or (type(default_value_tmp) == configList):
-                            #print('Configlist',type(default_value_tmp))
-                            for d in default_value_tmp:
-                                #print('d',d)
-                                if valid_template(d):
-                                    #print('Template', d)
-                                    dtmp = dict_to_configDict(d, process_template=process_template)
-                                else:
-                                    #print('Standard data', d)
-                                    dtmp = data_to_configdata(d,recursive=True)
-
-                                dtmp.template = copy.deepcopy(d)
-                                dtmp.__parent__ = default_value # Save the parent as attribute
-                                default_value.append(dtmp)
-                                default_value.template = copy.deepcopy(c[index])
-                        else:
-                            raise TypeError("The default value should be a list containing templates")
+                # Check if datatype is modifiable (list, dictionary)
+                #if (c[index]['type'] == 'list'):
+                if (c[index]['type'] == 'list') or (c[index]['type'] == 'dict'): # list
+                    print('LISTDICT',index,modifiable)
+                    options = [] # The options for the list, this will be filled now
+                    # Check if options are in the template, if not add standard types
+                    if not(modifiable):
+                        options = []
                     else:
-                        default_value = configList()
-                        default_value.template = copy.deepcopy(c[index])
+                        try:
+                            c[index]['options']
+                            options = copy.deepcopy(c[index]['options'])
+                            # Loop over the options and replace standard options with their dictionary types
+                            for i,o in enumerate(c[index]['options']):
+                                #print('Option to be checked', o)
+                                # If the option is a str, try to find the correct template in the standard template
+                                if (type(o) == str) or (type(o) == configString):
+                                    #print('Converting to standard option',o)
+                                    try:
+                                        #c[index]['options'][i] = copy.deepcopy(__template_types__modifiable_list_dict__[o])
+                                        options[i] = copy.deepcopy( __template_types__modifiable_list_dict__[o])
+                                        #print('Changed option', c[index]['options'][i])
+                                        #print('Hallo', c)
+                                    except Exception as e:
+                                        #print('Did not change because of',e)
+                                        continue
+                        except: # If no options are given, simply copy all options as a choice
+                            #c[index]['options'] = copy.deepcopy(__template_types__modifiable_list__)
+                            options = copy.deepcopy(__template_types__modifiable_list__)
+
+                        #templatedata['options'] = c[index]['options'] # Copy the modified options
+                        #templatedata['options'] = options  # Copy the modified options
+                        # Check for default data
+                        if (c[index]['type'] == 'list'):
+                            if ('default' in c[index].keys()): # The default values are templates and need to be converted to dicts
+                                default_value_tmp = c[index]['default']
+                                default_value = configList()
+                                #print('Default',default_value_tmp)
+                                # Loop over the entries of the default values, and convert them if neccessary
+                                if (type(default_value_tmp) == list) or (type(default_value_tmp) == configList):
+                                    #print('Configlist',type(default_value_tmp))
+                                    for d in default_value_tmp:
+                                        #print('d',d)
+                                        if valid_template(d):
+                                            #print('Template', d)
+                                            dtmp = dict_to_configDict(d, process_template=process_template)
+                                        else:
+                                            #print('Standard data', d)
+                                            dtmp = data_to_configdata(d, recursive=True)
+
+                                        dtmp.template = copy.deepcopy(d)
+                                        dtmp.__parent__ = default_value # Save the parent as attribute
+                                        default_value.append(dtmp)
+                                        default_value.template = copy.deepcopy(c[index])
+                                else:
+                                    raise TypeError("The default value should be a list containing templates")
+                            else:
+                                default_value = configList()
+
+                        elif (c[index]['type'] == 'dict'):
+                            if ('default' in c[index].keys()):  # The default values are templates and need to be converted to dicts
+                                default_value = c[index]['default']
+                                # TODO, loop over keys and check if a conversion of templates has to be done
+                            else:
+                                default_value = configDict()
+
+                    print('Listdict options',index,options)
+
 
                 #print('Default value',default_value,FLAG_CONFIG_DICT,type(default_value))
+                #print('options',options)
                 c[index] = data_to_configdata(default_value)
-                # Test if an template was already added above, otherwise add one
                 try:
-                    c[index].template
+                    c[index].options = options
                 except:
-                    #print('Adding template', origdata)
-                    c[index].template = templatedata
-                    c[index].__template_orig__ = templatedata_orig
+                    c[index].options = None
+                c[index].template = templatedata
+                c[index].__parent__ = c  # Save the parent as attribute
+                ## Test if a template was already added above, otherwise add one
+                #try:
+                #    c[index].template
+                #except:
+                #    #print('Adding template', origdata)
+                #    c[index].template = templatedata
+                #    c[index].__template_orig__ = templatedata_orig
+
 
 
             # Iterate over a dictionary or list
@@ -573,7 +605,7 @@ def dict_to_configDict(data, process_template=False, configdict=None, standard_o
 
     # Start the iterative processing now
     data_dict.__parent__ = None
-    loop_over_index(data_dict)
+    loop_over_index(data_dict, children_removable = False)
     #print('Config:',config)
     #print('Data dict',data_dict,type(data_dict))
     return data_dict

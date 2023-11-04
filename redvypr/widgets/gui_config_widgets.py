@@ -222,13 +222,15 @@ class configWidget(QtWidgets.QWidget):
             self.config_widget_color(item)
 
         elif(dtype == 'configString'):
-            # If we have options
             try:
-                data.template['options']
+                options = data.options
+            except:
+                options = None
+            # If we have options
+            if options is not None:
                 self.config_widget_str_combo(item)
             # Let the user enter
-            except Exception as e:
-                logger.exception(e)
+            else:
                 self.config_widget_str(item)
 
 
@@ -248,31 +250,27 @@ class configWidget(QtWidgets.QWidget):
         data = item.__data__
         dataindex = item.__dataindex__
         if btn == self.__configwidget_apply:
-
             dtype = item.__datatype__
             logger.debug(funcname + 'Apply')
             logger.debug(funcname + 'dtype {:s}'.format(str(dtype)))
             btntext = btn.text()
             if (btn.__type__ == 'dict'):  # Add/Remove from dictionary
                 logger.debug(funcname + 'dict')
-                type_add = self.__configwidget_input.currentText()  # line edit
-                index_add = self.__configwidget_input.currentIndex()  # combobox
-                data_add = redvypr.config.template_types[index_add]['default']
-                data_add = redvypr.config.data_to_configdata(data_add,recursive=True)
-                data_add.template = copy.deepcopy(redvypr.config.template_types[index_add])
+
+                logger.debug(funcname + 'Add to list')
+                type_add = self.__configwidget_input.currentText()  # combobox
+                options_items_add = self.__configwidget_input.__options__item__  # Dictionary with the items
+                data_add = options_items_add[type_add]  # The item to be added
+                logger.debug(funcname + 'Type to be added {:s}'.format(str(type_add)))
                 data_add.__parent__ = data
-                try:
-                    data_add.subtype = redvypr.config.template_types[index_add]['subtype']
-                except:
-                    pass
                 key_add  = self.__configwidget_key.text()
                 logger.debug(funcname + 'Type to be added {:s}'.format(str(type_add)))
                 logger.debug(funcname + 'Key to be added'.format(str(key_add)))
                 if(key_add not in data.keys()):
-                    logger.debug('Adding key {:s} index add: {:s} data_add {:s}'.format(str(key_add),str(index_add),str(data_add)))
+                    logger.debug('Adding key {:s} data_add {:s}'.format(str(key_add),str(data_add)))
                     data[key_add] = data_add
                 else:
-                    logger.debug(funcname + 'key {:s} does already exist'.format(key_add))
+                    logger.info(funcname + 'key {:s} does already exist'.format(key_add))
 
                 self.reload_config()
                 self.apply_config_change()
@@ -280,8 +278,8 @@ class configWidget(QtWidgets.QWidget):
             if (btn.__type__ == 'list'):  # Add/Remove from list
                 logger.debug(funcname + 'Add to list')
                 type_add  = self.__configwidget_input.currentText()  # combobox
-                options_items_add = self.__configwidget_input.__options__item__
-                data_add = options_items_add[type_add]
+                options_items_add = self.__configwidget_input.__options__item__ # Dictionary with the items
+                data_add = options_items_add[type_add] # The item to be added
                 logger.debug(funcname + 'Type to be added {:s}'.format(str(type_add)))
                 # TODO, this should be done in the append function of the configList
                 data_add.__parent__ = data
@@ -480,8 +478,14 @@ class configWidget(QtWidgets.QWidget):
         self.__layoutwidget_int.addRow(QtWidgets.QLabel('Value'), self.__configwidget_input)
         # Buttons
         self.__add_apply_btn__(self.__layoutwidget_int, item=item, dtype='str')
-        if (parentparent is not None):
+        if (parentparent is not None): # Remove button
             self.__add_remove_btn__(self.__layoutwidget_int, item=item, dtype='str')
+            try:
+                removable = parent.__data__.children_removable
+            except Exception as e:
+                removable = True
+
+            self.__configwidget_remove.setEnabled(removable)
 
         self.configgui_layout.addWidget(self.__configwidget_int)
 
@@ -507,8 +511,57 @@ class configWidget(QtWidgets.QWidget):
         self.__add_apply_btn__(self.__layoutwidget_int, item=item, dtype='strcombo')
         if (parentparent is not None):
             self.__add_remove_btn__(self.__layoutwidget_int, item=item, dtype='strcombo')
+            try:
+                removable = parent.__data__.children_removable
+            except Exception as e:
+                removable = True
+
+            self.__configwidget_remove.setEnabled(removable)
 
         self.configgui_layout.addWidget(self.__configwidget_int)
+
+
+    def get_options_from_config(self,options):
+        funcname = __name__ + '.get_options_from_config():'
+        options_tmp = options
+        # Fill the options combo and the corresponding items
+        options_str = []  # The strings used in the combo box
+        options_item = {}  # A dictionary that helps to quickly get the item having the str
+        try:  # First have a look if there are template options
+            logger.debug(funcname + 'Using template options')
+            logger.debug(funcname + 'Options are {:s}'.format(str(options_tmp)))
+            for o in options_tmp:
+                # print('option',o)
+                # print('------------------')
+                if (
+                        'type' in o.keys()):  # This is a default entry from redvypr.config.__template_types__modifiable_list_dict__
+                    try:
+                        tempname = o['type']
+                        # opt_tmp = redvypr.config.template_types_dict[tempname]
+                        data_item = o['default']
+                        data_item = redvypr.config.data_to_configdata(data_item)
+                        data_item.template = o  # Add the template
+                        try:
+                            data_item.subtype = o['subtype']
+                        except:
+                            pass
+
+                        options_str.append(tempname)
+                        options_item[tempname] = data_item
+                    except Exception as e:
+                        logger.exception(e)
+                        logger.debug(funcname + 'Could not find template type for {:s}'.format(str(o)))
+                elif ('template_name' in o.keys()):
+                    tempname = o['template_name']
+                    data_item = redvypr.config.dict_to_configDict(o, process_template=True)
+                    data_item.template = o  # Add the template
+                    options_str.append(tempname)
+                    options_item[tempname] = data_item
+
+        except Exception as e:  # First have a look if there are template options
+            logger.exception(e)
+
+        return [options_str, options_item]
 
     def config_widget_list_combo(self, item):
         """
@@ -537,7 +590,7 @@ class configWidget(QtWidgets.QWidget):
         options_str = [] # The strings used in the combo box
         options_item = {} # A dictionary that helps to quickly get the item having the str
         try: # First have a look if there are template options
-            options_tmp = data.template['options']
+            options_tmp = data.options
             logger.debug(funcname + 'Template is'.format(str(data.template)))
             logger.debug(funcname + 'Using template options')
             logger.debug(funcname + 'Options are {:s}'.format(str(options_tmp)))
@@ -585,6 +638,7 @@ class configWidget(QtWidgets.QWidget):
                 #print('Tempname',tempname)
                 options_item[tempname] = data_item
 
+        # update the widgets
         self.__configwidget_input.__options__item__ = options_item
         for t in options_str:
             self.__configwidget_input.addItem(t)
@@ -593,9 +647,16 @@ class configWidget(QtWidgets.QWidget):
         self.__layoutwidget_int.addRow(QtWidgets.QLabel('Value'), self.__configwidget_input)
 
         # Buttons
-        self.__add_apply_btn__(self.__layoutwidget_int, item=item, dtype='list')
+        enabled = len(options_str) > 0 # If there is options
+        self.__add_apply_btn__(self.__layoutwidget_int, item=item, dtype='list' , enabled=enabled)
         if (parentparent is not None):
             self.__add_remove_btn__(self.__layoutwidget_int, item=item, dtype='list')
+            try:
+                removable = parent.__data__.children_removable
+            except Exception as e:
+                removable = True
+
+            self.__configwidget_remove.setEnabled(removable)
 
         self.configgui_layout.addWidget(self.__configwidget_int)
 
@@ -623,15 +684,36 @@ class configWidget(QtWidgets.QWidget):
         self.__layoutwidget_int.addRow(QtWidgets.QLabel('Dict key'),self.__configwidget_key)
 
         self.__configwidget_input = QtWidgets.QComboBox()
-        options = redvypr.config.template_types
-        for t in options:
-            self.__configwidget_input.addItem(t['type'])
+        # Check if options have been specified, otherwise use all standard template types
+        try:  # First have a look if there are template options
+            options_tmp = data.options
+        except:
+            options_tmp = None
+
+        #print('Options tmp, dict',options_tmp)
+        enabled = True
+        if options_tmp is not None: # Fill combobox with standard template types
+            [options_str,options_item] = self.get_options_from_config(options_tmp)
+            self.__configwidget_input.__options__item__ = options_item
+            for t in options_str:
+                self.__configwidget_input.addItem(t)
+
+            enabled = len(options_str) > 0  # If there is options
+        else:
+            enabled = False
 
         self.__layoutwidget_int.addRow(QtWidgets.QLabel('Type'), self.__configwidget_input)
         # Buttons
-        self.__add_apply_btn__(self.__layoutwidget_int, item=item, dtype='dict')
+        self.__configwidget_key.setEnabled(enabled)
+        self.__add_apply_btn__(self.__layoutwidget_int, item=item, dtype='dict', enabled = enabled)
         if(parentparent is not None):
             self.__add_remove_btn__(self.__layoutwidget_int, item=item, dtype='dict')
+            try:
+                removable = parent.__data__.children_removable
+            except Exception as e:
+                removable = True
+
+            self.__configwidget_remove.setEnabled(removable)
 
         self.configgui_layout.addWidget(self.__configwidget_int)
 
@@ -646,12 +728,13 @@ class configWidget(QtWidgets.QWidget):
         except:
             layout.addWidget(self.__configwidget_remove)
 
-    def __add_apply_btn__(self, layout, item, dtype):
+    def __add_apply_btn__(self, layout, item, dtype, enabled = True):
         self.__configwidget_apply = QtWidgets.QPushButton('Apply')
         self.__configwidget_apply.clicked.connect(self.__config_widget_button)
         self.__configwidget_apply.item = item
         self.__configwidget_apply.__type__ = dtype
         self.__configwidget_apply.__removeitem__ = False
+        self.__configwidget_apply.setEnabled(enabled)
         try:
             layout.addRow(self.__configwidget_apply)
         except:
