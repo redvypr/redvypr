@@ -381,7 +381,8 @@ def start_udp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
     npackets = 0 # Number packets received via the datainqueue
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) # UDP
     if(config['address'] == '<broadcast>'):        
-        client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        #client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,  1)  # https://stackoverflow.com/questions/13637121/so-reuseport-is-not-defined-on-windows-7
         # Enable broadcasting mode
         client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
@@ -451,7 +452,8 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
     #client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) # UDP
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # UDP
     if(config['address'] == '<broadcast>'):
-        client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        #client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1) # https://stackoverflow.com/questions/13637121/so-reuseport-is-not-defined-on-windows-7
+        client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # https://stackoverflow.com/questions/13637121/so-reuseport-is-not-defined-on-windows-7
         # Enable broadcasting mode
         client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     client.settimeout(0.05) # timeout for listening
