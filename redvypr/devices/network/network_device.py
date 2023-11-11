@@ -457,6 +457,7 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
         # Enable broadcasting mode
         client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     client.settimeout(0.05) # timeout for listening
+    logger.debug(funcname + 'Will bind to {:s} on port {:d}'.format((config['address'],(config['port']))))
     client.bind((config['address'],config['port']))
     while True:
         try:
