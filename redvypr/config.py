@@ -495,7 +495,7 @@ def dict_to_configDict(data, process_template=False, configdict=None, standard_o
                 # Check if datatype is modifiable (list, dictionary)
                 #if (c[index]['type'] == 'list'):
                 if (c[index]['type'] == 'list') or (c[index]['type'] == 'dict'): # list
-                    print('LISTDICT',index,modifiable)
+                    #print('LISTDICT',index,modifiable)
                     options = [] # The options for the list, this will be filled now
                     # Check if options are in the template, if not add standard types
                     if not(modifiable):
@@ -558,7 +558,7 @@ def dict_to_configDict(data, process_template=False, configdict=None, standard_o
                             else:
                                 default_value = configDict()
 
-                    print('Listdict options',index,options)
+                    #print('Listdict options',index,options)
 
 
                 #print('Default value',default_value,FLAG_CONFIG_DICT,type(default_value))
@@ -713,7 +713,8 @@ def apply_config_to_configDict(userconfig,configdict, standard_option_modifiable
                         #print('Template options',ctemp.template)
                         #print('Nameuser',nameuser)
                         #print('Options',ctemp.template['options'])
-                        for o in ctemp.template['options']:
+                        #for o in ctemp.template['options']:
+                        for o in ctemp.options:
                             #print('Option',o,type(o))
                             # If the option is a str, try to find the correct template in the standard template
                             if(type(o) == str) or (type(o) == configString):

@@ -3,6 +3,8 @@
             - cleaned up a lot of debugging information in several files
             - added redvypr.get_all_devicenames()
             - network_device updated to configuration dictionaries with template
+            - config gui clean up
+            - config gui is smarter regarding apply and remove
     -0.6.6  - rawdatareplay: replace_time flag
             - plot_widgets: clear buffer is now also clearing the line to plot
     -0.6.5  - repaired numpacket in distribute_data

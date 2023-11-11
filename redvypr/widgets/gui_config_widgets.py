@@ -49,7 +49,7 @@ class redvypr_ip_widget(QtWidgets.QWidget):
 class configWidget(QtWidgets.QWidget):
     #config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
-    def __init__(self, config=None, loadsavebutton=False, redvypr_instance=None, show_datatype = False, editable = True):
+    def __init__(self, config=None, loadsavebutton=False, redvypr_instance=None, show_datatype = False, editable = True, configname = None):
         funcname = __name__ + '.__init__():'
         if config == None:
             config = redvypr.config.configuration({})
@@ -58,10 +58,11 @@ class configWidget(QtWidgets.QWidget):
         self.redvypr= redvypr_instance
         self.layout = QtWidgets.QGridLayout(self)
 
-        try:
-            configname = config['name']
-        except:
-            configname = 'config'
+        if configname is None:
+            try:
+                configname = config['name']
+            except:
+                configname = 'config'
 
 
         self.config = config

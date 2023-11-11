@@ -487,12 +487,12 @@ class redvypr_device(QtCore.QObject):
             self.logger.debug(funcname + ': Terminating now')
             self.thread.kill()
 
-    def thread_command(self, command,data=None):
+    def thread_command(self, command, data=None):
         """
         Sends a command to the device thread
         Args:
             command: string, i.e. "stop"
-            data: dictionary with additional data, the data will be incorporated into the command dict by executing command.update8(ata)
+            data: dictionary with additional data, the data will be incorporated into the command dict by executing command.update(data)
 
         Returns:
 

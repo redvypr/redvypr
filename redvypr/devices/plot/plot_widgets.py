@@ -27,7 +27,8 @@ pyqtgraph.setConfigOption('foreground', 'k')
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('plot_widgets')
-logger.setLevel(logging.DEBUG)
+#logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 
@@ -89,12 +90,12 @@ class redvypr_graph_widget(QtWidgets.QFrame):
     """ Widget is plotting realtimedata using the pyqtgraph functionality
     This widget can be configured with a configuration dictionary 
     """
-    def __init__(self,config=None, redvypr_device = None):
+    def __init__(self,config=None, redvypr_device = None , loglevel = logging.DEBUG):
         funcname = __name__ + '.init():'
         super(QtWidgets.QFrame, self).__init__()
         self.device = redvypr_device
         self.logger = logging.getLogger('plot_graph_widget')
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(loglevel)
         self.description = description_graph
         self.config_template = config_template_graph
 
@@ -103,12 +104,12 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         else:
             self.config = redvypr.config.configuration(self.config_template,config=config)
 
-        self.logger.debug('plot widget config {:s}'.format(str(self.config)))
+        #self.logger.debug('plot widget config {:s}'.format(str(self.config)))
         backcolor = str(self.config['backgroundcolor'])
         bordercolor = str(self.config['bordercolor'])
-        logger.debug(funcname + 'backcolor {:s}'.format(str(backcolor)))
+        #logger.debug(funcname + 'backcolor {:s}'.format(str(backcolor)))
         style = "background-color : {:s};border : 1px solid {:s};".format(backcolor, bordercolor)
-        logger.debug(funcname + 'Style: {:s}'.format(str(style)))
+        #logger.debug(funcname + 'Style: {:s}'.format(str(style)))
         self.setStyleSheet(style)
         self.layout = QtWidgets.QVBoxLayout(self)
         self.create_widgets()
@@ -129,7 +130,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         logger.debug(funcname)
         i = 0
         if True:
-            logger.debug(funcname + ': Adding plot' + str(config))
+            logger.debug(funcname + ': Adding plot ')# + str(config))
             try:
                 title = config['title'].data
             except:
@@ -311,7 +312,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             except:
                 pass
 
-            logger.debug(funcname + ': Adding a line to the plot:' + str(line))
+            logger.debug(funcname + ': Adding a line to the plot:')# + str(line))
             buffersize = line['buffersize'].data
             tdata = np.zeros(buffersize) * np.NaN
             xdata = np.zeros(buffersize) * np.NaN
