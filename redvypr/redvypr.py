@@ -229,6 +229,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 #
                 # And finally: Distribute the data
                 #
+                # Loop over all devices and check if any subscription works
                 for devicedict_sub in devices:
                     devicesub = devicedict_sub['device']
                     if(devicesub == device): # Not to itself
@@ -252,6 +253,9 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                                 break
                             except Exception as e:
                                 logger.exception(e)
+                                thread_status = devicesub.get_thread_status()
+                                if thread_status['running']:
+                                    devicedict['statistics']['packets_dropped'] += 1
                                 logger.debug(funcname + ':dataout of :' + devicedict_sub['device'].name + ' full: ' + str(e))
 
                 # The gui of the device

@@ -385,6 +385,9 @@ def start_udp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
         client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,  1)  # https://stackoverflow.com/questions/13637121/so-reuseport-is-not-defined-on-windows-7
         # Enable broadcasting mode
         client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        udp_addr = ""
+    else:
+        udp_addr = config['address']
 
     client.settimeout(0.01) # timeout for listening, do we need that here??
     FLAG_RUN=True
@@ -414,7 +417,7 @@ def start_udp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
                     datab       = packet_to_raw(data_dict,config)
                     bytes_sent += len(datab)
                     #print('Sending data',datab)
-                    client.sendto(datab, (config['address'], config['port']))
+                    client.sendto(datab, (udp_addr, config['port']))
 
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))
@@ -456,9 +459,12 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
         client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # https://stackoverflow.com/questions/13637121/so-reuseport-is-not-defined-on-windows-7
         # Enable broadcasting mode
         client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        udp_addr = ""
+    else:
+        udp_addr = config['address']
     client.settimeout(0.05) # timeout for listening
-    logger.debug(funcname + 'Will bind to {:s} on port {:d}'.format(config['address'],config['port']))
-    client.bind((config['address'],config['port']))
+    logger.debug(funcname + 'Will bind to {:s} on port {:d}'.format(udp_addr,config['port']))
+    client.bind((udp_addr,config['port']))
     while True:
         try:
             com = datainqueue.get(block=False)

@@ -11,7 +11,7 @@ logger.setLevel(logging.DEBUG)
 
 
 # A dictionary for the device_redvypr entry in the statistics
-device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {},'packets_received':0,'packets_sent':0}
+device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {},'packets_received':0,'packets_sent':0,'packets_droped':0}
 
 
 regex_symbol_start = '{'
