@@ -126,6 +126,7 @@ config_template['redvypr_device']['max_devices']  = 1
 config_template['redvypr_device']['publishes']  = True
 config_template['redvypr_device']['subscribes'] = True
 config_template['redvypr_device']['description'] = description
+redvypr_devicemodule = True
 
 # Headers for network packets
 info_header = {}

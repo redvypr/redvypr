@@ -53,7 +53,7 @@ config_template['redvypr_device']['subscribes']  = True
 config_template['redvypr_device']['description'] = description
 config_template['redvypr_device']['gui_tablabel_init'] = 'Setup'
 config_template['redvypr_device']['gui_tablabel_display'] = 'File status'
-
+redvypr_devicemodule = True
 
 def get_strformat(config,data,redvypr_addr,csvformatdict):
     funcname = 'get_strformat'

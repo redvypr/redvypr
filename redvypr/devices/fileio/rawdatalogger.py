@@ -37,6 +37,7 @@ config_template['redvypr_device']    = {}
 config_template['redvypr_device']['publishes']   = False
 config_template['redvypr_device']['subscribes']  = True
 config_template['redvypr_device']['description'] = description
+redvypr_devicemodule = True
 
 def create_logfile(config,count=0):
     funcname = __name__ + '.create_logfile():'

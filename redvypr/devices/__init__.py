@@ -5,7 +5,7 @@ from . import fileio
 from . import processing
 from . import interface
 
-
+redvypr_devicemodule = True
 
 
 

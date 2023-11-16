@@ -22,7 +22,7 @@ config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publishes']     = False
 config_template['redvypr_device']['subscribes']   = True
 config_template['redvypr_device']['description'] = description
-
+redvypr_devicemodule = True
 
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'

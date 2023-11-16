@@ -352,7 +352,7 @@ class redvypr(QtCore.QObject):
         self.devices, self.hostinfo, self.deviceinfo_all, self.datadistinfoqueue, self.redvyprqueue, self.dt_datadist), daemon=True)
         self.datadistthread.start()
         logger.info(funcname + ':Searching for devices')
-        self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths,redvypr_devices=redvyprdevices)
+        self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths, redvypr_devices=redvyprdevices)
         logger.info(funcname + ':Done searching for devices')
 
         # Parsing configuration

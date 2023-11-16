@@ -1,1 +1,1 @@
-
+redvypr_devicemodule = True

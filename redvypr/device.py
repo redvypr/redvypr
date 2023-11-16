@@ -36,7 +36,7 @@ class redvypr_device_scan():
     """
     Searches for redvypr devices
     """
-    def __init__(self, device_path = [],scan=True,redvypr_devices = None):
+    def __init__(self, device_path = [], scan=True, redvypr_devices = None):
         """
 
         Args:
@@ -56,7 +56,6 @@ class redvypr_device_scan():
 
         # Start scanning
         if(scan):
-            print('scanning redvypr')
             if redvypr_devices is not None:
                 self.scan_redvypr(redvypr_devices)
             self.scan_modules()
@@ -112,6 +111,7 @@ class redvypr_device_scan():
 
     def scan_module_recursive(self,testmodule, module_dict):
         funcname = 'scan_module_recursive():'
+        #self.logger.debug(funcname + ' Scanning {:s}'.format(str(testmodule)))
         # print(funcname,testmodule)
         # Check if the device is valid
         valid_module = self.valid_device(testmodule)
@@ -125,25 +125,28 @@ class redvypr_device_scan():
                 module_dict['__devices__'] = [devdict]
 
             self.redvypr_devices_flat.append(devdict)
+            self.logger.debug(funcname + ' Found valid module {:s}'.format(str(testmodule)))
         # Always append as scanned
         self.__modules_scanned__.append(testmodule)
 
-        device_module_tmp = inspect.getmembers(testmodule, inspect.ismodule)
-        if len(device_module_tmp) > 0:
-            for smod in device_module_tmp:
-                testmodule2 = getattr(testmodule, smod[0])
-                if (testmodule2 in self.__modules_scanned__):
-                    # logger.debug(funcname + ': Module has been tested already ...')
-                    continue
-                else:
-                    try:
-                        module_dict[testmodule.__name__]
-                    except:
-                        module_dict[testmodule.__name__] = {}
-                    self.scan_module_recursive(testmodule2, module_dict[testmodule.__name__])
-                    # Cleanup modules without devices
-                    if len(module_dict[testmodule.__name__].keys()) == 0:
-                        module_dict.pop(testmodule.__name__)
+        # Checks if the module has a variable called redvypr_devicemodule
+        if (valid_module['hasredvyprdevicemodule']):  # If the module is valid add it to devices
+            device_module_tmp = inspect.getmembers(testmodule, inspect.ismodule)
+            if len(device_module_tmp) > 0:
+                for smod in device_module_tmp:
+                    testmodule2 = getattr(testmodule, smod[0])
+                    if (testmodule2 in self.__modules_scanned__):
+                        # logger.debug(funcname + ': Module has been tested already ...')
+                        continue
+                    else:
+                        try:
+                            module_dict[testmodule.__name__]
+                        except:
+                            module_dict[testmodule.__name__] = {}
+                        self.scan_module_recursive(testmodule2, module_dict[testmodule.__name__])
+                        # Cleanup modules without devices
+                        if len(module_dict[testmodule.__name__].keys()) == 0:
+                            module_dict.pop(testmodule.__name__)
 
     def scan_redvypr(self,redvyprdevices):
         funcname = 'scan_redvypr():'
@@ -186,16 +189,15 @@ class redvypr_device_scan():
 
             # Dont import the redvypr module itself
             if d.key == 'redvypr':
-                #print('its me')
                 FLAG_POTENTIAL_MODULE = False
 
             if(FLAG_POTENTIAL_MODULE):
-                #print('Found package',d.location, d.project_name, d.version, d.key)
+                print('Found potential package',d.location, d.project_name, d.version, d.key)
                 libstr2 = d.key.replace('-','_')  # Need to replace - with _, because - is not allowed in python
-
                 try:
                     testmodule = importlib.import_module(libstr2)
                     device_module_all = inspect.getmembers(testmodule)
+                    print('Scan recursive start')
                     self.scan_module_recursive(testmodule,self.redvypr_devices['redvypr_modules'])
                     # Clean empty dictionaries
 
@@ -208,6 +210,12 @@ class redvypr_device_scan():
         """
         funcname = 'valid_device(): '
         #self.logger.debug(funcname + 'Checking device {:s}'.format(str(devicemodule)))
+        try:
+            devicemodule.config_template
+            hastemplate = True
+        except:
+            hastemplate = False
+
         try:
             devicemodule.Device
             hasdevice = True
@@ -239,9 +247,17 @@ class redvypr_device_scan():
         except:
             hasinitwidget = False
 
+        try:
+            devicemodule.redvypr_devicemodule
+            hasredvyprdevicemodule = True
+        except:
+            hasredvyprdevicemodule = False
+
         devicecheck = {}
-        devicecheck['valid'] = hasstart
-        devicecheck['Device'] = hasdevice
+        devicecheck['valid'] = hasstart and hasredvyprdevicemodule
+        devicecheck['hasdevice'] = hasdevice
+        devicecheck['hasredvyprdevicemodule'] = hasredvyprdevicemodule
+        devicecheck['hastemplate'] = hastemplate
         devicecheck['start'] = hasstart
         devicecheck['initgui'] = hasinitwidget
         devicecheck['displaygui'] = hasdisplaywidget
@@ -361,7 +377,7 @@ class redvypr_device(QtCore.QObject):
         if(FLAG_NEW):
             self.subscribed_addresses.append(raddr)
             self.subscription_changed_signal.emit()
-            print(self.subscribed_addresses)
+            #print(self.subscribed_addresses)
             return True
         else:
             if force: # Resend the subscription signal
@@ -373,7 +389,7 @@ class redvypr_device(QtCore.QObject):
         """
         funcname = self.__class__.__name__ + '.unsubscribe_address()'
         self.logger.debug(funcname + ' unsubscribing from device {:s}'.format(str(address)))
-        print('Address', address, type(address))
+        #print('Address', address, type(address))
         if (type(address) == str):
             raddr = redvypr_address(address)
         else:

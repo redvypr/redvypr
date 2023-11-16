@@ -34,6 +34,7 @@ config_template['redvypr_device']    = {}
 config_template['redvypr_device']['publish']   = False
 config_template['redvypr_device']['subscribe'] = True
 config_template['redvypr_device']['description'] = description
+redvypr_devicemodule = True
 
 def get_packets(filestream=None):
     funcname = __name__ + '.get_packets()'
