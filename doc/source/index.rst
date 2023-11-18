@@ -11,6 +11,7 @@ Welcome to redvypr's documentation!
    :caption: Contents:
 
    redvypr.rst
+   device.rst
    design.rst
    api.rst
 ..   examples.rst      

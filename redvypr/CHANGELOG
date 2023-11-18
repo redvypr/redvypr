@@ -1,3 +1,5 @@
+    -0.6.8  - scan for redvypr modules updated, they need now a flag redvypr_devicemodule to be identified
+            - line plot has a dt_update
     -0.6.7  - improvements in plot_widgets (context menu, units in legend)
             - added redvypr_graph_widget.set_line(), redvypr_graph_widget.add_line()
             - cleaned up a lot of debugging information in several files

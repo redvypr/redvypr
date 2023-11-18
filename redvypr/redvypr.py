@@ -579,12 +579,27 @@ class redvypr(QtCore.QObject):
                         device['deviceconfig'] = {}
 
                     # Check if the devicemodulename kind of fits
-                    FLAG_MOD_DEVICEMODULENAME = True
+                    FLAG_DEVICEMODULENAME_EXACT = False
+                    # Make an exact test first
                     for smod in self.redvypr_device_scan.redvypr_devices_flat:
-                        if (device['devicemodulename'] == smod['name']):
-                            FLAG_MOD_DEVICEMODULENAME = False
+                        print('device:',smod['name'],device['devicemodulename'])
+                        # The smod['name'] looks like 'redvypr.devices.network.zeromq_device'
+                        # Check first if devicemodulename has a '.', if not, use split smod['name'] and use the last one
+                        if '.' in device['devicemodulename']:
+                            if (device['devicemodulename'] == smod['name']):
+                                FLAG_DEVICEMODULENAME_EXACT = True
+                                break
+                        else:
+                            smodname = smod['name'].split('.')[-1]
+                            print('smodname',smodname)
+                            if (device['devicemodulename'] == smodname):
+                                FLAG_DEVICEMODULENAME_EXACT = True
+                                device['devicemodulename_orig'] = device['devicemodulename']
+                                device['devicemodulename'] = smod['name']
+                                break
 
-                    if FLAG_MOD_DEVICEMODULENAME:
+                    # Make a test if the string is within the devicemodulename
+                    if FLAG_DEVICEMODULENAME_EXACT == False:
                         for smod in self.redvypr_device_scan.redvypr_devices_flat:
                             if (device['devicemodulename'] in smod['name']): # This is a weaker test, can be potentially replaced by regex
                                 device['devicemodulename_orig'] = device['devicemodulename']
@@ -692,7 +707,6 @@ class redvypr(QtCore.QObject):
                 except:
                     deviceconfig['config'] = {}
                 # If the device does not have a name, add a standard but unique one
-                # Peter
                 devicenames = self.get_all_devicenames()
                 try:
                     devicename_tmp = deviceconfig['name']
@@ -773,25 +787,25 @@ class redvypr(QtCore.QObject):
                         startfunction = devicemodule.start
 
                     # Config used at all?
-                    print('Getting config')
+                    #print('Getting config')
                     config = deviceconfig['config']
-                    print('Done')
+                    #print('Done')
                     # Merge the config with a potentially existing template to fill in default values
                     if FLAG_HAS_TEMPLATE:
-                        print('With template', config_template)
-                        print('With configuration', config)
+                        #print('With template', config_template)
+                        #print('With configuration', config)
                         #config = apply_config_to_dict(config,templatedict)
                         #config = copy.deepcopy(config)
                         #redvypr.config.dict_to_configDict(templatedict, process_template=True)
                         configu = configuration(template=config_template,config=config)
                     else: # Make a configuration without a template directly from the config dict
-                        print('Without template')
+                        #print('Without template')
                         configu = configuration(config)
                         config_template = None
 
-                    print('Config', configu)
-                    print('Config type', type(configu))
-                    print('loglevel', loglevel)
+                    #print('Config', configu)
+                    #print('Config type', type(configu))
+                    #print('loglevel', loglevel)
                     device = Device(name=name, uuid=device_uuid, config=configu, redvypr=self, dataqueue=dataqueue,
                                     publishes=publishes,subscribes=subscribes,autostart=autostart,
                                     template=config_template, comqueue=comqueue, datainqueue=datainqueue,
@@ -849,9 +863,9 @@ class redvypr(QtCore.QObject):
                 except:
                     subscribe_addresses = []
 
-                print('Subscribing to ...')
+                #print('Subscribing to ...')
                 for a in subscribe_addresses:
-                    print('subscribing',a)
+                    #print('subscribing',a)
                     device.subscribe_address(a)
 
                 logger.debug(funcname + ': Emitting device signal')
@@ -2054,7 +2068,7 @@ def redvypr_main():
     # Add device
     if (args.add_device is not None):
         hostconfig = {'devices': []}
-        print('devices!', args.add_device)
+        #print('devices!', args.add_device)
         for d in args.add_device:
             deviceconfig = {'autostart':False,'loglevel':logging_level,'mp':'thread','config':{},'subscriptions':[]}
             if(',' in d):
@@ -2117,7 +2131,7 @@ def redvypr_main():
             else:
                 devicemodulename = d
             dev = {'devicemodulename': devicemodulename, 'deviceconfig':deviceconfig}
-            print('dev',dev)
+            #print('dev',dev)
             hostconfig['devices'].append(dev)
             logger.info('Adding device {:s}, autostart: {:s},'.format(d,str(deviceconfig['autostart'])))
 

@@ -306,7 +306,7 @@ class configNumber(numbers.Integral):
         return self.data.__reduce__()
 
 
-def data_to_configdata(data,recursive = False):
+def data_to_configdata(data, recursive = False):
     """
     Converts a known class to a configClass, that can additionally store attributes
     Args:

@@ -63,8 +63,9 @@ config_template_graph_line['linewidth'] = {'type': 'int', 'default': 1,
                                           'description': 'The linewidth of the line'}
 config_template_graph = {}
 config_template_graph['template_name'] = 'Realtime graph'
-config_template_graph['location'] = config_template_grid_loc
-config_template_graph['type'] = {'type': 'str', 'default': 'graph', 'modify': False}
+config_template_graph['location']    = config_template_grid_loc
+config_template_graph['type']        = {'type': 'str', 'default': 'graph', 'modify': False}
+config_template_graph['dt_update']   = {'type': 'float', 'default': 0.25, 'modify': True,'description':'update time of plot'}
 config_template_graph['interactive'] = {'type': 'str', 'default': 'mouse', 'modify': True,'description':'Interactive modes'}
 config_template_graph['backgroundcolor'] = {'type': 'color', 'default': 'lightgray'}
 config_template_graph['bordercolor'] = {'type': 'color', 'default': 'lightgray'}
@@ -350,7 +351,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             # Configuration of the line plot
             lineconfig = {'x': x, 'y': y, 'linewidth': linewidth, 'color': color}
             # Add the line and the configuration to the lines list
-            line_dict = {'line': lineplot, 'config': lineconfig, 'xdata': xdata, 'ydata': ydata, 'tdata':tdata}
+            line_dict = {'line': lineplot, 'config': lineconfig, 'xdata': xdata, 'ydata': ydata, 'tdata':tdata,'tlastupdate':0}
             line.line_dict = line_dict
             plot.addItem(lineplot)
             # Configuration
@@ -472,8 +473,8 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         funcname = self.__class__.__name__ + '.update_plot():'
         tnow = time.time()
         #print(funcname + 'got data',data,tnow)
-        # Always update
-        update = True
+
+
         #try:
         if True:
             # Loop over all plot axes
@@ -542,10 +543,21 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                                     self.config['lines'][iline]['name'].data = name_new
                                     self.apply_config()
 
+            # Update the lines plot
+            for iline, line in enumerate(self.config['lines']):
+                line_dict = line.line_dict
+                tlastupdate = line_dict['tlastupdate']  # The time the plot was last updated
+                # Check if an update of the plot shall be done, or if only the buffer is updated
+                dt = tnow - tlastupdate
+                if dt > self.config['dt_update']:
+                    update = True
+                    line_dict['tlastupdate'] = tnow
+                    print('update')
+                else:
+                    update = False
+                    print('no update')
 
-            if(update):
-                for iline, line in enumerate(self.config['lines']):
-                    line_dict = line.line_dict
+                if (update):  # We could check here if data was changed above the for given line
                     line      = line_dict['line'] # The line to plot
                     config    = line_dict['config'] # The line to plot
                     x         = line_dict['xdata'] # The line to plot
