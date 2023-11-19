@@ -32,14 +32,20 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulena
     else:  # Update the local flag, check if we have a local data packet, i.e. a packet that comes from another redvypr instance with another UUID
         data['_redvypr']['host']['local'] = data['_redvypr']['host']['uuid'] == hostinfo['uuid']
 
-    # Add the last publishing device
-    data['_redvypr']['lpd'] = str(devicename)
 
-    # Tag the datapacket
+
+    # Tag the datapacket and add the local publishing device
     try:
         data['_redvypr']['tag'][hostinfo['uuid']] += 1
     except:
         data['_redvypr']['tag'][hostinfo['uuid']] = 1
+        data['_redvypr']['locpub'] = str(devicename)
+
+    # Add the publishing device
+    try:
+        data['_redvypr']['pub']
+    except:
+        data['_redvypr']['pub'] = str(devicename)
 
     # Add the time to the datadict if its not already in
     if ('t' not in data['_redvypr'].keys()):

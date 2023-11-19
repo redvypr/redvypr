@@ -36,7 +36,7 @@ config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publishes']   = True
 config_template['redvypr_device']['subscribes']  = False
 config_template['redvypr_device']['description'] = description
-
+redvypr_devicemodule = True
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('test_device')
