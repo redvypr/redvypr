@@ -1495,6 +1495,11 @@ class redvyprWidget(QtWidgets.QWidget):
         except Exception as e:
             logger.debug(funcname + ':finalize_init():' + str(e))
 
+        try:
+            devicedisplaywidget_called.finalize_init()
+        except Exception as e:
+            logger.debug(funcname + ':finalize_init():' + str(e))
+
             # Update the summary
         self.update_devicewidgetsummary()
 
