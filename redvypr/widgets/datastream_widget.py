@@ -180,13 +180,16 @@ class datastreamWidget(QtWidgets.QWidget):
         try:
             datastream_address = self.addressline.datakey_address
         except Exception as e:
-            logger.exception(e)
+            #logger.exception(e)
             return
-        datastream_str = datastream_address.get_str()
+
+        addrtype = self.addrtype_combo.currentText()
+        datastream_str = datastream_address.get_str(addrtype)
         device = self.addressline.device
         device_address = self.addressline.devaddress
 
         signal_dict = {'device': device, 'device_address':device_address,'datastream_str': datastream_str,'datastream_address':datastream_address}
+        signal_dict['addrformat'] = self.addressline.datakey_address
         #print('Signal dict',signal_dict)
         self.apply.emit(signal_dict)
         self.close()
