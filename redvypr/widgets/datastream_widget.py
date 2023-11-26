@@ -66,7 +66,12 @@ class datastreamWidget(QtWidgets.QWidget):
         self.devicelist.setColumnCount(1)
         self.devicelist.itemClicked.connect(self.__device_clicked)
 
+        self.addressline_manual = QtWidgets.QLineEdit()
+        self.addressline_manual.setReadOnly(False)
+        self.addressline_manual.textChanged.connect(self.__addrManualChanged)
+
         self.addressline = QtWidgets.QLineEdit()
+        self.addressline.setReadOnly(True)
 
 
         # A combobox to choose between different styles of the address
@@ -80,7 +85,12 @@ class datastreamWidget(QtWidgets.QWidget):
         # Add widgets to layout
         self.layout.addWidget(self.deviceavaillabel)
         self.layout.addWidget(self.devicelist)
+
+        self.layout.addWidget(QtWidgets.QLabel('Manual Address'))
+        self.layout.addWidget(self.addressline_manual)
+        self.layout.addWidget(QtWidgets.QLabel('Address format'))
         self.layout.addWidget(self.addrtype_combo)
+        self.layout.addWidget(QtWidgets.QLabel('Address'))
         self.layout.addWidget(self.addressline)
 
 
@@ -98,14 +108,19 @@ class datastreamWidget(QtWidgets.QWidget):
 
         self.__update_devicetree()
 
+    def __addrManualChanged(self,addrstr):
+        funcname = __name__ + '.__addrManualChanged():'
+        logger.debug(funcname)
+        self.addressline.datakey_address = redvypr_address(addrstr)
+        self.addressline.device = self.addressline.datakey_address.devicename
+        self.addressline.devaddress = self.addressline.datakey_address.address_str
+        self.__addrtype_changed__()
+
     def __device_clicked(self,item):
         """
         Called when an item in the qtree is clicked
         """
-        print('Item',item)
-
         if(item.iskey): # If this is a datakey item
-            print('Key')
             addrtype = self.addrtype_combo.currentText()
             addrstring = item.datakey_address.get_str(addrtype)
             self.addressline.setText(addrstring)
@@ -132,6 +147,8 @@ class datastreamWidget(QtWidgets.QWidget):
                         continue
 
                     itm = QtWidgets.QTreeWidgetItem([dev.name])
+                    col = QtGui.QColor(220,220,220)
+                    itm.setBackground(0, col)
                     itm.device = dev
                     itm.redvypr_address = dev.address
                     root.addChild(itm)
@@ -144,13 +161,14 @@ class datastreamWidget(QtWidgets.QWidget):
                             addrtype = 'full'
                             addrstring = devaddress_redvypr.get_str(addrtype)
                             itmf = QtWidgets.QTreeWidgetItem([addrstring])
+                            itmf.setBackground(0, col)
                             itmf.device = dev
                             itmf.redvypr_address = devaddress_redvypr
                             itmf.address_forwarded = devaddress
                             itm.addChild(itmf)
                             itmf.iskey = False
                             datakeys = devs_forwarded[devaddress]['datakeys']
-                            print('Datakeys',datakeys,devs_forwarded[devaddress])
+                            #print('Datakeys',datakeys,devs_forwarded[devaddress])
                             for dkey in datakeys:
                                 itmk = QtWidgets.QTreeWidgetItem([dkey])
                                 itmk.iskey = True
@@ -173,7 +191,7 @@ class datastreamWidget(QtWidgets.QWidget):
         try:
             addrstring =  self.addressline.datakey_address.get_str(addrtype)
         except:
-            addrstr = ''
+            addrstring = ''
         self.addressline.setText(addrstring)
 
     def done_clicked(self):

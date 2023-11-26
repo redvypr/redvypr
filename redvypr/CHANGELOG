@@ -1,4 +1,6 @@
     -0.6.9  - finalize_init is also tried to called for the displaywidget
+            - redvypr_device.unsubscribe_all implemented
+            - datastreamWidget somewhat nicer
     -0.6.8  - scan for redvypr modules updated, they need now a flag redvypr_devicemodule to be identified
             - line plot has a dt_update
             - added to datapackets ['_redvypr'][locpub] and ['_redvypr'][pub], the local publishing device and the publishing device

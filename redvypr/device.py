@@ -401,6 +401,19 @@ class redvypr_device(QtCore.QObject):
         except Exception as e:
             self.logger.warning('Could not remove address {:s}: {:s}'.format(str(address),str(e)))
 
+    def unsubscribe_all(self):
+        """
+        """
+        funcname = self.__class__.__name__ + '.unsubscribe_all():'
+        self.logger.debug(funcname + ' unsubscribing all')
+        while len(self.subscribed_addresses)>0:
+            try:
+                self.subscribed_addresses.pop(0)
+            except Exception as e:
+                self.logger.warning(funcname + 'Could not remove address')
+
+        self.subscription_changed_signal.emit()
+
 
     def change_name(self,name):
         """
