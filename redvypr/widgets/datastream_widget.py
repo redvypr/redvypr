@@ -63,6 +63,7 @@ class datastreamWidget(QtWidgets.QWidget):
 
 
         self.devicelist = QtWidgets.QTreeWidget()  # List of available devices
+        self.devicelist.setHeaderLabels(['Datastreams'])
         self.devicelist.setColumnCount(1)
         self.devicelist.itemClicked.connect(self.__device_clicked)
 
@@ -129,12 +130,11 @@ class datastreamWidget(QtWidgets.QWidget):
             self.addressline.devaddress = item.devaddress
 
     def __update_devicetree(self):
-
         if True:
             self.devicelist.clear()
             root = self.devicelist.invisibleRootItem()
             # self.devices_listcon.addItem(str(device))
-            data_provider_all = self.redvypr.get_devices(publishes=True)
+            data_provider_all = self.redvypr.get_devices(publishes=True, subscribes=False)
             font1 = QtGui.QFont('Arial')
             font1.setBold(True)
             font0 = QtGui.QFont('Arial')
@@ -143,6 +143,7 @@ class datastreamWidget(QtWidgets.QWidget):
             # print('data provider',data_provider_all)
             if (data_provider_all is not None):
                 for dev in data_provider_all:
+                    flag_datastreams = False
                     if dev == self.device:
                         continue
 
@@ -151,31 +152,42 @@ class datastreamWidget(QtWidgets.QWidget):
                     itm.setBackground(0, col)
                     itm.device = dev
                     itm.redvypr_address = dev.address
-                    root.addChild(itm)
+
                     itm.iskey = False
                     # Check for forwarded devices
                     if True:
                         devs_forwarded = dev.get_device_info()
-                        for devaddress in devs_forwarded.keys():
-                            devaddress_redvypr = data_packets.redvypr_address(devaddress)
-                            addrtype = 'full'
-                            addrstring = devaddress_redvypr.get_str(addrtype)
-                            itmf = QtWidgets.QTreeWidgetItem([addrstring])
-                            itmf.setBackground(0, col)
-                            itmf.device = dev
-                            itmf.redvypr_address = devaddress_redvypr
-                            itmf.address_forwarded = devaddress
-                            itm.addChild(itmf)
-                            itmf.iskey = False
+                        devkeys = list(devs_forwarded.keys())
+                        devkeys.sort()
+                        for devaddress in devkeys:
                             datakeys = devs_forwarded[devaddress]['datakeys']
-                            #print('Datakeys',datakeys,devs_forwarded[devaddress])
-                            for dkey in datakeys:
-                                itmk = QtWidgets.QTreeWidgetItem([dkey])
-                                itmk.iskey = True
-                                itmk.device = dev
-                                itmk.devaddress = devaddress
-                                itmk.datakey_address = data_packets.redvypr_address(data_packets.modify_addrstr(devaddress,datakey=dkey))
-                                itmf.addChild(itmk)
+                            if len(datakeys) > 0:
+                                flag_datastreams = True
+                                devaddress_redvypr = data_packets.redvypr_address(devaddress)
+                                addrtype = 'full'
+                                addrstring = devaddress_redvypr.get_str(addrtype)
+                                itmf = QtWidgets.QTreeWidgetItem([addrstring])
+                                itmf.setBackground(0, col)
+                                itmf.device = dev
+                                itmf.redvypr_address = devaddress_redvypr
+                                itmf.address_forwarded = devaddress
+                                itm.addChild(itmf)
+                                itmf.iskey = False
+
+                                #print('Datakeys',datakeys,devs_forwarded[devaddress])
+                                # Sort the datakey
+                                datakeys.sort()
+                                for dkey in datakeys:
+                                    itmk = QtWidgets.QTreeWidgetItem([dkey])
+                                    itmk.iskey = True
+                                    itmk.device = dev
+                                    itmk.devaddress = devaddress
+                                    itmk.datakey_address = data_packets.redvypr_address(data_packets.modify_addrstr(devaddress,datakey=dkey))
+                                    itmf.addChild(itmk)
+
+                    if flag_datastreams: # If we have datastreams found, add the itm
+                        root.addChild(itm)
+
 
 
             self.devicelist.expandAll()

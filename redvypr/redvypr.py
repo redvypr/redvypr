@@ -806,6 +806,7 @@ class redvypr(QtCore.QObject):
                     #print('Config', configu)
                     #print('Config type', type(configu))
                     #print('loglevel', loglevel)
+                    # Creating the device
                     device = Device(name=name, uuid=device_uuid, config=configu, redvypr=self, dataqueue=dataqueue,
                                     publishes=publishes,subscribes=subscribes,autostart=autostart,
                                     template=config_template, comqueue=comqueue, datainqueue=datainqueue,
@@ -982,13 +983,12 @@ class redvypr(QtCore.QObject):
         return devicenames
 
 
-    def get_devices(self, publishes = None, subscribes = None):
+    def get_devices(self, publishes = None, subscribes = True):
         """
-        Returns a list of all devices of this redvypr instance. Returns all devices if "publishes" or "subscribes" is None.
-        Otherwise according to the publishes/subscribes flags
+        Returns a list of all devices of this redvypr instance. Returns all devices if neither "publishes" or "subscribes" is defined.
         Args:
-            publishes: True/False or None.
-            subscribes: True/False or None
+            publishes: True/False or None
+            subscribes: True/False
 
         Returns: List with redvypr_devices
 
@@ -1009,9 +1009,6 @@ class redvypr(QtCore.QObject):
                 if (dev.subscribes):
                     devicelist.append(dev)
                     continue
-            elif subscribes is None:
-                devicelist.append(dev)
-                continue
 
 
         return devicelist

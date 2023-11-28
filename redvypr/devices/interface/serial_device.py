@@ -30,7 +30,7 @@ config_template['chunksize'] = {'type':'int','default':1000} # The maximum amoun
 config_template['packetdelimiter'] = {'type':'str','default':'\n'} # The maximum amount of bytes read with one chunk
 config_template['redvypr_device'] = {}
 config_template['redvypr_device']['publishes']   = True
-config_template['redvypr_device']['subscribes'] = False
+config_template['redvypr_device']['subscribes']  = True
 config_template['redvypr_device']['description'] = description
 redvypr_devicemodule = True
 

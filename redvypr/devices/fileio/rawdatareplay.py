@@ -31,8 +31,8 @@ config_template['loop']              = {'type':'bool','default':False,'descripti
 config_template['speedup']           = {'type':'float','default':1.0,'description':'Speedup factor of the data'}
 config_template['replace_time']      = {'type':'bool','default':False,'description':'Replaces the original time in the packet with the time the packet was read.'}
 config_template['redvypr_device']    = {}
-config_template['redvypr_device']['publish']   = False
-config_template['redvypr_device']['subscribe'] = True
+config_template['redvypr_device']['publishes']   = True
+config_template['redvypr_device']['subscribes']  = False
 config_template['redvypr_device']['description'] = description
 redvypr_devicemodule = True
 

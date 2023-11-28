@@ -40,6 +40,7 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulena
     except:
         data['_redvypr']['tag'][hostinfo['uuid']] = 1
         data['_redvypr']['locpub'] = str(devicename)
+        data['_redvypr']['locuuid'] = hostinfo['uuid']
 
     # Add the publishing device
     try:
@@ -445,7 +446,7 @@ def do_data_statistics(data, statdict):
         statdict['hostinfos'][uuid] = data['_redvypr']['host']
 
 
-    # new
+    # new statistic information
     statdict['datastream_redvypr'].update(datastreams_dict)
     # Create a hostinfo information
     try:
@@ -453,7 +454,7 @@ def do_data_statistics(data, statdict):
     except:
         statdict['host_redvypr'][uuid] = data['_redvypr']['host']
 
-    # Create device_redvypr
+    # Create device_redvypr, dictionary with all devices as keys
     try:
         statdict['device_redvypr'][devicename_stat]['packets_sent'] += 1
     except:  # Does not exist yet, create the entry
@@ -486,13 +487,6 @@ def do_data_statistics(data, statdict):
         statdict['device_redvypr'][devicename_stat]['_keyinfo'].update(data['_keyinfo'])
     except:
         pass
-
-    ## Create status skeleton if not existing
-    #try:
-    #    statdict['device_redvypr'][devicename_stat]['_redvypr']['status']
-    #except:
-    #    statdict['device_redvypr'][devicename_stat]['_redvypr']['status'] = {}
-
 
     return statdict
 
