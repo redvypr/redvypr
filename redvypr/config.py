@@ -87,6 +87,8 @@ __template_types__modifiable_list__.append(template_types_dict['int'])
 __template_types__modifiable_list__.append(template_types_dict['float'])
 __template_types__modifiable_list__.append(template_types_dict['str'])
 __template_types__modifiable_list__.append(template_types_dict['bool'])
+#__template_types__modifiable_list__.append(template_types_dict['list'])
+#__template_types__modifiable_list__.append(template_types_dict['dict'])
 
 __template_types__modifiable_list_dict__ = {}
 for t in __template_types__modifiable_list__:
@@ -746,7 +748,10 @@ def apply_config_to_configDict(userconfig,configdict, standard_option_modifiable
                                 break
 
                         if(FLAG_FOUND_VALID_OPTION == False):
-                            cuser[index][i] = None
+                            logger.debugv('no option found')
+                            # If there is no valid option the data can be copied anyhow or replaced by None
+                            #cuser[index][i] = None
+                            ctemp[i] = data_to_configdata(cuser[index][i])
 
                     # Loop again
                     loop_over_index(ctemp, cuser[index])
@@ -780,7 +785,7 @@ class configuration(configDict):
     The class is a modified dictionary with extra functionality for configuration.
     - history
     """
-    def __init__(self,template={},config=None):
+    def __init__(self,template={}, config=None):
         """
         Args:
             template:
@@ -791,7 +796,7 @@ class configuration(configDict):
         #self.config_orig = config
         #self.data = dict_to_configDict(template, process_template=True)
         logger.debugv(self.__class__.__name__ + ' converting to configdict')
-        tmp = dict_to_configDict(template, process_template=True,configdict=self)
+        tmp = dict_to_configDict(template, process_template = True, configdict = self)
 
         #print('Applying')
         if(config is not None):

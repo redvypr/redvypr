@@ -444,6 +444,7 @@ class redvypr_graph_widget(QtWidgets.QFrame):
         """
         Gets the data of the buffer in the limits of xlim
         """
+        funcname = __name__ + '.get_data():'
         tdata = []
         xdata = []
         ydata = []
@@ -461,7 +462,9 @@ class redvypr_graph_widget(QtWidgets.QFrame):
             tdata.append(tdata_tmp)
             xdata.append(xdata_tmp)
             ydata.append(ydata_tmp)
-            print('get_data',datetime.datetime.utcfromtimestamp(tdata_tmp[0]),datetime.datetime.utcfromtimestamp(xdata_tmp[0]))
+            logger.debug(funcname + ' Got data of length {:d}'.format(len(tdata_tmp)))
+            #print('get_data',datetime.datetime.utcfromtimestamp(tdata_tmp[0]),datetime.datetime.utcfromtimestamp(xdata_tmp[0]))
+
 
         return {'x':xdata,'y':ydata,'t':tdata}
 
@@ -552,10 +555,10 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                 if dt > self.config['dt_update']:
                     update = True
                     line_dict['tlastupdate'] = tnow
-                    print('update')
+                    #print('update')
                 else:
                     update = False
-                    print('no update')
+                    #print('no update')
 
                 if (update):  # We could check here if data was changed above the for given line
                     line      = line_dict['line'] # The line to plot
