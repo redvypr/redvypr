@@ -504,6 +504,7 @@ def dict_to_configDict(data, process_template=False, configdict=None, standard_o
                         options = []
                     else:
                         try:
+                            #print('Hallo',index)
                             c[index]['options']
                             options = copy.deepcopy(c[index]['options'])
                             # Loop over the options and replace standard options with their dictionary types
@@ -554,11 +555,35 @@ def dict_to_configDict(data, process_template=False, configdict=None, standard_o
                                 default_value = configList()
 
                         elif (c[index]['type'] == 'dict'):
+                            #print('Filling dict',index)
+                            default_value = configDict()
                             if ('default' in c[index].keys()):  # The default values are templates and need to be converted to dicts
-                                default_value = c[index]['default']
+                                # Loop over the entries of the default values, and convert them if neccessary
+                                default_value_tmp = c[index]['default']
+                                if (type(default_value_tmp) == dict) or (type(default_value_tmp) == configDict):
+                                    # print('Configlist',type(default_value_tmp))
+                                    for k in default_value_tmp.keys():
+                                        d = default_value_tmp[k]
+                                        #print('d',d,'key',k)
+                                        #print('process_template',process_template)
+                                        if valid_template(d):
+                                            # print('Template', d)
+                                            dtmp = dict_to_configDict(d, process_template=process_template)
+                                        else:
+                                            # print('Standard data', d)
+                                            dtmp = data_to_configdata(d, recursive=True)
+
+                                        dtmp.template = copy.deepcopy(d)
+                                        dtmp.__parent__ = default_value  # Save the parent as attribute
+                                        #print('dtmp',dtmp)
+                                        default_value[k] = dtmp
+                                        default_value.template = copy.deepcopy(c[index])
+                                else:
+                                    raise TypeError("The default value should be a dict containing templates")
+
+                                #default_value = c[index]['default']
                                 # TODO, loop over keys and check if a conversion of templates has to be done
-                            else:
-                                default_value = configDict()
+
 
                     #print('Listdict options',index,options)
 
