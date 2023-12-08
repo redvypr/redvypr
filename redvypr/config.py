@@ -555,22 +555,23 @@ def dict_to_configDict(data, process_template=False, configdict=None, standard_o
                                 default_value = configList()
 
                         elif (c[index]['type'] == 'dict'):
-                            #print('Filling dict',index)
+                            print('Filling dict',index)
                             default_value = configDict()
                             if ('default' in c[index].keys()):  # The default values are templates and need to be converted to dicts
                                 # Loop over the entries of the default values, and convert them if neccessary
                                 default_value_tmp = c[index]['default']
                                 if (type(default_value_tmp) == dict) or (type(default_value_tmp) == configDict):
-                                    # print('Configlist',type(default_value_tmp))
+                                    print('Configdict',type(default_value_tmp))
+                                    print(default_value_tmp.keys())
                                     for k in default_value_tmp.keys():
                                         d = default_value_tmp[k]
                                         #print('d',d,'key',k)
                                         #print('process_template',process_template)
                                         if valid_template(d):
-                                            # print('Template', d)
+                                            print('Template', d)
                                             dtmp = dict_to_configDict(d, process_template=process_template)
                                         else:
-                                            # print('Standard data', d)
+                                            print('Standard data', d)
                                             dtmp = data_to_configdata(d, recursive=True)
 
                                         dtmp.template = copy.deepcopy(d)
@@ -690,10 +691,23 @@ def apply_config_to_configDict(userconfig,configdict, standard_option_modifiable
             #        logger.debug(funcname + ': cuser[index]: ' + str(e))
             #        continue
             # Check for different types that can need to be looped
-            if (type(ctemp) == configDict):  # dictionary
+            if (type(ctemp) == configDict) and not modifiable:  # dictionary
+                print('Hallo 1',index)
                 logger.debugv(funcname + ' configDict loop')
                 try:  # Check if the user data is existing as well
                     cuser[index]
+                    print('Cuser',cuser[index])
+                    if (seq_iter(cuser[index]) is not None):
+                        loop_over_index(ctemp, cuser[index])
+                except Exception as e:
+                    logger.debug(funcname + ': cuser[index]: ')
+                    logger.exception(e)
+                    continue
+            elif (type(ctemp) == configDict) and modifiable:  # dictionary that can have several entries
+                logger.debugv(funcname + ' configDict loop')
+                try:  # Check if the user data is existing as well
+                    cuser[index]
+                    ctemp.update(cuser[index])
                     if (seq_iter(cuser[index]) is not None):
                         loop_over_index(ctemp, cuser[index])
                 except Exception as e:

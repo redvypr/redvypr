@@ -803,7 +803,8 @@ class redvypr(QtCore.QObject):
                         configu = configuration(config)
                         config_template = None
 
-                    #print('Config', configu)
+                    logger.debug(funcname + 'Config for device')
+                    logger.debug(funcname + 'Config: {:s}'.format(str(configu)))
                     #print('Config type', type(configu))
                     #print('loglevel', loglevel)
                     # Creating the device
