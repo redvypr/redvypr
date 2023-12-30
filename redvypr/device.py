@@ -24,8 +24,28 @@ import pathlib
 import inspect
 import pkg_resources
 import redvypr
+import pydantic
 from redvypr.data_packets import compare_datastreams, parse_addrstr, commandpacket, redvypr_address, do_data_statistics
 import redvypr.config as redvyprConfig
+
+
+
+class redvypr_device_parameter(pydantic.BaseModel):
+    name: str = pydantic.Field(default='')
+    uuid: str = pydantic.Field(default='')
+    template: dict = pydantic.Field(default={}) # Candidate for removal
+    config: dict = pydantic.Field(default={})  # Candidate for removal
+    publishes: bool = False
+    subscribes: bool = False
+    multiprocess: str = pydantic.Field(default='thread')
+    loglevel: str = pydantic.Field(default='INFO')
+    numdevice: int = pydantic.Field(default=-1)
+    autostart: bool = False
+    devicemodulename: str = pydantic.Field(default='')
+    description: str = ''
+    # Not as parameter, but necessary for initialization
+    maxdevices: int = pydantic.Field(default=-1)
+
 
 
 
@@ -271,7 +291,7 @@ class redvypr_device(QtCore.QObject):
     status_signal  = QtCore.pyqtSignal(dict)   # Signal with the status of the device
     subscription_changed_signal = QtCore.pyqtSignal()  # Signal notifying that a subscription changed
 
-    def __init__(self,name='redvypr_device',uuid = '', redvypr=None,dataqueue=None,comqueue=None,datainqueue=None,statusqueue=None,template = {},config = {},publishes=False,subscribes=False,multiprocess='tread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False,devicemodulename=''):
+    def __init__(self,name='redvypr_device', uuid = '', redvypr=None, dataqueue=None, comqueue=None, datainqueue=None,statusqueue=None,template = {},config = {},publishes=False,subscribes=False, multiprocess='thread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False,devicemodulename=''):
         """
         """
         super(redvypr_device, self).__init__()
@@ -798,9 +818,11 @@ class redvypr_device(QtCore.QObject):
 
     def get_datakeyinfo(self,datastream):
         """
+        Returns the datakeyinfo for the datastream
 
         Args:
             datastream:
+            first_match:
 
         Returns:
 
@@ -813,13 +835,38 @@ class redvypr_device(QtCore.QObject):
         datakeyinfo = {}
         for device in d:
             for dkey in d[device]['_keyinfo'].keys():
-                dstreamaddr_info = redvypr.data_packets.redvypr_address(device,datakey = dkey)
+                dstreamaddr_info = redvypr.data_packets.redvypr_address(device, datakey = dkey)
                 #print('dstreamddr_info',dstreamaddr_info)
                 if daddr in dstreamaddr_info:
                     #print('Match')
                     datakeyinfo[dstreamaddr_info.get_str()] = d[device]['_keyinfo'][dkey]
 
         return datakeyinfo
+
+    def get_datastream_keyinfo(self, datastream):
+        """
+        Returns the datakeyinfo for the datastream
+
+        Args:
+            datastream:
+            first_match:
+
+        Returns:
+
+        """
+        funcname = self.__class__.__name__ + '.get_datastream_keyinfo()'
+        self.logger.debug(funcname)
+        daddr = redvypr.data_packets.redvypr_address(datastream)
+        d = copy.deepcopy(self.statistics['device_redvypr'])
+        # print('Datastream',datastream,daddr)
+        for device in d:
+            for dkey in d[device]['_keyinfo'].keys():
+                dstreamaddr_info = redvypr.data_packets.redvypr_address(device, datakey=dkey)
+                # print('dstreamddr_info',dstreamaddr_info)
+                if daddr in dstreamaddr_info:
+                    return d[device]['_keyinfo'][dkey]
+
+        return None
     def get_config(self):
         """
         Returns a copy of the configuration as a dict, not as a configuration object

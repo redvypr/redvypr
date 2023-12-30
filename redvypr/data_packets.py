@@ -819,8 +819,9 @@ def get_datastream_from_data(data,datakey,uuid=False):
     else:
         if(datakey in data.keys()):
             datastream = datakey + '/' + devicestr
+            return datastream
         else:
-            None
+            return None
         
     
 def get_datastreams_from_data(data,uuid=False,add_dict=False):
