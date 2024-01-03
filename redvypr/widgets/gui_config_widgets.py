@@ -39,14 +39,19 @@ class redvypr_ip_widget(QtWidgets.QWidget):
 
 
 
-class pdconfigWidget(QtWidgets.QWidget):
+class pdDeviceConfigWidget(QtWidgets.QWidget):
     """
     Config widget for a pydantic configuration
     """
-    def __init__(self, config=None):
+    def __init__(self, device = None):
         funcname = __name__ + '.__init__():'
         super().__init__()
         logger.debug(funcname)
+        self.device = device
+        self.layout = QtWidgets.QGridLayout(self)
+        self.label = QtWidgets.QLabel('Configuration of\n{:s}'.format(self.device.name))
+        self.layout.addWidget(self.label)
+
 
 
 

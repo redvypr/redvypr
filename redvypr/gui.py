@@ -6,7 +6,7 @@ import yaml
 import datetime
 from PyQt5 import QtWidgets, QtCore, QtGui
 from redvypr.device import redvypr_device
-from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, pdconfigWidget
+from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, pdDeviceConfigWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget
 from redvypr.widgets.datastream_widget import datastreamWidget
 import redvypr.configdata
@@ -808,7 +808,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
     def config_clicked(self):
         funcname = __name__ + '.config_clicked():'
         logger.debug(funcname)
-        self.config_widget = pdconfigWidget(self.device.config)
+        self.config_widget = pdDeviceConfigWidget(self.device)
         self.config_widget.show()
 
     def statistics_clicked(self):

@@ -7,7 +7,7 @@ import logging
 import sys
 import yaml
 from redvypr.device import redvypr_device
-from redvypr.widgets.gui_config_widgets import configWidget, pdconfigWidget
+#from redvypr.widgets.gui_config_widgets import configWidget
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr')
