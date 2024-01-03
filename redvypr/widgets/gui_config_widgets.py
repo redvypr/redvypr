@@ -39,6 +39,15 @@ class redvypr_ip_widget(QtWidgets.QWidget):
 
 
 
+class pdconfigWidget(QtWidgets.QWidget):
+    """
+    Config widget for a pydantic configuration
+    """
+    def __init__(self, config=None):
+        funcname = __name__ + '.__init__():'
+        super().__init__()
+        logger.debug(funcname)
+
 
 
 #

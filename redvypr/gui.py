@@ -6,7 +6,7 @@ import yaml
 import datetime
 from PyQt5 import QtWidgets, QtCore, QtGui
 from redvypr.device import redvypr_device
-from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget
+from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, pdconfigWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget
 from redvypr.widgets.datastream_widget import datastreamWidget
 import redvypr.configdata
@@ -729,7 +729,7 @@ class redvypr_deviceStatisticWidget(QtWidgets.QWidget):
     """
     Widgets shows the device statistic as text
     """
-    def __init__(self, device = None):
+    def __init__(self, device = None, dt_update=1000):
         funcname = __name__ + '.__init__():'
         logger.debug(funcname)
         super().__init__()
@@ -739,9 +739,10 @@ class redvypr_deviceStatisticWidget(QtWidgets.QWidget):
         self.infowidget.setReadOnly(True)
         self.layout.addWidget(self.infowidget,0,0)
 
+        self.__update_info()
         self.updatetimer = QtCore.QTimer()
         self.updatetimer.timeout.connect(self.__update_info)
-        self.updatetimer.start(500)
+        self.updatetimer.start(dt_update)
 
     def __update_info(self):
         funcname = __name__ + '.__update_info():'
@@ -769,7 +770,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
     """
     connect = QtCore.pyqtSignal(
         redvypr_device)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
-    def __init__(self, device = None):
+    def __init__(self, device = None, dt_update = 1000):
         funcname = __name__ + '.__init__():'
         logger.debug(funcname)
         super().__init__()
@@ -786,7 +787,9 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         self.subBtn = QtWidgets.QPushButton('Subscribe')
         self.subBtn.clicked.connect(self.connect_clicked)
         self.confBtn = QtWidgets.QPushButton('Config')
+        self.confBtn.clicked.connect(self.config_clicked)
         self.statBtn = QtWidgets.QPushButton('Statistics')
+        self.statBtn.clicked.connect(self.statistics_clicked)
         self.layout.addWidget(self.update_label)
         self.layout.addWidget(self.packetRecv_label)
         self.layout.addWidget(self.packetPubl_label)
@@ -800,9 +803,23 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
 
         self.updatetimer = QtCore.QTimer()
         self.updatetimer.timeout.connect(self.__update_info)
-        self.updatetimer.start(1000)
+        self.updatetimer.start(dt_update)
+
+    def config_clicked(self):
+        funcname = __name__ + '.config_clicked():'
+        logger.debug(funcname)
+        self.config_widget = pdconfigWidget(self.device.config)
+        self.config_widget.show()
+
+    def statistics_clicked(self):
+        funcname = __name__ + '.statistics_clicked():'
+        logger.debug(funcname)
+        self.statistics_widget = redvypr_deviceStatisticWidget(device=self.device)
+        self.statistics_widget.show()
 
     def connect_clicked(self):
+        funcname = __name__ + '.connect_clicked():'
+        logger.debug(funcname)
         button = self.sender()
         self.connect.emit(self.device)
 
