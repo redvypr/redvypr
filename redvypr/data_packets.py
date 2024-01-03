@@ -11,7 +11,7 @@ logger.setLevel(logging.DEBUG)
 
 
 # A dictionary for the device_redvypr entry in the statistics
-device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {},'packets_received':0,'packets_sent':0,'packets_droped':0}
+device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {},'packets_received':0,'packets_published':0,'packets_droped':0}
 
 
 regex_symbol_start = '{'
@@ -360,7 +360,7 @@ def compare_address_substrings(str1,str2):
 def create_data_statistic_dict():
     statdict = {}
     statdict['inspect']          = True
-    statdict['packets_sent']     = 0
+    statdict['packets_published']     = 0
     statdict['packets_received'] = 0
     statdict['datakeys']         = []
     statdict['devicekeys']       = {}
@@ -416,13 +416,13 @@ def do_data_statistics(data, statdict):
     # of the transporting dictionary
     devicename_stat = get_devicename_from_data(data,uuid=True)
     # Update the packets sent
-    statdict['packets_sent'] += 1
+    statdict['packets_published'] += 1
     try:
         statdict['packets'][devicename_stat]
     except:
-        statdict['packets'][devicename_stat] = {'received':0,'sent':0}
+        statdict['packets'][devicename_stat] = {'received':0,'published':0}
 
-    statdict['packets'][devicename_stat]['sent'] += 1
+    statdict['packets'][devicename_stat]['published'] += 1
 
     try:
         statdict['devicekeys'][devicename_stat]
@@ -456,7 +456,7 @@ def do_data_statistics(data, statdict):
 
     # Create device_redvypr, dictionary with all devices as keys
     try:
-        statdict['device_redvypr'][devicename_stat]['packets_sent'] += 1
+        statdict['device_redvypr'][devicename_stat]['packets_published'] += 1
     except:  # Does not exist yet, create the entry
         statdict['device_redvypr'][devicename_stat] = copy.deepcopy(device_redvypr_statdict)
 

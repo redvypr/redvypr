@@ -97,26 +97,36 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         self.layout = QtWidgets.QGridLayout(self)
         self.config_widgets = []
         self.device = device
-        self.config_widget = configWidget(device.config,redvypr_instance=self.device.redvypr)
+        #self.config_widget = configWidget(device.config,redvypr_instance=self.device.redvypr)
 
-        self.config_widgets.append(self.config_widget)
+        #self.config_widgets.append(self.config_widget)
+        labelstr = 'Init device\n' + str(device.name)
+        self.label = QtWidgets.QLabel(labelstr)
+        font = QtGui.QFont('Arial', 20)
+        font.setBold(True)
+        self.label.setFont(font)
+        self.label.setAlignment(QtCore.Qt.AlignCenter)
 
         # Start-button
         self.startbutton = QtWidgets.QPushButton('Start')
         self.startbutton.clicked.connect(self.start_clicked)
         self.startbutton.setCheckable(True)
+        #self.startbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         # Process kill button (if thread)
         if (self.device.mp == 'multiprocess'):
             # Killbutton
             self.killbutton = QtWidgets.QPushButton('Kill process')
             self.killbutton.clicked.connect(self.kill_clicked)
+            #self.killbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
 
         # Connect button
-        self.conbutton = QtWidgets.QPushButton("Connect")
+        self.conbutton = QtWidgets.QPushButton("Subscribe")
         self.conbutton.clicked.connect(self.connect_clicked)
+        #self.conbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         self.config_widgets.append(self.conbutton)
 
-        self.layout.addWidget(self.config_widget, 0, 0, 1, 4)
+        #self.layout.addWidget(self.config_widget, 0, 0, 1, 4)
+        self.layout.addWidget(self.label, 0, 0, 1, 4)
         self.layout.addWidget(self.conbutton, 1, 0, 1, 4)
         if (self.device.mp == 'multiprocess'):
             self.layout.addWidget(self.startbutton, 2, 0, 1, 3)
@@ -130,7 +140,7 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
 
-        self.config_widget.config_changed_flag.connect(self.config_changed)
+        #self.config_widget.config_changed_flag.connect(self.config_changed)
 
     def config_changed(self):
         """
@@ -189,3 +199,5 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
     def connect_clicked(self):
         button = self.sender()
         self.connect.emit(self.device)
+
+

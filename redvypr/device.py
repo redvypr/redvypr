@@ -631,11 +631,17 @@ class redvypr_device(QtCore.QObject):
                         device_info = {'device':self.name,'uuid':self.uuid,'thread_uuid':thread_uuid,'hostinfo':self.redvypr.hostinfo}
                         if config is None:
                             self.logger.debug('Using internal configuration')
-                            config = copy.deepcopy(self.config) # The thread/multiprocess gets a copy
+                            if type(self.config) == redvypr.config.configuration:
+                                self.logger.debug('Redvypr configuration')
+                                config = copy.deepcopy(self.config) # The thread/multiprocess gets a copy
+                            else:
+                                self.logger.debug('Pydantic configuration')
+                                config = self.config.model_dump()
+
                         else:
                             self.logger.debug('Using external configuration')
 
-                        args = (device_info,config, self.dataqueue, self.datainqueue, self.statusqueue)
+                        args = (device_info, config, self.dataqueue, self.datainqueue, self.statusqueue)
                         if self.mp == 'thread':
                             self.logger.info(funcname + 'Starting as thread')
                             self.thread = threading.Thread(target=self.start, args=args, daemon=True)
@@ -682,7 +688,7 @@ class redvypr_device(QtCore.QObject):
         """
         pass
 
-    def get_deviceaddresses(self,local=None):
+    def get_deviceaddresses(self, local=None):
         """
         Returns a list with redvypr_addresses of all devices that publish data via this device. This is in many cases
         the device itself but can also forwarded devices (i.e. iored) or because the device publishes data with different
@@ -693,7 +699,8 @@ class redvypr_device(QtCore.QObject):
         Args:
             local: None, True or False
 
-        Returns: List of redvypr_addresses
+        Returns:
+            List of redvypr_addresses
 
         """
         addr_str = list(self.statistics['device_redvypr'].keys())
@@ -711,7 +718,8 @@ class redvypr_device(QtCore.QObject):
 
     def get_datastreams(self,local=None):
         """
-        Returns all datastreams this device is providing
+        Returns:
+            List with all datastreams this device is providing
         """
         devaddrs = self.get_deviceaddresses(local)
         datastreams = []
@@ -731,12 +739,12 @@ class redvypr_device(QtCore.QObject):
         that have been sent by this device.
         Note: name was def get_data_provider_info(self):
 
-        Returns: dictionary with the device addresses as keys
+        Returns:
+            Dictionary with the device addresses as keys
 
         """
         d = copy.deepcopy(self.statistics['device_redvypr'])
         return d
-
 
 
     def publishing_to(self):
@@ -745,13 +753,24 @@ class redvypr_device(QtCore.QObject):
         Returns:
             List of devices this device is publishing to
         """
-        self.logger.warning('needs to be refurbished')
-        devs = self.redvypr.get_data_receiving_devices(self)
-        return devs
+        funcname = __name__ + '.publishing_to()'
+        self.logger.debug(funcname)
+        devs = self.redvypr.get_devices()
+        devs_publishing_to = []
+        for dev in reversed(devs):
+            for subaddr in dev.subscribed_addresses:
+                daddr = redvypr_address(subaddr)
+                if (self.address in daddr) and (dev is not self):
+                    devs_publishing_to.append(dev)
+                    break
+
+        return devs_publishing_to
 
     def get_subscribed_datastreams(self):
         """
-        Returns all datastreams of the subscribed devices
+
+        Returns:
+            All datastreams of the subscribed devices
 
         """
         funcname = __name__ + '.get_subscribed_datastreams()'

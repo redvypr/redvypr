@@ -343,7 +343,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     statistics = create_data_statistic_dict()
     
     bytes_read         = 0
-    packets_sent       = 0
+    packets_published       = 0
     dt_packet_sum      = 0
     bytes_read_total   = 0
     packets_read_total = 0
@@ -448,7 +448,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                         p['_redvypr']['t'] = tnow
 
                     dataqueue.put(p)
-                    packets_sent += 1
+                    packets_published += 1
                     dt_packet_sum += dt_packet
 
         # Status update
@@ -457,10 +457,10 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             td = datetime.datetime.fromtimestamp(t_status)
             tdstr = td.strftime("%Y-%m-%d %H:%M:%S.%f")
             try:
-                dt_avg = dt_packet_sum / packets_sent
+                dt_avg = dt_packet_sum / packets_published
             except:
                 dt_avg = -1
-            sstr = '{:s}: Sent {:d} packets with an avg dt of {:.3f}s.'.format(tdstr, packets_sent,
+            sstr = '{:s}: Sent {:d} packets with an avg dt of {:.3f}s.'.format(tdstr, packets_published,
                                                                                dt_avg)
             logger.debug(sstr)
             try:
@@ -736,7 +736,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             #stat = self.inspect_data(filename,rescan=False)
             stat = self.inspect_data_thread(filename, i, rescan=False)
             if False:
-                packetitem = QtWidgets.QTableWidgetItem(str(stat['packets_sent']))
+                packetitem = QtWidgets.QTableWidgetItem(str(stat['packets_published']))
                 packetitem.setFlags(packetitem.flags() & ~QtCore.Qt.ItemIsEditable)
                 self.inlist.setItem(i,self.col_npackets,packetitem)
                 tdmin = datetime.datetime.fromtimestamp(stat['t_min'])

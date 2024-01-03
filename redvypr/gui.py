@@ -3,6 +3,7 @@ import time
 import logging
 import sys
 import yaml
+import datetime
 from PyQt5 import QtWidgets, QtCore, QtGui
 from redvypr.device import redvypr_device
 from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget
@@ -249,19 +250,20 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
 
 
 class redvyprSubscribeWidget(QtWidgets.QWidget):
-    """ A widget that lists all devices and datastreams as potential inputs and a second list of all the subscriptions
-     of the
+    """ Widget that lets the user add/modify/remove subscriptions of a device
 
     """
 
-    def __init__(self, redvypr=None, device=None):
+    def __init__(self, redvypr=None, device=None, show_devices = False):
         """
 
         Args:
             redvypr:
-            device:
+            device: The device the user can change the
+            show_devices: lets the user choose between different devices, otherwise only the subscriptions of device=device can be changed.
         """
         super(redvyprSubscribeWidget, self).__init__()
+        self.show_devices = show_devices
         self.redvypr = redvypr
         self.devices = self.redvypr.devices
         self.redvypr.devices_connected.connect(self.__devices_connected__)
@@ -282,22 +284,23 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
         lab = QtWidgets.QLabel('Device subscriptions')
         lab.setFont(font)
         lab.setAlignment(QtCore.Qt.AlignCenter)
+        self.lab = lab
 
         self.device_label = QtWidgets.QLabel('Device')
         self.device_label.setAlignment(QtCore.Qt.AlignCenter)
         self.dataprovider_label = QtWidgets.QLabel('Data providing devices')
         self.dataprovider_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.subscribe_label = QtWidgets.QLabel('Subscribed')
+        self.subscribe_label = QtWidgets.QLabel('Subscriptions')
         self.subscribe_label.setAlignment(QtCore.Qt.AlignCenter)
 
-        self.devices_listallout = QtWidgets.QTreeWidget()  # All dataproviding devices
-        self.devices_listallout.setColumnCount(2)
-        self.devices_listallout.setHeaderHidden(True)
-        self.devices_listallout.currentItemChanged.connect(self.__update_device_choice__)
+        self.devices_listPublisher = QtWidgets.QTreeWidget()  # All data publishing devices
+        self.devices_listPublisher.setColumnCount(2)
+        self.devices_listPublisher.setHeaderHidden(True)
+        self.devices_listPublisher.currentItemChanged.connect(self.__update_device_choice__)
 
-        self.devices_listcon = QtWidgets.QListWidget()  # The devices a connection is to be defined
-        self.devices_listcon.itemClicked.connect(self.itemcon_clicked)
-        self.devices_listcon.itemDoubleClicked.connect(self.itemcon_dclicked)
+        self.devices_listDevices = QtWidgets.QListWidget()  # The devices a connection is to be defined
+        self.devices_listDevices.itemClicked.connect(self.itemcon_clicked)
+        self.devices_listDevices.itemDoubleClicked.connect(self.itemcon_dclicked)
 
         self.devices_listallsub = QtWidgets.QListWidget()  # The subscriptions of the device
         self.devices_listallsub.itemClicked.connect(self.__itemsubscribed_clicked__)
@@ -310,16 +313,24 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
         self.__commitbtn.clicked.connect(self.commit_clicked)
         self.__commitbtn.setEnabled(False)
 
+        self.__subscribeAllBtn = QtWidgets.QPushButton('Subscribe all (*)')
+        self.__subscribeAllBtn.clicked.connect(self.subscribeAll_clicked)
+        #self.__commitbtn.setEnabled(False)
+
         #layout.addWidget(lab, 0, 1,1,3)
         layout.addWidget(lab, 0, 0,1,3)
-        layout.addWidget(self.device_label, 1, 0)
-        layout.addWidget(self.devices_listcon, 2, 0)
+
+        if self.show_devices:
+            layout.addWidget(self.device_label, 1, 0)
+            layout.addWidget(self.devices_listDevices, 2, 0)
+
         layout.addWidget(self.subscribe_label, 1, 1)
         layout.addWidget(self.devices_listallsub, 2, 1)
         layout.addWidget(self.dataprovider_label, 1, 2)
-        layout.addWidget(self.devices_listallout, 2, 2)
+        layout.addWidget(self.devices_listPublisher, 2, 2)
         layout.addWidget(self.subscribe_edit, 3, 0, 1, 3)
         layout.addWidget(self.__commitbtn,4,0,1,3)
+        layout.addWidget(self.__subscribeAllBtn, 5, 0, 1, 3)
 
         if (len(self.devices) > 0):
             self.update_list(device)
@@ -342,7 +353,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
         #print('Devices have been connected',dev1,dev2)
         self.update_list(self.device)
 
-    def __update_device_choice__(self,newitem,olditem):
+    def __update_device_choice__(self, newitem, olditem):
         """
         A device was clicked, update all buttons
         Args:
@@ -366,8 +377,8 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
                 self.__commitbtn.redvypr_addr_remove = devstr
             else:
                 self.subscribe_edit.setText(devstr)
-                print(devstr)
-                print('Item',newitem.text(0))
+                #print(devstr)
+                #print('Item',newitem.text(0))
                 self.__commitbtn.setText('Subscribe')
                 self.__commitbtn.__status__ = 'add'
                 self.__commitbtn.setEnabled(True)
@@ -384,14 +395,14 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
         except:
             devname = 'NA'
         logger.debug(funcname + ':update_list for device: {:s}, name {:s}'.format(str(device),devname))
-        self.devices_listallout.clear()
+        self.devices_listPublisher.clear()
         self.devices_listallsub.clear()
-        self.devices_listcon.clear()
+        self.devices_listDevices.clear()
         self.device = device
 
         if (len(self.devices) > 0):
-            root = self.devices_listallout.invisibleRootItem()
-            # self.devices_listcon.addItem(str(device))
+            root = self.devices_listPublisher.invisibleRootItem()
+            # self.devices_listDevices.addItem(str(device))
             data_provider_all = self.redvypr.get_devices(publishes=True)
             font1 = QtGui.QFont('Arial')
             font1.setBold(True)
@@ -449,8 +460,8 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
 
                             itm.addChild(itmf)
 
-            self.devices_listallout.expandAll()
-            self.devices_listallout.resizeColumnToContents(0)
+            self.devices_listPublisher.expandAll()
+            self.devices_listPublisher.resizeColumnToContents(0)
 
             # Fill list of devices subscribing
             devitm = None
@@ -460,12 +471,13 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
                     sen = s['device']
                     itm = QtWidgets.QListWidgetItem(sen.name)
                     itm.device = sen
-                    self.devices_listcon.addItem(itm)
+                    self.devices_listDevices.addItem(itm)
                     if (sen == device):
                         devitm = itm
 
                 if(devitm is not None):
-                    self.devices_listcon.setCurrentItem(devitm)
+                    self.devices_listDevices.setCurrentItem(devitm)
+                    self.lab.setText('Subscriptions for\n ' + str(sen.name))
 
             # Fill the subscribed list
             if True:
@@ -498,7 +510,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
                 self.update_list(self.device)
 
 
-        getSelected = self.devices_listallout.selectedItems()
+        getSelected = self.devices_listPublisher.selectedItems()
         if getSelected:
             itm = getSelected[0]
             try:
@@ -509,13 +521,17 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
                 devicename = ''
 
             # Get subscriber
-            subscriber_item  = self.devices_listcon.currentItem()
+            subscriber_item  = self.devices_listDevices.currentItem()
             subscriber = subscriber_item.device
             try:
                 address_forwarded = itm.address_forwarded
             except:
                 address_forwarded = None
 
+    def subscribeAll_clicked(self):
+        logger.debug('Subscribe all')
+        self.device.subscribe_address('*')
+        self.update_list(self.device)
 
     def disconnect_clicked(self):
         logger.debug('Disconnect')
@@ -528,15 +544,15 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
         if (item.isSelected()):
             item.setSelected(False)
 
-class deviceinfoWidget(QtWidgets.QWidget):
-    """ A widget to display the general info of a device
+class deviceControlWidget(QtWidgets.QWidget):
+    """ A widget to set the general settings of the device (start/stop, debug level)
     """
     device_start = QtCore.pyqtSignal(dict) # Signal requesting a start of the device (starting the thread)
     device_stop  = QtCore.pyqtSignal(dict) # Signal requesting a stop of device
     connect      = QtCore.pyqtSignal(dict) # Signal requesting a change of the connection
 
     def __init__(self,devicedict,redvyprwidget):
-        super(deviceinfoWidget, self).__init__()
+        super(deviceControlWidget, self).__init__()
         self.devicedict = devicedict
         self.device = devicedict['device']
         # Connect the status signal
@@ -573,7 +589,7 @@ class deviceinfoWidget(QtWidgets.QWidget):
         self.viewbtn = QtWidgets.QPushButton("View")
         self.viewbtn.clicked.connect(self.viewclicked)
         self.viewbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)        
-        self.conbtn = QtWidgets.QPushButton("Connections")
+        self.conbtn = QtWidgets.QPushButton("Subscribe")
         self.conbtn.clicked.connect(self.conclicked)
         self.conbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
         self.rembtn = QtWidgets.QPushButton("Remove")
@@ -709,8 +725,11 @@ class QPlainTextEditLogger(logging.Handler):
 # Widget shows the statistics of the device
 #
 #
-class redvypr_deviceInfoWidget(QtWidgets.QWidget):
-    def __init__(self, device=None):
+class redvypr_deviceStatisticWidget(QtWidgets.QWidget):
+    """
+    Widgets shows the device statistic as text
+    """
+    def __init__(self, device = None):
         funcname = __name__ + '.__init__():'
         logger.debug(funcname)
         super().__init__()
@@ -742,6 +761,73 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         # self.text.setTextCursor(prev_cursor)
         if True:
             self.infowidget.verticalScrollBar().setValue(pos)
+
+
+class redvypr_deviceInfoWidget(QtWidgets.QWidget):
+    """
+    Information widget of a device
+    """
+    connect = QtCore.pyqtSignal(
+        redvypr_device)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    def __init__(self, device = None):
+        funcname = __name__ + '.__init__():'
+        logger.debug(funcname)
+        super().__init__()
+        self.device = device
+        self.layout = QtWidgets.QGridLayout(self)
+        tstr = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.update_label = QtWidgets.QLabel('Last update {:s}'.format(tstr))
+        self.packetRecv_label = QtWidgets.QLabel('Packets received {:d}'.format(0))
+        self.packetPubl_label = QtWidgets.QLabel('Packets published {:d}'.format(0))
+        self.publist_label = QtWidgets.QLabel('Publishes to')
+        self.publist = QtWidgets.QListWidget()
+        self.sublist_label = QtWidgets.QLabel('Subscribed devices')
+        self.sublist = QtWidgets.QListWidget()
+        self.subBtn = QtWidgets.QPushButton('Subscribe')
+        self.subBtn.clicked.connect(self.connect_clicked)
+        self.confBtn = QtWidgets.QPushButton('Config')
+        self.statBtn = QtWidgets.QPushButton('Statistics')
+        self.layout.addWidget(self.update_label)
+        self.layout.addWidget(self.packetRecv_label)
+        self.layout.addWidget(self.packetPubl_label)
+        self.layout.addWidget(self.sublist_label)
+        self.layout.addWidget(self.sublist)
+        self.layout.addWidget(self.publist_label)
+        self.layout.addWidget(self.publist)
+        self.layout.addWidget(self.statBtn)
+        self.layout.addWidget(self.confBtn)
+        self.layout.addWidget(self.subBtn)
+
+        self.updatetimer = QtCore.QTimer()
+        self.updatetimer.timeout.connect(self.__update_info)
+        self.updatetimer.start(1000)
+
+    def connect_clicked(self):
+        button = self.sender()
+        self.connect.emit(self.device)
+
+    def __update_info(self):
+        funcname = __name__ + '.__update_info():'
+        tstr = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.update_label.setText('Last update {:s}'.format(tstr))
+        nrecv = self.device.statistics['packets_received']
+        npub = self.device.statistics['packets_published']
+        self.packetRecv_label.setText('Packets received {:d}'.format(nrecv))
+        self.packetPubl_label.setText('Packets published {:d}'.format(npub))
+
+
+
+        devs = self.device.get_subscribed_devices()
+        self.sublist.clear()
+        for d in devs:
+            devname = d.name
+            self.sublist.addItem(devname)
+
+        devs_sub = self.device.publishing_to()
+        self.publist.clear()
+        for d in devs_sub:
+            devname = d.name
+            self.publist.addItem(devname)
 
 
 

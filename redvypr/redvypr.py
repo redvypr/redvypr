@@ -28,7 +28,7 @@ import platform
 # Import redvypr specific stuff
 import redvypr.data_packets as data_packets
 from redvypr.gui import redvypr_ip_widget, QPlainTextEditLogger, displayDeviceWidget_standard, \
-    deviceinfoWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget, deviceTabWidget
+    deviceControlWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget, deviceTabWidget
 import redvypr.gui as gui
 from redvypr.config import configuration
 import redvypr.config as redvyprconfig
@@ -159,7 +159,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     if(type(data) is not dict): # If data is not a dictionary, convert it to one
                         data = {'data':data}
 
-                    #devicedict['packets_sent'] += 1 # Do we still need this???
+                    #devicedict['packets_published'] += 1 # Do we still need this???
                     packets_processed += 1 # Counter for the statistics
                     packet_counter += 1 # Global counter of packets received by the redvypr instance
                     data_all.append([data,packet_counter])
@@ -256,7 +256,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                                 try:
                                     devicedict_sub['statistics']['packets'][devicename_stat]
                                 except:
-                                    devicedict_sub['statistics']['packets'][devicename_stat] = {'received':0,'sent':0}
+                                    devicedict_sub['statistics']['packets'][devicename_stat] = {'received':0,'published':0}
                                 devicedict_sub['statistics']['packets'][devicename_stat]['received'] += 1
                                 #print('Sent data to',devicename_stat,devicedict_sub['packets_received'])
                                 break
@@ -451,7 +451,7 @@ class redvypr(QtCore.QObject):
                 runstr = 'stopped'
 
             statusstr += '\n\t' + sendict['device'].name + ':' + runstr + ': data packets sent: {:d}' + ': data packets received: {:d}'.format(
-                sendict['packets_sent'],sendict['packets_received'])
+                sendict['packets_published'],sendict['packets_received'])
             # statusstr += ': data packets received: {:d}'.format(sendict['numpacketout'])
 
         return statusstr
@@ -730,6 +730,7 @@ class redvypr(QtCore.QObject):
                         config_template = devicemodule.config_template
                         logger.debug(funcname + ':Found configuation template of device {:s}'.format(str(devicemodule)))
                         #templatedict = configtemplate_to_dict(config_template)
+                        print('Deviceconfig',deviceconfig)
                         self.__fill_config__(device_parameter, config_template, deviceconfig, thread)
                         FLAG_HAS_TEMPLATE = True
                     except Exception as e:
@@ -755,6 +756,7 @@ class redvypr(QtCore.QObject):
                 print('Devicenames',devicenames)
                 print('device_parameter',device_parameter)
                 print('devicemodulename', devicemodulename)
+                devicename_tmp = ''
                 if len(device_parameter.name) == 0:
                     devicename_tmp = devicemodulename.split('.')[-1]# + '_' + str(self.numdevice)
 
@@ -817,23 +819,26 @@ class redvypr(QtCore.QObject):
                     #print('Getting config')
 
                     #print('Done')
-                    # Merge the config with a potentially existing template to fill in default values
-                    if FLAG_HAS_TEMPLATE:
-                        config = deviceconfig['config']
-                        #print('With template', config_template)
-                        #print('With configuration', config)
-                        #config = apply_config_to_dict(config,templatedict)
-                        #config = copy.deepcopy(config)
-                        #redvypr.config.dict_to_configDict(templatedict, process_template=True)
-                        configu = configuration(template=config_template,config=config)
-                    else: # Make a configuration without a template directly from the config dict
-                        #print('Without template')
-                        configu = configuration(config)
-                        config_template = None
+
 
                     if FLAG_HAS_PYDANTIC:
                         logger.debug(funcname + ' Using pydantic config')
                         configu = pydantic_device_config
+                        config_template = None
+                    else: # Legacy configuration
+                        # Merge the config with a potentially existing template to fill in default values
+                        if FLAG_HAS_TEMPLATE:
+                            config = deviceconfig['config']
+                            # print('With template', config_template)
+                            # print('With configuration', config)
+                            # config = apply_config_to_dict(config,templatedict)
+                            # config = copy.deepcopy(config)
+                            # redvypr.config.dict_to_configDict(templatedict, process_template=True)
+                            configu = configuration(template=config_template, config=config)
+                        else:  # Make a configuration without a template directly from the config dict
+                            # print('Without template')
+                            configu = configuration(config)
+                            config_template = None
 
                     logger.debug(funcname + 'Config for device')
                     logger.debug(funcname + 'Config: {:s}'.format(str(configu)))
@@ -863,7 +868,7 @@ class redvypr(QtCore.QObject):
                 devicedict['devicemodulename'] = devicemodulename
                 # Add some statistics (LEGACY)
                 devicedict['packets_received'] = 0
-                devicedict['packets_sent'] = 0
+                devicedict['packets_published'] = 0
                 # The displaywcreate_idget, to be filled by redvyprWidget.add_device (optional)
                 devicedict['devicedisplaywidget'] = None
                 # device = devicedict['device']
@@ -1148,7 +1153,7 @@ class redvypr(QtCore.QObject):
                 devicedict['devicemodulename'] = devicemodulename
                 # Add some statistics (LEGACY)
                 devicedict['packets_received'] = 0
-                devicedict['packets_sent'] = 0
+                devicedict['packets_published'] = 0
                 # The displaywcreate_idget, to be filled by redvyprWidget.add_device (optional)
                 devicedict['devicedisplaywidget'] = None
                 # device = devicedict['device']
@@ -1557,12 +1562,12 @@ class redvyprWidget(QtWidgets.QWidget):
                 dev['device'].change_name(name)
                 widget = dev['widget']
                 # Create a new infowidget
-                dev['infowidget'].close()
-                dev['infowidget'] = deviceinfoWidget(dev, self)
+                dev['controlwidget'].close()
+                dev['controlwidget'] = deviceControlWidget(dev, self)
                 # Note: commented for the moment to be replaced by the signals of the device itself
                 # dev['infowidget'].device_start.connect(self.redvypr.start_device_thread)
                 # dev['infowidget'].device_stop.connect(self.redvypr.stop_device_thread)
-                dev['infowidget'].connect.connect(self.connect_device)
+                dev['controlwidget'].connect.connect(self.connect_device)
                 for i in range(self.devicetabs.count()):
                     if (self.devicetabs.widget(i) == widget):
                         self.devicetabs.setTabText(i, name)
@@ -1589,7 +1594,7 @@ class redvyprWidget(QtWidgets.QWidget):
 
         # and refill it
         for i, devicedict in enumerate(self.redvypr.devices):
-            self.devicesummarywidget_layout.addWidget(devicedict['infowidget'])
+            self.devicesummarywidget_layout.addWidget(devicedict['controlwidget'])
 
         self.devicesummarywidget_layout.addStretch()
 
@@ -1702,6 +1707,7 @@ class redvyprWidget(QtWidgets.QWidget):
         device.deviceinitwidget = deviceinitwidget
         # Add the info widget
         deviceinfowidget = redvypr_deviceInfoWidget(device)
+        deviceinfowidget.connect.connect(self.connect_device)
 
         #
         # Check if we have a widget to display the data
@@ -1780,8 +1786,8 @@ class redvyprWidget(QtWidgets.QWidget):
 
         self.redvypr.devices[ind_devices]['widget'] = devicewidget  # This is the displaywidget
         # Create the infowidget (for the overview of all devices)
-        self.redvypr.devices[ind_devices]['infowidget'] = deviceinfoWidget(self.redvypr.devices[ind_devices], self)
-        self.redvypr.devices[ind_devices]['infowidget'].connect.connect(self.connect_device)
+        self.redvypr.devices[ind_devices]['controlwidget'] = deviceControlWidget(self.redvypr.devices[ind_devices], self)
+        self.redvypr.devices[ind_devices]['controlwidget'].connect.connect(self.connect_device)
 
         #
         # Add the devicelistentry to the widget, this gives the full information to the device
@@ -2124,7 +2130,7 @@ class redvyprWidget(QtWidgets.QWidget):
                 # Close the widgets (init/display)
                 currentWidget.close()
                 # Info
-                sendict['infowidget'].close()
+                sendict['controlwidget'].close()
 
                 self.devicetabs.removeTab(currentIndex)
                 break

@@ -290,7 +290,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         for i in rows:
             filename = self.inlist.item(i,0).text()
             stat = self.inspect_data(filename,rescan=False)
-            packetitem = QtWidgets.QTableWidgetItem(str(stat['packets_sent']))
+            packetitem = QtWidgets.QTableWidgetItem(str(stat['packets_published']))
             self.inlist.setItem(i,1,packetitem)
             tdmin = datetime.datetime.fromtimestamp(stat['t_min'])
             tminstr = str(tdmin)

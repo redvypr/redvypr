@@ -204,7 +204,7 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
             tcp_thread = threading.Thread(target=handle_tcp_client_send, args=([client,address],threadqueue,statusqueue), daemon=True)
             tcp_thread.start()
             clients.append(client)
-            threadqueues.append({'thread':tcp_thread,'queue': threadqueue,'address':address,'bytes_sent':0,'packets_sent':0})
+            threadqueues.append({'thread':tcp_thread,'queue': threadqueue,'address':address,'bytes_sent':0,'packets_published':0})
         except socket.timeout:
             pass
         except Exception as e:
@@ -230,7 +230,7 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
                 for q in threadqueues:
                     q['queue'].put(datab)
                     q['bytes_sent'] += len(datab)
-                    q['packets_sent'] += 1
+                    q['packets_published'] += 1
 
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))
@@ -250,7 +250,7 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
             statusdata['clients'] = []
             statusdata['config'] = copy.deepcopy(config)
             for q in threadqueues:
-                client = {'bytes':q['bytes_sent'],'address':q['address'][0],'port':q['address'][1],'packets':q['packets_sent']}
+                client = {'bytes':q['bytes_sent'],'address':q['address'][0],'port':q['address'][1],'packets':q['packets_published']}
                 statusdata['clients'].append(client)
                 
             try:
