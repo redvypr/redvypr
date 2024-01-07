@@ -5,7 +5,7 @@ import sys
 import yaml
 import datetime
 from PyQt5 import QtWidgets, QtCore, QtGui
-from redvypr.device import redvypr_device
+from redvypr.device import redvypr_device, redvypr_device_parameter
 from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, pdDeviceConfigWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget
 from redvypr.widgets.datastream_widget import datastreamWidget
@@ -66,8 +66,9 @@ def get_QColor(data):
 
     return color
 
-class redvyprDeviceWidget(QtWidgets.QWidget):
+class redvyprAddDeviceWidget(QtWidgets.QWidget):
     """ A widget that lists all devices found in modules and in the python files included in the path list.
+
     """
     def __init__(self, redvypr_device_scan=None,redvypr=None):
         """
@@ -76,7 +77,7 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
             redvypr:
             device:
         """
-        super(redvyprDeviceWidget, self).__init__()
+        super(redvyprAddDeviceWidget, self).__init__()
         self.redvypr = redvypr
         if redvypr is not None:
             self.redvypr_device_scan = redvypr.redvypr_device_scan
@@ -95,24 +96,44 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
         self.devnamelabel = QtWidgets.QLabel('Devicename')
         self.devname = QtWidgets.QLineEdit()
         self.mp_label = QtWidgets.QLabel('Multiprocessing options')
+        self.mp_qthread = QtWidgets.QRadioButton('QThread')
         self.mp_thread = QtWidgets.QRadioButton('Thread')
         self.mp_multi = QtWidgets.QRadioButton('Multiprocessing')
-        self.mp_multi.setChecked(True)
         self.mp_group = QtWidgets.QButtonGroup()
+        self.mp_group.addButton(self.mp_qthread)
         self.mp_group.addButton(self.mp_thread)
         self.mp_group.addButton(self.mp_multi)
-        self.mp_thread.setChecked(True)
+        self.mp_qthread.setChecked(True)
 
+        self.log_label = QtWidgets.QLabel('Loglevel')
+        self.logwidget = QtWidgets.QComboBox()  # A Combobox to change the loglevel of the device
+        # Fill the logwidget
+        if (logger is not None):
+            level = logger.getEffectiveLevel()
+            levelname = logging.getLevelName(level)
+            loglevels = ['INFO', 'DEBUG', 'WARNING', 'ERROR', 'CRITICAL']
+            for i, l in enumerate(loglevels):
+                self.logwidget.addItem(l)
+
+            self.logwidget.setCurrentText(levelname)
+        else:
+            self.logwidget.addItem('NA')
+
+        thread_layout = QtWidgets.QHBoxLayout()
+        thread_layout.addWidget(self.mp_qthread)
+        thread_layout.addWidget(self.mp_multi)
+        thread_layout.addWidget(self.mp_thread)
         self.layout = QtWidgets.QFormLayout(self)
         self.layout.addRow(self.devicetree)
         self.layout.addRow(self.deviceinfo)
-        self.layout.addRow(self.mp_label)
-        self.layout.addRow(self.mp_thread, self.mp_multi)
+        self.layout.addRow(self.log_label,self.logwidget)
+        self.layout.addRow(self.mp_label,thread_layout)
+        #self.layout.addRow(self.mp_thread, self.mp_multi)
         self.layout.addRow(self.devnamelabel, self.devname)
         self.layout.addRow(self.addbtn)
 
         self.setWindowIcon(QtGui.QIcon(_icon_file))
-        self.setWindowTitle("redvypr devices")
+        self.setWindowTitle("redvypr add device")
 
     def create_deviceinfo_widget(self):
         """
@@ -221,7 +242,7 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
         self.__device_info()
 
     def add_device_click(self):
-        """
+        """ Adds the device
         """
         funcname = __name__ + 'add_device_click():'
         logger.debug(funcname)
@@ -231,16 +252,24 @@ class redvyprDeviceWidget(QtWidgets.QWidget):
 
         if item.devdict is not None:
             devicemodulename = item.devdict['name']
-            thread = self.mp_thread.isChecked()
-            config = {'loglevel':logger.level}
+            device_parameter = redvypr_device_parameter()
+            if self.mp_thread.isChecked():
+                device_parameter.multiprocess = 'thread'
+            elif self.mp_qthread.isChecked():
+                device_parameter.multiprocess = 'qthread'
+            elif self.mp_multi.isChecked():
+                device_parameter.multiprocess = 'multiprocessing'
+
+            levelname = self.logwidget.currentText()
+            device_parameter.loglevel = levelname
             devname = str(self.devname.text())
             if len(devname) > 0:
-                config['name'] = devname
-            deviceconfig = {'config':config}
+                device_parameter.name = devname
+
             print('devicemodulename',devicemodulename)
-            print('Adding device, config',deviceconfig)
+            print('Adding device, config',device_parameter)
             if self.redvypr is not None:
-                self.redvypr.add_device(devicemodulename=devicemodulename, thread=thread, deviceconfig=deviceconfig)
+                self.redvypr.add_device(devicemodulename=devicemodulename, device_parameter=device_parameter)
             self.devname.clear()
             # Update the name
             #self.__device_name()

@@ -37,8 +37,8 @@ class redvypr_device_parameter(pydantic.BaseModel):
     config: dict = pydantic.Field(default={})  # Candidate for removal
     publishes: bool = False
     subscribes: bool = False
-    multiprocess: str = pydantic.Field(default='thread')
-    loglevel: str = pydantic.Field(default='INFO')
+    multiprocess: str = pydantic.Field(default='qthread')
+    loglevel: str = pydantic.Field(default='')
     numdevice: int = pydantic.Field(default=-1)
     autostart: bool = False
     devicemodulename: str = pydantic.Field(default='')
@@ -46,6 +46,21 @@ class redvypr_device_parameter(pydantic.BaseModel):
     # Not as parameter, but necessary for initialization
     maxdevices: int = pydantic.Field(default=-1)
     gui_tablabel_display: str = 'Display'
+
+
+class deviceQThread(QtCore.QThread):
+    def __init__(self, startfunction, start_arguments):
+        QtCore.QThread.__init__(self)
+        self.startfunction = startfunction
+        self.start_arguments = start_arguments
+
+    def __del__(self):
+        self.wait()
+
+    def run(self):
+        print('Arguments',self.start_arguments)
+        self.startfunction(*self.start_arguments)
+
 
 
 
@@ -309,7 +324,7 @@ class redvypr_device(QtCore.QObject):
         self.redvypr     = redvypr
         self.name        = device_parameter.name
         self.devicemodulename = device_parameter.devicemodulename
-        self.uuid        = uuid
+        self.uuid        = device_parameter.uuid
         try:
             self.host_uuid = redvypr.hostinfo['uuid']
         except:
@@ -320,6 +335,7 @@ class redvypr_device(QtCore.QObject):
         self.numdevice   = device_parameter.numdevice
         self.description = 'redvypr_device'
         self.statistics  = statistics
+        print('Hallo device parameter',device_parameter.multiprocess)
         self.mp          = device_parameter.multiprocess
         self.autostart   = device_parameter.autostart
         self.thread      = None
@@ -507,11 +523,8 @@ class redvypr_device(QtCore.QObject):
         Returns:
 
         """
-        try:
-            running = self.thread.is_alive()
-        except:
-            running = False
-
+        running = False
+        running = self.thread_running()
         info_dict = {}
         info_dict['uuid'] = self.uuid
         info_dict['thread_uuid'] = self.thread_uuid
@@ -536,9 +549,31 @@ class redvypr_device(QtCore.QObject):
     def kill_process(self):
         funcname = __name__ + '.kill_process():'
         self.logger.debug(funcname)
-        if(self.mp == 'multiprocess'):
-            self.logger.debug(funcname + ': Terminating now')
-            self.thread.kill()
+        if self.thread is not None:
+            if isinstance(self.thread, deviceQThread):
+                self.logger.debug(funcname + ': Terminating now')
+                self.thread.terminate()
+            #elif(self.mp == 'multiprocess'):
+            elif isinstance(self.thread, deviceQThread):
+                self.logger.debug(funcname + ': Terminating now')
+                self.thread.kill()
+            elif isinstance(self.thread, threading.Thread):
+                self.logger.debug(funcname + ': Cannot terminate a threading.Thread')
+            else:
+                self.logger.warning(funcname + ' Thread type no known')
+        else:
+            self.logger.warning(funcname + ' Device is not running')
+
+    def thread_running(self):
+        try: # thread/mulitprocess
+            running = self.thread.is_alive()
+        except:  # QThread
+            try:
+                running = self.thread.isRunning()
+            except:
+                running = False
+
+        return running
 
     def thread_command(self, command, data=None):
         """
@@ -560,12 +595,7 @@ class redvypr_device(QtCore.QObject):
             else:
                 raise TypeError('data needs to be a dictionary')
 
-        try:
-            running = self.thread.is_alive()
-        except:
-            running = False
-
-        if(running):
+        if(self.thread_running()):
             #print('Sending command',command)
             self.__send_command__(command)
         else:
@@ -579,23 +609,22 @@ class redvypr_device(QtCore.QObject):
         """
         funcname = __name__ + '.thread_stop():'
         self.logger.debug(funcname)
+        print('Thread stop ...')
         command = commandpacket(command='stop', device_uuid=self.uuid,thread_uuid=self.thread_uuid)
+        print('Thread stop ... 1',command)
         #print('Sending command',command)
-        try:
-            running = self.thread.is_alive()
-        except:
-            running = False
-
+        running = self.thread_running()
+        print('Thread stop ... 2')
         if(running):
             self.__send_command__(command)
-            try:
-                running2 = self.thread.is_alive()
-            except:
-                running2 = False
+            print('Thread stop ... 3')
+            running2 = self.thread_running()
+            print('Thread stop ... 4')
             info_dict = {}
             info_dict['uuid'] = self.uuid
             info_dict['thread_status'] = running2
             self.thread_stopped.emit(info_dict)
+            print('Thread stop ... 5')
         else:
             self.logger.warning(funcname + ' thread is not running, doing nothing')
 
@@ -621,11 +650,7 @@ class redvypr_device(QtCore.QObject):
         # Find the right thread to start
         if True:
             if True:
-                try:
-                    running = self.thread.is_alive()
-                except:
-                    running = False
-
+                running = self.thread_running()
                 if(running):
                     self.logger.warning(funcname + ':thread/process is already running, doing nothing')
                 else:
@@ -646,19 +671,25 @@ class redvypr_device(QtCore.QObject):
                             self.logger.debug('Using external configuration')
 
                         args = (device_info, config, self.dataqueue, self.datainqueue, self.statusqueue)
-                        if self.mp == 'thread':
+                        if True:
+                            self.thread = deviceQThread(startfunction=self.start,start_arguments=args)
+                        elif self.mp == 'thread':
                             self.logger.info(funcname + 'Starting as thread')
                             self.thread = threading.Thread(target=self.start, args=args, daemon=True)
                         else:
                             self.logger.info(funcname + 'Starting as process')
                             self.thread = multiprocessing.Process(target=self.start, args=args)
+
                             #self.logger.info(funcname + 'started {:s} as process with PID {:d}'.format(self.name, self.thread.pid))
 
                         self.thread.start()
+
                         sendict['thread'] = self.thread
                         self.logger.info(funcname + 'started {:s}'.format(self.name))
                         # Update the device and the devicewidgets about the thread status
-                        running2 = sendict['thread'].is_alive()
+                        running2 = self.thread_running()
+
+
                         try: # If the device has a thread_status function
                             self.thread_status({'threadalive':running2})
                         except:

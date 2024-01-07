@@ -1,3 +1,6 @@
+    -0.7.1  - pydantic device_parameter, add_device, gui, loglevel
+    -0.7.0  - Qthread instead of threading.Thread (allows to terminate a thread)
+            - pydantic instead of redvypr.configure for configuration
     -0.6.9  - finalize_init is also tried to called for the displaywidget
             - redvypr_device.unsubscribe_all implemented
             - datastreamWidget somewhat nicer

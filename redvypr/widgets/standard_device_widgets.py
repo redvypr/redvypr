@@ -113,7 +113,7 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         self.startbutton.setCheckable(True)
         #self.startbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         # Process kill button (if thread)
-        if (self.device.mp == 'multiprocess'):
+        if (self.device.mp == 'multiprocess') or (self.device.mp == 'qthread'):
             # Killbutton
             self.killbutton = QtWidgets.QPushButton('Kill process')
             self.killbutton.clicked.connect(self.kill_clicked)
@@ -128,7 +128,7 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         #self.layout.addWidget(self.config_widget, 0, 0, 1, 4)
         self.layout.addWidget(self.label, 0, 0, 1, 4)
         self.layout.addWidget(self.conbutton, 1, 0, 1, 4)
-        if (self.device.mp == 'multiprocess'):
+        if (self.device.mp == 'multiprocess')  or (self.device.mp == 'qthread'):
             self.layout.addWidget(self.startbutton, 2, 0, 1, 3)
             self.layout.addWidget(self.killbutton, 2, 3)
         else:

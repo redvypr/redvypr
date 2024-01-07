@@ -662,7 +662,7 @@ class redvypr(QtCore.QObject):
 
         return loglevel
 
-    def add_device(self, devicemodulename=None, deviceconfig={}, thread = None):
+    def add_device(self, devicemodulename=None, deviceconfig={}, device_parameter = None):
         """
         Function adds a device to redvypr
 
@@ -680,7 +680,10 @@ class redvypr(QtCore.QObject):
         logger.debug(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(deviceconfig))
         devicelist = []
         # Pydantic data structure with the essential device parameters
-        device_parameter = redvypr_device_parameter()
+        if device_parameter is None:
+            device_parameter = redvypr_device_parameter()
+
+
         device_parameter.devicemodulename = devicemodulename
         device_parameter.numdevice = self.numdevice
         device_found = False
@@ -769,18 +772,13 @@ class redvypr(QtCore.QObject):
                 device_parameter.name = devicename_tmp
 
                 # Check for multiprocess options in configuration
-                if(thread):
-                    device_parameter.multiprocess = 'thread'
-                else:
-                    device_parameter.multiprocess = 'multiprocess'
-
-                if device_parameter.multiprocess == 'thread':  # Thread or multiprocess
+                if 'thread' in device_parameter.multiprocess:  # Thread or QThread
                     dataqueue = queue.Queue(maxsize=queuesize)
                     datainqueue = queue.Queue(maxsize=queuesize)
                     comqueue = queue.Queue(maxsize=queuesize)
                     statusqueue = queue.Queue(maxsize=queuesize)
                     guiqueue = queue.Queue(maxsize=queuesize)
-                else:
+                else: # multiprocess
                     dataqueue = multiprocessing.Queue(maxsize=queuesize)
                     datainqueue = multiprocessing.Queue(maxsize=queuesize)
                     comqueue = multiprocessing.Queue(maxsize=queuesize)
@@ -794,7 +792,7 @@ class redvypr(QtCore.QObject):
                 try:
                     numdevices = len(self.devices)
                     # Could also create a UUID based on the hostinfo UUID str
-                    device_uuid = '{:03d}--'.format(numdevices) + str(uuid.uuid1()) + '::' + self.hostinfo['uuid']
+                    device_parameter.uuid = '{:03d}--'.format(numdevices) + str(uuid.uuid1()) + '::' + self.hostinfo['uuid']
                     try:
                         devicemodule.Device
                         HASDEVICE = True
@@ -848,6 +846,12 @@ class redvypr(QtCore.QObject):
                     #print('loglevel', loglevel)
                     # Creating the device
                     print('Device parameter',device_parameter.model_dump())
+                    if len(device_parameter.loglevel) == 0:
+                        # Set the loglevel
+                        level = logger.getEffectiveLevel()
+                        levelname = logging.getLevelName(level)
+                        device_parameter.loglevel = levelname
+                        logger.debug(funcname + ' Setting the loglevel to {:s}'.format(levelname))
                     #device = Device(name=device_parameter.name, uuid=device_parameter.uuid, config=configu, redvypr=self, dataqueue=dataqueue,
                     #                publishes=device_parameter.publishes,subscribes=device_parameter.subscribes,autostart=device_parameter.autostart,
                     #                template=config_template, comqueue=comqueue, datainqueue=datainqueue,
@@ -855,7 +859,7 @@ class redvypr(QtCore.QObject):
                     #                numdevice=self.numdevice, statistics=statistics,startfunction=startfunction,devicemodulename=device_parameter.devicemodulename, device_parameter = device_parameter)
                     device = Device(device_parameter = device_parameter, config=configu, redvypr=self, dataqueue=dataqueue,
                                     template=config_template, comqueue=comqueue, datainqueue=datainqueue,
-                                    statusqueue=statusqueue, statistics=statistics,startfunction=startfunction)
+                                    statusqueue=statusqueue, statistics=statistics, startfunction=startfunction)
 
                     device.subscription_changed_signal.connect(self.process_subscription_changed)
                     self.numdevice += 1
@@ -1063,6 +1067,7 @@ class redvypr(QtCore.QObject):
                         multiprocess = deviceconfig['mp'].lower()
                     except:
                         multiprocess = 'thread'
+
                 elif(thread):
                     multiprocess = 'thread'
                 else:
@@ -1667,7 +1672,7 @@ class redvyprWidget(QtWidgets.QWidget):
         #print('Size: %d x %d' % (size.width(), size.height()))
         rect = screen.availableGeometry()
         #print('Available: %d x %d' % (rect.width(), rect.height()))
-        self.add_device_widget = gui.redvyprDeviceWidget(redvypr=self.redvypr)
+        self.add_device_widget = gui.redvyprAddDeviceWidget(redvypr=self.redvypr)
         self.add_device_widget.resize(int(rect.width()*0.75),int(rect.height()*0.75))
         self.add_device_widget.show()
 

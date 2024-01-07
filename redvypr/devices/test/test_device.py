@@ -63,6 +63,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
 
         data = redvypr.data_packets.datapacket(device = device_info['device'])
         time.sleep(config['delay_s'])
+        print('Hallo')
         
 
 
