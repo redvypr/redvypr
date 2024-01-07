@@ -682,6 +682,7 @@ class redvypr(QtCore.QObject):
         # Pydantic data structure with the essential device parameters
         device_parameter = redvypr_device_parameter()
         device_parameter.devicemodulename = devicemodulename
+        device_parameter.numdevice = self.numdevice
         device_found = False
         # Loop over all modules and check of we find the name
         for smod in self.redvypr_device_scan.redvypr_devices_flat:
@@ -689,6 +690,7 @@ class redvypr(QtCore.QObject):
                 logger.debug('Trying to import device {:s}'.format(smod['name']))
                 devicemodule = smod['module']
                 # Try to get a pydantic configuration
+                pydantic_base_config = None
                 try:
                     pydantic_base_config = devicemodule.device_base_config()
                     logger.debug(funcname + ':Found pydantic base configuation {:s}'.format(str(devicemodule)))
@@ -846,11 +848,14 @@ class redvypr(QtCore.QObject):
                     #print('loglevel', loglevel)
                     # Creating the device
                     print('Device parameter',device_parameter.model_dump())
-                    device = Device(name=device_parameter.name, uuid=device_parameter.uuid, config=configu, redvypr=self, dataqueue=dataqueue,
-                                    publishes=device_parameter.publishes,subscribes=device_parameter.subscribes,autostart=device_parameter.autostart,
+                    #device = Device(name=device_parameter.name, uuid=device_parameter.uuid, config=configu, redvypr=self, dataqueue=dataqueue,
+                    #                publishes=device_parameter.publishes,subscribes=device_parameter.subscribes,autostart=device_parameter.autostart,
+                    #                template=config_template, comqueue=comqueue, datainqueue=datainqueue,
+                    #                statusqueue=statusqueue, loglevel=device_parameter.loglevel, multiprocess=device_parameter.multiprocess,
+                    #                numdevice=self.numdevice, statistics=statistics,startfunction=startfunction,devicemodulename=device_parameter.devicemodulename, device_parameter = device_parameter)
+                    device = Device(device_parameter = device_parameter, config=configu, redvypr=self, dataqueue=dataqueue,
                                     template=config_template, comqueue=comqueue, datainqueue=datainqueue,
-                                    statusqueue=statusqueue, loglevel=device_parameter.loglevel, multiprocess=device_parameter.multiprocess,
-                                    numdevice=self.numdevice, statistics=statistics,startfunction=startfunction,devicemodulename=device_parameter.devicemodulename)
+                                    statusqueue=statusqueue, statistics=statistics,startfunction=startfunction)
 
                     device.subscription_changed_signal.connect(self.process_subscription_changed)
                     self.numdevice += 1
@@ -1767,9 +1772,13 @@ class redvyprWidget(QtWidgets.QWidget):
                 tablabeldisplay = devicedisplaywidget_called.tabname
             except:
                  try:
-                     tablabeldisplay = str(device.config['redvypr_device']['gui_tablabel_display'])
+                     tablabeldisplay = str(device.device_parameter.gui_tablabel_display)
                  except:
-                    tablabeldisplay= 'Display data'
+                     try:
+                         tablabeldisplay = str(device.config['redvypr_device']['gui_tablabel_display'])
+                     except:
+                         tablabeldisplay = 'Display'
+
 
             # Check if the widget has included itself, otherwise add the displaytab
             # This is usefull to have the displaywidget add several tabs

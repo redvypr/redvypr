@@ -34,6 +34,7 @@ import socket
 #from apt_pkg import config
 import yaml
 import copy
+import pydantic
 from redvypr.device import redvypr_device
 from redvypr.data_packets import check_for_command
 
@@ -66,6 +67,16 @@ config_template['redvypr_device']['publishes']   = True
 config_template['redvypr_device']['subscribes']  = True
 config_template['redvypr_device']['description'] = description
 redvypr_devicemodule = True
+
+#class device_base_config(pydantic.BaseModel):
+#    publishes: bool = True
+#    subscribes: bool = True
+#    description: str = 'Send and receive data using standard network protocols as TCP or UDP'
+
+#class device_config(pydantic.BaseModel):
+#    address: str = pydantic.Field(default='<IP>', description='The IP address, this can be also <IP> or <broadcast>')
+#    port: int = pydantic.Field(default=18196, description='The network port used')
+
 
 #https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib
 def get_ip():

@@ -45,6 +45,7 @@ class redvypr_device_parameter(pydantic.BaseModel):
     description: str = ''
     # Not as parameter, but necessary for initialization
     maxdevices: int = pydantic.Field(default=-1)
+    gui_tablabel_display: str = 'Display'
 
 
 
@@ -291,12 +292,14 @@ class redvypr_device(QtCore.QObject):
     status_signal  = QtCore.pyqtSignal(dict)   # Signal with the status of the device
     subscription_changed_signal = QtCore.pyqtSignal()  # Signal notifying that a subscription changed
 
-    def __init__(self,name='redvypr_device', uuid = '', redvypr=None, dataqueue=None, comqueue=None, datainqueue=None,statusqueue=None,template = {},config = {},publishes=False,subscribes=False, multiprocess='thread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False,devicemodulename=''):
+    #def __init__(self, name='redvypr_device', uuid = '', redvypr = None, dataqueue = None, comqueue = None, datainqueue=None,statusqueue=None,template = {},config = {},publishes=False,subscribes=False, multiprocess='thread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False,devicemodulename=''):
+    def __init__(self, device_parameter = None, redvypr=None, dataqueue=None, comqueue=None, datainqueue=None,
+                 statusqueue=None, template = {}, config = {}, statistics=None, startfunction = None):
         """
         """
         super(redvypr_device, self).__init__()
-        self.publishes   = publishes    # publishes data, a typical sensor is doing this
-        self.subscribes  = subscribes   # subscribes other devices data, a typical datalogger is doing this
+        self.publishes   = device_parameter.publishes    # publishes data, a typical sensor is doing this
+        self.subscribes  = device_parameter.subscribes   # subscribes other devices data, a typical datalogger is doing this
         self.datainqueue = datainqueue
         self.dataqueue   = dataqueue        
         self.comqueue    = comqueue
@@ -304,8 +307,8 @@ class redvypr_device(QtCore.QObject):
         self.template    = template
         self.config      = config
         self.redvypr     = redvypr
-        self.name        = name
-        self.devicemodulename = devicemodulename
+        self.name        = device_parameter.name
+        self.devicemodulename = device_parameter.devicemodulename
         self.uuid        = uuid
         try:
             self.host_uuid = redvypr.hostinfo['uuid']
@@ -313,13 +316,14 @@ class redvypr_device(QtCore.QObject):
             self.host_uuid = ''
         self.thread_uuid = ''
         self.host        = redvypr.hostinfo
-        self.loglevel    = loglevel
-        self.numdevice   = numdevice
+        self.loglevel    = device_parameter.loglevel
+        self.numdevice   = device_parameter.numdevice
         self.description = 'redvypr_device'
         self.statistics  = statistics
-        self.mp          = multiprocess
-        self.autostart   = autostart
+        self.mp          = device_parameter.multiprocess
+        self.autostart   = device_parameter.autostart
         self.thread      = None
+        self.device_parameter = device_parameter
         # Create a redvypr_address
         # self.address_str
         # self.address
@@ -342,7 +346,7 @@ class redvypr_device(QtCore.QObject):
         self.subscribed_addresses = []
         
         self.logger = logging.getLogger(self.name)
-        self.logger.setLevel(loglevel)
+        self.logger.setLevel(device_parameter.loglevel)
 
     def subscription_changed_global(self,devchange):
         """
