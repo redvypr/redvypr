@@ -735,7 +735,7 @@ class redvypr_device(QtCore.QObject):
             local: None, True or False
 
         Returns:
-            List of redvypr_addresses
+            List of redvypr_address
 
         """
         addr_str = list(self.statistics['device_redvypr'].keys())
@@ -753,15 +753,16 @@ class redvypr_device(QtCore.QObject):
 
     def get_datastreams(self,local=None):
         """
+        Returns a list of all datastreams this device is providing
         Returns:
-            List with all datastreams this device is providing
+            List of datastreams (str)
         """
         devaddrs = self.get_deviceaddresses(local)
         datastreams = []
         for devaddr in devaddrs:
             dkeys = self.statistics['device_redvypr'][devaddr.address_str]['datakeys']
             for dkey in dkeys:
-                raddr = redvypr_address(devaddr,datakey=dkey)
+                raddr = redvypr_address(devaddr, datakey=dkey)
                 dstr = raddr.get_str()
                 datastreams.append(dstr)
 
@@ -771,11 +772,11 @@ class redvypr_device(QtCore.QObject):
     def get_device_info(self):
         """
         Returns a deepcopy that is saved in self.statistics['device_redvypr'] containing information about all devices
-        that have been sent by this device.
+        that have been published through this device.
         Note: name was def get_data_provider_info(self):
 
         Returns:
-            Dictionary with the device addresses as keys
+            Dictionary with the device address (str) as key
 
         """
         d = copy.deepcopy(self.statistics['device_redvypr'])
@@ -786,10 +787,10 @@ class redvypr_device(QtCore.QObject):
         """
 
         Returns:
-            List of devices this device is publishing to
+            List of redvypr_device this device is publishing to
         """
         funcname = __name__ + '.publishing_to()'
-        self.logger.debug(funcname)
+        #self.logger.debug(funcname)
         devs = self.redvypr.get_devices()
         devs_publishing_to = []
         for dev in reversed(devs):
@@ -823,13 +824,14 @@ class redvypr_device(QtCore.QObject):
 
     def get_subscribed_devices(self):
         """
-        Returns all redvypr.devices this device is subscribed to.
+        Returns all redvypr_device this device is subscribed to.
 
         Returns:
+             List with redvypr_device
 
         """
         funcname = __name__ + '.get_subscribed_devices()'
-        self.logger.debug(funcname)
+        #self.logger.debug(funcname)
         devs = self.redvypr.get_devices()
         devs_subscribed = []
         for subaddr in self.subscribed_addresses:
@@ -845,7 +847,8 @@ class redvypr_device(QtCore.QObject):
         List of redvypr devices addresses this device has subscribed. This is different from self.subcribed_addresses as it
         returns the existing devices that provide data to this evice, in self.subscribed_addresses also regular expressions can exist.
 
-        Returns: List of redvypr addresses
+        Returns:
+            List of redvypr_address
 
         """
         funcname = __name__ + '.get_subscribed_deviceaddresses()'

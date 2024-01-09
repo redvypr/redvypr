@@ -703,8 +703,8 @@ class redvypr(QtCore.QObject):
                     device_parameter = device_parameter.model_copy(update=pydantic_base_config.model_dump())
                 except Exception as e:
                     logger.debug(
-                        funcname + ':No configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
-                    logger.exception(e)
+                        funcname + ':No pydantic base configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
+                    #logger.exception(e)
                     FLAG_HAS_PYDANTICBASE = False
                     FLAG_PYDANTIC = False
 
@@ -724,7 +724,7 @@ class redvypr(QtCore.QObject):
                     logger.debug(
                         funcname + ':No pydantic configuration template of device {:s}: {:s}'.format(str(devicemodule),
                                                                                             str(e)))
-                    logger.exception(e)
+                    #logger.exception(e)
                     FLAG_HAS_PYDANTIC = False
 
                 # If no pydantic was found, do it the old style (to be removed soon)
@@ -736,11 +736,13 @@ class redvypr(QtCore.QObject):
                         logger.debug(funcname + ':Found configuation template of device {:s}'.format(str(devicemodule)))
                         #templatedict = configtemplate_to_dict(config_template)
                         print('Deviceconfig',deviceconfig)
-                        self.__fill_config__(device_parameter, config_template, deviceconfig, thread)
+                        self.__fill_config__(device_parameter, config_template, deviceconfig)
                         FLAG_HAS_TEMPLATE = True
                     except Exception as e:
                         logger.debug(
                             funcname + ':No configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
+                        logger.exception(e)
+                        logger.debug(funcname + ' template=False')
                         FLAG_HAS_TEMPLATE = False
 
 
@@ -761,9 +763,11 @@ class redvypr(QtCore.QObject):
                 print('Devicenames',devicenames)
                 print('device_parameter',device_parameter)
                 print('devicemodulename', devicemodulename)
-                devicename_tmp = ''
+                print('devicename 0',device_parameter.name,len(device_parameter.name))
+                devicename_tmp = device_parameter.name
                 if len(device_parameter.name) == 0:
                     devicename_tmp = devicemodulename.split('.')[-1]# + '_' + str(self.numdevice)
+                    print('Devicename_tmp',devicename_tmp)
 
                 if devicename_tmp in devicenames:
                     logger.warning(funcname + ' Devicename {:s} exists already, will add {:d} to the name.'.format(devicename_tmp,self.numdevice))
@@ -927,7 +931,7 @@ class redvypr(QtCore.QObject):
 
         return devicelist
 
-    def __fill_config__(self, device_parameter, config_template, deviceconfig, thread):
+    def __fill_config__(self, device_parameter, config_template, deviceconfig, thread=None):
         """ Fills device_parameter with data from config_template
         """
         try:
@@ -955,9 +959,17 @@ class redvypr(QtCore.QObject):
             pass
 
         try:
-            device_parameter.loglevel = deviceconfig['loglevel']
-        except:
-            pass
+            deviceconfig['loglevel']
+            level = deviceconfig['loglevel']
+            if type(level) == int:
+                levelname = logging.getLevelName(level)
+            else:
+                levelname = level
+
+            device_parameter.loglevel = levelname
+        except Exception as e:
+            logger.exception(e)
+
 
         try:
             device_parameter.autostart = deviceconfig['autostart']
@@ -1357,7 +1369,8 @@ class redvypr(QtCore.QObject):
         Args:
             local [bool/None]: None: all known devices are listed, False: Remote devices are listed, True: local devices are listed
 
-        Returns: List of redvypr_addresses
+        Returns:
+            List of redvypr_address
 
 
         """

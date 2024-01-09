@@ -51,11 +51,11 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     i = 0
     while True:
         try:
-            data = datainqueue.get(block=False)
+            data = datainqueue.get(block = False)
         except:
             data = None
         if(data is not None):
-            command = check_for_command(data,thread_uuid=device_info['thread_uuid'])
+            command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
             logger.debug('Got a command: {:s}'.format(str(data)))
             if (command == 'stop'):
                 logger.debug('Command is for me: {:s}'.format(str(command)))

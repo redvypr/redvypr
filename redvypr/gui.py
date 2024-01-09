@@ -854,6 +854,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
 
     def __update_info(self):
         funcname = __name__ + '.__update_info():'
+        #logger.debug(funcname)
         tstr = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.update_label.setText('Last update {:s}'.format(tstr))
         nrecv = self.device.statistics['packets_received']
