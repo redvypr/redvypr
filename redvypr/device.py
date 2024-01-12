@@ -239,6 +239,7 @@ class redvypr_device_scan():
 
                 except Exception as e:
                     self.logger.info(funcname + ' Could not import module: ' + str(e))  # If the module is valid add it to devices
+                    self.logger.debug('Could not import module', exc_info=True)
 
 
     def valid_device(self, devicemodule):
