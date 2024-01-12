@@ -179,8 +179,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 try:
                     devicedict['statistics'] = data_packets.do_data_statistics(data, devicedict['statistics'])
                 except Exception as e:
-                    logger.exception(e)
-                    logger.debug(funcname + ':Statistics:' + str(e))
+                    logger.debug(funcname + ':Statistics:',exc_info=True)
 
                 #
                 # Check for a command packet

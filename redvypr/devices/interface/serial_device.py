@@ -349,6 +349,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.text)
 
     def update(self,data):
+        funcname = __name__ + '.update():'
         #print('data',data)
         try:
             bstr = "Bytes read: {:d}".format(data['bytes_read'])
@@ -361,5 +362,5 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.text.insertPlainText(str(data['data']))
             self.text.insertPlainText('\n')
         except Exception as e:
-            logger.exception(e)
+            logger.debug(funcname,exc_info=True)
         

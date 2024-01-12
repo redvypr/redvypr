@@ -390,7 +390,7 @@ class redvypr_device(QtCore.QObject):
         addr = redvypr_address(datakey = datakey,devicename=self.name,local_hostinfo=self.redvypr.hostinfo)
         return addr
 
-    def subscribe_address(self, address,force=False):
+    def subscribe_address(self, address, force=False):
         """
         Subscribes to address
         Args:
@@ -888,16 +888,21 @@ class redvypr_device(QtCore.QObject):
         funcname = self.__class__.__name__ + '.get_datakeyinfo()'
         self.logger.debug(funcname)
         daddr = redvypr.data_packets.redvypr_address(datastream)
-        d = copy.deepcopy(self.statistics['device_redvypr'])
+        #d = copy.deepcopy(self.statistics['device_redvypr'])
+        devinfo_all = copy.deepcopy(self.redvypr.deviceinfo_all)
         #print('Datastream',datastream,daddr)
         datakeyinfo = {}
-        for device in d:
-            for dkey in d[device]['_keyinfo'].keys():
-                dstreamaddr_info = redvypr.data_packets.redvypr_address(device, datakey = dkey)
-                #print('dstreamddr_info',dstreamaddr_info)
-                if daddr in dstreamaddr_info:
-                    #print('Match')
-                    datakeyinfo[dstreamaddr_info.get_str()] = d[device]['_keyinfo'][dkey]
+        for hostdevice in devinfo_all:
+            d = devinfo_all[hostdevice]
+            for device in d:
+                for dkey in d[device]['_keyinfo'].keys():
+                    dstreamaddr_info = redvypr.data_packets.redvypr_address(device, datakey = dkey)
+                    #print('dstreamddr_info',dstreamaddr_info)
+                    if daddr in dstreamaddr_info:
+                        try:
+                            datakeyinfo[dstreamaddr_info.get_str()].update(d[device]['_keyinfo'][dkey])
+                        except:
+                            datakeyinfo[dstreamaddr_info.get_str()] = d[device]['_keyinfo'][dkey]
 
         return datakeyinfo
 

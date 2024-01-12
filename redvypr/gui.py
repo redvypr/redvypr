@@ -769,9 +769,10 @@ class redvypr_deviceStatisticWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.infowidget,0,0)
 
         self.__update_info()
-        self.updatetimer = QtCore.QTimer()
-        self.updatetimer.timeout.connect(self.__update_info)
-        self.updatetimer.start(dt_update)
+        # Todo, let the user choose for an update
+        #self.updatetimer = QtCore.QTimer()
+        #self.updatetimer.timeout.connect(self.__update_info)
+        #self.updatetimer.start(dt_update)
 
     def __update_info(self):
         funcname = __name__ + '.__update_info():'
