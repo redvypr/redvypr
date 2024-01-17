@@ -1257,7 +1257,7 @@ class redvypr(QtCore.QObject):
             if (sendict['device'] == device):
                 if (sendict['device'].thread == None):
                     return
-                elif (sendict['device'].thread.is_alive()):
+                elif (sendict['device'].thread_running()):
                     try:
                         device.thread_stop()
                         return
@@ -1445,9 +1445,9 @@ class redvypr(QtCore.QObject):
             if(sendict['device'] == device):
                 print('Sendict',sendict)
                 if (sendict['device'].thread == None):
-                    logger.debug(funcname + 'Thread is not runnung, doing nothing')
+                    logger.debug(funcname + 'Thread is not running, doing nothing')
                     pass
-                elif (sendict['device'].thread.is_alive()):
+                elif (sendict['device'].thread_running()):
                     logger.debug(funcname + 'Sending stop command')
                     device.thread_stop()
 
