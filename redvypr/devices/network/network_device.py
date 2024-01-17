@@ -557,6 +557,11 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
     """
     funcname = __name__ + '.start():'
     logger.debug(funcname + config['protocol'])
+    if (config['address'].lower() == '<ip>'):
+        ip = get_ip()
+        logger.debug(funcname + ' Converting <IP> to {:s}'.format(ip))
+        config['address'] = ip
+
     if(config['direction'] == 'publish'):
         if(config['protocol'] == 'tcp'):
             logger.info(__name__ + ':Start to serve data on address (TCP):' + str(config))
