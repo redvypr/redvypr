@@ -933,6 +933,7 @@ class redvypr(QtCore.QObject):
     def __fill_config__(self, device_parameter, config_template, deviceconfig, thread=None):
         """ Fills device_parameter with data from config_template
         """
+        funcname = __name__ + '.fill_config():'
         try:
             device_parameter.max_devices = config_template['redvypr_device']['max_devices']
         except:
@@ -958,7 +959,6 @@ class redvypr(QtCore.QObject):
             pass
 
         try:
-            deviceconfig['loglevel']
             level = deviceconfig['loglevel']
             if type(level) == int:
                 levelname = logging.getLevelName(level)
@@ -967,7 +967,7 @@ class redvypr(QtCore.QObject):
 
             device_parameter.loglevel = levelname
         except Exception as e:
-            logger.exception(e)
+            logger.debug(funcname + 'Loglevel not found', exc_info=True)
 
 
         try:
