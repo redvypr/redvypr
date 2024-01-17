@@ -194,7 +194,7 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
     bytes_read   = 0
     threadqueues = []
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    logger.debug(funcname + ' Binding to {:s}:{:d}'.format(config['adress'],config['port']))
+    logger.debug(funcname + ' Binding to {:s}:{:d}'.format(config['address'],config['port']))
     server.bind((config['address'],config['port']))
     server.listen(8)
     server.settimeout(0.05) # timeout for listening
