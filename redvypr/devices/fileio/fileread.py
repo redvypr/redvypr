@@ -10,7 +10,8 @@ import yaml
 import copy
 import os
 from redvypr.device import redvypr_device
-from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
+from redvypr.data_packets import check_for_command
+from redvypr.packet_statistic import do_data_statistics, create_data_statistic_dict
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('fileread')

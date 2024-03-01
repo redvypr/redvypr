@@ -27,6 +27,8 @@ from pyqtconsole.highlighter import format
 import platform
 # Import redvypr specific stuff
 import redvypr.data_packets as data_packets
+import redvypr.redvypr_address as redvypr_address
+import redvypr.packet_statistic as redvypr_packet_statistic
 from redvypr.gui import redvypr_ip_widget, QPlainTextEditLogger, displayDeviceWidget_standard, \
     deviceControlWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget, deviceTabWidget
 import redvypr.gui as gui
@@ -102,7 +104,7 @@ def create_hostinfo(hostname='redvypr'):
     randstr = '{:03d}'.format(random.randrange(2 ** 8))
     #redvyprid = datetime.datetime.now().strftime('%Y%m%d%H%M%S.%f-') + str(uuid.getnode()) + '-' + randstr
     redvyprid = str(uuid.getnode()) + '-' + randstr
-    hostinfo = {'hostname': hostname, 'tstart': time.time(), 'addr': get_ip(), 'uuid': redvyprid, 'local': True}
+    hostinfo = {'hostname': hostname, 'tstart': time.time(), 'addr': get_ip(), 'uuid': redvyprid}
     return hostinfo
 
 
@@ -169,15 +171,20 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
             for data_list in data_all:
                 data = data_list[0]
                 numpacket = data_list[1]
-                #
+
+                #rdata = data_packets.redvypr_datapacket(data)
+                #print(rdata.datakeys())
+
                 # Add additional information, if not present yet
-                data_packets.treat_datadict(data, device.name, hostinfo, numpacket, tread,devicedict['devicemodulename'])
-                # Get the devicename
-                devicename_stat = data_packets.get_devicename_from_data(data, uuid=True)
+                redvypr_packet_statistic.treat_datadict(data, device.name, hostinfo, numpacket, tread,devicedict['devicemodulename'])
+                # Get the devicename using an address
+                raddr = redvypr_address.redvypr_address(data)
+                devicename_stat = raddr.address_str
+                #devicename_stat = data_packets.get_devicename_from_data(data, uuid=True)
                 #
                 # Do statistics
                 try:
-                    devicedict['statistics'] = data_packets.do_data_statistics(data, devicedict['statistics'])
+                    devicedict['statistics'] = redvypr_packet_statistic.do_data_statistics(data, devicedict['statistics'], address_data=raddr)
                 except Exception as e:
                     logger.debug(funcname + ':Statistics:',exc_info=True)
 
@@ -311,14 +318,14 @@ class redvypr(QtCore.QObject):
     device_status_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
     hostconfig_changed_signal    = QtCore.pyqtSignal()  # Signal notifying if the configuration of the host changed (hostname, hostinfo_opt)
 
-    def __init__(self, parent=None, config=None, hostname='redvypr',hostinfo_opt = {}, nogui=False):
+    def __init__(self, parent=None, config=None, hostname='redvypr', hostinfo_opt = {}, nogui=False):
         # super(redvypr, self).__init__(parent)
         super(redvypr, self).__init__()
         print(__platform__)
         funcname = __name__ + '.__init__()'
         logger.debug(funcname)
         self.hostinfo = create_hostinfo(hostname=hostname)
-        print('Hostinfo opt',hostinfo_opt)
+        #print('Hostinfo opt',hostinfo_opt)
         try:
             hostinfo_opt['description']
         except:
@@ -360,7 +367,7 @@ class redvypr(QtCore.QObject):
         self.devices, self.hostinfo, self.deviceinfo_all, self.datadistinfoqueue, self.redvyprqueue, self.dt_datadist), daemon=True)
         self.datadistthread.start()
         logger.info(funcname + ':Searching for devices')
-        self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths, redvypr_devices=redvyprdevices)
+        self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths, redvypr_devices=redvyprdevices, loglevel = logger.getEffectiveLevel())
         logger.info(funcname + ':Done searching for devices')
 
         # Parsing configuration
@@ -504,7 +511,7 @@ class redvypr(QtCore.QObject):
 
         return config
 
-    def parse_configuration(self, redvypr_config=None):
+    def parse_configuration(self, redvypr_config = None):
         """ Parses a dictionary with a configuration, if the file does not exists it will return with false, otherwise self.config will be updated
 
         Arguments:
@@ -527,7 +534,7 @@ class redvypr(QtCore.QObject):
         device_tmp = []
         for configraw in redvypr_config:
             if (type(configraw) == str):
-                logger.info(funcname + ':Opening yaml file: ' + str(configraw))
+                logger.debug(funcname + ':Opening yaml file: ' + str(configraw))
                 if (os.path.exists(configraw)):
                     fconfig = open(configraw)
                     config_tmp = yaml.load(fconfig, Loader=yaml.loader.SafeLoader)
@@ -535,7 +542,7 @@ class redvypr(QtCore.QObject):
                     logger.warning(funcname + ':Yaml file: ' + str(configraw) + ' does not exist!')
                     continue
             elif(type(configraw) == dict):
-                logger.info(funcname + ':Opening dictionary')
+                logger.debug(funcname + ':Opening dictionary')
                 config_tmp = configraw
             else:
                 logger.warning(funcname + ': Unknown type of configuration {:s}'.format(type(configraw)))
@@ -630,6 +637,7 @@ class redvypr(QtCore.QObject):
                                 device['devicemodulename_orig'] = device['devicemodulename']
                                 device['devicemodulename'] = smod['name']
 
+                    logger.info(funcname + ' adding device {}'.format(device['devicemodulename']))
                     dev_added = self.add_device(devicemodulename=device['devicemodulename'], deviceconfig=device['deviceconfig'])
 
                     # Subscriptions
@@ -676,7 +684,8 @@ class redvypr(QtCore.QObject):
         """
 
         funcname = self.__class__.__name__ + '.add_device():'
-        logger.debug(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(deviceconfig))
+        #logger.debug(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(deviceconfig))
+        logger.info(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(deviceconfig))
         devicelist = []
         # Pydantic data structure with the essential device parameters
         if device_parameter is None:
@@ -734,7 +743,6 @@ class redvypr(QtCore.QObject):
                         config_template = devicemodule.config_template
                         logger.debug(funcname + ':Found configuation template of device {:s}'.format(str(devicemodule)))
                         #templatedict = configtemplate_to_dict(config_template)
-                        print('Deviceconfig',deviceconfig)
                         self.__fill_config__(device_parameter, config_template, deviceconfig)
                         FLAG_HAS_TEMPLATE = True
                     except Exception as e:
@@ -759,14 +767,14 @@ class redvypr(QtCore.QObject):
 
                 # If the device does not have a name, add a standard but unique one
                 devicenames = self.get_all_devicenames()
-                print('Devicenames',devicenames)
-                print('device_parameter',device_parameter)
-                print('devicemodulename', devicemodulename)
-                print('devicename 0',device_parameter.name,len(device_parameter.name))
+                #print('Devicenames',devicenames)
+                #print('device_parameter',device_parameter)
+                #print('devicemodulename', devicemodulename)
+                #print('devicename 0',device_parameter.name,len(device_parameter.name))
                 devicename_tmp = device_parameter.name
                 if len(device_parameter.name) == 0:
                     devicename_tmp = devicemodulename.split('.')[-1]# + '_' + str(self.numdevice)
-                    print('Devicename_tmp',devicename_tmp)
+                    #print('Devicename_tmp',devicename_tmp)
 
                 if devicename_tmp in devicenames:
                     logger.warning(funcname + ' Devicename {:s} exists already, will add {:d} to the name.'.format(devicename_tmp,self.numdevice))
@@ -790,7 +798,7 @@ class redvypr(QtCore.QObject):
 
                 # Create a dictionary for the statistics and general information about the device
                 # This is used extensively in exchanging information about devices between redvypr instances and or other devices
-                statistics = data_packets.create_data_statistic_dict()
+                statistics = redvypr_packet_statistic.create_data_statistic_dict()
                 # Device do not necessarily have a statusqueue
                 try:
                     numdevices = len(self.devices)
@@ -845,21 +853,17 @@ class redvypr(QtCore.QObject):
 
                     logger.debug(funcname + 'Config for device')
                     logger.debug(funcname + 'Config: {:s}'.format(str(configu)))
-                    #print('Config type', type(configu))
-                    #print('loglevel', loglevel)
-                    # Creating the device
-                    print('Device parameter',device_parameter.model_dump())
-                    if len(device_parameter.loglevel) == 0:
+                    try:
+                        level = deviceconfig['loglevel']
+                    except Exception as e:
+                        logger.info(exc_info=True)
                         # Set the loglevel
                         level = logger.getEffectiveLevel()
-                        levelname = logging.getLevelName(level)
-                        device_parameter.loglevel = levelname
-                        logger.debug(funcname + ' Setting the loglevel to {:s}'.format(levelname))
-                    #device = Device(name=device_parameter.name, uuid=device_parameter.uuid, config=configu, redvypr=self, dataqueue=dataqueue,
-                    #                publishes=device_parameter.publishes,subscribes=device_parameter.subscribes,autostart=device_parameter.autostart,
-                    #                template=config_template, comqueue=comqueue, datainqueue=datainqueue,
-                    #                statusqueue=statusqueue, loglevel=device_parameter.loglevel, multiprocess=device_parameter.multiprocess,
-                    #                numdevice=self.numdevice, statistics=statistics,startfunction=startfunction,devicemodulename=device_parameter.devicemodulename, device_parameter = device_parameter)
+
+                    levelname = logging.getLevelName(level)
+                    logger.debug(funcname + ' Setting the loglevel to {:s}'.format(levelname))
+                    device_parameter.loglevel = levelname
+                    # Creating the device
                     device = Device(device_parameter = device_parameter, config=configu, redvypr=self, dataqueue=dataqueue,
                                     template=config_template, comqueue=comqueue, datainqueue=datainqueue,
                                     statusqueue=statusqueue, statistics=statistics, startfunction=startfunction)
@@ -1099,7 +1103,7 @@ class redvypr(QtCore.QObject):
 
                 # Create a dictionary for the statistics and general information about the device
                 # This is used extensively in exchanging information about devices between redvypr instances and or other devices
-                statistics = data_packets.create_data_statistic_dict()
+                statistics = redvypr_packet_statistic.create_data_statistic_dict()
                 # Device do not necessarily have a statusqueue
                 try:
                     name = deviceconfig['name']
@@ -1397,22 +1401,6 @@ class redvypr(QtCore.QObject):
         return datastreams
 
 
-    def get_datastream_info(self, datastream):
-        """ Gets additional information to the datastream
-        """
-
-        datastreams = self.get_datastreams()
-        datastreaminfo = {}
-        for dev in self.devices:
-            datastreaminfo |= dev['statistics']['datastreams_info']
-
-        for dstream in datastreaminfo.keys():
-            if (data_packets.compare_datastreams(datastream, dstream)):
-                return datastreaminfo[dstream]
-
-        return None
-
-
     def get_known_devices(self):
         """ List all known devices that can be loaded by redvypr
         
@@ -1661,15 +1649,15 @@ class redvyprWidget(QtWidgets.QWidget):
         funcname = self.__class__.__name__ + '.save_config():'
         logger.debug(funcname)
         data_save = self.redvypr.get_config()
-        #print('data_save',data_save)
         if True:
             tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
             fname_suggestion = 'config_' + self.redvypr.hostinfo['hostname'] + '_' +tstr + '.yaml'
 
             fname_full, _ = QtWidgets.QFileDialog.getSaveFileName(self, "QFileDialog.getSaveFileName()", fname_suggestion,
                                                                   "Yaml Files (*.yaml);;All Files (*)")
+
             if fname_full:
-                print('Saving to file {:s}'.format(fname_full))
+                logger.debug('Saving to file {:s}'.format(fname_full))
                 with open(fname_full, 'w') as fyaml:
                     yaml.dump(data_save, fyaml)
 
@@ -2196,7 +2184,7 @@ class redvyprWidget(QtWidgets.QWidget):
 #
 #
 class redvyprMainWidget(QtWidgets.QMainWindow):
-    def __init__(self, width=None, height=None, config=None,hostname='redvypr',hostinfo_opt={}):
+    def __init__(self, width=None, height=None, config=None,hostname='redvypr', hostinfo_opt={}):
         super(redvyprMainWidget, self).__init__()
         # self.setGeometry(0, 0, width, height)
 
@@ -2204,7 +2192,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         #self.setWindowTitle("redvypr")
         self.setWindowTitle(hostname)
         # Add the icon
-        self.setWindowIcon(QtGui.QIcon(_icon_file))
+        #self.setWindowIcon(QtGui.QIcon(_icon_file))
 
         self.redvypr_widget = redvyprWidget(config=config,hostname=hostname,hostinfo_opt=hostinfo_opt)
         self.setCentralWidget(self.redvypr_widget)
@@ -2378,7 +2366,9 @@ def redvypr_main():
     config_help_nogui = 'start redvypr without a gui'
     config_help_path = 'add path to search for redvypr modules'
     config_help_hostname = 'hostname of redvypr, overwrites the hostname in a possible configuration '
-    config_help_add = 'add device, can be called multiple times, options/configuration by commas separated, -a test_device,[s],[mp/th],name:test_1,delay_s:0.4'
+    add_device_example = '\t-a test_device, s, [mp / th], loglevel: [DEBUG / INFO / WARNING], name: test_1, subscribe: "*"'
+    add_device_example_2 = ', also device specific configuration can be set similarly: -a test_device,delay_s: 0.4, '
+    config_help_add = 'add device, can be called multiple times, optional options/configuration can be added by comma separated input:' + add_device_example + add_device_example_2
     config_help_list = 'lists all known devices'
     config_optional = 'optional information about the redvypr instance, multiple calls possible or separated by ",". Given as a key:data pair: --hostinfo location:lab --hostinfo lat:10.2,lon:30.4. The data is tried to be converted to an int, if that is not working as a float, if that is neither working at is passed as string'
     parser = argparse.ArgumentParser()
@@ -2433,10 +2423,12 @@ def redvypr_main():
         for d in args.add_device:
             deviceconfig = {'autostart':False,'loglevel':logging_level,'mp':'thread','config':{},'subscriptions':[]}
             if(',' in d):
+                print('Found options')
                 #devicemodulename = d.split(',')[0]
                 #options = d.split(',')[1:]
                 # Split the string, using csv reader to have quoted strings conserved
                 options_all = split_quotedstring(d)
+                print('options all',options_all)
                 devicemodulename = options_all[0]
                 options = options_all[1:]
                 #print('options', options,type(options))
@@ -2557,6 +2549,7 @@ def redvypr_main():
         sys.exit(app.exec_())
     else:
         app = QtWidgets.QApplication(sys.argv)
+        app.setWindowIcon(QtGui.QIcon(_icon_file))
         screen = app.primaryScreen()
         # print('Screen: %s' % screen.name())
         size = screen.size()

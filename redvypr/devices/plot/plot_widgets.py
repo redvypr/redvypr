@@ -11,13 +11,9 @@ import copy
 import pyqtgraph
 
 import redvypr.data_packets
-from redvypr.data_packets import addr_in_data, get_keys_from_data, parse_addrstr
-#from redvypr.gui import redvypr_devicelist_widget
 import redvypr.gui
 import redvypr.files as files
 from redvypr.configdata import configtemplate_to_dict, configdata, getdata
-#from redvypr.device import redvypr_device
-#from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
 from copy import deepcopy as dc
 
 _logo_file = files.logo_file
@@ -593,8 +589,8 @@ config_template_numdisp['fontsize'] = {'type': 'int', 'default': 20}
 config_template_numdisp['datastream'] = {'type': 'datastream', 'default': 'NA'}
 config_template_numdisp['timeformat'] = {'type': 'str', 'default': '%d-%b-%Y %H:%M:%S'}
 config_template_numdisp['unit'] = {'type': 'str', 'default': ''}
-config_template_numdisp['datastreamlabel'] = {'type': 'str', 'options': redvypr.data_packets.addresstypes,
-                                           'default': '<key>/<device>', 'description': 'Display the datastreamlabel'}
+config_template_numdisp['datastreamlabel'] = {'type': 'str', 'options': ['tmp1','tmp2'],
+                                           'default': '/d:/k:', 'description': 'Display the datastreamlabel'}
 config_template_numdisp['useprops'] = {'type': 'bool', 'default': True,
                                     'description': 'Use the properties to display units etc.'}
 config_template_numdisp['dataformat'] = {'type': 'str', 'default': 'f',

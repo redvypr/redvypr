@@ -1,4 +1,5 @@
 from .redvypr import *
+from .redvypr_address import redvypr_address
 #from .devices import *
 from . import data_packets
 from . import gui

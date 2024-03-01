@@ -25,7 +25,9 @@ import inspect
 import pkg_resources
 import redvypr
 import pydantic
-from redvypr.data_packets import compare_datastreams, parse_addrstr, commandpacket, redvypr_address, do_data_statistics
+from redvypr.data_packets import commandpacket
+from redvypr.packet_statistic import do_data_statistics
+from redvypr.redvypr_address import redvypr_address
 import redvypr.config as redvyprConfig
 
 
@@ -58,7 +60,7 @@ class deviceQThread(QtCore.QThread):
         self.wait()
 
     def run(self):
-        print('Arguments',self.start_arguments)
+        #print('Arguments',self.start_arguments)
         self.startfunction(*self.start_arguments)
 
 
@@ -72,7 +74,7 @@ class redvypr_device_scan():
     """
     Searches for redvypr devices
     """
-    def __init__(self, device_path = [], scan=True, redvypr_devices = None):
+    def __init__(self, device_path = [], scan=True, redvypr_devices = None, loglevel = logging.INFO):
         """
 
         Args:
@@ -80,7 +82,7 @@ class redvypr_device_scan():
             scan: Flag if a scanning shall be performed at initialization
         """
         self.logger = logging.getLogger('redvypr_device_scan')
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(loglevel)
         self.device_paths = device_path
         #self.redvypr = redvypr
         self.device_modules_path = []
@@ -228,12 +230,12 @@ class redvypr_device_scan():
                 FLAG_POTENTIAL_MODULE = False
 
             if(FLAG_POTENTIAL_MODULE):
-                print('Found potential package',d.location, d.project_name, d.version, d.key)
+                #print('Found potential package',d.location, d.project_name, d.version, d.key)
                 libstr2 = d.key.replace('-','_')  # Need to replace - with _, because - is not allowed in python
                 try:
                     testmodule = importlib.import_module(libstr2)
                     device_module_all = inspect.getmembers(testmodule)
-                    print('Scan recursive start')
+                    #print('Scan recursive start')
                     self.scan_module_recursive(testmodule,self.redvypr_devices['redvypr_modules'])
                     # Clean empty dictionaries
 
@@ -336,7 +338,6 @@ class redvypr_device(QtCore.QObject):
         self.numdevice   = device_parameter.numdevice
         self.description = 'redvypr_device'
         self.statistics  = statistics
-        print('Hallo device parameter',device_parameter.multiprocess)
         self.mp          = device_parameter.multiprocess
         self.autostart   = device_parameter.autostart
         self.thread      = None
@@ -351,6 +352,8 @@ class redvypr_device(QtCore.QObject):
         datapacket['_redvypr']['device'] = self.name
         datapacket['_redvypr']['devicemodulename'] = self.devicemodulename
         datapacket['_redvypr']['host']=self.host
+        datapacket['_redvypr']['locpub'] = str(self.name)
+        datapacket['_redvypr']['locuuid'] = self.host['uuid']
         do_data_statistics(datapacket,self.statistics)
 
         # Adding the start function (the function that is executed as a thread or multiprocess and is doing all the work!)
@@ -479,17 +482,19 @@ class redvypr_device(QtCore.QObject):
         self.logger.warning('This chnages only the device name but will not restart the thread.')
 
     def __update_address__(self):
-        self.address_str = self.name + ':' + self.redvypr.hostinfo['hostname'] + '@' + self.redvypr.hostinfo[
-            'addr'] + '::' + self.redvypr.hostinfo['uuid']
-        self.address = redvypr_address(self.address_str)
+        #self.address_str = self.name + ':' + self.redvypr.hostinfo['hostname'] + '@' + self.redvypr.hostinfo[
+        #    'addr'] + '::' + self.redvypr.hostinfo['uuid']
+        #self.address = redvypr_address(self.address_str)
+        self.address = redvypr_address(devicename=self.name, local_hostinfo= self.redvypr.hostinfo)
+        self.address_str = self.address.get_str(address_format='/u/a/h/d/')
 
-    def address_string(self,strtype='<device>:<host>@<addr>::<uuid>'):
+    def address_string(self, address_format='/u/a/h/d'):
         """
         Returns the address string of the device
         Returns:
 
         """
-        astr = self.address.get_str(strtype = strtype)
+        astr = self.address.get_str(address_format = address_format)
         return astr
 
     def got_subscribed(self,dataprovider_address,datareceiver_address,):
@@ -610,22 +615,16 @@ class redvypr_device(QtCore.QObject):
         """
         funcname = __name__ + '.thread_stop():'
         self.logger.debug(funcname)
-        print('Thread stop ...')
         command = commandpacket(command='stop', device_uuid=self.uuid,thread_uuid=self.thread_uuid)
-        print('Thread stop ... 1',command)
         #print('Sending command',command)
         running = self.thread_running()
-        print('Thread stop ... 2')
         if(running):
             self.__send_command__(command)
-            print('Thread stop ... 3')
             running2 = self.thread_running()
-            print('Thread stop ... 4')
             info_dict = {}
             info_dict['uuid'] = self.uuid
             info_dict['thread_status'] = running2
             self.thread_stopped.emit(info_dict)
-            print('Thread stop ... 5')
         else:
             self.logger.warning(funcname + ' thread is not running, doing nothing')
 
@@ -874,7 +873,36 @@ class redvypr_device(QtCore.QObject):
         self.logger.debug(funcname)
         self.subscribed_addresses = []
 
-    def get_datakeyinfo(self,datastream):
+    def get_metadata_datakey(self, address):
+        """
+        Returns the metadata of the redvypr address
+        """
+        funcname = self.__class__.__name__ + '.get_datakeyinfo()'
+        self.logger.debug(funcname)
+        if isinstance(address,str):
+            daddr = redvypr.redvypr_address(address)
+        else:
+            daddr = address
+
+        # d = copy.deepcopy(self.statistics['device_redvypr'])
+        devinfo_all = copy.deepcopy(self.redvypr.deviceinfo_all)
+        # print('Datastream',datastream,daddr)
+        datakeyinfo = {}
+        for hostdevice in devinfo_all:
+            d = devinfo_all[hostdevice]
+            for device in d:
+                for dkey in d[device]['_keyinfo'].keys():
+                    dstreamaddr_info = redvypr.redvypr_address(device, datakey=dkey)
+                    # print('dstreamddr_info',dstreamaddr_info)
+                    if daddr in dstreamaddr_info:
+                        try:
+                            datakeyinfo[dstreamaddr_info.get_str()].update(d[device]['_keyinfo'][dkey])
+                        except:
+                            datakeyinfo[dstreamaddr_info.get_str()] = d[device]['_keyinfo'][dkey]
+
+        return datakeyinfo
+
+    def get_datakeyinfo_legacy(self,datastream):
         """
         Returns the datakeyinfo for the datastream
 
@@ -887,7 +915,7 @@ class redvypr_device(QtCore.QObject):
         """
         funcname = self.__class__.__name__ + '.get_datakeyinfo()'
         self.logger.debug(funcname)
-        daddr = redvypr.data_packets.redvypr_address(datastream)
+        daddr = redvypr.redvypr_address(datastream)
         #d = copy.deepcopy(self.statistics['device_redvypr'])
         devinfo_all = copy.deepcopy(self.redvypr.deviceinfo_all)
         #print('Datastream',datastream,daddr)
@@ -896,7 +924,7 @@ class redvypr_device(QtCore.QObject):
             d = devinfo_all[hostdevice]
             for device in d:
                 for dkey in d[device]['_keyinfo'].keys():
-                    dstreamaddr_info = redvypr.data_packets.redvypr_address(device, datakey = dkey)
+                    dstreamaddr_info = redvypr.redvypr_address(device, datakey = dkey)
                     #print('dstreamddr_info',dstreamaddr_info)
                     if daddr in dstreamaddr_info:
                         try:
@@ -906,7 +934,7 @@ class redvypr_device(QtCore.QObject):
 
         return datakeyinfo
 
-    def get_datastream_keyinfo(self, datastream):
+    def get_datastream_keyinfo_legacy(self, datastream):
         """
         Returns the datakeyinfo for the datastream
 
@@ -919,12 +947,12 @@ class redvypr_device(QtCore.QObject):
         """
         funcname = self.__class__.__name__ + '.get_datastream_keyinfo()'
         self.logger.debug(funcname)
-        daddr = redvypr.data_packets.redvypr_address(datastream)
+        daddr = redvypr.redvypr_address(datastream)
         d = copy.deepcopy(self.statistics['device_redvypr'])
         # print('Datastream',datastream,daddr)
         for device in d:
             for dkey in d[device]['_keyinfo'].keys():
-                dstreamaddr_info = redvypr.data_packets.redvypr_address(device, datakey=dkey)
+                dstreamaddr_info = redvypr.redvypr_address(device, datakey=dkey)
                 # print('dstreamddr_info',dstreamaddr_info)
                 if daddr in dstreamaddr_info:
                     return d[device]['_keyinfo'][dkey]

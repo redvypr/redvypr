@@ -8,7 +8,9 @@ import serial
 import serial.tools.list_ports
 import logging
 import sys
-from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
+import pydantic
+from redvypr.data_packets import check_for_command
+#from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
 
 
 description = 'Reading data from a serial device'
@@ -17,6 +19,22 @@ description = 'Reading data from a serial device'
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('serial_device')
 logger.setLevel(logging.DEBUG)
+
+class device_base_config(pydantic.BaseModel):
+    publishes: bool = True
+    subscribes: bool = True
+    description: str = 'Reads to and write from a serial device'
+    gui_tablabel_display: str = 'Serial data'
+
+class device_config(pydantic.BaseModel):
+    baud: int = 4800
+    parity: int = serial.PARITY_NONE
+    stopbits: int = serial.STOPBITS_ONE
+    bytesize: int = serial.EIGHTBITS
+    dt_poll: float = 0.05
+    chunksize: int = pydantic.Field(default=1000, description='The maximum amount of bytes read with one chunk')
+    packetdelimiter: str = pydantic.Field(default='\n', description='The delimiter to distinuish packets')
+    comport: str = ''
 
 
 config_template              = {}
@@ -40,13 +58,13 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     """
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Starting reading serial data')
-    chunksize   = config['chunksize'] #The maximum amount of bytes read with one chunk    
-    serial_name = config['comport']
-    baud        = config['baud']
-    parity      = config['parity']    
-    stopbits    = config['stopbits']    
-    bytesize    = config['bytesize']    
-    dt_poll     = config['dt_poll']
+    chunksize   = config.chunksize #The maximum amount of bytes read with one chunk
+    serial_name = config.comport
+    baud        = config.baud
+    parity      = config.parity
+    stopbits    = config.stopbits
+    bytesize    = config.bytesize
+    dt_poll     = config.dt_poll
 
     print('Starting',config)
     
@@ -293,30 +311,30 @@ class initDeviceWidget(QtWidgets.QWidget):
             button.setText('Close')
             serial_name = str(self._combo_serial_devices.currentText())
             serial_baud = int(self._combo_serial_baud.currentText())
-            self.device.config['comport'].data = serial_name
-            self.device.config['baud'].data = serial_baud
+            self.device.config.comport = serial_name
+            self.device.config.baud = serial_baud
             stopbits = self._combo_stopbits.currentText()
             if(stopbits=='1'):
-                self.device.config['stopbits'].data =  serial.STOPBITS_ONE
+                self.device.config.stopbits =  serial.STOPBITS_ONE
             elif(stopbits=='1.5'):
-                self.device.config['stopbits'].data =  serial.STOPBITS_ONE_POINT_FIVE
+                self.device.config.stopbits =  serial.STOPBITS_ONE_POINT_FIVE
             elif(stopbits=='2'):
-                self.device.config['stopbits'].data =  serial.STOPBITS_TWO
+                self.device.config.stopbits =  serial.STOPBITS_TWO
                 
             databits = int(self._combo_databits.currentText())
-            self.device.config['bytesize'].data = databits
+            self.device.config.bytesize = databits
 
             parity = self._combo_parity.currentText()
             if(parity=='None'):
-                self.device.config['parity'] = serial.PARITY_NONE
+                self.device.config.parity = serial.PARITY_NONE
             elif(parity=='Even'):                
-                self.device.config['parity'] = serial.PARITY_EVEN
+                self.device.config.parity = serial.PARITY_EVEN
             elif(parity=='Odd'):                
-                self.device.config['parity'] = serial.PARITY_ODD
+                self.device.config.parity = serial.PARITY_ODD
             elif(parity=='Mark'):                
-                self.device.config['parity'] = serial.PARITY_MARK
+                self.device.config.parity = serial.PARITY_MARK
             elif(parity=='Space'):                
-                self.device.config['parity'] = serial.PARITY_SPACE
+                self.device.config.parity = serial.PARITY_SPACE
                 
 
             self.device.thread_start()

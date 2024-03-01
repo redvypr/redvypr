@@ -3,7 +3,7 @@ import logging
 import sys
 import redvypr.files as files
 import redvypr.data_packets as data_packets
-from redvypr.data_packets import parse_addrstr, addresstypes as redvypr_addresstypes, redvypr_address
+from redvypr.redvypr_address import redvypr_address
 
 
 _logo_file = files.logo_file
@@ -77,8 +77,8 @@ class datastreamWidget(QtWidgets.QWidget):
 
         # A combobox to choose between different styles of the address
         self.addrtype_combo = QtWidgets.QComboBox()  # Combo for the different combination types
-        for t in redvypr_addresstypes:
-            self.addrtype_combo.addItem(t)
+        #for t in redvypr_addresstypes:
+        #    self.addrtype_combo.addItem(t)
 
         self.addrtype_combo.setCurrentIndex(2)
         self.addrtype_combo.currentIndexChanged.connect(self.__addrtype_changed__)

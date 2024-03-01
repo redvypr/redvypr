@@ -11,10 +11,12 @@ import copy
 import os
 import gzip
 import threading
-
+import hashlib
+import re
 import redvypr.config
 from redvypr.device import redvypr_device
-from redvypr.data_packets import do_data_statistics, create_data_statistic_dict,check_for_command
+from redvypr.data_packets import check_for_command
+#from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('rawdatareplay')
@@ -182,7 +184,7 @@ def index_file(filestream,chunksize,statusqueue=None):
 
 
 class packetreader():
-    def __init__(self,filename=None, replay_index = '0,-1,1', npackets = 10, chunksize=1024,statusqueue=None,filestat = None):
+    def __init__(self, filename=None, replay_index = '0,-1,1', npackets = 10, chunksize=1024,statusqueue=None,filestat = None):
         funcname = self.__class__.__name__ + '.__init__()'
         self.filename = filename
         #
@@ -231,10 +233,40 @@ class packetreader():
         self.filestream.seek(0)
         self.chunksize = chunksize
 
+        # Calculate hash
+        #hasher = hashlib.sha256()
+        hasher = hashlib.md5()
+        while True:
+            data = f.read(65536)
+            if not data:
+                break
+            hasher.update(data)
+        self.checksum = hasher.hexdigest()
+        self.filestream.seek(0)
+        #print("MD5 checksum of {}".format(self.checksum))
+
         if filestat is None:
+            # Check for an index file
+            filename_index = filename + '.index{}.yaml.gz'.format(self.checksum)
+            try:
+                logger.debug(funcname + ' loading index file')
+                filestream_index = gzip.open(filename_index, 'rb')
+                filestat_raw = filestream_index.read()
+                filestat = yaml.safe_load(filestat_raw)
+                filestat['checksum'] = self.checksum
+                logger.debug(funcname + ' loading index file done')
+            except:
+                logger.debug(funcname, exc_info=True)
+                logger.info("Did not find index file, creating one")
+                filestat = self.index_file()
+                findex = gzip.open(filename_index, 'wb')
+                yamlstr = yaml.dump(filestat)
+                findex.write(yamlstr.encode('utf-8'))
+                findex.close()
+
             # Inspect file, if not done already
             logger.debug(funcname + ' Indexing file {:s}'.format(filename))
-            self.filestat = self.index_file()
+            self.filestat = filestat
         elif filestat == 'thread':
             logger.debug(funcname + ' Starting thread based file statistic')
             self.index_file_thread()
@@ -340,7 +372,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     loop = config['loop']
     
     
-    statistics = create_data_statistic_dict()
+    #statistics = create_data_statistic_dict()
     
     bytes_read         = 0
     packets_published       = 0
@@ -838,10 +870,14 @@ class initDeviceWidget(QtWidgets.QWidget):
         """ Opens a dialog to choose file to add
         """
         funcname = self.__class__.__name__ + '.add_files()'
+        regex_indexfile = re.compile('.*[.index][0-9a-f]{32}.yaml.gz')
         logger.debug(funcname)
         filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self,"Rawdatafiles","","redvypr raw gzip (*.redvypr_yaml.gz);;redvypr raw (*.redvypr_yaml);;All Files (*)")
-        for f in filenames: 
-            self.device.config['files'].append(redvypr.config.configString(f))
+        for f in filenames:
+            if regex_indexfile.match(f) is None:
+                self.device.config['files'].append(redvypr.config.configString(f))
+            else:
+                logger.info('Found index file {}, will not use it'.format(f))
             
         self.update_filenamelist()
         self.inlist.sortItems(self.col_fname, QtCore.Qt.AscendingOrder)
