@@ -853,6 +853,7 @@ class redvypr(QtCore.QObject):
 
                     logger.debug(funcname + 'Config for device')
                     logger.debug(funcname + 'Config: {:s}'.format(str(configu)))
+                    # Set the loglevel
                     try:
                         level = deviceconfig['loglevel']
                     except Exception as e:
@@ -863,6 +864,12 @@ class redvypr(QtCore.QObject):
                     levelname = logging.getLevelName(level)
                     logger.debug(funcname + ' Setting the loglevel to {:s}'.format(levelname))
                     device_parameter.loglevel = levelname
+                    # Check for an autostart
+                    try:
+                        device_parameter.autostart = deviceconfig['autostart']
+                    except Exception as e:
+                        device_parameter.autostart = False
+
                     # Creating the device
                     device = Device(device_parameter = device_parameter, config=configu, redvypr=self, dataqueue=dataqueue,
                                     template=config_template, comqueue=comqueue, datainqueue=datainqueue,
@@ -914,14 +921,17 @@ class redvypr(QtCore.QObject):
                 #
                 # Subscribe to devices
                 #
+                print('Deviceconfig', deviceconfig)
                 try:
                     subscribe_addresses =  deviceconfig['subscriptions']
                 except:
+                    logger.info('Subscriptions',exc_info=True)
+
                     subscribe_addresses = []
 
-                #print('Subscribing to ...')
+                print('Subscribing to ...')
                 for a in subscribe_addresses:
-                    #print('subscribing',a)
+                    print('subscribing',a)
                     device.subscribe_address(a)
 
                 logger.debug(funcname + ': Emitting device signal')
@@ -984,250 +994,6 @@ class redvypr(QtCore.QObject):
                 device_parameter.multiprocess = deviceconfig['mp'].lower()
             except:
                 pass
-
-
-
-
-    def add_device_legacy(self, devicemodulename=None, deviceconfig={}, thread=None):
-        """
-        Function adds a device to redvypr
-
-        Args:
-            devicemodulename:
-            deviceconfig: A dictionary with the configuration, this is filled by i.e. a yaml file with the configuration or if clicked in the gui just the name of the device
-            thread:
-
-        Returns:
-            devicelist: a list containing all devices of this redvypr instance
-
-        """
-
-        funcname = self.__class__.__name__ + '.add_device():'
-        logger.debug(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(deviceconfig))
-        devicelist = []
-        device_found = False
-        # Loop over all modules and check of we find the name
-        for smod in self.redvypr_device_scan.redvypr_devices_flat:
-            if (devicemodulename == smod['name']):
-                logger.debug('Trying to import device {:s}'.format(smod['name']))
-                devicemodule = smod['module']
-                # Try to get a configuration template
-                try:
-                    config_template = devicemodule.config_template
-                    logger.debug(funcname + ':Found configuation template of device {:s}'.format(str(devicemodule)))
-                    #templatedict = configtemplate_to_dict(config_template)
-                    FLAG_HAS_TEMPLATE = True
-                except Exception as e:
-                    logger.debug(
-                        funcname + ':No configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
-                    FLAG_HAS_TEMPLATE = False
-
-                # Try to get information about the maximum number of devices
-                try:
-                    max_devices = config_template['redvypr_device']['max_devices']
-                except:
-                    max_devices = -1
-
-                if(max_devices > 0):
-                    ndevices = 0
-                    for d in self.devices:
-                        devname = d['device'].devicemodulename
-                        if(devname == devicemodulename):
-                            ndevices += 1
-
-                    if ndevices >= max_devices:
-                        logger.warning(funcname + ' Could not add {:s}, maximum number of {:d} devices reached'.format(devicemodulename,max_devices))
-                        return
-
-                # Try to get information about publish/subscribe capabilities described in the config_template
-                try:
-                    publishes = config_template['redvypr_device']['publishes']
-                except:
-                    publishes = False
-                try:
-                    subscribes = config_template['redvypr_device']['subscribes']
-                except:
-                    subscribes = False
-
-                try:
-                    deviceconfig['config']
-                except:
-                    deviceconfig['config'] = {}
-                # If the device does not have a name, add a standard but unique one
-                devicenames = self.get_all_devicenames()
-                try:
-                    devicename_tmp = deviceconfig['name']
-                except:
-                    devicename_tmp = devicemodulename.split('.')[-1]# + '_' + str(self.numdevice)
-
-                if devicename_tmp in devicenames:
-                    logger.warning(funcname + ' Devicename {:s} exists already, will add {:d} to the name.'.format(devicename_tmp,self.numdevice))
-                    devicename_tmp += '_' + str(self.numdevice)
-
-                deviceconfig['name'] = devicename_tmp
-
-                try:
-                    deviceconfig['loglevel']
-                except:
-                    deviceconfig['loglevel'] = 'INFO'
-
-                try:
-                    autostart = deviceconfig['autostart']
-                except:
-                    autostart = False
-
-                # Check for multiprocess options in configuration
-                if (thread == None):
-                    try:
-                        multiprocess = deviceconfig['mp'].lower()
-                    except:
-                        multiprocess = 'thread'
-
-                elif(thread):
-                    multiprocess = 'thread'
-                else:
-                    multiprocess = 'multiprocess'
-
-                if multiprocess == 'thread':  # Thread or multiprocess
-                    dataqueue = queue.Queue(maxsize=queuesize)
-                    datainqueue = queue.Queue(maxsize=queuesize)
-                    comqueue = queue.Queue(maxsize=queuesize)
-                    statusqueue = queue.Queue(maxsize=queuesize)
-                    guiqueue = queue.Queue(maxsize=queuesize)
-                else:
-                    dataqueue = multiprocessing.Queue(maxsize=queuesize)
-                    datainqueue = multiprocessing.Queue(maxsize=queuesize)
-                    comqueue = multiprocessing.Queue(maxsize=queuesize)
-                    statusqueue = multiprocessing.Queue(maxsize=queuesize)
-                    guiqueue = multiprocessing.Queue(maxsize=queuesize)
-
-                # Create a dictionary for the statistics and general information about the device
-                # This is used extensively in exchanging information about devices between redvypr instances and or other devices
-                statistics = redvypr_packet_statistic.create_data_statistic_dict()
-                # Device do not necessarily have a statusqueue
-                try:
-                    name = deviceconfig['name']
-                    loglevel = deviceconfig['loglevel']
-
-                    numdevices = len(self.devices)
-                    # Could also create a UUID based on the hostinfo UUID str
-                    device_uuid = '{:03d}--'.format(numdevices) + str(uuid.uuid1()) + '::' + self.hostinfo['uuid']
-                    try:
-                        devicemodule.Device
-                        HASDEVICE = True
-                    except:
-                        HASDEVICE = False
-
-                    if (HASDEVICE):  # Module has its own device
-                        Device = devicemodule.Device
-                        # Check if a startfunction is implemented
-                        try:
-                            Device.start
-                            startfunction = None
-                            logger.debug(
-                                funcname + ' Device has a start function')
-                        except:
-                            logger.debug(
-                                funcname + ' Device does not have a start function, will add the standard function')
-                            startfunction = devicemodule.start
-                    else:
-                        Device = redvypr_device
-                        startfunction = devicemodule.start
-
-                    # Config used at all?
-                    #print('Getting config')
-                    config = deviceconfig['config']
-                    #print('Done')
-                    # Merge the config with a potentially existing template to fill in default values
-                    if FLAG_HAS_TEMPLATE:
-                        #print('With template', config_template)
-                        #print('With configuration', config)
-                        #config = apply_config_to_dict(config,templatedict)
-                        #config = copy.deepcopy(config)
-                        #redvypr.config.dict_to_configDict(templatedict, process_template=True)
-                        configu = configuration(template=config_template,config=config)
-                    else: # Make a configuration without a template directly from the config dict
-                        #print('Without template')
-                        configu = configuration(config)
-                        config_template = None
-
-                    logger.debug(funcname + 'Config for device')
-                    logger.debug(funcname + 'Config: {:s}'.format(str(configu)))
-                    #print('Config type', type(configu))
-                    #print('loglevel', loglevel)
-                    # Creating the device
-                    device = Device(name=name, uuid=device_uuid, config=configu, redvypr=self, dataqueue=dataqueue,
-                                    publishes=publishes,subscribes=subscribes,autostart=autostart,
-                                    template=config_template, comqueue=comqueue, datainqueue=datainqueue,
-                                    statusqueue=statusqueue, loglevel=loglevel, multiprocess=multiprocess,
-                                    numdevice=self.numdevice, statistics=statistics,startfunction=startfunction,devicemodulename=devicemodulename)
-
-                    device.subscription_changed_signal.connect(self.process_subscription_changed)
-                    self.numdevice += 1
-                    # If the device has a logger
-                    devicelogger = device.logger
-                except Exception as e:
-                    logger.warning(funcname + ' Could not add device because of:')
-                    logger.exception(e)
-
-
-                devicedict = {'device': device, 'dataout': [], 'gui': [], 'guiqueue': [guiqueue],
-                              'statistics': statistics, 'logger': devicelogger,'comqueue':comqueue}
-
-                # Add the modulename
-                devicedict['devicemodulename'] = devicemodulename
-                # Add some statistics (LEGACY)
-                devicedict['packets_received'] = 0
-                devicedict['packets_published'] = 0
-                # The displaywcreate_idget, to be filled by redvyprWidget.add_device (optional)
-                devicedict['devicedisplaywidget'] = None
-                # device = devicedict['device']
-
-                # Check if the device wants a direct start after initialization
-                try:
-                    autostart = device.autostart
-                except:
-                    autostart = False
-
-                # Add the device to the device list
-                self.devices.append(devicedict)  # Add the device to the devicelist
-                ind_device = len(self.devices) - 1
-
-                # Update the statistics of the device itself
-                deviceinfo_packet = {'_redvypr':{},'_deviceinfo': {'subscribes': subscribes, 'publishes': publishes, 'devicemodulename': devicemodulename}}
-                device.dataqueue.put(deviceinfo_packet)
-                # Send a device_status packet to notify that a new device was added (deviceinfo_all) is updated
-                datapacket = data_packets.commandpacket(command='device_status')
-                device.dataqueue.put(datapacket)
-                if (autostart):
-                    logger.info(funcname + ': Starting device')
-                    self.start_device_thread(device)
-
-                devicelist = [devicedict, ind_device, devicemodule]
-
-                #
-                # Subscribe to devices
-                #
-                try:
-                    subscribe_addresses =  deviceconfig['subscriptions']
-                except:
-                    subscribe_addresses = []
-
-                #print('Subscribing to ...')
-                for a in subscribe_addresses:
-                    #print('subscribing',a)
-                    device.subscribe_address(a)
-
-                logger.debug(funcname + ': Emitting device signal')
-                self.device_added.emit(devicelist)
-                device_found = True
-                break
-
-        if (device_found == False):
-            logger.warning(funcname + ': Could not add device (not found): {:s}'.format(str(devicemodulename)))
-
-        return devicelist
-
 
 
     def start_device_thread(self, device):
@@ -2428,7 +2194,7 @@ def redvypr_main():
                 #options = d.split(',')[1:]
                 # Split the string, using csv reader to have quoted strings conserved
                 options_all = split_quotedstring(d)
-                print('options all',options_all)
+                #print('options all',options_all)
                 devicemodulename = options_all[0]
                 options = options_all[1:]
                 #print('options', options,type(options))
@@ -2448,7 +2214,8 @@ def redvypr_main():
                             try:
                                 data = ast.literal_eval(data[1:-1])
                             except Exception as e:
-                                print(e)
+                                logger.info('Error parsing options:',exc_info=True)
+
 
                         else:
                             try:
@@ -2461,8 +2228,8 @@ def redvypr_main():
 
                         #print('Data', data)
                         #print('type Data', type(data))
-                        #print('Data', data)
-                        #print('Data', data)
+                        print('Data', data)
+                        print('key', key)
                         if(key == 'name'):
                             deviceconfig[key] = data
                         elif (key == 'loglevel') or (key == 'll'):
@@ -2476,10 +2243,11 @@ def redvypr_main():
 
                             print('Setting device {:s} to loglevel {:s}'.format(devicemodulename,loglevel_tmp))
                             deviceconfig['loglevel'] = loglevel_device
-                        elif (key == 'subscribe'):
-                            print('Subscribe',data)
+                        elif (key.lower() == 'subscribe'):
+                            print('Add subscription {}'.format(str(data)))
                             deviceconfig['subscriptions'].append(data)
                         else:
+                            print('Adding key',key,data)
                             deviceconfig['config'][key] = data
             else:
                 devicemodulename = d
