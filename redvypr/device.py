@@ -312,14 +312,14 @@ class redvypr_device(QtCore.QObject):
 
     #def __init__(self, name='redvypr_device', uuid = '', redvypr = None, dataqueue = None, comqueue = None, datainqueue=None,statusqueue=None,template = {},config = {},publishes=False,subscribes=False, multiprocess='thread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False,devicemodulename=''):
     def __init__(self, device_parameter = None, redvypr=None, dataqueue=None, comqueue=None, datainqueue=None,
-                 statusqueue=None, template = {}, config = {}, statistics=None, startfunction = None):
+                 statusqueue = None, template = {}, config = {}, statistics=None, startfunction = None):
         """
         """
         super(redvypr_device, self).__init__()
         self.publishes   = device_parameter.publishes    # publishes data, a typical sensor is doing this
         self.subscribes  = device_parameter.subscribes   # subscribes other devices data, a typical datalogger is doing this
         self.datainqueue = datainqueue
-        self.dataqueue   = dataqueue        
+        self.dataqueue   = dataqueue
         self.comqueue    = comqueue
         self.statusqueue = statusqueue
         self.template    = template

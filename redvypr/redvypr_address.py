@@ -42,30 +42,52 @@ class redvypr_address():
             #elif type(addrstr) == dict:  # Address from datapacket # This does not work with inherited classes like redvypr_address
             elif isinstance(addrstr,dict):  # Address from datapacket # This should work with dict and inherited classes like redvypr_address
                 #print('Data packet',addrstr)
-                if publisher is None:
+                if True:
                     try:
-                        publisher = addrstr['_redvypr']['locpub']
+                        publisher_packet = addrstr['_redvypr']['locpub']
+                    except:
+                        publisher_packet = None
+                if True:
+                    try:
+                        addr_packet = addrstr['_redvypr']['host']['addr']
                     except:
                         pass
-                if addr is None:
-                    try:
-                        addr = addrstr['_redvypr']['host']['addr']
-                    except:
-                        pass
-                if hostname is None:
-                    hostname = addrstr['_redvypr']['host']['hostname']
-                if uuid is None:
-                    uuid = addrstr['_redvypr']['host']['uuid']
-                if devicename is None:
-                    devicename = addrstr['_redvypr']['device']
+                if True:
+                    hostname_packet = addrstr['_redvypr']['host']['hostname']
+                if True:
+                    uuid_packet = addrstr['_redvypr']['host']['uuid']
+                if True:
+                    devicename_packet = addrstr['_redvypr']['device']
 
-                self.address_str = self.create_addrstr(datakey, devicename, hostname, addr, uuid, publisher,
+                self.address_str = self.create_addrstr(datakey, devicename_packet, hostname_packet, addr_packet, uuid_packet, publisher_packet,
                                                        local_hostinfo=local_hostinfo)
 
             elif addrstr == '*':
                 self.address_str = self.create_addrstr()
             else:
                 self.address_str = addrstr
+
+
+            # Replace potentially given arguments
+            if any([addrstr, local_hostinfo, datakey, devicename, hostname, addr, uuid, publisher]):
+                parsed_addrstr = self.parse_addrstr(self.address_str)
+                if addr is not None:
+                    parsed_addrstr['addr'] = addr
+                if datakey is not None:
+                    parsed_addrstr['datakey'] = datakey
+                if devicename is not None:
+                    parsed_addrstr['devicename'] = devicename
+                if hostname is not None:
+                    parsed_addrstr['hostname'] = hostname
+                if uuid is not None:
+                    parsed_addrstr['uuid'] = uuid
+                if publisher is not None:
+                    parsed_addrstr['publisher'] = publisher
+
+                self.address_str = self.create_addrstr(parsed_addrstr['datakey'], parsed_addrstr['devicename'], parsed_addrstr['hostname'], parsed_addrstr['addr'], parsed_addrstr['uuid'], parsed_addrstr['publisher'], local_hostinfo=local_hostinfo)
+
+
+
 
         else:  # addrstr from single ingredients
             self.address_str = self.create_addrstr(datakey, devicename, hostname, addr, uuid, publisher, local_hostinfo=local_hostinfo)

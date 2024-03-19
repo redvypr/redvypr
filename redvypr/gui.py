@@ -217,13 +217,12 @@ class redvyprAddDeviceWidget(QtWidgets.QWidget):
 
     def __item_changed__(self, new, old):
         print('Item changed')
-        print('new',new,old)
+        print('new',new, old)
         if new.devdict is not None:
             self.__update_device_info__(new.devdict)
             self.addbtn.setEnabled(True)
         else:
             self.addbtn.setEnabled(False)
-
 
     def __apply_item__(self):
         print('Apply')

@@ -375,7 +375,7 @@ class XYplot(QtWidgets.QFrame):
                     #xtmp = redvypr.data_packets.modify_addrstr(y_raddr.address_str, datakey='t')
                     ## print('xtmp',xtmp)
                     #x_raddr = redvypr.redvypr_address(xtmp)
-                    x_raddr = redvypr.redvypr_address(y_addr,datakey='t')
+                    x_raddr = redvypr.redvypr_address(y_addr, datakey='t')
                 else:
                     x_raddr = redvypr.redvypr_address(x_addr)
 
@@ -473,9 +473,9 @@ class XYplot(QtWidgets.QFrame):
                 # Check if the device is to be plotted
                 for iline, line in enumerate(self.config.lines):
                     error_raddr = line._error_raddr
-                    # print('adresses:',xaddr.get_str(),yaddr.get_str())
-                    # print('device',data['_redvypr']['device'])
-                    # print('data in',(data in xaddr),(data in yaddr))
+                    #print('adresses:',line._x_raddr.get_str(),line._y_raddr.get_str())
+                    #print('device',data['_redvypr']['device'])
+                    #print('data in',(data in xaddr),(data in yaddr))
                     if (data in line._x_raddr) and (data in line._y_raddr):
                         pw = self.plotWidget  # The plot widget
                         #print('Databuffer',line.databuffer)
@@ -568,7 +568,7 @@ class XYplot(QtWidgets.QFrame):
                     line._lineplot.setData(x=x, y=y)
                     # Update the error
                     if line._errorplot is not None:
-                        if len(x)>0:
+                        if len(x) > 0:
                             #print('Updating errorplot')
                             err = line.databuffer.errordata[-line.numplot:]
                             #print('err',err,x,y)

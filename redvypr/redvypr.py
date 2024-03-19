@@ -725,7 +725,9 @@ class redvypr(QtCore.QObject):
                         pydantic_device_config = devicemodule.device_config.model_validate(config)
                     except Exception as e:
                         logger.exception(e)
-                    logger.debug(funcname + ':Found pydantic configuation {:s}'.format(str(devicemodule)))
+                        pydantic_device_config = devicemodule.device_config()
+
+                    logger.debug(funcname + ':Found pydantic configuration {:s}'.format(str(devicemodule)))
                     #redvypr_device_parameter.config = pydantic_device_config
                     FLAG_HAS_PYDANTIC = True
                 except Exception as e:
@@ -857,12 +859,12 @@ class redvypr(QtCore.QObject):
                     try:
                         level = deviceconfig['loglevel']
                     except Exception as e:
-                        logger.info(exc_info=True)
+                        logger.info('Setting loglevel to standard',exc_info=True)
                         # Set the loglevel
                         level = logger.getEffectiveLevel()
 
                     levelname = logging.getLevelName(level)
-                    logger.debug(funcname + ' Setting the loglevel to {:s}'.format(levelname))
+                    logger.debug(funcname + ' Setting the loglevel to {}'.format(levelname))
                     device_parameter.loglevel = levelname
                     # Check for an autostart
                     try:

@@ -24,9 +24,10 @@ class displayDeviceWidget_standard(QtWidgets.QWidget):
         tabwidget [optional]
 
         """
-        funcname = __name__ + '.start()'
+        funcname = __name__ + '.__init__()'
         super(QtWidgets.QWidget, self).__init__()
         layout = QtWidgets.QGridLayout(self)
+        self.tabwidget = tabwidget
         self.device = device
         # A timer that is regularly calling the device.status function
         self.statustimer = QtCore.QTimer()
@@ -54,7 +55,7 @@ class displayDeviceWidget_standard(QtWidgets.QWidget):
             self.text.clear()
             self.text.insertPlainText(str(statusdata))
         except Exception as e:
-            # logger.debug(funcname + str(e) + 'hallo')
+            logger.debug(funcname + str(e))
             pass
 
     def update(self, data):

@@ -35,8 +35,11 @@ import socket
 import yaml
 import copy
 import pydantic
+import typing
 from redvypr.device import redvypr_device
 from redvypr.data_packets import check_for_command
+from redvypr.widgets.gui_config_widgets import dictQTreeWidget
+from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('network_device')
@@ -49,33 +52,42 @@ logger.setLevel(logging.DEBUG)
 #self.config['data'] = 'data'  # datakey
 #self.config['serialize'] = 'raw'  # yaml/str/raw
 
-description = "Send and receive data using standard network protocols as TCP or UDP"
-config_template = {}
-config_template['name']              = 'network_device'
-config_template['address']           = {'type':'str','default':'<IP>','description':'The IP address, this can be also <IP> or <broadcast>'}
-config_template['port']        = {'type':'int','default':18196,'description':'The network port used.'}
-config_template['protocol']   = {'type':'str','default':'tcp','options':['tcp','udp'],'description':'The network protocol used.'}
-config_template['direction']         = {'type':'str','default':'publish','options':['publish','receive'],'description':'Publishing or receiving data.'}
-config_template['data']      = {'type':'str','default':'data','description':'Datakey to store data, this is used if serialize is raw or str'}
-config_template['serialize'] = {'type':'str','default':'raw','options':['yaml','str','raw'],'description':'Method to serialize (convert) original data into binary data.'}
-config_template['queuesize']        = {'type':'int','default':10000,'description':'Size of the queues for transfer between threads'}
-config_template['dtstatus']     = {'type':'float','default':2.0,'description':'Send a status message every dtstatus seconds'}
-config_template['tcp_reconnect']        = {'type':'bool','default':True,'description':'Reconnecting to TCP Port if connection was closed by host'}
-config_template['tcp_numreconnect']       = {'type':'int','default':10,'description':'The number of reconnection attempts before giving up'}
-config_template['redvypr_device']    = {}
-config_template['redvypr_device']['publishes']   = True
-config_template['redvypr_device']['subscribes']  = True
-config_template['redvypr_device']['description'] = description
+#description = "Send and receive data using standard network protocols as TCP or UDP"
+#config_template = {}
+#config_template['name']              = 'network_device'
+#config_template['address']           = {'type':'str','default':'<IP>','description':'The IP address, this can be also <IP> or <broadcast>'}
+##config_template['port']        = {'type':'int','default':18196,'description':'The network port used.'}
+#config_template['protocol']   = {'type':'str','default':'tcp','options':['tcp','udp'],'description':'The network protocol used.'}
+#config_template['direction']         = {'type':'str','default':'publish','options':['publish','receive'],'description':'Publishing or receiving data.'}
+#config_template['data']      = {'type':'str','default':'data','description':'Datakey to store data, this is used if serialize is raw or str'}
+#config_template['serialize'] = {'type':'str','default':'raw','options':['yaml','str','raw'],'description':'Method to serialize (convert) original data into binary data.'}
+#config_template['queuesize']        = {'type':'int','default':10000,'description':'Size of the queues for transfer between threads'}
+#config_template['dtstatus']     = {'type':'float','default':2.0,'description':'Send a status message every dtstatus seconds'}
+#config_template['tcp_reconnect']        = {'type':'bool','default':True,'description':'Reconnecting to TCP Port if connection was closed by host'}
+#config_template['tcp_numreconnect']       = {'type':'int','default':10,'description':'The number of reconnection attempts before giving up'}
+#config_template['redvypr_device']    = {}
+#config_template['redvypr_device']['publishes']   = True
+#config_template['redvypr_device']['subscribes']  = True
+#config_template['redvypr_device']['description'] = description
 redvypr_devicemodule = True
 
-#class device_base_config(pydantic.BaseModel):
-#    publishes: bool = True
-#    subscribes: bool = True
-#    description: str = 'Send and receive data using standard network protocols as TCP or UDP'
+class device_base_config(pydantic.BaseModel):
+    publishes: bool = True
+    subscribes: bool = True
+    description: str = 'Send and receive data using standard network protocols as TCP or UDP'
+    gui_tablabel_display: str = 'Network Status'
 
-#class device_config(pydantic.BaseModel):
-#    address: str = pydantic.Field(default='<IP>', description='The IP address, this can be also <IP> or <broadcast>')
-#    port: int = pydantic.Field(default=18196, description='The network port used')
+class device_config(pydantic.BaseModel):
+    address: str = pydantic.Field(default='<IP>', description='The IP address, this can be also <IP> or <broadcast>')
+    port: int = pydantic.Field(default=18196, description='The network port used')
+    protocol: typing.Literal['tcp', 'udp'] = pydantic.Field(default='tcp', description= 'The network protocol used.')
+    direction: typing.Literal['publish', 'receive'] = pydantic.Field(default='tcp', description='Publishing or receiving data.')
+    datakey: str = pydantic.Field(default='data', description='Datakey to store data, this is used if serialize is raw or str')
+    serialize: typing.Literal['yaml','str','raw'] = pydantic.Field(default='raw',description='Method to serialize (convert) original data into binary data.')
+    queuesize: int = pydantic.Field(default=10000, description= 'Size of the queues for transfer between threads')
+    dt_status: float = pydantic.Field(default=4.0,description= 'Send a status message every dt_status seconds')
+    tcp_reconnect: bool = pydantic.Field(default=True, description = 'Reconnecting to TCP Port if connection was closed by host')
+    tcp_numreconnect: int = pydantic.Field(default= 10, description='The number of reconnection attempts before giving up')
 
 
 #https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib
@@ -117,23 +129,23 @@ def raw_to_packet(datab,config):
                 data = yaml.safe_load(databs)
             except Exception as e:
                 logger.debug(funcname + ': Could not decode message {:s}'.format(str(data)))
-                logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(config['data']))
+                logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(config['datakey']))
             if(data is not None):
-                if(config['data'] == 'all'): # Forward the whole message
+                if(config['datakey'] == 'all'): # Forward the whole message
                     packets.append(data)
                 else:
                     datan = {'t':t}
-                    datan[config['data']] = data[k]
+                    datan[config['datakey']] = data[k]
                     packets.append(datan)
 
     elif (config['serialize'] == 'utf-8'):  # Put the "str" data into the packet with the key in "data"
         data = datab.decode('utf-8')
         datan = {'t':t}
-        datan[config['data']] = data
+        datan[config['datakey']] = data
         packets.append(datan)
     elif(config['serialize'] == 'raw'): # Put the "str" data into the packet with the key in "data"
         datan = {'t':t}
-        datan[config['data']] = datab
+        datan[config['datakey']] = datab
         packets.append(datan)
 
     return packets
@@ -143,13 +155,13 @@ def packet_to_raw(data_dict,config):
     """
     funcname = __name__ + 'send_data()'
     #
-    if (config['data'] == 'all') and (config['serialize'] == 'yaml'):
+    if (config['datakey'] == 'all') and (config['serialize'] == 'yaml'):
         datab = yaml_dump(data_dict).encode('utf-8')
     elif (config['serialize'] == 'utf-8'):
-        key = config['data']
+        key = config['datakey']
         datab = str(data_dict[key]).encode('utf-8')
     elif (config['serialize'] == 'raw'):
-        key = config['data']
+        key = config['datakey']
         data = data_dict[key]
         if(isinstance(data, (bytes, bytearray))):
             datab = data
@@ -159,31 +171,51 @@ def packet_to_raw(data_dict,config):
     return datab
 
 
-def handle_tcp_client_send(client,threadqueue,statusqueue):
+def handle_tcp_client_send(client, threadqueue, statusqueue, config):
     funcname =  __name__ + 'handle_tcp_client_send()'
     address = client[1]
     client = client[0]
     statusstr = 'Sending data to (TCP):' + str(address)
+    nsent = 0
+    dt_status = config['dt_status']
+    tlast_status = time.time()
+    #statusdict = {'tcp': {'send': {'address': {address: {'sent': nsent, 'status': 'open'}}}}}
     try:
         statusqueue.put_nowait(statusstr)
+        #statusqueue.put_nowait(statusdict)
         logger.info(funcname + ':' + statusstr)
     except Exception as e:
         logger.warning(funcname + ':' + str(e))
     
     while True:
-        data = threadqueue.get()
+        data = threadqueue.get() # Blocking
+        tread = time.time()
         #print('Read data from queue')
         try:
             logger.debug(funcname  + ':Sending data: {:s}'.format(str(data)))
             client.send(data)
+            nsent += len(data)
         except Exception as e:
-            statusstr = 'Connection to {:s} closed, stopping thread'.format(str(address))
+            statusstr = 'Connection to {:s} closed, stopping thread, sent {:d}bytes'.format(str(address),nsent)
             try:
                 statusqueue.put_nowait(statusstr)
             except: # If the queue is full
                 pass
             logger.info(funcname + ':' + statusstr)
             return
+
+        if (tread - tlast_status) > dt_status:
+            statusstr = 'Connection to {:s} open, sent {:d}bytes'.format(str(address), nsent)
+            #statusdict = {'tcp': {'send': {'address': {address:{'sent':nsent,'status':'open'}}}}}
+            try:
+                statusqueue.put_nowait(statusstr)
+                #statusqueue.put_nowait(statusdict)
+            except:  # If the queue is full
+                pass
+            logger.debug(funcname + ':' + statusstr)
+            tlast_status = time.time()
+
+
 
 def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info=None):
     """ TCP publishing, this thread waits for TCP connections connections. For each connection a new connection is created that is fed with a subthread (handle_tcp_send) is created that is receiving data with a new queue. 
@@ -200,7 +232,7 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
     server.settimeout(0.05) # timeout for listening
     # Some variables for status
     tstatus = time.time()
-    dtstatus = 5 # Send a status message every dtstatus seconds
+    dt_status = 5 # Send a status message every dtstatus seconds
     npackets = 0 # Number packets received via the datainqueue
     clients = []
     try:
@@ -212,11 +244,12 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
     while FLAG_RUN:
         try:
             client, address = server.accept() # Here the timeout will let the loop run with 20 Hz
+            taccept = time.time()
             threadqueue = queue.Queue(maxsize=queuesize)
-            tcp_thread = threading.Thread(target=handle_tcp_client_send, args=([client,address],threadqueue,statusqueue), daemon=True)
+            tcp_thread = threading.Thread(target=handle_tcp_client_send, args=([client,address],threadqueue,statusqueue,config), daemon=True)
             tcp_thread.start()
             clients.append(client)
-            threadqueues.append({'thread':tcp_thread,'queue': threadqueue,'address':address,'bytes_sent':0,'packets_published':0})
+            threadqueues.append({'thread':tcp_thread,'queue': threadqueue,'address':address,'bytes_sent':0,'packets_published':0,'taccept':taccept})
         except socket.timeout:
             pass
         except Exception as e:
@@ -250,7 +283,7 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
 
 
         # Sending a status message
-        if((time.time() - tstatus) > dtstatus):
+        if((time.time() - tstatus) > dt_status):
             statusdata = {'npackets':npackets}
             tstatus = time.time()
             # Do a cleanup of the threads that are dead
@@ -259,11 +292,12 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
                 if(isalive == False):
                     threadqueues.remove(q)
                 
-            statusdata['clients'] = []
-            statusdata['config'] = copy.deepcopy(config)
+            statusdata['tcp_clients'] = []
+            #statusdata['config'] = copy.deepcopy(config)
             for q in threadqueues:
-                client = {'bytes':q['bytes_sent'],'address':q['address'][0],'port':q['address'][1],'packets':q['packets_published']}
-                statusdata['clients'].append(client)
+                taccept_str = datetime.datetime.fromtimestamp(q['taccept'])
+                client = {'bytes':q['bytes_sent'],'address':q['address'][0],'port':q['address'][1],'packets':q['packets_published'],'t_accept':taccept_str}
+                statusdata['tcp_clients'].append(client)
                 
             try:
                 statusqueue.put_nowait(statusdata)
@@ -297,9 +331,9 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
     # Some variables for status
     tstatus = time.time()
     try:
-        dtstatus = config['dtstatus']
+        dt_status = config['dt_status']
     except:
-        dtstatus = 2 # Send a status message every dtstatus seconds
+        dt_status = 2 # Send a status message every dtstatus seconds
         
     # Reconnecting to TCP Port if connection was closed by host
     try:
@@ -366,7 +400,7 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
             return
 
         # Sending a status message
-        if((time.time() - tstatus) > dtstatus):
+        if((time.time() - tstatus) > dt_status):
             statusdata = {}
             statusdata['bytes_read'] = bytes_read
             statusdata['time'] = str(datetime.datetime.now())
@@ -390,10 +424,10 @@ def start_udp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
 
     # Some variables for status
     tstatus = time.time()
-    dtstatus = 5 # Send a status message every dtstatus seconds
+    dt_status = 5 # Send a status message every dtstatus seconds
     npackets = 0 # Number packets received via the datainqueue
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) # UDP
-    if(config['address'] == '<broadcast>'):        
+    if(config['address'] == '<broadcast>'):
         #client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,  1)  # https://stackoverflow.com/questions/13637121/so-reuseport-is-not-defined-on-windows-7
         # Enable broadcasting mode
@@ -415,22 +449,23 @@ def start_udp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
                     client.close()
                     logger.info(funcname + 'received command:' + str(data_dict) + ' stopping now')
                     statusdata = {}
-                    statusdata['status'] = 'Stopping UDP redcv thread'
-                    statusdata['time'] = str(datetime.datetime.now())
+                    udpaddrstr = str((udp_addr, config['port']))
+                    statusdata = '{} Stopping UDP send thread to {}'.format(str(datetime.datetime.now()),udpaddrstr)
                     try:
                         statusqueue.put_nowait(statusdata)
                     except:  # If the queue is full
                         pass
 
-                    FLAG_RUN=False
+                    FLAG_RUN = False
                     break
                 else:
                     npackets   += 1
                     # Call the send_data function to create a binary sendable datastream
                     datab       = packet_to_raw(data_dict,config)
                     bytes_sent += len(datab)
-                    #print('Sending data',datab)
+                    #print('Sending data',datab,udp_addr,config['port'])
                     client.sendto(datab, (udp_addr, config['port']))
+
 
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))
@@ -438,15 +473,18 @@ def start_udp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
 
 
         # Sending a status message
-        if((time.time() - tstatus) > dtstatus):
+        if((time.time() - tstatus) > dt_status):
             statusdata = {'npackets':npackets}
             statusdata['bytes_sent'] = bytes_sent
+            statusdata['udp_address'] = str((udp_addr, config['port']))
             tstatus = time.time()
             #statusdata['clients'] = []
-            statusdata['config'] = copy.deepcopy(config)
-                
+            #statusdata['config'] = copy.deepcopy(config)
+            statussend = {}
+            statussend['udp_publish'] = statusdata
+
             try:
-                statusqueue.put_nowait(statusdata)
+                statusqueue.put_nowait(statussend)
             except: # If the queue is full
                 pass
             
@@ -463,7 +501,7 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
     bytes_read   = 0
     threadqueues = []
     tstatus      = 0
-    dtstatus     = 2 # Send a status message every dtstatus seconds
+    dt_status     = 2 # Send a status message every dtstatus seconds
     
     #client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) # UDP
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # UDP
@@ -523,7 +561,7 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
 
 
         # Sending a status message
-        if((time.time() - tstatus) > dtstatus):
+        if((time.time() - tstatus) > dt_status):
             statusdata = {}
             statusdata['bytes_read'] = bytes_read
             statusdata['npackets'] = npackets
@@ -567,7 +605,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
             logger.info(__name__ + ':Start to serve data on address (TCP):' + str(config))
             start_tcp_send(dataqueue,datainqueue,statusqueue,config=config,device_info=device_info)
         elif(config['protocol'] == 'udp'):
-            logger.info(__name__ + ':Start to serve data on address (UDP broadcast)')
+            logger.info(__name__ + ':Start to serve data on address (UDP)' + str(config))
             #start_udp_send(dataqueue,datainqueue,statusqueue,config=config)
             start_udp_send(dataqueue, datainqueue, statusqueue, config=config,
                            device_info=device_info)
@@ -580,62 +618,94 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
             start_udp_recv(dataqueue,datainqueue,statusqueue,config=config,device_info=device_info)
 
 class Device(redvypr_device):
+    network_status_changed = QtCore.pyqtSignal()  # Signal notifying that the network status changed
     def __init__(self, **kwargs):
         """
         """
         super(Device, self).__init__(**kwargs)
         self.check_and_fill_config() # Add standard stuff
+        # Could be done with a blocking thread, but lets keep it simple
+        self.network_status = {}
+        self.statustimer = QtCore.QTimer()
+        self.statustimer.timeout.connect(self.get_status)  # Add to the timer another update
+        self.statustimer.start(1000)
 
     def check_and_fill_config(self):
         """ Fills a config, if essential entries are missing
         """
         try:
-            self.config['address']
+            self.config.address
         except:
-            self.config['address'].data = get_ip()
+            self.configaddress = get_ip()
 
 
-        if(self.config['address'] == None):
-            self.config['address'].data = get_ip()
-        elif(self.config['address'].data == ''):
-            self.config['address'].data = get_ip()
-        elif(self.config['address'].data == '<ip>'):
-            self.config['address'].data = get_ip()
-        elif(self.config['address'].data == '<IP>'):
-            self.config['address'].data = get_ip()
+        if(self.config.address == None):
+            self.config.address = get_ip()
+        elif(self.config.address == ''):
+            self.config.address = get_ip()
+        elif(self.config.address == '<ip>'):
+            self.config.address = get_ip()
+        elif(self.config.address == '<IP>'):
+            self.config.address = get_ip()
             
         try:
-            self.config['port'].data
+            self.config.port
         except:
-            self.config['port'].data = 18196
+            self.config.port = 18196
             
         try:
-            self.config['protocol'].data
+            self.config.protocol
         except:
-            self.config['protocol'].data = 'tcp'
+            self.config.protocol = 'tcp'
         
         try:    
-            self.config['direction'].data
+            self.config.direction
         except:
-            self.config['direction'].data = 'publish' # publish/receive
+            self.config.direction = 'publish' # publish/receive
             
         try:
-            self.config['data'].data
+            self.config.datakey
         except: 
-            self.config['data'].data = 'data' #
+            self.config.datakey = 'data' #
 
         try:
-            self.config['serialize'].data
+            self.config.serialize
         except:
-            self.config['serialize'].data = 'raw' # yaml/str/raw
+            self.config.serialize = 'raw' # yaml/str/raw
 
     def status(self):
         funcname = 'status()'
+        # print('Status')
+        try:
+            status = self.statusqueue.get_nowait()
+        except:
+            return
+        # print(statusstr)
+        if type(status) == str:
+            print('Status', status)
+        else:
+            print('Statusdict', status)
+
+        return status
+
+    def get_status(self):
+        funcname = 'get_status()'
         #print('Status')
-        status = self.statusqueue.get_nowait()
-        #print(statusstr)
-        statusstr = yaml.dump(status)
-        return statusstr
+        while True:
+            try:
+                status = self.statusqueue.get_nowait()
+            except:
+                return
+
+            print(type(status))
+            if type(status) == str:
+                print('Status str',status)
+            else:
+                print('Statusdict',status)
+                self.network_status.update(status)
+                self.network_status_changed.emit()
+
+        #return statusstr
             
 
     def __str__(self):
@@ -658,6 +728,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.label    = QtWidgets.QLabel("Network device")
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         self.label.setStyleSheet("font-weight: bold; font-size: 16")
+        self.subbtn = QtWidgets.QPushButton("Subscribe")
+        self.subbtn.clicked.connect(self.subscribe_clicked)
+
         self.startbtn = QtWidgets.QPushButton("Open device")
         self.startbtn.clicked.connect(self.start_clicked)
         self.startbtn.setCheckable(True)
@@ -726,6 +799,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addRow(self._data_pub_all,self._data_pub_dict)
         layout.addRow(QtWidgets.QLabel("Serialize"),self._combo_ser)
         layout.addRow(self.fdataentry,self.dataentry)
+        layout.addRow(self.subbtn)
         layout.addRow(self.startbtn)
         
         self.config_widgets.append(self.addressline)
@@ -745,6 +819,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
 
+    def subscribe_clicked(self):
+        button = self.sender()
+        self.connect.emit(self.device)
     def connect_signals_options(self,connect=True):
         if True:
             if(connect):
@@ -769,17 +846,17 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         # Disconnect all signals
         self.connect_signals_options(connect=False)
-        if (self.device.config['protocol'].data == 'tcp'):
+        if (self.device.config.protocol == 'tcp'):
             self._combo_proto.setCurrentIndex(0)
         else:
             self._combo_proto.setCurrentIndex(1)
 
-        if(self.device.config['address'].data is not None):
-            self.addressline.setText(self.device.config['address'].data)
-        if(self.device.config['port'].data is not None):
-            self.portline.setText(str(self.device.config['port'].data))
+        if(self.device.config.address is not None):
+            self.addressline.setText(self.device.config.address)
+        if(self.device.config.port is not None):
+            self.portline.setText(str(self.device.config.port))
             
-        if(self.device.config['direction'].data == 'publish'):
+        if(self.device.config.direction == 'publish'):
             self._combo_inout.setCurrentIndex(0)
         else:
             self._combo_inout.setCurrentIndex(1)
@@ -788,17 +865,17 @@ class initDeviceWidget(QtWidgets.QWidget):
             self._combo_ser.setCurrentIndex(i)
             txt = self._combo_ser.currentText()
             #print('txt',i,txt)
-            if(txt.lower() == self.device.config['serialize'].data.lower()):
+            if(txt.lower() == self.device.config.serialize.lower()):
                 #print('break')
                 break
 
-        if(self.device.config['serialize'].data.lower() == 'all'):
+        if(self.device.config.serialize.lower() == 'all'):
             self._data_pub_all.setChecked(True)
         else:
             self._data_pub_dict.setChecked(True)
 
 
-        self.dataentry.setText(self.device.config['data'].data)
+        self.dataentry.setText(self.device.config.datakey)
         self.connect_signals_options(connect=True)
             
     def process_options(self):
@@ -809,19 +886,19 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         config = self.device.config
 
-        config['address'].data   = self.addressline.text()
-        config['direction'].data = self._combo_inout.currentText().lower()
-        config['protocol'].data  = self._combo_proto.currentText().lower()
+        config.address   = self.addressline.text()
+        config.direction = self._combo_inout.currentText().lower()
+        config.protocol  = self._combo_proto.currentText().lower()
         if(self._data_pub_all.isChecked()): # sending/receiving YAML dictionaries
             self.dataentry.setEnabled(False)
             self._combo_ser.setEnabled(False)
-            config['serialize'].data = 'yaml'
-            config['data'].data      = 'all'
+            config.serialize = 'yaml'
+            config.datakey      = 'all'
         else:
             self.dataentry.setEnabled(True)
             self._combo_ser.setEnabled(True)
-            config['serialize'].data = self._combo_ser.currentText().lower()
-            config['data'].data      = self.dataentry.text()
+            config.serialize = self._combo_ser.currentText().lower()
+            config.datakey   = self.dataentry.text()
 
         # Change the GUI according to send/receive
         if(self._combo_inout.currentText() == 'Publish'):
@@ -833,11 +910,11 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
         # Check for invalid combinations
-        if((config['address'].lower()) == '<broadcast>' and config['protocol'] == 'tcp'):
+        if((config.address.lower()) == '<broadcast>' and config.protocol == 'tcp'):
             logger.warning(funcname + ': Broadcast works only with UDP')
 
         try:
-            config['port'].data = int(self.portline.text())
+            config.port = int(self.portline.text())
         except:
             logger.warning(funcname + ': Port is not an int')
 
@@ -894,26 +971,21 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
 
-# class displayDeviceWidget(QtWidgets.QWidget):
-#     def __init__(self):
-#         super(QtWidgets.QWidget, self).__init__()
-#         layout        = QtWidgets.QVBoxLayout(self)
-#         hlayout        = QtWidgets.QHBoxLayout(self)
-#         self.bytes_read = QtWidgets.QLabel('Bytes read: ')
-#         self.lines_read = QtWidgets.QLabel('Lines read: ')
-#         self.text     = QtWidgets.QPlainTextEdit(self)
-#         self.text.setReadOnly(True)
-#         self.text.setMaximumBlockCount(10000)
-#         hlayoutv.addWidget(self.bytes_read)
-#         hlayout.addWidget(self.lines_read)
-#         layout.addLayout(hlayout)
-#         layout.addWidget(self.text)
-#
-#     def update(self,data):
-#         #print('data',data)
-#         bstr = "Bytes read: {:d}".format(data['bytes_read'])
-#         lstr = "Lines read: {:d}".format(data['nmea_sentences_read'])
-#         self.bytes_read.setText(bstr)
-#         self.lines_read.setText(lstr)
-#         self.text.insertPlainText(str(data['nmea']))
-        
+class displayDeviceWidget(QtWidgets.QWidget):
+    def __init__(self, device=None, tabwidget=None):
+        super().__init__()
+        self.device = device
+        self.layout = QtWidgets.QGridLayout(self)
+        self.tabwidget = tabwidget
+        #self.statuswidget_network = QtWidgets.QWidget()
+        #self.tabwidget.addTab(self.statuswidget_network,'Network devices connected')
+        self.statusdictWidget = dictQTreeWidget(self.device.network_status, dataname = 'network status')
+        self.device.network_status_changed.connect(self.update_status)
+        self.layout.addWidget(self.statusdictWidget)
+
+    def update_status(self):
+        """
+
+        """
+        status = self.device.network_status
+        self.statusdictWidget.reload_data(status)

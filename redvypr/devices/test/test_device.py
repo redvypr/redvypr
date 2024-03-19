@@ -62,9 +62,10 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 break
 
         data = redvypr.data_packets.datapacket(device = device_info['device'])
+        data['data'] = float(np.random.rand(1)-0.5)
         dataqueue.put(data)
         time.sleep(config['delay_s'])
-        print('Hallo')
+        #print('Hallo')
         
 
 
