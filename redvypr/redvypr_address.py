@@ -293,6 +293,13 @@ class redvypr_address():
             hostflag   = self.compare_address_substrings(self.hostname, datapacket['_redvypr']['host']['hostname'])
             addrflag   = self.compare_address_substrings(self.addr, datapacket['_redvypr']['host']['addr'])
             uuidflag   = self.compare_address_substrings(self.uuid, datapacket['_redvypr']['host']['uuid'])
+            try:
+                pubstr = datapacket['_redvypr']['host']['pub']
+            except:
+                pubstr = ''
+
+            pubflag = self.compare_address_substrings(self.publisher, pubstr)
+            #locpubflag = self.compare_address_substrings(self.uuid, datapacket['_redvypr']['host']['locpub'])
             #print('deviceflag', deviceflag)
             #print('hostflag', deviceflag)
             #print('addrflag', addrflag)
@@ -311,14 +318,16 @@ class redvypr_address():
                 else:  # If the key does not fit, return False immediately
                     return False
 
-            if (deviceflag and uuidflag):
-                return True
-            elif (deviceflag and hostflag and addrflag and uuidflag):
-                return True
-            elif (deviceflag and uuidflag):
-                return True
+            #if (deviceflag and uuidflag):
+            #    return True
+            #elif (deviceflag and hostflag and addrflag and uuidflag):
+            #    return True
+            #elif (deviceflag and uuidflag):
+            #    return True
 
-            return False
+            matchflag3 = deviceflag and hostflag and addrflag and uuidflag and pubflag
+
+            return matchflag3
 
         elif(type(data) == redvypr_address):
             addr = data
@@ -327,6 +336,8 @@ class redvypr_address():
             hostflag    = self.compare_address_substrings(self.hostname, addr.hostname)
             addrflag    = self.compare_address_substrings(self.addr, addr.addr)
             uuidflag    = self.compare_address_substrings(self.uuid, addr.uuid)
+            pubflag = self.compare_address_substrings(self.publisher, addr.publisher)
+            #locpubflag = self.compare_address_substrings(self.local_publisher, addr.local_publisher)
 
             # print('Datakeyflag',datakeyflag)
             # print('Deviceflag',deviceflag)
@@ -337,7 +348,7 @@ class redvypr_address():
 
             # matchflag1  = datakeyflag and deviceflag and hostflag and addrflag
             # matchflag2 = datakeyflag  and deviceflag and uuidflag
-            matchflag3 = datakeyflag and deviceflag and hostflag and addrflag and uuidflag
+            matchflag3 = datakeyflag and deviceflag and hostflag and addrflag and uuidflag and pubflag
 
             return matchflag3  # 1 or matchflag2
 

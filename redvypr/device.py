@@ -485,10 +485,10 @@ class redvypr_device(QtCore.QObject):
         #self.address_str = self.name + ':' + self.redvypr.hostinfo['hostname'] + '@' + self.redvypr.hostinfo[
         #    'addr'] + '::' + self.redvypr.hostinfo['uuid']
         #self.address = redvypr_address(self.address_str)
-        self.address = redvypr_address(devicename=self.name, local_hostinfo= self.redvypr.hostinfo)
-        self.address_str = self.address.get_str(address_format='/u/a/h/d/')
+        self.address = redvypr_address(devicename=self.name, local_hostinfo= self.redvypr.hostinfo, publisher=self.name)
+        self.address_str = self.address.get_str(address_format='/u/a/h/p/d/')
 
-    def address_string(self, address_format='/u/a/h/d'):
+    def address_string(self, address_format='/u/a/h/p/d'):
         """
         Returns the address string of the device
         Returns:
@@ -497,7 +497,7 @@ class redvypr_device(QtCore.QObject):
         astr = self.address.get_str(address_format = address_format)
         return astr
 
-    def got_subscribed(self,dataprovider_address,datareceiver_address,):
+    def got_subscribed(self, dataprovider_address, datareceiver_address):
         """
         Function is called by self.redvypr if this device is connected with another one. The intention is to notify device
         that a specific datastream/devce has been subscribed. This is a wrapper function and need to be reimplemented if needed.
