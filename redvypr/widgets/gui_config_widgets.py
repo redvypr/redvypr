@@ -7,7 +7,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import pydantic
 from redvypr.configdata import configtemplate_to_dict
 from redvypr.device import redvypr_device
-from redvypr.widgets.datastream_widget import datastreamWidget
+from redvypr.widgets.redvypr_addressWidget import datastreamWidget
 import redvypr.configdata
 import redvypr.files as files
 
@@ -1154,10 +1154,8 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
         self.root.__parent__ = None
         self.setColumnCount(3)
         self.create_qtree()
+        self.show_datatype = show_datatype
 
-        # Show the datatpye column
-        if show_datatype == False:
-            self.header().hideSection(2)
         #self.itemExpanded.connect(self.resize_view)
         #self.itemCollapsed.connect(self.resize_view)
 
@@ -1340,6 +1338,9 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
         self.blockSignals(False)
         self.expandAll()
         self.resizeColumnToContents(0)
+        # Show the datatpye column
+        if self.show_datatype == False:
+            self.header().hideSection(2)
 
 
 

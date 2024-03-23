@@ -13,6 +13,82 @@ _icon_file = files.icon_file
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr')
 logger.setLevel(logging.DEBUG)
+
+
+class address_filterWidget(QtWidgets.QWidget):
+    def __init__(self):
+        """
+        """
+        self.filter_address = redvypr_address('*')
+        self.filter_on = False
+        super(QtWidgets.QWidget, self).__init__()
+        self.layout = QtWidgets.QGridLayout(self)
+        self.btn_nofilter = QtWidgets.QPushButton('Filter off')
+        self.btn_nofilter.setCheckable(True)
+        self.btn_nofilter.setChecked(False)
+        self.btn_nofilter.clicked.connect(self._onfilter_btn_)
+
+        self.btn_showfilter = QtWidgets.QPushButton('Show Filter')
+        self.btn_showfilter.setCheckable(True)
+        #self.btn_showfilter.setChecked(True)
+        self.btn_showfilter.clicked.connect(self._showfilter_btn_)
+
+
+        self.filter_widget = QtWidgets.QWidget()
+        self.filter_layout = QtWidgets.QFormLayout(self.filter_widget)
+        self.btn_datakeyfilter = QtWidgets.QPushButton('Datakey')
+        self.line_datakeyfilter = QtWidgets.QLineEdit(self.filter_address.datakey)
+        self.btn_devicefilter = QtWidgets.QPushButton('Device')
+        self.line_devicefilter = QtWidgets.QLineEdit(self.filter_address.devicename)
+        self.btn_publishingdevicefilter = QtWidgets.QPushButton('Publishing device')
+        self.line_publishingdevicefilter = QtWidgets.QLineEdit(self.filter_address.publisher)
+        self.btn_hostfilter = QtWidgets.QPushButton('Redvypr host')
+        self.line_hostfilter = QtWidgets.QLineEdit(self.filter_address.hostname)
+        self.line_hostfilter.editingFinished.connect(self.__update_address_from_lineedits)
+
+        self.line_filterstr = QtWidgets.QLineEdit(self.filter_address.get_str())
+
+        self.filter_layout.addRow(self.btn_datakeyfilter,self.line_datakeyfilter)
+        self.filter_layout.addRow(self.btn_devicefilter,self.line_devicefilter)
+        self.filter_layout.addRow(self.btn_publishingdevicefilter, self.line_publishingdevicefilter)
+        self.filter_layout.addRow(self.btn_hostfilter, self.line_hostfilter)
+        self.filter_layout.addRow(self.line_filterstr)
+
+        self.filter_widget.hide()
+        self.layout.addWidget(self.btn_nofilter,0,0)
+        self.layout.addWidget(self.btn_showfilter,0,1)
+        self.layout.addWidget(self.filter_widget,1,0,1,2)
+
+    def __update_address_from_lineedits(self):
+        host = self.line_hostfilter.text()
+        datakey = self.line_datakeyfilter.text()
+        devicename = self.line_devicefilter.text()
+        self.filter_address = redvypr_address(datakey=datakey, hostname=host, devicename=devicename)
+        #print('Update filteraddress',self.filter_address.get_str())
+        self.line_filterstr.setText(self.filter_address.get_str())
+
+    def _onfilter_btn_(self):
+        if self.btn_nofilter.isChecked():
+            print('Will filter')
+            self.btn_nofilter.setText('Filter on')
+            self.filter_on = True
+        else:
+            print('Will NOT filter')
+            self.btn_nofilter.setText('Filter off')
+            self.filter_on = False
+
+
+    def _showfilter_btn_(self):
+        print('Show filter button')
+        button = self.sender()
+        if button.isChecked():
+            self.filter_widget.show()
+            self.btn_showfilter.setText('Hide Filter')
+        else:
+            self.filter_widget.hide()
+            self.btn_showfilter.setText('Show Filter')
+
+
 #
 class datastreamWidget(QtWidgets.QWidget):
     """ Widget that lets the user choose available subscribed devices (if device is not None) and datakeys. This
@@ -82,8 +158,9 @@ class datastreamWidget(QtWidgets.QWidget):
 
         self.addrtype_combo.setCurrentIndex(2)
         self.addrtype_combo.currentIndexChanged.connect(self.__addrtype_changed__)
-
+        self.filterWidget = address_filterWidget()
         # Add widgets to layout
+        self.layout.addWidget(self.filterWidget)
         self.layout.addWidget(self.deviceavaillabel)
         self.layout.addWidget(self.devicelist)
 
@@ -121,6 +198,9 @@ class datastreamWidget(QtWidgets.QWidget):
         """
         Called when an item in the qtree is clicked
         """
+        funcname = __name__ + '__device_clicked()'
+        logger.debug(funcname)
+        print('Item',item.iskey)
         if(item.iskey): # If this is a datakey item
             addrtype = self.addrtype_combo.currentText()
             addrstring = item.datakey_address.get_str(addrtype)
@@ -163,9 +243,9 @@ class datastreamWidget(QtWidgets.QWidget):
                             datakeys = devs_forwarded[devaddress]['datakeys']
                             if len(datakeys) > 0:
                                 flag_datastreams = True
-                                devaddress_redvypr = data_packets.redvypr_address(devaddress)
+                                devaddress_redvypr = redvypr_address(devaddress)
                                 addrtype = 'full'
-                                addrstring = devaddress_redvypr.get_str(addrtype)
+                                addrstring = devaddress_redvypr.get_str()
                                 itmf = QtWidgets.QTreeWidgetItem([addrstring])
                                 itmf.setBackground(0, col)
                                 itmf.device = dev
@@ -182,7 +262,7 @@ class datastreamWidget(QtWidgets.QWidget):
                                     itmk.iskey = True
                                     itmk.device = dev
                                     itmk.devaddress = devaddress
-                                    itmk.datakey_address = data_packets.redvypr_address(data_packets.modify_addrstr(devaddress,datakey=dkey))
+                                    itmk.datakey_address = redvypr_address(devaddress,datakey=dkey)
                                     itmf.addChild(itmk)
 
                     if flag_datastreams: # If we have datastreams found, add the itm

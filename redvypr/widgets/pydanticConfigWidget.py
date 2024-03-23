@@ -7,7 +7,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import pydantic
 from redvypr.configdata import configtemplate_to_dict
 from redvypr.device import redvypr_device
-from redvypr.widgets.datastream_widget import datastreamWidget
+from redvypr.widgets.redvypr_addressWidget import datastreamWidget
 import redvypr.configdata
 import redvypr.files as files
 

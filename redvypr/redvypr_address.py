@@ -112,6 +112,8 @@ class redvypr_address():
         self.uuid = parsed_addrstr['uuid']
         self.uuidexpand = parsed_addrstr['uuidexpand']
 
+        self.publisher = parsed_addrstr['publisher']
+
     def get_common_address_formats(self):
         return self._common_address_formats
     def create_addrstr(self, datakey=None, devicename=None, hostname=None, addr=None, uuid=None, publisher=None, local_hostinfo=None):

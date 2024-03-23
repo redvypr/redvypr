@@ -1663,7 +1663,7 @@ class redvyprWidget(QtWidgets.QWidget):
             self.__status_dtneeded.setText('')
         else:
             npackets = self.redvypr.packets_processed
-            if(npackets > 0):
+            if(npackets > 0) and (self.redvypr.dt_avg_datadist > 0):
                 packets_pstr = npackets / self.redvypr.dt_avg_datadist
             else:
                 packets_pstr = 0.0

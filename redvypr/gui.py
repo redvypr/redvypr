@@ -10,7 +10,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 from redvypr.device import redvypr_device, redvypr_device_parameter
 from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, pdDeviceConfigWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget
-from redvypr.widgets.datastream_widget import datastreamWidget
+from redvypr.widgets.redvypr_addressWidget import datastreamWidget
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, pydanticQTreeWidget
 import redvypr.configdata
 import redvypr.files as files

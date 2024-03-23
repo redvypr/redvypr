@@ -440,9 +440,11 @@ class XYplot(QtWidgets.QFrame):
         xdata = []
         ydata = []
         for iline, line in enumerate(self.config.lines):
-            line_dict = line.line_dict
-            line = line_dict['line']  # The line to plot
-            config = line_dict['config']  # The line to plot
+            print('Line', line)
+            print('Type Line', type(line))
+            #line_dict = line.line_dict
+            #line = line_dict['line']  # The line to plot
+            #config = line_dict['config']  # The line to plot
             t = np.asarray(line.databuffer.tdata)  # The line to plot
             x = np.asarray(line.databuffer.xdata)  # The line to plot
             y = np.asarray(line.databuffer.ydata)  # The line to plot
