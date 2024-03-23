@@ -16,6 +16,7 @@ logger.setLevel(logging.DEBUG)
 
 
 class address_filterWidget(QtWidgets.QWidget):
+    filterChanged = QtCore.pyqtSignal()  # Signal notifying if the device path was changed
     def __init__(self):
         """
         """
@@ -44,7 +45,10 @@ class address_filterWidget(QtWidgets.QWidget):
         self.line_publishingdevicefilter = QtWidgets.QLineEdit(self.filter_address.publisher)
         self.btn_hostfilter = QtWidgets.QPushButton('Redvypr host')
         self.line_hostfilter = QtWidgets.QLineEdit(self.filter_address.hostname)
-        self.line_hostfilter.editingFinished.connect(self.__update_address_from_lineedits)
+
+        lineedits = [self.line_datakeyfilter, self.line_devicefilter, self.line_publishingdevicefilter,self.line_hostfilter]
+        for l in lineedits:
+            l.editingFinished.connect(self.__update_address_from_lineedits)
 
         self.line_filterstr = QtWidgets.QLineEdit(self.filter_address.get_str())
 
@@ -66,6 +70,7 @@ class address_filterWidget(QtWidgets.QWidget):
         self.filter_address = redvypr_address(datakey=datakey, hostname=host, devicename=devicename)
         #print('Update filteraddress',self.filter_address.get_str())
         self.line_filterstr.setText(self.filter_address.get_str())
+        self.filterChanged.emit()
 
     def _onfilter_btn_(self):
         if self.btn_nofilter.isChecked():
@@ -76,6 +81,8 @@ class address_filterWidget(QtWidgets.QWidget):
             print('Will NOT filter')
             self.btn_nofilter.setText('Filter off')
             self.filter_on = False
+
+        self.filterChanged.emit()
 
 
     def _showfilter_btn_(self):
@@ -153,12 +160,14 @@ class datastreamWidget(QtWidgets.QWidget):
 
         # A combobox to choose between different styles of the address
         self.addrtype_combo = QtWidgets.QComboBox()  # Combo for the different combination types
-        #for t in redvypr_addresstypes:
-        #    self.addrtype_combo.addItem(t)
+        redvypr_addresstypes = redvypr_address().get_common_address_formats()
+        for t in redvypr_addresstypes:
+            self.addrtype_combo.addItem(t)
 
-        self.addrtype_combo.setCurrentIndex(2)
+        #self.addrtype_combo.setCurrentIndex(2)
         self.addrtype_combo.currentIndexChanged.connect(self.__addrtype_changed__)
         self.filterWidget = address_filterWidget()
+
         # Add widgets to layout
         self.layout.addWidget(self.filterWidget)
         self.layout.addWidget(self.deviceavaillabel)
@@ -183,8 +192,9 @@ class datastreamWidget(QtWidgets.QWidget):
 
         devicelist = []
         self.datakeylist_subscribed = {}
-
+        print('Update devicetree')
         self.__update_devicetree()
+        self.filterWidget.filterChanged.connect(self.__update_devicetree)
 
     def __addrManualChanged(self,addrstr):
         funcname = __name__ + '.__addrManualChanged():'
@@ -204,6 +214,8 @@ class datastreamWidget(QtWidgets.QWidget):
         if(item.iskey): # If this is a datakey item
             addrtype = self.addrtype_combo.currentText()
             addrstring = item.datakey_address.get_str(addrtype)
+            print('Addrstring',addrstring)
+            print('Devstring', item.devaddress)
             self.addressline.setText(addrstring)
             self.addressline.datakey_address = item.datakey_address
             self.addressline.device = item.device
@@ -226,6 +238,13 @@ class datastreamWidget(QtWidgets.QWidget):
                     flag_datastreams = False
                     if dev == self.device:
                         continue
+                    # Check for filter
+                    print('Address', dev.address)
+                    if self.filterWidget.filter_on:
+                        if dev.address not in self.filterWidget.filter_address:
+                            print('No filter match for ',dev.address)
+                            continue
+
 
                     itm = QtWidgets.QTreeWidgetItem([dev.name])
                     col = QtGui.QColor(220,220,220)
@@ -244,9 +263,14 @@ class datastreamWidget(QtWidgets.QWidget):
                             if len(datakeys) > 0:
                                 flag_datastreams = True
                                 devaddress_redvypr = redvypr_address(devaddress)
-                                addrtype = 'full'
-                                addrstring = devaddress_redvypr.get_str()
-                                itmf = QtWidgets.QTreeWidgetItem([addrstring])
+                                if self.filterWidget.filter_on:
+                                    if devaddress_redvypr not in self.filterWidget.filter_address:
+                                        print('No filter match for ', devaddress_redvypr)
+                                        continue
+                                addrtype = '/d/'
+                                print('Hallo',devaddress_redvypr,devaddress_redvypr.get_str())
+                                devicename = devaddress_redvypr.devicename
+                                itmf = QtWidgets.QTreeWidgetItem([devicename])
                                 itmf.setBackground(0, col)
                                 itmf.device = dev
                                 itmf.redvypr_address = devaddress_redvypr
@@ -263,6 +287,10 @@ class datastreamWidget(QtWidgets.QWidget):
                                     itmk.device = dev
                                     itmk.devaddress = devaddress
                                     itmk.datakey_address = redvypr_address(devaddress,datakey=dkey)
+                                    if self.filterWidget.filter_on:
+                                        if itmk.datakey_address not in self.filterWidget.filter_address:
+                                            print('No filter match for ', itmk.datakey_address)
+                                            continue
                                     itmf.addChild(itmk)
 
                     if flag_datastreams: # If we have datastreams found, add the itm
