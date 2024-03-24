@@ -294,7 +294,7 @@ class redvypr_address():
             addrflag   = self.compare_address_substrings(self.addr, datapacket['_redvypr']['host']['addr'])
             uuidflag   = self.compare_address_substrings(self.uuid, datapacket['_redvypr']['host']['uuid'])
             try:
-                pubstr = datapacket['_redvypr']['host']['pub']
+                pubstr = datapacket['_redvypr']['pub']
             except:
                 pubstr = ''
 

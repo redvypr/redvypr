@@ -115,7 +115,7 @@ class XYplot(QtWidgets.QFrame):
         logger.debug(funcname)
         i = 0
         if True:
-            logger.debug(funcname + ': Adding plot ')  # + str(config))
+            self.logger.debug(funcname + ': Adding plot ')  # + str(config))
             try:
                 title = config.title
             except:
@@ -164,7 +164,6 @@ class XYplot(QtWidgets.QFrame):
     def pyqtgraphAddLineAction(self):
         funcname = __name__ + '.pyqtgraphAddLineAction()'
         logger.debug(funcname)
-        print('Add line')
         newline = configLine()
         self.addLineConfigWidget = redvypr.gui.pydanticConfigWidget(newline, configname='new line')
         self.addLineConfigWidget.setWindowTitle('Add line')
@@ -233,22 +232,22 @@ class XYplot(QtWidgets.QFrame):
         Adds a line to the plot
         """
         funcname = __name__ + '.add_line()'
-        logger.debug(funcname)
+        self.logger.debug(funcname)
         if isinstance(y_addr,redvypr.redvypr_address):
-            print('Redvypr y-address')
+            logger.debug('Redvypr y-address')
             y_addr = y_addr.address_str
         if isinstance(x_addr, redvypr.redvypr_address):
-            print('Redvypr x-address')
+            logger.debug('Redvypr x-address')
             x_addr = x_addr.address_str
         if isinstance(error_addr, redvypr.redvypr_address):
-            print('Redvypr error-address')
+            logger.debug('Redvypr error-address')
             error_addr = error_addr.address_str
         #print('add line',y_addr,color)
         if color is None: # No color defined, take color from the colors list
             nlines = len(self.config.lines) - 1
             colind = nlines % len(colors)
             color = colors[colind]
-            print('Color',colind,color)
+            logger.debug('Color')
 
         if index is None:
             rconfig = configLine()
@@ -275,7 +274,7 @@ class XYplot(QtWidgets.QFrame):
 
         """
         funcname = __name__ + '.apply_config()'
-        logger.debug(funcname)
+        self.logger.debug(funcname)
         # Recreate the lineMenu
         for iline, line in enumerate(self.config.lines):
             name = self.config.lines[iline].name
@@ -299,11 +298,11 @@ class XYplot(QtWidgets.QFrame):
             datetick_x = False
 
         if datetick_x:
-            logger.debug(funcname + 'Datetick')
+            self.logger.debug(funcname + 'Datetick')
             axis = pyqtgraph.DateAxisItem(orientation='bottom', utcOffset=0)
             plot.setAxisItems({"bottom": axis})
         else:
-            logger.debug(funcname + ' No Datetick')
+            self.logger.debug(funcname + ' No Datetick')
             axis = pyqtgraph.AxisItem(orientation='bottom')
             plot.setAxisItems({"bottom": axis})
 
@@ -353,8 +352,7 @@ class XYplot(QtWidgets.QFrame):
             try:
                 color = redvypr.gui.get_QColor(line.color)
             except Exception as e:
-                logger.debug('Definition of color not usable:')
-                logger.exception(e)
+                self.logger.debug('Definition of color not usable:',exc_info=True)
                 color = QtGui.QColor(255, 10, 10)
 
             line._tlastupdate = 0
@@ -365,13 +363,15 @@ class XYplot(QtWidgets.QFrame):
         self.legendWidget.clear()
         for iline, line in enumerate(self.config.lines):
             try:
-                logger.debug(funcname + ': Updating line {:d}'.format(iline))
-                # print('Line',line,iline)
+                self.logger.debug(funcname + ': Updating line {:d}'.format(iline))
+                print('Line',line,iline)
                 x_addr = line.x_addr
                 y_addr = line.y_addr
                 y_raddr = redvypr.redvypr_address(y_addr)
+                print('x_addr', x_addr)
+                print('y_addr', y_addr)
                 if (x_addr == '$t(y)'):
-                    logger.debug(funcname + ' Using time variable of y')
+                    self.logger.debug(funcname + ' Using time variable of y')
                     #xtmp = redvypr.data_packets.modify_addrstr(y_raddr.address_str, datakey='t')
                     ## print('xtmp',xtmp)
                     #x_raddr = redvypr.redvypr_address(xtmp)
@@ -379,6 +379,7 @@ class XYplot(QtWidgets.QFrame):
                 else:
                     x_raddr = redvypr.redvypr_address(x_addr)
 
+                print('x_addrnew', x_addr,x_raddr)
                 # These attributes are used in plot.Device.connect_devices to actually subscribe to the fitting devices
                 line._x_raddr = x_raddr
                 line._y_raddr = y_raddr
@@ -408,18 +409,17 @@ class XYplot(QtWidgets.QFrame):
 
                 name = self.config.lines[iline].name
                 if (name.lower() == '$y'):
-                    logger.debug(funcname + ' Replacing with y')
+                    self.logger.debug(funcname + ' Replacing with y')
                     name = y_addr
 
-                logger.debug(funcname + ' Setting the name')
+                self.logger.debug(funcname + ' Setting the name')
                 self.legendWidget.addItem(line._lineplot, name)
                 line._lineplot.setData(name=name)
             except Exception as e:
-                logger.exception(e)
                 logger.debug('Exception config lines: {:s}'.format(str(e)),exc_info=True)
                 raise ValueError('')
 
-        logger.debug(funcname + ' done.')
+        self.logger.debug(funcname + ' done.')
 
     def clear_buffer(self):
         """ Clears the buffer of all lines
@@ -429,7 +429,7 @@ class XYplot(QtWidgets.QFrame):
         for iline, line in enumerate(self.config.lines):
             line.databuffer = dataBufferLine()
             # Set the data
-            line.setData(x=line.databuffer.xdata, y=line.databuffer.ydata)
+            line._lineplot.setData(x=line.databuffer.xdata, y=line.databuffer.ydata)
 
     def get_data(self, xlim):
         """
@@ -440,8 +440,8 @@ class XYplot(QtWidgets.QFrame):
         xdata = []
         ydata = []
         for iline, line in enumerate(self.config.lines):
-            print('Line', line)
-            print('Type Line', type(line))
+            #print('Line', line)
+            #print('Type Line', type(line))
             #line_dict = line.line_dict
             #line = line_dict['line']  # The line to plot
             #config = line_dict['config']  # The line to plot
@@ -456,7 +456,7 @@ class XYplot(QtWidgets.QFrame):
             tdata.append(tdata_tmp)
             xdata.append(xdata_tmp)
             ydata.append(ydata_tmp)
-            logger.debug(funcname + ' Got data of length {:d}'.format(len(tdata_tmp)))
+            self.logger.debug(funcname + ' Got data of length {:d}'.format(len(tdata_tmp)))
             # print('get_data',datetime.datetime.utcfromtimestamp(tdata_tmp[0]),datetime.datetime.utcfromtimestamp(xdata_tmp[0]))
 
         return {'x': xdata, 'y': ydata, 't': tdata}
@@ -475,9 +475,12 @@ class XYplot(QtWidgets.QFrame):
                 # Check if the device is to be plotted
                 for iline, line in enumerate(self.config.lines):
                     error_raddr = line._error_raddr
-                    #print('adresses:',line._x_raddr.get_str(),line._y_raddr.get_str())
                     #print('device',data['_redvypr']['device'])
-                    #print('data in',(data in xaddr),(data in yaddr))
+                    #print('data',data)
+                    #print('line',line)
+                    #print('line A', line._x_raddr, (data in line._x_raddr))
+                    #print('line B', line._y_raddr, (data in line._y_raddr))
+                    #print('fdsfsfsd',(data in line._x_raddr) and (data in line._y_raddr))
                     if (data in line._x_raddr) and (data in line._y_raddr):
                         pw = self.plotWidget  # The plot widget
                         #print('Databuffer',line.databuffer)
@@ -535,7 +538,7 @@ class XYplot(QtWidgets.QFrame):
                                 line._datakeys  # datakeys found, doing nothing
                             except:
                                 line._datakeys = self.device.get_metadata_datakey(line._y_raddr)
-                                logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._datakeys)))
+                                self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._datakeys)))
                                 unit = None
                                 for k in line._datakeys.keys():
                                     # print('key',k,yaddr,k in yaddr)
