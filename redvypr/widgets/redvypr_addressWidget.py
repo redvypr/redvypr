@@ -17,9 +17,10 @@ logger.setLevel(logging.DEBUG)
 
 class address_filterWidget(QtWidgets.QWidget):
     filterChanged = QtCore.pyqtSignal()  # Signal notifying if the device path was changed
-    def __init__(self):
+    def __init__(self, redvypr = None):
         """
         """
+        self.redvypr = redvypr
         self.filter_address = redvypr_address('*')
         self.filter_on = False
         super(QtWidgets.QWidget, self).__init__()
@@ -46,6 +47,13 @@ class address_filterWidget(QtWidgets.QWidget):
         self.btn_hostfilter = QtWidgets.QPushButton('Redvypr host')
         self.line_hostfilter = QtWidgets.QLineEdit(self.filter_address.hostname)
 
+        buttons = [self.btn_datakeyfilter, self.btn_devicefilter, self.btn_publishingdevicefilter,
+                     self.btn_hostfilter]
+        for b in buttons:
+            b.clicked.connect(self.__open_filterChoiceWidget)
+            if redvypr is None:
+                b.setEnabled(False)
+
         lineedits = [self.line_datakeyfilter, self.line_devicefilter, self.line_publishingdevicefilter,self.line_hostfilter]
         for l in lineedits:
             l.editingFinished.connect(self.__update_address_from_lineedits)
@@ -62,6 +70,49 @@ class address_filterWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.btn_nofilter,0,0)
         self.layout.addWidget(self.btn_showfilter,0,1)
         self.layout.addWidget(self.filter_widget,1,0,1,2)
+
+    def __open_filterChoiceWidget(self):
+        """
+        Opens a widget to let the user choose available choices
+        """
+        self.__filterChoice = QtWidgets.QWidget()
+        self.__filterChoiceLayout = QtWidgets.QVBoxLayout(self.__filterChoice)
+        self.__filterChoiceList = QtWidgets.QListWidget()
+        self.__filterChoiceApply = QtWidgets.QPushButton('Apply')
+        self.__filterChoiceApply.clicked.connect(self.__filterChoiceApplyClicked)
+        self.__filterChoiceCancel = QtWidgets.QPushButton('Cancel')
+        self.__filterChoiceCancel.clicked.connect(self.__filterChoice.close)
+        # Fill the list
+        if self.sender() == self.btn_datakeyfilter:
+            options = self.redvypr.get_datakeys()
+            self.__filterChoiceList.lineedit = self.line_datakeyfilter
+        elif self.sender() == self.btn_devicefilter:
+            options = self.redvypr.get_devices(local_object=False)
+            self.__filterChoiceList.lineedit = self.line_devicefilter
+        elif self.sender() == self.btn_publishingdevicefilter:
+            options = self.redvypr.get_devices(local_object=True)
+            self.__filterChoiceList.lineedit = self.line_publishingdevicefilter
+        elif self.sender() == self.btn_hostfilter:
+            options = self.redvypr.get_hosts()
+            self.__filterChoiceList.lineedit = self.line_hostfilter
+        else:
+            options = []
+
+        for o in options:
+            self.__filterChoiceList.addItem(str(o))
+
+        self.__filterChoiceLayout.addWidget(self.__filterChoiceList)
+        self.__filterChoiceLayout.addWidget(self.__filterChoiceApply)
+        self.__filterChoiceLayout.addWidget(self.__filterChoiceCancel)
+        self.__filterChoice.show()
+
+    def __filterChoiceApplyClicked(self):
+        option = self.__filterChoiceList.currentItem()
+        optionstr = str(option.text())
+        print('Apply',optionstr)
+        self.__filterChoiceList.lineedit.setText(optionstr)
+        self.__update_address_from_lineedits()
+        self.__filterChoice.close()
 
     def __update_address_from_lineedits(self):
         host = self.line_hostfilter.text()
@@ -167,7 +218,7 @@ class datastreamWidget(QtWidgets.QWidget):
 
         #self.addrtype_combo.setCurrentIndex(2)
         self.addrtype_combo.currentIndexChanged.connect(self.__addrtype_changed__)
-        self.filterWidget = address_filterWidget()
+        self.filterWidget = address_filterWidget(redvypr = redvypr)
 
         # Add widgets to layout
         self.layout.addWidget(self.filterWidget)
@@ -227,7 +278,7 @@ class datastreamWidget(QtWidgets.QWidget):
             self.devicelist.clear()
             root = self.devicelist.invisibleRootItem()
             # self.devices_listDevices.addItem(str(device))
-            data_provider_all = self.redvypr.get_devices(publishes=True, subscribes=False)
+            data_provider_all = self.redvypr.get_device_objects(publishes=True, subscribes=False)
             font1 = QtGui.QFont('Arial')
             font1.setBold(True)
             font0 = QtGui.QFont('Arial')

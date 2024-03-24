@@ -1100,8 +1100,22 @@ class redvypr(QtCore.QObject):
 
         return devicenames
 
+    def get_hosts(self):
+        """
+        Returns: List with all redvypr hosts known to this redvypr host instance
 
-    def get_devices(self, publishes = None, subscribes = True):
+        """
+        hosts = []
+        for d in self.devices:
+            dev = d['device']
+            hosts.extend(dev.get_hosts())
+
+        hosts = list(set(hosts))
+        hosts.sort()
+        return hosts
+
+
+    def get_device_objects(self, publishes = None, subscribes = True):
         """
         Returns a list of all devices of this redvypr instance. Returns all devices if neither "publishes" or "subscribes" is defined.
         Args:
@@ -1128,7 +1142,27 @@ class redvypr(QtCore.QObject):
                     devicelist.append(dev)
                     continue
 
+        return devicelist
 
+    def get_devices(self, local=None, local_object=True):
+        """
+        Returns a list of all devices of this redvypr instance.
+        Returns: List with devicenames
+
+        """
+
+        devicelist = []
+        for d in self.devices:
+            dev = d['device']
+            if local_object:
+                devicelist.append(dev.name)
+            else:
+                devaddrs = dev.get_deviceaddresses(local=local)
+                for devaddr in devaddrs:
+                    devicelist.append(devaddr.devicename)
+
+        devicelist = list(set(devicelist))
+        devicelist.sort()
         return devicelist
 
     def get_deviceaddresses(self, local = None, publishes = None, subscribes = None):
@@ -1151,6 +1185,21 @@ class redvypr(QtCore.QObject):
             raddrs.extend(raddrs_tmp)
 
         return raddrs
+
+    def get_datakeys(self, local=None):
+        """
+        Returns a list of all datakeys this host is providing by all its devices
+        Returns:
+            List of datakeys (str)
+        """
+        datakeys = []
+        for dev in self.devices:
+            dkeys = dev['device'].get_datakeys()
+            datakeys.extend(dkeys)
+
+        datakeys = list(set(datakeys))
+        datakeys.sort()
+        return datakeys
 
     def get_datastreams(self,local=None):
         """

@@ -723,16 +723,29 @@ class redvypr_device(QtCore.QObject):
         """
         pass
 
+
+    def get_hosts(self):
+        """
+        Returns:
+            List of redvypr host instances this device has been seen
+        """
+        hosts = []
+        devs = self.get_deviceaddresses()
+        for d in devs:
+            hosts.append(d.hostname)
+
+        hosts = list(set(hosts))
+        hosts.sort()
+        return hosts
+
+
     def get_deviceaddresses(self, local=None):
         """
         Returns a list with redvypr_addresses of all devices that publish data via this device. This is in many cases
         the device itself but can also forwarded devices (i.e. iored) or because the device publishes data with different
-        devicenames::
-           dataqueue.put({'count': i}) # Devicename as the device itself
-           dataqueue.put({'count': i+10,'_redvypr':{'device':'test2'}}) # Devicename is 'test2'
 
         Args:
-            local: None, True or False
+            local: True for local devices only, False for remote devices only, None for both
 
         Returns:
             List of redvypr_address
@@ -750,6 +763,23 @@ class redvypr_device(QtCore.QObject):
                     addr_list.append(raddr)
 
         return addr_list
+
+    def get_datakeys(self, local=None):
+        """
+        Returns a list of all datakeys this device is providing
+        Returns:
+            List of datakeys (str)
+        """
+        devaddrs = self.get_deviceaddresses(local)
+        datakeys = []
+        for devaddr in devaddrs:
+            dkeys = self.statistics['device_redvypr'][devaddr.address_str]['datakeys']
+            datakeys.extend(dkeys)
+
+        # Sort the datakeys and make them unique
+        datakeys = list(set(datakeys))
+        datakeys.sort()
+        return datakeys
 
     def get_datastreams(self,local=None):
         """
@@ -791,7 +821,7 @@ class redvypr_device(QtCore.QObject):
         """
         funcname = __name__ + '.publishing_to()'
         #self.logger.debug(funcname)
-        devs = self.redvypr.get_devices()
+        devs = self.redvypr.get_device_objects()
         devs_publishing_to = []
         for dev in reversed(devs):
             for subaddr in dev.subscribed_addresses:
@@ -811,7 +841,7 @@ class redvypr_device(QtCore.QObject):
         """
         funcname = __name__ + '.get_subscribed_datastreams()'
         datastreams = []
-        devs = self.redvypr.get_devices()
+        devs = self.redvypr.get_device_objects()
         for subaddr in self.subscribed_addresses:
             for dev in reversed(devs):
                 datastreams_dev = dev.get_datastreams()
@@ -832,7 +862,7 @@ class redvypr_device(QtCore.QObject):
         """
         funcname = __name__ + '.get_subscribed_devices()'
         #self.logger.debug(funcname)
-        devs = self.redvypr.get_devices()
+        devs = self.redvypr.get_device_objects()
         devs_subscribed = []
         for subaddr in self.subscribed_addresses:
             for dev in reversed(devs):
