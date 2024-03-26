@@ -13,6 +13,8 @@ import gzip
 import threading
 import hashlib
 import re
+import pydantic
+import typing
 import redvypr.config
 from redvypr.device import redvypr_device
 from redvypr.data_packets import check_for_command
@@ -22,20 +24,20 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('rawdatareplay')
 logger.setLevel(logging.DEBUG)
 
-description = "Replays a raw redvypr data file"
+class device_base_config(pydantic.BaseModel):
+    publishes: bool = True
+    subscribes: bool = False
+    description: str = "Replays a raw redvypr data file"
+    gui_tablabel_display: str = 'Replay status'
 
-description = "Saves the raw redvypr packets into a file"
-config_template = {}
-config_template['name']              = 'rawdatareplay'
-config_template['files']             = {'type':'list','description':'List of files to replay'}
-config_template['replay_index']      = {'type':'list','default':['0,-1,1'],'description':'The index of the packets to be replayed [start, end, nth]'}
-config_template['loop']              = {'type':'bool','default':False,'description':'Loop over all files if set'}
-config_template['speedup']           = {'type':'float','default':1.0,'description':'Speedup factor of the data'}
-config_template['replace_time']      = {'type':'bool','default':False,'description':'Replaces the original time in the packet with the time the packet was read.'}
-config_template['redvypr_device']    = {}
-config_template['redvypr_device']['publishes']   = True
-config_template['redvypr_device']['subscribes']  = False
-config_template['redvypr_device']['description'] = description
+class device_config(pydantic.BaseModel):
+    files: list = pydantic.Field(default=[], description='List of files to replay')
+    replay_index: list = pydantic.Field(default=['0,-1,1'], description='The index of the packets to be replayed [start, end, nth]')
+    loop: bool = pydantic.Field(default=False, description='Loop over all files if set')
+    speedup: float = pydantic.Field(default=1.0, description='Speedup factor of the data')
+    replace_time: bool = pydantic.Field(default=False, description='Replaces the original time in the packet with the time the packet was read')
+
+
 redvypr_devicemodule = True
 
 def get_packets(filestream=None):
@@ -58,7 +60,7 @@ def get_packets(filestream=None):
         return None
 
 
-def index_file(filestream,chunksize,statusqueue=None):
+def index_file(filestream, chunksize, statusqueue=None):
     funcname = __name__ + '.index_file()'
     npackets_read = 0
     packets = []
@@ -101,7 +103,7 @@ def index_file(filestream,chunksize,statusqueue=None):
                 except Exception as e:
                     index_start = None
 
-                # Look for the start of a packet
+                # Look for the end of a packet
                 try:
                     pattern_end = b'\0'
                     index_end = data_buffer.index(pattern_end)
@@ -305,7 +307,7 @@ class packetreader():
         packets = self.get_packets_by_index(packetindex)
         return packets
 
-    def get_packets_by_index(self,packetindex):
+    def get_packets_by_index(self, packetindex):
         """
         Get the packets
         """
@@ -339,6 +341,172 @@ class packetreader():
 
 
 
+def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, commandqueue=None, statusqueue=None):
+    funcname = __name__ + '.index_file()'
+
+    if filename.lower().endswith('.gz'):
+        FLAG_GZIP = True
+    else:
+        FLAG_GZIP = False
+
+    if FLAG_GZIP:
+        try:
+            filestream = gzip.open(filename, 'rb')
+            logger.debug(funcname + ' Opened file: {:s}'.format(filename))
+        except Exception as e:
+            logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
+            return None
+    else:
+        try:
+            filestream = open(filename, 'rb')
+            logger.debug(funcname + ' Opened file: {:s}'.format(filename))
+        except Exception as e:
+            logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
+            return None
+
+    # Get the size of the data (within the file, this is different to the filesize, which can be gzipped
+    fsize = os.path.getsize(filename)
+    f = filestream
+    f.seek(0, os.SEEK_END)
+    size = f.tell()
+    datasize = size
+    filestream.seek(0)
+
+    npackets_read = 0
+    packets = []
+    status_thread = {}
+    tstatus = time.time()
+    stat = {}
+    stat['packets_seek'] = []
+    stat['packets_size'] = []
+    stat['packets_num'] = []
+    stat['packets_t'] = []
+    stat['npackets'] = 0
+    packets_ = []
+    seek_start = 0
+    seek_now = 0
+    nread = 0
+    data = ''
+    data_buffer = b''
+    flag_eof = False
+    filestream.seek(0)
+    nread = 0
+    nnewread = 0
+    if (filestream is not None):
+        while True:
+            com = commandqueue.get()
+            if type(com) == int: # Read n new packets
+                nnewread = com
+                nread = 0
+            while nread < nnewread:
+                print('Nread',nread)
+                seek_start = filestream.tell()
+                data_read = filestream.read(chunksize)
+                seek_now = filestream.tell()
+                #print('data read', seek_start,seek_now, seek_now - seek_start,len(data_read))
+                lendata = len(data_read)
+                nread += lendata
+                # print('len', len(data_read))
+                if len(data_read) < chunksize:
+                    flag_eof = True
+
+                # Add potentially old data and the newly read data
+                data_buffer += data_read
+                seek_data_buffer_end = seek_now
+                seek_data_buffer_start = seek_data_buffer_end - len(data_buffer)
+                while True:
+                    # Look for the start of a packet
+                    try:
+                        index_start = data_buffer.index(b'---')
+                    except Exception as e:
+                        index_start = None
+
+                    # Look for the end of a packet
+                    try:
+                        pattern_end = b'\0'
+                        index_end = data_buffer.index(pattern_end)
+                        #index_end += len(pattern_end)
+                    except Exception as e:
+                        index_end = None
+
+                    #print('data',data_buffer)
+                    #print('index start',index_start,index_end)
+
+                    if (index_end is not None) and (index_start is not None) and ((index_end - index_start) > 0):
+                        datab = data_buffer[index_start:index_end]
+                        databs = datab.decode('utf-8')
+                        #print('databs',databs,index_start,index_end)
+                    else:
+                        break
+                    try:
+                        data_packet = yaml.safe_load(databs)
+                        if (data_packet is not None):
+                            numpacket = data_packet['_redvypr']['numpacket']
+                            tpacket = data_packet['_redvypr']['t']
+                            #print('Found datapacket',seek_data_buffer_start)
+                            loc_packet_start = seek_data_buffer_start + index_start
+                            loc_packet_length = index_end - index_start
+                            #packets.append(data_packet)
+                            dataqueue.put(data_packet)
+                            nread += 1
+                            stat['packets_seek'].append(loc_packet_start)
+                            stat['packets_size'].append(loc_packet_length)
+                            stat['packets_num'].append(numpacket)
+                            stat['packets_t'].append(tpacket)
+
+                            npackets_read += 1
+                            #print('fdsfd',npackets_read)
+                            stat['npackets'] = npackets_read
+
+                            if True:
+                                dt = time.time() - tstatus
+                                if dt > 0.5:
+                                    tstatus = time.time()
+                                    tmin = stat['packets_t'][0]
+                                    tmax = stat['packets_t'][-1]
+                                    status_thread['t'] = time.time()
+                                    status_thread['t_min'] = tmin
+                                    status_thread['t_max'] = tmax
+                                    status_thread['seek'] = seek_now
+                                    status_thread['packets_num'] = npackets_read
+                                    status_thread['flag_eof'] = flag_eof
+                                    status_thread['stat'] = None
+                                    logger.debug(funcname + ' Status:' + str(status_thread))
+                                    if statusqueue is not None:
+                                        statusqueue.put(status_thread)
+                            # Remove the packet from the dta_buffer
+                            data_buffer = data_buffer[index_end+len(pattern_end):]
+                            seek_data_buffer_start = seek_data_buffer_end - len(data_buffer)
+                    except Exception as e:
+                        logger.debug(funcname + ': Could not decode message {:s}'.format(str(databs)))
+                        logger.exception(e)
+                        #return [packets, packet_ind]
+
+                    #break
+
+
+                if flag_eof:  # EOF, cleanup
+                    logger.debug(funcname + ': EOF. Rewinding file')
+                    filestream.seek(0)
+                    t = time.time()
+                    td = datetime.datetime.fromtimestamp(t)
+                    tdstr = td.strftime("%Y-%m-%d %H:%M:%S.%f")
+                    break
+
+            # In thread mode, add stat to status dictionary
+            if statusqueue is not None:
+                status_thread['t'] = time.time()
+                status_thread['seek'] = seek_now
+                status_thread['packets_num'] = npackets_read
+                status_thread['flag_eof'] = flag_eof
+                status_thread['stat'] = stat
+                statusqueue.put(status_thread)
+
+
+
+
+
+
 def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening reading:')
@@ -350,13 +518,6 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     dt_status = .5  # Status update
     t_sent = 0 # The time the last packets was sent
     t_packet_old = 1e12 # The time the last packet had (internally)
-    try:
-        file_statistics = config['file_statistics']
-        print('Found file statistics',len(file_statistics))
-    except:
-        print('Did not find file statistics')
-        file_statistics = None
-        #
     try:
         config['speedup']
     except:
@@ -375,7 +536,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     #statistics = create_data_statistic_dict()
     
     bytes_read         = 0
-    packets_published       = 0
+    packets_published  = 0
     dt_packet_sum      = 0
     bytes_read_total   = 0
     packets_read_total = 0
@@ -384,8 +545,11 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     tflush          = time.time() # Save the time the file was created
     FLAG_NEW_FILE = True
     nfile = 0
+    packets = []
+    read_dataqueue = queue.Queue()
+    read_commandqueue = queue.Queue()
     while True:
-        tcheck      = time.time()
+        tcheck = time.time()
         try:
             data = datainqueue.get(block=False)
         except:
@@ -423,39 +587,17 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                     nfile = 0
 
             filename = files[nfile]
+            chunksize = 5000
+            npacket_buf = 10
             rindex = replay_index[nfile]
-            try:
-                filestat = file_statistics[filename]
-            except Exception as e:
-                logger.exception(e)
-                filestat = None
+            args = (filename, chunksize, npacket_buf, read_dataqueue, read_commandqueue, statusqueue)
+            read_thread = threading.Thread(target=packet_read_thread, args=args, daemon=True)
+            read_commandqueue.put(10)
 
-            #print('Filestat',filestat)
-            #print('Filestat',len(file_statistics),nfile)
-            preader = packetreader(filename=filename, statusqueue=statusqueue, filestat = filestat)
-            #print('Rindex',rindex)
-            packet_index = preader.index_to_packetindex(rindex)
-            #print('Packet index',packet_index)
-            nfile += 1
-            FLAG_NEW_FILE = False
-            t_packet_old = 1e12  # The time the last packet had (internally)
 
-        nread_tmp = 5
-        if len(packet_index) > nread_tmp:
-            pind_read = packet_index[0:nread_tmp]
-            packet_index = packet_index[nread_tmp:]
-        else:
-            pind_read = packet_index
-            packet_index = []
 
-        packets = preader.get_packets_by_index(pind_read)
-        #print('len packet',len(packets),pind_read,len(packet_index))
-        #print('Packet ind',packets_ind)
-        if len(packet_index) <= 0:
-            FLAG_NEW_FILE = True
-            preader.close_file()
 
-        packets = [None] + packets # Add a None so that there is at least one packet
+
         if(packets is not None):
             for p in packets:
                 if p is None:
@@ -553,11 +695,11 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         # Looping the data?
         self.loop_checkbox = QtWidgets.QCheckBox('Loop')
-        loopflag = bool(self.device.config['loop'])
+        loopflag = bool(self.device.config.loop)
         self.loop_checkbox.setChecked(loopflag)
         self.loop_checkbox.stateChanged.connect(self.speedup_changed)
         self.replace_time_checkbox = QtWidgets.QCheckBox('Replace time')
-        replace_time_flag = bool(self.device.config['replace_time'])
+        replace_time_flag = bool(self.device.config.replace_time)
         self.replace_time_checkbox.setChecked(replace_time_flag)
         self.replace_time_checkbox.stateChanged.connect(self.speedup_changed)
         # Speedup
@@ -566,7 +708,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.speedup_edit.setValidator(onlyDouble)
         self.speedup_edit.setToolTip('Speedup of the packet replay.')
         self.speedup_label = QtWidgets.QLabel("Speedup factor")
-        speedup = float(self.device.config['speedup'])
+        speedup = float(self.device.config.speedup)
         self.speedup_edit.setText("{:.1f}".format(speedup))
         self.speedup_edit.textChanged.connect(self.speedup_changed)
         
@@ -600,11 +742,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = self.__class__.__name__ + '.speedup_changed()'
         logger.debug(funcname)
         # Speedup
-        self.device.config['speedup'].data = float(self.speedup_edit.text())
+        self.device.config.speedup = float(self.speedup_edit.text())
         loopflag = self.loop_checkbox.isChecked()
         replace_time_flag = self.replace_time_checkbox.isChecked()
-        self.device.config['loop'].data = loopflag
-        self.device.config['replace_time'].data = replace_time_flag
+        self.device.config.loop = loopflag
+        self.device.config.replace_time = replace_time_flag
 
     def table_changed(self,row,col):
         funcname = self.__class__.__name__ + '.table_changed()'
@@ -619,7 +761,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 istart = int(rs[0])
                 iend = int(rs[1])
                 istep = int(rs[2])
-                self.device.config['replay_index'][item.replay_index] = rindex
+                self.device.config.replay_index[item.replay_index] = rindex
                 item.replay_index_str = rindex
             except Exception as e:
                 logger.exception(e)
@@ -646,15 +788,15 @@ class initDeviceWidget(QtWidgets.QWidget):
                 pass
             self.inlist.clear()
             self.inlist.setHorizontalHeaderLabels(self.__filelistheader__)
-            nfiles = len(self.device.config['files'])
+            nfiles = len(self.device.config.files)
             self.inlist.setRowCount(nfiles)
             rows = []
-            for i, f in enumerate(self.device.config['files']):
-                if len(self.device.config['replay_index']) < (i+1):
-                    self.device.config['replay_index'].append(self.device.config['replay_index'][-1])
-                    replayindex = self.device.config['replay_index'][-1]
+            for i, f in enumerate(self.device.config.files):
+                if len(self.device.config.replay_index) < (i+1):
+                    self.device.config.replay_index.append(self.device.config.replay_index[-1])
+                    replayindex = self.device.config.replay_index[-1]
                 else:
-                    replayindex = self.device.config['replay_index'][i]
+                    replayindex = self.device.config.replay_index[i]
 
                 item = QtWidgets.QTableWidgetItem(str(replayindex))
                 item.replay_index = i
@@ -667,15 +809,15 @@ class initDeviceWidget(QtWidgets.QWidget):
                 rows.append(i)
 
             self.inlist.resizeColumnsToContents()
-            for i, f in enumerate(self.device.config['files']):
-                self.scan_file(str(f), i)
+            #for i, f in enumerate(self.device.config.files):
+            #    self.scan_file(str(f), i)
 
             self.inlist.resizeColumnsToContents()
 
             # Loop flag
-            loop = bool(self.device.config['loop'])
+            loop = bool(self.device.config.loop)
             self.loop_checkbox.setChecked(loop)
-            speedupstr = "{:.1f}".format(float(self.device.config['speedup']))
+            speedupstr = "{:.1f}".format(float(self.device.config.speedup))
             self.speedup_edit.setText(speedupstr)
             ## Add the packetnumber etc etc
             #self.scan_files(rows)
@@ -750,7 +892,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         if (rescan or (FLAG_HASSTAT == False)):
             logger.debug(funcname + ': Scanning file {:s}'.format(filename))
             p = packetreader(filename)
-            # stat = p.inspect_file()
+            # stat = p.ipacketreadernspect_file()
             self.file_statistics[filename] = p.filestat
         else:
             logger.debug(funcname + ': No rescan of {:s}'.format(filename))
@@ -765,28 +907,13 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         for i in rows:
             filename = self.inlist.item(i,self.col_fname).text()
-            #stat = self.inspect_data(filename,rescan=False)
-            stat = self.inspect_data_thread(filename, i, rescan=False)
-            if False:
-                packetitem = QtWidgets.QTableWidgetItem(str(stat['packets_published']))
-                packetitem.setFlags(packetitem.flags() & ~QtCore.Qt.ItemIsEditable)
-                self.inlist.setItem(i,self.col_npackets,packetitem)
-                tdmin = datetime.datetime.fromtimestamp(stat['t_min'])
-                tminstr = str(tdmin)
-                tdmax = datetime.datetime.fromtimestamp(stat['t_max'])
-                tmaxstr = str(tdmax)
-                t_min_item = QtWidgets.QTableWidgetItem(tminstr)
-                t_min_item.setFlags(t_min_item.flags() & ~QtCore.Qt.ItemIsEditable)
-                t_max_item = QtWidgets.QTableWidgetItem(tmaxstr)
-                t_max_item.setFlags(t_max_item.flags() & ~QtCore.Qt.ItemIsEditable)
-                self.inlist.setItem(i,self.col_tmin,t_min_item)
-                self.inlist.setItem(i,self.col_tmax,t_max_item)
+            #stat = self.inspect_data_thread(filename, i, rescan=False)
 
         # Start a timer to update
-        if len(rows) > 0:
-            self.threadtimer = QtCore.QTimer()
-            self.threadtimer.timeout.connect(self.update_table_from_thread)  # Add to the timer another update
-            self.threadtimer.start(250)
+        #if len(rows) > 0:
+        #    self.threadtimer = QtCore.QTimer()
+        #    self.threadtimer.timeout.connect(self.update_table_from_thread)  # Add to the timer another update
+        #    self.threadtimer.start(250)
             
         self.inlist.resizeColumnsToContents()
 
@@ -862,7 +989,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         rows = list(set(rows))
         rows.sort(reverse=True)  
         for i in rows:
-            self.device.config['files'].pop(i)
+            self.device.config.files.pop(i)
             
         self.update_filenamelist() 
 
@@ -875,7 +1002,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self,"Rawdatafiles","","redvypr raw gzip (*.redvypr_yaml.gz);;redvypr raw (*.redvypr_yaml);;All Files (*)")
         for f in filenames:
             if regex_indexfile.match(f) is None:
-                self.device.config['files'].append(redvypr.config.configString(f))
+                self.device.config.files.append(f)
             else:
                 logger.info('Found index file {}, will not use it'.format(f))
             
@@ -888,12 +1015,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         """ Resorts the files in config['files'] according to the sorting in the table
         """
         files_new = []
-        nfiles = len(self.device.config['files'])
+        nfiles = len(self.device.config.files)
         for i in range(nfiles):
             filename = self.inlist.item(i,self.col_fname).text()
             files_new.append(filename)
             
-        self.device.config['files'] = redvypr.config.configList(files_new)
+        self.device.config.files = files_new
         
     def con_clicked(self):
         funcname = self.__class__.__name__ + '.con_clicked():'
@@ -912,33 +1039,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             # update loop, replace_time and speedup
             self.speedup_changed()
             # Replay index
-            nfiles = len(self.device.config['files'])
-            replay_index_abs = []
-            for i in range(nfiles):
-                rindex = self.inlist.item(i, self.col_replaypackets).text()
-                npackets = int(self.inlist.item(i, self.col_npackets).text())
-                rs = rindex.split(',')
-                istart = int(rs[0])
-                iend = int(rs[1])
-                istep = int(rs[2])
-                if iend < 0:
-                    iend_abs = npackets + iend
-                else:
-                    iend_abs = iend
-
-                if istart < 0:
-                    istart_abs = npackets + istart
-                else:
-                    istart_abs = istart
-
-                rindex_abs = '{:d},{:d},{:d}'.format(istart_abs,iend_abs,iend_abs)
-                replay_index_abs.append(rindex_abs)
-
-            #self.device.config['replay_index'] = redvypr.config.configList(replay_index)
-            config = copy.deepcopy(self.device.config)
-            # Add statistics to config
-            config['file_statistics'] = self.file_statistics
-            self.device.thread_start(config=config)
+            self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')
             self.device.thread_stop()
