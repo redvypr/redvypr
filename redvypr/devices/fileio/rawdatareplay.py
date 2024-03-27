@@ -230,7 +230,7 @@ class packetreader():
         self.fsize = os.path.getsize(filename)
         f = self.filestream
         f.seek(0, os.SEEK_END)
-        size = f.tell()
+        size = f.tell() # The size of the internal data
         self.datasize = size
         self.filestream.seek(0)
         self.chunksize = chunksize
@@ -342,7 +342,7 @@ class packetreader():
 
 
 def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, commandqueue=None, statusqueue=None):
-    funcname = __name__ + '.index_file()'
+    funcname = __name__ + '.packet_read_thread()'
 
     if filename.lower().endswith('.gz'):
         FLAG_GZIP = True
@@ -372,6 +372,9 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
     datasize = size
     filestream.seek(0)
 
+    filename_base = os.path.basename(filename)
+    filename_path = os.path.dirname(filename)
+
     npackets_read = 0
     packets = []
     status_thread = {}
@@ -398,14 +401,16 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
             if type(com) == int: # Read n new packets
                 nnewread = com
                 nread = 0
+            elif com == 'stop':  # Read n new packets
+                logger.debug(funcname + ' Stopping ...')
+                return
             while nread < nnewread:
-                print('Nread',nread)
+                print('Nread:',nread)
                 seek_start = filestream.tell()
                 data_read = filestream.read(chunksize)
                 seek_now = filestream.tell()
                 #print('data read', seek_start,seek_now, seek_now - seek_start,len(data_read))
                 lendata = len(data_read)
-                nread += lendata
                 # print('len', len(data_read))
                 if len(data_read) < chunksize:
                     flag_eof = True
@@ -449,36 +454,26 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
                             #packets.append(data_packet)
                             dataqueue.put(data_packet)
                             nread += 1
-                            stat['packets_seek'].append(loc_packet_start)
-                            stat['packets_size'].append(loc_packet_length)
-                            stat['packets_num'].append(numpacket)
-                            stat['packets_t'].append(tpacket)
+                            #stat['packets_seek'].append(loc_packet_start)
+                            #stat['packets_size'].append(loc_packet_length)
+                            #stat['packets_num'].append(numpacket)
+                            #stat['packets_t'].append(tpacket)
 
                             npackets_read += 1
                             #print('fdsfd',npackets_read)
-                            stat['npackets'] = npackets_read
+                            #stat['npackets'] = npackets_read
 
                             if True:
                                 dt = time.time() - tstatus
                                 if dt > 0.5:
                                     tstatus = time.time()
-                                    tmin = stat['packets_t'][0]
-                                    tmax = stat['packets_t'][-1]
-                                    status_thread['t'] = time.time()
-                                    status_thread['t_min'] = tmin
-                                    status_thread['t_max'] = tmax
-                                    status_thread['seek'] = seek_now
-                                    status_thread['packets_num'] = npackets_read
-                                    status_thread['flag_eof'] = flag_eof
-                                    status_thread['stat'] = None
-                                    logger.debug(funcname + ' Status:' + str(status_thread))
-                                    if statusqueue is not None:
-                                        statusqueue.put(status_thread)
+                                    #logger.debug(funcname + ' Status:' + str(status_thread))
                             # Remove the packet from the dta_buffer
                             data_buffer = data_buffer[index_end+len(pattern_end):]
                             seek_data_buffer_start = seek_data_buffer_end - len(data_buffer)
                     except Exception as e:
-                        logger.debug(funcname + ': Could not decode message {:s}'.format(str(databs)))
+                        logger.debug(funcname + ': Could not decode message:"{:s}"'.format(str(databs)))
+
                         logger.exception(e)
                         #return [packets, packet_ind]
 
@@ -491,15 +486,27 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
                     t = time.time()
                     td = datetime.datetime.fromtimestamp(t)
                     tdstr = td.strftime("%Y-%m-%d %H:%M:%S.%f")
-                    break
+                    return
 
             # In thread mode, add stat to status dictionary
             if statusqueue is not None:
+                ['time', 'filename', 'seek', 'fsize', 'pc', 'packets_num']
                 status_thread['t'] = time.time()
+                td = datetime.datetime.fromtimestamp(status_thread['t'])
+                status_thread['time'] = td.strftime('%d %b %Y %H:%M:%S')
+                status_thread['filename'] = filename_base
+                status_thread['filepath'] = filename_path
                 status_thread['seek'] = seek_now
+                status_thread['datasize'] = size
+                status_thread['filesize'] = fsize
+                try:
+                    pc = seek_now / size * 100
+                except:
+                    pc = 'NaN'
+                status_thread['pc'] = "{:.2f}".format(pc)
                 status_thread['packets_num'] = npackets_read
                 status_thread['flag_eof'] = flag_eof
-                status_thread['stat'] = stat
+                #status_thread['stat'] = stat
                 statusqueue.put(status_thread)
 
 
@@ -564,6 +571,12 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                     statusqueue.put_nowait(sstr)
                 except:
                     pass
+
+                try:
+                    read_commandqueue.put('stop')
+                    logger.debug('stopping read thread')
+                except:
+                    logger.debug('stopping read thread failed:',exc_info=True)
                 break
 
         if (FLAG_NEW_FILE):
@@ -589,44 +602,67 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             filename = files[nfile]
             chunksize = 5000
             npacket_buf = 10
-            rindex = replay_index[nfile]
+            nfile += 1
+            print('Starting reading thread')
             args = (filename, chunksize, npacket_buf, read_dataqueue, read_commandqueue, statusqueue)
             read_thread = threading.Thread(target=packet_read_thread, args=args, daemon=True)
-            read_commandqueue.put(10)
+            read_thread.start()
+            read_commandqueue.put(npacket_buf)
+            for i in range(npacket_buf):
+                packets.append(read_dataqueue.get())
 
+            pnow = packets.pop(0)
+            pnext = packets.pop(0)
+            FLAG_NEW_FILE = False
 
-
-
-
-        if(packets is not None):
-            for p in packets:
-                if p is None:
-                    continue
-                else:
+        # Check if the read thread is still alive
+        if not(read_thread.is_alive()):
+            logger.debug(funcname + ' Reading thread finished')
+            FLAG_NEW_FILE = True
+        else:
+            if len(packets) > 1:
+                while True:
+                    try:
+                        packets.append(read_dataqueue.get_nowait())
+                    except:
+                        break
+                if True:
+                    t_pnow = pnow['_redvypr']['t']
+                    t_pnext = pnext['_redvypr']['t']
+                    dt = t_pnext - t_pnow
                     t_now = time.time()
-                    dt = t_now - t_sent
-                    dt_packet = (p['_redvypr']['t'] - t_packet_old)/speedup
+                    if config['replace_time']:
+                        pnow['t'] = t_now
+                        pnow['_redvypr']['t'] = t_now
+
+                    #print('sending',pnow)
+                    dataqueue.put(pnow)
+                    pnow = pnext
+                    pnext = packets.pop(0)
+                    packets_published += 1
+                    dt_packet = dt / speedup
+                    dt_packet_sum += dt_packet
+
+
                     if (dt_packet < 0):
                         dt_packet = 0
                     if (dt_packet > 10):
                         logger.warning(funcname + ' Long dt_packet of {:f} seconds'.format(dt_packet))
 
 
-                    #print('dt_packet',dt_packet)
+                    if len(packets) < npacket_buf:
+                        dn = npacket_buf - len(packets)
+                        #print('Asking for new packets',dn)
+                        read_commandqueue.put(dn)
+
+                    #print('sleeping dt_packet',dt_packet)
                     time.sleep(dt_packet)
                     t_sent = time.time()
-                    t_packet_old = p['_redvypr']['t']
-                    if config['replace_time']:
-                        tnow = time.time()
-                        p['t'] = tnow
-                        p['_redvypr']['t'] = tnow
 
-                    dataqueue.put(p)
-                    packets_published += 1
-                    dt_packet_sum += dt_packet
 
         # Status update
         if (time.time() - t_status) > dt_status:
+            print('status')
             t_status = time.time()
             td = datetime.datetime.fromtimestamp(t_status)
             tdstr = td.strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -1082,10 +1118,25 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.scrollchk.setChecked(True)
         self.statuslab= QtWidgets.QLabel("Status")
         self.text.setMaximumBlockCount(10000)
+        # Add a table
+        self.statustable = QtWidgets.QTableWidget()
+        self.__statusheader__ = ['Time','Filename','Filesize','Bytes read','Bytes total','%','Packets read']
+        self.statustable.setColumnCount(len(self.__statusheader__))
+        self.statustable.setHorizontalHeaderLabels(self.__statusheader__)
+        self.statustable.setRowCount(1)
+        #self.statustable.resizeColumnsToContents()
+        #self.statustable.resizeRowsToContents()
+        #self.statustable.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)      # <---
+        #self.statustable.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.statustable.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        seekitem = QtWidgets.QTableWidgetItem('test 1')
+        self.statustable.setItem(0, 0, seekitem)
+
         hlayout.addRow(self.statuslab)
+        layout.addWidget(self.statustable,1)
         layout.addLayout(hlayout)
-        layout.addWidget(self.text)
-        layout.addWidget(self.scrollchk)
+        layout.addWidget(self.text,5)
+        layout.addWidget(self.scrollchk,1)
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update)
         self.statustimer.start(500)
@@ -1098,13 +1149,23 @@ class displayDeviceWidget(QtWidgets.QWidget):
             except:
                 break
 
-            pos = self.text.verticalScrollBar().value() # Original position of scrollbar
-            self.text.moveCursor(QtGui.QTextCursor.End)
-            self.text.insertPlainText(str(data) + '\n')
+            if type(data) == dict:
+                print('data',data)
+                statuskeys = ['time','filename','filesize','seek','datasize','pc','packets_num']
+                for i,k in enumerate(statuskeys):
+                    datastr = str(data[k])
+                    dataitem = QtWidgets.QTableWidgetItem(datastr)
+                    self.statustable.setItem(0, i, dataitem)
+                    self.statustable.resizeColumnsToContents()
 
-            if(self.scrollchk.isChecked()):
-                self.text.verticalScrollBar().setValue(self.text.verticalScrollBar().maximum())
             else:
-                self.text.verticalScrollBar().setValue(pos)
+                pos = self.text.verticalScrollBar().value() # Original position of scrollbar
+                self.text.moveCursor(QtGui.QTextCursor.End)
+                self.text.insertPlainText(str(data) + '\n')
+
+                if(self.scrollchk.isChecked()):
+                    self.text.verticalScrollBar().setValue(self.text.verticalScrollBar().maximum())
+                else:
+                    self.text.verticalScrollBar().setValue(pos)
 
 
