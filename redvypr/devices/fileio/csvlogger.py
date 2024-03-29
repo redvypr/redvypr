@@ -20,8 +20,12 @@ import yaml
 import copy
 import gzip
 import os
+import pydantic
+import typing
 from redvypr.device import redvypr_device
 import redvypr.data_packets as data_packets
+import redvypr.redvypr_address as redvypr_address
+import redvypr.gui
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('csvlogger')
@@ -44,7 +48,7 @@ config_template['filepostfix']       = {'type':'str','default':'csvlogger','desc
 config_template['filedateformat']    = {'type':'str','default':'%Y-%m-%d_%H%M%S','description':'Dateformat used in the filename, must be understood by datetime.strftime'}
 config_template['filecountformat']   = {'type':'str','default':'04','description':'Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}'}
 config_template['filegzipformat']    = {'type':'str','default':'','description':'If empty, no compression done'}
-config_template['datastreams']       = {'type':'list','default':['§HF.*§','§.*§'],'description':'List of all datastreams to be saved'}
+config_template['datastreams']       = {'type':'list','default':['/k:t','/k:d','/k:b'],'description':'List of all datastreams to be saved'}
 config_template['separator']         = {'type':'str','default':',','description':'Separator between the columns'}
 config_template['datatypeformat']    = {'type':'dict','default':{'str':[['*','"{:s}"']],'float':[['t/*','{:06.6f}'],['*','{:f}']],'int':[['*','{:d}']],'bytes':[['*','"{:s}"']]},'description':'Format description for the different datatypes and subscriptions'}
 config_template['redvypr_device']    = {}
@@ -54,6 +58,38 @@ config_template['redvypr_device']['description'] = description
 config_template['redvypr_device']['gui_tablabel_init'] = 'Setup'
 config_template['redvypr_device']['gui_tablabel_display'] = 'File status'
 redvypr_devicemodule = True
+
+
+class device_base_config(pydantic.BaseModel):
+    publishes: bool = False
+    subscribes: bool = True
+    description: str = "Saves subscribed datastreams in a comma separated value (csv) file"
+    gui_tablabel_display: str = 'csv logging status'
+
+
+class csv_datastream_config(pydantic.BaseModel):
+    address: str = pydantic.Field(default='*', type='redvypr_address',description='The redvypr address string of the datastream')
+    address_found: str = pydantic.Field(default=None, description='The redvypr address string of the datastream that is found for the column')
+    strformat: dict = pydantic.Field(default={})
+
+
+class device_config(pydantic.BaseModel):
+    datastreams: typing.Optional[typing.List[csv_datastream_config]] = pydantic.Field(default=[csv_datastream_config(),csv_datastream_config(address='/k:hallo')])
+    dt_sync: int = pydantic.Field(default=5,description='Time after which an open file is synced on disk')
+    dt_waitbeforewrite: int = pydantic.Field(default=10,description='Time after which the first write to a file is done, this is useful to collect datastreams')
+    dt_newfile: int = pydantic.Field(default=300,description='Time after which a new file is created')
+    dt_newfile_unit: typing.Literal['seconds','hours','days'] = pydantic.Field(default='seconds')
+    dt_update:int = pydantic.Field(default=2,description='Time after which an upate is sent to the gui')
+    size_newfile:int = pydantic.Field(default=0,description='Size after which a new file is created')
+    size_newfile_unit: typing.Literal['bytes','kB','MB'] = pydantic.Field(default='bytes')
+    datafolder:str = pydantic.Field(default='./',description='Folder the data is saved to')
+    fileextension:str= pydantic.Field(default='csv',description='File extension, if empty not used')
+    fileprefix:str= pydantic.Field(default='redvypr',description='If empty not used')
+    filepostfix:str= pydantic.Field(default='csvlogger',description='If empty not used')
+    filedateformat:str= pydantic.Field(default='%Y-%m-%d_%H%M%S',description='Dateformat used in the filename, must be understood by datetime.strftime')
+    filecountformat:str= pydantic.Field(default='04',description='Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}')
+    filegzipformat:str= pydantic.Field(default='',description='If empty, no compression done')
+
 
 def get_strformat(config,data,redvypr_addr,csvformatdict):
     funcname = 'get_strformat'
@@ -76,7 +112,7 @@ def get_strformat(config,data,redvypr_addr,csvformatdict):
         # Get all subscriptions for the datatype and search for the valid one
         subscriptions = config['datatypeformat'][typestr]
         for sub in subscriptions:
-            saddr = data_packets.redvypr_address(sub[0])
+            saddr = redvypr_address(sub[0])
             if redvypr_addr in saddr:
                 csvformatdict[typestr][redvypr_addr] = sub[1]
                 break
@@ -304,7 +340,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         if dstr in csvcolumns: # Check if datastream in already in csvcolumns
                             FLAG_WRITE_PACKET = True
                         else: # If not, check if it should be added
-                            daddr = data_packets.redvypr_address(dstr)
+                            daddr =redvypr_address(dstr)
                             for dconf in config['datastreams']:
                                 #print('Hallo',dconf)
                                 dconfaddr = data_packets.redvypr_address(dconf)
@@ -435,9 +471,11 @@ class Device(redvypr_device):
         self.csvcolumns = []       # List with the columns, containing dictionaries with the format
         self.csvcolumns_info = []  # List with the columns, containing dictionaries with the format
 
-        for dconf in self.config['datastreams']:
-            #print('Subscribing')
-            self.subscribe_address(dconf)
+        for dconf in self.config.datastreams:
+            address = dconf.address
+            print('Subscribing dconf',dconf)
+            self.subscribe_address(address)
+            #self.subscribe_address(dconf)
             #print('Datastream conf',dconf)
 
     def create_csvcolumns(self):
@@ -488,10 +526,22 @@ class initDeviceWidget(QtWidgets.QWidget):
         # Input output widget
         self.inlabel  = QtWidgets.QLabel("Input")
         self.inlist   = QtWidgets.QListWidget()
+        # csv formattable
+        self.csvformattable = QtWidgets.QTableWidget()
+        csvheader = self.csvformattable.horizontalHeader()
+        csvheader.setSectionsMovable(True)
+        csvheader.sectionMoved.connect(self.__columnOrderChanged__)
+        self.populate_csvformattable()
         #
-        self.dataformattable = QtWidgets.QTableWidget()
-        # Populate the table
-        self.populate_dataformattable()
+        self.adddatastreambtn = QtWidgets.QPushButton("Add datastream")
+        self.adddatastreambtn.clicked.connect(self.addDatastreamClicked)
+        self.moddatastreambtn = QtWidgets.QPushButton("Modify datastream")
+        self.moddatastreambtn.clicked.connect(self.modDatastreamClicked)
+        self.remdatastreambtn = QtWidgets.QPushButton("Remove datastream")
+        ##
+        #self.dataformattable = QtWidgets.QTableWidget()
+        ## Populate the table
+        #self.populate_dataformattable()
         #
         self.adddeviceinbtn   = QtWidgets.QPushButton("Subscribe")
         self.adddeviceinbtn.clicked.connect(self.con_clicked)
@@ -612,13 +662,17 @@ class initDeviceWidget(QtWidgets.QWidget):
         #self.outlayout.addStretch(1)
             
         layout.addWidget(self.label,0,0,1,2)
-        layout.addWidget(self.inlabel,1,0)         
-        layout.addWidget(self.inlist,2,0)
-        layout.addWidget(self.dataformattable, 3, 0,1,4)
-        layout.addWidget(self.outlabel,1,1)
-        layout.addWidget(self.outwidget,2,2,1,1)
-        layout.addWidget(self.adddeviceinbtn, 4, 0)
-        layout.addWidget(self.startbtn,4,1,1,2)
+        #layout.addWidget(self.inlabel,1,0)
+        #layout.addWidget(self.inlist,2,0)
+        #layout.addWidget(self.dataformattable, 3, 0,1,4)
+        layout.addWidget(self.adddatastreambtn, 3, 0, 1, 2)
+        layout.addWidget(self.moddatastreambtn, 3, 2, 1, 1)
+        layout.addWidget(self.remdatastreambtn, 3, 3, 1, 1)
+        layout.addWidget(self.csvformattable, 4, 0, 1, 4)
+        layout.addWidget(self.outlabel,1,0)
+        layout.addWidget(self.outwidget,2,0)
+        layout.addWidget(self.adddeviceinbtn, 5, 0)
+        layout.addWidget(self.startbtn,5,1,1,2)
 
         self.config_to_widgets()
         self.connect_widget_signals()
@@ -631,6 +685,106 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
 
+
+    def __columnOrderChanged__(self,logIndex,oldVisInd,newVisInd):
+        #print('hallo',a,b,c)
+        datastreamIndold = oldVisInd - self.ncols_add
+        datastreamIndnew = newVisInd - self.ncols_add
+        datastreamIndlog = logIndex - self.ncols_add
+        if datastreamIndlog > 0:
+            # Swap the items
+            print('Swapping')
+            tmp = self.device.config.datastreams[datastreamIndnew]
+            self.device.config.datastreams[datastreamIndnew] = self.device.config.datastreams[datastreamIndold]
+            self.device.config.datastreams[datastreamIndold] = tmp
+        else:
+            print('Time & Description columns cannot be changed')
+        # Redraw the table
+        self.csvformattable.clear()
+        self.csvformattable.horizontalHeader().restoreState(self._headerstate)
+        self.populate_csvformattable()
+
+    def modDatastreamClicked(self):
+        funcname = __name__ + '.modDatastreamClicked():'
+        logger.debug(funcname)
+
+    def addDatastreamClicked(self):
+        funcname = __name__ + '.addDatastreamClicked():'
+        logger.debug(funcname)
+        self.dstreamwidget = redvypr.gui.datastreamWidget(self.device.redvypr, closeAfterApply=False)
+        self.dstreamwidget.apply.connect(self.__datastream_choosen__)
+        self.dstreamwidget.layout.removeWidget(self.dstreamwidget.buttondone)
+        label = QtWidgets.QLabel('Add at column number')
+        self.dstreamwidget.comboCol = QtWidgets.QComboBox()
+        self.dstreamwidget.comboCol.addItem('end')
+        for i in range(len(self.device.config.datastreams)):
+            colindex = self.ncols_add + 1 + i
+            self.dstreamwidget.comboCol.addItem(str(colindex))
+
+        self.dstreamwidget.layout.addWidget(label)
+        self.dstreamwidget.layout.addWidget(self.dstreamwidget.comboCol)
+        self.dstreamwidget.layout.addWidget(self.dstreamwidget.buttondone)
+        self.dstreamwidget.show()
+
+    def __datastream_choosen__(self,datastreamdict):
+        funcname = __name__ + '.__datastream_choosen__():'
+        logger.debug(funcname)
+        addr = datastreamdict['datastream_address']
+        newdatastream = csv_datastream_config(address=addr.get_str())
+        print('Hallo datastream choosen',addr)
+        print('Hallo bewdatastream', newdatastream)
+        # Get the column number
+        colnumber = self.dstreamwidget.comboCol.currentText()
+        print('Colnumber',colnumber)
+        if colnumber == 'end':
+            self.device.config.datastreams.append(newdatastream)
+        else:
+            datastreamindex = int(colnumber) - (self.ncols_add + 1)
+            self.device.config.datastreams.insert(datastreamindex,newdatastream)
+
+        # update the column numbers
+        self.dstreamwidget.comboCol.clear()
+        self.dstreamwidget.comboCol.addItem('end')
+        for i in range(len(self.device.config.datastreams)):
+            colindex = self.ncols_add + 1 + i
+            self.dstreamwidget.comboCol.addItem(str(colindex))
+
+        self.populate_csvformattable()
+
+    def populate_csvformattable(self):
+        funcname = self.__class__.__name__ + '.populate_csvformattable():'
+        logger.debug(funcname)
+        self.ncols_add = 2 # number of additional rows
+        ncols = len(self.device.config.datastreams) + self.ncols_add
+        self._headerstate = self.csvformattable.horizontalHeader().saveState()
+        self.csvformattable.clear()
+        self.csvformattable.setColumnCount(ncols)
+        self.csvformattable.setRowCount(4)
+
+        n0_item = QtWidgets.QTableWidgetItem('Description')
+        n1_item = QtWidgets.QTableWidgetItem('Address subscribe')
+        n2_item = QtWidgets.QTableWidgetItem('Address found')
+        n3_item = QtWidgets.QTableWidgetItem('Unit')
+        self.csvformattable.setItem(0, 0, n0_item)
+        self.csvformattable.setItem(1, 0, n1_item)
+        self.csvformattable.setItem(2, 0, n2_item)
+        self.csvformattable.setItem(3, 0, n3_item)
+
+        t_item = QtWidgets.QTableWidgetItem('Packet time')
+        tu_item = QtWidgets.QTableWidgetItem('seconds since 1970-01-01 00:00:00')
+        self.csvformattable.setItem(0, 1, t_item)
+        self.csvformattable.setItem(3, 1, tu_item)
+        for i,d in enumerate(self.device.config.datastreams):
+            print('d',d)
+            ds_item = QtWidgets.QTableWidgetItem("Datastream_{:02d}".format(i))
+            addr_item = QtWidgets.QTableWidgetItem(str(d.address))
+            addrs_item = QtWidgets.QTableWidgetItem(str(d.address_found))
+            self.csvformattable.setItem(0, self.ncols_add + i, ds_item)
+            self.csvformattable.setItem(1, self.ncols_add + i, addr_item)
+            self.csvformattable.setItem(2, self.ncols_add + i, addrs_item)
+
+        #self.csvformattable.resizeColumnsToContent()
+        self.csvformattable.resizeColumnsToContents()
     def populate_dataformattable(self):
         """
         Populates the dataformattable with information self.config['datatypeformat']
@@ -664,7 +818,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 self.dataformattable.setItem(irow, i * 2,item0)
                 self.dataformattable.setItem(irow, i * 2 + 1, item1)
 
-        self.dataformattable.resizeColumnsToContents()
+        self.dataformattable.resizeColumnToContents()
 
 
 
@@ -739,7 +893,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.datastreamtable.clear()
         self.datastreamtable.setRowCount(len(datastreams_subscribed))
         for i,d in enumerate(datastreams_subscribed):
-            dadr = data_packets.redvypr_address(d)
+            dadr = redvypr_address(d)
             item = QtWidgets.QTableWidgetItem(d)
             self.datastreamtable.setItem(i,4,item)
 
@@ -750,7 +904,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         #print('Devices',devicestr_provider,devicestr_receiver)
         raddresses = self.device.get_subscribed_deviceaddresses()
-        #print('Deviceaddresses',raddresses)
+        print('Deviceaddresses',raddresses)
         self.inlist.clear()
         for raddr in raddresses:
             self.inlist.addItem(raddr.address_str)
@@ -768,29 +922,29 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         config = self.device.config
         print('config',config)
-        self.dt_newfile.setText(str(config['dt_newfile'].data))
+        self.dt_newfile.setText(str(config.dt_newfile))
         for i in range(self.newfiletimecombo.count()):
             self.newfiletimecombo.setCurrentIndex(i)
-            if(self.newfiletimecombo.currentText().lower() == config['dt_newfile_unit'].data):
+            if(self.newfiletimecombo.currentText().lower() == config.dt_newfile_unit):
                 break
 
         for i in range(self.newfilesizecombo.count()):
             self.newfilesizecombo.setCurrentIndex(i)
-            if (self.newfilesizecombo.currentText().lower() == config['size_newfile_unit'].data):
+            if (self.newfilesizecombo.currentText().lower() == config.size_newfile_unit):
                 break
 
-        self.size_newfile.setText(str(config['size_newfile'].data))
+        self.size_newfile.setText(str(config.size_newfile))
 
-        if len(config['datafolder'].data)>0:
-            self.folder_text.setText(config['datafolder'].data)
+        if len(config.datafolder)>0:
+            self.folder_text.setText(config.datafolder)
         # Update filename and checkboxes
         filename_all = []
-        filename_all.append([config['fileextension'].data,self.extension_text,self.extension_check])
-        filename_all.append([config['fileprefix'].data,self.prefix_text,self.prefix_check])
-        filename_all.append([config['filepostfix'].data,self.postfix_text,self.postfix_check])
-        filename_all.append([config['filedateformat'].data,self.date_text,self.date_check])
-        filename_all.append([config['filecountformat'].data,self.count_text,self.count_check])
-        filename_all.append([config['filegzipformat'].data, self.gzip_text, self.gzip_check])
+        filename_all.append([config.fileextension,self.extension_text,self.extension_check])
+        filename_all.append([config.fileprefix,self.prefix_text,self.prefix_check])
+        filename_all.append([config.filepostfix,self.postfix_text,self.postfix_check])
+        filename_all.append([config.filedateformat,self.date_text,self.date_check])
+        filename_all.append([config.filecountformat,self.count_text,self.count_check])
+        filename_all.append([config.filegzipformat, self.gzip_text, self.gzip_check])
         for i in range(len(filename_all)):
             widgets = filename_all[i]
             if(len(widgets[0])==0):
@@ -808,40 +962,40 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.widgets_to_config():'
         logger.debug(funcname)
-        config['dt_newfile'].data        = int(self.dt_newfile.text())
-        config['dt_newfile_unit'].data   = self.newfiletimecombo.currentText()
-        config['size_newfile'].data      = int(self.size_newfile.text())
-        config['size_newfile_unit'].data = self.newfilesizecombo.currentText()
+        config.dt_newfile = int(self.dt_newfile.text())
+        config.dt_newfile_unit = self.newfiletimecombo.currentText()
+        config.size_newfile = int(self.size_newfile.text())
+        config.size_newfile_unit = self.newfilesizecombo.currentText()
 
         if(self.extension_check.isChecked()):
-            config['fileextension'].data = self.extension_text.text()
+            config.fileextension = self.extension_text.text()
         else:
-            config['fileextension'].data = ''
+            config.fileextension = ''
 
         if(self.prefix_check.isChecked()):
-            config['fileprefix'].data = self.prefix_text.text()
+            config.fileprefix = self.prefix_text.text()
         else:
-            config['fileprefix'].data = ''
+            config.fileprefix = ''
 
         if(self.postfix_check.isChecked()):
-            config['filepostfix'].data = self.postfix_text.text()
+            config.filepostfix = self.postfix_text.text()
         else:
-            config['filepostfix'].data = ''
+            config.filepostfix = ''
 
         if(self.date_check.isChecked()):
-            config['filedateformat'].data    = self.date_text.text()
+            config.filedateformat = self.date_text.text()
         else:
-            config['filedateformat'].data = ''
+            config.filedateformat = ''
 
         if(self.count_check.isChecked()):
-            config['filecountformat'].data = self.count_text.text()
+            config.filecountformat = self.count_text.text()
         else:
-            config['filecountformat'].data = ''
+            config.filecountformat = ''
 
         if (self.gzip_check.isChecked()):
-            config['filegzipformat'].data = self.gzip_text.text()
+            config.filegzipformat = self.gzip_text.text()
         else:
-            config['filegzipformat'].data = ''
+            config.filegzipformat = ''
 
 
         print('Config',config)

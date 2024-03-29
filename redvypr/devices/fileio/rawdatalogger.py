@@ -10,6 +10,8 @@ import copy
 import gzip
 import os
 import queue
+import pydantic
+import typing
 from redvypr.device import redvypr_device
 from redvypr.data_packets import check_for_command
 from redvypr.packet_statistic import do_data_statistics, create_data_statistic_dict
@@ -18,27 +20,50 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('rawdatalogger')
 logger.setLevel(logging.DEBUG)
 
-description = "Saves the raw redvypr packets into a file"
-config_template = {}
-config_template['name']              = 'rawdatalogger'
-config_template['dt_sync']           = {'type':'int','default':5,'description':'Time after which an open file is synced on disk'}
-config_template['dt_newfile']        = {'type':'int','default':60,'description':'Time after which a new file is created'}
-config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','options':['seconds','hours','days']}
-config_template['dt_update']         = {'type':'int','default':5,'description':'Time after which an upate is sent to the gui'}
-config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
-config_template['size_newfile_unit'] = {'type':'str','default':'bytes','options':['bytes','kB','MB']}
-config_template['datafolder']        = {'type':'str','default':'./','description':'Folder the data is saved to'}
-config_template['fileextension']     = {'type':'str','default':'redvypr_yaml','description':'File extension, if empty not used'}
-config_template['fileprefix']        = {'type':'str','default':'redvypr','description':'If empty not used'}
-config_template['filepostfix']       = {'type':'str','default':'raw','description':'If empty not used'}
-config_template['filedateformat']    = {'type':'str','default':'%Y-%m-%d_%H%M%S','description':'Dateformat used in the filename, must be understood by datetime.strftime'}
-config_template['filecountformat']   = {'type':'str','default':'04','description':'Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}'}
-config_template['filegzipformat']    = {'type':'str','default':'gz','description':'If empty, no compression done'}
-config_template['redvypr_device']    = {}
-config_template['redvypr_device']['publishes']   = False
-config_template['redvypr_device']['subscribes']  = True
-config_template['redvypr_device']['description'] = description
+#description = "Saves the raw redvypr packets into a file"
+#config_template = {}
+#config_template['name']              = 'rawdatalogger'
+#config_template['dt_sync']           = {'type':'int','default':5,'description':'Time after which an open file is synced on disk'}
+#config_template['dt_newfile']        = {'type':'int','default':60,'description':'Time after which a new file is created'}
+#config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','options':['seconds','hours','days']}
+#config_template['dt_update']         = {'type':'int','default':5,'description':'Time after which an upate is sent to the gui'}
+#config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
+#config_template['size_newfile_unit'] = {'type':'str','default':'bytes','options':['bytes','kB','MB']}
+#config_template['datafolder']        = {'type':'str','default':'./','description':'Folder the data is saved to'}
+#config_template['fileextension']     = {'type':'str','default':'redvypr_yaml','description':'File extension, if empty not used'}
+#config_template['fileprefix']        = {'type':'str','default':'redvypr','description':'If empty not used'}
+#config_template['filepostfix']       = {'type':'str','default':'raw','description':'If empty not used'}
+#config_template['filedateformat']    = {'type':'str','default':'%Y-%m-%d_%H%M%S','description':'Dateformat used in the filename, must be understood by datetime.strftime'}
+#config_template['filecountformat']   = {'type':'str','default':'04','description':'Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}'}
+#config_template['filegzipformat']    = {'type':'str','default':'gz','description':'If empty, no compression done'}
+#config_template['redvypr_device']    = {}
+#config_template['redvypr_device']['publishes']   = False
+#config_template['redvypr_device']['subscribes']  = True
+#config_template['redvypr_device']['description'] = description
 redvypr_devicemodule = True
+
+
+class device_base_config(pydantic.BaseModel):
+    publishes: bool = False
+    subscribes: bool = True
+    description: str = "Saves the raw redvypr packets into a file"
+    gui_tablabel_display: str = 'Logging status'
+
+class device_config(pydantic.BaseModel):
+    dt_sync: int = pydantic.Field(default=5, description='Time after which an open file is synced on disk')
+    dt_newfile: int = pydantic.Field(default=60, description='Time after which a new file is created')
+    dt_newfile_unit: typing.Literal['seconds', 'hours', 'days'] = pydantic.Field(default='seconds')
+    dt_update: int = pydantic.Field(default= 5, description='Time after which an upate is sent to the gui')
+    size_newfile: int = pydantic.Field(default= 0, description='Size after which a new file is created')
+    size_newfile_unit: typing.Literal['bytes', 'kB', 'MB'] = pydantic.Field(default='bytes')
+    datafolder: str = pydantic.Field(default='./', description='Folder the data is saved to')
+    fileextension: str = pydantic.Field(default='redvypr_yaml', description='File extension, if empty not used')
+    fileprefix: str = pydantic.Field(default='redvypr', description='If empty not used')
+    filepostfix: str = pydantic.Field(default='raw', description='If empty not used')
+    filedateformat: str = pydantic.Field(default='%Y-%m-%d_%H%M%S', description='Dateformat used in the filename, must be understood by datetime.strftime')
+    filecountformat: str = pydantic.Field(default='04', description='Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}')
+    filegzipformat: str = pydantic.Field(default='gz', description='If empty, no compression done')
+
 
 def create_logfile(config,count=0):
     funcname = __name__ + '.create_logfile():'
@@ -208,8 +233,16 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     #logger.debug('Got a command: {:s}'.format(str(data)))
                     if (command is not None):
                         if(command == 'stop'):
-                            logger.debug('Stop command')
+                            logger.debug(funcname + ' Stop command')
                             FLAG_RUN = False
+                            f.close()
+                            data_stat = {'_deviceinfo': {}}
+                            data_stat['_deviceinfo']['filename'] = filename
+                            data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
+                            data_stat['_deviceinfo']['closed'] = time.time()
+                            data_stat['_deviceinfo']['bytes_written'] = bytes_written
+                            data_stat['_deviceinfo']['packets_written'] = packets_written
+                            dataqueue.put(data_stat)
                             return
 
                 statistics = do_data_statistics(data,statistics)
@@ -274,7 +307,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.extension_check = QtWidgets.QCheckBox('Extension')
 
         try:
-            filename = self.device.config['filename']
+            filename = self.device.config.filename
         except:
             filename = ''
 
@@ -300,7 +333,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.dt_newfile = edit
         self.dt_newfile.setToolTip('Create a new file every N seconds.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
         try:
-            self.dt_newfile.setText(str(self.device.config['dt_newfile']))
+            self.dt_newfile.setText(str(self.device.config.dt_newfile))
         except Exception as e:
             self.dt_newfile.setText('0')
             
@@ -311,7 +344,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.size_newfile = edit
         self.size_newfile.setToolTip('Create a new file every N bytes.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
         try:
-            self.size_newfile.setText(str(self.device.config['size_newfile']))
+            self.size_newfile.setText(str(self.device.config.size_newfile))
         except Exception as e:
             self.size_newfile.setText('0')
             
@@ -478,30 +511,30 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
 
         config = self.device.config
-        print('config',config)
-        self.dt_newfile.setText(str(config['dt_newfile'].data))
+        #print('config',config)
+        self.dt_newfile.setText(str(config.dt_newfile))
         for i in range(self.newfiletimecombo.count()):
             self.newfiletimecombo.setCurrentIndex(i)
-            if(self.newfiletimecombo.currentText().lower() == config['dt_newfile_unit'].data):
+            if(self.newfiletimecombo.currentText().lower() == config.dt_newfile_unit):
                 break
 
         for i in range(self.newfilesizecombo.count()):
             self.newfilesizecombo.setCurrentIndex(i)
-            if (self.newfilesizecombo.currentText().lower() == config['size_newfile_unit'].data):
+            if (self.newfilesizecombo.currentText().lower() == config.size_newfile_unit):
                 break
 
-        self.size_newfile.setText(str(config['size_newfile'].data))
+        self.size_newfile.setText(str(config.size_newfile))
 
-        if len(config['datafolder'].data)>0:
-            self.folder_text.setText(config['datafolder'].data)
+        if len(config.datafolder)>0:
+            self.folder_text.setText(config.datafolder)
         # Update filename and checkboxes
         filename_all = []
-        filename_all.append([config['fileextension'].data,self.extension_text,self.extension_check])
-        filename_all.append([config['fileprefix'].data,self.prefix_text,self.prefix_check])
-        filename_all.append([config['filepostfix'].data,self.postfix_text,self.postfix_check])
-        filename_all.append([config['filedateformat'].data,self.date_text,self.date_check])
-        filename_all.append([config['filecountformat'].data,self.count_text,self.count_check])
-        filename_all.append([config['filegzipformat'].data, self.gzip_text, self.gzip_check])
+        filename_all.append([config.fileextension,self.extension_text,self.extension_check])
+        filename_all.append([config.fileprefix,self.prefix_text,self.prefix_check])
+        filename_all.append([config.filepostfix,self.postfix_text,self.postfix_check])
+        filename_all.append([config.filedateformat,self.date_text,self.date_check])
+        filename_all.append([config.filecountformat,self.count_text,self.count_check])
+        filename_all.append([config.filegzipformat, self.gzip_text, self.gzip_check])
         for i in range(len(filename_all)):
             widgets = filename_all[i]
             if(len(widgets[0])==0):
@@ -519,44 +552,44 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.widgets_to_config():'
         logger.debug(funcname)
-        config['datafolder'].data        = self.folder_text.text()
-        config['dt_newfile'].data        = int(self.dt_newfile.text())
-        config['dt_newfile_unit'].data   = self.newfiletimecombo.currentText()
-        config['size_newfile'].data      = int(self.size_newfile.text())
-        config['size_newfile_unit'].data = self.newfilesizecombo.currentText()
+        config.datafolder = self.folder_text.text()
+        config.dt_newfile = int(self.dt_newfile.text())
+        config.dt_newfile_unit = self.newfiletimecombo.currentText()
+        config.size_newfile = int(self.size_newfile.text())
+        config.size_newfile_unit = self.newfilesizecombo.currentText()
 
         if(self.extension_check.isChecked()):
-            config['fileextension'].data = self.extension_text.text()
+            config.fileextension = self.extension_text.text()
         else:
-            config['fileextension'].data = ''
+            config.fileextension = ''
 
         if(self.prefix_check.isChecked()):
-            config['fileprefix'].data = self.prefix_text.text()
+            config.fileprefix = self.prefix_text.text()
         else:
-            config['fileprefix'].data = ''
+            config.fileprefix = ''
 
         if(self.postfix_check.isChecked()):
-            config['filepostfix'].data = self.postfix_text.text()
+            config.filepostfix = self.postfix_text.text()
         else:
-            config['filepostfix'].data = ''
+            config.filepostfix = ''
 
         if(self.date_check.isChecked()):
-            config['filedateformat'].data    = self.date_text.text()
+            config.filedateformat    = self.date_text.text()
         else:
-            config['filedateformat'].data = ''
+            config.filedateformat = ''
 
         if(self.count_check.isChecked()):
-            config['filecountformat'].data = self.count_text.text()
+            config.filecountformat = self.count_text.text()
         else:
-            config['filecountformat'].data = ''
+            config.filecountformat = ''
 
         if (self.gzip_check.isChecked()):
-            config['filegzipformat'].data = self.gzip_text.text()
+            config.filegzipformat = self.gzip_text.text()
         else:
-            config['filegzipformat'].data = ''
+            config.filegzipformat = ''
 
 
-        print('Config',config)
+        #print('Config',config)
         return config
 
     def update_device_config(self):

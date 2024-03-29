@@ -408,8 +408,11 @@ class redvypr_device(QtCore.QObject):
         #print('Address',address,type(address))
         if type(address) == str or (type(address) == redvyprConfig.configString):
             raddr = redvypr_address(str(address))
-        else:
+        elif type(address) == redvypr_address:
             raddr = address
+        else:
+            raise TypeError('address needs to be a str or a redvypr_address')
+
 
         FLAG_NEW = True
         # Test if the same address exists already
@@ -875,7 +878,7 @@ class redvypr_device(QtCore.QObject):
     def get_subscribed_deviceaddresses(self):
         """
         List of redvypr devices addresses this device has subscribed. This is different from self.subcribed_addresses as it
-        returns the existing devices that provide data to this evice, in self.subscribed_addresses also regular expressions can exist.
+        returns the existing devices that provide data to this device, in self.subscribed_addresses also regular expressions can exist.
 
         Returns:
             List of redvypr_address
@@ -885,8 +888,8 @@ class redvypr_device(QtCore.QObject):
         subaddresses = []
         raddresses = self.redvypr.get_deviceaddresses()
 
-        #print('raddresses', raddresses)
-        #print('subscribed addresses',self.subscribed_addresses)
+        #print(' A raddresses', raddresses)
+        #print(' B subscribed addresses',self.subscribed_addresses)
         for subaddr in self.subscribed_addresses:
             for addr in reversed(raddresses):
                 if subaddr in addr:

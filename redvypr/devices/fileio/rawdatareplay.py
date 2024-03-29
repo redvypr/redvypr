@@ -1124,13 +1124,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.statustable.setColumnCount(len(self.__statusheader__))
         self.statustable.setHorizontalHeaderLabels(self.__statusheader__)
         self.statustable.setRowCount(1)
+        self.statustable.verticalHeader().setVisible(False)
         #self.statustable.resizeColumnsToContents()
         #self.statustable.resizeRowsToContents()
         #self.statustable.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)      # <---
         #self.statustable.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.statustable.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        seekitem = QtWidgets.QTableWidgetItem('test 1')
-        self.statustable.setItem(0, 0, seekitem)
 
         hlayout.addRow(self.statuslab)
         layout.addWidget(self.statustable,1)

@@ -158,7 +158,7 @@ class datastreamWidget(QtWidgets.QWidget):
     datakey_name_changed = QtCore.pyqtSignal(str)  # Signal notifying if the datakey has changed
 
     def __init__(self, redvypr, device=None, devicename_highlight=None, datakey=None, deviceonly=False,
-                 devicelock=False, subscribed_only=True, showapplybutton=True,datastreamstring=''):
+                 devicelock=False, subscribed_only=True, showapplybutton=True,datastreamstring='',closeAfterApply=True):
         """
         Args:
             redvypr:
@@ -172,6 +172,7 @@ class datastreamWidget(QtWidgets.QWidget):
 
         super(QtWidgets.QWidget, self).__init__()
         self.setWindowIcon(QtGui.QIcon(_icon_file))
+        self.closeAfterApply = closeAfterApply
         self.redvypr = redvypr
         self.datastreamstring_orig = datastreamstring
         self.datastreamstring      = datastreamstring
@@ -241,17 +242,23 @@ class datastreamWidget(QtWidgets.QWidget):
             self.buttondone = QtWidgets.QPushButton('Apply')
             self.buttondone.clicked.connect(self.done_clicked)
             self.layout.addWidget(self.buttondone)
+            self.buttondone.setEnabled(False)
 
         devicelist = []
         self.datakeylist_subscribed = {}
-        print('Update devicetree')
+
         self.__update_devicetree()
         self.filterWidget.filterChanged.connect(self.__update_devicetree)
 
     def __addrManualChanged(self,addrstr):
         funcname = __name__ + '.__addrManualChanged():'
-        logger.debug(funcname)
-        self.addressline.datakey_address = redvypr_address(addrstr)
+        logger.debug(funcname + " manual address: {}".format(addrstr))
+        try:
+            self.addressline.datakey_address = redvypr_address(addrstr)
+            self.buttondone.setEnabled(True)
+        except:
+            self.buttondone.setEnabled(False)
+            return
         self.addressline.device = self.addressline.datakey_address.devicename
         self.addressline.devaddress = self.addressline.datakey_address.address_str
         self.__addrtype_changed__()
@@ -362,8 +369,11 @@ class datastreamWidget(QtWidgets.QWidget):
         addrtype = self.addrtype_combo.currentText()
         try:
             addrstring =  self.addressline.datakey_address.get_str(addrtype)
+            self.buttondone.setEnabled(True)
         except:
             addrstring = ''
+            self.buttondone.setEnabled(False)
+
         self.addressline.setText(addrstring)
 
     def done_clicked(self):
@@ -382,7 +392,8 @@ class datastreamWidget(QtWidgets.QWidget):
         signal_dict['addrformat'] = self.addressline.datakey_address
         #print('Signal dict',signal_dict)
         self.apply.emit(signal_dict)
-        self.close()
+        if self.closeAfterApply:
+            self.close()
 
 
 
