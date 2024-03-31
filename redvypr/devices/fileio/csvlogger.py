@@ -39,7 +39,7 @@ class device_base_config(pydantic.BaseModel):
     gui_tablabel_display: str = 'csv logging status'
 
 class csv_datastream_strformat(pydantic.BaseModel):
-    str_type: str = pydantic.Field(default='{}')
+    str_type: str = pydantic.Field(default='"{:s}"')
     int_type: str = pydantic.Field(default='{}')
     float_type: str = pydantic.Field(default='{}')
     dict_type: str = pydantic.Field(default='{}')
@@ -47,7 +47,7 @@ class csv_datastream_strformat(pydantic.BaseModel):
 
 class csv_datastream_config(pydantic.BaseModel):
     address: str = pydantic.Field(default='*', type='redvypr_address',description='The redvypr address string of the datastream')
-    address_found: str = pydantic.Field(default=None, description='The redvypr address string of the datastream that is found for the column')
+    address_found: str = pydantic.Field(default='', description='The redvypr address string of the datastream that is found for the column')
     strformat: csv_datastream_strformat = pydantic.Field(default=csv_datastream_strformat())
 
 class device_config(pydantic.BaseModel):
@@ -56,10 +56,10 @@ class device_config(pydantic.BaseModel):
     dt_sync: int = pydantic.Field(default=5,description='Time after which an open file is synced on disk')
     dt_waitbeforewrite: int = pydantic.Field(default=10,description='Time after which the first write to a file is done, this is useful to collect datastreams')
     dt_newfile: int = pydantic.Field(default=300,description='Time after which a new file is created')
-    dt_newfile_unit: typing.Literal['seconds','hours','days'] = pydantic.Field(default='seconds')
+    dt_newfile_unit: typing.Literal['none','seconds','hours','days'] = pydantic.Field(default='seconds')
     dt_update:int = pydantic.Field(default=2,description='Time after which an upate is sent to the gui')
     size_newfile:int = pydantic.Field(default=0,description='Size after which a new file is created')
-    size_newfile_unit: typing.Literal['bytes','kB','MB'] = pydantic.Field(default='bytes')
+    size_newfile_unit: typing.Literal['none','bytes','kB','MB'] = pydantic.Field(default='bytes')
     datafolder:str = pydantic.Field(default='./',description='Folder the data is saved to')
     fileextension:str= pydantic.Field(default='csv',description='File extension, if empty not used')
     fileprefix:str= pydantic.Field(default='redvypr',description='If empty not used')
@@ -477,6 +477,7 @@ class initDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)
+        print('Hallo,device config',device.config)
         self.device   = device
         self.redvypr  = device.redvypr
         self.label    = QtWidgets.QLabel("Csvlogger setup")
@@ -491,7 +492,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         csvheader = self.csvformattable.horizontalHeader()
         csvheader.setSectionsMovable(True)
         csvheader.sectionMoved.connect(self.__columnOrderChanged__)
+        self.csvformattable.cellChanged.connect(self.cellChanged_csvformattable)
         self.populate_csvformattable()
+
         #
         self.adddatastreambtn = QtWidgets.QPushButton("Add datastream")
         self.adddatastreambtn.clicked.connect(self.addDatastreamClicked)
@@ -567,7 +570,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             
         self.newfilesizecombo = QtWidgets.QComboBox()
         self.newfilesizecombo.addItem('None')
-        self.newfilesizecombo.addItem('Bytes')
+        self.newfilesizecombo.addItem('bytes')
         self.newfilesizecombo.addItem('kB')
         self.newfilesizecombo.addItem('MB')
         self.newfilesizecombo.setCurrentIndex(2)
@@ -711,9 +714,26 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         self.populate_csvformattable()
 
+    def cellChanged_csvformattable(self,row,col):
+        print('Cell changed',row,col)
+        item = self.csvformattable.item(row,col)
+
+        try:
+            newformat = item.text()
+            dstrf = item.__dstrformat__
+            f = item.__strtype__
+            print('Hallo',dstrf,f,newformat)
+            setattr(dstrf,f,newformat)
+            self.populate_csvformattable()
+            print('Config',self.device.config.model_dump())
+        except Exception as e:
+            print('Could not change format',e)
+            pass
+
     def populate_csvformattable(self):
         funcname = self.__class__.__name__ + '.populate_csvformattable():'
         logger.debug(funcname)
+        self.csvformattable.cellChanged.disconnect(self.cellChanged_csvformattable)
         self.ncols_add = 2 # number of additional rows
         ncols = len(self.device.config.datastreams) + self.ncols_add
         self._headerstate = self.csvformattable.horizontalHeader().saveState()
@@ -761,10 +781,14 @@ class initDeviceWidget(QtWidgets.QWidget):
                 f_item = QtWidgets.QTableWidgetItem(strf)
                 f_item.setData(QtCore.Qt.UserRole,d.strformat)
                 f_item.setData(QtCore.Qt.UserRole+1, f)
+                f_item.__dstrformat__ = d.strformat
+                f_item.__strformat__ = strf
+                f_item.__strtype__ = f
                 self.csvformattable.setItem(nrows1 + j, self.ncols_add + i, f_item)
 
         #self.csvformattable.resizeColumnsToContent()
         self.csvformattable.resizeColumnsToContents()
+        self.csvformattable.cellChanged.connect(self.cellChanged_csvformattable)
     def populate_dataformattable(self):
         """
         Populates the dataformattable with information self.config['datatypeformat']

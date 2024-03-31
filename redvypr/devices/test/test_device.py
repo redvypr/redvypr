@@ -64,6 +64,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
 
         data = redvypr.data_packets.datapacket(device = device_info['device'])
         data['data'] = float(np.random.rand(1)-0.5)
+        data['sometext'] = 'Hallo {}'.format(counter)
         dataqueue.put(data)
 
         # Calculate some sine
