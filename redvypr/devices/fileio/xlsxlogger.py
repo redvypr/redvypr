@@ -1,11 +1,6 @@
 """
 
-Logger that writes csv files (comma separated value)
-
-Configuration
--------------
-- separator
-- format of the data
+Logger that writes xlsx files
 
 """
 
@@ -20,6 +15,7 @@ import yaml
 import copy
 import gzip
 import os
+import xlsxwriter
 import pydantic
 import typing
 from redvypr.device import redvypr_device
@@ -28,33 +24,17 @@ import redvypr.redvypr_address as redvypr_address
 import redvypr.gui
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('csvlogger')
+logger = logging.getLogger('xlsxlogger')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
 class device_base_config(pydantic.BaseModel):
     publishes: bool = False
     subscribes: bool = True
-    description: str = "Saves subscribed datastreams in a comma separated value (csv) file"
-    gui_tablabel_display: str = 'csv logging status'
-
-class csv_datastream_strformat(pydantic.BaseModel):
-    str_type: str = pydantic.Field(default='"{:s}"')
-    int_type: str = pydantic.Field(default='{}')
-    float_type: str = pydantic.Field(default='{}')
-    dict_type: str = pydantic.Field(default='{}')
-
-
-class csv_datastream_config(pydantic.BaseModel):
-    address: str = pydantic.Field(default='*', type='redvypr_address',description='The redvypr address string of the datastream')
-    address_found: str = pydantic.Field(default='', description='The redvypr address string of the datastream that is found for the column')
-    strformat: csv_datastream_strformat = pydantic.Field(default=csv_datastream_strformat())
-    comment: str= pydantic.Field(default='', description='Comment')
-    unit: str = pydantic.Field(default='', description='Unit of the data')
+    description: str = "Saves subscribed devices in a xlsx file"
+    gui_tablabel_display: str = 'xlsx logging status'
 
 class device_config(pydantic.BaseModel):
-    separator: str = pydantic.Field(default=',',description='Separator between the columns')
-    datastreams: typing.Optional[typing.List[csv_datastream_config]] = pydantic.Field(default=[csv_datastream_config(),csv_datastream_config(address='/k:hallo')])
     dt_sync: int = pydantic.Field(default=5,description='Time after which an open file is synced on disk')
     dt_waitbeforewrite: int = pydantic.Field(default=10,description='Time after which the first write to a file is done, this is useful to collect datastreams')
     dt_newfile: int = pydantic.Field(default=300,description='Time after which a new file is created')
@@ -63,13 +43,11 @@ class device_config(pydantic.BaseModel):
     size_newfile:int = pydantic.Field(default=0,description='Size after which a new file is created')
     size_newfile_unit: typing.Literal['none','bytes','kB','MB'] = pydantic.Field(default='bytes')
     datafolder:str = pydantic.Field(default='./',description='Folder the data is saved to')
-    fileextension:str= pydantic.Field(default='csv',description='File extension, if empty not used')
+    fileextension:str= pydantic.Field(default='xlsx',description='File extension, if empty not used')
     fileprefix:str= pydantic.Field(default='redvypr',description='If empty not used')
-    filepostfix:str= pydantic.Field(default='csvlogger',description='If empty not used')
+    filepostfix:str= pydantic.Field(default='xlsxlogger',description='If empty not used')
     filedateformat:str= pydantic.Field(default='%Y-%m-%d_%H%M%S',description='Dateformat used in the filename, must be understood by datetime.strftime')
     filecountformat:str= pydantic.Field(default='04',description='Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}')
-    filegzipformat:str= pydantic.Field(default='',description='If empty, no compression done')
-
 
 def create_logfile(config,count=0):
     funcname = __name__ + '.create_logfile():'
@@ -129,19 +107,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     logger.debug(funcname + ':Opening writing:')
     print('Config',config)
     numline = 0
-    header_datatype = []
-    header_datakeys = []
-    header_device   = []
-    header_host     = []
-    header_ip       = []
-    header_uuid     = []
-    header_address  = []
-
-    header_data = [header_datakeys,header_device,header_host,header_ip,header_uuid]
     data_write_to_file = [] # List of columns to be written to file
-    csvcolumns = []  # List of datastreams in each column
-    csvformat  = []  # List of datastreams in each column, LEGACY?
-    csvformatdict = {}  # Dictionary of all datastreams and their formats
     count = 0
     if True:
         try:
@@ -509,25 +475,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         # Input output widget
         self.inlabel  = QtWidgets.QLabel("Input")
         self.inlist   = QtWidgets.QListWidget()
-        # csv formattable
-        self.csvformattable = QtWidgets.QTableWidget()
-        csvheader = self.csvformattable.horizontalHeader()
-        csvheader.setSectionsMovable(True)
-        csvheader.sectionMoved.connect(self.__columnOrderChanged__)
-        self.csvformattable.cellChanged.connect(self.cellChanged_csvformattable)
-        self.populate_csvformattable()
-
-        #
-        self.adddatastreambtn = QtWidgets.QPushButton("Add datastream")
-        self.adddatastreambtn.clicked.connect(self.addDatastreamClicked)
-        #self.moddatastreambtn = QtWidgets.QPushButton("Modify datastream")
-        #self.moddatastreambtn.clicked.connect(self.modDatastreamClicked)
-        self.remdatastreambtn = QtWidgets.QPushButton("Remove datastream")
-        self.remdatastreambtn.clicked.connect(self.__removeClicked__)
-        ##
-        #self.dataformattable = QtWidgets.QTableWidget()
-        ## Populate the table
-        #self.populate_dataformattable()
         #
         self.adddeviceinbtn   = QtWidgets.QPushButton("Subscribe")
         self.adddeviceinbtn.clicked.connect(self.con_clicked)
@@ -645,22 +592,11 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         self.outlayout.addWidget(self.newfilewidget,4,0,1,4)
 
-        self.config_widgets.append(self.csvformattable)
-        self.config_widgets.append(self.adddatastreambtn)
-        self.config_widgets.append(self.remdatastreambtn)
-        self.config_widgets.append(self.outlabel)
-        self.config_widgets.append(self.adddeviceinbtn)
-        self.config_widgets.append(self.outwidget)
         #self.outlayout.addStretch(1)
             
         layout.addWidget(self.label,0,0,1,2)
         #layout.addWidget(self.inlabel,1,0)
         #layout.addWidget(self.inlist,2,0)
-        #layout.addWidget(self.dataformattable, 3, 0,1,4)
-        layout.addWidget(self.adddatastreambtn, 3, 0, 1, 2)
-        #layout.addWidget(self.moddatastreambtn, 3, 2, 1, 1)
-        layout.addWidget(self.remdatastreambtn, 3, 3, 1, 1)
-        layout.addWidget(self.csvformattable, 4, 0, 1, 4)
         layout.addWidget(self.outlabel,1,0)
         layout.addWidget(self.outwidget,2,0)
         layout.addWidget(self.adddeviceinbtn, 5, 0)
@@ -676,244 +612,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
-
-    def __removeClicked__(self):
-        print('Hallo')
-        #indexes = self.csvformattable.selectionModel().selectedRows()
-        indexes = self.csvformattable.selectionModel().selectedColumns()
-        print('indexes,',indexes)
-        datastreamInd = []
-        datastreamsRem = []
-        for index in sorted(indexes):
-            print('Row %d is selected',index.column())
-            indtmp = index.column() - self.ncols_add
-            if indtmp >= 0:
-                datastreamInd.append(indtmp)
-                datastreamsRem.append(self.device.config.datastreams[indtmp])
-
-        for drem in datastreamsRem:
-            self.device.config.datastreams.remove(drem)
-
-        self.populate_csvformattable()
-        print('Datastreamind',datastreamInd)
-
-    def __columnOrderChanged__(self,logIndex,oldVisInd,newVisInd):
-        #print('hallo',a,b,c)
-        datastreamIndold = oldVisInd - self.ncols_add
-        datastreamIndnew = newVisInd - self.ncols_add
-        datastreamIndlog = logIndex - self.ncols_add
-        if datastreamIndlog > 0:
-            # Swap the items
-            print('Swapping')
-            tmp = self.device.config.datastreams[datastreamIndnew]
-            self.device.config.datastreams[datastreamIndnew] = self.device.config.datastreams[datastreamIndold]
-            self.device.config.datastreams[datastreamIndold] = tmp
-        else:
-            print('Time & Description columns cannot be changed')
-        # Redraw the table
-        self.csvformattable.clear()
-        self.csvformattable.horizontalHeader().restoreState(self._headerstate)
-        self.populate_csvformattable()
-
-    def modDatastreamClicked(self):
-        funcname = __name__ + '.modDatastreamClicked():'
-        logger.debug(funcname)
-
-    def addDatastreamClicked(self):
-        funcname = __name__ + '.addDatastreamClicked():'
-        logger.debug(funcname)
-        self.dstreamwidget = redvypr.gui.datastreamWidget(self.device.redvypr, closeAfterApply=False)
-        self.dstreamwidget.apply.connect(self.__datastream_choosen__)
-        self.dstreamwidget.layout.removeWidget(self.dstreamwidget.buttondone)
-        label = QtWidgets.QLabel('Add at column number')
-        self.dstreamwidget.comboCol = QtWidgets.QComboBox()
-        self.dstreamwidget.comboCol.addItem('end')
-        for i in range(len(self.device.config.datastreams)):
-            colindex = self.ncols_add + 1 + i
-            self.dstreamwidget.comboCol.addItem(str(colindex))
-
-        self.dstreamwidget.layout.addWidget(label)
-        self.dstreamwidget.layout.addWidget(self.dstreamwidget.comboCol)
-        self.dstreamwidget.layout.addWidget(self.dstreamwidget.buttondone)
-        self.dstreamwidget.show()
-
-    def __datastream_choosen__(self,datastreamdict):
-        funcname = __name__ + '.__datastream_choosen__():'
-        logger.debug(funcname)
-        #addr = datastreamdict['datastream_address']
-        datastream_str = datastreamdict['datastream_str']
-        newdatastream = csv_datastream_config(address=datastream_str)
-        #print('Hallo datastream choosen',datastream_str)
-        #print('Hallo bewdatastream', newdatastream)
-        # Get the column number
-        colnumber = self.dstreamwidget.comboCol.currentText()
-        #print('Colnumber',colnumber)
-        if colnumber == 'end':
-            self.device.config.datastreams.append(newdatastream)
-        else:
-            datastreamindex = int(colnumber) - (self.ncols_add + 1)
-            self.device.config.datastreams.insert(datastreamindex,newdatastream)
-
-        # update the column numbers
-        self.dstreamwidget.comboCol.clear()
-        self.dstreamwidget.comboCol.addItem('end')
-        for i in range(len(self.device.config.datastreams)):
-            colindex = self.ncols_add + 1 + i
-            self.dstreamwidget.comboCol.addItem(str(colindex))
-
-        self.populate_csvformattable()
-
-    def cellChanged_csvformattable(self,row,col):
-        funcname = __name__ + '.cellChanged_csvformattable():'
-        logger.debug(funcname + ' Cell changed row {} col {}'.format(row,col))
-        item = self.csvformattable.item(row,col)
-        if row == self.row_field_comment:
-            indexdatastream = col - self.ncols_add
-            comment = str(item.text())
-            print('Indexdatastream',indexdatastream,comment)
-            self.device.config.datastreams[indexdatastream].comment = comment
-            self.populate_csvformattable()
-        elif row == self.row_field_unit:
-            indexdatastream = col - self.ncols_add
-            unit = str(item.text())
-            print('Indexdatastream', indexdatastream, unit)
-            self.device.config.datastreams[indexdatastream].unit = unit
-            self.populate_csvformattable()
-        else:
-            try:
-                newformat = item.text()
-                dstrf = item.__dstrformat__
-                f = item.__strtype__
-                print('Hallo',dstrf,f,newformat)
-                setattr(dstrf,f,newformat)
-                self.populate_csvformattable()
-                print('Config',self.device.config.model_dump())
-            except Exception as e:
-                print('Could not change format',e)
-
-    def populate_csvformattable(self):
-        funcname = self.__class__.__name__ + '.populate_csvformattable():'
-        logger.debug(funcname)
-        self.csvformattable.cellChanged.disconnect(self.cellChanged_csvformattable)
-        self.ncols_add = 2 # number of additional rows
-        ncols = len(self.device.config.datastreams) + self.ncols_add
-        self._headerstate = self.csvformattable.horizontalHeader().saveState()
-        self.csvformattable.clear()
-        self.csvformattable.setColumnCount(ncols)
-        formatfields = list(csv_datastream_strformat().model_fields.keys())
-        nformattypes = len(formatfields)
-        nrows1 = 6
-        nrows = nrows1 + nformattypes
-        self.csvformattable.setRowCount(nrows)
-
-        # Add format fields
-        for i,f in enumerate(formatfields):
-            f_item = QtWidgets.QTableWidgetItem(f)
-            self.csvformattable.setItem(nrows1 + i, 0, f_item)
-
-        n0_item = QtWidgets.QTableWidgetItem('Description')
-        n1_item = QtWidgets.QTableWidgetItem('Address subscribe')
-        n2_item = QtWidgets.QTableWidgetItem('Address found')
-        n3_item = QtWidgets.QTableWidgetItem('Unit')
-        self.row_field_unit = 3
-        n4_item = QtWidgets.QTableWidgetItem('Comment')
-        self.row_field_comment = 4
-        n5_item = QtWidgets.QTableWidgetItem('Field format')
-        self.row_field_format = 5
-        self.csvformattable.setItem(0, 0, n0_item)
-        self.csvformattable.setItem(1, 0, n1_item)
-        self.csvformattable.setItem(2, 0, n2_item)
-        self.csvformattable.setItem(self.row_field_unit, 0, n3_item)
-        self.csvformattable.setItem(self.row_field_comment, 0, n4_item)
-        self.csvformattable.setItem(self.row_field_format, 0, n5_item)
-
-        t_item = QtWidgets.QTableWidgetItem('Packet time')
-        tu_item = QtWidgets.QTableWidgetItem('seconds since 1970-01-01 00:00:00')
-        self.csvformattable.setItem(0, 1, t_item)
-        self.csvformattable.setItem(3, 1, tu_item)
-        for i,d in enumerate(self.device.config.datastreams):
-            print('d',d)
-            ds_item = QtWidgets.QTableWidgetItem("Datastream_{:02d}".format(i))
-            addr_item = QtWidgets.QTableWidgetItem(str(d.address))
-            addrs_item = QtWidgets.QTableWidgetItem(str(d.address_found))
-            self.csvformattable.setItem(0, self.ncols_add + i, ds_item)
-            self.csvformattable.setItem(1, self.ncols_add + i, addr_item)
-            self.csvformattable.setItem(2, self.ncols_add + i, addrs_item)
-            comment_item = QtWidgets.QTableWidgetItem(str(d.comment))
-            self.csvformattable.setItem(self.row_field_comment, self.ncols_add + i, comment_item)
-            unit_item = QtWidgets.QTableWidgetItem(str(d.unit))
-            self.csvformattable.setItem(self.row_field_unit, self.ncols_add + i, unit_item)
-
-            for j, f in enumerate(formatfields):
-                strf = getattr(d.strformat,f)
-                f_item = QtWidgets.QTableWidgetItem(strf)
-                f_item.setData(QtCore.Qt.UserRole,d.strformat)
-                f_item.setData(QtCore.Qt.UserRole+1, f)
-                f_item.__dstrformat__ = d.strformat
-                f_item.__strformat__ = strf
-                f_item.__strtype__ = f
-                self.csvformattable.setItem(nrows1 + j, self.ncols_add + i, f_item)
-
-        #self.csvformattable.resizeColumnsToContent()
-        noneditColor = QtGui.QColor(200, 200, 200)
-        for i in range(nrows):
-            for j in range(0,2):
-                item = self.csvformattable.item(i,j)
-                if item is None:
-                    item = QtWidgets.QTableWidgetItem('')
-                    self.csvformattable.setItem(i, j, item)
-
-                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
-                item.setBackground(noneditColor)
-
-            if (i < 3) or (i == self.row_field_format): # Non editable rows is not editable
-                for j in range(1,ncols):
-                    item = self.csvformattable.item(i, j)
-                    if item is None:
-                        item = QtWidgets.QTableWidgetItem('')
-                        self.csvformattable.setItem(i, j, item)
-
-                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
-                    item.setBackground(noneditColor)
-
-
-        self.csvformattable.resizeColumnsToContents()
-        self.csvformattable.cellChanged.connect(self.cellChanged_csvformattable)
-    def populate_dataformattable(self):
-        """
-        Populates the dataformattable with information self.config['datatypeformat']
-        """
-        funcname = self.__class__.__name__ + '.populate_dataformattable():'
-        logger.debug(funcname)
-        print('Hallo',self.device.config['datatypeformat'])
-        columns = []
-        nrows = 0
-        for dtype in self.device.config['datatypeformat'].keys():
-            print('d',dtype)
-            d = self.device.config['datatypeformat'][dtype]
-            columns.append('Subscription for {:s}'.format(dtype))
-            columns.append('Format for {:s}'.format(dtype))
-
-            nrows = max([len(d),nrows])
-
-        print('Columns',columns)
-        ncols = len(columns)
-        self.dataformattable.setColumnCount(ncols)
-        self.dataformattable.setRowCount(nrows)
-        self.dataformattable.setHorizontalHeaderLabels(columns)
-        # And now the data itself
-        for i,dtype in enumerate(self.device.config['datatypeformat'].keys()):
-            print('d',dtype)
-            d = self.device.config['datatypeformat'][dtype]
-            for irow,dsub in enumerate(d):
-                print('dsub',dsub)
-                item0 = QtWidgets.QTableWidgetItem(str(dsub[0]))
-                item1 = QtWidgets.QTableWidgetItem(str(dsub[1]))
-                self.dataformattable.setItem(irow, i * 2,item0)
-                self.dataformattable.setItem(irow, i * 2 + 1, item1)
-
-        self.dataformattable.resizeColumnToContents()
-
 
 
     def connect_widget_signals(self,connect=True):
@@ -975,6 +673,23 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.connect.emit(self.device) # The connect signal is connected with connect_device that will open a subscribe/connect widget
             self.update_device_list()
 
+    def update_datastream_table(self):
+        """
+
+        """
+        # columns = ['Columnnr.', 'Datakey', 'Device', 'Format', 'Full Address String']
+        funcname = self.__class__.__name__ + '.update_datastream_table():'
+        print(funcname)
+        datastreams_subscribed = self.device.get_subscribed_datastreams()
+        print('datastreams subscribed',datastreams_subscribed)
+        self.datastreamtable.clear()
+        self.datastreamtable.setRowCount(len(datastreams_subscribed))
+        for i,d in enumerate(datastreams_subscribed):
+            dadr = redvypr_address(d)
+            item = QtWidgets.QTableWidgetItem(d)
+            self.datastreamtable.setItem(i,4,item)
+
+        self.datastreamtable.resizeColumnsToContents()
 
     def update_device_list(self):
         funcname = self.__class__.__name__ + '.update_device_list():'
@@ -1139,12 +854,24 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.filelab= QtWidgets.QLabel("File: ")
         self.byteslab   = QtWidgets.QLabel("Bytes written: ")
         self.packetslab = QtWidgets.QLabel("Packets written: ")
+        # Table that displays all datastreams and the format as it is written to the file
+        self.datastreamtable = QtWidgets.QTableWidget()
+        self.datastreamtable_columns = ['Columnnr.', 'Datakey', 'Device', 'Datatype', 'Format', 'Address']
+
+        # self.datastreamtable.setRowCount(len(rows))
+        self.datastreamtable.setColumnCount(len(self.datastreamtable_columns))
+        self.datastreamtable.setHorizontalHeaderLabels(self.datastreamtable_columns)
+        self.datastreamtable.resizeColumnsToContents()
+        self.datastreamtable.verticalHeader().hide()
+
 
         hlayout.addWidget(self.byteslab)
         hlayout.addWidget(self.packetslab)
         layout.addWidget(self.filelab)        
         layout.addLayout(hlayout)
         layout.addWidget(self.filetable)
+        layout.addWidget(self.datastreamtable)
+        #self.text.insertPlainText("hallo!")        
 
     def update(self,data):
         try:
