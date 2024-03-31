@@ -279,6 +279,7 @@ class datastreamWidget(QtWidgets.QWidget):
             self.addressline.datakey_address = item.datakey_address
             self.addressline.device = item.device
             self.addressline.devaddress = item.devaddress
+            self.buttondone.setEnabled(True)
 
     def __update_devicetree(self):
         if True:

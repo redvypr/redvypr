@@ -31,49 +31,27 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('csvlogger')
 logger.setLevel(logging.DEBUG)
 
-description = "Saves subscribed datastreams in a comma separated value (csv) file"
-config_template = {}
-config_template['name']              = 'csvlogger'
-config_template['dt_sync']           = {'type':'int','default':5,'description':'Time after which an open file is synced on disk'}
-config_template['dt_waitbeforewrite']= {'type':'int','default':10,'description':'Time after which the first write to a file is done, this is useful to collect datastreams'}
-config_template['dt_newfile']        = {'type':'int','default':300,'description':'Time after which a new file is created'}
-config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','options':['seconds','hours','days']}
-config_template['dt_update']         = {'type':'int','default':2,'description':'Time after which an upate is sent to the gui'}
-config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
-config_template['size_newfile_unit'] = {'type':'str','default':'bytes','options':['bytes','kB','MB']}
-config_template['datafolder']        = {'type':'str','default':'./','description':'Folder the data is saved to'}
-config_template['fileextension']     = {'type':'str','default':'csv','description':'File extension, if empty not used'}
-config_template['fileprefix']        = {'type':'str','default':'redvypr','description':'If empty not used'}
-config_template['filepostfix']       = {'type':'str','default':'csvlogger','description':'If empty not used'}
-config_template['filedateformat']    = {'type':'str','default':'%Y-%m-%d_%H%M%S','description':'Dateformat used in the filename, must be understood by datetime.strftime'}
-config_template['filecountformat']   = {'type':'str','default':'04','description':'Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}'}
-config_template['filegzipformat']    = {'type':'str','default':'','description':'If empty, no compression done'}
-config_template['datastreams']       = {'type':'list','default':['/k:t','/k:d','/k:b'],'description':'List of all datastreams to be saved'}
-config_template['separator']         = {'type':'str','default':',','description':'Separator between the columns'}
-config_template['datatypeformat']    = {'type':'dict','default':{'str':[['*','"{:s}"']],'float':[['t/*','{:06.6f}'],['*','{:f}']],'int':[['*','{:d}']],'bytes':[['*','"{:s}"']]},'description':'Format description for the different datatypes and subscriptions'}
-config_template['redvypr_device']    = {}
-config_template['redvypr_device']['publishes']   = False
-config_template['redvypr_device']['subscribes']  = True
-config_template['redvypr_device']['description'] = description
-config_template['redvypr_device']['gui_tablabel_init'] = 'Setup'
-config_template['redvypr_device']['gui_tablabel_display'] = 'File status'
 redvypr_devicemodule = True
-
-
 class device_base_config(pydantic.BaseModel):
     publishes: bool = False
     subscribes: bool = True
     description: str = "Saves subscribed datastreams in a comma separated value (csv) file"
     gui_tablabel_display: str = 'csv logging status'
 
+class csv_datastream_strformat(pydantic.BaseModel):
+    str_type: str = pydantic.Field(default='{}')
+    int_type: str = pydantic.Field(default='{}')
+    float_type: str = pydantic.Field(default='{}')
+    dict_type: str = pydantic.Field(default='{}')
+
 
 class csv_datastream_config(pydantic.BaseModel):
     address: str = pydantic.Field(default='*', type='redvypr_address',description='The redvypr address string of the datastream')
     address_found: str = pydantic.Field(default=None, description='The redvypr address string of the datastream that is found for the column')
-    strformat: dict = pydantic.Field(default={})
-
+    strformat: csv_datastream_strformat = pydantic.Field(default=csv_datastream_strformat())
 
 class device_config(pydantic.BaseModel):
+    separator: str = pydantic.Field(default=',',description='Separator between the columns')
     datastreams: typing.Optional[typing.List[csv_datastream_config]] = pydantic.Field(default=[csv_datastream_config(),csv_datastream_config(address='/k:hallo')])
     dt_sync: int = pydantic.Field(default=5,description='Time after which an open file is synced on disk')
     dt_waitbeforewrite: int = pydantic.Field(default=10,description='Time after which the first write to a file is done, this is useful to collect datastreams')
@@ -89,41 +67,6 @@ class device_config(pydantic.BaseModel):
     filedateformat:str= pydantic.Field(default='%Y-%m-%d_%H%M%S',description='Dateformat used in the filename, must be understood by datetime.strftime')
     filecountformat:str= pydantic.Field(default='04',description='Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}')
     filegzipformat:str= pydantic.Field(default='',description='If empty, no compression done')
-
-
-def get_strformat(config,data,redvypr_addr,csvformatdict):
-    funcname = 'get_strformat'
-    #logger.debug(funcname)
-    typestr = type(data).__name__
-    #print('Typestr',typestr)
-    try:
-        csvformatdict[typestr]
-    except:
-        csvformatdict[typestr] = {}
-
-    try:
-        csvformatdict[typestr][redvypr_addr]
-        FLAG_FINDFORMAT = False
-    except:
-        csvformatdict[typestr][redvypr_addr] = ''
-        FLAG_FINDFORMAT = True
-
-    if FLAG_FINDFORMAT:
-        # Get all subscriptions for the datatype and search for the valid one
-        subscriptions = config['datatypeformat'][typestr]
-        for sub in subscriptions:
-            saddr = redvypr_address(sub[0])
-            if redvypr_addr in saddr:
-                csvformatdict[typestr][redvypr_addr] = sub[1]
-                break
-
-    #print('strformat',csvformatdict)
-    try:
-        formatstr = csvformatdict[typestr][redvypr_addr]
-    except:
-        formatstr = '{:s}'
-    return formatstr
-
 
 
 def create_logfile(config,count=0):
@@ -255,7 +198,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     data_stat['_deviceinfo']['packets_written'] = packets_written
     dataqueue.put(data_stat)
     count += 1
-    statistics = data_packets.create_data_statistic_dict()
+    #statistics = data_packets.create_data_statistic_dict()
     if(f == None):
        return None
     
@@ -277,11 +220,21 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     # Convert data to str
                     datastr_all = str(data_time) + config['separator']
                     for index,streamdata in enumerate(data_line):
-                        redvypr_addr = header_address[index]
-                        strformat = get_strformat(config,streamdata,redvypr_addr,csvformatdict)
+                        if streamdata is None:
+                            streamdata = ''
+
+                        typestr = type(streamdata).__name__ + '_type'
+                        print('Index',typestr,index,streamdata)
+                        try:
+                            strformat = config['datastreams'][index]['strformat'][typestr]
+                        except:
+                            logger.debug('Could not get strformat', exc_info=True)
+                            strformat = '{}'
+
                         if ":s" in strformat: # Convert to str if str format is choosen, this is useful for datatypes different of str (i.e. bytes)
                             streamdata = str(streamdata)
-                        # TODO, here errors in conversion should be treated more carefully
+
+                        # Here errors in conversion could be treated more carefully
                         dtxt = strformat.format(streamdata)
                         datastr_all += dtxt + config['separator']
 
@@ -293,6 +246,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     packets_written += 1
                     bytes_written_total += len(datastr_all)
                     packets_written_total += 1
+                    print('Written',datastr_all)
 
                 data_write_to_file = []
 
@@ -326,63 +280,69 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             continue
 
 
-                statistics = data_packets.do_data_statistics(data,statistics)
-                datastreams = data_packets.get_datastreams_from_data(data)
+                #statistics = data_packets.do_data_statistics(data,statistics)
+                datastreams = data_packets.redvypr_datapacket(data).datastreams()
+                print('Hallo data',data)
+                print('Got datastreams',datastreams)
                 data_write = ['']*len(csvcolumns)
                 FLAG_WRITE_PACKET = False
-                if datastreams is not None:
-                    datastreams.sort() # Sort the datastreams alphabetically
+                if len(datastreams) > 0:
+                    #datastreams.sort() # Sort the datastreams alphabetically
                     #print('Datastreams',datastreams)
                     data_time = data['_redvypr']['t']
                     # Check if the datastreams are in the list already
-                    for dstr in datastreams:
-                        streamdata = data_packets.get_data(dstr,data)
-                        if dstr in csvcolumns: # Check if datastream in already in csvcolumns
-                            FLAG_WRITE_PACKET = True
-                        else: # If not, check if it should be added
-                            daddr =redvypr_address(dstr)
-                            for dconf in config['datastreams']:
-                                #print('Hallo',dconf)
-                                dconfaddr = data_packets.redvypr_address(dconf)
-                                if dstr in dconfaddr: # Found a match, will add it to the file
+                    data_fill = []
+                    streamdata = None
+                    for ind_dstream, dstream in enumerate(config['datastreams']):
+                        data_fill.append(None)
+                        for dstr in datastreams:
+                            if dstream['address_found'] is None: # Not assigned yet
+                                print('Trying to assign')
+                                raddr = redvypr.redvypr_address(dstream['address'])
+                                if dstr in raddr: # Found something
+                                    print('Found ',dstr, 'in', raddr)
+                                    dstream['address_found'] = dstr.get_str()
+                                    streamdata = dstr.get_data(data)
+                                    data_fill[ind_dstream] = streamdata
                                     FLAG_WRITE_PACKET = True
-                                    #print('Adding datastream to file',dstr)
-                                    header_datakeys.append(daddr.datakey)
-                                    header_device.append(daddr.devicename)
-                                    header_host.append(daddr.hostname)
-                                    header_ip.append(daddr.addr)
-                                    header_address.append(dstr)
-                                    header_uuid.append(daddr.uuid)
-                                    csvcolumns.append(dstr)
-                                    # The datatype and the format
-                                    header_datatype.append(type(streamdata).__name__)
-                                    strformat = get_strformat(config, streamdata, dstr, csvformatdict)
-                                    csvformat.append(strformat)
-                                    data_write.append('') # Add another field
-                                    # Make an update about the change of the csvcolumns
-                                    data_stat = {'_deviceinfo': {}}
-                                    data_stat['_deviceinfo']['csvcolumns'] = csvcolumns
-                                    data_stat['_deviceinfo']['csvformat'] = csvformat
-                                    data_stat['_deviceinfo']['header_datakeys'] = header_datakeys
-                                    data_stat['_deviceinfo']['header_device']   = header_device
-                                    data_stat['_deviceinfo']['header_host']     = header_host
-                                    data_stat['_deviceinfo']['header_ip']       = header_ip
-                                    data_stat['_deviceinfo']['header_datatype'] = header_datatype
+                                    print('Got streamdata',streamdata)
+                                    break
+                            else:
+                                streamdata = redvypr.redvypr_address(dstream['address_found']).get_data(data) # returns None if not fitting
+                                if streamdata is not None:
+                                    data_fill[ind_dstream] = streamdata
+                                    FLAG_WRITE_PACKET = True
+                                    break
 
-                                    dataqueue.put(data_stat)
+                    # If data to write was found
+                    if FLAG_WRITE_PACKET:
+                        data_write_to_file.append([data_time, data_fill])
+                        if False:
+                            FLAG_WRITE_PACKET = True
+                            #print('Adding datastream to file',dstr)
+                            header_datakeys.append(daddr.datakey)
+                            header_device.append(daddr.devicename)
+                            header_host.append(daddr.hostname)
+                            header_ip.append(daddr.addr)
+                            header_address.append(dstr)
+                            header_uuid.append(daddr.uuid)
+                            csvcolumns.append(dstr)
+                            # The datatype and the format
+                            header_datatype.append(type(streamdata).__name__)
+                            strformat = get_strformat(config, streamdata, dstr, csvformatdict)
+                            csvformat.append(strformat)
+                            data_write.append('') # Add another field
+                            # Make an update about the change of the csvcolumns
+                            data_stat = {'_deviceinfo': {}}
+                            data_stat['_deviceinfo']['csvcolumns'] = csvcolumns
+                            data_stat['_deviceinfo']['csvformat'] = csvformat
+                            data_stat['_deviceinfo']['header_datakeys'] = header_datakeys
+                            data_stat['_deviceinfo']['header_device']   = header_device
+                            data_stat['_deviceinfo']['header_host']     = header_host
+                            data_stat['_deviceinfo']['header_ip']       = header_ip
+                            data_stat['_deviceinfo']['header_datatype'] = header_datatype
 
-                        #print('csvcolumns',csvcolumns)
-                        index = csvcolumns.index(dstr)
-                        #print('Index',index)
-                        if index is not None:
-                            #print('dstr',dstr)
-                            #print('data',data)
-                            #print('streamdata',streamdata)
-                            data_write[index] = streamdata
-                            #print('saving data',dtxt)
-
-                if FLAG_WRITE_PACKET:
-                    data_write_to_file.append([data_time, data_write])
+                            dataqueue.put(data_stat)
 
                 # Send statistics
                 if ((time.time() - tupdate) > config['dt_update']):
@@ -431,7 +391,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 if FLAG_RUN:
                     [f, filename] = create_logfile(config, count)
                     count += 1
-                    statistics = data_packets.create_data_statistic_dict()
+                    #statistics = data_packets.create_data_statistic_dict()
                     tfile = tcheck
                     bytes_written = 0
                     packets_written = 0
@@ -759,16 +719,29 @@ class initDeviceWidget(QtWidgets.QWidget):
         self._headerstate = self.csvformattable.horizontalHeader().saveState()
         self.csvformattable.clear()
         self.csvformattable.setColumnCount(ncols)
-        self.csvformattable.setRowCount(4)
+        formatfields = list(csv_datastream_strformat().model_fields.keys())
+        nformattypes = len(formatfields)
+        nrows1 = 6
+        nrows = nrows1 + nformattypes
+        self.csvformattable.setRowCount(nrows)
+
+        # Add format fields
+        for i,f in enumerate(formatfields):
+            f_item = QtWidgets.QTableWidgetItem(f)
+            self.csvformattable.setItem(nrows1 + i, 0, f_item)
 
         n0_item = QtWidgets.QTableWidgetItem('Description')
         n1_item = QtWidgets.QTableWidgetItem('Address subscribe')
         n2_item = QtWidgets.QTableWidgetItem('Address found')
         n3_item = QtWidgets.QTableWidgetItem('Unit')
+        n4_item = QtWidgets.QTableWidgetItem('Comment')
+        n5_item = QtWidgets.QTableWidgetItem('Field format')
         self.csvformattable.setItem(0, 0, n0_item)
         self.csvformattable.setItem(1, 0, n1_item)
         self.csvformattable.setItem(2, 0, n2_item)
         self.csvformattable.setItem(3, 0, n3_item)
+        self.csvformattable.setItem(4, 0, n4_item)
+        self.csvformattable.setItem(5, 0, n5_item)
 
         t_item = QtWidgets.QTableWidgetItem('Packet time')
         tu_item = QtWidgets.QTableWidgetItem('seconds since 1970-01-01 00:00:00')
@@ -782,6 +755,13 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.csvformattable.setItem(0, self.ncols_add + i, ds_item)
             self.csvformattable.setItem(1, self.ncols_add + i, addr_item)
             self.csvformattable.setItem(2, self.ncols_add + i, addrs_item)
+
+            for j, f in enumerate(formatfields):
+                strf = getattr(d.strformat,f)
+                f_item = QtWidgets.QTableWidgetItem(strf)
+                f_item.setData(QtCore.Qt.UserRole,d.strformat)
+                f_item.setData(QtCore.Qt.UserRole+1, f)
+                self.csvformattable.setItem(nrows1 + j, self.ncols_add + i, f_item)
 
         #self.csvformattable.resizeColumnsToContent()
         self.csvformattable.resizeColumnsToContents()

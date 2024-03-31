@@ -45,6 +45,23 @@ class redvypr_datapacket(dict):
 
         return keys
 
+    def datastreams(self):
+        """
+        Returns the datastreams of the redvypr dictionary
+        """
+        keys = list(self.keys())
+        datastreams = []
+        for key_remove in redvypr_data_keys:
+            try:
+                keys.remove(key_remove)
+            except:
+                pass
+
+        keys.sort()
+        for k in keys:
+            datastreams.append(redvypr.redvypr_address(self, datakey = k))
+
+        return datastreams
 
 
 

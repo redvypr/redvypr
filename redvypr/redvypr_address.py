@@ -164,7 +164,19 @@ class redvypr_address():
         with the address
 
         """
-        pass
+        if datapacket in self:
+            if self.datakeyexpand == True: # Return the time
+                return datapacket['_redvypr']['t']
+            elif self.datakey.startswith(self.__regex_symbol_start) and self.datakey.endswith(self.__regex_symbol_end) and len(self.datakey) > 1:
+                # Regular expression
+                for k in datapacket.keys():
+                    if self.compare_address_substrings(k,self.datakey):
+                        return datapacket[k]
+            else: # Just a datakey
+                return datapacket[self.datakey]
+        else:
+            return None
+
 
     def parse_addrstr(self, addrstr):
         """ Parses a redvypr address string
