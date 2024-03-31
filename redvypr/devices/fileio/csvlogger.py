@@ -692,13 +692,14 @@ class initDeviceWidget(QtWidgets.QWidget):
     def __datastream_choosen__(self,datastreamdict):
         funcname = __name__ + '.__datastream_choosen__():'
         logger.debug(funcname)
-        addr = datastreamdict['datastream_address']
-        newdatastream = csv_datastream_config(address=addr.get_str())
-        print('Hallo datastream choosen',addr)
-        print('Hallo bewdatastream', newdatastream)
+        #addr = datastreamdict['datastream_address']
+        datastream_str = datastreamdict['datastream_str']
+        newdatastream = csv_datastream_config(address=datastream_str)
+        #print('Hallo datastream choosen',datastream_str)
+        #print('Hallo bewdatastream', newdatastream)
         # Get the column number
         colnumber = self.dstreamwidget.comboCol.currentText()
-        print('Colnumber',colnumber)
+        #print('Colnumber',colnumber)
         if colnumber == 'end':
             self.device.config.datastreams.append(newdatastream)
         else:
@@ -715,7 +716,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.populate_csvformattable()
 
     def cellChanged_csvformattable(self,row,col):
-        print('Cell changed',row,col)
+        funcname = __name__ + '.cellChanged_csvformattable():'
+        logger.debug(funcname + ' Cell changed row {} col {}'.format(row,col))
         item = self.csvformattable.item(row,col)
 
         try:
@@ -756,12 +758,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         n3_item = QtWidgets.QTableWidgetItem('Unit')
         n4_item = QtWidgets.QTableWidgetItem('Comment')
         n5_item = QtWidgets.QTableWidgetItem('Field format')
+        row_field_format = 5
         self.csvformattable.setItem(0, 0, n0_item)
         self.csvformattable.setItem(1, 0, n1_item)
         self.csvformattable.setItem(2, 0, n2_item)
         self.csvformattable.setItem(3, 0, n3_item)
         self.csvformattable.setItem(4, 0, n4_item)
-        self.csvformattable.setItem(5, 0, n5_item)
+        self.csvformattable.setItem(row_field_format, 0, n5_item)
 
         t_item = QtWidgets.QTableWidgetItem('Packet time')
         tu_item = QtWidgets.QTableWidgetItem('seconds since 1970-01-01 00:00:00')
@@ -787,6 +790,28 @@ class initDeviceWidget(QtWidgets.QWidget):
                 self.csvformattable.setItem(nrows1 + j, self.ncols_add + i, f_item)
 
         #self.csvformattable.resizeColumnsToContent()
+        noneditColor = QtGui.QColor(200, 200, 200)
+        for i in range(nrows):
+            for j in range(0,2):
+                item = self.csvformattable.item(i,j)
+                if item is None:
+                    item = QtWidgets.QTableWidgetItem('')
+                    self.csvformattable.setItem(i, j, item)
+
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                item.setBackground(noneditColor)
+
+            if (i < 3) or (i == row_field_format): # Non editable rows is not editable
+                for j in range(1,ncols):
+                    item = self.csvformattable.item(i, j)
+                    if item is None:
+                        item = QtWidgets.QTableWidgetItem('')
+                        self.csvformattable.setItem(i, j, item)
+
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                    item.setBackground(noneditColor)
+
+
         self.csvformattable.resizeColumnsToContents()
         self.csvformattable.cellChanged.connect(self.cellChanged_csvformattable)
     def populate_dataformattable(self):

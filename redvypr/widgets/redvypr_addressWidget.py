@@ -389,7 +389,7 @@ class datastreamWidget(QtWidgets.QWidget):
         device = self.addressline.device
         device_address = self.addressline.devaddress
 
-        signal_dict = {'device': device, 'device_address':device_address,'datastream_str': datastream_str,'datastream_address':datastream_address}
+        signal_dict = {'device': device, 'device_address':device_address,'datastream_str': datastream_str,'datastream_address':datastream_address,'address_format':addrtype}
         signal_dict['addrformat'] = self.addressline.datakey_address
         #print('Signal dict',signal_dict)
         self.apply.emit(signal_dict)
