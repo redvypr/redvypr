@@ -40,8 +40,8 @@ class device_config(pydantic.BaseModel):
     dt_newfile: int = pydantic.Field(default=300,description='Time after which a new file is created')
     dt_newfile_unit: typing.Literal['none','seconds','hours','days'] = pydantic.Field(default='seconds')
     dt_update:int = pydantic.Field(default=2,description='Time after which an upate is sent to the gui')
-    size_newfile:int = pydantic.Field(default=0,description='Size after which a new file is created')
-    size_newfile_unit: typing.Literal['none','bytes','kB','MB'] = pydantic.Field(default='bytes')
+    size_newfile:int = pydantic.Field(default=5,description='Size after which a new file is created')
+    size_newfile_unit: typing.Literal['none','bytes','kB','MB'] = pydantic.Field(default='MB')
     datafolder:str = pydantic.Field(default='./',description='Folder the data is saved to')
     fileextension:str= pydantic.Field(default='xlsx',description='File extension, if empty not used')
     fileprefix:str= pydantic.Field(default='redvypr',description='If empty not used')
@@ -82,7 +82,10 @@ def create_logfile(config,count=0):
 
     # Create a workbook and add a worksheet.
     workbook = xlsxwriter.Workbook(filename)
-    return [workbook,filename]
+    date_format = workbook.add_format({'num_format': 'yyyy-mm-dd HH:MM:SS.000'})
+    formats = {}
+    formats['date'] = date_format
+    return [workbook,filename,formats]
 
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
@@ -142,7 +145,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     device_worksheets_indices = {}
     numworksheet = 0
 
-    [workbook,filename] = create_logfile(config,count)
+    [workbook,filename,formats] = create_logfile(config,count)
     worksheet_summary = workbook.add_worksheet('summary')
     redvypr_version_str = 'redvypr {}'.format(redvypr.version)
     worksheet_summary.write(0,0,redvypr_version_str)
@@ -188,9 +191,11 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 address_format = '/h/p/d/'
                 packet_address_str = packet_address.get_str(address_format)
                 print('Address',packet_address)
+                row_datakey = 1
+                row_firstdata = 3
+                coloffset = 1
                 try:
                     device_worksheets[packet_address_str]
-                    FLAG_CREATE_WORKBOOK = False
                 except:
                     numworksheet += 1
                     numworksheet_offset = 2
@@ -205,26 +210,31 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     worksheet_summary.write(numworksheet + numworksheet_offset, 1, packet_address_str_xlsx)
                     logger.debug('Will create workbook for {}'.format(packet_address_str_xlsx))
                     device_worksheets[packet_address_str] = workbook.add_worksheet(packet_address_str_xlsx)
-                    device_worksheets_indices[packet_address_str] = {'datakeys':[],'numline':0}
+                    device_worksheets_indices[packet_address_str] = {'datakeys':[],'numline':0,'colindex':{}}
                     device_worksheets_indices[packet_address_str]['worksheet'] = packet_address_str_xlsx
-                    FLAG_CREATE_WORKBOOK = False
+                    device_worksheets[packet_address_str].write(row_datakey, 0, 'Excel time')
+
+
                 # Write data
                 if True:
-                    row_datakey = 1
-                    row_firstdata = 3
                     datakeys = data_packets.redvypr_datapacket(data).datakeys()
                     datakeys.remove('t')
                     datakeys.insert(0,'t')
                     # Write data in datakeys
+                    # Write time
+                    colindex_time = 0
+                    lineindex = row_firstdata + device_worksheets_indices[packet_address_str]['numline']
+                    datatime = datetime.datetime.fromtimestamp(data['t'])
+                    device_worksheets[packet_address_str].write_datetime(lineindex, colindex_time, datatime,formats['date'])
                     for k in datakeys:
                         try:
-                            colindex = device_worksheets_indices[packet_address_str]['datakeys'].index(k)
+                            colindex = device_worksheets_indices[packet_address_str]['colindex'][k]
                         except:
                             device_worksheets_indices[packet_address_str]['datakeys'].append(k)
-                            colindex = len(device_worksheets_indices[packet_address_str]['datakeys']) - 1
+                            colindex = len(device_worksheets_indices[packet_address_str]['datakeys']) - 1 + coloffset
+                            device_worksheets_indices[packet_address_str]['colindex'][k] = colindex
                             device_worksheets[packet_address_str].write(row_datakey,colindex,k)
 
-                        lineindex = row_firstdata + device_worksheets_indices[packet_address_str]['numline']
                         print('Will write data from {} to column {} and line {}'.format(packet_address_str, colindex,lineindex))
                         datawrite = data[k]
                         if (type(datawrite) is not str) and (type(datawrite) is not int) and (type(datawrite) is not float):
@@ -257,6 +267,12 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             FLAG_TIME = (dtnews > 0) and (file_age >= dtnews)
             FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
             if FLAG_TIME or FLAG_SIZE or (FLAG_RUN == False):
+                # Autofit
+                print('Autofit')
+                worksheet_summary.autofit()
+                for w in device_worksheets:
+                    device_worksheets[w].autofit()
+                    device_worksheets[w].set_column(0, 0, 25)
                 workbook.close()
                 data_stat = {'_deviceinfo': {}}
                 data_stat['_deviceinfo']['filename'] = filename
@@ -266,7 +282,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 data_stat['_deviceinfo']['packets_written'] = packets_written
                 dataqueue.put(data_stat)
                 if FLAG_RUN:
-                    [workbook, filename] = create_logfile(config, count)
+                    [workbook, filename,formats] = create_logfile(config, count)
                     count += 1
                     #statistics = data_packets.create_data_statistic_dict()
                     tfile = tcheck
@@ -377,23 +393,30 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.size_newfile = edit
         self.size_newfile.setToolTip('Create a new file every N bytes.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
         try:
-            self.size_newfile.setText(str(self.device.config['size_newfile']))
+            self.size_newfile.setText(str(self.device.config.size_newfile))
         except Exception as e:
             self.size_newfile.setText('0')
             
         self.newfiletimecombo = QtWidgets.QComboBox()
-        self.newfiletimecombo.addItem('None')
-        self.newfiletimecombo.addItem('seconds')
-        self.newfiletimecombo.addItem('hours')
-        self.newfiletimecombo.addItem('days')
-        self.newfiletimecombo.setCurrentIndex(1)
+        times = typing.get_args(self.device.config.model_fields['size_newfile_unit'].annotation)
+        timeunit = self.device.config.size_newfile_unit
+        for t in times:
+            self.newfiletimecombo.addItem(t)
+
+        index = self.newfiletimecombo.findText(timeunit)
+        self.newfiletimecombo.setCurrentIndex(index)
+        #self.newfiletimecombo.addItem('None')
+        #self.newfiletimecombo.addItem('seconds')
+        #self.newfiletimecombo.addItem('hours')
+        #self.newfiletimecombo.addItem('days')
+        #self.newfiletimecombo.setCurrentIndex(1)
             
         self.newfilesizecombo = QtWidgets.QComboBox()
         self.newfilesizecombo.addItem('None')
         self.newfilesizecombo.addItem('bytes')
         self.newfilesizecombo.addItem('kB')
         self.newfilesizecombo.addItem('MB')
-        self.newfilesizecombo.setCurrentIndex(2)
+        self.newfilesizecombo.setCurrentIndex(3)
         
         sizelabel = QtWidgets.QLabel('New file after')
          # File change layout
