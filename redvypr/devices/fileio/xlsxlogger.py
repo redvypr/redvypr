@@ -16,6 +16,7 @@ import copy
 import gzip
 import os
 import xlsxwriter
+import pympler.asizeof
 import pydantic
 import typing
 from redvypr.device import redvypr_device
@@ -36,7 +37,6 @@ class device_base_config(pydantic.BaseModel):
 
 class device_config(pydantic.BaseModel):
     dt_sync: int = pydantic.Field(default=5,description='Time after which an open file is synced on disk')
-    dt_waitbeforewrite: int = pydantic.Field(default=10,description='Time after which the first write to a file is done, this is useful to collect datastreams')
     dt_newfile: int = pydantic.Field(default=300,description='Time after which a new file is created')
     dt_newfile_unit: typing.Literal['none','seconds','hours','days'] = pydantic.Field(default='seconds')
     dt_update:int = pydantic.Field(default=2,description='Time after which an upate is sent to the gui')
@@ -78,35 +78,17 @@ def create_logfile(config,count=0):
     if (len(config['fileextension']) > 0):
         filename += '.' + config['fileextension']
 
-    if (len(config['filegzipformat']) > 0):
-        filename += '.' + config['filegzipformat']
-        FLAG_GZIP = True
-    else:
-        FLAG_GZIP = False
-
     logger.info(funcname + ' Will create a new file: {:s}'.format(filename))
-    if FLAG_GZIP:
-        try:
-            f = gzip.open(filename,'wt')
-            logger.debug(funcname + ' Opened file: {:s}'.format(filename))
-        except Exception as e:
-            logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
-            return None
-    else:
-        try:
-            f = open(filename,'w+')
-            logger.debug(funcname + ' Opened file: {:s}'.format(filename))
-        except Exception as e:
-            logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
-            return None
-       
-    return [f,filename]
+
+    # Create a workbook and add a worksheet.
+    workbook = xlsxwriter.Workbook(filename)
+    return [workbook,filename]
 
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
     print('Config',config)
-    numline = 0
+
     data_write_to_file = [] # List of columns to be written to file
     count = 0
     if True:
@@ -156,8 +138,14 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     packets_written = 0
     bytes_written_total = 0
     packets_written_total = 0
+    device_worksheets = {} # The workbooks for the devices
+    device_worksheets_indices = {}
+    numworksheet = 0
 
-    [f,filename] = create_logfile(config,count)
+    [workbook,filename] = create_logfile(config,count)
+    worksheet_summary = workbook.add_worksheet('summary')
+    redvypr_version_str = 'redvypr {}'.format(redvypr.version)
+    worksheet_summary.write(0,0,redvypr_version_str)
     data_stat = {'_deviceinfo': {}}
     data_stat['_deviceinfo']['filename'] = filename
     data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
@@ -166,12 +154,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     data_stat['_deviceinfo']['packets_written'] = packets_written
     dataqueue.put(data_stat)
     count += 1
-    #statistics = data_packets.create_data_statistic_dict()
-    if(f == None):
-       return None
-    
 
-    
     tfile           = time.time() # Save the time the file was created
     tflush          = time.time() # Save the time the file was created
     tupdate         = time.time() # Save the time for the update timing
@@ -182,8 +165,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
         # Flush file on regular basis
         if ((time.time() - tflush) > config['dt_sync']):
-            f.flush()
-            os.fsync(f.fileno())
+            print('Flushing, not implemented (yet)')
+            bytes_written = pympler.asizeof.asizeof(workbook)
+            print('Bytes written',bytes_written)
             tflush = time.time()
 
         time.sleep(0.05)
@@ -198,80 +182,60 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             logger.debug('Stop command')
                             FLAG_RUN = False
                             break
-                        elif (command == 'csvcolumns'):
-                            logger.debug(funcname + ' Got csvcolumns command')
-                            #print('COMDATA')
-                            #print('Comdata',comdata)
-                            #csvcolumns = data['csvcolumns']
-                            continue
-
 
                 #statistics = data_packets.do_data_statistics(data,statistics)
-                datastreams = data_packets.redvypr_datapacket(data).datastreams()
-                #print('Hallo data',data)
-                #print('Got datastreams',datastreams)
-                data_write = ['']*len(csvcolumns)
-                FLAG_WRITE_PACKET = False
-                if len(datastreams) > 0:
-                    #datastreams.sort() # Sort the datastreams alphabetically
-                    #print('Datastreams',datastreams)
-                    data_time = data['_redvypr']['t']
-                    # Check if the datastreams are in the list already
-                    data_fill = []
-                    streamdata = None
-                    for ind_dstream, dstream in enumerate(config['datastreams']):
-                        data_fill.append(None)
-                        for dstr in datastreams:
-                            if dstream['address_found'] == '': # Not assigned yet
-                                #print('Trying to assign')
-                                raddr = redvypr.redvypr_address(dstream['address'])
-                                if dstr in raddr: # Found something
-                                    print('Found ', dstr, 'in', raddr)
-                                    address_found_format = '/h/d/k' # The format
-                                    address_found_str = dstr.get_str(address_found_format)
-                                    print('Address found str',address_found_str)
-                                    dstream['address_found'] = address_found_str
-                                    streamdata = dstr.get_data(data)
-                                    data_fill[ind_dstream] = streamdata
-                                    FLAG_WRITE_PACKET = True
-                                    print('Got streamdata',streamdata)
-                                    break
-                            else: # Get the data
-                                streamdata = redvypr.redvypr_address(dstream['address_found']).get_data(data) # returns None if not fitting
-                                if streamdata is not None:
-                                    data_fill[ind_dstream] = streamdata
-                                    FLAG_WRITE_PACKET = True
-                                    break
+                packet_address = redvypr.redvypr_address(data)
+                address_format = '/h/p/d/'
+                packet_address_str = packet_address.get_str(address_format)
+                print('Address',packet_address)
+                try:
+                    device_worksheets[packet_address_str]
+                    FLAG_CREATE_WORKBOOK = False
+                except:
+                    numworksheet += 1
+                    numworksheet_offset = 2
+                    devicename = packet_address.devicename.replace('/','_').replace('[','_').replace(']','_').replace('\\','_').replace('*','_').replace(':','_')
+                    packet_address_str_xlsx = '{:02d}_{}'.format(numworksheet,devicename)
+                    if len(packet_address_str_xlsx) > 31:
+                        packet_address_str_xlsx = packet_address_str_xlsx[0:31]
 
-                    # If data to write was found
-                    if FLAG_WRITE_PACKET:
-                        data_write_to_file.append([data_time, data_fill])
-                        if False:
-                            FLAG_WRITE_PACKET = True
-                            #print('Adding datastream to file',dstr)
-                            header_datakeys.append(daddr.datakey)
-                            header_device.append(daddr.devicename)
-                            header_host.append(daddr.hostname)
-                            header_ip.append(daddr.addr)
-                            header_address.append(dstr)
-                            header_uuid.append(daddr.uuid)
-                            csvcolumns.append(dstr)
-                            # The datatype and the format
-                            header_datatype.append(type(streamdata).__name__)
-                            strformat = get_strformat(config, streamdata, dstr, csvformatdict)
-                            csvformat.append(strformat)
-                            data_write.append('') # Add another field
-                            # Make an update about the change of the csvcolumns
-                            data_stat = {'_deviceinfo': {}}
-                            data_stat['_deviceinfo']['csvcolumns'] = csvcolumns
-                            data_stat['_deviceinfo']['csvformat'] = csvformat
-                            data_stat['_deviceinfo']['header_datakeys'] = header_datakeys
-                            data_stat['_deviceinfo']['header_device']   = header_device
-                            data_stat['_deviceinfo']['header_host']     = header_host
-                            data_stat['_deviceinfo']['header_ip']       = header_ip
-                            data_stat['_deviceinfo']['header_datatype'] = header_datatype
+                    worksheet_summary.write(numworksheet_offset, 0, 'redvypr address')
+                    worksheet_summary.write(numworksheet_offset, 1, 'worksheet')
+                    worksheet_summary.write(numworksheet + numworksheet_offset, 0, packet_address_str)
+                    worksheet_summary.write(numworksheet + numworksheet_offset, 1, packet_address_str_xlsx)
+                    logger.debug('Will create workbook for {}'.format(packet_address_str_xlsx))
+                    device_worksheets[packet_address_str] = workbook.add_worksheet(packet_address_str_xlsx)
+                    device_worksheets_indices[packet_address_str] = {'datakeys':[],'numline':0}
+                    device_worksheets_indices[packet_address_str]['worksheet'] = packet_address_str_xlsx
+                    FLAG_CREATE_WORKBOOK = False
+                # Write data
+                if True:
+                    row_datakey = 1
+                    row_firstdata = 3
+                    datakeys = data_packets.redvypr_datapacket(data).datakeys()
+                    datakeys.remove('t')
+                    datakeys.insert(0,'t')
+                    # Write data in datakeys
+                    for k in datakeys:
+                        try:
+                            colindex = device_worksheets_indices[packet_address_str]['datakeys'].index(k)
+                        except:
+                            device_worksheets_indices[packet_address_str]['datakeys'].append(k)
+                            colindex = len(device_worksheets_indices[packet_address_str]['datakeys']) - 1
+                            device_worksheets[packet_address_str].write(row_datakey,colindex,k)
 
-                            dataqueue.put(data_stat)
+                        lineindex = row_firstdata + device_worksheets_indices[packet_address_str]['numline']
+                        print('Will write data from {} to column {} and line {}'.format(packet_address_str, colindex,lineindex))
+                        datawrite = data[k]
+                        if (type(datawrite) is not str) and (type(datawrite) is not int) and (type(datawrite) is not float):
+                            print('Datatype {} not supported, converting data to str'.format(str(type(datawrite))))
+                            datawrite = str(datawrite)
+
+                        device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
+
+                    device_worksheets_indices[packet_address_str]['numline'] += 1
+                    size = sys.getsizeof(workbook)
+                    print('Size:',size)
 
                 # Send statistics
                 if ((time.time() - tupdate) > config['dt_update']):
@@ -288,87 +252,12 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 logger.debug(funcname + ':Exception:' + str(e))
                 # print(data)
 
-        # Write data to file if available
-        if ((time.time() - tfile) > config['dt_waitbeforewrite'])  or (FLAG_RUN == False):
-            if len(data_write_to_file) > 0:
-                # logger.debug('Writing {:d} lines to file now'.format(len(data_write_to_file)))
-                for l in data_write_to_file:
-                    numline += 1
-                    data_time = l[0]  # Time
-                    data_line = l[1]  # Data
-                    # Convert data to str
-                    datastr_all = str(numline) + config['separator']
-                    datastr_all += str(data_time) + config['separator']
-                    for index, streamdata in enumerate(data_line):
-                        if streamdata is None:
-                            streamdata = ''
-
-                        typestr = type(streamdata).__name__ + '_type'
-                        print('Index', typestr, index, streamdata)
-                        try:
-                            strformat = config['datastreams'][index]['strformat'][typestr]
-                        except:
-                            logger.debug('Could not get strformat', exc_info=True)
-                            strformat = '{}'
-
-                        if ":s" in strformat:  # Convert to str if str format is choosen, this is useful for datatypes different of str (i.e. bytes)
-                            streamdata = str(streamdata)
-
-                        # Here errors in conversion could be treated more carefully
-                        dtxt = strformat.format(streamdata)
-                        datastr_all += dtxt + config['separator']
-
-                    datastr_all = datastr_all[:-len(config['separator'])]
-                    datastr_all += '\n'
-
-                    f.write(datastr_all)
-                    bytes_written += len(datastr_all)
-                    packets_written += 1
-                    bytes_written_total += len(datastr_all)
-                    packets_written_total += 1
-                    print('Written', datastr_all)
-
-                data_write_to_file = []
-
         if True: # Check if a new file should be created, close the old one and write the header
             file_age = tcheck - tfile
             FLAG_TIME = (dtnews > 0) and (file_age >= dtnews)
             FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
-            if (FLAG_TIME or FLAG_SIZE) or (FLAG_RUN == False):
-                print('Writing header and closing file ...')
-                # Create header
-                header_lines = []
-                header_lines.append(['Description','Packettime'])
-                header_lines.append(['Address subscribe', ''])
-                header_lines.append(['Address found', ''])
-                header_lines.append(['Unit', 'seconds since 1970-01-01 00:00:00'])
-                header_lines.append(['Comment', ''])
-                hstr = 'Redvypr {} csvlogger'.format(redvypr.version)
-                hstr += '\n'
-                for ihline,hline in enumerate(header_lines):
-                    hstr += hline[0] + config['separator'] + hline[1] + config['separator']
-                    for i, d in enumerate(config['datastreams']):
-                        if ihline == 0:
-                            hstr += "Datastream_{:02d}".format(i) + config['separator']
-                        elif ihline == 1:
-                            hstr += d['address'] + config['separator']
-                        elif ihline == 2:
-                            hstr += d['address_found'] + config['separator']
-                        elif ihline == 3:
-                            hstr += d['unit'] + config['separator']
-                        elif ihline == 4:
-                            hstr += d['comment'] + config['separator']
-
-                    hstr = hstr[:-len(config['separator'])] + '\n'
-
-                print('Writing hstr', hstr)
-                f.seek(0)
-                lines = f.read() # read old content
-                f.seek(0)
-                f.write(hstr)
-                ##print('Writing original data', lines)
-                f.write(lines)
-                f.close()
+            if FLAG_TIME or FLAG_SIZE or (FLAG_RUN == False):
+                workbook.close()
                 data_stat = {'_deviceinfo': {}}
                 data_stat['_deviceinfo']['filename'] = filename
                 data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
@@ -377,7 +266,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 data_stat['_deviceinfo']['packets_written'] = packets_written
                 dataqueue.put(data_stat)
                 if FLAG_RUN:
-                    [f, filename] = create_logfile(config, count)
+                    [workbook, filename] = create_logfile(config, count)
                     count += 1
                     #statistics = data_packets.create_data_statistic_dict()
                     tfile = tcheck
@@ -414,45 +303,6 @@ class Device(redvypr_device):
         """
         funcname = __name__ + '__init__()'
         super(Device, self).__init__(**kwargs)
-
-        self.redvypr.device_status_changed_signal.connect(self.update_datastreamlist)
-        self.csvcolumns = []       # List with the columns, containing dictionaries with the format
-        self.csvcolumns_info = []  # List with the columns, containing dictionaries with the format
-
-        for dconf in self.config.datastreams:
-            address = dconf.address
-            print('Subscribing dconf',dconf)
-            self.subscribe_address(address)
-            #self.subscribe_address(dconf)
-            #print('Datastream conf',dconf)
-
-    def create_csvcolumns(self):
-        funcname = __name__ + 'create_csvcolumns():'
-        logger.debug(funcname)
-        flag_new_datastream = False
-        datastreams_subscribed = self.get_subscribed_datastreams()
-        #print('datastreams subscribed', datastreams_subscribed)
-        for i, d in enumerate(datastreams_subscribed):
-            cdict = {'addr':d}
-            if d in self.csvcolumns:
-                pass
-            else:
-                self.csvcolumns.append(d)
-                self.csvcolumns_info.append(cdict)
-                flag_new_datastream = True
-
-        if flag_new_datastream:
-            logger.debug(funcname + 'New csvcolumns')
-            self.thread_command('csvcolumns', data={'csvcolumns':self.csvcolumns})
-
-
-
-    def update_datastreamlist(self):
-        funcname = __name__ + 'update_datastreamlist()'
-        logger.debug(funcname)
-        self.create_csvcolumns()
-
-
 
 
 #
@@ -560,14 +410,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.date_text = QtWidgets.QLineEdit('%Y-%m-%d_%H%M%S')
         self.count_text = QtWidgets.QLineEdit('04d')
         self.postfix_text = QtWidgets.QLineEdit('')
-        self.gzip_text = QtWidgets.QLineEdit('gz')
 
         self.prefix_check = QtWidgets.QCheckBox('Prefix')
         self.date_check = QtWidgets.QCheckBox('Date/Time')
         self.count_check = QtWidgets.QCheckBox('Counter')
         self.postfix_check = QtWidgets.QCheckBox('Postfix')
         self.extension_check = QtWidgets.QCheckBox('Extension')
-        self.gzip_check = QtWidgets.QCheckBox('gzip')
         # The outwidget
         self.outwidget = QtWidgets.QWidget()
         self.outlayout = QtWidgets.QGridLayout(self.outwidget)
@@ -580,15 +428,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.outlayout.addWidget(self.count_check, 1, 2)
         self.outlayout.addWidget(self.postfix_check, 1, 3)
         self.outlayout.addWidget(self.extension_check, 1, 4)
-        self.outlayout.addWidget(self.gzip_check, 1, 5)
 
         self.outlayout.addWidget(self.prefix_text, 2, 0)
         self.outlayout.addWidget(self.date_text, 2, 1)
         self.outlayout.addWidget(self.count_text, 2, 2)
         self.outlayout.addWidget(self.postfix_text, 2, 3)
         self.outlayout.addWidget(self.extension_text, 2, 4)
-        self.outlayout.addWidget(self.gzip_text, 2, 5)
-
 
         self.outlayout.addWidget(self.newfilewidget,4,0,1,4)
 
@@ -639,9 +484,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.extension_text.editingFinished.connect(self.update_device_config)
             self.newfilesizecombo.currentIndexChanged.connect(self.update_device_config)
             self.newfiletimecombo.currentIndexChanged.connect(self.update_device_config)
-            self.gzip_check.stateChanged.connect(self.update_device_config)
         else:
-            self.gzip_check.stateChanged.disconnect()
             self.prefix_check.stateChanged.disconnect()
             self.postfix_check.stateChanged.disconnect()
             self.date_check.stateChanged.disconnect()
@@ -736,7 +579,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         filename_all.append([config.filepostfix,self.postfix_text,self.postfix_check])
         filename_all.append([config.filedateformat,self.date_text,self.date_check])
         filename_all.append([config.filecountformat,self.count_text,self.count_check])
-        filename_all.append([config.filegzipformat, self.gzip_text, self.gzip_check])
         for i in range(len(filename_all)):
             widgets = filename_all[i]
             if(len(widgets[0])==0):
@@ -783,12 +625,6 @@ class initDeviceWidget(QtWidgets.QWidget):
             config.filecountformat = self.count_text.text()
         else:
             config.filecountformat = ''
-
-        if (self.gzip_check.isChecked()):
-            config.filegzipformat = self.gzip_text.text()
-        else:
-            config.filegzipformat = ''
-
 
         print('Config',config)
         return config

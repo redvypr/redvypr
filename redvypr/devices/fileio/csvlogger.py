@@ -524,14 +524,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         #self.moddatastreambtn.clicked.connect(self.modDatastreamClicked)
         self.remdatastreambtn = QtWidgets.QPushButton("Remove datastream")
         self.remdatastreambtn.clicked.connect(self.__removeClicked__)
-        ##
-        #self.dataformattable = QtWidgets.QTableWidget()
-        ## Populate the table
-        #self.populate_dataformattable()
         #
-        self.adddeviceinbtn   = QtWidgets.QPushButton("Subscribe")
-        self.adddeviceinbtn.clicked.connect(self.con_clicked)
-        self.adddeviceinbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+        #self.adddeviceinbtn   = QtWidgets.QPushButton("Subscribe")
+        #self.adddeviceinbtn.clicked.connect(self.con_clicked)
+        #self.adddeviceinbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         # The output widgets
         self.outlabel        = QtWidgets.QLabel("Logfile")
         self.outfilename     = QtWidgets.QLineEdit()
@@ -649,22 +645,20 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.config_widgets.append(self.adddatastreambtn)
         self.config_widgets.append(self.remdatastreambtn)
         self.config_widgets.append(self.outlabel)
-        self.config_widgets.append(self.adddeviceinbtn)
+        #self.config_widgets.append(self.adddeviceinbtn)
         self.config_widgets.append(self.outwidget)
-        #self.outlayout.addStretch(1)
-            
+
         layout.addWidget(self.label,0,0,1,2)
         #layout.addWidget(self.inlabel,1,0)
         #layout.addWidget(self.inlist,2,0)
-        #layout.addWidget(self.dataformattable, 3, 0,1,4)
         layout.addWidget(self.adddatastreambtn, 3, 0, 1, 2)
         #layout.addWidget(self.moddatastreambtn, 3, 2, 1, 1)
         layout.addWidget(self.remdatastreambtn, 3, 3, 1, 1)
         layout.addWidget(self.csvformattable, 4, 0, 1, 4)
         layout.addWidget(self.outlabel,1,0)
         layout.addWidget(self.outwidget,2,0)
-        layout.addWidget(self.adddeviceinbtn, 5, 0)
-        layout.addWidget(self.startbtn,5,1,1,2)
+        #layout.addWidget(self.adddeviceinbtn, 5, 0)
+        layout.addWidget(self.startbtn,5,0,1,4)
 
         self.config_to_widgets()
         self.connect_widget_signals()
