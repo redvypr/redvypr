@@ -17,7 +17,7 @@ description = 'Reading data from a serial device'
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('serial_device')
+logger = logging.getLogger('serial_single')
 logger.setLevel(logging.DEBUG)
 
 class device_base_config(pydantic.BaseModel):
@@ -25,6 +25,7 @@ class device_base_config(pydantic.BaseModel):
     subscribes: bool = True
     description: str = 'Reads to and write from a serial device'
     gui_tablabel_display: str = 'Serial data'
+
 
 class device_config(pydantic.BaseModel):
     baud: int = 4800
@@ -58,13 +59,13 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     """
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Starting reading serial data')
-    chunksize   = config.chunksize #The maximum amount of bytes read with one chunk
-    serial_name = config.comport
-    baud        = config.baud
-    parity      = config.parity
-    stopbits    = config.stopbits
-    bytesize    = config.bytesize
-    dt_poll     = config.dt_poll
+    chunksize   = config['chunksize'] #The maximum amount of bytes read with one chunk
+    serial_name = config['comport']
+    baud        = config['baud']
+    parity      = config['parity']
+    stopbits    = config['stopbits']
+    bytesize    = config['bytesize']
+    dt_poll     = config['dt_poll']
 
     print('Starting',config)
     

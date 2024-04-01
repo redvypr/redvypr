@@ -78,7 +78,7 @@ def create_logfile(config,count=0):
     filename = ''
     if len(config['datafolder']) > 0:
         if os.path.isdir(config['datafolder']):
-            filename += config['datafolder']
+            filename += config['datafolder'] + os.sep
         else:
             logger.warning(funcname + ' Data folder {:s} does not exist.'.format(filename))
             return None
@@ -1037,6 +1037,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         config.dt_newfile_unit = self.newfiletimecombo.currentText()
         config.size_newfile = int(self.size_newfile.text())
         config.size_newfile_unit = self.newfilesizecombo.currentText()
+
+        config.datafolder = self.folder_text.text()
 
         if(self.extension_check.isChecked()):
             config.fileextension = self.extension_text.text()
