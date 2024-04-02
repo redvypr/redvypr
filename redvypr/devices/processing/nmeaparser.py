@@ -5,8 +5,12 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import time
 import numpy as np
 import sys
-import redvypr.utils.csv2dict as csv2dict
+import pynmea2
+import pydantic
+import typing
 import copy
+
+import redvypr.data_packets
 import redvypr.data_packets as data_packets
 from redvypr.device import redvypr_device
 from redvypr.data_packets import check_for_command
@@ -19,15 +23,16 @@ logger.setLevel(logging.DEBUG)
 
 description = 'Parses NMEA data strings'
 
-config_template = {}
-config_template['name']              = 'nmeaparser'
-config_template['messages']          = {'type':'list','default':[]}
-config_template['datakey']           = {'type':'str','default':'data'}
-config_template['redvypr_device']    = {}
-config_template['redvypr_device']['publish']   = True
-config_template['redvypr_device']['subscribe'] = True
-config_template['redvypr_device']['description'] = description
 redvypr_devicemodule = True
+class device_base_config(pydantic.BaseModel):
+    publishes: bool = True
+    subscribes: bool = False
+    description: str = 'NMEA0183 parsing device'
+
+class device_config(pydantic.BaseModel):
+    dt_status: float = 2.0
+    messages:list = pydantic.Field(default=[])
+    datakey: str = pydantic.Field(default='',description='The datakey to look for NMEA data, if empty scan all fields and use the first match')
 
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     """ 
@@ -37,24 +42,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     # Some variables for status
     tstatus = time.time()
 
-    print('Hallo, start!', config)
-    NMEA_definitions = csv2dict.NMEA_definitions
-    NMEA_definitions_process = []
-    for NMEA_message in NMEA_definitions:
-        for message in config['messages']:
-            print('message',message,config['messages'])
-            if message in NMEA_message['name']:
-                NMEA_definitions_process.append(NMEA_message)
-
-    print('Version {:s}'.format(csv2dict.version))
-    csv = csv2dict.csv2dict()
-    csv.add_csvdefinition(csv2dict.NMEA_definitions)
-    csv.print_definitions()
-
-    try:
-        dtstatus = config['dtstatus']
-    except:
-        dtstatus = 2  # Send a status message every dtstatus seconds
+    dtstatus = config['dt_status']
 
     #
     npackets = 0  # Number packets received
@@ -63,27 +51,60 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         command = check_for_command(data)
         if(command is not None):
             if command == 'stop':
-                print('Got a stop command')
+                logger.debug('Got a stop command, stopping thread')
                 break
 
         #print('Data',data)
         # Check if the datakey is in the datapacket
-        if config['datakey'] in data.keys():
-            csvdata = data['data']
-            dicts = csv.parse_data(csvdata)
-            for packet in dicts: # Loop over the list and make a packet out of it
-                print('packet',packet)
+        if len(config['datakey']) == 0:
+            datakeys = redvypr.data_packets.redvypr_datapacket(data).datakeys()
+        else:
+            if config['datakey'] in data.keys():
+                datakeys = [config['datakey']]
+            else:
+                datakeys = []
+
+        for datakey in datakeys:
+            dataparse = data[datakey]
+            if (type(dataparse) == bytes):
                 try:
-                    devicename = packet['deviceid']
+                    dataparse = dataparse.decode('UTF-8')
                 except:
-                    devicename = packet['name']
-                data_packets.treat_datadict(packet, devicename, hostinfo=data['_redvypr']['host'], numpacket = data['_redvypr']['numpacket'], tpacket=data['t'])
-                print('Putting',packet)
-                dataqueue.put(packet)
+                    logger.debug(funcname + ' Could not decode:',exc_info=True)
+                    continue
+            if (type(dataparse) == str) and (len(dataparse) > 2):
+                print('Parsing data at datakey {}:{}'.format(datakey,dataparse))
 
-            #print(dicts)
+                try:
+                    msg = pynmea2.parse(dataparse)
+                    talker = msg.talker
+                    sentence_type = msg.sentence_type
+                    daddr = redvypr.redvypr_address(data)
+                    devname = sentence_type + '_' + daddr.devicename
+                    print('Devicename', daddr.devicename)
+                    data_parsed = redvypr.data_packets.datapacket(data=msg.talker, datakey='talker', device=devname)
+                    data_parsed['sentence_type'] = sentence_type
+                    attr = dir(msg)
+                    for a in attr:
+                        d = getattr(msg,a)
+                        #print('da',a,d)
+                        if not(a.startswith('_')):
+                            if(type(d) == float) or (type(d) == int) or (type(d) == str) or (type(d) == bool):
+                                data_parsed[a] = d
 
-    print('Hallo, stop!')
+                    print('Parsing of type {} suceeded:{}'.format(sentence_type,msg))
+                    #print('Longitude',msg.longitude,msg.latitude)
+                    print('DAta parsed',data_parsed)
+                    dataqueue.put(data_parsed)
+                    #if msgtype == 'GGA':
+                    #    #tGGA = msg.timestamp
+                    #    data_parsed = redvypr.data_packets.datapacket(data = msg.longitude, datakey='lon',device = devname)
+                    #    data_parsed['latitude'] = msg.latitude
+                    #    dataqueue.put(data_parsed)
+                except:
+                    logger.debug('NMEA Parsing failed:', exc_info=True)
+
+
 
 
 
@@ -95,10 +116,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout        = QtWidgets.QVBoxLayout(self)
         self.device   = device
 
-        print('csv2dict Version {:s}'.format(csv2dict.version))
-        self.csv = csv2dict.csv2dict()
-        # Adding NMEA definitions
-        self.csv.add_csvdefinition(copy.deepcopy(csv2dict.NMEA_definitions))
         self.messagelist = QtWidgets.QListWidget()
         self.sub_button = QtWidgets.QPushButton('Subscribe')
         self.sub_button.clicked.connect(self.subscribe_clicked)
@@ -116,13 +133,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
 
-        for i,NMEA_message in enumerate(csv2dict.NMEA_definitions):
-            name = NMEA_message['name']
-            item = QtWidgets.QListWidgetItem(name)
+        for i,NMEA_message in enumerate(['GGA','VTG']):
+            item = QtWidgets.QListWidgetItem(NMEA_message)
             #item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
             item.setCheckState(QtCore.Qt.Checked)
-            item.NMEA_message = NMEA_message
             self.messagelist.addItem(item)
 
 
@@ -131,15 +146,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         print('start utton',button.isChecked())
         if button.isChecked():
             logger.debug("button pressed")
-            NMEA_messages = []
-            for i in range(self.messagelist.count()):
-                item = self.messagelist.item(i)
-                if item.checkState():
-                    print(i, "is checked")
-                    NMEA_messages.append(item.NMEA_message['name'])
-
-            print(NMEA_messages)
-            self.device.config['messages'].data.extend(NMEA_messages)
             button.setText('Starting')
             self.device.thread_start()
             #self.start_button.setChecked(True)

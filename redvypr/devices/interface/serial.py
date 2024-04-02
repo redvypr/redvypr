@@ -27,41 +27,21 @@ logger = logging.getLogger('serial')
 logger.setLevel(logging.DEBUG)
 
 
-config_template              = {}
-config_template['comport']  = {'type':'str'}
-config_template['baudrates'] = {'type':'list','default':[300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 576000, 921600]}
-config_template['comports']  = {'type':'list','default':[]}
-config_template['baud']      = {'type':'int','default':9600}
-config_template['parity']    = {'type':'int','default':serial.PARITY_NONE}
-config_template['stopbits']  = {'type':'int','default':serial.STOPBITS_ONE}
-config_template['bytesize']  = {'type':'int','default':serial.EIGHTBITS}
-config_template['dt_poll']   = {'type':'float','default':0.05}
-config_template['dt_maxwait']= {'type':'float','default':5.0,'description':'Wait time in s for valid data, if time without a valid packets exceeds dt_maxwait the comport is closed and the read thread is stopped. '}
-config_template['chunksize'] = {'type':'int','default':0} # The maximum amount of bytes read with one chunk
-config_template['packetdelimiter'] = {'type':'str','default':'\n'} # The maximum amount of bytes read with one chunk
-config_template['packetstart'] = {'type':'str','default':'$'} # The maximum amount of bytes read with one chunk
-config_template['redvypr_device'] = {}
-config_template['redvypr_device']['publishes']   = True
-config_template['redvypr_device']['subscribes']  = False
-config_template['redvypr_device']['description'] = description
-
 redvypr_devicemodule = True
-
-
 class device_base_config(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = True
     description: str = 'Reads to and writes from a serial devices'
     gui_tablabel_display: str = 'Serial device status'
 
-
 class serial_device_config(pydantic.BaseModel):
+    use_device: bool = pydantic.Field(default=True, description='Flag if the device should be used')
     baud: int = 4800
     parity: typing.Literal[serial.PARITY_NONE, serial.PARITY_ODD, serial.PARITY_EVEN, serial.PARITY_MARK, serial.PARITY_SPACE] = pydantic.Field(default=serial.PARITY_NONE)
     stopbits: typing.Literal[serial.STOPBITS_ONE, serial.STOPBITS_ONE_POINT_FIVE,serial.STOPBITS_TWO] = pydantic.Field(default=serial.STOPBITS_ONE)
     bytesize: typing.Literal[serial.EIGHTBITS, serial.SEVENBITS, serial.SIXBITS] = pydantic.Field(default=serial.EIGHTBITS)
     dt_poll: float = 0.05
-    dt_maxwait: float = 0.5
+    dt_maxwait: float = pydantic.Field(default=5.0,description='Wait time in s for valid data, if time without a valid packets exceeds dt_maxwait the comport is closed and the read thread is stopped')
     chunksize: int = pydantic.Field(default=1000, description='The maximum amount of bytes read with one chunk')
     packetdelimiter: str = pydantic.Field(default='\n', description='The delimiter to distinuish packets')
     packetstart: str = pydantic.Field(default='')
@@ -80,7 +60,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
     funcname = __name__ + '.read_serial()'
     logger.debug(funcname + ':Starting reading serial data')
     chunksize = config['chunksize']  # The maximum amount of bytes read with one chunk
-    serial_name = config['comport']
+    serial_name = config['device']
     baud = config['baud']
     parity = config['parity']
     stopbits = config['stopbits']
@@ -240,12 +220,12 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     """
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Starting reading serial data')
-    logger.debug('Will open comports {:s}'.format(str(config['comports'])))
+    logger.debug('Will open comports {:s}'.format(str(config['serial_devices'])))
 
     serial_threads = []
     serial_threads_datainqueues = []
-    dt_poll     = config['dt_poll']
-    for comportconfig in config['comports']:
+    dt_poll = 0.05
+    for comportconfig in config['serial_devices']:
         queuesize = 100
         config_thread = copy.deepcopy(comportconfig)
         datainqueue_thread = queue.Queue(maxsize=queuesize)
@@ -332,7 +312,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout_all = QtWidgets.QGridLayout(self.serialwidgets_parent)
         self.layout_serialwidgets = layout_all
         self.serialwidgets = []
-        self.label    = QtWidgets.QLabel("Serial device")
+        self.label= QtWidgets.QLabel("Serial device")
 
         self.comscanbutton = QtWidgets.QPushButton("Rescan comports")
         self.comscanbutton.clicked.connect(self.comscan_clicked)
@@ -342,8 +322,6 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         self.init_serialwidgets()
         layout.addWidget(self.serialwidgets_parent)
-
-
 
         self.startbutton = QtWidgets.QPushButton("Start")
         self.startbutton.clicked.connect(self.start_clicked)
@@ -374,19 +352,20 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout_all.addWidget(QtWidgets.QLabel('Packet start'), 0, 6)
         layout_all.addWidget(QtWidgets.QLabel('Packet delimiter'), 0, 7)
         layout_all.addWidget(QtWidgets.QLabel('Packet size'), 0, 8)
-        layout_all.addWidget(QtWidgets.QLabel('Read port'), 0, 9)
+        layout_all.addWidget(QtWidgets.QLabel('Config'), 0, 9)
+        layout_all.addWidget(QtWidgets.QLabel('Read port'), 0, 10)
         lwidth = 80 # width of the qlineedits
 
         for irow,serial_device in enumerate(self.device.config.serial_devices):
             widget = QtWidgets.QWidget()
             serialwidgetdict = {}
             serialwidgetdict['widget'] = widget
+            serialwidgetdict['serial_device'] = serial_device
             self.serialwidgets.append(serialwidgetdict)
             layout = QtWidgets.QGridLayout(widget)
             # Serial baud rates
             #baud = [300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 576000, 921600]
             baudrates = self.device.config.baud_standard
-            print('Baudrates',baudrates)
             # find the index of the baudrate of the device, if its none add it to the list
             try:
                 ibaud = baudrates.index(serial_device.baud)
@@ -434,7 +413,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
             serialwidgetdict['button_serial_openclose'] = QtWidgets.QPushButton('Read')
             serialwidgetdict['button_serial_openclose'].setCheckable(True)
-            serialwidgetdict['button_serial_openclose'].setChecked(True)
+            serialwidgetdict['button_serial_openclose'].setChecked(serial_device.use_device)
             #serialwidgetdict['button_serial_openclose'].clicked.connect(self.start_clicked)
 
             serialwidgetdict['button_config'] = QtWidgets.QPushButton('Config')
@@ -479,8 +458,8 @@ class initDeviceWidget(QtWidgets.QWidget):
             layout_all.addWidget(serialwidgetdict['packet_start'], irow + 1, 6)
             layout_all.addWidget(serialwidgetdict['packet_ident'], irow + 1, 7)
             layout_all.addWidget(serialwidgetdict['packet_size'], irow + 1, 8)
-            #layout_all.addWidget(serialwidgetdict['button_config'], irow+1, 5)
-            layout_all.addWidget(serialwidgetdict['button_serial_openclose'], irow+1, 9)
+            layout_all.addWidget(serialwidgetdict['button_config'], irow+1, 9)
+            layout_all.addWidget(serialwidgetdict['button_serial_openclose'], irow+1, 10)
 
             #self.statustimer = QtCore.QTimer()
             #self.statustimer.timeout.connect(self.update_buttons)
@@ -504,71 +483,64 @@ class initDeviceWidget(QtWidgets.QWidget):
             self._combo_serial_baud.setEnabled(True)
             self._combo_serial_devices.setEnabled(True)
         
-            
+
+    def widgets_to_config(self):
+        """
+        Copies the widget data to the configuration
+        """
+        # print('hallo',len(self.serialwidgets))
+        configs = []
+        for w in self.serialwidgets:
+            serial_device = w['serial_device']
+            config = {}
+            serial_name = str(w['combo_serial_devices'].currentText())
+            serial_device.device = serial_name
+            devicename = str(w['devicename'].text())
+            serial_device.devicename = devicename
+            serial_baud = int(w['combo_serial_baud'].currentText())
+            serial_device.baud = serial_baud
+            stopbits = w['combo_stopbits'].currentText()
+            if (stopbits == '1'):
+                serial_device.stopbits = serial.STOPBITS_ONE
+            elif (stopbits == '1.5'):
+                serial_device.stopbits = serial.STOPBITS_ONE_POINT_FIVE
+            elif (stopbits == '2'):
+                serial_device.stopbits = serial.STOPBITS_TWO
+
+            databits = int(w['combo_databits'].currentText())
+            serial_device.bytesize = databits
+
+            parity = w['combo_parity'].currentText()
+            if (parity == 'None'):
+                serial_device.parity = serial.PARITY_NONE
+            elif (parity == 'Even'):
+                serial_device.parity = serial.PARITY_EVEN
+            elif (parity == 'Odd'):
+                serial_device.parity = serial.PARITY_ODD
+            elif (parity == 'Mark'):
+                serial_device.parity = serial.PARITY_MARK
+            elif (parity == 'Space'):
+                serial_device.parity = serial.PARITY_SPACE
+
+            #
+            serial_device.chunksize = int(w['packet_size'].text())
+            serial_device.packetdelimiter = w['packet_ident'].text().replace('\\n', '\n').replace('\\r', '\r')
+            # print('fdsf',w['packet_ident'].text(),config['packetdelimiter'])
+            serial_device.packetstart = w['packet_start'].text()
+            if w['button_serial_openclose'].isChecked():
+                serial_device.use_device = True
+            else:
+                serial_device.use_device = False
+
     def start_clicked(self):
-        #print('Start clicked')
-        #button = self.startbtn
         button = self.sender()
-        #print('Start clicked:' + button.text())
-        #config_template['comport'] = {'type': 'str'}
-        #config_template['baud'] = {'type': 'int', 'default': 4800}
-        #config_template['parity'] = {'type': 'int', 'default': serial.PARITY_NONE}
-        #config_template['stopbits'] = {'type': 'int', 'default': serial.STOPBITS_ONE}
-        #config_template['bytesize'] = {'type': 'int', 'default': serial.EIGHTBITS}
-        #config_template['dt_poll'] = {'type': 'float', 'default': 0.05}
-        #config_template['chunksize'] = {'type': 'int',
-        #                                'default': 1000}  # The maximum amount of bytes read with one chunk
-        #config_template['packetdelimiter'] = {'type': 'str',
-        #                                      'default': '\n'}  # The maximum amount of bytes read with one chunk
         if ('Start' in button.text()):
-            #print('hallo',len(self.serialwidgets))
-            configs = []
-            for w in self.serialwidgets:
-                config = {}
-                serial_name = str(w['combo_serial_devices'].currentText())
-                config['comport'] = serial_name
-                devicename = str(w['devicename'].text())
-                config['devicename'] = devicename
-                serial_baud = int(w['combo_serial_baud'].currentText())
-                config['baud'] = serial_baud
-                stopbits = w['combo_stopbits'].currentText()
-                if (stopbits == '1'):
-                    config['stopbits'] = serial.STOPBITS_ONE
-                elif (stopbits == '1.5'):
-                    config['stopbits'] = serial.STOPBITS_ONE_POINT_FIVE
-                elif (stopbits == '2'):
-                    config['stopbits'] = serial.STOPBITS_TWO
-
-                databits = int(w['combo_databits'].currentText())
-                config['bytesize'] = databits
-
-                parity = w['combo_parity'].currentText()
-                if (parity == 'None'):
-                    config['parity'] = serial.PARITY_NONE
-                elif (parity == 'Even'):
-                    config['parity'] = serial.PARITY_EVEN
-                elif (parity == 'Odd'):
-                    config['parity'] = serial.PARITY_ODD
-                elif (parity == 'Mark'):
-                    config['parity'] = serial.PARITY_MARK
-                elif (parity == 'Space'):
-                    config['parity'] = serial.PARITY_SPACE
-
-                # TODO, this needs to be read from the configuration widget
-                config['chunksize'] = int(w['packet_size'].text())
-                config['packetdelimiter'] = w['packet_ident'].text().replace('\\n','\n').replace('\\r','\r')
-                #print('fdsf',w['packet_ident'].text(),config['packetdelimiter'])
-                config['packetstart'] = w['packet_start'].text()
-                config['dt_poll'] = self.device.config['dt_poll']
-                config['dt_maxwait'] = self.device.config['dt_maxwait']
-                if w['button_serial_openclose'].isChecked():
-                    configs.append(config)
-
-            self.device.config['comports'] = configs
+            self.widgets_to_config()
             self.device.thread_start()
             button.setText('Stop')
         else:
             self.stop_clicked()
+
     def update_buttons(self):
         """ Updating all buttons depending on the thread status (if its alive, graying out things)
         """
@@ -596,10 +568,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self._button_serial_openclose
         self.device.thread_stop()
         button.setText('Closing') 
-        #self._combo_serial_baud.setEnabled(True)
-        #self._combo_serial_devices.setEnabled(True)      
-
-
 
 class displayDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None):
