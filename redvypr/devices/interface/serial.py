@@ -120,7 +120,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
 
 
     while True:
-        # TODO, here commands could be send as well
+        # Note: Here commands could be send as well
         try:
             data = datainqueue.get(block=False)
         except:
@@ -131,7 +131,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
             if (command is not None):
                 if command == 'stop':
                     serial_device.close()
-                    sstr = funcname + ': Command is for me ({:s}): {:s}'.format(config['comport'],str(command))
+                    sstr = funcname + ': Command is for me ({:s}): {:s}'.format(config['device'],str(command))
                     logger.debug(sstr)
                     try:
                         statusqueue.put_nowait(sstr)
@@ -565,9 +565,8 @@ class initDeviceWidget(QtWidgets.QWidget):
             # self.conbtn.setEnabled(True)
 
     def stop_clicked(self):
-        button = self._button_serial_openclose
         self.device.thread_stop()
-        button.setText('Closing') 
+        self.startbutton.setText('Closing')
 
 class displayDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None):
