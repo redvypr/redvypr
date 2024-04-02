@@ -565,8 +565,14 @@ class initDeviceWidget(QtWidgets.QWidget):
             # self.conbtn.setEnabled(True)
 
     def stop_clicked(self):
+        """
+
+        Returns:
+
+        """
         self.device.thread_stop()
         self.startbutton.setText('Closing')
+
 
 class displayDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None):
