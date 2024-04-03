@@ -340,6 +340,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         for i in reversed(range(layout.count())):
             layout.itemAt(i).widget().setParent(None)
         self.init_serialwidgets()
+        # Redraw also the devicedisplaywidget
+        self.device.devicedisplaywidget.populate_statustable()
+
 
     def init_serialwidgets(self):
         layout_all = self.layout_serialwidgets
@@ -577,19 +580,24 @@ class initDeviceWidget(QtWidgets.QWidget):
 class displayDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
-        layout        = QtWidgets.QGridLayout(self)
+        layout = QtWidgets.QGridLayout(self)
         self.device = device
         self.serialwidgets = []
         self.serialwidgetsdict = {}
         self.comporttable = QtWidgets.QTableWidget()
+        layout.addWidget(self.comporttable,0,0)
+        self.device = device
+        self.populate_statustable()
 
 
-        columns = ['Comport','Bytes read','Packets read','Status','Show rawdata']
+    def populate_statustable(self):
+        funcname = __name__ + '.populate_statustable():'
+        logger.debug(funcname)
+        self.comporttable.clear()
+        columns = ['Comport', 'Bytes read', 'Packets read', 'Status', 'Show rawdata']
         self.comporttable.setColumnCount(len(columns))
         self.comporttable.horizontalHeader().ResizeMode(self.comporttable.horizontalHeader().ResizeToContents)
         self.comporttable.setHorizontalHeaderLabels(columns)
-
-        layout.addWidget(self.comporttable,0,0)
         comports = self.device.comports
         self.comporttable.setRowCount(len(comports))
         self.comports = []
@@ -619,8 +627,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
             button.displaywidget = serialwidgetdict['datawidget']
             self.comporttable.setCellWidget(irow, 4, button)
 
-
-        self.device = device
         self.comporttable.resizeColumnsToContents()
 
     def __showdata__(self):

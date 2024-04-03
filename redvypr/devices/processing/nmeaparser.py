@@ -84,17 +84,22 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                     print('Devicename', daddr.devicename)
                     data_parsed = redvypr.data_packets.datapacket(data=msg.talker, datakey='talker', device=devname)
                     data_parsed['sentence_type'] = sentence_type
-                    attr = dir(msg)
-                    for a in attr:
-                        d = getattr(msg,a)
-                        #print('da',a,d)
-                        if not(a.startswith('_')):
-                            if(type(d) == float) or (type(d) == int) or (type(d) == str) or (type(d) == bool):
-                                data_parsed[a] = d
+                    #attr = dir(msg)
+                    #for a in attr:
+                    #    d = getattr(msg,a)
+                    #    #print('da',a,d)
+                    #    if not(a.startswith('_')):
+                    #        if(type(d) == float) or (type(d) == int) or (type(d) == str) or (type(d) == bool):
+                    #            data_parsed[a] = d
+                    for field in msg.fields:
+                        field_short = field[1]
+                        field_descr = field[0]
+                        data_parsed[field_short] = getattr(msg,field_short)
 
                     print('Parsing of type {} suceeded:{}'.format(sentence_type,msg))
                     #print('Longitude',msg.longitude,msg.latitude)
-                    print('DAta parsed',data_parsed)
+                    print('Data parsed',data_parsed)
+                    print('----Done-----')
                     dataqueue.put(data_parsed)
                     #if msgtype == 'GGA':
                     #    #tGGA = msg.timestamp

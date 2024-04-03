@@ -8,7 +8,7 @@ import pydantic
 from pydantic.color import Color as pydColor
 from PyQt5 import QtWidgets, QtCore, QtGui
 from redvypr.device import redvypr_device, redvypr_device_parameter
-from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, pdDeviceConfigWidget
+from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, dictQTreeWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget
 from redvypr.widgets.redvypr_addressWidget import datastreamWidget
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, pydanticQTreeWidget
@@ -882,7 +882,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
     def config_clicked(self):
         funcname = __name__ + '.config_clicked():'
         logger.debug(funcname)
-        self.config_widget = pdDeviceConfigWidget(self.device)
+        self.config_widget = pydanticDeviceConfigWidget(self.device)
         self.config_widget.show()
 
     def statistics_clicked(self):

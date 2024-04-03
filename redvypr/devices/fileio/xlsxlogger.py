@@ -37,10 +37,10 @@ class device_base_config(pydantic.BaseModel):
 
 class device_config(pydantic.BaseModel):
     dt_sync: int = pydantic.Field(default=5,description='Time after which an open file is synced on disk')
-    dt_newfile: int = pydantic.Field(default=300,description='Time after which a new file is created')
+    dt_newfile: int = pydantic.Field(default=3600,description='Time after which a new file is created')
     dt_newfile_unit: typing.Literal['none','seconds','hours','days'] = pydantic.Field(default='seconds')
     dt_update:int = pydantic.Field(default=2,description='Time after which an upate is sent to the gui')
-    size_newfile:int = pydantic.Field(default=5,description='Size after which a new file is created')
+    size_newfile:int = pydantic.Field(default=500,description='Size of object in RAM after which a new file is created')
     size_newfile_unit: typing.Literal['none','bytes','kB','MB'] = pydantic.Field(default='MB')
     datafolder:str = pydantic.Field(default='./',description='Folder the data is saved to')
     fileextension:str= pydantic.Field(default='xlsx',description='File extension, if empty not used')
@@ -141,10 +141,10 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     packets_written = 0
     bytes_written_total = 0
     packets_written_total = 0
-    device_worksheets = {} # The workbooks for the devices
+    device_worksheets = {} # The extended info of the worksheets for the devices
+    device_worksheets_reduced = {} # The worksheets for the devices
     device_worksheets_indices = {}
     numworksheet = 0
-
     [workbook,filename,formats] = create_logfile(config,count)
     worksheet_summary = workbook.add_worksheet('summary')
     redvypr_version_str = 'redvypr {}'.format(redvypr.version)
@@ -162,6 +162,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     tflush          = time.time() # Save the time the file was created
     tupdate         = time.time() # Save the time for the update timing
     FLAG_RUN = True
+    file_status = {}
+    file_status_reduced = {}
     while FLAG_RUN:
         tcheck      = time.time()
 
@@ -190,7 +192,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 packet_address = redvypr.redvypr_address(data)
                 address_format = '/h/p/d/'
                 packet_address_str = packet_address.get_str(address_format)
-                print('Address',packet_address)
+                #print('Address',packet_address)
                 row_datakey = 1
                 row_firstdata = 3
                 coloffset = 1
@@ -212,11 +214,38 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     device_worksheets[packet_address_str] = workbook.add_worksheet(packet_address_str_xlsx)
                     device_worksheets_indices[packet_address_str] = {'datakeys':[],'numline':0,'colindex':{}}
                     device_worksheets_indices[packet_address_str]['worksheet'] = packet_address_str_xlsx
+                    device_worksheets_reduced[packet_address_str] = "worksheet: {}, #written: {}".format(packet_address_str_xlsx,0)
                     device_worksheets[packet_address_str].write(row_datakey, 0, 'Excel time')
+                    status = {'some cool status':4}
+                    #statuspacket = redvypr.data_packets.statuspacket(device_info['address_str'],status)
+                    #print('STATUSPACKET!!!')
+                    #print('STATUSPACKET!!!',statuspacket)
+                    #print('STATUSPACKET!!!')
+                    #dataqueue.put(statuspacket)
+                    try:
+                        file_status[filename]['worksheets']
+                    except:
+                        file_status[filename] = {'worksheets':{}}
+                    try:
+                        file_status_reduced[filename]['worksheets']
+                    except:
+                        file_status_reduced[filename] = {'worksheets': {}}
+
+                    data_stat = {'_deviceinfo': {}}
+                    file_status[filename]['worksheets'][packet_address_str] = device_worksheets_indices[packet_address_str]
+                    file_status_reduced[filename]['worksheets'] = device_worksheets_reduced
+                    data_stat['_deviceinfo']['file_status'] = file_status
+                    data_stat['_deviceinfo']['file_status_reduced'] = file_status_reduced
+                    dataqueue.put(data_stat)
 
 
                 # Write data
                 if True:
+                    try:
+                        data['t']
+                    except:
+                        data['t'] = data['_redvypr']['t']
+
                     datakeys = data_packets.redvypr_datapacket(data).datakeys()
                     datakeys.remove('t')
                     datakeys.insert(0,'t')
@@ -235,17 +264,21 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             device_worksheets_indices[packet_address_str]['colindex'][k] = colindex
                             device_worksheets[packet_address_str].write(row_datakey,colindex,k)
 
-                        print('Will write data from {} to column {} and line {}'.format(packet_address_str, colindex,lineindex))
+                        #print('Will write data from {} to column {} and line {}'.format(packet_address_str, colindex,lineindex))
                         datawrite = data[k]
                         if (type(datawrite) is not str) and (type(datawrite) is not int) and (type(datawrite) is not float):
-                            print('Datatype {} not supported, converting data to str'.format(str(type(datawrite))))
+                            #print('Datatype {} not supported, converting data to str'.format(str(type(datawrite))))
                             datawrite = str(datawrite)
 
                         device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
 
                     device_worksheets_indices[packet_address_str]['numline'] += 1
+                    numline = device_worksheets_indices[packet_address_str]['numline']
+                    device_worksheets_reduced[packet_address_str] = "worksheet: {}, #written: {}".format(
+                        packet_address_str_xlsx, numline)
                     size = sys.getsizeof(workbook)
-                    print('Size:',size)
+                    packets_written += 1
+                    #print('Size:',size)
 
                 # Send statistics
                 if ((time.time() - tupdate) > config['dt_update']):
@@ -255,6 +288,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
                     data_stat['_deviceinfo']['bytes_written'] = bytes_written
                     data_stat['_deviceinfo']['packets_written'] = packets_written
+                    file_status[filename]['worksheets'] = device_worksheets_indices
+                    data_stat['_deviceinfo']['file_status'] = file_status
+                    data_stat['_deviceinfo']['file_status_reduced'] = file_status_reduced
                     dataqueue.put(data_stat)
 
             except Exception as e:
@@ -282,12 +318,30 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 data_stat['_deviceinfo']['packets_written'] = packets_written
                 dataqueue.put(data_stat)
                 if FLAG_RUN:
-                    [workbook, filename,formats] = create_logfile(config, count)
-                    count += 1
-                    #statistics = data_packets.create_data_statistic_dict()
                     tfile = tcheck
+                    #[workbook, filename,formats] = create_logfile(config, count)
+                    #count += 1
+                    #bytes_written = 0
+                    #packets_written = 0
+                    #data_stat = {'_deviceinfo': {}}
+                    #data_stat['_deviceinfo']['filename'] = filename
+                    #data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
+                    #data_stat['_deviceinfo']['created'] = time.time()
+                    #data_stat['_deviceinfo']['bytes_written'] = bytes_written
+                    #data_stat['_deviceinfo']['packets_written'] = packets_written
+                    #dataqueue.put(data_stat)
                     bytes_written = 0
                     packets_written = 0
+                    bytes_written_total = 0
+                    packets_written_total = 0
+                    device_worksheets = {}  # The worksheets for the devices
+                    device_worksheets_reduced = {}  # The worksheets for the devices
+                    device_worksheets_indices = {}
+                    numworksheet = 0
+                    [workbook, filename, formats] = create_logfile(config, count)
+                    worksheet_summary = workbook.add_worksheet('summary')
+                    redvypr_version_str = 'redvypr {}'.format(redvypr.version)
+                    worksheet_summary.write(0, 0, redvypr_version_str)
                     data_stat = {'_deviceinfo': {}}
                     data_stat['_deviceinfo']['filename'] = filename
                     data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
@@ -331,7 +385,7 @@ class initDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)
-        print('Hallo,device config',device.config)
+        #print('Hallo,device config',device.config)
         self.device   = device
         self.redvypr  = device.redvypr
         self.label    = QtWidgets.QLabel("Csvlogger setup")
@@ -391,15 +445,15 @@ class initDeviceWidget(QtWidgets.QWidget):
         onlyInt = QtGui.QIntValidator()
         edit.setValidator(onlyInt)
         self.size_newfile = edit
-        self.size_newfile.setToolTip('Create a new file every N bytes.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
+        self.size_newfile.setToolTip('Create a new file if N bytes of RAM are used.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
         try:
             self.size_newfile.setText(str(self.device.config.size_newfile))
         except Exception as e:
             self.size_newfile.setText('0')
             
         self.newfiletimecombo = QtWidgets.QComboBox()
-        times = typing.get_args(self.device.config.model_fields['size_newfile_unit'].annotation)
-        timeunit = self.device.config.size_newfile_unit
+        times = typing.get_args(self.device.config.model_fields['dt_newfile_unit'].annotation)
+        timeunit = self.device.config.dt_newfile_unit
         for t in times:
             self.newfiletimecombo.addItem(t)
 
@@ -703,8 +757,9 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
 class displayDeviceWidget(QtWidgets.QWidget):
-    def __init__(self):
+    def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
+        self.device = device
         layout          = QtWidgets.QVBoxLayout(self)
         hlayout         = QtWidgets.QHBoxLayout()
         self.filetable  = QtWidgets.QTableWidget()
@@ -716,14 +771,34 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.byteslab   = QtWidgets.QLabel("Bytes written: ")
         self.packetslab = QtWidgets.QLabel("Packets written: ")
         # Table that displays all datastreams and the format as it is written to the file
-        self.datastreamtable = QtWidgets.QTableWidget()
-        self.datastreamtable_columns = ['Columnnr.', 'Datakey', 'Device', 'Datatype', 'Format', 'Address']
+        self.deviceinfoQtree = redvypr.gui.dictQTreeWidget(dataname='file status', show_datatype = False)
+        # Update layout
+        updatelayout = QtWidgets.QHBoxLayout()
+        self.update_auto = QtWidgets.QCheckBox('Autoupdate file status')
+        self.update_auto.setChecked(True)
+        updatelayout.addWidget(self.update_auto)
+        self.update_show_all_files = QtWidgets.QRadioButton('Show all files')
+        #self.update_show_all_files.setChecked(True)
+        self.update_show_cur_file = QtWidgets.QRadioButton('Show current file')
+        self.update_show_cur_file.setChecked(True)
+        show_group=QtWidgets.QButtonGroup()
+        show_group.addButton(self.update_show_all_files)
+        show_group.addButton(self.update_show_cur_file)
+        self.show_group = show_group
+        updatelayout.addWidget(self.update_show_all_files)
+        updatelayout.addWidget(self.update_show_cur_file)
 
-        # self.datastreamtable.setRowCount(len(rows))
-        self.datastreamtable.setColumnCount(len(self.datastreamtable_columns))
-        self.datastreamtable.setHorizontalHeaderLabels(self.datastreamtable_columns)
-        self.datastreamtable.resizeColumnsToContents()
-        self.datastreamtable.verticalHeader().hide()
+        self.update_show_full = QtWidgets.QRadioButton('Show all information')
+        #self.update_show_full.setChecked(True)
+        self.update_show_red = QtWidgets.QRadioButton('Show reduced information')
+        self.update_show_red.setChecked(True)
+        showred_group = QtWidgets.QButtonGroup()
+        showred_group.addButton(self.update_show_full)
+        showred_group.addButton(self.update_show_red)
+        self.showred_group = showred_group
+        updatelayout.addWidget(self.update_show_full)
+        updatelayout.addWidget(self.update_show_red)
+
 
 
         hlayout.addWidget(self.byteslab)
@@ -731,12 +806,64 @@ class displayDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.filelab)        
         layout.addLayout(hlayout)
         layout.addWidget(self.filetable)
-        layout.addWidget(self.datastreamtable)
-        #self.text.insertPlainText("hallo!")        
+        layout.addWidget(self.deviceinfoQtree)
+        # Add update options
+        layout.addLayout(updatelayout)
+        #self.text.insertPlainText("hallo!")
+
+    def update_qtreewidget(self):
+        funcname = __name__ + '.update_qtreewidget()'
+        logger.debug(funcname)
+        if self.update_auto.isChecked():
+            devinfo = self.device.get_device_info(address=self.device.address_str)
+            # devinfo = self.device.get_device_info()
+            # print('Deviceinfo!!!!', devinfo)
+            # print('__________')
+
+            filename = devinfo['_deviceinfo']['filename']
+
+            if self.update_show_red.isChecked():
+                print('Hallo show reduced is checked')
+                file_status = devinfo['_deviceinfo']['file_status_reduced']
+            else:
+                print('Hallo show full is checked')
+                file_status = devinfo['_deviceinfo']['file_status']
+
+            if self.update_show_cur_file.isChecked():
+                print('Hallo current file is checked')
+                file_status = file_status[filename]
+            else:
+                print('Hallo is not checked')
+
+            # Update the qtree
+            # https://stackoverflow.com/questions/9364754/remembering-scroll-value-of-a-qtreewidget-in-pyqt?rq=3
+            bar = self.deviceinfoQtree.verticalScrollBar()
+            yScroll = bar.value()
+            self.deviceinfoQtree.reload_data(file_status)
+            self.deviceinfoQtree.verticalScrollBar().setSliderPosition(yScroll)
 
     def update(self,data):
+        funcname = __name__ + '.update()'
         try:
-            funcname = __name__ + '.update()'
+            data['_deviceinfo']
+        except:
+            return
+
+        # Update qtree
+
+        try:
+            # Test if the file status has changed, if yes make an update
+            file_status_tmp = data['_deviceinfo']['file_status']
+            try:
+                self.update_qtreewidget()
+            except Exception as e:
+                logger.debug(exc_info=True)
+
+        except Exception as e:
+            #logger.debug(funcname, exc_info=True)
+            pass
+
+        try:
             #print('data',data)
             try:
                 filename_table = self.filetable.item(0,0).text()

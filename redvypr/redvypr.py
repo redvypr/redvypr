@@ -161,7 +161,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     if(type(data) is not dict): # If data is not a dictionary, convert it to one
                         data = {'data':data}
 
-                    #devicedict['packets_published'] += 1 # Do we still need this???
+                    devicedict['statistics']['packets_published'] += 1 # The total number of packets published by the device
                     packets_processed += 1 # Counter for the statistics
                     packet_counter += 1 # Global counter of packets received by the redvypr instance
                     data_all.append([data,packet_counter])

@@ -660,7 +660,7 @@ class redvypr_device(QtCore.QObject):
                     try:
                         # The arguments for the start function
                         thread_uuid = 'thread_' + str(uuid.uuid1())
-                        device_info = {'device':self.name,'uuid':self.uuid,'thread_uuid':thread_uuid,'hostinfo':self.redvypr.hostinfo}
+                        device_info = {'device':self.name,'uuid':self.uuid,'thread_uuid':thread_uuid,'hostinfo':self.redvypr.hostinfo,'address_str':self.address_str}
                         if config is None:
                             self.logger.debug('Using internal configuration')
                             if type(self.config) == redvypr.config.configuration:
@@ -802,7 +802,7 @@ class redvypr_device(QtCore.QObject):
 
         return datastreams
 
-    def get_device_info(self):
+    def get_device_info(self, address=None):
         """
         Returns a deepcopy that is saved in self.statistics['device_redvypr'] containing information about all devices
         that have been published through this device.
@@ -812,8 +812,17 @@ class redvypr_device(QtCore.QObject):
             Dictionary with the device address (str) as key
 
         """
-        d = copy.deepcopy(self.statistics['device_redvypr'])
-        return d
+        if address is None:
+            d = copy.deepcopy(self.statistics['device_redvypr'])
+            return d
+        else:
+            if type(address) == str:
+                raddr = redvypr_address(address)
+                dtmp = copy.deepcopy(self.statistics['device_redvypr'])
+                for a in dtmp.keys():
+                    if a in raddr:
+                        d = dtmp[a]
+                        return d
 
 
     def publishing_to(self):

@@ -150,6 +150,33 @@ def commandpacket(command='stop',device_uuid='',thread_uuid='',devicename = None
     return compacket
 
 
+def deviceinfopacket(deviceadress,statusdict):
+    """
+    deviceinfopacket for a device thread
+    Returns:
+         stauspacket: A redvypr statuspacket dictionary
+    """
+    comdata = {}
+    comdata['deviceaddr'] = deviceadress
+    comdata['devicestatus'] = statusdict  # This is the status of the device
+    datapacket = commandpacket(command='device_status', device_uuid='', thread_uuid='', devicename=None,
+                                            host=None, comdata=comdata)
+    return datapacket
+
+
+def statuspacket(deviceadress,statusdict):
+    """
+    statuspacket for a device thread
+    Returns:
+         statuspacket: A redvypr statuspacket dictionary
+    """
+    comdata = {}
+    comdata['deviceaddr'] = deviceadress
+    comdata['devicestatus'] = statusdict  # This is the status of the device
+    datapacket = commandpacket(command='device_status', device_uuid='', thread_uuid='', devicename=None,
+                                            host=None, comdata=comdata)
+    return datapacket
+
 def check_for_command(datapacket=None,uuid=None,thread_uuid=None,add_data=False):
     """
 

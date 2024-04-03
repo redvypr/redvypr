@@ -1,4 +1,5 @@
-    -0.7.3  - mahor csvlogger rework, xlsxlogger draft implemented
+    -0.7.4  - xlsxlogger working, nmeaparser re-implemented, working but needs to be polished
+    -0.7.3  - major csvlogger rework, xlsxlogger draft implemented
     -0.7.2  - Cleanup of several API calls, command line interface improved, XYplotWidget with pydantic added, redvypr_address with new address format added
     -0.7.1  - pydantic device_parameter, add_device, gui, loglevel
     -0.7.0  - Qthread instead of threading.Thread (allows to terminate a thread)

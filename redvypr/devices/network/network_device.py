@@ -108,7 +108,7 @@ def yaml_dump(data):
     #return yaml.dump(data,default_flow_style=False)
     return yaml.dump(data,explicit_end=True,explicit_start=True)
 
-def raw_to_packet(datab,config):
+def raw_to_packet(datab, config, safe_load=True):
     """
     Packs the received raw data into a packet that can be sent via the dataqueue
 
@@ -123,19 +123,33 @@ def raw_to_packet(datab,config):
     funcname = __name__ + '.raw_to_packet()'
     t = time.time()
     packets = []
+    datab_rest = b''
+    #print('A data:',datab)
+    #print('-------------------')
+    if safe_load:
+        loader = yaml.SafeLoader
+    else:
+        loader = yaml.CLoader
     if(config['serialize'] == 'yaml'):
-        for databs in datab.split(b'...\n'): # Split the text into single subpackets
+        i0 = datab.find(b'---\n')
+        i1 = datab.rfind(b'...\n')+4
+        # Here check if we got data
+        datab_valid = datab[i0:i1]
+        datab_rest = datab[i1:]
+        for databs in datab_valid.split(b'...\n'): # Split the text into single subpackets
             try:
-                data = yaml.safe_load(databs)
+                data = yaml.load(databs,Loader=loader)
             except Exception as e:
-                logger.debug(funcname + ': Could not decode message {:s}'.format(str(data)))
+                #print('data',databs)
+                logger.info(funcname + ': Could not decode message:',exc_info=True)
                 logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(config['datakey']))
+                data = None
             if(data is not None):
                 if(config['datakey'] == 'all'): # Forward the whole message
                     packets.append(data)
                 else:
                     datan = {'t':t}
-                    datan[config['datakey']] = data[k]
+                    datan[config['datakey']] = data[config['datakey']]
                     packets.append(datan)
 
     elif (config['serialize'] == 'utf-8'):  # Put the "str" data into the packet with the key in "data"
@@ -148,7 +162,7 @@ def raw_to_packet(datab,config):
         datan[config['datakey']] = datab
         packets.append(datan)
 
-    return packets
+    return {'packets':packets,'datab_rest':datab_rest}
 
 def packet_to_raw(data_dict,config):
     """ Function that processes the data_dict to a serialized datastream sendable over network connections 
@@ -349,6 +363,7 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
         
     # 
     npackets = 0 # Number packets received via the datainqueue
+    datab_all = b''
     while True:
         try:
             com = datainqueue.get(block=False)
@@ -388,7 +403,10 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
 
             bytes_read += len(datab)
             # Check what data we are expecting and convert it accordingly
-            packets = raw_to_packet(datab, config)
+            datab_all += datab
+            tmp = raw_to_packet(datab_all, config)
+            packets = tmp['packets']
+            datab_all = tmp['datab_rest']
             for p in packets:
                 dataqueue.put(p)
                 npackets += 1
@@ -396,7 +414,7 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
         except socket.timeout as e:
             pass
         except Exception as e:
-            logger.info(funcname + ':' + str(e))
+            logger.info(funcname + ':',exc_info=True)
             return
 
         # Sending a status message
