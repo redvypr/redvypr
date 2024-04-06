@@ -274,8 +274,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
                     device_worksheets_indices[packet_address_str]['numline'] += 1
                     numline = device_worksheets_indices[packet_address_str]['numline']
+                    worksheet_tmp = device_worksheets_indices[packet_address_str]['worksheet']
                     device_worksheets_reduced[packet_address_str] = "worksheet: {}, #written: {}".format(
-                        packet_address_str_xlsx, numline)
+                        worksheet_tmp, numline)
                     size = sys.getsizeof(workbook)
                     packets_written += 1
                     #print('Size:',size)
