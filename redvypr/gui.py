@@ -516,7 +516,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
                                 if subscribed:
                                     break
 
-                            devaddress_str = devaddress_redvypr.get_str('/a/h/d/')
+                            devaddress_str = devaddress_redvypr.get_str('/a/h/p/d/')
                             itmf = QtWidgets.QTreeWidgetItem([devaddress_str, ''])
                             #itmf.setData(0, 0, devaddress_redvypr)
                             itmf.device = dev

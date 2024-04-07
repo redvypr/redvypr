@@ -33,14 +33,14 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulena
         data['_redvypr']['tag'][hostinfo['uuid']] += 1
     except:
         data['_redvypr']['tag'][hostinfo['uuid']] = 1
-        data['_redvypr']['locpub'] = str(devicename)
         data['_redvypr']['locuuid'] = hostinfo['uuid']
+        data['_redvypr']['locpub'] = str(devicename)
 
-    # Add the publishing device
+    # Add the first publishing device
     try:
-        data['_redvypr']['pub']
+        data['_redvypr']['fpub']
     except:
-        data['_redvypr']['pub'] = str(devicename)
+        data['_redvypr']['fpub'] = str(devicename)
 
     # Add the time to the datadict if its not already in
     if ('t' not in data['_redvypr'].keys()):

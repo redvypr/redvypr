@@ -34,7 +34,7 @@ class redvypr_address():
         # Try to convert redvypr_address to dict
 
 
-        self._common_address_formats = ['/d/k', '/a/h/d/', '/u/a/h/d/', '/u/a/h/d/k/', '/a/h/p/']
+        self._common_address_formats = ['/d/k', '/k/','/d/','/p/','/p/d/','/u/a/h/d/', '/u/a/h/d/k/', '/a/h/d/', '/a/h/p/']
         if addrstr is not None: # Address from addrstr
             #print('addrstr',type(addrstr),type(self))
             if type(addrstr) == type(self): # If addrstr is redvypr_address, convert it to str
@@ -306,7 +306,7 @@ class redvypr_address():
             addrflag   = self.compare_address_substrings(self.addr, datapacket['_redvypr']['host']['addr'])
             uuidflag   = self.compare_address_substrings(self.uuid, datapacket['_redvypr']['host']['uuid'])
             try:
-                pubstr = datapacket['_redvypr']['pub']
+                pubstr = datapacket['_redvypr']['locpub']
             except:
                 pubstr = ''
 

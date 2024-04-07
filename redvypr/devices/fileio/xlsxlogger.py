@@ -274,9 +274,10 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
                     device_worksheets_indices[packet_address_str]['numline'] += 1
                     numline = device_worksheets_indices[packet_address_str]['numline']
+                    numkeys = len(device_worksheets_indices[packet_address_str]['datakeys'])
                     worksheet_tmp = device_worksheets_indices[packet_address_str]['worksheet']
-                    device_worksheets_reduced[packet_address_str] = "worksheet: {}, #written: {}".format(
-                        worksheet_tmp, numline)
+                    device_worksheets_reduced[packet_address_str] = "worksheet: {}, numkeys: {}, numlines: {}".format(
+                        worksheet_tmp, numkeys, numline)
                     size = sys.getsizeof(workbook)
                     packets_written += 1
                     #print('Size:',size)
@@ -499,7 +500,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.outlayout = QtWidgets.QGridLayout(self.outwidget)
         # Datafolder lineedit
         self.outlayout.addWidget(self.folderbtn, 0, 0)
-        self.outlayout.addWidget(self.folder_text, 0, 1,1,3)
+        self.outlayout.addWidget(self.folder_text, 0, 1,1,4)
         # Checkboxes
         self.outlayout.addWidget(self.prefix_check, 1, 0)
         self.outlayout.addWidget(self.date_check, 1, 1)
@@ -523,7 +524,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.outlabel,1,0)
         layout.addWidget(self.outwidget,2,0)
         layout.addWidget(self.adddeviceinbtn, 5, 0)
-        layout.addWidget(self.startbtn,5,1,1,2)
+        layout.addWidget(self.startbtn,6,0)
 
         self.config_to_widgets()
         self.connect_widget_signals()
