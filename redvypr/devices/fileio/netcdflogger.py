@@ -7,6 +7,8 @@ Logger that writes xlsx files
 import datetime
 import logging
 import queue
+
+import numpy
 from PyQt5 import QtWidgets, QtCore, QtGui
 import time
 import logging
@@ -15,7 +17,7 @@ import yaml
 import copy
 import gzip
 import os
-import xlsxwriter
+import netCDF4
 import pympler.asizeof
 import pydantic
 import typing
@@ -25,27 +27,28 @@ import redvypr.redvypr_address as redvypr_address
 import redvypr.gui
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('xlsxlogger')
+logger = logging.getLogger('netcdflogger')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
 class device_base_config(pydantic.BaseModel):
     publishes: bool = False
     subscribes: bool = True
-    description: str = "Saves subscribed devices in a xlsx file"
-    gui_tablabel_display: str = 'xlsx logging status'
+    description: str = "Saves subscribed devices in a netCDF4 file"
+    gui_tablabel_display: str = 'netCDF logging status'
 
 class device_config(pydantic.BaseModel):
     dt_sync: int = pydantic.Field(default=5,description='Time after which an open file is synced on disk')
     dt_newfile: int = pydantic.Field(default=3600,description='Time after which a new file is created')
     dt_newfile_unit: typing.Literal['none','seconds','hours','days'] = pydantic.Field(default='seconds')
     dt_update:int = pydantic.Field(default=2,description='Time after which an upate is sent to the gui')
+    zlib: bool = pydantic.Field(default=True, description='Flag if zlib compression shall be used for the netCDF data')
     size_newfile:int = pydantic.Field(default=500,description='Size of object in RAM after which a new file is created')
     size_newfile_unit: typing.Literal['none','bytes','kB','MB'] = pydantic.Field(default='MB')
     datafolder:str = pydantic.Field(default='./',description='Folder the data is saved to')
-    fileextension:str= pydantic.Field(default='xlsx',description='File extension, if empty not used')
+    fileextension:str= pydantic.Field(default='nc',description='File extension, if empty not used')
     fileprefix:str= pydantic.Field(default='redvypr',description='If empty not used')
-    filepostfix:str= pydantic.Field(default='xlsxlogger',description='If empty not used')
+    filepostfix:str= pydantic.Field(default='netcdflogger',description='If empty not used')
     filedateformat:str= pydantic.Field(default='%Y-%m-%d_%H%M%S',description='Dateformat used in the filename, must be understood by datetime.strftime')
     filecountformat:str= pydantic.Field(default='04',description='Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}')
 
@@ -81,11 +84,8 @@ def create_logfile(config,count=0):
     logger.info(funcname + ' Will create a new file: {:s}'.format(filename))
 
     # Create a workbook and add a worksheet.
-    workbook = xlsxwriter.Workbook(filename)
-    date_format = workbook.add_format({'num_format': 'yyyy-mm-dd HH:MM:SS.000'})
-    formats = {}
-    formats['date'] = date_format
-    return [workbook,filename,formats]
+    nc = netCDF4.Dataset(filename, mode='w',format='NETCDF4')
+    return [nc,filename]
 
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
@@ -137,18 +137,20 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     except:
         config['dt_sync'] = 5
 
+
+    flag_zlib = config['zlib']
+    #flag_zlib = False
+
     bytes_written = 0
     packets_written = 0
     bytes_written_total = 0
     packets_written_total = 0
-    device_worksheets = {} # The extended info of the worksheets for the devices
-    device_worksheets_reduced = {} # The worksheets for the devices
-    device_worksheets_indices = {}
-    numworksheet = 0
-    [workbook,filename,formats] = create_logfile(config,count)
-    worksheet_summary = workbook.add_worksheet('summary')
+    [nc,filename] = create_logfile(config,count)
+    print('Adding main group',device_info)
+    hostname = device_info['hostinfo']['hostname']
+    nchost = nc.createGroup(hostname)
     redvypr_version_str = 'redvypr {}'.format(redvypr.version)
-    worksheet_summary.write(0,0,redvypr_version_str)
+    nc.redvypr_version = redvypr_version_str
     data_stat = {'_deviceinfo': {}}
     data_stat['_deviceinfo']['filename'] = filename
     data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
@@ -166,12 +168,10 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     file_status_reduced = {}
     while FLAG_RUN:
         tcheck      = time.time()
-
-
         # Flush file on regular basis
         if ((time.time() - tflush) > config['dt_sync']):
             print('Flushing, not implemented (yet)')
-            bytes_written = pympler.asizeof.asizeof(workbook)
+            bytes_written = pympler.asizeof.asizeof(nc)
             print('Bytes written',bytes_written)
             tflush = time.time()
 
@@ -192,95 +192,82 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 packet_address = redvypr.redvypr_address(data)
                 address_format = '/h/p/d/'
                 packet_address_str = packet_address.get_str(address_format)
-                #print('Address',packet_address)
-                row_datakey = 1
-                row_firstdata = 3
-                coloffset = 1
+                publisher = packet_address.publisher
+                devicename = packet_address.devicename
+                # This is the group structure
+                # Data is written to the group found in
+                # ncgroup = groups[hostname][publisher][devicename]
                 try:
-                    device_worksheets[packet_address_str]
+                    nc[hostname][publisher]
                 except:
-                    numworksheet += 1
-                    numworksheet_offset = 2
-                    devicename = packet_address.devicename.replace('/','_').replace('[','_').replace(']','_').replace('\\','_').replace('*','_').replace(':','_')
-                    packet_address_str_xlsx = '{:02d}_{}'.format(numworksheet,devicename)
-                    if len(packet_address_str_xlsx) > 31:
-                        packet_address_str_xlsx = packet_address_str_xlsx[0:31]
+                    print('Creating publishing device',publisher)
+                    ncgroup_pub = nc[hostname].createGroup(publisher)
 
-                    worksheet_summary.write(numworksheet_offset, 0, 'redvypr address')
-                    worksheet_summary.write(numworksheet_offset, 1, 'worksheet')
-                    worksheet_summary.write(numworksheet + numworksheet_offset, 0, packet_address_str)
-                    worksheet_summary.write(numworksheet + numworksheet_offset, 1, packet_address_str_xlsx)
-                    logger.debug('Will create workbook for {}'.format(packet_address_str_xlsx))
-                    device_worksheets[packet_address_str] = workbook.add_worksheet(packet_address_str_xlsx)
-                    device_worksheets_indices[packet_address_str] = {'datakeys':[],'numline':0,'colindex':{}}
-                    device_worksheets_indices[packet_address_str]['worksheet'] = packet_address_str_xlsx
-                    device_worksheets_reduced[packet_address_str] = "worksheet: {}, #written: {}".format(packet_address_str_xlsx,0)
-                    device_worksheets[packet_address_str].write(row_datakey, 0, 'Excel time')
-                    status = {'some cool status':4}
-                    #statuspacket = redvypr.data_packets.statuspacket(device_info['address_str'],status)
-                    #print('STATUSPACKET!!!')
-                    #print('STATUSPACKET!!!',statuspacket)
-                    #print('STATUSPACKET!!!')
-                    #dataqueue.put(statuspacket)
-                    try:
-                        file_status[filename]['worksheets']
-                    except:
-                        file_status[filename] = {'worksheets':{}}
-                    try:
-                        file_status_reduced[filename]['worksheets']
-                    except:
-                        file_status_reduced[filename] = {'worksheets': {}}
-
-                    data_stat = {'_deviceinfo': {}}
-                    file_status[filename]['worksheets'][packet_address_str] = device_worksheets_indices[packet_address_str]
-                    file_status_reduced[filename]['worksheets'] = device_worksheets_reduced
-                    data_stat['_deviceinfo']['file_status'] = file_status
-                    data_stat['_deviceinfo']['file_status_reduced'] = file_status_reduced
-                    dataqueue.put(data_stat)
-
+                # The device
+                try:
+                    nc_device = nc[hostname][publisher][devicename]
+                except:
+                    print('Creating device',devicename)
+                    nc_device = nc[hostname][publisher].createGroup(devicename)
+                    # Add time variable
+                    print('Creating time dimension')
+                    nc_device.createDimension('time',None)
+                    nc_device.createVariable('time', float,('time'))
 
                 # Write data
                 if True:
+                    print(funcname + ' got data',data)
                     try:
                         data['t']
                     except:
                         data['t'] = data['_redvypr']['t']
 
+                    lent = len(nc_device.variables['time'])
+                    nc_device.variables['time'][lent] = data['t']
                     datakeys = data_packets.redvypr_datapacket(data).datakeys()
                     datakeys.remove('t')
-                    datakeys.insert(0,'t')
-                    # Write data in datakeys
+                    #datakeys.insert(0,'t')
+                    # Write data in datakeys or create variable
                     # Write time
-                    colindex_time = 0
-                    lineindex = row_firstdata + device_worksheets_indices[packet_address_str]['numline']
-                    datatime = datetime.datetime.fromtimestamp(data['t'])
-                    device_worksheets[packet_address_str].write_datetime(lineindex, colindex_time, datatime,formats['date'])
                     for k in datakeys:
                         try:
-                            colindex = device_worksheets_indices[packet_address_str]['colindex'][k]
-                        except:
-                            device_worksheets_indices[packet_address_str]['datakeys'].append(k)
-                            colindex = len(device_worksheets_indices[packet_address_str]['datakeys']) - 1 + coloffset
-                            device_worksheets_indices[packet_address_str]['colindex'][k] = colindex
-                            device_worksheets[packet_address_str].write(row_datakey,colindex,k)
+                            var = nc_device.variables[k]
+                        except: # Create variable
+                            typedata = type(data[k])
+                            print('typedata',typedata)
+                            if (typedata is list) or (typedata is numpy.ndarray):
+                                print('Creating variable for list/ndarray type {}'.format(typedata))
+                                dwrite = numpy.asarray(data[k])
+                                datatype_array = dwrite.dtype
+                                dwrite_shape = numpy.shape(dwrite)
+                                dimnames = ['time']
+                                for id,nd in enumerate(numpy.shape(dwrite)):
+                                    dimname = k + '_n_{}'.format(id)
+                                    dimnames.append(dimname)
+                                    nc_device.createDimension(dimname, None)
 
-                        #print('Will write data from {} to column {} and line {}'.format(packet_address_str, colindex,lineindex))
-                        datawrite = data[k]
-                        if (type(datawrite) is not str) and (type(datawrite) is not int) and (type(datawrite) is not float):
-                            #print('Datatype {} not supported, converting data to str'.format(str(type(datawrite))))
-                            datawrite = str(datawrite)
+                                print('Creating variable',k,'Dimnames',dimnames,'datatype',datatype_array)
+                                var = nc_device.createVariable(k, datatype_array, dimnames, zlib=flag_zlib)
+                            elif (typedata is str):
+                                print('Creating string variable')
+                                # For some reason zlib does not work with str
+                                var = nc_device.createVariable(k, str, ('time'), zlib=False)
+                            else:
+                                try:
+                                    print('Creating variable with type {}'.format(typedata))
+                                    var = nc_device.createVariable(k, typedata, ('time'), zlib=flag_zlib)
+                                except:
+                                    var = None
 
-                        device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
+                        if var is not None:
+                            try:
+                                var[lent] = data[k]
+                            except:
+                                logger.info('Could not write data',exc_info=True)
+                        else:
+                            pass
 
-                    device_worksheets_indices[packet_address_str]['numline'] += 1
-                    numline = device_worksheets_indices[packet_address_str]['numline']
-                    numkeys = len(device_worksheets_indices[packet_address_str]['datakeys'])
-                    worksheet_tmp = device_worksheets_indices[packet_address_str]['worksheet']
-                    device_worksheets_reduced[packet_address_str] = "worksheet: {}, numkeys: {}, numlines: {}".format(
-                        worksheet_tmp, numkeys, numline)
-                    size = sys.getsizeof(workbook)
-                    packets_written += 1
-                    #print('Size:',size)
+
 
                 # Send statistics
                 if ((time.time() - tupdate) > config['dt_update']):
@@ -290,7 +277,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
                     data_stat['_deviceinfo']['bytes_written'] = bytes_written
                     data_stat['_deviceinfo']['packets_written'] = packets_written
-                    file_status[filename]['worksheets'] = device_worksheets_indices
                     data_stat['_deviceinfo']['file_status'] = file_status
                     data_stat['_deviceinfo']['file_status_reduced'] = file_status_reduced
                     dataqueue.put(data_stat)
@@ -306,12 +292,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
             if FLAG_TIME or FLAG_SIZE or (FLAG_RUN == False):
                 # Autofit
-                print('Autofit')
-                worksheet_summary.autofit()
-                for w in device_worksheets:
-                    device_worksheets[w].autofit()
-                    device_worksheets[w].set_column(0, 0, 25)
-                workbook.close()
+                nc.close()
                 data_stat = {'_deviceinfo': {}}
                 data_stat['_deviceinfo']['filename'] = filename
                 data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
@@ -321,29 +302,13 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 dataqueue.put(data_stat)
                 if FLAG_RUN:
                     tfile = tcheck
-                    #[workbook, filename,formats] = create_logfile(config, count)
-                    #count += 1
-                    #bytes_written = 0
-                    #packets_written = 0
-                    #data_stat = {'_deviceinfo': {}}
-                    #data_stat['_deviceinfo']['filename'] = filename
-                    #data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
-                    #data_stat['_deviceinfo']['created'] = time.time()
-                    #data_stat['_deviceinfo']['bytes_written'] = bytes_written
-                    #data_stat['_deviceinfo']['packets_written'] = packets_written
-                    #dataqueue.put(data_stat)
                     bytes_written = 0
                     packets_written = 0
                     bytes_written_total = 0
                     packets_written_total = 0
-                    device_worksheets = {}  # The worksheets for the devices
-                    device_worksheets_reduced = {}  # The worksheets for the devices
-                    device_worksheets_indices = {}
-                    numworksheet = 0
-                    [workbook, filename, formats] = create_logfile(config, count)
-                    worksheet_summary = workbook.add_worksheet('summary')
+                    [nc, filename] = create_logfile(config, count)
                     redvypr_version_str = 'redvypr {}'.format(redvypr.version)
-                    worksheet_summary.write(0, 0, redvypr_version_str)
+
                     data_stat = {'_deviceinfo': {}}
                     data_stat['_deviceinfo']['filename'] = filename
                     data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
@@ -367,7 +332,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
 class Device(redvypr_device):
     """
-    xlsxlogger device
+    netCDFlogger device
     """
 
     def __init__(self, **kwargs):
@@ -390,7 +355,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         #print('Hallo,device config',device.config)
         self.device   = device
         self.redvypr  = device.redvypr
-        self.label    = QtWidgets.QLabel("xlsx logger setup")
+        self.label    = QtWidgets.QLabel("netCDF logger setup")
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         self.label.setStyleSheet(''' font-size: 24px; font: bold''')
         self.config_widgets= [] # A list of all widgets that can only be used of the device is not started yet

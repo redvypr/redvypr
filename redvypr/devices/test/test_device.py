@@ -76,6 +76,14 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         counter += 1
         time.sleep(config['delay_s'])
         #print('Hallo')
+
+        # Add complex data
+        data = redvypr.data_packets.datapacket(device='test_complex_data')
+        data['data_list'] = [counter,data_sine]
+        data['data_ndarray_1d'] = np.zeros((5,)) + counter
+        data['data_ndarray_2d'] = np.zeros((6,7)) + counter
+        data['data_ndarray_2d_int'] = np.zeros((3,2),dtype=int) + int(counter)
+        dataqueue.put(data)
         
 
 
