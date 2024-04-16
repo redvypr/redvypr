@@ -66,7 +66,7 @@ class redvypr_datapacket(dict):
 
 
 
-def datapacket(data=None,datakey=None,tu=None,device=None,hostinfo=None):
+def datapacket(data=None, datakey=None, tu=None, device=None, hostinfo=None):
     """ A datapacket dictionary used as internal datastructure in redvypr
     """
     if(tu == None):
