@@ -1,9 +1,4 @@
 import datetime
-import dateutil.parser
-import zoneinfo
-import logging
-import queue
-import time
 import numpy as np
 import logging
 import sys
@@ -11,7 +6,6 @@ import threading
 import copy
 import yaml
 import json
-import glob
 import typing
 import pydantic
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -26,9 +20,9 @@ from redvypr import redvypr_address
 from redvypr.devices.plot import plot_widgets
 from redvypr.devices.plot import XYplotWidget
 import redvypr.files as redvypr_files
-from .calibration_models import  calibration_HF, calibration_NTC, get_date_from_calibration
-from .heatflow_sensors import convert_HF, parse_HF_raw, parse_HFS_raw, add_keyinfo_HF_raw, parse_HFV_raw, process_IMU_packet, process_HFS_data
-from .temperature_array_sensors import process_TAR_data, sensor_TAR, TARWidget
+from redvypr.devices.sensors.calibration.calibration_models import  calibration_HF, calibration_NTC, get_date_from_calibration
+from .heatflow_sensors import convert_HF, parse_HF_raw, add_keyinfo_HF_raw, parse_HFV_raw, process_IMU_packet, process_HFS_data
+from .temperature_array_sensors import process_TAR_data, sensor_TAR, TARWidget, TARWidget_config
 
 _icon_file = redvypr_files.icon_file
 
@@ -36,7 +30,7 @@ redvypr_devicemodule = True
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('heatflow')
+logger = logging.getLogger('csvsensors')
 logger.setLevel(logging.DEBUG)
 
 
@@ -198,8 +192,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                                             datapacket = None
 
                                     elif packettype == 'TAR':
-                                        print('Hallo!!')
-                                        print('Parsing TAR')
+                                        #print('Parsing TAR')
                                         try:
                                             datapackets_TAR = process_TAR_data(dataline, data, device_info, loggerconfig)
                                         except:
@@ -208,7 +201,6 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
 
                                         for datapacket_TAR in datapackets_TAR:
                                             dataqueue.put(datapacket_TAR)
-
 
                                     elif packettype == 'HFS':
                                         # Heatflow data in physical units
@@ -234,9 +226,6 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
 
                                             if datapacket_HFS_avg is not None:
                                                 dataqueue.put(datapacket_HFS_avg)
-
-
-
 
                                     elif packettype == 'HF':
                                         # Heatflow data in raw units
@@ -1833,15 +1822,16 @@ class initDeviceWidget(QtWidgets.QWidget):
 
             sensor_id = str(self.device.config.sensorconfigurations[sn].sensor_id)
             #print('logger_short', logger_short)
-            configwidget = self.__create_logger_config_widget__(str(sn), sensor_id)
+            # Create a configuration widget for the sensor
+            configwidget = self.__create_sensor_config_widget__(str(sn), sensor_id)
             item.configwidget = configwidget
             item.sn = sn
             #print('Item',item.configwidget)
             self.configLoggerWidgets['loggerlist'].addItem(item)
 
-    def __create_logger_config_widget__(self, sn, sensor_id):
-        funcname = __name__ + '__create_logger_config_widget__()'
-        logger.debug(funcname + ' sn: {:s}, logger_short {:s}'.format(sn,sensor_id))
+    def __create_sensor_config_widget__(self, sn, sensor_id):
+        funcname = __name__ + '__create_sensor_config_widget__()'
+        logger.debug(funcname + ' sn: {:s}, sensor_short {:s}'.format(sn,sensor_id))
         cwidget = QtWidgets.QWidget()
         clayout = QtWidgets.QVBoxLayout(cwidget)
         clabel = QtWidgets.QLabel('Config of \n' + sn)
@@ -1849,6 +1839,10 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         if sensor_id.lower() == 'generic logger':
             print('Generic logger ...')
+        elif sensor_id.lower() == 'tar':
+            logger.debug('Config widget for temperature array (TAR)')
+            config_widget = TARWidget_config(sn=sn, redvypr_device=self.device)
+            clayout.addWidget(config_widget)
         elif sensor_id.lower() == 'dhfs50':
             logger.debug('DHFS50')
             config_widget = DHFS50Widget_config(sn = sn, redvypr_device = self.device)

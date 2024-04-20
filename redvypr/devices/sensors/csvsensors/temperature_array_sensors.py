@@ -1,14 +1,14 @@
+import copy
 import datetime
 import redvypr.data_packets as data_packets
+from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 import numpy
-import logging
-import zoneinfo
 import pydantic
 import typing
 import sys
 import logging
-from PyQt5 import QtWidgets, QtCore, QtGui
-from .calibration_models import calibration_HF, calibration_NTC, get_date_from_calibration
+from PyQt5 import QtWidgets
+from redvypr.devices.sensors.calibration.calibration_models import calibration_NTC
 from .average_data import average_data
 
 logging.basicConfig(stream=sys.stderr)
@@ -20,6 +20,7 @@ avg_objs_TAR_raw = {}  # Average dataobjects
 
 class parameter_TAR(pydantic.BaseModel):
     NTC_A: typing.Optional[typing.List[calibration_NTC]] = pydantic.Field(default=[])
+    name: typing.Optional[typing.List[str]] = pydantic.Field(default=[],description='Name of the parameter')
     pos_x: typing.Optional[typing.List[float]] = pydantic.Field(default=[])
     pos_y: typing.Optional[typing.List[float]] = pydantic.Field(default=[])
     pos_z: typing.Optional[typing.List[float]] = pydantic.Field(default=[])
@@ -50,13 +51,22 @@ class sensor_TAR(pydantic.BaseModel):
         pos_x = 0
         if n_NTC is not None:
             for i in range(n_NTC):
-                parameter_name = 'NTC{:d}'.format(i)
+
+                if n_NTC > 0:
+                    numzeros = int(numpy.floor(numpy.log10(n_NTC))) + 1
+                else:
+                    numzeros = 1
+
+                #intformat = 'NTC_A{:0' + str(numzeros) + 'd}'
+                parameter_name = 'NTC_A[{:d}]'.format(i)
+                NTC_name = parameter_name
                 ntc_coeff = [1.9560290742146262e-07, -7.749325133113135e-08, 0.00025341112950681254,
                              0.0012350747622505245]
                 coeff_comment = 'Standard coefficients, not calibration'
-                NTCcal = calibration_NTC(parameter=parameter_name, coeff=ntc_coeff, comment=coeff_comment)
+                NTCcal = calibration_NTC(parameter=parameter_name, coeff=ntc_coeff, comment=coeff_comment, sn=self.sn)
                 self.parameter.NTC_A.append(NTCcal)
                 self.parameter.pos_x.append(pos_x)
+                self.parameter.name.append(NTC_name)
                 #print('Adding parameter',parameter_name)
                 pos_x += dx_positions
 
@@ -100,7 +110,7 @@ def process_TAR_data(dataline, data, device_info, loggerconfig):
             datapacket_TAR_T['NTC_A'].append(float(dataSI))
 
         datapackets_return.append(datapacket_TAR_T)
-        print('Datapacket TAR', datapacket_TAR_T)
+        #print('Datapacket TAR', datapacket_TAR_T)
         # dataqueue.put(datapacket_TAR)
         # Do averaging.
         sn = datapacket_TAR['sn']
@@ -139,7 +149,7 @@ def parse_TAR_raw(data, sensortype='TAR'):
     Parses temperature array
     $FC0FE7FFFE155D8C,TAR,B2,36533.125000,83117,3498.870,3499.174,3529.739,3490.359,3462.923,3467.226,3480.077,3443.092,3523.642,3525.567,3509.492,3561.330,3565.615,3486.693,3588.670,3539.169,3575.104,3523.946,3496.343,3480.160,3531.045,3501.624,3497.010,3557.235,3479.952,3458.297,3523.052,3487.223,3571.087,3525.740,3580.928,3534.818
     """
-    print('Got data', data)
+    #print('Got data', data)
     datasplit = data.split(',')
     macstr = datasplit[0][1:17]
     packettype = datasplit[1]  # HF
@@ -160,15 +170,6 @@ def parse_TAR_raw(data, sensortype='TAR'):
         for i in range(5, numsp):
             j += 1
             data = float(datasplit[i])
-            poly = [1.9560290742146262e-07, -7.749325133113135e-08, 0.00025341112950681254, 0.0012350747622505245]
-            Toff = 273.15
-            # print('Poly', poly)
-            data_tmp = numpy.polyval(poly, numpy.log(data))
-            # print('data_tmp', data_tmp)
-            data_tmp = 1 / data_tmp - Toff
-            dataSI = data_tmp
-            #print('data_SI', dataSI,type(dataSI))
-            #datapacket[parameter] = float(dataSI)
             ntc_all.append(data)
 
         datapacket['NTC_A'] = ntc_all
@@ -240,7 +241,7 @@ class TARWidget(QtWidgets.QWidget):
         funcname = __name__ + '__update__()'
         logger.debug(funcname)
         devicename = data['_redvypr']['device']
-        print('Devicename',devicename)
+        #print('Devicename',devicename)
         dkey = self.parameter[0]
         NTC_A = data[dkey]
         self.nRow_time = 1
@@ -288,3 +289,72 @@ class TARWidget(QtWidgets.QWidget):
 
         # Fill the datatables
         self.datatable_all.resizeColumnsToContents()
+
+
+#
+#
+# Here the widgets start
+#
+#
+class TARWidget_config(QtWidgets.QWidget):
+    """
+    Widget to configure a temperature array sensor
+    """
+
+    def __init__(self, *args, sn=None, redvypr_device=None):
+        funcname = __name__ + '__init__()'
+        super(QtWidgets.QWidget, self).__init__(*args)
+        logger.debug(funcname)
+        self.device = redvypr_device
+        self.nosensorstr = ''
+        self.sn = sn
+        # Try to find a configuration for the logger
+        try:
+            conf = self.device.config.sensorconfigurations[self.sn]
+            logger.debug(funcname + ' Found a configuration')
+        except:
+            logger.warning(funcname + ' Did not find a configuration')
+            return
+
+        self.config = conf
+        conflocal = copy.deepcopy(conf)
+        self.configWidget = pydanticConfigWidget(self.config)
+
+        self.parameterWidget = QtWidgets.QWidget(self)
+        self.fill_parameter_widgets()
+
+        self.layout = QtWidgets.QGridLayout(self)
+        self.layout.addWidget(self.configWidget,0,0)
+        self.layout.addWidget(self.parameterWidget,0,1)
+    def fill_parameter_widgets(self):
+        funcname = __name__ +'.fill_parameter_widgets():'
+        self.parameterLayout = QtWidgets.QGridLayout(self.parameterWidget)
+        self.parameterAuto = QtWidgets.QPushButton('Autofill calibrations')
+        self.parameterTable = QtWidgets.QTableWidget()
+        self.parameterLayout.addWidget(self.parameterAuto, 0, 0)
+        self.parameterLayout.addWidget(self.parameterTable, 1, 0)
+        nRows = len(self.config.parameter.NTC_A)
+        nCols = 5
+        self.parameterTable.setRowCount(nRows)
+        self.parameterTable.setColumnCount(nCols)
+        self.parameterTable.setHorizontalHeaderLabels(['Sensor Parameter','Cal SN','Cal Parameter','Cal Date','Cal Comment'])
+        #print('Config parameter',self.config.parameter)
+        for i,para in enumerate(self.config.parameter.NTC_A):
+            #print('Para',para)
+            name = self.config.parameter.name[i]
+            but = QtWidgets.QPushButton(name)
+            self.parameterTable.setCellWidget(i,0,but)
+            # SN
+            item = QtWidgets.QTableWidgetItem(para.sn)
+            self.parameterTable.setItem(i, 1, item)
+            # Parameter
+            item = QtWidgets.QTableWidgetItem(para.parameter)
+            self.parameterTable.setItem(i, 2, item)
+            # Date
+            item = QtWidgets.QTableWidgetItem(para.date)
+            self.parameterTable.setItem(i, 3, item)
+            # Comment
+            item = QtWidgets.QTableWidgetItem(para.comment)
+            self.parameterTable.setItem(i, 4, item)
+
+        self.parameterTable.resizeColumnsToContents()

@@ -60,6 +60,7 @@ class calibration_HF(pydantic.BaseModel):
     unit:  str = 'W m-2 mV-1'
     unit_input: str = 'mV'
     date: str = '1970-01-01 00:00:00.000'
+    calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be choosen by the user')
     comment: typing.Optional[str] = None
 
 class calibration_NTC(pydantic.BaseModel):
@@ -68,7 +69,7 @@ class calibration_NTC(pydantic.BaseModel):
     """
     structure_version: str = '1.0'
     calibration_type: typing.Literal['ntc'] = 'ntc'
-    parameter: str = 'NTC'
+    parameter: str = pydantic.Field(default = 'NTC_NUMXYZ',description='The calibrated parameter, this links the calibration to a specific sensor, i.e. NTC0 or NTC_A[10]')
     sn: str = '' # The serial number of the sensor
     sensor_model: str = ''  # The sensor model
     Toff: float = 273.15 # Offset between K and degC
@@ -77,4 +78,5 @@ class calibration_NTC(pydantic.BaseModel):
     unit:  str = 'T'
     unit_input: str = 'ohm'
     date: str = '1970-01-01 00:00:00.000'
+    calibration_id: str = pydantic.Field(default = '', description='ID of the calibration, can be choosen by the user')
     comment: typing.Optional[str] = None

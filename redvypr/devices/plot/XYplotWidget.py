@@ -436,6 +436,7 @@ class XYplot(QtWidgets.QFrame):
         Gets the data of the buffer in the limits of xlim
         """
         funcname = __name__ + '.get_data():'
+        data = []
         tdata = []
         xdata = []
         ydata = []
@@ -453,13 +454,14 @@ class XYplot(QtWidgets.QFrame):
             tdata_tmp = t[ind]
             xdata_tmp = x[ind]
             ydata_tmp = y[ind]
-            tdata.append(tdata_tmp)
-            xdata.append(xdata_tmp)
-            ydata.append(ydata_tmp)
+            data.append({'x': xdata_tmp, 'y': ydata_tmp, 't': tdata_tmp})
+            #tdata.append(tdata_tmp)
+            #xdata.append(xdata_tmp)
+            #ydata.append(ydata_tmp)
             self.logger.debug(funcname + ' Got data of length {:d}'.format(len(tdata_tmp)))
             # print('get_data',datetime.datetime.utcfromtimestamp(tdata_tmp[0]),datetime.datetime.utcfromtimestamp(xdata_tmp[0]))
 
-        return {'x': xdata, 'y': ydata, 't': tdata}
+        return data
 
     def update_plot(self, data):
         """ Updates the plot based on the given data
