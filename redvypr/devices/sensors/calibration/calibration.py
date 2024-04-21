@@ -243,7 +243,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
 
     while True:
         data = datainqueue.get(block=True)
-        print('Read data',data)
+        #print('Read data',data)
         command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
         # logger.debug('Got a command: {:s}'.format(str(data)))
         if (command is not None):
@@ -305,6 +305,41 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         logger.debug(funcname)
         self.update_coefftable_ntc()
 
+    def calc_ntc_coeff(self,sdata, tdatetime, caldata, refdata):
+        cal_NTC = calibration_NTC()
+        cal_NTC.parameter = sdata.parameter
+        cal_NTC.sn = sdata.sn
+        cal_NTC.sensor_model = sdata.sensor_model
+        tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
+        cal_NTC.date = tdatas
+        R = np.asarray(caldata)
+        R = np.abs(R)
+        T = refdata
+        print('R', R)
+        print('T', T)
+        # And finally the fit
+        TOFF = 273.15
+        fitdata = fit_ntc(T, R, TOFF)
+        P_R = fitdata['P_R']
+        cal_NTC.coeff = P_R.tolist()
+        print('P_R', P_R)
+        # T_test = calc_ntc(R, P_R, TOFF)
+        T_test = calc_NTC(cal_NTC, R)
+        # Calculate Ntest values between min and max
+        Ntest = 100
+        Rtest = np.linspace(min(R), max(R), Ntest)
+        T_Ntest = calc_NTC(cal_NTC, Rtest)
+
+        # caldata = np.asarray(self.device.config.calibrationdata[i].data) * 1000  # V to mV
+        # print('Caldata', caldata)
+        # print('Refdata', refdata)
+        # ratio = np.asarray(refdata) / np.asarray(caldata)
+        # cal_NTC.coeff = float(ratio.mean())
+        # cal_NTC.coeff_std = float(ratio.std())
+        print('Cal NTC', cal_NTC)
+
+        return cal_NTC
+
     def calc_ntc_coeffs(self):
         funcname = __name__ + '.calc_ntc_coeffs():'
         logger.debug(funcname)
@@ -330,38 +365,30 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
                     cal_NTC.comment = 'reference sensor'
                     calibrations.append(cal_NTC)
                 else:
-                    cal_NTC = calibration_NTC()
-                    cal_NTC.parameter = sdata.parameter
-                    cal_NTC.sn = sdata.sn
-                    cal_NTC.sensor_model = sdata.sensor_model
-                    cal_NTC.date = tdatas
-                    caldata = np.asarray(self.device.config.calibrationdata[i].data)
-                    R = np.asarray(caldata)
-                    T = refdata
-                    print('R', R)
-                    print('T', T)
-                    # And finally the fit
-                    TOFF = 273.15
-                    fitdata = fit_ntc(T, R, TOFF)
-                    P_R = fitdata['P_R']
-                    cal_NTC.coeff = P_R.tolist()
-                    print('P_R',P_R)
-                    #T_test = calc_ntc(R, P_R, TOFF)
-                    T_test = calc_NTC( cal_NTC, R )
-                    # Calculate Ntest values between min and max
-                    Ntest = 100
-                    Rtest = np.linspace( min(R), max(R), Ntest )
-                    T_Ntest = calc_NTC( cal_NTC, Rtest )
+                    try:
+                        caldata = np.asarray(self.device.config.calibrationdata[i].data)
+                        print('Caldata',caldata)
+                        print('Shape caldata',np.shape(caldata))
+                        calshape = np.shape(caldata)
+                        if len(calshape) == 1:
+                            print('Normal array')
+                            cal_NTC = self.calc_ntc_coeff(sdata, tdatetime, caldata, refdata)
+                            calibrations.append(cal_NTC)
+                        elif len(calshape) == 2:
+                            print('Array of sensors')
+                            cal_NTCs = []
+                            for isub in range(calshape[1]):
+                                cal_NTCs.append(self.calc_ntc_coeff(sdata, tdatetime, caldata[:,isub], refdata))
 
-                    ## TODO, V to mV more smart
-                    #caldata = np.asarray(self.device.config.calibrationdata[i].data) * 1000  # V to mV
-                    #print('Caldata', caldata)
-                    #print('Refdata', refdata)
-                    #ratio = np.asarray(refdata) / np.asarray(caldata)
-                    #cal_NTC.coeff = float(ratio.mean())
-                    #cal_NTC.coeff_std = float(ratio.std())
-                    print('Cal NTC',cal_NTC)
-                    calibrations.append(cal_NTC)
+                            calibrations.append(cal_NTCs)
+                        else:
+                            logger.warning(funcname + ' Too many dimensions', exc_info=True)
+                            calibrations.append(None)
+                            continue
+
+                    except:
+                        logger.warning(funcname + 'Could not calculate coefficients', exc_info=True)
+                        calibrations.append(None)
 
             return calibrations
         else:
@@ -372,8 +399,14 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         funcname = __name__ + '.update_coefftable_ntc():'
         logger.debug(funcname)
         self.calibration_ntc['coefftable'].clear()
+        nrows = len(self.device.config.calibrationdata)
+        try:
+            self.calibration_ntc['coefftable'].setRowCount(nrows)
+        except:
+            logger.debug(funcname, exc_info=True)
+            return
+
         self.calibration_ntc['coefftable'].setColumnCount(3)
-        self.calibration_ntc['coefftable'].setRowCount(len(self.parent().allsensornames) - 1)
         # Calculate the coefficients
         try:
             calibrationdata = self.calibdata_to_dict()
@@ -398,8 +431,16 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
             self.device.config.__calibration_coeffs__ = coeffs
 
             irow = 0
-            for i,coeff in enumerate(coeffs):
-                if True:
+            for i, coeff_tmp in enumerate(coeffs):
+                if coeff_tmp is None:
+                    continue
+                if type(coeff_tmp) == list:
+                    nrows += len(coeff_tmp)
+                    self.calibration_ntc['coefftable'].setRowCount(nrows)
+                else:
+                    coeff_tmp = [coeff_tmp]
+
+                for coeff in coeff_tmp:
                     item = QtWidgets.QTableWidgetItem(coeff.parameter)
                     self.calibration_ntc['coefftable'].setItem(irow,0,item)
                     item = QtWidgets.QTableWidgetItem(coeff.sn)
@@ -859,10 +900,10 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
 
 
     def update_plot(self, data):
-        print('QTableCalibrationWidget, updating',data)
+        #print('QTableCalibrationWidget, updating',data)
 
         try:
-            print('Datastream',self.datastream,type(self.datastream))
+            #print('Datastream',self.datastream,type(self.datastream))
             daddr = redvypr.redvypr_address(self.datastream)
         except:
             print('No datastream yet')
@@ -870,15 +911,31 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
 
         if daddr is not None:
             if data in daddr:
-                print('Got data to update')
+                #print('Got data to update')
                 data_tmp = data[daddr.datakey]
                 self.data_buffer.append(data_tmp)
                 self.data_buffer_t.append(data['t'])
+
                 if len(self.data_buffer) > self.data_buffer_len:
                     self.data_buffer.pop(0)
                     self.data_buffer_t.pop(0)
 
-                print('len data buffer', self.data_buffer_t)
+                # Update the table
+                self.setRowCount(1)
+                if type(data_tmp) == list:
+                    self.setColumnCount(len(data_tmp))
+                    for indd, d in enumerate(data_tmp):
+                        dstr = str(d)
+                        item = QtWidgets.QTableWidgetItem(dstr)
+                        self.setItem(0,indd,item)
+                else:
+                    self.setColumnCount(1)
+                    dstr = str(data_tmp)
+                    item = QtWidgets.QTableWidgetItem(dstr)
+                    self.setItem(0, 0, item)
+
+                #print('len data buffer', self.data_buffer_t)
+                self.resizeColumnsToContents()
 
 
 
@@ -1797,8 +1854,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
                         # Average the data and convert it to standard python types
                         ydata = np.mean(rawdata_all,0).tolist() # Convert to list
                         tdata = float(np.mean(data['t'], 0))
-                        if len(ydata) == 1:
-                            ydata = float(ydata)
+                        #if len(ydata) == 1:
+                        #    ydata = float(ydata)
 
                         tdatetime = datetime.datetime.utcfromtimestamp(tdata)
                         tdatas = tdatetime.strftime('%d-%m-%Y %H:%M:%S.%f')
@@ -2045,7 +2102,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.update():'
         logger.debug(funcname)
         try:
-            print('Data',data)
+            #print('Data',data)
             for i,plot_widget in enumerate(self.plot_widgets):
                 #print('p',i,p.datastream,p.subscription_redvypr)
                 if plot_widget.datastream is None: # No datastream assigned yet, check if the data packet is worth subscription
@@ -2118,7 +2175,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                             else:
                                 logger.debug('Will not Datastream {:s} has invalid type {:s}'.format(d,type(datastreamdata).__name__))
                 else:
-                    logger.debug('Updating plot {:d} with data {}'.format(i,data))
+                    #logger.debug('Updating plot {:d} with data {}'.format(i,data))
                     plot_widget.update_plot(data)
 
 
