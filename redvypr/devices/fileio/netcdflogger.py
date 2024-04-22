@@ -91,7 +91,7 @@ def create_logfile(config,count=0):
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
-    print('Config',config)
+    #print('Config',config)
     if config['clearqueue']:
         while (datainqueue.empty() == False):
             try:

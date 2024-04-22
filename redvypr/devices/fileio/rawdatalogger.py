@@ -33,6 +33,8 @@ class device_config(pydantic.BaseModel):
     dt_newfile: int = pydantic.Field(default=60, description='Time after which a new file is created')
     dt_newfile_unit: typing.Literal['seconds', 'hours', 'days'] = pydantic.Field(default='seconds')
     dt_update: int = pydantic.Field(default= 5, description='Time after which an upate is sent to the gui')
+    clearqueue: bool = pydantic.Field(default=True,
+                                      description='Flag if the buffer of the subscribed queue should be emptied before start')
     size_newfile: int = pydantic.Field(default= 0, description='Size after which a new file is created')
     size_newfile_unit: typing.Literal['bytes', 'kB', 'MB'] = pydantic.Field(default='bytes')
     datafolder: str = pydantic.Field(default='./', description='Folder the data is saved to')
@@ -103,7 +105,13 @@ def create_logfile(config,count=0):
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
-    print('Config',config)
+    #print('Config',config)
+    if config['clearqueue']:
+        while (datainqueue.empty() == False):
+            try:
+                data = datainqueue.get(block=False)
+            except:
+                break
     count = 0
     if True:
         try:
