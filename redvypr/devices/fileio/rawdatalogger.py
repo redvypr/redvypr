@@ -19,27 +19,6 @@ from redvypr.packet_statistic import do_data_statistics, create_data_statistic_d
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('rawdatalogger')
 logger.setLevel(logging.DEBUG)
-
-#description = "Saves the raw redvypr packets into a file"
-#config_template = {}
-#config_template['name']              = 'rawdatalogger'
-#config_template['dt_sync']           = {'type':'int','default':5,'description':'Time after which an open file is synced on disk'}
-#config_template['dt_newfile']        = {'type':'int','default':60,'description':'Time after which a new file is created'}
-#config_template['dt_newfile_unit']   = {'type':'str','default':'seconds','options':['seconds','hours','days']}
-#config_template['dt_update']         = {'type':'int','default':5,'description':'Time after which an upate is sent to the gui'}
-#config_template['size_newfile']      = {'type':'int','default':0,'description':'Size after which a new file is created'}
-#config_template['size_newfile_unit'] = {'type':'str','default':'bytes','options':['bytes','kB','MB']}
-#config_template['datafolder']        = {'type':'str','default':'./','description':'Folder the data is saved to'}
-#config_template['fileextension']     = {'type':'str','default':'redvypr_yaml','description':'File extension, if empty not used'}
-#config_template['fileprefix']        = {'type':'str','default':'redvypr','description':'If empty not used'}
-#config_template['filepostfix']       = {'type':'str','default':'raw','description':'If empty not used'}
-#config_template['filedateformat']    = {'type':'str','default':'%Y-%m-%d_%H%M%S','description':'Dateformat used in the filename, must be understood by datetime.strftime'}
-#config_template['filecountformat']   = {'type':'str','default':'04','description':'Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}'}
-#config_template['filegzipformat']    = {'type':'str','default':'gz','description':'If empty, no compression done'}
-#config_template['redvypr_device']    = {}
-#config_template['redvypr_device']['publishes']   = False
-#config_template['redvypr_device']['subscribes']  = True
-#config_template['redvypr_device']['description'] = description
 redvypr_devicemodule = True
 
 
@@ -357,7 +336,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             
         self.newfilesizecombo = QtWidgets.QComboBox()
         self.newfilesizecombo.addItem('None')
-        self.newfilesizecombo.addItem('Bytes')
+        self.newfilesizecombo.addItem('bytes')
         self.newfilesizecombo.addItem('kB')
         self.newfilesizecombo.addItem('MB')
         self.newfilesizecombo.setCurrentIndex(2)

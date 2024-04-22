@@ -1010,11 +1010,11 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.folder_text.setText(config.datafolder)
         # Update filename and checkboxes
         filename_all = []
-        filename_all.append([config.fileextension,self.extension_text,self.extension_check])
-        filename_all.append([config.fileprefix,self.prefix_text,self.prefix_check])
-        filename_all.append([config.filepostfix,self.postfix_text,self.postfix_check])
-        filename_all.append([config.filedateformat,self.date_text,self.date_check])
-        filename_all.append([config.filecountformat,self.count_text,self.count_check])
+        filename_all.append([config.fileextension, self.extension_text, self.extension_check])
+        filename_all.append([config.fileprefix, self.prefix_text, self.prefix_check])
+        filename_all.append([config.filepostfix, self.postfix_text, self.postfix_check])
+        filename_all.append([config.filedateformat, self.date_text, self.date_check])
+        filename_all.append([config.filecountformat, self.count_text, self.count_check])
         filename_all.append([config.filegzipformat, self.gzip_text, self.gzip_check])
         for i in range(len(filename_all)):
             widgets = filename_all[i]
