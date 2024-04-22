@@ -268,11 +268,11 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                                     #print('Sent data to',devicename_stat,devicedict_sub['packets_received'])
                                     break
                                 except Exception as e:
-                                    logger.exception(e)
+                                    #logger.exception(e)
                                     thread_status = devicesub.get_thread_status()
-                                    if thread_status['running']:
+                                    if thread_status['thread_running']:
                                         devicedict['statistics']['packets_dropped'] += 1
-                                    logger.debug(funcname + ':dataout of :' + devicedict_sub['device'].name + ' full: ' + str(e))
+                                    logger.debug(funcname + ':dataout of :' + devicedict_sub['device'].name + ' full: ' + str(e), exc_info=True)
 
                     # The gui of the device
                     for guiqueue in devicedict['guiqueue']:  # Put data into the guiqueue, this queue does always exist
@@ -457,8 +457,8 @@ class redvypr(QtCore.QObject):
             status = sendict['device'].get_thread_status()
             #info_dict['uuid'] = self.uuid
             #info_dict['thread_uuid'] = self.thread_uuid
-            #info_dict['thread_status'] = running
-            if(status['thread_status']):
+            #info_dict['thread_running'] = running
+            if(status['thread_running']):
                 runstr = 'running'
             else:
                 runstr = 'stopped'

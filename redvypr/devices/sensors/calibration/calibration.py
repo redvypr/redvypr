@@ -305,11 +305,11 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         logger.debug(funcname)
         self.update_coefftable_ntc()
 
-    def calc_ntc_coeff(self,sdata, tdatetime, caldata, refdata):
-        cal_NTC = calibration_NTC()
-        cal_NTC.parameter = sdata.parameter
-        cal_NTC.sn = sdata.sn
-        cal_NTC.sensor_model = sdata.sensor_model
+    def calc_ntc_coeff(self, parameter, sdata, tdatetime, caldata, refdata):
+        cal_NTC = calibration_NTC(parameter = parameter, sn = sdata.sn, sensor_model = sdata.sensor_model)
+        #cal_NTC.parameter = sdata.parameter
+        #cal_NTC.sn = sdata.sn
+        #cal_NTC.sensor_model = sdata.sensor_model
         tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
         cal_NTC.date = tdatas
         R = np.asarray(caldata)
@@ -372,13 +372,15 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
                         calshape = np.shape(caldata)
                         if len(calshape) == 1:
                             print('Normal array')
-                            cal_NTC = self.calc_ntc_coeff(sdata, tdatetime, caldata, refdata)
+                            parameter = sdata.parameter
+                            cal_NTC = self.calc_ntc_coeff(parameter, sdata, tdatetime, caldata, refdata)
                             calibrations.append(cal_NTC)
                         elif len(calshape) == 2:
                             print('Array of sensors')
                             cal_NTCs = []
                             for isub in range(calshape[1]):
-                                cal_NTCs.append(self.calc_ntc_coeff(sdata, tdatetime, caldata[:,isub], refdata))
+                                parameter = sdata.parameter + '[{}]'.format(isub)
+                                cal_NTCs.append(self.calc_ntc_coeff(parameter, sdata, tdatetime, caldata[:,isub], refdata))
 
                             calibrations.append(cal_NTCs)
                         else:
@@ -412,6 +414,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
             calibrationdata = self.calibdata_to_dict()
         except Exception as e:
             logger.exception(e)
+            return
 
         print(funcname + 'Calculating coefficients')
         try:
@@ -429,19 +432,25 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
             self.calibration_ntc['coeffs'] = coeffs
             # Save the calibration as a private attribute
             self.device.config.__calibration_coeffs__ = coeffs
-
+            headers = ['Parameter','SN','Coeffs']
+            self.calibration_ntc['coefftable'].setHorizontalHeaderLabels(headers)
             irow = 0
             for i, coeff_tmp in enumerate(coeffs):
                 if coeff_tmp is None:
                     continue
                 if type(coeff_tmp) == list:
                     nrows += len(coeff_tmp)
+                    coeff_index = range(len(coeff_tmp))
                     self.calibration_ntc['coefftable'].setRowCount(nrows)
                 else:
                     coeff_tmp = [coeff_tmp]
+                    coeff_index = [None]
 
-                for coeff in coeff_tmp:
-                    item = QtWidgets.QTableWidgetItem(coeff.parameter)
+                for cindex,coeff in zip(coeff_index,coeff_tmp):
+                    parameter = coeff.parameter
+                    #if cindex is not None:
+                    #    parameter += '[{}]'.format(cindex)
+                    item = QtWidgets.QTableWidgetItem(parameter)
                     self.calibration_ntc['coefftable'].setItem(irow,0,item)
                     item = QtWidgets.QTableWidgetItem(coeff.sn)
                     self.calibration_ntc['coefftable'].setItem(irow,1,item)
@@ -536,34 +545,39 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
         if len(folderpath) > 0:
             logger.debug(funcname + ' Saving data to folder {:s}'.format(folderpath))
-            for c, cal in zip(coeffs, calibrationdata):
-                print('Saving coeff', c)
-                date = datetime.datetime.strptime(c.date, "%Y-%m-%d %H:%M:%S.%f")
-                dstr = date.strftime('%Y-%m-%d_%H-%M-%S')
-                fname = '{:s}_{:s}_{:s}.yaml'.format(c.sn, c.parameter, dstr)
-                fname_full = folderpath + '/' + fname
-                fname_cal = '{:s}_{:s}_{:s}_calibrationdata.yaml'.format(c.sn, c.parameter, dstr)
-                fname_cal_full = folderpath + '/' + fname_cal
-                if os.path.isfile(fname_full):
-                    logger.warning('File is already existing {:s}'.format(fname_full))
-                    file_exist = True
-                else:
-                    file_exist = False
-
-                if overwrite or (file_exist == False):
-                    logger.info('Saving file to {:s}'.format(fname_full))
-                    if c.comment == 'reference sensor':
-                        logger.debug(funcname + ' Will not save calibration (reference sensor)')
+            for c_tmp, cal in zip(coeffs, calibrationdata):
+                if type(c_tmp) is not list:
+                    c_tmp = [c_tmp]
+                for c in c_tmp:
+                    # Calibrationdata stays the same if its a list for all subparameter
+                    print('Saving coeff', c)
+                    date = datetime.datetime.strptime(c.date, "%Y-%m-%d %H:%M:%S.%f")
+                    dstr = date.strftime('%Y-%m-%d_%H-%M-%S')
+                    fname = '{:s}_{:s}_{:s}.yaml'.format(c.sn, c.parameter, dstr)
+                    fname_full = folderpath + '/' + fname
+                    fname_cal = '{:s}_{:s}_{:s}_calibrationdata.yaml'.format(c.sn, c.parameter, dstr)
+                    fname_cal_full = folderpath + '/' + fname_cal
+                    if os.path.isfile(fname_full):
+                        logger.warning('File is already existing {:s}'.format(fname_full))
+                        file_exist = True
                     else:
-                        cdump = c.model_dump()
-                        # data_save = yaml.dump(cdump)
-                        with open(fname_full, 'w') as fyaml:
-                            yaml.dump(cdump, fyaml)
+                        file_exist = False
 
-                        caldump = cal.model_dump()
-                        # data_save = yaml.dump(cdump)
-                        with open(fname_cal_full, 'w') as fyaml:
-                            yaml.dump(caldump, fyaml)
+                    if overwrite or (file_exist == False):
+                        logger.info('Saving file to {:s}'.format(fname_full))
+                        if c.comment == 'reference sensor':
+                            logger.debug(funcname + ' Will not save calibration (reference sensor)')
+                        else:
+                            cdump = c.model_dump()
+                            # data_save = yaml.dump(cdump)
+                            with open(fname_full, 'w') as fyaml:
+                                yaml.dump(cdump, fyaml)
+
+                            print('Cal',cal)
+                            caldump = cal.model_dump()
+                            # data_save = yaml.dump(cdump)
+                            with open(fname_cal_full, 'w') as fyaml:
+                                yaml.dump(caldump, fyaml)
 
 
 class PlotWidgetNTC(QtWidgets.QWidget):
@@ -1452,7 +1466,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
 
         status = self.device.get_thread_status()
-        thread_status = status['thread_status']
+        thread_status = status['thread_running']
         # Running
         if (thread_status):
             self.startbutton.setText('Stop')

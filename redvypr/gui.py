@@ -743,7 +743,7 @@ class deviceControlWidget(QtWidgets.QWidget):
     def thread_status(self,statusdict):
         """ Function regularly called by redvypr to update the thread status
         """
-        status = statusdict['thread_status']
+        status = statusdict['thread_running']
         if(status):
             self.startbtn.setText('Stop')
             self.startbtn.setChecked(True)            

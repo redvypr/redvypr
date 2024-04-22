@@ -949,7 +949,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             """
 
             status = self.device.get_thread_status()
-            thread_status = status['thread_status']
+            thread_status = status['thread_running']
             # Running
             if(thread_status):
                 self.startbtn.setText('Stop')

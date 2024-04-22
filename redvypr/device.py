@@ -537,7 +537,7 @@ class redvypr_device(QtCore.QObject):
         info_dict = {}
         info_dict['uuid'] = self.uuid
         info_dict['thread_uuid'] = self.thread_uuid
-        info_dict['thread_status'] = running
+        info_dict['thread_running'] = running
 
         return info_dict
 
@@ -626,7 +626,7 @@ class redvypr_device(QtCore.QObject):
             running2 = self.thread_running()
             info_dict = {}
             info_dict['uuid'] = self.uuid
-            info_dict['thread_status'] = running2
+            info_dict['thread_running'] = running2
             self.thread_stopped.emit(info_dict)
         else:
             self.logger.warning(funcname + ' thread is not running, doing nothing')
@@ -703,7 +703,7 @@ class redvypr_device(QtCore.QObject):
                         info_dict                  = {}
                         info_dict['uuid']          = self.uuid
                         info_dict['thread_uuid']   = thread_uuid
-                        info_dict['thread_status'] = running2
+                        info_dict['thread_running'] = running2
                         self.thread_started.emit(info_dict)  # Notify about the started thread
 
                         return self.thread
