@@ -877,6 +877,11 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
         self.data_buffer_len = 2000
 
     def get_data(self, t_intervall):
+        # Relative data
+        if (t_intervall[0] <= 0) and (t_intervall[1] <= 0):
+            t_intervall[0] = t_intervall[0] + self.data_buffer_t[-1]
+            t_intervall[1] = t_intervall[1] + self.data_buffer_t[-1]
+
         ttmp = np.asarray(self.data_buffer_t)
         ind = (ttmp >= min(t_intervall)) & (ttmp <= max(t_intervall))
         print('ind', ind)
@@ -1824,7 +1829,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
         tget = time.time() # The time the data was added
         timeintervaltype = self.addintervall_combo.currentText()
         if 'last' in timeintervaltype.lower():
-            t1 = time.time()
+            #t1 = time.time()
+            #t0 = t1 - self.addintervall_time.value()
+            t1 = 0
             t0 = t1 - self.addintervall_time.value()
             dt = t1 - t0
             t_intervall = [t0, t1]

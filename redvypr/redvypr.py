@@ -127,181 +127,184 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
 
 
     while True:
-        time.sleep(dt_sleep)
-        tstart = time.time()
-        FLAG_device_status_changed = False
-        devices_changed = []
-        devices_removed = []
-        # Read data from the main thread
         try:
-            redvyprdata = redvyprqueue.get(block=False) # Data from the main thread
-        except Exception as e:
-            redvyprdata = None
-        # Process data from the main thread
-        if(redvyprdata is not None):
-            if(redvyprdata['type'] == 'device_removed'):
-                print('Device removed',redvyprdata)
-                FLAG_device_status_changed = True
-                devices_removed.append(redvyprdata['device'])
-                devinfo_rem = deviceinfo_all.pop(redvyprdata['device'])
-                #print('Devices len distribute data', len(devices))
-                devinfo_send = {'type':'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all), 'devices_changed': list(set(devices_changed)),
-                'devices_removed': devices_removed,'change':'devrem','device_changed':redvyprdata['device']}
-                infoqueue.put_nowait(devinfo_send)
-
-
-        for devicedict in devices:
-            device = devicedict['device']
-            data_all = []
-            tread = time.time()
-            # Read all packets in a bunch
-            while True:
-                try:
-                    data = device.dataqueue.get(block=False)
-                    if(type(data) is not dict): # If data is not a dictionary, convert it to one
-                        data = {'data':data}
-
-                    devicedict['statistics']['packets_published'] += 1 # The total number of packets published by the device
-                    packets_processed += 1 # Counter for the statistics
-                    packet_counter += 1 # Global counter of packets received by the redvypr instance
-                    data_all.append([data,packet_counter])
-                except Exception as e:
-                    break
-            # Process read packets
-            for data_list in data_all:
-                data = data_list[0]
-                numpacket = data_list[1]
-
-                #rdata = data_packets.redvypr_datapacket(data)
-                #print(rdata.datakeys())
-
-                # Add additional information, if not present yet
-                redvypr_packet_statistic.treat_datadict(data, device.name, hostinfo, numpacket, tread,devicedict['devicemodulename'])
-                # Get the devicename using an address
-                raddr = redvypr_address.redvypr_address(data)
-                devicename_stat = raddr.address_str
-                #devicename_stat = data_packets.get_devicename_from_data(data, uuid=True)
-                #
-                # Do statistics
-                try:
-                    devicedict['statistics'] = redvypr_packet_statistic.do_data_statistics(data, devicedict['statistics'], address_data=raddr)
-                except Exception as e:
-                    logger.debug(funcname + ':Statistics:',exc_info=True)
-
-                #
-                # Check for a command packet
-                #
-                numtag = data['_redvypr']['tag'][hostinfo['uuid']]
-                if numtag < 2:  # Check if data packet fits with addr and its not recirculated again
-                    [command, comdata] = data_packets.check_for_command(data, add_data=True)
-                    if (command == 'device_status'):  # status update
-                        #print('device status command',device.name)
-                        #print('comdata',comdata)
-                        #print('data', data)
-                        try:
-                            devaddr   = comdata['data']['deviceaddr']
-                            devstatus = comdata['data']['devicestatus']
-                        except:
-                            devaddr = None
-                            devstatus = None
-
-                        devices_changed.append(device.name) # LEGACY ...
-                        if(devaddr is not None):
-                            try: # Update the device
-                                devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'].update(devstatus)
-                            except Exception as e:
-                                logger.warning('Could not update status ' + str(e))
-                                logger.exception(e)
-
-                        # Send an information about the change, that will trigger a pyqt signal in the main thread
-                        devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
-                                        'devices_changed': list(set(devices_changed)), 'device_changed':device.name,
-                                        'devices_removed': devices_removed, 'change': 'device_status command','comdata':comdata}
-                        infoqueue.put_nowait(devinfo_send)
-
-                #
-                # Create a dictionary of all datastreams
-                #
-                datastreams_all.update(devicedict['statistics']['datastream_redvypr'])
-                try:
-                    deviceinfo_all[device.name].update(devicedict['statistics']['device_redvypr'])
-                except:
-                    deviceinfo_all[device.name] = devicedict['statistics']['device_redvypr']
-
-                #
-                # Compare if datastreams changed
-                #
-                if (list(datastreams_all.keys()) != list(datastreams_all_old.keys())):
-                    #print('Datastreams changed', len(datastreams_all.keys()))
-                    datastreams_all_old.update(datastreams_all)
-                    devices_changed.append(device.name)
-                    # Send an information about the change, that will trigger a pyqt signal in the main thread
-                    devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
-                                    'devices_changed': list(set(devices_changed)),
-                                    'devices_removed': devices_removed, 'change': 'datastreams changed','device_changed':device.name}
+            time.sleep(dt_sleep)
+            tstart = time.time()
+            FLAG_device_status_changed = False
+            devices_changed = []
+            devices_removed = []
+            # Read data from the main thread
+            try:
+                redvyprdata = redvyprqueue.get(block=False) # Data from the main thread
+            except Exception as e:
+                redvyprdata = None
+            # Process data from the main thread
+            if(redvyprdata is not None):
+                if(redvyprdata['type'] == 'device_removed'):
+                    print('Device removed',redvyprdata)
+                    FLAG_device_status_changed = True
+                    devices_removed.append(redvyprdata['device'])
+                    devinfo_rem = deviceinfo_all.pop(redvyprdata['device'])
+                    #print('Devices len distribute data', len(devices))
+                    devinfo_send = {'type':'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all), 'devices_changed': list(set(devices_changed)),
+                    'devices_removed': devices_removed,'change':'devrem','device_changed':redvyprdata['device']}
                     infoqueue.put_nowait(devinfo_send)
 
-                #
-                # And finally: Distribute the data
-                #
-                # Loop over all devices and check if any subscription works
-                for devicedict_sub in devices:
-                    devicesub = devicedict_sub['device']
-                    if(devicesub == device): # Not to itself
-                        continue
 
-                    for addr in devicesub.subscribed_addresses: # Loop over all subscribed redvypr_addresses
-                        # This is the main functionality for distribution, comparing a datapacket with a
-                        # redvypr_address using "in"
-                        if (data in addr) and (numtag < 2): # Check if data packet fits with addr and if its not recirculated again
-                            try:
-                                #print('data to be sent',data)
-                                devicesub.datainqueue.put_nowait(data) # These are the datainqueues of the subscribing devices
-                                devicedict_sub['statistics']['packets_received'] += 1
-                                #print(devicedict_sub['statistics']['packets_received'])
-                                try:
-                                    devicedict_sub['statistics']['packets'][devicename_stat]
-                                except:
-                                    devicedict_sub['statistics']['packets'][devicename_stat] = {'received':0,'published':0}
-                                devicedict_sub['statistics']['packets'][devicename_stat]['received'] += 1
-                                #print('Sent data to',devicename_stat,devicedict_sub['packets_received'])
-                                break
-                            except Exception as e:
-                                logger.exception(e)
-                                thread_status = devicesub.get_thread_status()
-                                if thread_status['running']:
-                                    devicedict['statistics']['packets_dropped'] += 1
-                                logger.debug(funcname + ':dataout of :' + devicedict_sub['device'].name + ' full: ' + str(e))
-
-                # The gui of the device
-                for guiqueue in devicedict['guiqueue']:  # Put data into the guiqueue, this queue does always exist
+            for devicedict in devices:
+                device = devicedict['device']
+                data_all = []
+                tread = time.time()
+                # Read all packets in a bunch
+                while True:
                     try:
-                        guiqueue.put_nowait(data)
+                        data = device.dataqueue.get(block=False)
+                        if(type(data) is not dict): # If data is not a dictionary, convert it to one
+                            data = {'data':data}
+
+                        devicedict['statistics']['packets_published'] += 1 # The total number of packets published by the device
+                        packets_processed += 1 # Counter for the statistics
+                        packet_counter += 1 # Global counter of packets received by the redvypr instance
+                        data_all.append([data,packet_counter])
                     except Exception as e:
-                        pass
-                        # logger.debug(funcname + ':guiqueue of :' + devicedict['device'].name + ' full')
+                        break
+                # Process read packets
+                for data_list in data_all:
+                    data = data_list[0]
+                    numpacket = data_list[1]
 
-        #if FLAG_device_status_changed:
-            #infoqueue.put_nowait(copy.copy(datastreams_all))
-            #devinfo_send = {'type':'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all), 'devices_changed': list(set(devices_changed)),
-            # 'devices_removed': devices_removed,''}
-            #infoqueue.put_nowait(devinfo_send)
+                    #rdata = data_packets.redvypr_datapacket(data)
+                    #print(rdata.datakeys())
 
-        # Calculate the sleeping time
-        tstop = time.time()
-        dt_dist = tstop - tstart  # The time for all the looping
-        dt_avg += dt_dist
-        navg += 1
-        dt_sleep = max([0, dt - dt_dist])
-        if ((tstop - tinfo) > dt_info):
-            tinfo = tstop
-            info_dict = {'type':'dt_avg','dt_avg': dt_avg / navg,'packets_processed': packets_processed}
-            packets_processed = 0
-            # print(info_dict)
-            try:
-                infoqueue.put_nowait(info_dict)
-            except:
-                pass
+                    # Add additional information, if not present yet
+                    redvypr_packet_statistic.treat_datadict(data, device.name, hostinfo, numpacket, tread,devicedict['devicemodulename'])
+                    # Get the devicename using an address
+                    raddr = redvypr_address.redvypr_address(data)
+                    devicename_stat = raddr.address_str
+                    #devicename_stat = data_packets.get_devicename_from_data(data, uuid=True)
+                    #
+                    # Do statistics
+                    try:
+                        devicedict['statistics'] = redvypr_packet_statistic.do_data_statistics(data, devicedict['statistics'], address_data=raddr)
+                    except Exception as e:
+                        logger.debug(funcname + ':Statistics:',exc_info=True)
+
+                    #
+                    # Check for a command packet
+                    #
+                    numtag = data['_redvypr']['tag'][hostinfo['uuid']]
+                    if numtag < 2:  # Check if data packet fits with addr and its not recirculated again
+                        [command, comdata] = data_packets.check_for_command(data, add_data=True)
+                        if (command == 'device_status'):  # status update
+                            #print('device status command',device.name)
+                            #print('comdata',comdata)
+                            #print('data', data)
+                            try:
+                                devaddr   = comdata['data']['deviceaddr']
+                                devstatus = comdata['data']['devicestatus']
+                            except:
+                                devaddr = None
+                                devstatus = None
+
+                            devices_changed.append(device.name) # LEGACY ...
+                            if(devaddr is not None):
+                                try: # Update the device
+                                    devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'].update(devstatus)
+                                except Exception as e:
+                                    logger.warning('Could not update status ' + str(e))
+                                    logger.exception(e)
+
+                            # Send an information about the change, that will trigger a pyqt signal in the main thread
+                            devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
+                                            'devices_changed': list(set(devices_changed)), 'device_changed':device.name,
+                                            'devices_removed': devices_removed, 'change': 'device_status command','comdata':comdata}
+                            infoqueue.put_nowait(devinfo_send)
+
+                    #
+                    # Create a dictionary of all datastreams
+                    #
+                    datastreams_all.update(devicedict['statistics']['datastream_redvypr'])
+                    try:
+                        deviceinfo_all[device.name].update(devicedict['statistics']['device_redvypr'])
+                    except:
+                        deviceinfo_all[device.name] = devicedict['statistics']['device_redvypr']
+
+                    #
+                    # Compare if datastreams changed
+                    #
+                    if (list(datastreams_all.keys()) != list(datastreams_all_old.keys())):
+                        #print('Datastreams changed', len(datastreams_all.keys()))
+                        datastreams_all_old.update(datastreams_all)
+                        devices_changed.append(device.name)
+                        # Send an information about the change, that will trigger a pyqt signal in the main thread
+                        devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
+                                        'devices_changed': list(set(devices_changed)),
+                                        'devices_removed': devices_removed, 'change': 'datastreams changed','device_changed':device.name}
+                        infoqueue.put_nowait(devinfo_send)
+
+                    #
+                    # And finally: Distribute the data
+                    #
+                    # Loop over all devices and check if any subscription works
+                    for devicedict_sub in devices:
+                        devicesub = devicedict_sub['device']
+                        if(devicesub == device): # Not to itself
+                            continue
+
+                        for addr in devicesub.subscribed_addresses: # Loop over all subscribed redvypr_addresses
+                            # This is the main functionality for distribution, comparing a datapacket with a
+                            # redvypr_address using "in"
+                            if (data in addr) and (numtag < 2): # Check if data packet fits with addr and if its not recirculated again
+                                try:
+                                    #print('data to be sent',data)
+                                    devicesub.datainqueue.put_nowait(data) # These are the datainqueues of the subscribing devices
+                                    devicedict_sub['statistics']['packets_received'] += 1
+                                    #print(devicedict_sub['statistics']['packets_received'])
+                                    try:
+                                        devicedict_sub['statistics']['packets'][devicename_stat]
+                                    except:
+                                        devicedict_sub['statistics']['packets'][devicename_stat] = {'received':0,'published':0}
+                                    devicedict_sub['statistics']['packets'][devicename_stat]['received'] += 1
+                                    #print('Sent data to',devicename_stat,devicedict_sub['packets_received'])
+                                    break
+                                except Exception as e:
+                                    logger.exception(e)
+                                    thread_status = devicesub.get_thread_status()
+                                    if thread_status['running']:
+                                        devicedict['statistics']['packets_dropped'] += 1
+                                    logger.debug(funcname + ':dataout of :' + devicedict_sub['device'].name + ' full: ' + str(e))
+
+                    # The gui of the device
+                    for guiqueue in devicedict['guiqueue']:  # Put data into the guiqueue, this queue does always exist
+                        try:
+                            guiqueue.put_nowait(data)
+                        except Exception as e:
+                            pass
+                            # logger.debug(funcname + ':guiqueue of :' + devicedict['device'].name + ' full')
+
+            #if FLAG_device_status_changed:
+                #infoqueue.put_nowait(copy.copy(datastreams_all))
+                #devinfo_send = {'type':'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all), 'devices_changed': list(set(devices_changed)),
+                # 'devices_removed': devices_removed,''}
+                #infoqueue.put_nowait(devinfo_send)
+
+            # Calculate the sleeping time
+            tstop = time.time()
+            dt_dist = tstop - tstart  # The time for all the looping
+            dt_avg += dt_dist
+            navg += 1
+            dt_sleep = max([0, dt - dt_dist])
+            if ((tstop - tinfo) > dt_info):
+                tinfo = tstop
+                info_dict = {'type':'dt_avg','dt_avg': dt_avg / navg,'packets_processed': packets_processed}
+                packets_processed = 0
+                # print(info_dict)
+                try:
+                    infoqueue.put_nowait(info_dict)
+                except:
+                    pass
+        except:
+            logger.warning(funcname + 'Could not distribute packets:', exc_info=True)
 
 
 class redvypr(QtCore.QObject):
@@ -414,6 +417,10 @@ class redvypr(QtCore.QObject):
         if self.datadistthread.is_alive() == False:
             logger.warning('Datadistribution thread is not running! This is bad, consider restarting redvypr.')
             self.status_update_signal.emit()
+            if True:
+                logger.info('RESTARTING datadistribution thread ....')
+                self.datadistthread.start()
+
             return
 
         while True:
@@ -537,7 +544,18 @@ class redvypr(QtCore.QObject):
                 logger.debug(funcname + ':Opening yaml file: ' + str(configraw))
                 if (os.path.exists(configraw)):
                     fconfig = open(configraw)
-                    config_tmp = yaml.load(fconfig, Loader=yaml.loader.SafeLoader)
+                    try:
+                        config_tmp = yaml.load(fconfig, Loader=yaml.SafeLoader)
+                    except:
+                        logger.warning(funcname + ' Could not load yaml file with safe loader')
+                        fconfig.close()
+                        fconfig = open(configraw)
+                        try:
+                            config_tmp = yaml.load(fconfig, Loader=yaml.CLoader)
+                            print('Config tmp',config_tmp)
+                        except:
+                            logger.warning(funcname + ' Could not load yaml file with x loader')
+                            continue
                 else:
                     logger.warning(funcname + ':Yaml file: ' + str(configraw) + ' does not exist!')
                     continue

@@ -42,6 +42,7 @@ class device_config(pydantic.BaseModel):
     dt_newfile: int = pydantic.Field(default=3600,description='Time after which a new file is created')
     dt_newfile_unit: typing.Literal['none','seconds','hours','days'] = pydantic.Field(default='seconds')
     dt_update:int = pydantic.Field(default=2,description='Time after which an upate is sent to the gui')
+    clearqueue: bool = pydantic.Field(default=True, description='Flag if the buffer of the subscribed queue should be emptied before start')
     zlib: bool = pydantic.Field(default=True, description='Flag if zlib compression shall be used for the netCDF data')
     size_newfile:int = pydantic.Field(default=500,description='Size of object in RAM after which a new file is created')
     size_newfile_unit: typing.Literal['none','bytes','kB','MB'] = pydantic.Field(default='MB')
@@ -91,6 +92,12 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
     print('Config',config)
+    if config['clearqueue']:
+        while (datainqueue.empty() == False):
+            try:
+                data = datainqueue.get(block=False)
+            except:
+                break
 
     data_write_to_file = [] # List of columns to be written to file
     count = 0
