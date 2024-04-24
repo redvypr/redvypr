@@ -2211,7 +2211,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             if len(self.device.sensordata_raw[sn]) > self.maxlen:
                 self.device.sensordata_raw[sn] = self.device.sensordata_raw[sn][-self.maxlen:]
 
-            rdata = data_packets.redvypr_datapacket(data)
+            rdata = data_packets.datapacket(data)
             parameter = rdata.datakeys()
             #try:
             #    parameter.remove('type')  # Remove type
@@ -2313,7 +2313,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             # Fill the table with data
             for macdraw in mac_redraw:
                 data_redraw = table.sensordata[macdraw]
-                data_redraw_rdata = data_packets.redvypr_datapacket(data_redraw)
+                data_redraw_rdata = data_packets.datapacket(data_redraw)
                 parameter_redraw = data_redraw_rdata.datakeys()
                 index_col = columns.index(macdraw)
                 #print('data redraw',data_)

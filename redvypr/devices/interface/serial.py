@@ -12,7 +12,7 @@ import sys
 import threading
 import pydantic
 import typing
-from redvypr.data_packets import check_for_command, datapacket
+from redvypr.data_packets import check_for_command, create_datadict
 from redvypr.device import redvypr_device
 import redvypr.files as redvypr_files
 import redvypr.devices.plot.plot_widgets as redvypr_plot_widgets
@@ -95,7 +95,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
             serial_device = serial.Serial(serial_name, baud, parity=parity, stopbits=stopbits, bytesize=bytesize,
                                           timeout=0)
 
-            data = datapacket(device=devicename)
+            data = create_datadict(device=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['status'] = 'reading'
@@ -107,7 +107,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
         except Exception as e:
             # print('Serial device 2',serial_device)
             logger.debug(funcname + ': Exception open_serial_device {:s} {:d}: '.format(serial_name, baud) + str(e))
-            data = datapacket(device=devicename)
+            data = create_datadict(device=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['status'] = 'could not open'
@@ -155,7 +155,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
                 #print('rawdata_all',rawdata_all)
                 FLAG_CHUNK = (len(rawdata_all)) > chunksize and (chunksize > 0)
                 if (FLAG_CHUNK):
-                    data = datapacket(device=devicename)
+                    data = create_datadict(device=devicename)
                     data['t'] =  time.time()
                     data['data'] = rawdata_all
                     data['comport'] = serial_device.name
@@ -178,7 +178,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
                                     sentences_read += 1
                                     raw = rawdata_split[ind] + newpacket  # reconstruct the data
                                     # print('raw', raw)
-                                    data = datapacket(device=devicename)
+                                    data = create_datadict(device=devicename)
                                     data['t' ] = tnewpacket
                                     data['data'] = raw
                                     data['comport'] = serial_device.name
@@ -191,7 +191,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
 
         if ((time.time() - tnewpacket) > dt_maxwait):
             logger.warning('Did not find valid packet on serial device {:s}'.format(serial_name))
-            data = datapacket(device=devicename)
+            data = create_datadict(device=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['status'] = 'timout (dt_maxwait)'
@@ -203,7 +203,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
             dbytes = bytes_read - bytes_read_old
             bytes_read_old = bytes_read
             bps = dbytes / dt_update  # bytes per second
-            data = datapacket(device=devicename)
+            data = create_datadict(device=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['bps'] = bps

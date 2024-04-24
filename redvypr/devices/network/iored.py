@@ -1015,7 +1015,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
             return
 
     # Create an onformation packet for to update the deviceinformation
-    datapacket = data_packets.datapacket(data = {'url_zmq_rep':url_rep,'url_zmq_sub':url_pub}, datakey = '_deviceinfo')
+    datapacket = data_packets.create_datadict(data = {'url_zmq_rep':url_rep, 'url_zmq_sub':url_pub}, datakey ='_deviceinfo')
     dataqueue.put(datapacket)
 
     #

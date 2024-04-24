@@ -39,7 +39,10 @@ class device_config(pydantic.BaseModel):
     dt_sync: int = pydantic.Field(default=5,description='Time after which an open file is synced on disk')
     dt_newfile: int = pydantic.Field(default=3600,description='Time after which a new file is created')
     dt_newfile_unit: typing.Literal['none','seconds','hours','days'] = pydantic.Field(default='seconds')
-    dt_update:int = pydantic.Field(default=2,description='Time after which an upate is sent to the gui')
+    dt_update: int = pydantic.Field(default=2,description='Time after which an upate is sent to the gui')
+    datakey_expansionlevel: int = pydantic.Field(default=3, description='Level of the datakey expansionlevel')
+    clearqueue: bool = pydantic.Field(default=True,
+                                      description='Flag if the buffer of the subscribed queue should be emptied before start')
     size_newfile:int = pydantic.Field(default=500,description='Size of object in RAM after which a new file is created')
     size_newfile_unit: typing.Literal['none','bytes','kB','MB'] = pydantic.Field(default='MB')
     datafolder:str = pydantic.Field(default='./',description='Folder the data is saved to')
@@ -90,7 +93,13 @@ def create_logfile(config,count=0):
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
-    print('Config',config)
+    #print('Config',config)
+    if config['clearqueue']:
+        while (datainqueue.empty() == False):
+            try:
+                data = datainqueue.get(block=False)
+            except:
+                break
 
     data_write_to_file = [] # List of columns to be written to file
     count = 0
@@ -246,7 +255,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     except:
                         data['t'] = data['_redvypr']['t']
 
-                    datakeys = data_packets.redvypr_datapacket(data).datakeys()
+                    datapacket = data_packets.datapacket(data)
+                    datakeys = datapacket.datakeys(expand=config['datakey_expansionlevel'])
+                    print('datakeys')
                     datakeys.remove('t')
                     datakeys.insert(0,'t')
                     # Write data in datakeys
@@ -265,7 +276,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             device_worksheets[packet_address_str].write(row_datakey,colindex,k)
 
                         #print('Will write data from {} to column {} and line {}'.format(packet_address_str, colindex,lineindex))
-                        datawrite = data[k]
+                        datawrite = datapacket[k]
                         if (type(datawrite) is not str) and (type(datawrite) is not int) and (type(datawrite) is not float):
                             #print('Datatype {} not supported, converting data to str'.format(str(type(datawrite))))
                             datawrite = str(datawrite)

@@ -84,8 +84,8 @@ def process_TAR_data(dataline, data, device_info, loggerconfig):
         datapackets_return.append(datapacket_TAR)
         # Convert to temperature
         devicename = 'TAR_SI_' + datapacket_TAR['sn']
-        datapacket_TAR_T = data_packets.datapacket(device=devicename, tu=datapacket_TAR['_redvypr']['t'],
-                                                   hostinfo=device_info['hostinfo'])
+        datapacket_TAR_T = data_packets.create_datadict(device=devicename, tu=datapacket_TAR['_redvypr']['t'],
+                                                        hostinfo=device_info['hostinfo'])
         datapacket_TAR_T['type'] = datapacket_TAR['type']
         datapacket_TAR_T['np'] = datapacket_TAR['np']
         datapacket_TAR_T['sn'] = datapacket_TAR['sn']
@@ -136,8 +136,8 @@ def process_TAR_raw(dataline, data, device_info):
         macstr = datapacket['sn']
         datapacket['t'] = data['t']
         devicename = 'TAR_raw_' + macstr
-        datapacket_redvypr = data_packets.datapacket(device=devicename, tu=data['_redvypr']['t'],
-                                                     hostinfo=device_info['hostinfo'])
+        datapacket_redvypr = data_packets.create_datadict(device=devicename, tu=data['_redvypr']['t'],
+                                                          hostinfo=device_info['hostinfo'])
         datapacket_redvypr.update(datapacket)
 
         return datapacket_redvypr

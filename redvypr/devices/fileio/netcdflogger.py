@@ -231,7 +231,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
                     lent = len(nc_device.variables['time'])
                     nc_device.variables['time'][lent] = data['t']
-                    datakeys = data_packets.redvypr_datapacket(data).datakeys()
+                    datakeys = data_packets.datapacket(data).datakeys()
                     datakeys.remove('t')
                     #datakeys.insert(0,'t')
                     # Write data in datakeys or create variable

@@ -1,3 +1,4 @@
+    -0.7.7  - datapacket object that allows datakey expansion, enables xlsxlogger to write "flattened" out list/arrays
     -0.7.6  - datadistribution thread is restarted when it crashes.
     -0.7.5  - calibration and csvsensors added
     -0.7.4  - xlsxlogger working, nmeaparser re-implemented, working but needs to be polished

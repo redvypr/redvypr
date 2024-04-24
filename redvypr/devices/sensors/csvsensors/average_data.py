@@ -47,7 +47,7 @@ class average_data():
                         # devicename = datapacket_HFSI['devicename'] + '_avg'
 
 
-                        datapacket_avg = data_packets.datapacket(device=self.devicename, tu=data['_redvypr']['t'], hostinfo=self.device_info['hostinfo'])
+                        datapacket_avg = data_packets.create_datadict(device=self.devicename, tu=data['_redvypr']['t'], hostinfo=self.device_info['hostinfo'])
 
                         datapacket_avg['type'] = self.data['type']
                         datapacket_avg['sn'] = self.macstr

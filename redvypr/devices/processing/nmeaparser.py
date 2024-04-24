@@ -57,7 +57,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         #print('Data',data)
         # Check if the datakey is in the datapacket
         if len(config['datakey']) == 0:
-            datakeys = redvypr.data_packets.redvypr_datapacket(data).datakeys()
+            datakeys = redvypr.data_packets.datapacket(data).datakeys()
         else:
             if config['datakey'] in data.keys():
                 datakeys = [config['datakey']]
@@ -82,7 +82,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                     daddr = redvypr.redvypr_address(data)
                     devname = sentence_type + '_' + daddr.devicename
                     print('Devicename', daddr.devicename)
-                    data_parsed = redvypr.data_packets.datapacket(data=msg.talker, datakey='talker', device=devname)
+                    data_parsed = redvypr.data_packets.create_datadict(data=msg.talker, datakey='talker', device=devname)
                     data_parsed['sentence_type'] = sentence_type
                     #attr = dir(msg)
                     #for a in attr:
