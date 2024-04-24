@@ -24,7 +24,7 @@ setup(name='redvypr',
       scripts = [],
       entry_points={ 'console_scripts': ['redvypr=redvypr:redvypr_main']},
       package_data = {'':['VERSION','icon/*','utils/csv2dict/*.yaml']},
-      install_requires=[ 'pyaml', 'pyqtgraph','netCDF4', 'pyqtconsole', 'pyserial','qtawesome','pynmea2','pydantic>2.0'],
+      install_requires=[ 'pyaml', 'pyqtgraph','netCDF4', 'pyqtconsole', 'pyserial','qtawesome','pynmea2','pydantic>2.0','xlsxwriter'],
       classifiers=[
         'Development Status :: 4 - Beta',
         'Topic :: Scientific/Engineering',          
