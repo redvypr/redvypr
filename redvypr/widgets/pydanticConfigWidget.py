@@ -21,16 +21,17 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
     """
     Config widget for a pydantic configuration
     """
-    def __init__(self, device = None):
+    def __init__(self, device = None, exclude = []):
         funcname = __name__ + '.__init__():'
         super().__init__()
         logger.debug(funcname)
         self.device = device
+        self.exclude = exclude
         self.layout = QtWidgets.QGridLayout(self)
         self.label = QtWidgets.QLabel('Configuration of\n{:s}'.format(self.device.name))
         self.layout.addWidget(self.label)
         dataname = self.device.name + '.config'
-        self.configWidget = pydanticQTreeWidget(self.device.config, dataname=dataname)
+        self.configWidget = pydanticQTreeWidget(self.device.config, dataname=dataname, exclude = self.exclude)
         self.layout.addWidget(self.configWidget)
 
 #
@@ -41,9 +42,10 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
 class pydanticConfigWidget(QtWidgets.QWidget):
     #config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
-    def __init__(self, config=None, loadsavebutton=False, redvypr_instance=None, show_datatype = False, editable = True, configname = None):
+    def __init__(self, config=None, loadsavebutton=False, redvypr_instance=None, show_datatype = False, editable = True, configname = None, exclude = []):
         funcname = __name__ + '.__init__():'
         super().__init__()
+        self.exclude = exclude
         self.layout = QtWidgets.QGridLayout(self)
         #self.label = QtWidgets.QLabel('Configuration of\n{:s}'.format(self.device.name))
         #self.layout.addWidget(self.label)
@@ -51,7 +53,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             configname = 'pydanticConfig'
 
         self.config = config
-        self.configWidget = pydanticQTreeWidget(self.config, dataname=configname)
+        self.configWidget = pydanticQTreeWidget(self.config, dataname=configname, exclude=self.exclude)
         if editable:
             self.configWidget.itemDoubleClicked.connect(self.__openConfigGui__)
             self.configGui = QtWidgets.QWidget()  # Widget where the user can modify the content
@@ -165,7 +167,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
     """ Qtreewidget that display a pydantic object
     """
 
-    def __init__(self, data=None, dataname = 'data', show_datatype = True, show_editable_only = True):
+    def __init__(self, data=None, dataname = 'data', show_datatype = True, show_editable_only = True, exclude = []):
         funcname = __name__ + '.__init__():'
         super().__init__()
         logger.debug(funcname + str(data))
@@ -173,6 +175,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
         # make only the first column editable
         #self.setEditTriggers(self.NoEditTriggers)
         #self.header().setVisible(False)
+        self.exclude = exclude
         self.setHeaderLabels(['Variable','Value','Type'])
         self.data     = data
         self.dataname = dataname
@@ -281,7 +284,11 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
             if(flag_iterate == False): # Check if we have an item that is something with data (not a pydantic module, list or dict)
                 data_value = data  #
                 typestr = data_value.__class__.__name__
-                item       = QtWidgets.QTreeWidgetItem([str(index), str(data_value),typestr])
+                indexstr = str(index)
+                # Check if item should be excluded
+                if indexstr in self.exclude:
+                    return
+                item = QtWidgets.QTreeWidgetItem([indexstr, str(data_value),typestr])
                 #item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)  # editable
                 item.__data__ = data
                 item.__dataparent__   = parent.__data__ # can be used to reference the data (and change it)
@@ -294,7 +301,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 #data.__item__ = item
 
                 index_child = self.item_is_child(parent, item)
-                if  index_child == None:  # Check if the item is already existing, if no add it
+                if index_child == None:  # Check if the item is already existing, if no add it
                     parent.addChild(item)
                 else: # Update the data (even if it hasnt changed
                     parent.child(index_child).setText(1,str(data_value))
@@ -304,11 +311,11 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 datatmp = data
 
                 typestr = datatmp.__class__.__name__
-                #typestr = datatmp.__class__.__name__
                 flag_modifiable = True
-                if(index is not None):
-                    indexstr = index
-
+                indexstr = str(index)
+                # Check if item should be excluded
+                if indexstr in self.exclude:
+                    return
                 #print('gf',index)
                 #print('gf type', type(index))
                 #print('Hallo',str(index))

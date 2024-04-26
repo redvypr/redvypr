@@ -505,12 +505,6 @@ class Device(redvypr_device):
                     self.calfiles_processed.remove(calfile)
                     return True
 
-
-
-
-
-
-
     def populate_calibration(self):
         funcname = __name__ + '.populate_calibration()'
         logger.debug(funcname)
@@ -1637,22 +1631,14 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
 
-        self.coeffbutton = QtWidgets.QPushButton('Sensor coefficients')
+        self.coeffbutton = QtWidgets.QPushButton('Calibration coefficients')
         self.coeffbutton.clicked.connect(self.show_coeffwidget)
         self.config_widgets.append(self.coeffbutton)
 
         self.__create_configLoggers_widget__()
-        self.addLoggerButton = QtWidgets.QPushButton('Add logger manually')
+        self.addLoggerButton = QtWidgets.QPushButton('Add sensor manually')
         self.addLoggerButton.clicked.connect(self.__configlogger_add_clicked__)
         self.config_widgets.append(self.addLoggerButton)
-
-        self.configLoggerButton = QtWidgets.QPushButton('Configure')
-        self.configLoggerButton.clicked.connect(self.__configlogger_clicked__)
-        self.config_widgets.append(self.addLoggerButton)
-
-        #self.coefffiles_button = QtWidgets.QPushButton('Coefficient files')
-        #self.coefffiles_button.clicked.connect(self.show_coefffileswidget)
-        #self.config_widgets.append(self.coefffiles_button)
 
         self.coefffiles = QtWidgets.QListWidget()
         self.populate_coefffiles()
@@ -1672,22 +1658,24 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.conbutton = QtWidgets.QPushButton("Subscribe")
         self.conbutton.clicked.connect(self.connect_clicked)
         self.config_widgets.append(self.conbutton)
-
-        self.layout.addWidget(self.configLoggerWidgets['loggerlist'], 0, 0, 4, 1)
-        self.layout.addWidget(self.coeffbutton, 1, 1, 1, 1)
-        self.layout.addWidget(self.addLoggerButton,2,1,1,1)
-        self.layout.addWidget(self.configLoggerButton, 3, 1, 1, 1)
-        #self.layout.addWidget(self.coefffiles_button, 2, 2, 1, 2)
-        self.layout.addWidget(self.conbutton, 4, 0, 1, 4)
+        sensorlabel = QtWidgets.QLabel('Sensors')
+        sensorlabel.setAlignment(QtCore.Qt.AlignCenter)
+        sensorlabel.setStyleSheet(''' font-size: 24px; font: bold''')
+        self.layout.addWidget(sensorlabel, 0, 0)
+        self.layout.addWidget(self.configLoggerWidgets['loggerlist'], 1, 0, 1, 4)
+        self.layout.addWidget(self.coeffbutton, 2, 0, 1, 2)
+        self.layout.addWidget(self.addLoggerButton,2, 2, 1, 2)
+        self.layout.addWidget(self.conbutton, 3, 0, 1, 4)
         if (self.device.mp == 'multiprocess'):
-            self.layout.addWidget(self.startbutton, 5, 0, 1, 3)
-            self.layout.addWidget(self.killbutton, 5, 3)
+            self.layout.addWidget(self.startbutton, 4, 0, 1, 3)
+            self.layout.addWidget(self.killbutton, 4, 3)
         else:
-            self.layout.addWidget(self.startbutton, 5, 0, 1, 4)
+            self.layout.addWidget(self.startbutton, 4, 0, 1, 4)
 
         # If the config is changed, update the device widget
-        self.layout.setRowStretch(0, 10)
-        self.layout.setRowStretch(1, 1)
+        self.layout.setRowStretch(0, 0)
+        self.layout.setRowStretch(1, 20)
+        self.layout.setRowStretch(2, 1)
         self.layout.setRowStretch(3, 2)
         #GL.setColumnStretch(GL.columnCount(), 1)
 
@@ -1723,17 +1711,17 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
 
         self.configLoggerWidgets = {}
-        self.configLoggerWidgets['loggerlist'] = QtWidgets.QListWidget()  # A list with all loggers
+        #self.configLoggerWidgets['loggerlist'] = QtWidgets.QListWidget()  # A list with all loggers
+        self.configLoggerWidgets['loggerlist'] = QtWidgets.QTableWidget()  # A list with all loggers
         #self.configLoggerWidgets['loggerlist'].currentRowChanged.connect(self.__configloggerlist_changed__)
         self.configLoggerWidgets['loggerconfig'] = QtWidgets.QWidget()
         self.configLoggerWidgets['loggerconfig_layout'] = QtWidgets.QVBoxLayout(self.configLoggerWidgets['loggerconfig'])
         self.__update_configLoggerList__()
 
     def __configlogger_clicked__(self):
-        funcname = __name__ + '__configloggerlist_clicked__():'
+        funcname = __name__ + '__configlogger_clicked__():'
         logger.debug(funcname)
-        row = self.configLoggerWidgets['loggerlist'].currentRow()
-        item = self.configLoggerWidgets['loggerlist'].item(row)
+        item = self.sender().item
         layout = self.configLoggerWidgets['loggerconfig_layout']
         if item is not None:
             #print('item', item)
@@ -1817,9 +1805,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '____update_configLoggerList__():'
         logger.debug(funcname)
         self.configLoggerWidgets['loggerlist'].clear()
-        for sn in self.device.config.sensorconfigurations.keys():
-            item = QtWidgets.QListWidgetItem(str(sn))
-
+        nrows = len(self.device.config.sensorconfigurations.keys())
+        ncols = 3
+        self.configLoggerWidgets['loggerlist'].setRowCount(nrows)
+        self.configLoggerWidgets['loggerlist'].setColumnCount(ncols)
+        self.configLoggerWidgets['loggerlist'].setHorizontalHeaderLabels(['SN','Sensortype','Configure'])
+        for irow,sn in enumerate(self.device.config.sensorconfigurations.keys()):
+            item = QtWidgets.QTableWidgetItem(str(sn))
             sensor_id = str(self.device.config.sensorconfigurations[sn].sensor_id)
             #print('logger_short', logger_short)
             # Create a configuration widget for the sensor
@@ -1827,7 +1819,15 @@ class initDeviceWidget(QtWidgets.QWidget):
             item.configwidget = configwidget
             item.sn = sn
             #print('Item',item.configwidget)
-            self.configLoggerWidgets['loggerlist'].addItem(item)
+            self.configLoggerWidgets['loggerlist'].setItem(irow,0,item)
+            item_type = QtWidgets.QTableWidgetItem(sensor_id)
+            self.configLoggerWidgets['loggerlist'].setItem(irow, 1, item_type)
+            button_configure = QtWidgets.QPushButton('Configure')
+            button_configure.clicked.connect(self.__configlogger_clicked__)
+            button_configure.item = item
+            self.configLoggerWidgets['loggerlist'].setCellWidget(irow, 2, button_configure)
+
+        self.configLoggerWidgets['loggerlist'].resizeColumnsToContents()
 
     def __create_sensor_config_widget__(self, sn, sensor_id):
         funcname = __name__ + '__create_sensor_config_widget__()'
@@ -1841,7 +1841,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             print('Generic logger ...')
         elif sensor_id.lower() == 'tar':
             logger.debug('Config widget for temperature array (TAR)')
-            config_widget = TARWidget_config(sn=sn, redvypr_device=self.device)
+            config_widget = TARWidget_config(self, sn=sn, redvypr_device=self.device)
             clayout.addWidget(config_widget)
         elif sensor_id.lower() == 'dhfs50':
             logger.debug('DHFS50')
@@ -1893,6 +1893,31 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.create_sensorcoefficientWidget()
         self.sensorCoeffWidget.show()
 
+    def show_coeffwidget_apply(self):
+        self.create_sensorcoefficientWidget()
+
+        self.applyCoeffButton = QtWidgets.QPushButton('Apply')
+        self.applyCoeffButton.clicked.connect(self.applyCalibration_clicked)
+        self.cancelCoeffButton = QtWidgets.QPushButton('Cancel')
+        self.cancelCoeffButton.clicked.connect(self.applyCalibration_clicked)
+        self.sensorCoeffWidget_layout.addWidget(self.applyCoeffButton, 2, 0)
+        self.sensorCoeffWidget_layout.addWidget(self.cancelCoeffButton, 2, 1)
+        self.sensorCoeffWidget.show()
+
+    def applyCalibration_clicked(self):
+        if self.sender() == self.cancelCoeffButton:
+            self.sensorCoeffWidget.close()
+        else:
+            print('Apply')
+            user_role = 10
+            item = self.sensorCoeffWidget_list.currentItem()
+            if item is not None:
+                role = QtCore.Qt.UserRole + user_role
+                print('fds', self.sensorCoeffWidget_list.currentRow(), item.data(role))
+                cal = item.data(role)
+                print('Cal',cal)
+                self.__cal_apply__ = cal # Save the calibration
+                self.sensorCoeffWidget.close()
 
 
     def create_sensorcoefficientWidget(self):

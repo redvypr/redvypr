@@ -318,7 +318,7 @@ class TARWidget_config(QtWidgets.QWidget):
 
         self.config = conf
         conflocal = copy.deepcopy(conf)
-        self.configWidget = pydanticConfigWidget(self.config)
+        self.configWidget = pydanticConfigWidget(self.config, exclude=['parameter'])
 
         self.parameterWidget = QtWidgets.QWidget(self)
         self.fill_parameter_widgets()
@@ -326,13 +326,45 @@ class TARWidget_config(QtWidgets.QWidget):
         self.layout = QtWidgets.QGridLayout(self)
         self.layout.addWidget(self.configWidget,0,0)
         self.layout.addWidget(self.parameterWidget,0,1)
-    def fill_parameter_widgets(self):
-        funcname = __name__ +'.fill_parameter_widgets():'
-        self.parameterLayout = QtWidgets.QGridLayout(self.parameterWidget)
-        self.parameterAuto = QtWidgets.QPushButton('Autofill calibrations')
-        self.parameterTable = QtWidgets.QTableWidget()
-        self.parameterLayout.addWidget(self.parameterAuto, 0, 0)
-        self.parameterLayout.addWidget(self.parameterTable, 1, 0)
+
+    def __assign_calibrations__(self):
+        funcname = __name__ + '__assign_calibrations():'
+        print(funcname)
+        print('calibrations',self.device.config.calibrations)
+        cals = self.device.config.calibrations
+        match = ['parameter','sn']
+        for i, para in enumerate(self.config.parameter.NTC_A):
+            print('Searching for calibration for parameter',i)
+            print('Para',i,para)
+            cal_match = []
+            cal_match_date = []
+            for cal in cals:
+                match_all = True
+                for m in match:
+                    mcal = getattr(cal, m)
+                    mpara = getattr(para, m)
+                    if mcal != mpara:
+                        match_all = False
+
+                if match_all:
+                    print('Found matching parameter')
+                    print('Cal',cal)
+                    cal_match.append(cal)
+                    td = datetime.datetime.strptime(cal.date,'%Y-%m-%d %H:%M:%S.%f')
+                    cal_match_date.append(td)
+
+            if len(cal_match) > 0:
+                imin = numpy.argmin(cal_match)
+                print('Assigning matching parameter')
+                self.config.parameter.NTC_A[i] = cal_match[imin]
+
+        self.__fill_calibration_table__()
+
+
+    def __fill_calibration_table__(self):
+        funcname = __name__ + '__fill_calibration_table__():'
+        logger.debug(funcname)
+        self.parameterTable.clear()
         nRows = len(self.config.parameter.NTC_A)
         nCols = 5
         self.parameterTable.setRowCount(nRows)
@@ -343,6 +375,7 @@ class TARWidget_config(QtWidgets.QWidget):
             #print('Para',para)
             name = self.config.parameter.name[i]
             but = QtWidgets.QPushButton(name)
+            but.clicked.connect(self.parent().show_coeffwidget_apply)
             self.parameterTable.setCellWidget(i,0,but)
             # SN
             item = QtWidgets.QTableWidgetItem(para.sn)
@@ -358,3 +391,12 @@ class TARWidget_config(QtWidgets.QWidget):
             self.parameterTable.setItem(i, 4, item)
 
         self.parameterTable.resizeColumnsToContents()
+    def fill_parameter_widgets(self):
+        funcname = __name__ +'.fill_parameter_widgets():'
+        self.parameterLayout = QtWidgets.QGridLayout(self.parameterWidget)
+        self.parameterAuto = QtWidgets.QPushButton('Autofill calibrations')
+        self.parameterAuto.clicked.connect(self.__assign_calibrations__)
+        self.parameterTable = QtWidgets.QTableWidget()
+        self.parameterLayout.addWidget(self.parameterAuto, 0, 0)
+        self.parameterLayout.addWidget(self.parameterTable, 1, 0)
+        self.__fill_calibration_table__()

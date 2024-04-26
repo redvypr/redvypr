@@ -14,6 +14,7 @@ import logging
 import sys
 import pyqtgraph
 import yaml
+import uuid
 import threading
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -64,6 +65,9 @@ class sensor_data(pydantic.BaseModel):
     time_rawdata: list = pydantic.Field(default=[])
     realtimeplot: str = pydantic.Field(default='Table',description='Type of realtimedataplot')
 
+def get_uuid():
+    return 'CAL_' + str(uuid.uuid4())
+
 class device_config(pydantic.BaseModel):
     calibrationdata: typing.Optional[typing.List[sensor_data]] = pydantic.Field(default=[])
     calibrationdata_time: typing.Optional[typing.List] = pydantic.Field(default=[])
@@ -72,6 +76,9 @@ class device_config(pydantic.BaseModel):
     ind_ref_sensor: int = -1
     name_ref_sensor: str = ''
     dataformat: str = '{:.4f}'
+    calibration_id: str = ''
+    calibration_uuid: str = pydantic.Field(default_factory=get_uuid)
+    calibration_comment: str = ''
 
 
 class Device(redvypr_device):
@@ -527,7 +534,29 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
     def save_calibration(self):
         funcname = __name__ + '.save_calibration():'
         logger.debug(funcname)
-        overwrite = True
+
+        self.save_widget = QtWidgets.QWidget()
+        self.save_widget_layout = QtWidgets.QFormLayout(self.save_widget)
+        self.save_widget_dict = {}
+        folderpath_init = '.' + os.sep + '{SN}'
+        self.save_widget_dict['le'] = QtWidgets.QLineEdit(folderpath_init)
+        self.save_widget_dict['le'].editingFinished.connect(self.__populate__calibrationfilelist__)
+        calfolder = QtWidgets.QPushButton('Choose Calibration Folder')
+        calfolder.clicked.connect(self.__choose_calfolder__)
+
+        calfile_structure = '{SN}_{PARAMETER}_{CALDATE}.yaml'
+        self.save_widget_dict['le_calfile'] = QtWidgets.QLineEdit(calfile_structure)
+        self.save_widget_dict['le_calfile'].editingFinished.connect(self.__populate__calibrationfilelist__)
+
+        self.save_widget_dict['filelist'] = QtWidgets.QListWidget()
+
+        savecal_but = QtWidgets.QPushButton('Save calibration')
+        savecal_but.clicked.connect(self.__save_calibration__)
+
+        self.save_widget_layout.addRow(calfolder, self.save_widget_dict['le'])
+        self.save_widget_layout.addRow(QtWidgets.QLabel('Calibrationfile'),self.save_widget_dict['le_calfile'])
+        self.save_widget_layout.addRow(self.save_widget_dict['filelist'])
+        self.save_widget_layout.addRow(savecal_but)
         # Update the calibrationdata
         # calibrationdata = self.calibdata_to_dict()
         # self.update_coefftable_ntc()
@@ -539,10 +568,58 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         #    logger.exception(e)
         #    coeffs = None
 
+
+        self.__populate__calibrationfilelist__()
+        #folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
+
+
+        self.save_widget.show()
+
+    def __save_calibration__(self):
+        funcname = __name__ + '__save_calibration__():'
+        overwrite = True
+        create_path = True
+        fnames_full = self.save_widget_dict['fnames_full']
+        for fname_full,fname_cal_full,c,cal in fnames_full:
+            dirname = os.path.dirname(fname_full)
+            if os.path.isdir(dirname):
+                print('Path exists')
+            elif create_path:
+                print('Creating directory')
+                os.mkdir(dirname)
+            else:
+                print('Directory does not exist, will not write file')
+                continue
+            if os.path.isfile(fname_full):
+                logger.warning('File is already existing {:s}'.format(fname_full))
+                file_exist = True
+            else:
+                file_exist = False
+
+            if overwrite or (file_exist == False):
+                logger.info('Saving file to {:s}'.format(fname_full))
+                if c.comment == 'reference sensor':
+                    logger.debug(funcname + ' Will not save calibration (reference sensor)')
+                else:
+                    cdump = c.model_dump()
+                    # data_save = yaml.dump(cdump)
+
+                    with open(fname_full, 'w') as fyaml:
+                        yaml.dump(cdump, fyaml)
+                    print('Cal', cal)
+                    caldump = cal.model_dump()
+                    # data_save = yaml.dump(cdump)
+                    #with open(fname_cal_full, 'w') as fyaml:
+                    #    yaml.dump(caldump, fyaml)
+
+    def __populate__calibrationfilelist__(self):
+        funcname = __name__ + '__populate__calibrationfilelist__():'
         calibrationdata = self.device.config.calibrationdata
         coeffs = self.device.config.__calibration_coeffs__
 
-        folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
+        fnames_full = []
+        folderpath = self.save_widget_dict['le'].text()
+        self.save_widget_dict['filelist'].clear()
         if len(folderpath) > 0:
             logger.debug(funcname + ' Saving data to folder {:s}'.format(folderpath))
             for c_tmp, cal in zip(coeffs, calibrationdata):
@@ -554,31 +631,32 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
                     date = datetime.datetime.strptime(c.date, "%Y-%m-%d %H:%M:%S.%f")
                     dstr = date.strftime('%Y-%m-%d_%H-%M-%S')
                     fname = '{:s}_{:s}_{:s}.yaml'.format(c.sn, c.parameter, dstr)
+                    calfile_structure = self.save_widget_dict['le_calfile'].text()
+                    try:
+                        fname = calfile_structure.format(SN=c.sn, CALDATE=dstr, PARAMETER=c.parameter)
+                    except:
+                        fname = calfile_structure
+
                     fname_full = folderpath + '/' + fname
+                    # Add the placeholders
+                    try:
+                        fname_full = fname_full.format(SN=c.sn, CALDATE=dstr, PARAMETER=c.parameter)
+                    except:
+                        pass
+
                     fname_cal = '{:s}_{:s}_{:s}_calibrationdata.yaml'.format(c.sn, c.parameter, dstr)
                     fname_cal_full = folderpath + '/' + fname_cal
-                    if os.path.isfile(fname_full):
-                        logger.warning('File is already existing {:s}'.format(fname_full))
-                        file_exist = True
-                    else:
-                        file_exist = False
+                    fnames_full.append([fname_full,fname_cal_full, c,cal])
 
-                    if overwrite or (file_exist == False):
-                        logger.info('Saving file to {:s}'.format(fname_full))
-                        if c.comment == 'reference sensor':
-                            logger.debug(funcname + ' Will not save calibration (reference sensor)')
-                        else:
-                            cdump = c.model_dump()
-                            # data_save = yaml.dump(cdump)
-                            with open(fname_full, 'w') as fyaml:
-                                yaml.dump(cdump, fyaml)
+                    self.save_widget_dict['filelist'].addItem(fname_full)
 
-                            print('Cal',cal)
-                            caldump = cal.model_dump()
-                            # data_save = yaml.dump(cdump)
-                            with open(fname_cal_full, 'w') as fyaml:
-                                yaml.dump(caldump, fyaml)
+                self.save_widget_dict['fnames_full'] = fnames_full
 
+
+    def __choose_calfolder__(self):
+        folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
+        if len(folderpath) > 0:
+            self.save_widget_dict['le'].setText(folderpath)
 
 class PlotWidgetNTC(QtWidgets.QWidget):
     def __init__(self, config, coeffs):
@@ -1555,14 +1633,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.tablewidget_layout = QtWidgets.QGridLayout(self.tablewidget)
         self.datatable = QtWidgets.QTableWidget()
         # self.update_datatable()
-        self.addLineButton = QtWidgets.QPushButton('Add line')
+        self.addLineButton = QtWidgets.QPushButton('Add empty row')
         self.addLineButton.clicked.connect(self.addBlankCalibrationData)
-        self.remLineButton = QtWidgets.QPushButton('Rem line(s)')
+        self.remLineButton = QtWidgets.QPushButton('Rem row(s)')
         self.remLineButton.clicked.connect(self.remCalibrationData)
         #self.loadcalibbutton = QtWidgets.QPushButton('Load Calibration')
         #self.loadcalibbutton.clicked.connect(self.load_calibration)
-
-
 
         self.plot_widgets_parent = QtWidgets.QWidget()
         self.plot_widgets_parent_layout = QtWidgets.QGridLayout(self.plot_widgets_parent)
@@ -1589,7 +1665,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.calibration_widget = QtWidgets.QWidget()
         self.calibration_widget_layout = QtWidgets.QVBoxLayout(self.calibration_widget)
 
-
         # Datatable widget
         label = QtWidgets.QLabel('Calibration data')
         label.setStyleSheet("font-weight: bold")
@@ -1598,11 +1673,32 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.datatable_widget = QtWidgets.QWidget()
         #self.datatable_widget.setStyleSheet("background-color: rgb(255,0,0); margin:5px; border:1px solid rgb(0, 255, 0); ")
         datatable_widget_layout = QtWidgets.QVBoxLayout(self.datatable_widget)
+        self.datainput_configwidget = QtWidgets.QWidget()
+        self.inputlayout = QtWidgets.QGridLayout(self.datainput_configwidget)
+        self.datainput_configwidgets = {}
+        self.datainput_configwidgets['lUUID'] = QtWidgets.QLineEdit(self.device.config.calibration_uuid)
+        self.datainput_configwidgets['lUUID'].setReadOnly(True)
+        self.datainput_configwidgets['lUUID_label'] = QtWidgets.QLabel('Calibration UUID')
+        self.datainput_configwidgets['lID'] = QtWidgets.QLineEdit(self.device.config.calibration_id)
+        self.datainput_configwidgets['lID_label'] = QtWidgets.QLabel('Calibration ID')
+        self.datainput_configwidgets['lco'] = QtWidgets.QLineEdit(self.device.config.calibration_comment)
+        self.datainput_configwidgets['lco_label'] = QtWidgets.QLabel('Calibration comment')
+        self.inputlayout.addWidget(self.datainput_configwidgets['lUUID_label'], 0, 0)
+        self.inputlayout.addWidget(self.datainput_configwidgets['lUUID'], 0, 1)
+        self.inputlayout.addWidget(self.datainput_configwidgets['lID_label'], 1, 0)
+        self.inputlayout.addWidget(self.datainput_configwidgets['lID'], 1, 1)
+        self.inputlayout.addWidget(self.datainput_configwidgets['lco_label'], 2, 0)
+        self.inputlayout.addWidget(self.datainput_configwidgets['lco'], 2, 1)
         #datatable_widget_layout.addStretch()
+
+
+
         datatable_widget_layout.addWidget(label)
+        datatable_widget_layout.addWidget(self.datainput_configwidget)
         datatable_widget_layout.addWidget(self.datatable)
         datatable_widget_layout.setStretch(0, 1)
-        datatable_widget_layout.setStretch(1, 10)
+        datatable_widget_layout.setStretch(1, 1)
+        datatable_widget_layout.setStretch(2, 10)
 
 
         # Create the layout
