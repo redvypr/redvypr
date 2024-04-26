@@ -16,13 +16,14 @@ from redvypr.data_packets import check_for_command
 import redvypr.data_packets as data_packets
 import redvypr.gui as gui
 #import redvypr.config as redvypr_config
-from redvypr import redvypr_address
+from redvypr.redvypr_address import redvypr_address
 from redvypr.devices.plot import plot_widgets
 from redvypr.devices.plot import XYplotWidget
 import redvypr.files as redvypr_files
 from redvypr.devices.sensors.calibration.calibration_models import  calibration_HF, calibration_NTC, get_date_from_calibration
 from .heatflow_sensors import convert_HF, parse_HF_raw, add_keyinfo_HF_raw, parse_HFV_raw, process_IMU_packet, process_HFS_data
 from .temperature_array_sensors import process_TAR_data, sensor_TAR, TARWidget, TARWidget_config
+from .sensorWidgets import sensorCoeffWidget
 
 _icon_file = redvypr_files.icon_file
 
@@ -177,10 +178,10 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                                     try:
                                         loggerconfig = config.sensorconfigurations[sn]
                                     except:
-                                        logger.debug(funcname + ' New logger.', exc_info=True)
-                                        statusmessage = {'status': 'newlogger', 'sn': sn, 'packettype': packettype,'dataline':dataline}
+                                        logger.debug(funcname + ' New sensor', exc_info=True)
+                                        statusmessage = {'status': 'newlogger', 'sn': sn, 'packettype': packettype,'dataline':dataline,'data':data}
                                         statusqueue.put(statusmessage)
-                                        print('new logger statusmessage', statusmessage)
+                                        #print('new logger statusmessage', statusmessage)
                                         loggerconfig = None
 
                                     if packettype == 'IMU':
@@ -483,15 +484,11 @@ class Device(redvypr_device):
         else:
             logger.debug(funcname + ' File is already listed')
 
-
         self.populate_calibration()
 
     def rem_calibration_file(self, calfile):
         funcname = __name__ + 'rem_calibration_file():'
         logger.debug(funcname)
-
-
-
         calfiles_tmp = list(self.config.calibration_files)
         if calfile in calfiles_tmp:
             calibration = self.read_calibration_file(calfile)
@@ -556,9 +553,6 @@ class Device(redvypr_device):
             logger.warning('Calibration exists already')
             return False
 
-
-
-
     def read_calibration_file(self, fname):
         """
         Open and reads a calibration file, it will as well determine the type of calibration and call the proper function
@@ -566,8 +560,6 @@ class Device(redvypr_device):
         """
         funcname = __name__ + '.read_calibration_file():'
         logger.debug(funcname + 'Opening file {:s}'.format(fname))
-
-
         try:
             f = open(fname)
             data = yaml.safe_load(f)
@@ -704,7 +696,7 @@ class Device(redvypr_device):
         super(Device, self).thread_start(config=config)
 
 
-    def add_sensorconfig(self, sn, sensor_id, config = None):
+    def add_sensorconfig(self, sn, sensor_id, config = None, address=None):
         """
 
         """
@@ -756,11 +748,12 @@ class Device(redvypr_device):
                 return
             elif type(status) == dict:
                 if status['status'] == 'newlogger':
-                    logger.debug('New logger')
+                    logger.debug('New Sensor')
+                    newsensor_address = redvypr_address(status['data'])
                     if status['packettype'] == 'HFV':
                         logger.info('New 4Channel logger')
                         sn = status['sn']
-                        ret = self.add_sensorconfig(sn, sensor_id ='hfv4ch')
+                        ret = self.add_sensorconfig(sn, sensor_id ='hfv4ch', address=newsensor_address)
                         if ret is not None:
                             config = self.config.model_dump()
                             print('config for new logger',config)
@@ -770,7 +763,7 @@ class Device(redvypr_device):
                         logger.info('New Temperature array')
                         sn = status['sn']
                         dataline = status['dataline']
-                        ret = self.add_sensorconfig(sn, sensor_id='tar', config=dataline)
+                        ret = self.add_sensorconfig(sn, sensor_id='tar', config=dataline, address=newsensor_address)
                         if ret is not None:
                             config = self.config.model_dump()
                             # print('config',config)
@@ -1516,89 +1509,7 @@ class DHFSWidget(QtWidgets.QWidget):
         # Fill the datatables
 
 
-class sensorCoeffWidget(QtWidgets.QWidget):
-    """
-    Widget to display all sensor coefficients
-    """
-    coeff = QtCore.pyqtSignal( dict )  # Signal returning the coefficients
-    def __init__(self, *args, redvypr_device=None):
-        funcname = __name__ + '__init__()'
-        super(QtWidgets.QWidget, self).__init__(*args)
-        logger.debug(funcname)
-        self.device = redvypr_device
-        self.layout = QtWidgets.QGridLayout(self)
-        self.create_sensorcoefficientWidget_table()
 
-        # Add buttons
-        self.apply_button = QtWidgets.QPushButton('Apply')
-        self.apply_button.clicked.connect(self.coeff_chosen)
-        self.cancel_button = QtWidgets.QPushButton('Cancel')
-        self.cancel_button.clicked.connect(self.coeff_cancel)
-        self.layout.addWidget(self.sensorCoeffWidget_table, 0, 0,1,2)
-        self.layout.addWidget(self.apply_button, 1, 0)
-        self.layout.addWidget(self.cancel_button, 1, 1)
-
-    def coeff_chosen(self):
-        funcname = __name__ + '.coeff_chosen():'
-        logger.debug(funcname)
-        row = self.sensorCoeffWidget_table.currentRow()
-        item = self.sensorCoeffWidget_table.item(row,0)
-        #print('Coeff',item.coeff)
-        calibration = item.calibration
-        print('Calibration',calibration)
-        cal = {'calibration':calibration}
-
-        self.coeff.emit(cal)
-        self.close()
-
-    def coeff_cancel(self):
-        funcname = __name__ + '.coeff_cancel():'
-        logger.debug(funcname)
-        self.close()
-    def create_sensorcoefficientWidget_table(self):
-        """
-
-        """
-        funcname = __name__ + '.create_sensorcoefficientWidget_table():'
-        logger.debug(funcname)
-        self.col_sn = 0
-        self.col_model = 1
-        self.col_parameter = 2
-        self.col_date = 3
-        sensorCoeffWidget_table = QtWidgets.QTableWidget()
-        sensorCoeffWidget_table.setColumnCount(4)
-        columns = ['SN','Model','Parameter','Date']
-        sensorCoeffWidget_table.setHorizontalHeaderLabels(columns)
-        # Fill the table with sn
-        nrows = len(self.device.config.calibrations)
-        print('Calibrations', self.device.config.calibrations)
-        sensorCoeffWidget_table.setRowCount(nrows)
-        row = 0
-        for calibration in self.device.config.calibrations:
-            sn = calibration.sn
-            if True:
-                if True:
-                    parameter = calibration.parameter
-                    td = get_date_from_calibration(calibration, parameter)
-                    #date = str(calibration['parameter'][parameter]['date'])
-                    date = td.strftime('%Y-%m-%d %H:%M:%S')
-                    model = str(calibration.sensor_model)
-                    item = QtWidgets.QTableWidgetItem(str(sn))
-                    item.calibration = calibration
-                    sensorCoeffWidget_table.setItem(row,self.col_sn,item)
-                    item = QtWidgets.QTableWidgetItem(str(model))
-                    item.calibration = calibration
-                    sensorCoeffWidget_table.setItem(row, self.col_model, item)
-                    item = QtWidgets.QTableWidgetItem(str(parameter))
-                    item.calibration = calibration
-                    sensorCoeffWidget_table.setItem(row, self.col_parameter, item)
-                    item = QtWidgets.QTableWidgetItem(str(date))
-                    item.calibration = calibration
-                    sensorCoeffWidget_table.setItem(row, self.col_date, item)
-                    row += 1
-
-        self.sensorCoeffWidget_table = sensorCoeffWidget_table
-        self.sensorCoeffWidget_table.resizeColumnsToContents()
 
 
 
@@ -1798,6 +1709,41 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.__update_configLoggerList__()
             self.configLoggerWidgets['addwidget'].close()
 
+    def __update_configLoggerList_status__(self):
+        """
+        updates the status of the configloggerlist
+        """
+        funcname = __name__ + '____update_configLoggerList_status__():'
+        logger.debug(funcname)
+
+        colpub = 3
+        coldev = 4
+        colnp = 5
+        for irow, sn in enumerate(self.device.config.sensorconfigurations.keys()):
+            try:
+                raddr = self.device.sensordata[sn]['__raddr__']
+                item_publisher = QtWidgets.QTableWidgetItem(raddr.publisher)
+                item_publisher_old = self.configLoggerWidgets['loggerlist'].item(irow, colpub)
+                if item_publisher_old.text() != item_publisher.text():
+                    self.configLoggerWidgets['loggerlist'].setItem(irow, colpub, item_publisher)
+
+                devices = str(self.device.sensordata[sn]['__devices__'])
+                item_devices = QtWidgets.QTableWidgetItem(devices)
+                item_devices_old = self.configLoggerWidgets['loggerlist'].item(irow, coldev)
+                if item_devices_old.text() != item_devices.text():
+                    self.configLoggerWidgets['loggerlist'].setItem(irow, coldev, item_devices)
+
+                np = self.device.sensordata[sn]['__np__']
+                item_np = QtWidgets.QTableWidgetItem(str(np))
+                item_np_old = self.configLoggerWidgets['loggerlist'].item(irow, colnp)
+                if item_np_old.text() != item_np.text():
+                    self.configLoggerWidgets['loggerlist'].setItem(irow, colnp, item_np)
+            except:
+                logger.info(funcname,exc_info=True)
+                raddr = None
+
+        self.configLoggerWidgets['loggerlist'].resizeColumnsToContents()
+
     def __update_configLoggerList__(self):
         """
         update the logger list of logger configuration widget
@@ -1806,11 +1752,17 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         self.configLoggerWidgets['loggerlist'].clear()
         nrows = len(self.device.config.sensorconfigurations.keys())
-        ncols = 3
+        ncols = 6
         self.configLoggerWidgets['loggerlist'].setRowCount(nrows)
         self.configLoggerWidgets['loggerlist'].setColumnCount(ncols)
-        self.configLoggerWidgets['loggerlist'].setHorizontalHeaderLabels(['SN','Sensortype','Configure'])
+        self.configLoggerWidgets['loggerlist'].setHorizontalHeaderLabels(['SN','Sensortype','Configure','Publisher','Devices','Numpackets'])
         for irow,sn in enumerate(self.device.config.sensorconfigurations.keys()):
+            # Set blank everywhere
+            for icol in range(ncols):
+                item_blank = QtWidgets.QTableWidgetItem('')
+                self.configLoggerWidgets['loggerlist'].setItem(irow, icol, item_blank)
+
+
             item = QtWidgets.QTableWidgetItem(str(sn))
             sensor_id = str(self.device.config.sensorconfigurations[sn].sensor_id)
             #print('logger_short', logger_short)
@@ -1826,6 +1778,14 @@ class initDeviceWidget(QtWidgets.QWidget):
             button_configure.clicked.connect(self.__configlogger_clicked__)
             button_configure.item = item
             self.configLoggerWidgets['loggerlist'].setCellWidget(irow, 2, button_configure)
+            try:
+                raddr = self.device.sensordata[sn]['__raddr__']
+                item_publisher = QtWidgets.QTableWidgetItem(raddr.publisher)
+                self.configLoggerWidgets['loggerlist'].setItem(irow, 4, item_publisher)
+                print('Done')
+            except:
+                logger.info('fdsf',exc_info=True)
+                raddr = None
 
         self.configLoggerWidgets['loggerlist'].resizeColumnsToContents()
 
@@ -1856,28 +1816,6 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         return cwidget
 
-    def chooseCalibrationFiles(self):
-        """
-
-        """
-        funcname = __name__ + '.chooseCalibrationFiles():'
-        logger.debug(funcname)
-        #fileName = QtWidgets.QFileDialog.getLoadFileName(self, 'Load Calibration', '',
-        #                                                 "Yaml Files (*.yaml);;All Files (*)")
-
-        fileNames = QtWidgets.QFileDialog.getOpenFileNames(self, 'Load Calibration', '',
-                                                         "Yaml Files (*.yaml);;All Files (*)")
-        for fileName in fileNames[0]:
-            #self.device.read_calibration_file(fileName)
-            print('Adding file ...',fileName)
-            self.device.add_calibration_file(fileName)
-
-        # Fill the list with sn
-
-        if len(fileNames[0])>0:
-            logger.debug(funcname + ' Updating the calibrationlist')
-            self.__sensorCoeffWidget_list_populate__()
-
     def show_coefffileswidget(self):
         self.coefffileswidget.show()
 
@@ -1893,157 +1831,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.create_sensorcoefficientWidget()
         self.sensorCoeffWidget.show()
 
-    def show_coeffwidget_apply(self):
-        self.create_sensorcoefficientWidget()
 
-        self.applyCoeffButton = QtWidgets.QPushButton('Apply')
-        self.applyCoeffButton.clicked.connect(self.applyCalibration_clicked)
-        self.cancelCoeffButton = QtWidgets.QPushButton('Cancel')
-        self.cancelCoeffButton.clicked.connect(self.applyCalibration_clicked)
-        self.sensorCoeffWidget_layout.addWidget(self.applyCoeffButton, 2, 0)
-        self.sensorCoeffWidget_layout.addWidget(self.cancelCoeffButton, 2, 1)
-        self.sensorCoeffWidget.show()
-
-    def applyCalibration_clicked(self):
-        if self.sender() == self.cancelCoeffButton:
-            self.sensorCoeffWidget.close()
-        else:
-            print('Apply')
-            user_role = 10
-            item = self.sensorCoeffWidget_list.currentItem()
-            if item is not None:
-                role = QtCore.Qt.UserRole + user_role
-                print('fds', self.sensorCoeffWidget_list.currentRow(), item.data(role))
-                cal = item.data(role)
-                print('Cal',cal)
-                self.__cal_apply__ = cal # Save the calibration
-                self.sensorCoeffWidget.close()
 
 
     def create_sensorcoefficientWidget(self):
-        """
-
-        """
-        funcname = __name__ + '.create_sensorcoefficientWidget():'
-        logger.debug(funcname)
-        self.sensorCoeffWidget = QtWidgets.QWidget()
-        self.sensorCoeffWidget.setWindowIcon(QtGui.QIcon(_icon_file))
-        #self.sensorCoeffWidget.setWindowFlags(QtCore.Qt.Dialog | QtCore.Qt.WindowStaysOnTopHint)
-        self.sensorCoeffWidget_layout = QtWidgets.QGridLayout(self.sensorCoeffWidget)
-        self.sensorCoeffWidget_list = QtWidgets.QTableWidget()
-
-        #self.sensorCoeffWidget_list.currentRowChanged.connect(self.sensorcoefficient_changed)
-
-        colheaders = ['SN','Parameter','Calibration date']
-        self.sensorCoeffWidget_list.setColumnCount(len(colheaders))
-        self.sensorCoeffWidget_list.setHorizontalHeaderLabels(colheaders)
-        self.__sensorCoeffWidget_list_populate__()
-
-
-        self.loadCoeffButton = QtWidgets.QPushButton('Load coefficients')
-        self.loadCoeffButton.clicked.connect(self.chooseCalibrationFiles)
-        self.remCoeffButton = QtWidgets.QPushButton('Remove coefficients')
-        self.remCoeffButton.clicked.connect(self.remCalibration_clicked)
-
-
-
-        #self.calibrationConfigWidget = gui.configWidget(self.device.calibration, editable=False)
-        self.calibrationConfigWidget = QtWidgets.QWidget()
-        self.calibrationConfigWidget_layout = QtWidgets.QVBoxLayout(self.calibrationConfigWidget)
-        self.sensorCoeffWidget_layout.addWidget(self.sensorCoeffWidget_list, 0, 0)
-        self.sensorCoeffWidget_layout.addWidget(self.calibrationConfigWidget, 0, 1)
-        self.sensorCoeffWidget_layout.addWidget(self.loadCoeffButton, 1, 0)
-        self.sensorCoeffWidget_layout.addWidget(self.remCoeffButton, 1, 1)
-
-    def __sensorCoeffWidget_list_item_changed__(self,old,new):
-        print('Changed',old,new)
-        user_role = 10
-        role = QtCore.Qt.UserRole+user_role
-        item = self.sensorCoeffWidget_list.currentItem()
-        if item is not None:
-            print('fds', self.sensorCoeffWidget_list.currentRow(), item.data(role))
-            cal = item.data(role)
-            try:
-                cal_old = self.__calConfigWidget_tmp__.cal
-            except:
-                cal_old = None
-
-            if cal_old == cal:
-                print('Same calibration, doing nothing')
-            else:
-                try:
-                    self.__calConfigWidget_tmp__.close()
-                except:
-                    pass
-
-
-
-                self.__calConfigWidget_tmp__ = gui.pydanticQTreeWidget(cal,dataname = cal.sn + '/' + cal.parameter, show_datatype=False )
-                self.__calConfigWidget_tmp__.cal = cal
-                self.calibrationConfigWidget_layout.addWidget(self.__calConfigWidget_tmp__)
-
-    def __sensorCoeffWidget_list_populate__(self):
-        try:
-            self.sensorCoeffWidget_list.itemChanged.disconnect(self.__sensorCoeffWidget_list_item_changed__)
-        except:
-            pass
-
-        # Fill the list with sn
-        sns = []  # Get all serialnumbers
-
-        for cal in self.device.config.calibrations:
-            print('Cal', cal)
-            sns.append(cal.sn)
-
-        self.sensorCoeffWidget_list.setRowCount(len(self.device.config.calibrations) + 1)
-        for i,cal in enumerate(self.device.config.calibrations):
-            item = QtWidgets.QTableWidgetItem(cal.sn)
-            user_role = 10
-            role = QtCore.Qt.UserRole + user_role
-            item.setData(role, cal)
-            self.sensorCoeffWidget_list.setItem(i,0,item)
-            item = QtWidgets.QTableWidgetItem(cal.parameter)
-            item.setData(role, cal)
-            self.sensorCoeffWidget_list.setItem(i, 1, item)
-            item = QtWidgets.QTableWidgetItem(cal.date)
-            item.setData(role, cal)
-            self.sensorCoeffWidget_list.setItem(i, 2, item)
-
-        self.sensorCoeffWidget_list.resizeColumnsToContents()
-        self.sensorCoeffWidget_list.currentCellChanged.connect(self.__sensorCoeffWidget_list_item_changed__)
-
-    def remCalibration_clicked(self):
-        funcname = __name__ + '.remCalibration_clicked()'
-        logger.debug(funcname)
-        self.calibrationConfigWidget.close()
-        item = self.sensorCoeffWidget_list.takeItem(self.sensorCoeffWidget_list.currentRow())
-        index = self.sensorCoeffWidget_list.currentRow()
-        sn = item.text()
-        calibration = self.device.config.calibrations.pop(index)
-        print('Removed',calibration)
-
-    def sensorcoefficient_changed(self, index):
-        """
-        Changes the active widget that is shown when clicked on the QListWidget
-        """
-        funcname = __name__ + '.sensorcoefficient_changed()'
-        logger.debug(funcname)
-        if index is not None:
-            item = self.sensorCoeffWidget_list.currentItem()
-            if item is not None:
-                sn = self.sensorCoeffWidget_list.currentItem().text()
-                return
-                print('sn',sn)
-                self.calibrationConfigWidget.close()
-                calibrations = {'calibrations':self.device.config['calibrations'][sn]}
-                self.calibrationConfigWidget = gui.configWidget(calibrations, editable=False,configname = 'Coefficients of {:s}'.format(sn))
-                self.sensorCoeffWidget_layout.addWidget(self.calibrationConfigWidget, 0, 1)
-                #self.sensorstack.setCurrentIndex(index)
-            else:
-                try:
-                    self.calibrationConfigWidget.close()
-                except:
-                    pass
+        self.sensorCoeffWidget = sensorCoeffWidget(redvypr_device=self.device)
 
     def config_changed(self):
         """
@@ -2202,12 +1994,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.sensorstack.addWidget(sensorwidget)
 
 
-        self.device.sensordata[sn] = {}
+        self.device.sensordata[sn] = {'__np__':0,'__raddr__':None,'__devices__':[]}
         self.device.sensordata_raw[sn] = []
 
 
 
-    def update(self,data):
+    def update(self, data):
         funcname = __name__ + '.update():'
         print(funcname)
         #return
@@ -2216,28 +2008,41 @@ class displayDeviceWidget(QtWidgets.QWidget):
             sn = data['sn']
             # ptype is packettype
             ptype = data['type']
+            datatype = data['datatype']
             # can be IMU, HFV, HF, TAR
             print('Ptype',ptype,sn)
             try:
                 self.device.sensordata_raw[sn] # List for the raw datapackets
-            except Exception as e:
-                logger.debug(e,exc_info=True)
+            except:
+                logger.debug('New sensor',exc_info=True)
                 logger.debug(funcname + 'New sensor found with sn {:s}'.format(sn))
                 try:
-                    self.add_sensorwidget(sn, sensortype= ptype)
-                except Exception as e:
+                    self.add_sensorwidget(sn, sensortype=ptype)
+                except:
                     logger.debug(funcname, exc_info=True)
                     logger.debug('Could not add sensorwidget for {:s}'.format(sn))
                     return None
 
+            print('Hallo',sn)
+            print('fds',redvypr_address)
+            raddr = redvypr_address(data)
+            print('Hallo',raddr)
             # Add the data to self.device
             self.device.sensordata_raw[sn].append(data)
+            self.device.sensordata[sn]['__np__'] += 1
+            self.device.sensordata[sn]['__raddr__'] = raddr
+            self.device.sensordata[sn]['__devices__'].append(raddr.devicename)
+            self.device.sensordata[sn]['__devices__'] = list(set(self.device.sensordata[sn]['__devices__']))
+            print('fdsfds')
+            self.device.deviceinitwidget.__update_configLoggerList_status__()
+            print('fdsfd_done')
             # Check if data needs to be removed
             if len(self.device.sensordata_raw[sn]) > self.maxlen:
                 self.device.sensordata_raw[sn] = self.device.sensordata_raw[sn][-self.maxlen:]
 
+
             rdata = data_packets.datapacket(data)
-            parameter = rdata.datakeys()
+            parameter = rdata.datakeys(expand=1)
             #try:
             #    parameter.remove('type')  # Remove type
             #    parameter.remove('sn')  # Remove mac
@@ -2256,7 +2061,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 except:
                     self.device.sensordata[sn][ptype][p] = []
 
-                self.device.sensordata[sn][ptype][p].append(data[p])
+                self.device.sensordata[sn][ptype][p].append(rdata[p])
                 # Check if data needs to be removed
                 if len(self.device.sensordata[sn][ptype][p]) > self.maxlen:
                     self.device.sensordata[sn][ptype][p] = self.device.sensordata[sn][ptype][p][-self.maxlen:]
@@ -2264,7 +2069,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             # Update rows and columns
             nsensors  = len(list(self.device.sensordata_raw.keys()))
 
-            if 'SI' in ptype:
+            if 'converted' in datatype.lower():
                 #print('Updating converted table',ptype)
                 rows = self.convrows
                 columns = self.convcolumns
@@ -2272,10 +2077,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 # Store the last datapacket in each table
                 table.sensordata[sn] = data
             else:
-                #print('Updating raw table',ptype)
+                print('Updating raw table',ptype)
                 rows = self.rawrows
                 columns = self.rawcolumns
                 table = self.rawdatatableWidget
+                print('rdata',rdata)
                 table.sensordata[sn] = data
 
             flag_redraw = False
@@ -2294,6 +2100,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
 
             if flag_redraw:
+                # Add publisher/device/numpackets to init
+                # Peterself.device.deviceinitwidget.
                 #print('redraw table')
                 #r = rows[0:2]
                 #rows[0] = '0'
@@ -2336,28 +2144,33 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 #logger.exception(e)
 
             # Fill the table with data
+            print('redraw',mac_redraw)
             for macdraw in mac_redraw:
                 data_redraw = table.sensordata[macdraw]
                 data_redraw_rdata = data_packets.datapacket(data_redraw)
-                parameter_redraw = data_redraw_rdata.datakeys()
+                parameter_redraw = data_redraw_rdata.datakeys(expand=1)
+                #print('parameter redraw',parameter_redraw)
                 index_col = columns.index(macdraw)
                 #print('data redraw',data_)
                 #print('filling table',macdraw, index_col)
                 for p in parameter_redraw:
+                    #print('P',p)
                     pstr = "{:s}.{:s}".format(data_redraw['type'], p)
                     index_row = rows.index(pstr)
                     # Packettype can be 'IMU','HF', 'HFSI'
+                    #print('data redraw',data_redraw)
+                    #print('fdsfdsfds',index_row,p,data_redraw_rdata[p])
                     if 'SI' in ptype:
                         if 'NTC' in p:
-                            dstr = "{:.3f}".format(data_redraw[p])
+                            dstr = "{:.3f}".format(data_redraw_rdata[p])
                         elif 'HF' in p:
-                            dstr = "{:.6f}".format(data_redraw[p])
+                            dstr = "{:.6f}".format(data_redraw_rdata[p])
                         elif p == 't': # Unix time stamp
-                            dstr = "{:.3f}".format(data_redraw[p])
+                            dstr = "{:.3f}".format(data_redraw_rdata[p])
                         else:
-                            dstr = str(data_redraw[p])
+                            dstr = str(data_redraw_rdata[p])
                     else:
-                        dstr = str(data_redraw[p])
+                        dstr = str(data_redraw_rdata[p])
 
                     # Time string
                     if p == 't':
@@ -2370,8 +2183,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     table.setItem(index_row,index_col,item)
 
             table.resizeColumnsToContents()
-        except Exception as e:
-            logger.debug(funcname,exc_info=True)
+        except:
+            logger.debug(funcname, exc_info=True)
 
 
         #print('Hallo',data)

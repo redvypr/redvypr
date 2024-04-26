@@ -7,9 +7,10 @@ import pydantic
 import typing
 import sys
 import logging
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtCore, QtGui
 from redvypr.devices.sensors.calibration.calibration_models import calibration_NTC
 from .average_data import average_data
+from .sensorWidgets import sensorCoeffWidget
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('temperature_array_sensors')
@@ -76,11 +77,13 @@ def process_TAR_data(dataline, data, device_info, loggerconfig):
     datapackets_return = []
     try:
         datapacket_TAR = process_TAR_raw(dataline, data, device_info)
+        datapacket_TAR['datatype'] = 'raw'
     except:
         logger.info(' Could not decode {:s}'.format(str(dataline)), exc_info=True)
         datapacket_TAR = None
 
     if datapacket_TAR is not None:
+
         datapackets_return.append(datapacket_TAR)
         # Convert to temperature
         devicename = 'TAR_SI_' + datapacket_TAR['sn']
@@ -90,6 +93,7 @@ def process_TAR_data(dataline, data, device_info, loggerconfig):
         datapacket_TAR_T['np'] = datapacket_TAR['np']
         datapacket_TAR_T['sn'] = datapacket_TAR['sn']
         datapacket_TAR_T['t'] = datapacket_TAR['t']
+        datapacket_TAR_T['datatype'] = 'converted'
         datapacket_TAR_T['sensortype'] = datapacket_TAR['sensortype']
         datapacket_TAR_T['NTC_A'] = []
         j = 0
@@ -360,6 +364,37 @@ class TARWidget_config(QtWidgets.QWidget):
 
         self.__fill_calibration_table__()
 
+    def __create_calibration_widget__(self):
+        self.__calbutton_clicked__ = self.sender()
+        self.__calwidget__ = sensorCoeffWidget(redvypr_device=self.device)
+        self.applyCoeffButton = QtWidgets.QPushButton('Apply')
+        self.applyCoeffButton.clicked.connect(self.applyCalibration_clicked)
+        self.cancelCoeffButton = QtWidgets.QPushButton('Cancel')
+        self.cancelCoeffButton.clicked.connect(self.applyCalibration_clicked)
+        self.__calwidget__.sensorCoeffWidget_layout.addWidget(self.applyCoeffButton, 2, 0)
+        self.__calwidget__.sensorCoeffWidget_layout.addWidget(self.cancelCoeffButton, 2, 1)
+        self.__calwidget__.show()
+
+    def applyCalibration_clicked(self):
+        if self.sender() == self.cancelCoeffButton:
+            self.sensorCoeffWidget.close()
+        else:
+            print('Apply')
+            user_role = 10
+            item = self.__calwidget__.sensorCoeffWidget_list.currentItem()
+            if item is not None:
+                role = QtCore.Qt.UserRole + user_role
+                print('fds', self.__calwidget__.sensorCoeffWidget_list.currentRow(), item.data(role))
+                cal = item.data(role)
+                print('Cal',cal)
+                self.__cal_apply__ = cal # Save the calibration
+                #Update the calibration
+                iupdate = self.__calbutton_clicked__.__para_index__
+                print('Iupdate', iupdate)
+                self.config.parameter.NTC_A[iupdate] = cal
+                self.__calwidget__.close()
+                self.__fill_calibration_table__()
+
 
     def __fill_calibration_table__(self):
         funcname = __name__ + '__fill_calibration_table__():'
@@ -375,7 +410,11 @@ class TARWidget_config(QtWidgets.QWidget):
             #print('Para',para)
             name = self.config.parameter.name[i]
             but = QtWidgets.QPushButton(name)
-            but.clicked.connect(self.parent().show_coeffwidget_apply)
+
+            #but.clicked.connect(self.parent().show_coeffwidget_apply)
+            but.clicked.connect(self.__create_calibration_widget__)
+            but.__para__ = para
+            but.__para_index__ = i
             self.parameterTable.setCellWidget(i,0,but)
             # SN
             item = QtWidgets.QTableWidgetItem(para.sn)
@@ -397,6 +436,14 @@ class TARWidget_config(QtWidgets.QWidget):
         self.parameterAuto = QtWidgets.QPushButton('Autofill calibrations')
         self.parameterAuto.clicked.connect(self.__assign_calibrations__)
         self.parameterTable = QtWidgets.QTableWidget()
-        self.parameterLayout.addWidget(self.parameterAuto, 0, 0)
-        self.parameterLayout.addWidget(self.parameterTable, 1, 0)
+
+        self.auto_check_sn = QtWidgets.QCheckBox('SN')
+        self.auto_check_sn.setEnabled(False)
+        self.auto_check_sn_edit = QtWidgets.QLineEdit()
+        self.auto_check_sn_edit.setText(self.sn)
+        self.auto_check_sn_edit.setEnabled(False)
+        self.parameterLayout.addWidget(self.parameterAuto, 0, 0, 1 , 2)
+        self.parameterLayout.addWidget(self.auto_check_sn, 1, 0)
+        self.parameterLayout.addWidget(self.auto_check_sn_edit, 1, 1)
+        self.parameterLayout.addWidget(self.parameterTable, 2, 0, 1, 2)
         self.__fill_calibration_table__()
