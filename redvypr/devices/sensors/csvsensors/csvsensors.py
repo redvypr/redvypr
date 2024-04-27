@@ -21,7 +21,7 @@ from redvypr.devices.plot import plot_widgets
 from redvypr.devices.plot import XYplotWidget
 import redvypr.files as redvypr_files
 from redvypr.devices.sensors.calibration.calibration_models import  calibration_HF, calibration_NTC, get_date_from_calibration
-from .heatflow_sensors import convert_HF, parse_HF_raw, add_keyinfo_HF_raw, parse_HFV_raw, process_IMU_packet, process_HFS_data
+from .heatflow_sensors import convert_HF, parse_HF_raw, add_keyinfo_HF_raw, parse_HFV_raw, process_IMU_packet, process_HFS_data, process_HF_data
 from .temperature_array_sensors import process_TAR_data, sensor_TAR, TARWidget, TARWidget_config
 from .sensorWidgets import sensorCoeffWidget
 
@@ -94,6 +94,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
     macs_found_HF = []  # List of all mac addresses found
     macs_found_HFSI = []  # List of all mac addresses found
     macs_found_IMU = []  # List of all mac addresses found
+    macs_found = {'IMU':[],'HFSI':[],'HF':[],'TAR':[]}  # List of all mac addresses found
     avg_objs = {}
     print('Device info',device_info)
     #try:
@@ -186,7 +187,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
 
                                     if packettype == 'IMU':
                                         try:
-                                            datapacket = process_IMU_packet(dataline, data, macstr, macs_found_IMU)
+                                            datapacket = process_IMU_packet(dataline, data, macstr, macs_found)
                                             dataqueue.put(datapacket)
                                         except:
                                             logger.debug(' Could not decode {:s}'.format(str(dataline)), exc_info=True)
@@ -206,87 +207,22 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                                     elif packettype == 'HFS':
                                         # Heatflow data in physical units
                                         try:
-                                            datapacket_HFS = process_HFS_data(dataline, data)
-
+                                            datapacket_HFS = process_HFS_data(dataline, data, device_info)
+                                            dataqueue.put(datapacket_HFS)
                                         except:
                                             logger.debug(' Could not decode {:s}'.format(str(dataline)), exc_info=True)
                                             datapacket_HFS = None
 
-                                        # Averaging the data
-                                        if datapacket_HFS is not None:
-                                            dataqueue.put(datapacket_HFS)
-                                            # Do averaging.
-                                            sn = datapacket_HFS['sn']
-                                            try:
-                                                datapacket_HFS_avg = avg_objs[sn].average_data(data)
-                                            except:
-                                                parameters = ['t', 'HF', 'NTC0', 'NTC1', 'NTC2']
-                                                avg_objs[sn] = average_datapacket(datapacket_HFS, parameters, loggerconfig)
-                                                datapacket_HFS_avg = avg_objs[sn].average_data(data)
-                                                logger.debug(funcname + ' could not average:', exc_info=True)
-
-                                            if datapacket_HFS_avg is not None:
-                                                dataqueue.put(datapacket_HFS_avg)
-
                                     elif packettype == 'HF':
                                         # Heatflow data in raw units
+                                        print('HF packet')
                                         try:
-                                            datapacket = parse_HF_raw(dataline)
+                                            datapacket_HF = process_HF_data(dataline, data, device_info, loggerconfig, config, macs_found)
+                                            if datapacket_HF is not None:
+                                                dataqueue.put(datapacket_HF)
                                         except:
-                                            logger.debug(' Could not decode {:s}'.format(str(dataline)))
-                                            datapacket = None
-
-                                        if datapacket is not None:
-                                            datapacket['t'] = data['t']
-                                            datapacket['devicename'] = 'DHF_raw_' + macstr
-                                            if macstr not in macs_found_HF:
-                                                logger.debug(funcname + 'New MAC found, will add keyinfo')
-                                                datapacket = add_keyinfo_HF_raw(datapacket)
-
-
-                                                #print('datapacket',datapacket)
-                                                macs_found_HF.append(macstr)
-                                            # Convert the data (if calibration found)
-
-
-
-                                            if loggerconfig is not None:
-                                                flag_convert = True and config.sensorconfigurations[sn].use_config
-                                                if flag_convert:
-                                                    datapacket_HFSI = convert_HF(datapacket, config.sensorconfigurations)
-                                                    #print('datapacket hfsi',datapacket_HFSI)
-                                                    #print('sn {:s}', sn)
-                                                    if datapacket_HFSI is not None:
-                                                        datapacket_HFSI['devicename'] = 'DHF_SI_' + macstr
-                                                        # Check if units should be set, this is only done once
-                                                        if macstr not in macs_found_HFSI:
-                                                            logger.debug(funcname + 'New MAC found, will add keyinfo')
-                                                            #print('Datapacket', datapacket)
-                                                            keys = list(datapacket.keys())
-                                                            for dkey in keys:
-                                                                #print(funcname + ' datakey {:s}'.format(dkey))
-                                                                if 'NTC' in dkey:
-                                                                    unit = 'degC'
-                                                                elif 'HF' in dkey:
-                                                                    unit = 'W m-2'
-                                                                else:
-                                                                    unit = 'NA'
-
-                                                                #print('Datakeyinfo', unit, macstr, dkey)
-                                                                data_packets.add_keyinfo2datapacket(datapacket_HFSI,
-                                                                                                    datakey=dkey,
-                                                                                                    unit=unit,
-                                                                                                    description=None,
-                                                                                                    infokey='sn',
-                                                                                                    info=macstr)
-                                                                data_packets.add_keyinfo2datapacket(datapacket_HFSI,
-                                                                                                    datakey=dkey,
-                                                                                                    infokey='sensortype',
-                                                                                                    info='DHFS50')
-
-                                                            #print('datapacket', datapacket)
-                                                            macs_found_HFSI.append(macstr)
-                                            #print('HF packet',datapacket)
+                                            logger.debug(' Could not decode {:s}'.format(str(dataline)), exc_info=True)
+                                            datapacket_HF = None
 
                                     elif packettype == 'HFV': # Voltage packet from a raspberry pi board
                                         #print('HFV')
@@ -331,7 +267,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                                                             # create a sn out of the logger and the attached sensor
                                                             sn_combined = datapacket_HFSI['sn'] + '_' + sn_sensor
                                                             # Check if the logger/sensor combinationis already known, otherwise send keyinfo
-                                                            if sn_combined in macs_found_HFSI:
+                                                            if sn_combined in macs_found['HFSI']:
                                                                 pass
                                                             else:
                                                                 logger.debug(
@@ -348,7 +284,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                                                                                                     infokey='sensortype',
                                                                                                     info=calibration.sensor_model)
 
-                                                                macs_found_HFSI.append(sn_combined)
+                                                                macs_found['HFSI'].append(sn_combined)
 
 
                                                     if flag_have_coeff == False:
@@ -2003,7 +1939,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.update():'
         print(funcname)
         #return
-        #print(funcname + '  got data',data)
+        print(funcname + '  got data',data)
         try:
             sn = data['sn']
             # ptype is packettype

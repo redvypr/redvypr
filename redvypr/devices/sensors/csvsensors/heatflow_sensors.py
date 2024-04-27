@@ -74,14 +74,15 @@ def convert_HF(datapacket, loggerconfigurations=None):
     return None
 
 
-def parse_HF_raw(data, sensortype='DHFS50'):
+def parse_HF_raw(data, sensortype='DHFS50', datapacket=None):
     """
     b'$FC0FE7FFFE167225,HF,00012848.3125,6424,-0.001354,848.389,848.389,852.966\n'
     """
     datasplit = data.split(',')
     macstr = datasplit[0][1:17]
     packettype = datasplit[1]  # HF
-    datapacket = {}
+    if datapacket is None:
+        datapacket = {}
     datapacket['type'] = packettype
     datapacket['sn'] = macstr
     datapacket['sensortype'] = sensortype
@@ -234,12 +235,12 @@ def parse_HFV_raw(data, sensortype='PIBOARD'):
     return datapacket
 
 
-def process_IMU_packet(dataline,data, macstr, macs_found_IMU):
+def process_IMU_packet(dataline,data, macstr, macs_found):
     funcname = __name__ + '.process_IMU_packet()'
     datapacket = parse_IMU_raw(dataline)
     datapacket['t'] = data['t']
     datapacket['devicename'] = 'DHF_raw_' + macstr
-    if macstr not in macs_found_IMU:
+    if macstr not in macs_found['IMU']:
         logger.debug(funcname + 'New MAC found, will add datakeyinfo')
         # print('Datapacket', datapacket)
         keys = list(datapacket.keys())
@@ -252,22 +253,109 @@ def process_IMU_packet(dataline,data, macstr, macs_found_IMU):
             data_packets.add_keyinfo2datapacket(datapacket, datakey=dkey,
                                                 infokey='sensortype', info='DHFS50')
 
-        macs_found_IMU.append(macstr)
+        macs_found['IMU'].append(macstr)
     # print('IMU packet',datapacket)
 
 
-def process_HFS_data(dataline, data):
+def process_HF_data(dataline, data, device_info, loggerconfig, config, macs_found):
+    """
+    Processes Heatflow raw data
+    """
+    funcname = __name__ + '.process_HF_data():'
     try:
-        datapacket_HFSI = parse_HFS_raw(dataline)
+        datapacket = parse_HF_raw(dataline)
+    except:
+        logger.debug(' Could not decode {:s}'.format(str(dataline)))
+        datapacket = None
+
+    macstr = datapacket['sn']
+    sn = datapacket['sn']
+    if datapacket is not None:
+        devicename = 'DHF_raw_' + macstr
+        datapacket['datatype'] = 'raw'
+        datapacket_HF = data_packets.create_datadict(device=devicename, hostinfo=device_info['hostinfo'],tu=data['t'])
+        datapacket_HF.update(datapacket)
+        if macstr not in macs_found['HF']:
+            logger.debug(funcname + 'New MAC found, will add keyinfo')
+            datapacket_HF = add_keyinfo_HF_raw(datapacket_HF)
+
+            # print('datapacket',datapacket)
+            macs_found['HF'].append(macstr)
+        # Convert the data (if calibration found)
+        return datapacket_HF
+        if loggerconfig is not None:
+            flag_convert = True and config.sensorconfigurations[sn].use_config
+            if flag_convert:
+                datapacket_HFSI = convert_HF(datapacket, config.sensorconfigurations)
+                # print('datapacket hfsi',datapacket_HFSI)
+                # print('sn {:s}', sn)
+                if datapacket_HFSI is not None:
+                    datapacket_HFSI['devicename'] = 'DHF_SI_' + macstr
+                    datapacket['datatype'] = 'converted_cal' # Here the UUID of the calibration could be added
+                    # Check if units should be set, this is only done once
+                    if macstr not in macs_found['HFSI']:
+                        logger.debug(funcname + 'New MAC found, will add keyinfo')
+                        # print('Datapacket', datapacket)
+                        keys = list(datapacket.keys())
+                        for dkey in keys:
+                            # print(funcname + ' datakey {:s}'.format(dkey))
+                            if 'NTC' in dkey:
+                                unit = 'degC'
+                            elif 'HF' in dkey:
+                                unit = 'W m-2'
+                            else:
+                                unit = 'NA'
+
+                            # print('Datakeyinfo', unit, macstr, dkey)
+                            data_packets.add_keyinfo2datapacket(datapacket_HFSI,
+                                                                datakey=dkey,
+                                                                unit=unit,
+                                                                description=None,
+                                                                infokey='sn',
+                                                                info=macstr)
+                            data_packets.add_keyinfo2datapacket(datapacket_HFSI,
+                                                                datakey=dkey,
+                                                                infokey='sensortype',
+                                                                info='DHFS50')
+
+                        # print('datapacket', datapacket)
+                        macs_found['HFSI'].append(macstr)
+        # print('HF packet',datapacket)
+
+
+def process_HFS_data(dataline, data, device_info):
+    try:
+        datapacket = parse_HFS_raw(dataline)
     except:
         logger.debug(' Could not decode {:s}'.format(str(dataline)), exc_info=True)
-        datapacket_HFSI = None
+        datapacket = None
 
-    if datapacket_HFSI is not None:
-        macstr = datapacket_HFSI['sn']
-        datapacket_HFSI['t'] = data['t']
+    if datapacket is not None:
+        macstr = datapacket['sn']
+        devicename = 'DHF_SI_' + macstr
+        datapacket_HFSI = data_packets.create_datadict(device=devicename, hostinfo=device_info['hostinfo'], tu=data['t'])
         datapacket_HFSI['type'] = 'HFSI'
-        datapacket_HFSI['devicename'] = 'DHF_SI_' + macstr
+        datapacket_HFSI['datatype'] = 'converted_' + macstr
+        datapacket_HFSI.update(datapacket)
+        return datapacket_HFSI
+
+        # Averaging the data
+        if False:
+            dataqueue.put(datapacket_HFS)
+            # Do averaging.
+            sn = datapacket_HFS['sn']
+            try:
+                datapacket_HFS_avg = avg_objs[sn].average_data(data)
+            except:
+                parameters = ['t', 'HF', 'NTC0', 'NTC1', 'NTC2']
+                avg_objs[sn] = average_datapacket(datapacket_HFS, parameters, loggerconfig)
+                datapacket_HFS_avg = avg_objs[sn].average_data(data)
+                logger.debug(funcname + ' could not average:', exc_info=True)
+
+            if datapacket_HFS_avg is not None:
+                dataqueue.put(datapacket_HFS_avg)
+
+
         return datapacket_HFSI
 
 

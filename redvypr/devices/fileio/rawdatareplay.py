@@ -405,7 +405,7 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
                 logger.debug(funcname + ' Stopping ...')
                 return
             while nread < nnewread:
-                print('Nread:',nread)
+                #print('Nread:',nread)
                 seek_start = filestream.tell()
                 data_read = filestream.read(chunksize)
                 seek_now = filestream.tell()
@@ -662,7 +662,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
 
         # Status update
         if (time.time() - t_status) > dt_status:
-            print('status')
+            #print('status')
             t_status = time.time()
             td = datetime.datetime.fromtimestamp(t_status)
             tdstr = td.strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -1125,17 +1125,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.statustable.setHorizontalHeaderLabels(self.__statusheader__)
         self.statustable.setRowCount(1)
         self.statustable.verticalHeader().setVisible(False)
-        #self.statustable.resizeColumnsToContents()
-        #self.statustable.resizeRowsToContents()
-        #self.statustable.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)      # <---
-        #self.statustable.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.statustable.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
 
         hlayout.addRow(self.statuslab)
-        layout.addWidget(self.statustable,1)
+        layout.addWidget(self.statustable, 1)
         layout.addLayout(hlayout)
-        layout.addWidget(self.text,5)
-        layout.addWidget(self.scrollchk,1)
+        layout.addWidget(self.text, 5)
+        layout.addWidget(self.scrollchk, 1)
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update)
         self.statustimer.start(500)
@@ -1149,22 +1145,19 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 break
 
             if type(data) == dict:
-                print('data',data)
-                statuskeys = ['time','filename','filesize','seek','datasize','pc','packets_num']
+                #print('data',data)
+                statuskeys = ['time', 'filename', 'filesize', 'seek', 'datasize', 'pc', 'packets_num']
                 for i,k in enumerate(statuskeys):
                     datastr = str(data[k])
                     dataitem = QtWidgets.QTableWidgetItem(datastr)
                     self.statustable.setItem(0, i, dataitem)
                     self.statustable.resizeColumnsToContents()
-
             else:
-                pos = self.text.verticalScrollBar().value() # Original position of scrollbar
+                #Original position of scrollbar
+                pos = self.text.verticalScrollBar().value()
                 self.text.moveCursor(QtGui.QTextCursor.End)
                 self.text.insertPlainText(str(data) + '\n')
-
                 if(self.scrollchk.isChecked()):
                     self.text.verticalScrollBar().setValue(self.text.verticalScrollBar().maximum())
                 else:
                     self.text.verticalScrollBar().setValue(pos)
-
-
