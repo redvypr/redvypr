@@ -59,15 +59,18 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             self.configGui = QtWidgets.QWidget()  # Widget where the user can modify the content
             self.configGui_layout = QtWidgets.QVBoxLayout(self.configGui)
             self.configGui_layout.addWidget(QtWidgets.QLabel('Edit data'))
-            self.layout.addWidget(self.configGui, 0, 1)
+            # Add a blank widget for editing
+            self.__configwidget = QtWidgets.QWidget()
+            self.configGui_layout.addWidget(self.__configwidget)
+            self.layout.addWidget(self.configGui, 1, 0)
 
 
 
-        self.closeButton = QtWidgets.QPushButton('Close')
-        self.closeButton.clicked.connect(self.close)
+        #self.closeButton = QtWidgets.QPushButton('Close')
+        #self.closeButton.clicked.connect(self.close)
 
         self.layout.addWidget(self.configWidget, 0, 0)
-        self.layout.addWidget(self.closeButton, 1, 0)
+        #self.layout.addWidget(self.closeButton, 1, 0)
 
 
     def __openConfigGui__(self, item):

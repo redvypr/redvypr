@@ -366,7 +366,8 @@ class TARWidget_config(QtWidgets.QWidget):
 
     def __create_calibration_widget__(self):
         self.__calbutton_clicked__ = self.sender()
-        self.__calwidget__ = sensorCoeffWidget(redvypr_device=self.device)
+        calibrations = redvypr_device = self.device.config.calibrations
+        self.__calwidget__ = sensorCoeffWidget(calibrations=calibrations, redvypr_device=self.device)
         self.applyCoeffButton = QtWidgets.QPushButton('Apply')
         self.applyCoeffButton.clicked.connect(self.applyCalibration_clicked)
         self.cancelCoeffButton = QtWidgets.QPushButton('Cancel')

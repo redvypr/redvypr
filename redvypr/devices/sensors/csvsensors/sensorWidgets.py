@@ -8,6 +8,8 @@ import yaml
 import json
 import typing
 import pydantic
+import numpy
+from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from PyQt5 import QtWidgets, QtCore, QtGui
 import redvypr.gui as gui
 
@@ -16,16 +18,238 @@ logger = logging.getLogger('sensorWidgets')
 logger.setLevel(logging.DEBUG)
 
 
+class sensorConfigWidget(QtWidgets.QWidget):
+    """
+    Widget to configure a sensor
+    """
+
+    def __init__(self, *args, sensor, calibrations, redvypr_device=None):
+        funcname = __name__ + '__init__()'
+        super(QtWidgets.QWidget, self).__init__(*args)
+        logger.debug(funcname)
+        self.device = redvypr_device
+        self.sensor = sensor
+        self.sn = sensor.sn
+        self.calibrations = calibrations
+
+        self.configWidget = pydanticConfigWidget(self.sensor, exclude=['parameter'])
+
+        self.parameterWidget = QtWidgets.QWidget(self)
+        self.fill_parameter_widgets()
+
+        self.layout = QtWidgets.QGridLayout(self)
+        self.layout.addWidget(self.configWidget,0,0)
+        self.layout.addWidget(self.parameterWidget,0,1)
+
+    def __assign_calibrations__(self):
+        funcname = __name__ + '__assign_calibrations():'
+        print(funcname)
+        print('calibrations',self.calibrations)
+        cals = self.calibrations
+        match = ['parameter','sn']
+
+        parameter = self.get_parameter(self.sensor.parameter)
+        for i, para_dict in enumerate(parameter):
+            para = para_dict['parameter']
+            para_parent = para_dict['parent']
+            para_name = para_dict['name']
+            para_index = para_dict['index']
+            print('Searching for calibration for parameter',i)
+            print('Para',para_index,para)
+            cal_match = []
+            cal_match_date = []
+            for cal in cals:
+                match_all = True
+                for m in match:
+                    mcal = getattr(cal, m)
+                    mpara = getattr(para, m)
+                    if mcal != mpara:
+                        match_all = False
+
+                if match_all:
+                    print('Found matching parameter')
+                    print('Cal',cal)
+                    cal_match.append(cal)
+                    td = datetime.datetime.strptime(cal.date,'%Y-%m-%d %H:%M:%S.%f')
+                    cal_match_date.append(td)
+
+            if len(cal_match) > 0:
+                imin = numpy.argmin(cal_match)
+                print('Assigning matching parameter')
+                # Apply calibration to parameter (could also be a function)
+                if para_parent.__class__.__base__ == pydantic.BaseModel:
+                    print('Setting parameter to:', para_index, cal)
+                    setattr(para_parent, para_index, cal)
+                elif isinstance(para_parent, list):
+                    print('Updating list with calibrations')
+                    para_parent[para_index] = cal
+                #self.sensor.parameter.NTC_A[i] = cal_match[imin]
+
+        self.__fill_calibration_table__()
+
+    def __create_calibration_widget__(self):
+        self.__calbutton_clicked__ = self.sender()
+        self.__calwidget__ = sensorCoeffWidget(calibrations=self.calibrations, redvypr_device=self.device)
+        self.applyCoeffButton = QtWidgets.QPushButton('Apply')
+        self.applyCoeffButton.clicked.connect(self.applyCalibration_clicked)
+        self.cancelCoeffButton = QtWidgets.QPushButton('Cancel')
+        self.cancelCoeffButton.clicked.connect(self.applyCalibration_clicked)
+        self.__calwidget__.sensorCoeffWidget_layout.addWidget(self.applyCoeffButton, 2, 0)
+        self.__calwidget__.sensorCoeffWidget_layout.addWidget(self.cancelCoeffButton, 2, 1)
+
+        self.__calwidget__.show()
+
+    def applyCalibration_clicked(self):
+        if self.sender() == self.cancelCoeffButton:
+            self.sensorCoeffWidget.close()
+        else:
+            print('Apply')
+            user_role = 10
+            item = self.__calwidget__.sensorCoeffWidget_list.currentItem()
+            if item is not None:
+                role = QtCore.Qt.UserRole + user_role
+                print('fds', self.__calwidget__.sensorCoeffWidget_list.currentRow(), item.data(role))
+                cal = item.data(role)
+                print('Cal', cal)
+                self.__cal_apply__ = cal # Save the calibration
+                #Update the calibration
+                iupdate = self.__calbutton_clicked__.__para_index__
+                parameter = self.__calbutton_clicked__.__para__
+                parameter_dict = self.__calbutton_clicked__.__para_dict__
+                para_parent = parameter_dict['parent']
+                para_name = parameter_dict['name']
+                print('Iupdate', iupdate,'Parameter',parameter)
+                print('Parameter dict', parameter_dict)
+                # Apply calibration to parameter (could also be a function)
+                if para_parent.__class__.__base__ == pydantic.BaseModel:
+                    print('Setting parameter to:',para_name, cal)
+                    setattr(para_parent,para_name, cal)
+                elif isinstance(para_parent, list):
+                    print('Updating list with calibrations')
+                    para_parent[iupdate] = cal
+
+                parameter = cal
+                self.__calwidget__.close()
+                self.__fill_calibration_table__()
+
+
+    def get_parameter(self, parameter):
+        def __get_parameter_recursive__(index, parameter, parameter_all):
+            for i, ptmp in enumerate(parameter):
+                if isinstance(ptmp, list):
+                    index_new = index + '[{}]'.format(i)
+                    __get_parameter_recursive__(index_new, ptmp, parameter_all)
+                # A pydantic parameter object
+                elif ptmp.__class__.__base__ == pydantic.BaseModel:
+                    if isinstance(parameter, list):
+                        name = '{}[{}]'.format(index,i)
+                    else:
+                        name = str(i)
+                    parameter_all.append({'parameter': ptmp, 'name': name,'parent':parameter,'index':i})
+
+
+        parameter_all = []
+        # Parameter should be a pydantic class
+        if parameter.__class__.__base__ == pydantic.BaseModel:
+            # Loop over all attributes
+            for ptmp in parameter:
+                par1 = ptmp[0]
+                ptmp_child = getattr(parameter, par1)
+                if isinstance(ptmp_child, list):
+                    __get_parameter_recursive__(par1, ptmp_child, parameter_all)
+                # A pydantic parameter object
+                elif ptmp_child.__class__.__base__ == pydantic.BaseModel:
+                    parameter_all.append({'parameter':ptmp_child,'name':par1,'parent':parameter})
+
+
+                print('ptmp',ptmp)
+
+        else:
+            raise Exception('parameter should be an instance of pydantic.BaseModel')
+
+
+        return parameter_all
+    def __fill_calibration_table__(self):
+        funcname = __name__ + '__fill_calibration_table__():'
+        logger.debug(funcname)
+        self.parameterTable.clear()
+        parameter_all = self.get_parameter(self.sensor.parameter)
+        print('Parameter all',parameter_all)
+        nRows = len(parameter_all)
+        nCols = 7
+        self.parameterTable.setRowCount(nRows)
+        self.parameterTable.setColumnCount(nCols)
+        self.parameterTable.setHorizontalHeaderLabels(['Sensor Parameter','Choose calibration','Show calibration','Cal SN','Cal Parameter','Cal Date','Cal Comment'])
+        #print('Config parameter',self.config.parameter)
+
+        for i, para_dict in enumerate(parameter_all):
+            #print('Para',para)
+            para = para_dict['parameter']
+            para_parent = para_dict['parent']
+            name = para_dict['name']
+            # Choose calibration button
+            but_choose = QtWidgets.QPushButton('Choose')
+            #but.clicked.connect(self.parent().show_coeffwidget_apply)
+            but_choose.clicked.connect(self.__create_calibration_widget__)
+            but_choose.__para_dict__ = para_dict
+            but_choose.__para__ = para
+            but_choose.__para_parent__ = para_parent
+            but_choose.__para_index__ = i
+            # Show calibration button
+            but_show = QtWidgets.QPushButton('Show')
+            but_show.clicked.connect(self.__show_calibration__)
+            # Parameter
+            item = QtWidgets.QTableWidgetItem(name)
+            self.parameterTable.setItem(i, 0, item)
+            self.parameterTable.setCellWidget(i, 1, but_choose)
+            self.parameterTable.setCellWidget(i, 2, but_show)
+            # SN
+            item = QtWidgets.QTableWidgetItem(para.sn)
+            self.parameterTable.setItem(i, 1+2, item)
+            # Parameter
+            item = QtWidgets.QTableWidgetItem(para.parameter)
+            self.parameterTable.setItem(i, 2+2, item)
+            # Date
+            item = QtWidgets.QTableWidgetItem(para.date)
+            self.parameterTable.setItem(i, 3+2, item)
+            # Comment
+            item = QtWidgets.QTableWidgetItem(para.comment)
+            self.parameterTable.setItem(i, 4+2, item)
+
+        self.parameterTable.resizeColumnsToContents()
+
+    def __show_calibration__(self):
+        print('Showing calibration')
+    def fill_parameter_widgets(self):
+        funcname = __name__ +'.fill_parameter_widgets():'
+        self.parameterLayout = QtWidgets.QGridLayout(self.parameterWidget)
+        self.parameterAuto = QtWidgets.QPushButton('Autofill calibrations')
+        self.parameterAuto.clicked.connect(self.__assign_calibrations__)
+        self.parameterTable = QtWidgets.QTableWidget()
+
+        self.auto_check_sn = QtWidgets.QCheckBox('SN')
+        self.auto_check_sn.setEnabled(False)
+        self.auto_check_sn_edit = QtWidgets.QLineEdit()
+        self.auto_check_sn_edit.setText(self.sn)
+        self.auto_check_sn_edit.setEnabled(False)
+        self.parameterLayout.addWidget(self.parameterAuto, 0, 0, 1 , 2)
+        self.parameterLayout.addWidget(self.auto_check_sn, 1, 0)
+        self.parameterLayout.addWidget(self.auto_check_sn_edit, 1, 1)
+        self.parameterLayout.addWidget(self.parameterTable, 2, 0, 1, 2)
+        self.__fill_calibration_table__()
+
+
 class sensorCoeffWidget(QtWidgets.QWidget):
     """
-
+    Widget to choose/load/remove new calibrations from files
     """
 
-    def __init__(self, *args, redvypr_device=None):
+    def __init__(self, *args, calibrations, redvypr_device=None):
         funcname = __name__ + '__init__()'
         super(QtWidgets.QWidget, self).__init__(*args)
         logger.debug(funcname)
         layout = QtWidgets.QVBoxLayout(self)
+        self.calibrations = calibrations
         self.device = redvypr_device
         self.sensorCoeffWidget = QtWidgets.QWidget()
         layout.addWidget(self.sensorCoeffWidget)
@@ -111,12 +335,12 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         # Fill the list with sn
         sns = []  # Get all serialnumbers
 
-        for cal in self.device.config.calibrations:
+        for cal in self.calibrations:
             print('Cal', cal)
             sns.append(cal.sn)
 
-        self.sensorCoeffWidget_list.setRowCount(len(self.device.config.calibrations) + 1)
-        for i, cal in enumerate(self.device.config.calibrations):
+        self.sensorCoeffWidget_list.setRowCount(len(self.calibrations) + 1)
+        for i, cal in enumerate(self.calibrations):
             item = QtWidgets.QTableWidgetItem(cal.sn)
             user_role = 10
             role = QtCore.Qt.UserRole + user_role
@@ -166,86 +390,3 @@ class sensorCoeffWidget(QtWidgets.QWidget):
                 except:
                     pass
 
-class sensorCoeffWidget_legacy(QtWidgets.QWidget):
-    """
-    Widget to display all sensor coefficients
-    """
-    coeff = QtCore.pyqtSignal( dict )  # Signal returning the coefficients
-    def __init__(self, *args, redvypr_device=None):
-        funcname = __name__ + '__init__()'
-        super(QtWidgets.QWidget, self).__init__(*args)
-        logger.debug(funcname)
-        self.device = redvypr_device
-        self.layout = QtWidgets.QGridLayout(self)
-        self.create_sensorcoefficientWidget_table()
-
-        # Add buttons
-        self.apply_button = QtWidgets.QPushButton('Apply')
-        self.apply_button.clicked.connect(self.coeff_chosen)
-        self.cancel_button = QtWidgets.QPushButton('Cancel')
-        self.cancel_button.clicked.connect(self.coeff_cancel)
-        self.layout.addWidget(self.sensorCoeffWidget_table, 0, 0,1,2)
-        self.layout.addWidget(self.apply_button, 1, 0)
-        self.layout.addWidget(self.cancel_button, 1, 1)
-
-    def coeff_chosen(self):
-        funcname = __name__ + '.coeff_chosen():'
-        logger.debug(funcname)
-        row = self.sensorCoeffWidget_table.currentRow()
-        item = self.sensorCoeffWidget_table.item(row,0)
-        #print('Coeff',item.coeff)
-        calibration = item.calibration
-        print('Calibration',calibration)
-        cal = {'calibration':calibration}
-
-        self.coeff.emit(cal)
-        self.close()
-
-    def coeff_cancel(self):
-        funcname = __name__ + '.coeff_cancel():'
-        logger.debug(funcname)
-        self.close()
-    def create_sensorcoefficientWidget_table(self):
-        """
-
-        """
-        funcname = __name__ + '.create_sensorcoefficientWidget_table():'
-        logger.debug(funcname)
-        self.col_sn = 0
-        self.col_model = 1
-        self.col_parameter = 2
-        self.col_date = 3
-        sensorCoeffWidget_table = QtWidgets.QTableWidget()
-        sensorCoeffWidget_table.setColumnCount(4)
-        columns = ['SN','Model','Parameter','Date']
-        sensorCoeffWidget_table.setHorizontalHeaderLabels(columns)
-        # Fill the table with sn
-        nrows = len(self.device.config.calibrations)
-        print('Calibrations', self.device.config.calibrations)
-        sensorCoeffWidget_table.setRowCount(nrows)
-        row = 0
-        for calibration in self.device.config.calibrations:
-            sn = calibration.sn
-            if True:
-                if True:
-                    parameter = calibration.parameter
-                    td = get_date_from_calibration(calibration, parameter)
-                    #date = str(calibration['parameter'][parameter]['date'])
-                    date = td.strftime('%Y-%m-%d %H:%M:%S')
-                    model = str(calibration.sensor_model)
-                    item = QtWidgets.QTableWidgetItem(str(sn))
-                    item.calibration = calibration
-                    sensorCoeffWidget_table.setItem(row,self.col_sn,item)
-                    item = QtWidgets.QTableWidgetItem(str(model))
-                    item.calibration = calibration
-                    sensorCoeffWidget_table.setItem(row, self.col_model, item)
-                    item = QtWidgets.QTableWidgetItem(str(parameter))
-                    item.calibration = calibration
-                    sensorCoeffWidget_table.setItem(row, self.col_parameter, item)
-                    item = QtWidgets.QTableWidgetItem(str(date))
-                    item.calibration = calibration
-                    sensorCoeffWidget_table.setItem(row, self.col_date, item)
-                    row += 1
-
-        self.sensorCoeffWidget_table = sensorCoeffWidget_table
-        self.sensorCoeffWidget_table.resizeColumnsToContents()
