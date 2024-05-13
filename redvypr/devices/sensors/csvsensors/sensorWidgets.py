@@ -260,9 +260,6 @@ class sensorCoeffWidget(QtWidgets.QWidget):
 
         # self.sensorCoeffWidget_list.currentRowChanged.connect(self.sensorcoefficient_changed)
 
-        colheaders = ['SN', 'Parameter', 'Calibration date']
-        self.sensorCoeffWidget_list.setColumnCount(len(colheaders))
-        self.sensorCoeffWidget_list.setHorizontalHeaderLabels(colheaders)
         self.__sensorCoeffWidget_list_populate__()
 
         self.loadCoeffButton = QtWidgets.QPushButton('Load coefficients')
@@ -332,6 +329,15 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         except:
             pass
 
+
+        colheaders = ['SN', 'Calibration type', 'Parameter', 'Calibration date']
+        icol_sn = colheaders.index('SN')
+        icol_para = colheaders.index('Parameter')
+        icol_date = colheaders.index('Calibration date')
+        icol_caltype = colheaders.index('Calibration type')
+        self.sensorCoeffWidget_list.setColumnCount(len(colheaders))
+        self.sensorCoeffWidget_list.setHorizontalHeaderLabels(colheaders)
+
         # Fill the list with sn
         sns = []  # Get all serialnumbers
 
@@ -341,17 +347,25 @@ class sensorCoeffWidget(QtWidgets.QWidget):
 
         self.sensorCoeffWidget_list.setRowCount(len(self.calibrations) + 1)
         for i, cal in enumerate(self.calibrations):
+            # SN
             item = QtWidgets.QTableWidgetItem(cal.sn)
             user_role = 10
             role = QtCore.Qt.UserRole + user_role
             item.setData(role, cal)
-            self.sensorCoeffWidget_list.setItem(i, 0, item)
+            self.sensorCoeffWidget_list.setItem(i, icol_sn, item)
+            # Calibration type
+            item = QtWidgets.QTableWidgetItem(cal.calibration_type)
+            item.setData(role, cal)
+            self.sensorCoeffWidget_list.setItem(i, icol_caltype, item)
+            # Parameter
+            icol_caltype = colheaders.index('Calibration type')
             item = QtWidgets.QTableWidgetItem(cal.parameter)
             item.setData(role, cal)
-            self.sensorCoeffWidget_list.setItem(i, 1, item)
+            self.sensorCoeffWidget_list.setItem(i, icol_para, item)
+            # Caldate
             item = QtWidgets.QTableWidgetItem(cal.date)
             item.setData(role, cal)
-            self.sensorCoeffWidget_list.setItem(i, 2, item)
+            self.sensorCoeffWidget_list.setItem(i, icol_date, item)
 
         self.sensorCoeffWidget_list.resizeColumnsToContents()
         self.sensorCoeffWidget_list.currentCellChanged.connect(self.__sensorCoeffWidget_list_item_changed__)
@@ -359,12 +373,25 @@ class sensorCoeffWidget(QtWidgets.QWidget):
     def remCalibration_clicked(self):
         funcname = __name__ + '.remCalibration_clicked()'
         logger.debug(funcname)
-        self.calibrationConfigWidget.close()
-        item = self.sensorCoeffWidget_list.takeItem(self.sensorCoeffWidget_list.currentRow())
-        index = self.sensorCoeffWidget_list.currentRow()
-        sn = item.text()
-        calibration = self.device.config.calibrations.pop(index)
-        print('Removed', calibration)
+
+        try:
+            self.__calConfigWidget_tmp__.close()
+        except:
+            pass
+
+        rows = []
+        for i in self.sensorCoeffWidget_list.selectionModel().selection().indexes():
+            row, column = i.row(), i.column()
+            rows.append(row)
+
+        rows = list(set(rows))
+        rows.sort(reverse=True)
+        for index in rows:
+            calibration = self.device.config.calibrations.pop(index)
+            logger.debug('Removed {}'.format(calibration))
+
+        self.__sensorCoeffWidget_list_populate__()
+
 
     def sensorcoefficient_changed(self, index):
         """
