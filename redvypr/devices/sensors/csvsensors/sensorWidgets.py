@@ -2,6 +2,7 @@ import datetime
 import numpy as np
 import logging
 import sys
+import os
 import threading
 import copy
 import yaml
@@ -12,6 +13,7 @@ import numpy
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from PyQt5 import QtWidgets, QtCore, QtGui
 import redvypr.gui as gui
+from pathlib import Path
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('sensorWidgets')
@@ -258,10 +260,13 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         self.sensorCoeffWidget_layout = QtWidgets.QGridLayout(self.sensorCoeffWidget)
         self.sensorCoeffWidget_list = QtWidgets.QTableWidget()
 
+
         # self.sensorCoeffWidget_list.currentRowChanged.connect(self.sensorcoefficient_changed)
 
         self.__sensorCoeffWidget_list_populate__()
 
+        self.loadCoeffSubFolder = QtWidgets.QCheckBox('Load all coeffs in folder and subfolders')
+        self.loadCoeffSubFolder.setChecked(True)
         self.loadCoeffButton = QtWidgets.QPushButton('Load coefficients')
         self.loadCoeffButton.clicked.connect(self.chooseCalibrationFiles)
         self.remCoeffButton = QtWidgets.QPushButton('Remove coefficients')
@@ -274,6 +279,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         self.sensorCoeffWidget_layout.addWidget(self.calibrationConfigWidget, 0, 1)
         self.sensorCoeffWidget_layout.addWidget(self.loadCoeffButton, 1, 0)
         self.sensorCoeffWidget_layout.addWidget(self.remCoeffButton, 1, 1)
+        self.sensorCoeffWidget_layout.addWidget(self.loadCoeffSubFolder, 2, 0)
 
     def chooseCalibrationFiles(self):
         """
@@ -284,15 +290,27 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         # fileName = QtWidgets.QFileDialog.getLoadFileName(self, 'Load Calibration', '',
         #                                                 "Yaml Files (*.yaml);;All Files (*)")
 
-        fileNames = QtWidgets.QFileDialog.getOpenFileNames(self, 'Load Calibration', '',
-                                                           "Yaml Files (*.yaml);;All Files (*)")
+        if self.loadCoeffSubFolder.isChecked():
+            fileNames = QtWidgets.QFileDialog.getExistingDirectory(self)
+            fileNames = ([fileNames],None)
+        else:
+            fileNames = QtWidgets.QFileDialog.getOpenFileNames(self, 'Load Calibration', '',
+                                                               "Yaml Files (*.yaml);;All Files (*)")
+
+        #print('Filenames',fileNames)
         for fileName in fileNames[0]:
             # self.device.read_calibration_file(fileName)
-            print('Adding file ...', fileName)
-            self.device.add_calibration_file(fileName)
+            #print('Adding file ...', fileName)
+            if os.path.isdir(fileName):
+                #print('Path',Path(fileName))
+                coefffiles = list(Path(fileName).rglob("*.[yY][aA][mM][lL]"))
+                #print('Coeffiles',coefffiles)
+                for coefffile in coefffiles:
+                    self.device.add_calibration_file(str(coefffile))
+            else:
+                self.device.add_calibration_file(fileName)
 
         # Fill the list with sn
-
         if len(fileNames[0]) > 0:
             logger.debug(funcname + ' Updating the calibrationlist')
             self.__sensorCoeffWidget_list_populate__()
@@ -329,7 +347,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         except:
             pass
 
-
+        self.sensorCoeffWidget_list.setSortingEnabled(False)
         colheaders = ['SN', 'Calibration type', 'Parameter', 'Calibration date']
         icol_sn = colheaders.index('SN')
         icol_para = colheaders.index('Parameter')
@@ -369,6 +387,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
 
         self.sensorCoeffWidget_list.resizeColumnsToContents()
         self.sensorCoeffWidget_list.currentCellChanged.connect(self.__sensorCoeffWidget_list_item_changed__)
+        self.sensorCoeffWidget_list.setSortingEnabled(True)
 
     def remCalibration_clicked(self):
         funcname = __name__ + '.remCalibration_clicked()'
