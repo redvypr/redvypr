@@ -5,7 +5,12 @@ import logging
 import sys
 import zoneinfo
 from PyQt5 import QtWidgets, QtCore, QtGui
+from redvypr.devices.plot import XYplotWidget
+from redvypr.devices.plot import plot_widgets
+from redvypr.redvypr_address import redvypr_address
 import redvypr.gui as gui
+from .sensorWidgets import sensorCoeffWidget
+
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('heatflow_dataprocess')
@@ -621,7 +626,7 @@ class HFVWidget_config(QtWidgets.QWidget):
                 try:
                     coeff = str(calibration.coeff)
                 except Exception as e:
-                    coeff = np.NaN
+                    coeff = numpy.NaN
                     logger.debug(funcname)
                     logger.exception(e)
                     logger.debug(funcname)
@@ -656,7 +661,7 @@ class HFVWidget_config(QtWidgets.QWidget):
                 item = QtWidgets.QTableWidgetItem(str(sn_sensor_attached))
                 self.coeff_table.setItem(index_row,index_col,item)
 
-                if coeff is np.NaN:
+                if coeff is numpy.NaN:
                     coeffstr = ''
                 else:
                     coeffstr = str(coeff)

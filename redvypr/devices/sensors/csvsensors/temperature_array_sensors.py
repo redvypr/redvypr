@@ -29,7 +29,7 @@ class parameter_TAR(pydantic.BaseModel):
 
 class sensor_TAR(pydantic.BaseModel):
     description: str = 'Temperature array (TAR) sensor'
-    sensor_id: typing.Literal['TAR'] = 'TAR'
+    sensor_type: typing.Literal['TAR'] = 'TAR'
     logger_model: str = 'TAR'
     logger_configuration: str = 'TAR'
     parameter: parameter_TAR = parameter_TAR()

@@ -46,11 +46,11 @@ class parameter_DHFS50(pydantic.BaseModel):
     NTC1: calibration_NTC = calibration_NTC(parameter='NTC1')
     NTC2: calibration_NTC = calibration_NTC(parameter='NTC2')
 
-class logger_DHFS50(pydantic.BaseModel):
+class sensor_DHFS50(pydantic.BaseModel):
     description: str = 'Digital heat flow sensor DHFS50'
-    sensor_id: typing.Literal['DHFS50'] = 'DHFS50'
-    logger_model: str = 'DHFS50'
-    logger_configuration: str = 'DHFS50-1m'
+    sensor_type: typing.Literal['DHFS50'] = 'DHFS50'
+    sensor_model: str = 'DHFS50'
+    sensor_configuration: str = 'DHFS50-1m'
     parameter: parameter_DHFS50 = parameter_DHFS50()
     sn: str = pydantic.Field(default='', description='The serial number and/or MAC address of the sensor')
     comment: str = pydantic.Field(default='')
@@ -65,7 +65,7 @@ class channels_HFV4CH(pydantic.BaseModel):
 
 class logger_HFV4CH(pydantic.BaseModel):
     description: str = '4 Channel voltage logger'
-    sensor_id: typing.Literal['hfv4ch'] = 'hfv4ch'
+    sensor_type: typing.Literal['hfv4ch'] = 'hfv4ch'
     logger_model: str = '4 Channel ADS logger'
     logger_configuration: str = 'Raspberry PI board'
     channels: channels_HFV4CH = channels_HFV4CH()
@@ -73,7 +73,7 @@ class logger_HFV4CH(pydantic.BaseModel):
     comment: str = pydantic.Field(default='')
 
 class device_config(pydantic.BaseModel):
-    sensorconfigurations: typing.Dict[str,typing.Annotated[typing.Union[logger_DHFS50,logger_HFV4CH, sensor_TAR], pydantic.Field(discriminator='sensor_id')]] = pydantic.Field(default={},description='Configuration of sensors, keys are their serial numbers')
+    sensorconfigurations: typing.Dict[str,typing.Annotated[typing.Union[sensor_DHFS50,logger_HFV4CH, sensor_TAR], pydantic.Field(discriminator='sensor_type')]] = pydantic.Field(default={},description='Configuration of sensors, keys are their serial numbers')
     calibrations: typing.List[typing.Annotated[typing.Union[calibration_NTC, calibration_HF], pydantic.Field(discriminator='calibration_type')]] = pydantic.Field(default=[], description = 'List of sensor calibrations')
     calibration_files: list = pydantic.Field(default=[])
     datakeys: list =  pydantic.Field(default = ['data'], description = 'The datakeys to be looked for csv data')
@@ -631,7 +631,7 @@ class Device(redvypr_device):
         super(Device, self).thread_start(config=config)
 
 
-    def add_sensorconfig(self, sn, sensor_id, config = None, address=None):
+    def add_sensorconfig(self, sn, sensor_type, config = None, address=None):
         """
 
         """
@@ -640,25 +640,34 @@ class Device(redvypr_device):
         try:
             sensor_new = sn not in self.config.sensorconfigurations.keys()
             if sensor_new:
-                logger.debug(funcname + 'Adding new sensor of type {:s} with sn {:s}'.format(sensor_id, sn))
-                if sensor_id.lower() == 'hfv4ch':
+                logger.debug(funcname + 'Adding new sensor of type {:s} with sn {:s}'.format(sensor_type, sn))
+                self.sensordata[sn] = {'__np__':0,'__raddr__':None,'__devices__':[]}
+                self.sensordata_raw[sn] = []
+                if sensor_type.lower() == 'hfv4ch':
                     sensor_config = logger_HFV4CH()
                     sensor_config.sn = sn
                     self.config.sensorconfigurations[sn] = sensor_config
-                    return True
-                elif sensor_id.lower() == 'dhfs50':
-                    sensor_config = logger_DHFS50()
+                    ret = True
+                elif sensor_type.lower() == 'dhfs50':
+                    sensor_config = sensor_DHFS50()
                     sensor_config.sn = sn
                     self.config.sensorconfigurations[sn] = sensor_config
-                    return True
-                elif sensor_id.lower() == 'tar':
+                    ret = True
+                elif sensor_type.lower() == 'tar':
                     # Add a temperature array logger
                     sensor_config = sensor_TAR()
                     sensor_config.init_from_data(config)
                     self.config.sensorconfigurations[sn] = sensor_config
-                    return True
+                    ret = True
                 else:
-                    return None
+                    ret = None
+
+                if ret is not None:
+                    config = self.config.model_dump()
+                    print('config for new logger', config)
+                    self.thread_command('config', data={'config': config})
+                    status = {'sn':sn, 'sensor_type':sensor_type,'config':config}
+                    self.newlogger_signal.emit(status)
             else:
                 logger.debug(funcname + ' Configuration for {:s} is already existing'.format(sn))
                 return False
@@ -688,39 +697,18 @@ class Device(redvypr_device):
                     if status['packettype'] == 'HFV':
                         logger.info('New 4Channel logger')
                         sn = status['sn']
-                        ret = self.add_sensorconfig(sn, sensor_id ='hfv4ch', address=newsensor_address)
-                        if ret is not None:
-                            config = self.config.model_dump()
-                            print('config for new logger',config)
-                            self.thread_command('config',data={'config':config})
-                            self.newlogger_signal.emit(status)
+                        ret = self.add_sensorconfig(sn, sensor_type ='hfv4ch', address=newsensor_address)
                     elif status['packettype'] == 'TAR':
                         logger.info('New Temperature array')
                         sn = status['sn']
                         dataline = status['dataline']
-                        ret = self.add_sensorconfig(sn, sensor_id='tar', config=dataline, address=newsensor_address)
-                        if ret is not None:
-                            config = self.config.model_dump()
-                            # print('config',config)
-                            self.thread_command('config', data={'config': config})
-                            self.newlogger_signal.emit(status)
+                        ret = self.add_sensorconfig(sn, sensor_type='tar', config=dataline, address=newsensor_address)
                     elif status['packettype'] == 'HF':
                         logger.info('New DHFS50')
                         sn = status['sn']
-                        ret = self.add_sensorconfig(sn, sensor_id ='dhfs50')
-                        if ret is not None:
-                            config = self.config.model_dump()
-                            # print('config',config)
-                            self.thread_command('config', data={'config': config})
-                            self.newlogger_signal.emit(status)
-                        #try:
-                        #    self.deviceinitwidget.__update_configLoggerList__()
-                        #except Exception as e:
-                        #    logger.exception(e)
+                        ret = self.add_sensorconfig(sn, sensor_type ='dhfs50')
                     else:
                         logger.warning('Unknown packet type')
-
-
 
 def find_calibration_for_logger(sn, calibration, caltype = 'latest'):
     """
@@ -728,23 +716,9 @@ def find_calibration_for_logger(sn, calibration, caltype = 'latest'):
     """
     pass
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 #
 #
 # Init Widget
-#
 #
 #
 class initDeviceWidget(QtWidgets.QWidget):
@@ -949,6 +923,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         for irow, sn in enumerate(self.device.config.sensorconfigurations.keys()):
             try:
                 raddr = self.device.sensordata[sn]['__raddr__']
+                print('Raddr',raddr)
                 item_publisher = QtWidgets.QTableWidgetItem(raddr.publisher)
                 item_publisher_old = self.configLoggerWidgets['loggerlist'].item(irow, colpub)
                 if item_publisher_old.text() != item_publisher.text():
@@ -991,15 +966,15 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
             item = QtWidgets.QTableWidgetItem(str(sn))
-            sensor_id = str(self.device.config.sensorconfigurations[sn].sensor_id)
+            sensor_type = str(self.device.config.sensorconfigurations[sn].sensor_type)
             #print('logger_short', logger_short)
             # Create a configuration widget for the sensor
-            configwidget = self.__create_sensor_config_widget__(str(sn), sensor_id)
+            configwidget = self.__create_sensor_config_widget__(str(sn), sensor_type)
             item.configwidget = configwidget
             item.sn = sn
             #print('Item',item.configwidget)
             self.configLoggerWidgets['loggerlist'].setItem(irow,0,item)
-            item_type = QtWidgets.QTableWidgetItem(sensor_id)
+            item_type = QtWidgets.QTableWidgetItem(sensor_type)
             self.configLoggerWidgets['loggerlist'].setItem(irow, 1, item_type)
             button_configure = QtWidgets.QPushButton('Configure')
             button_configure.clicked.connect(self.__configlogger_clicked__)
@@ -1007,6 +982,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.configLoggerWidgets['loggerlist'].setCellWidget(irow, 2, button_configure)
             try:
                 raddr = self.device.sensordata[sn]['__raddr__']
+                print('Raddr 2',raddr)
                 item_publisher = QtWidgets.QTableWidgetItem(raddr.publisher)
                 self.configLoggerWidgets['loggerlist'].setItem(irow, 4, item_publisher)
                 print('Done')
@@ -1016,29 +992,29 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         self.configLoggerWidgets['loggerlist'].resizeColumnsToContents()
 
-    def __create_sensor_config_widget__(self, sn, sensor_id):
+    def __create_sensor_config_widget__(self, sn, sensor_type):
         funcname = __name__ + '__create_sensor_config_widget__()'
-        logger.debug(funcname + ' sn: {:s}, sensor_short {:s}'.format(sn,sensor_id))
+        logger.debug(funcname + ' sn: {:s}, sensor_short {:s}'.format(sn,sensor_type))
         cwidget = QtWidgets.QWidget()
         clayout = QtWidgets.QVBoxLayout(cwidget)
         clabel = QtWidgets.QLabel('Config of \n' + sn)
         clayout.addWidget(clabel)
 
-        if sensor_id.lower() == 'generic logger':
+        if sensor_type.lower() == 'generic logger':
             print('Generic logger ...')
-        elif sensor_id.lower() == 'tar':
+        elif sensor_type.lower() == 'tar':
             logger.debug('Config widget for temperature array (TAR)')
             sensor = self.device.config.sensorconfigurations[sn]
             #config_widget = TARWidget_config(self, sn=sn, redvypr_device=self.device)
             config_widget = sensorConfigWidget(sensor=sensor, calibrations=self.device.config.calibrations)
             clayout.addWidget(config_widget)
-        elif sensor_id.lower() == 'dhfs50':
+        elif sensor_type.lower() == 'dhfs50':
             logger.debug('DHFS50')
             sensor = self.device.config.sensorconfigurations[sn]
             #config_widget = DHFS50Widget_config(sn = sn, redvypr_device = self.device)
             config_widget = sensorConfigWidget(sensor = sensor, calibrations = self.device.config.calibrations)
             clayout.addWidget(config_widget)
-        elif sensor_id.lower() == 'hfv4ch':
+        elif sensor_type.lower() == 'hfv4ch':
             logger.debug('Four channel logger')
             config_widget = HFVWidget_config(sn = sn, redvypr_device = self.device)
             clayout.addWidget(config_widget)
@@ -1169,6 +1145,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
         tabwidget.addTab(self,'Raw data')
         tabwidget.addTab(self.allconvertedWidget,'Converted data')
         tabwidget.addTab(self.sensorwidget, 'Sensors')
+        # Connect a new sensor configuration signal
+        self.device.newlogger_signal.connect(self.add_newsensor)
+
+
         #testwidget = DHFSWidget(sn='fdsfsdsf')
         #tabwidget.addTab(testwidget, 'Test')
 
@@ -1180,6 +1160,20 @@ class displayDeviceWidget(QtWidgets.QWidget):
         #testwidget3 = HFVWidget(sn='KALTEST', redvypr_device=self.device)
         #tabwidget.addTab(testwidget3, 'KALTEST')
 
+    def add_newsensor(self,status):
+        """
+        Function is called with when a new sensor signal is emitted by the device
+        """
+        funcname = __name__ + '.add_newsensor()'
+        logger.debug(funcname)
+        print('Status',status)
+        sn = status['sn']
+        sensor_type = status['sensor_type']
+        try:
+            self.sensorwidgets[sn]
+        except:
+            print('Will add new sensorwidget for sensor {}'.format(sn))
+            self.add_sensorwidget(sn,sensor_type)
 
 
     def change_sensor(self, index):
@@ -1224,9 +1218,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.sensorlist.addItem(sn)
             self.sensorstack.addWidget(sensorwidget)
 
-
-        self.device.sensordata[sn] = {'__np__':0,'__raddr__':None,'__devices__':[]}
-        self.device.sensordata_raw[sn] = []
+        # legacy
+        #self.device.sensordata[sn] = {'__np__':0,'__raddr__':None,'__devices__':[]}
+        #self.device.sensordata_raw[sn] = []
 
 
 
@@ -1242,17 +1236,18 @@ class displayDeviceWidget(QtWidgets.QWidget):
             datatype = data['datatype']
             # can be IMU, HFV, HF, TAR
             print('Ptype',ptype,sn)
-            try:
-                self.device.sensordata_raw[sn] # List for the raw datapackets
-            except:
-                logger.debug('New sensor',exc_info=True)
-                logger.debug(funcname + 'New sensor found with sn {:s}'.format(sn))
-                try:
-                    self.add_sensorwidget(sn, sensortype=ptype)
-                except:
-                    logger.debug(funcname, exc_info=True)
-                    logger.debug('Could not add sensorwidget for {:s}'.format(sn))
-                    return None
+            #self.device.config.sensorconfigurations[sn]
+            #try:
+            #    self.device.sensordata_raw[sn] # List for the raw datapackets
+            #except:
+            #    logger.debug('New sensor',exc_info=True)
+            #    logger.debug(funcname + 'New sensor found with sn {:s}'.format(sn))
+            #    try:
+            #        self.add_sensorwidget(sn, sensortype=ptype)
+            #    except:
+            #        logger.debug(funcname, exc_info=True)
+            #        logger.debug('Could not add sensorwidget for {:s}'.format(sn))
+            #        return None
 
             print('Hallo',sn)
             print('fds',redvypr_address)
@@ -1297,6 +1292,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 if len(self.device.sensordata[sn][ptype][p]) > self.maxlen:
                     self.device.sensordata[sn][ptype][p] = self.device.sensordata[sn][ptype][p][-self.maxlen:]
 
+            # Send the data to the sensorwidget
+            try:
+                self.sensorwidgets[sn].update(data)
+            except Exception as e:
+                logger.debug(funcname, exc_info=True)
+                # logger.exception(e)
+
             # Update rows and columns
             nsensors  = len(list(self.device.sensordata_raw.keys()))
 
@@ -1332,7 +1334,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
             if flag_redraw:
                 # Add publisher/device/numpackets to init
-                # Peterself.device.deviceinitwidget.
+                # self.device.deviceinitwidget.
                 #print('redraw table')
                 #r = rows[0:2]
                 #rows[0] = '0'
@@ -1367,12 +1369,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             else:
                 mac_redraw = [sn]
 
-            # Send the data to the sensorwidget
-            try:
-                self.sensorwidgets[sn].update(data)
-            except Exception as e:
-                logger.debug(funcname, exc_info=True)
-                #logger.exception(e)
+
 
             # Fill the table with data
             print('redraw',mac_redraw)
