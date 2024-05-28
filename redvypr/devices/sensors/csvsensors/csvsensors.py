@@ -20,8 +20,8 @@ from redvypr.redvypr_address import redvypr_address
 from redvypr.devices.plot import plot_widgets
 from redvypr.devices.plot import XYplotWidget
 import redvypr.files as redvypr_files
-from redvypr.devices.sensors.calibration.calibration_models import  calibration_HF, calibration_NTC, get_date_from_calibration
-from .heatflow_sensors import convert_HF, parse_HF_raw, add_keyinfo_HF_raw, parse_HFV_raw, process_IMU_packet, process_HFS_data, process_HF_data, DHFSWidget, HFVWidget, HFVWidget_config, DHFS50Widget_config
+from redvypr.devices.sensors.calibration.calibration_models import calibration_HF, calibration_NTC, get_date_from_calibration
+from .heatflow_sensors import parse_HFV_raw, process_IMU_packet, process_HFS_data, process_HF_data, DHFSWidget, HFVWidget, HFVWidget_config, sensor_DHFS50, logger_HFV4CH
 from .temperature_array_sensors import process_TAR_data, sensor_TAR, TARWidget, TARWidget_config
 from .sensorWidgets import sensorCoeffWidget, sensorConfigWidget
 
@@ -40,37 +40,7 @@ class device_base_config(pydantic.BaseModel):
     description: str = 'Processing of temperature and heatflow sensordata'
 
 
-class parameter_DHFS50(pydantic.BaseModel):
-    HF: calibration_HF = calibration_HF(parameter='HF')
-    NTC0: calibration_NTC = calibration_NTC(parameter='NTC0')
-    NTC1: calibration_NTC = calibration_NTC(parameter='NTC1')
-    NTC2: calibration_NTC = calibration_NTC(parameter='NTC2')
 
-class sensor_DHFS50(pydantic.BaseModel):
-    description: str = 'Digital heat flow sensor DHFS50'
-    sensor_type: typing.Literal['DHFS50'] = 'DHFS50'
-    sensor_model: str = 'DHFS50'
-    sensor_configuration: str = 'DHFS50-1m'
-    parameter: parameter_DHFS50 = parameter_DHFS50()
-    sn: str = pydantic.Field(default='', description='The serial number and/or MAC address of the sensor')
-    comment: str = pydantic.Field(default='')
-    use_config: bool = pydantic.Field(default=False, description='Use the configuration (True)')
-    avg_data: list = pydantic.Field(default=[60, 300], description='List of averaging intervals')
-
-class channels_HFV4CH(pydantic.BaseModel):
-    C0: calibration_HF = calibration_HF(parameter='C0')
-    C1: calibration_HF = calibration_HF(parameter='C1')
-    C2: calibration_HF = calibration_HF(parameter='C2')
-    C3: calibration_HF = calibration_HF(parameter='C3')
-
-class logger_HFV4CH(pydantic.BaseModel):
-    description: str = '4 Channel voltage logger'
-    sensor_type: typing.Literal['hfv4ch'] = 'hfv4ch'
-    logger_model: str = '4 Channel ADS logger'
-    logger_configuration: str = 'Raspberry PI board'
-    channels: channels_HFV4CH = channels_HFV4CH()
-    sn: str = pydantic.Field(default='', description='The serial number and/or MAC address of the sensor')
-    comment: str = pydantic.Field(default='')
 
 class device_config(pydantic.BaseModel):
     sensorconfigurations: typing.Dict[str,typing.Annotated[typing.Union[sensor_DHFS50,logger_HFV4CH, sensor_TAR], pydantic.Field(discriminator='sensor_type')]] = pydantic.Field(default={},description='Configuration of sensors, keys are their serial numbers')
@@ -1042,17 +1012,13 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
     def create_sensorcoefficientWidget(self):
-        self.sensorCoeffWidget = sensorCoeffWidget(calibrations=self.device.config.calibrations, redvypr_device=self.device)
+        # Get the calibration models from the type hints of the config
+        calhints = typing.get_type_hints(self.device.config)['calibrations']
+        calibration_models = typing.get_args(typing.get_args(calhints)[0])
+        self.sensorCoeffWidget = sensorCoeffWidget(calibrations=self.device.config.calibrations, redvypr_device=self.device, calibration_models = calibration_models)
 
     def config_changed(self):
         """
-
-
-        Args:
-            config:
-
-        Returns:
-
         """
         funcname = __name__ + '.config_changed():'
         logger.debug(funcname)

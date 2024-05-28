@@ -5,16 +5,54 @@ import logging
 import sys
 import zoneinfo
 from PyQt5 import QtWidgets, QtCore, QtGui
+import pydantic
+import typing
 from redvypr.devices.plot import XYplotWidget
 from redvypr.devices.plot import plot_widgets
 from redvypr.redvypr_address import redvypr_address
+from redvypr.devices.sensors.calibration.calibration_models import calibration_HF, calibration_NTC
 import redvypr.gui as gui
-from .sensorWidgets import sensorCoeffWidget
+from .sensorWidgets import sensorCoeffWidget, sensorConfigWidget
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('heatflow_dataprocess')
+logger = logging.getLogger('heatflow_sensors')
 logger.setLevel(logging.DEBUG)
+
+
+class parameter_DHFS50(pydantic.BaseModel):
+    HF: calibration_HF = calibration_HF(parameter='HF')
+    NTC0: calibration_NTC = calibration_NTC(parameter='NTC0')
+    NTC1: calibration_NTC = calibration_NTC(parameter='NTC1')
+    NTC2: calibration_NTC = calibration_NTC(parameter='NTC2')
+
+class sensor_DHFS50(pydantic.BaseModel):
+    description: str = 'Digital heat flow sensor DHFS50'
+    sensor_type: typing.Literal['DHFS50'] = 'DHFS50'
+    sensor_model: str = 'DHFS50'
+    sensor_configuration: str = 'DHFS50-1m'
+    parameter: parameter_DHFS50 = parameter_DHFS50()
+    sn: str = pydantic.Field(default='', description='The serial number and/or MAC address of the sensor')
+    comment: str = pydantic.Field(default='')
+    use_config: bool = pydantic.Field(default=False, description='Use the configuration (True)')
+    avg_data: list = pydantic.Field(default=[60, 300], description='List of averaging intervals')
+    show_rawdata: bool = pydantic.Field(default=True, description='Show the raw data in the gui')
+    show_convdata: bool = pydantic.Field(default=True, description='Show the converted data in the gui')
+
+class channels_HFV4CH(pydantic.BaseModel):
+    C0: calibration_HF = calibration_HF(parameter='C0')
+    C1: calibration_HF = calibration_HF(parameter='C1')
+    C2: calibration_HF = calibration_HF(parameter='C2')
+    C3: calibration_HF = calibration_HF(parameter='C3')
+
+class logger_HFV4CH(pydantic.BaseModel):
+    description: str = '4 Channel voltage logger'
+    sensor_type: typing.Literal['hfv4ch'] = 'hfv4ch'
+    logger_model: str = '4 Channel ADS logger'
+    logger_configuration: str = 'Raspberry PI board'
+    channels: channels_HFV4CH = channels_HFV4CH()
+    sn: str = pydantic.Field(default='', description='The serial number and/or MAC address of the sensor')
+    comment: str = pydantic.Field(default='')
 
 
 def convert_HF(datapacket, loggerconfigurations=None):
@@ -708,7 +746,7 @@ class HFVWidget(QtWidgets.QWidget):
 
         self.rawconvtabs = QtWidgets.QTabWidget()
 
-        # Add table with the data
+        # Add table with the data (raw data)
         self.datatable_raw = QtWidgets.QTableWidget()
         self.datatable_raw.setColumnCount(6)
         self.datatable_raw.setRowCount(2)
@@ -718,7 +756,7 @@ class HFVWidget(QtWidgets.QWidget):
         self.datatable_raw.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.datatable_raw.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
 
-        # Add table with the data
+        # Add table with the data (converted data)
         self.datatable_conv = QtWidgets.QTableWidget()
         self.datatable_conv.setColumnCount(6)
         self.datatable_conv.setRowCount(2)
@@ -861,145 +899,179 @@ class DHFSWidget(QtWidgets.QWidget):
         self.device = redvypr_device
         self.sn = sn
         self.configuration = None
+
         if self.device is not None:
             try:
                 self.configuration = self.device.config.sensorconfigurations[sn]
             except Exception as e:
                 logger.exception(e)
 
-        self.parameter = ['HF', 'NTC0', 'NTC1', 'NTC2']
+        #self.parameter = ['HF', 'NTC0', 'NTC1', 'NTC2']
         self.parameter = []
         self.parameter_unit = []
         self.parameter_unitconv = []
         print('Adding parameter')
         for ptmp in self.configuration.parameter:
-            print('ptmp',ptmp)
+            print('Parameter',ptmp)
             p = ptmp[0]
             self.parameter.append(p)
             self.parameter_unit.append(None)
             self.parameter_unitconv.append(None)
 
+
+
         #self.create_coeff_widget()
         self.XYplots = []
-        self.rawconvtabs = QtWidgets.QTabWidget()
-        self.rawwidget = QtWidgets.QWidget()
-        self.layout_raw = QtWidgets.QGridLayout(self.rawwidget)
-        self.convwidget = QtWidgets.QWidget()
-        self.layout_conv = QtWidgets.QGridLayout(self.convwidget)
-        self.rawconvtabs.addTab(self.rawwidget,'Rawdata')
-        self.rawconvtabs.addTab(self.convwidget, 'Converted data')
-
-        self.layout = QtWidgets.QGridLayout(self)
-        self.layout.addWidget(self.rawconvtabs,0,0)
-
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.hlayout = QtWidgets.QHBoxLayout(self)
+        self.configButton = QtWidgets.QPushButton('Configure')
+        self.configButton.clicked.connect(self.__configClicked__)
+        # Add a widget for the raw data
+        self.rawdataWidget = QtWidgets.QWidget()
+        self.rawdataWidget_layout = QtWidgets.QVBoxLayout(self.rawdataWidget)
+        label = QtWidgets.QPushButton('Raw data')
+        label.setEnabled(False)
+        self.rawdataWidget_layout.addWidget(label)
         # Add a table for the raw data
         self.datatable_raw = QtWidgets.QTableWidget()
-
-        self.datatable_raw.setRowCount(2)
-        self.datatable_raw_columnheader = ['Time']
+        self.rawdataWidget_layout.addWidget(self.datatable_raw)
+        # number of columns
+        ncols = 4
+        self.datatable_raw.setColumnCount(ncols)
+        self.datatable_raw_parameterheader = ['Time']
         for i, p in enumerate(self.parameter):
-            self.datatable_raw_columnheader.append(p)
+            self.datatable_raw_parameterheader.append(p)
 
-        self.datatable_raw.setColumnCount(len(self.datatable_raw_columnheader))
-        self.datatable_raw.setHorizontalHeaderLabels(self.datatable_raw_columnheader)
-        self.datatable_raw.setVerticalHeaderLabels(['Unit','Data'])
+        self.datatable_raw.setRowCount(len(self.datatable_raw_parameterheader))
+        self.datatable_raw.setVerticalHeaderLabels(self.datatable_raw_parameterheader)
+        self.datatable_raw.setHorizontalHeaderLabels(['Parameter','Unit','Data'])
         self.datatable_raw.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.datatable_raw.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+
+        # Converted data
+        self.convdataWidget = QtWidgets.QWidget()
+        self.convdataWidget_layout = QtWidgets.QVBoxLayout(self.convdataWidget)
+        label = QtWidgets.QPushButton('Converted data')
+        label.setEnabled(False)
+        self.convdataWidget_layout.addWidget(label)
         # Add a table for the conv data
         self.datatable_conv = QtWidgets.QTableWidget()
-        self.datatable_conv.setRowCount(2)
-        self.datatable_conv_columnheader = []
-        #for i, p in enumerate(self.parameter):
-        #    self.datatable_columnheader.append(p)
-        self.datatable_conv.setColumnCount(len(self.datatable_raw_columnheader))
-        self.datatable_conv.setHorizontalHeaderLabels(self.datatable_raw_columnheader)
-        self.datatable_conv.setVerticalHeaderLabels(['Unit', 'Data'])
+        self.convdataWidget_layout.addWidget(self.datatable_conv)
+        self.datatable_conv.setColumnCount(ncols)
+        self.datatable_conv.setRowCount(len(self.datatable_raw_parameterheader))
+        self.datatable_conv.setVerticalHeaderLabels(self.datatable_raw_parameterheader)
+        self.datatable_conv.setHorizontalHeaderLabels(['Parameter', 'Unit', 'Data'])
         self.datatable_conv.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.datatable_conv.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
 
-        config = XYplotWidget.configXYplot(title='Heat flow raw')
-        self.plot_widget_HF_raw = XYplotWidget.XYplot(config=config, redvypr_device=redvypr_device)
-        self.plot_widget_HF_raw.set_line(0,'/d:{DHF_raw_.*}/k:HF/', name='HF', color='red',linewidth = 2)
 
-        config = XYplotWidget.configXYplot(title='Heat flow')
-        self.plot_widget_HF_SI = XYplotWidget.XYplot(config=config, redvypr_device=redvypr_device)
-        self.plot_widget_HF_SI.set_line(0, '/d:{DHF_SI_.*}/k:HF/', name='HF', color='red', linewidth=2)
+        if self.configuration.show_rawdata:
+            self.hlayout.addWidget(self.rawdataWidget)
+        if self.configuration.show_convdata:
+            self.hlayout.addWidget(self.convdataWidget)
 
-        if True:
-            config = XYplotWidget.configXYplot(title='Temperature raw (NTC)')
-            self.plot_widget_NTC_raw = XYplotWidget.XYplot(config=config, redvypr_device=redvypr_device)
-            self.plot_widget_NTC_raw.set_line(0,'/d:{DHF_raw_.*}/k:NTC0/', name='NTC0', color='red', linewidth = 2)
-            self.plot_widget_NTC_raw.add_line('/d:{DHF_raw_.*}/k:NTC1/', name='NTC1', color='green',linewidth = 2)
-            self.plot_widget_NTC_raw.add_line('/d:{DHF_raw_.*}/k:NTC2/', name='NTC2', color='purple',linewidth = 2)
-
-        if True:
-            config = XYplotWidget.configXYplot(title='Temperature (NTC)')
-            self.plot_widget_NTC_SI = XYplotWidget.XYplot(config=config, redvypr_device=redvypr_device)
-            self.plot_widget_NTC_SI.set_line(0, '/d:{DHF_SI_.*}/k:NTC0/', name='NTC0', color='red', linewidth=2)
-            self.plot_widget_NTC_SI.add_line('/d:{DHF_SI_.*}/k:NTC1/', name='NTC1', color='green', linewidth=2)
-            self.plot_widget_NTC_SI.add_line('/d:{DHF_SI_.*}/k:NTC2/', name='NTC2', color='purple', linewidth=2)
+        self.layout.addLayout(self.hlayout)
+        self.layout.addWidget(self.configButton)
+        self.add_XYplots()
 
 
-        if True: # Average data
-            print('Average data!! 0')
-            self.avgWidget = QtWidgets.QWidget()
-            self.avgWidget_layout = QtWidgets.QVBoxLayout(self.avgWidget)
-            self.rawconvtabs.addTab(self.avgWidget, 'Average')
+    def __configClicked__(self):
 
-            config = XYplotWidget.configXYplot(title='Heat flow average')
-            self.plot_widget_HF_SI_AVG = XYplotWidget.XYplot(config=config, redvypr_device=redvypr_device, add_line=False)
-            for i,avg_s in enumerate(self.configuration.avg_data):
-                avg_str = str(avg_s) + 's'
-                avg_datakey = 'HF_avg_{}'.format(avg_str)
-                std_datakey = 'HF_std_{}'.format(avg_str)
-                raddress = redvypr_address(datakey=avg_datakey,devicename='{DHF_SIAVG_.*}')
-                raddress_std = redvypr_address(datakey=std_datakey, devicename='{DHF_SIAVG_.*}')
-                address = raddress.address_str
-                address_std = raddress_std.address_str
-                #'HF_avg_10s'
-                #Publishing avg:10s packet
-                #{'_redvypr': {'t': 1707832080.2044983, 'device': 'DHF_SIAVG_FC0FE7FFFE164EE0', 'host': {'hostname': 'redvypr', 'tstart': 1708066243.1493528, 'addr': '192.168.178.157', 'uuid': '176473386979093-187'}}, 't_avg_10s': 1707832073.2196076, 't_std_10s': 3.4081697616298503, 't_n_10s': 6, 'HF_avg_10s': 3.607291333333333, 'HF_std_10s': 0.04859570904468358, 'HF_n_10s': 6, 'NTC0_avg_10s': 21.016166666666663, 'NTC0_std_10s': 0.0003726779962504204, 'NTC0_n_10s': 6, 'NTC1_avg_10s': 21.119, 'NTC1_std_10s': 0.0, 'NTC1_n_10s': 6, 'NTC2_avg_10s': 21.113333333333333, 'NTC2_std_10s': 0.00047140452079160784, 'NTC2_n_10s': 6}
-                self.plot_widget_HF_SI_AVG.add_line(address, name=address, linewidth=1, error_addr=address_std)
-                self.avgWidget_layout.addWidget(self.plot_widget_HF_SI_AVG)
+        #self.configWidget = DHFS50Widget_config(sn = self.sn, redvypr_device=self.device)
+        self.configWidget = sensorConfigWidget(sensor=self.configuration,calibrations=self.device.config.calibrations)
+        self.configWidget.show()
 
-            # Add the three temperature sensors as well
-            for NNTC in range(0,3):
-                config = XYplotWidget.configXYplot(title='Temperature (average)')
-                plot_widget_NTC_SI_AVG = XYplotWidget.XYplot(config=config, redvypr_device=redvypr_device,
-                                                                 add_line=False)
-                for i, avg_s in enumerate(self.configuration.avg_data):
+
+    def add_XYplots(self):
+
+        self.device_subscriptions_raw = []
+        self.device_subscriptions_si = []
+        for p_index,p in enumerate(self.parameter):
+            # The parameter
+            # Raw
+            subtmp_raw = '/d:{{DHF_raw_{}}}/k:{}/'.format(self.sn, p)
+            self.device_subscriptions_raw.append(subtmp_raw)
+            config = XYplotWidget.configXYplot(title='{}'.format(p))
+            self.plot_widget_HF_raw = XYplotWidget.XYplot(config=config, redvypr_device=self.device)
+            self.plot_widget_HF_raw.set_line(0, subtmp_raw, name=p, color='red', linewidth=2)
+            # Create the button to plot the widget
+            but = QtWidgets.QPushButton('Plot')
+            but.clicked.connect(self.__plot_clicked__)
+            self.datatable_raw.setCellWidget(p_index + 1, 3, but)
+            but.__widget__ = self.plot_widget_HF_raw
+            # Converted
+            subtmp_si = '/d:{{DHF_SI_{}}}/k:{}/'.format(self.sn, p)
+            self.device_subscriptions_si.append(subtmp_si)
+            config = XYplotWidget.configXYplot(title='{} (converted)'.format(p))
+            self.plot_widget_HF_SI = XYplotWidget.XYplot(config=config, redvypr_device=self.device)
+            self.plot_widget_HF_SI.set_line(0, subtmp_si, name=p, color='red', linewidth=2)
+            # Create the button to plot the widget
+            but = QtWidgets.QPushButton('Plot')
+            but.clicked.connect(self.__plot_clicked__)
+            self.datatable_conv.setCellWidget(p_index + 1, 3, but)
+            but.__widget__ = self.plot_widget_HF_SI
+            # Add all the plots, such that they can be updated
+            self.XYplots.append(self.plot_widget_HF_raw)
+            self.XYplots.append(self.plot_widget_HF_SI)
+
+            if False: # Average data
+                print('Average data!! 0')
+                self.avgWidget = QtWidgets.QWidget()
+                self.avgWidget_layout = QtWidgets.QVBoxLayout(self.avgWidget)
+                self.rawconvtabs.addTab(self.avgWidget, 'Average')
+
+                config = XYplotWidget.configXYplot(title='Heat flow average')
+                self.plot_widget_HF_SI_AVG = XYplotWidget.XYplot(config=config, redvypr_device=redvypr_device, add_line=False)
+                for i,avg_s in enumerate(self.configuration.avg_data):
                     avg_str = str(avg_s) + 's'
-                    avg_datakey = 'NTC{}_avg_{}'.format(NNTC,avg_str)
-                    std_datakey = 'NTC{}_std_{}'.format(NNTC,avg_str)
-                    raddress = redvypr_address(datakey=avg_datakey, devicename='{DHF_SIAVG_.*}')
+                    avg_datakey = 'HF_avg_{}'.format(avg_str)
+                    std_datakey = 'HF_std_{}'.format(avg_str)
+                    raddress = redvypr_address(datakey=avg_datakey,devicename='{DHF_SIAVG_.*}')
                     raddress_std = redvypr_address(datakey=std_datakey, devicename='{DHF_SIAVG_.*}')
                     address = raddress.address_str
                     address_std = raddress_std.address_str
-                    plot_widget_NTC_SI_AVG.add_line(address, name=address, linewidth=1, error_addr=address_std)
-                    self.avgWidget_layout.addWidget(plot_widget_NTC_SI_AVG)
-                    self.XYplots.append(plot_widget_NTC_SI_AVG)
+                    #'HF_avg_10s'
+                    #Publishing avg:10s packet
+                    #{'_redvypr': {'t': 1707832080.2044983, 'device': 'DHF_SIAVG_FC0FE7FFFE164EE0', 'host': {'hostname': 'redvypr', 'tstart': 1708066243.1493528, 'addr': '192.168.178.157', 'uuid': '176473386979093-187'}}, 't_avg_10s': 1707832073.2196076, 't_std_10s': 3.4081697616298503, 't_n_10s': 6, 'HF_avg_10s': 3.607291333333333, 'HF_std_10s': 0.04859570904468358, 'HF_n_10s': 6, 'NTC0_avg_10s': 21.016166666666663, 'NTC0_std_10s': 0.0003726779962504204, 'NTC0_n_10s': 6, 'NTC1_avg_10s': 21.119, 'NTC1_std_10s': 0.0, 'NTC1_n_10s': 6, 'NTC2_avg_10s': 21.113333333333333, 'NTC2_std_10s': 0.00047140452079160784, 'NTC2_n_10s': 6}
+                    self.plot_widget_HF_SI_AVG.add_line(address, name=address, linewidth=1, error_addr=address_std)
+                    self.avgWidget_layout.addWidget(self.plot_widget_HF_SI_AVG)
 
-        # Add all the plots, such that they can be updated
-        self.XYplots.append(self.plot_widget_HF_SI_AVG)
-        self.XYplots.append(self.plot_widget_HF_raw)
-        self.XYplots.append(self.plot_widget_NTC_raw)
-        self.XYplots.append(self.plot_widget_HF_SI)
-        self.XYplots.append(self.plot_widget_NTC_SI)
+                # Add the three temperature sensors as well
+                for NNTC in range(0,3):
+                    config = XYplotWidget.configXYplot(title='Temperature (average)')
+                    plot_widget_NTC_SI_AVG = XYplotWidget.XYplot(config=config, redvypr_device=redvypr_device,
+                                                                     add_line=False)
+                    for i, avg_s in enumerate(self.configuration.avg_data):
+                        avg_str = str(avg_s) + 's'
+                        avg_datakey = 'NTC{}_avg_{}'.format(NNTC,avg_str)
+                        std_datakey = 'NTC{}_std_{}'.format(NNTC,avg_str)
+                        raddress = redvypr_address(datakey=avg_datakey, devicename='{DHF_SIAVG_.*}')
+                        raddress_std = redvypr_address(datakey=std_datakey, devicename='{DHF_SIAVG_.*}')
+                        address = raddress.address_str
+                        address_std = raddress_std.address_str
+                        plot_widget_NTC_SI_AVG.add_line(address, name=address, linewidth=1, error_addr=address_std)
+                        self.avgWidget_layout.addWidget(plot_widget_NTC_SI_AVG)
+                        self.XYplots.append(plot_widget_NTC_SI_AVG)
 
-        self.layout_raw.addWidget(self.datatable_raw, 0, 0, 1, 1)
-        self.layout_conv.addWidget(self.datatable_conv, 0, 0, 1, 1)
-        self.layout_raw.addWidget(self.plot_widget_HF_raw,1,0)
-        self.layout_raw.addWidget(self.plot_widget_NTC_raw,2,0)
-        self.layout_conv.addWidget(self.plot_widget_HF_SI,1,0)
-        self.layout_conv.addWidget(self.plot_widget_NTC_SI,2,0)
-
-        self.layout_raw.setRowStretch(1, 1)
-        self.layout_raw.setRowStretch(2, 1)
-        self.layout_conv.setRowStretch(1, 1)
-        self.layout_conv.setRowStretch(2, 1)
+            if False:
+                # Add all the plots, such that they can be updated
+                self.XYplots.append(self.plot_widget_HF_SI_AVG)
+                self.XYplots.append(self.plot_widget_HF_raw)
+                self.XYplots.append(self.plot_widget_NTC_raw)
+                self.XYplots.append(self.plot_widget_HF_SI)
+                self.XYplots.append(self.plot_widget_NTC_SI)
 
 
-    def update(self,data):
+                self.layout_raw.addWidget(self.plot_widget_HF_raw,1,0)
+                self.layout_raw.addWidget(self.plot_widget_NTC_raw,2,0)
+                self.layout_conv.addWidget(self.plot_widget_HF_SI,1,0)
+                self.layout_conv.addWidget(self.plot_widget_NTC_SI,2,0)
+
+    def __plot_clicked__(self):
+        but = self.sender()
+        but.__widget__.show()
+
+    def update(self, data):
         """
         Updating the local data with datapacket
         """
@@ -1019,8 +1091,19 @@ class DHFSWidget(QtWidgets.QWidget):
                 tdata = datetime.datetime.utcfromtimestamp(data['t'])
                 tdatastr = tdata.strftime('%Y-%m-%d %H:%M:%S.%f')
                 item = QtWidgets.QTableWidgetItem(tdatastr)
-                self.datatable_raw.setItem(1, 0, item)
+                self.datatable_raw.setItem(0, 2, item)
                 for p_index,p in enumerate(self.parameter):
+                    # The parameter
+                    item = QtWidgets.QTableWidgetItem(p)
+                    self.datatable_raw.setItem(p_index + 1, 0, item)
+                    # The data
+                    try:
+                        chdata = "{:+.6f}".format(data[p])
+                        item = QtWidgets.QTableWidgetItem(str(chdata))
+                        self.datatable_raw.setItem(p_index + 1, 2, item)
+                    except Exception as e:
+                        logger.debug(funcname, exc_info=True)
+
                     if self.parameter_unit[p_index] is None:
                         #datastream = data_packets.get_datastream_from_data(data,p)
                         datastream = redvypr_address(data, datakey = p)
@@ -1033,24 +1116,19 @@ class DHFSWidget(QtWidgets.QWidget):
                             self.parameter_unit[p_index] = str('NA')
 
                         item = QtWidgets.QTableWidgetItem(self.parameter_unit[p_index])
-                        self.datatable_raw.setItem(0, p_index + 1, item)
+                        self.datatable_raw.setItem(p_index + 1, 1, item)
                         #print('Keyinfo', keyinfo)
                         #print('Parameter', p)
                         #print('datastream',datastream)
                         #print('keyinfo', keyinfo)
-                    try:
-                        chdata = "{:+.6f}".format(data[p])
-                        item = QtWidgets.QTableWidgetItem(str(chdata))
-                        self.datatable_raw.setItem(1, p_index + 1, item)
-                    except Exception as e:
-                        logger.debug(funcname, exc_info=True)
+
 
             elif data['type'] == 'HFSI':  # Raw data
                 #print('Updating HFSI')
                 tdata = datetime.datetime.utcfromtimestamp(data['t'])
                 tdatastr = tdata.strftime('%Y-%m-%d %H:%M:%S.%f')
                 item = QtWidgets.QTableWidgetItem(tdatastr)
-                self.datatable_conv.setItem(1, 0, item)
+                self.datatable_conv.setItem(0, 1, item)
                 for p_index, p in enumerate(self.parameter):
                     if self.parameter_unitconv[p_index] is None:
                         datastream = redvypr_address(data, datakey=p)

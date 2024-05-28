@@ -246,12 +246,13 @@ class sensorCoeffWidget(QtWidgets.QWidget):
     Widget to choose/load/remove new calibrations from files
     """
 
-    def __init__(self, *args, calibrations, redvypr_device=None):
+    def __init__(self, *args, calibrations, redvypr_device=None, calibration_models = None):
         funcname = __name__ + '__init__()'
         super(QtWidgets.QWidget, self).__init__(*args)
         logger.debug(funcname)
         layout = QtWidgets.QVBoxLayout(self)
         self.calibrations = calibrations
+        self.calibration_models = calibration_models
         self.device = redvypr_device
         self.sensorCoeffWidget = QtWidgets.QWidget()
         layout.addWidget(self.sensorCoeffWidget)
@@ -265,10 +266,21 @@ class sensorCoeffWidget(QtWidgets.QWidget):
 
         self.__sensorCoeffWidget_list_populate__()
 
-        self.loadCoeffSubFolder = QtWidgets.QCheckBox('Load all coeffs in folder and subfolders')
+        self.loadCoeffSubFolder = QtWidgets.QCheckBox('Load all calibrations in folder and subfolders')
         self.loadCoeffSubFolder.setChecked(True)
+        self.editCoeff = QtWidgets.QCheckBox('Edit calibrations')
+        self.editCoeff.setChecked(True)
         self.loadCoeffButton = QtWidgets.QPushButton('Load coefficients')
         self.loadCoeffButton.clicked.connect(self.chooseCalibrationFiles)
+        self.saveCoeffButton = QtWidgets.QPushButton('Save coefficients')
+        self.saveCoeffButton.setEnabled(False)
+        self.addCoeffButton = QtWidgets.QPushButton('Add coefficient')
+        if calibration_models is None:
+            self.addCoeffButton.setEnabled(False)
+        else:
+            self.addCoeffButton.clicked.connect(self.__add_coefficient__)
+        #self.filterCoeffButton = QtWidgets.QPushButton('Filter coefficient')
+        #self.filterCoeffButton.setEnabled(False)
         self.remCoeffButton = QtWidgets.QPushButton('Remove coefficients')
         self.remCoeffButton.clicked.connect(self.remCalibration_clicked)
 
@@ -278,9 +290,40 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         self.sensorCoeffWidget_layout.addWidget(self.sensorCoeffWidget_list, 0, 0)
         self.sensorCoeffWidget_layout.addWidget(self.calibrationConfigWidget, 0, 1)
         self.sensorCoeffWidget_layout.addWidget(self.loadCoeffButton, 1, 0)
-        self.sensorCoeffWidget_layout.addWidget(self.remCoeffButton, 1, 1)
-        self.sensorCoeffWidget_layout.addWidget(self.loadCoeffSubFolder, 2, 0)
+        self.sensorCoeffWidget_layout.addWidget(self.saveCoeffButton, 1, 1)
+        self.sensorCoeffWidget_layout.addWidget(self.addCoeffButton, 2, 0)
+        self.sensorCoeffWidget_layout.addWidget(self.remCoeffButton, 2, 1)
+        self.sensorCoeffWidget_layout.addWidget(self.loadCoeffSubFolder, 3, 0)
+        self.sensorCoeffWidget_layout.addWidget(self.editCoeff, 3, 1)
+        #self.sensorCoeffWidget_layout.addWidget(self.filterCoeffButton, 3, 1)
 
+
+    def __add_coefficient__(self):
+        funcname = __name__ + '.__add_coefficient__():'
+        logger.debug(funcname)
+        # Create an add calibration widget
+        self.addCalibrationWidget = QtWidgets.QWidget()
+        self.addCalibrationWidget_layout = QtWidgets.QGridLayout(self.addCalibrationWidget)
+        self.calibrationModelCombo = QtWidgets.QComboBox()
+        for cal in self.calibration_models:
+            c = cal()
+            caltype = c.calibration_type
+            print('Caltype',caltype)
+            self.calibrationModelCombo.addItem(caltype)
+
+        self.calibrationModelCombo.currentIndexChanged.connect(self.__add_coefficient_type_changed__)
+
+        self.addCalibrationWidget_layout.addWidget(self.calibrationModelCombo)
+        self.addCalibrationWidget.show()
+
+
+
+    def __add_coefficient_type_changed__(self, calibration_index):
+        calmodel = self.calibration_models[calibration_index]
+        cal = calmodel()
+        print('Index',calibration_index)
+        self.__add_coefficient_calConfigWidget_tmp__ = gui.pydanticConfigWidget(cal)
+        self.addCalibrationWidget_layout.addWidget(self.__add_coefficient_calConfigWidget_tmp__)
     def chooseCalibrationFiles(self):
         """
 
@@ -336,8 +379,12 @@ class sensorCoeffWidget(QtWidgets.QWidget):
                 except:
                     pass
 
-                self.__calConfigWidget_tmp__ = gui.pydanticQTreeWidget(cal, dataname=cal.sn + '/' + cal.parameter,
-                                                                       show_datatype=False)
+                if self.editCoeff.isChecked():
+                    self.__calConfigWidget_tmp__ = gui.pydanticConfigWidget(cal)
+                else:
+                    self.__calConfigWidget_tmp__ = gui.pydanticQTreeWidget(cal, dataname=cal.sn + '/' + cal.parameter,
+                    show_datatype=False)
+
                 self.__calConfigWidget_tmp__.cal = cal
                 self.calibrationConfigWidget_layout.addWidget(self.__calConfigWidget_tmp__)
 
@@ -363,7 +410,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
             print('Cal', cal)
             sns.append(cal.sn)
 
-        self.sensorCoeffWidget_list.setRowCount(len(self.calibrations) + 1)
+        self.sensorCoeffWidget_list.setRowCount(len(self.calibrations))
         for i, cal in enumerate(self.calibrations):
             # SN
             item = QtWidgets.QTableWidgetItem(cal.sn)

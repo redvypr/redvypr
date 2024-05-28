@@ -3,6 +3,7 @@ import typing
 import numpy as np
 import datetime
 import dateutil
+import uuid
 
 
 def get_date_from_calibration(calibration, parameter, return_str = False, strformat = '%Y-%m-%d %H:%M:%S'):
@@ -60,7 +61,7 @@ class calibration_HF(pydantic.BaseModel):
     unit:  str = 'W m-2 mV-1'
     unit_input: str = 'mV'
     date: str = '1970-01-01 00:00:00.000'
-    calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be choosen by the user')
+    calibration_id: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex, description='ID of the calibration, can be choosen by the user. ID should be unique')
     comment: typing.Optional[str] = None
 
 class calibration_NTC(pydantic.BaseModel):
@@ -78,5 +79,5 @@ class calibration_NTC(pydantic.BaseModel):
     unit:  str = 'T'
     unit_input: str = 'ohm'
     date: str = '1970-01-01 00:00:00.000'
-    calibration_id: str = pydantic.Field(default = '', description='ID of the calibration, can be choosen by the user')
+    calibration_id: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex, description='ID of the calibration, can be choosen by the user')
     comment: typing.Optional[str] = None
