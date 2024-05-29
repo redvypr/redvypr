@@ -312,6 +312,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
 
         self.calibrationModelCombo.currentIndexChanged.connect(self.__add_coefficient_type_changed__)
         self.addCalibrationApply = QtWidgets.QPushButton('Apply')
+        self.addCalibrationApply.clicked.connect(self.__addCalibrationClicked__)
         self.addCalibrationWidget_layout.addWidget(QtWidgets.QLabel('Calibration type'), 0, 0)
         self.addCalibrationWidget_layout.addWidget(self.calibrationModelCombo, 0, 1)
         self.addCalibrationWidget_layout.addWidget(self.addCalibrationApply, 2, 0,1,2)
@@ -319,11 +320,18 @@ class sensorCoeffWidget(QtWidgets.QWidget):
 
         self.__add_coefficient_type_changed__(0)
 
-
+    def __addCalibrationClicked__(self):
+        print('Add clicked')
+        self.addCalibrationWidget.close()
+        print('Calibration',self.__cal_new_tmp__)
+        self.device.add_calibration(self.__cal_new_tmp__)
+        # Redraw the list
+        self.__sensorCoeffWidget_list_populate__()
 
     def __add_coefficient_type_changed__(self, calibration_index):
         calmodel = self.calibration_models[calibration_index]
         cal = calmodel()
+        self.__cal_new_tmp__ = cal
         print('Index',calibration_index)
         try:
             self.__add_coefficient_calConfigWidget_tmp__.delete_later()
@@ -389,12 +397,20 @@ class sensorCoeffWidget(QtWidgets.QWidget):
 
                 if self.editCoeff.isChecked():
                     self.__calConfigWidget_tmp__ = gui.pydanticConfigWidget(cal)
+                    # If the calibration was edited, update the list
+                    self.__calConfigWidget_tmp__.config_changed_flag.connect(self.__configEdited__)
                 else:
                     self.__calConfigWidget_tmp__ = gui.pydanticQTreeWidget(cal, dataname=cal.sn + '/' + cal.parameter,
                     show_datatype=False)
 
                 self.__calConfigWidget_tmp__.cal = cal
                 self.calibrationConfigWidget_layout.addWidget(self.__calConfigWidget_tmp__)
+
+    def __configEdited__(self):
+        funcname = __name__ + '.__configEdited__():'
+        print(funcname)
+        # Update the list of calibrations
+        self.__sensorCoeffWidget_list_populate__()
 
     def __sensorCoeffWidget_list_populate__(self):
         try:

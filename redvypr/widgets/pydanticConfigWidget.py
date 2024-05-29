@@ -235,6 +235,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             setattr(item.__dataparent__,item.__dataindex__, data)
             # item.setText(1, str(data_num))
             self.configWidget.reload_data()
+            self.config_changed_flag.emit()
 
 
 
