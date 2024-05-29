@@ -42,11 +42,12 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
 class pydanticConfigWidget(QtWidgets.QWidget):
     #config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
-    def __init__(self, config=None, loadsavebutton=False, redvypr_instance=None, show_datatype = False, editable = True, configname = None, exclude = []):
+    def __init__(self, config=None, editable = True, configname = None, exclude = [], config_location='bottom'):
         funcname = __name__ + '.__init__():'
         super().__init__()
         self.exclude = exclude
         self.layout = QtWidgets.QGridLayout(self)
+        self.config_location = config_location
         #self.label = QtWidgets.QLabel('Configuration of\n{:s}'.format(self.device.name))
         #self.layout.addWidget(self.label)
         if configname is None:
@@ -62,8 +63,10 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             # Add a blank widget for editing
             self.__configwidget = QtWidgets.QWidget()
             self.configGui_layout.addWidget(self.__configwidget)
-            self.layout.addWidget(self.configGui, 1, 0)
-
+            if self.config_location == 'bottom':
+                self.layout.addWidget(self.configGui, 1, 0)
+            else:
+                self.layout.addWidget(self.configGui, 0, 1)
 
 
         #self.closeButton = QtWidgets.QPushButton('Close')
@@ -80,6 +83,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             self.__configwidget.close()
         except:
             pass
+        print('some information')
         print(item.__data__)
         print(item.__dataparent__)
         print(item.__dataindex__)
@@ -89,7 +93,71 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         if (item.__datatypestr__ == 'int') or (item.__datatypestr__ == 'float'):
             self.createConfigWidgetNumber(item,dtype=item.__datatypestr__)
             self.configGui_layout.addWidget(self.__configwidget)
+        elif (item.__datatypestr__ == 'str'):
+            self.createConfigWidgetStr(item)
+            self.configGui_layout.addWidget(self.__configwidget)
+        elif (item.__datatypestr__ == 'bool'):
+            self.createConfigWidgetBool(item)
+            self.configGui_layout.addWidget(self.__configwidget)
 
+    def createConfigWidgetStr(self, item):
+
+        index = item.__dataindex__
+        parent = item.__parent__
+        data = item.__data__
+        parentparent = parent.__parent__
+        self.__configwidget = QtWidgets.QWidget()
+        self.__layoutwidget = QtWidgets.QFormLayout(self.__configwidget)
+        self.__configwidget_input = QtWidgets.QLineEdit()
+        self.__configwidget_input.setText(str(data))
+        self.__layoutwidget.addRow(QtWidgets.QLabel('Enter string for {:s}'.format(str(index))))
+        self.__layoutwidget.addRow(QtWidgets.QLabel('Value'), self.__configwidget_input)
+        # Buttons
+        self.__configwidget_apply = QtWidgets.QPushButton('Apply')
+        self.__configwidget_apply.clicked.connect(self.applyGuiInput)
+        self.__configwidget_apply.__configType = 'configStr'
+        self.__configwidget_apply.item = item
+        self.__configwidget_cancel = QtWidgets.QPushButton('Cancel')
+        self.__layoutwidget.addRow(self.__configwidget_apply)
+        self.__layoutwidget.addRow(self.__configwidget_cancel)
+        #if (parentparent is not None):  # Remove button
+        #    self.__add_remove_btn__(self.__layoutwidget_int, item=item, dtype='str')
+        #    try:
+        #        removable = parent.__data__.children_removable
+        #    except Exception as e:
+        #        removable = True
+
+        #    self.__configwidget_remove.setEnabled(removable)
+
+    def createConfigWidgetBool(self, item):
+
+        index = item.__dataindex__
+        parent = item.__parent__
+        data = item.__data__
+        parentparent = parent.__parent__
+        self.__configwidget = QtWidgets.QWidget()
+        self.__layoutwidget = QtWidgets.QFormLayout(self.__configwidget)
+        self.__configwidget_input = QtWidgets.QComboBox()
+        self.__configwidget_input.addItem('True')
+        self.__configwidget_input.addItem('False')
+        self.__layoutwidget.addRow(QtWidgets.QLabel('Enter bool for {:s}'.format(str(index))))
+        self.__layoutwidget.addRow(QtWidgets.QLabel('Value'), self.__configwidget_input)
+        # Buttons
+        self.__configwidget_apply = QtWidgets.QPushButton('Apply')
+        self.__configwidget_apply.clicked.connect(self.applyGuiInput)
+        self.__configwidget_apply.__configType = 'configBool'
+        self.__configwidget_apply.item = item
+        self.__configwidget_cancel = QtWidgets.QPushButton('Cancel')
+        self.__layoutwidget.addRow(self.__configwidget_apply)
+        self.__layoutwidget.addRow(self.__configwidget_cancel)
+        # if (parentparent is not None):  # Remove button
+        #    self.__add_remove_btn__(self.__layoutwidget_int, item=item, dtype='str')
+        #    try:
+        #        removable = parent.__data__.children_removable
+        #    except Exception as e:
+        #        removable = True
+
+        #    self.__configwidget_remove.setEnabled(removable)
 
     def createConfigWidgetNumber(self, item, dtype='int'):
         """
@@ -153,6 +221,13 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             print('Item',item)
             self.__configwidget_input
             data = self.__configwidget_input.value()  # Works for int/float spinboxes
+            data_set = True
+        elif self.sender().__configType == 'configStr':
+            data = self.__configwidget_input.text()  # Textbox
+            data_set = True
+
+        elif self.sender().__configType == 'configBool':
+            data = self.__configwidget_input.currentText() == 'True' # Combobox
             data_set = True
 
         if data_set:

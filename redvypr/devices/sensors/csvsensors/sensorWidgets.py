@@ -308,13 +308,16 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         for cal in self.calibration_models:
             c = cal()
             caltype = c.calibration_type
-            print('Caltype',caltype)
             self.calibrationModelCombo.addItem(caltype)
 
         self.calibrationModelCombo.currentIndexChanged.connect(self.__add_coefficient_type_changed__)
-
-        self.addCalibrationWidget_layout.addWidget(self.calibrationModelCombo)
+        self.addCalibrationApply = QtWidgets.QPushButton('Apply')
+        self.addCalibrationWidget_layout.addWidget(QtWidgets.QLabel('Calibration type'), 0, 0)
+        self.addCalibrationWidget_layout.addWidget(self.calibrationModelCombo, 0, 1)
+        self.addCalibrationWidget_layout.addWidget(self.addCalibrationApply, 2, 0,1,2)
         self.addCalibrationWidget.show()
+
+        self.__add_coefficient_type_changed__(0)
 
 
 
@@ -322,8 +325,13 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         calmodel = self.calibration_models[calibration_index]
         cal = calmodel()
         print('Index',calibration_index)
-        self.__add_coefficient_calConfigWidget_tmp__ = gui.pydanticConfigWidget(cal)
-        self.addCalibrationWidget_layout.addWidget(self.__add_coefficient_calConfigWidget_tmp__)
+        try:
+            self.__add_coefficient_calConfigWidget_tmp__.delete_later()
+        except:
+            pass
+        self.__add_coefficient_calConfigWidget_tmp__ = gui.pydanticConfigWidget(cal, config_location='right')
+        self.addCalibrationWidget_layout.addWidget(self.__add_coefficient_calConfigWidget_tmp__,1,0,1,2)
+
     def chooseCalibrationFiles(self):
         """
 
