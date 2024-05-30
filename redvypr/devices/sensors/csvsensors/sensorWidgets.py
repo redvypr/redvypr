@@ -25,7 +25,7 @@ class sensorConfigWidget(QtWidgets.QWidget):
     Widget to configure a sensor
     """
 
-    def __init__(self, *args, sensor, calibrations, redvypr_device=None):
+    def __init__(self, *args, sensor, calibrations, redvypr_device=None, calibration_models=None):
         funcname = __name__ + '__init__()'
         super(QtWidgets.QWidget, self).__init__(*args)
         logger.debug(funcname)
@@ -33,7 +33,7 @@ class sensorConfigWidget(QtWidgets.QWidget):
         self.sensor = sensor
         self.sn = sensor.sn
         self.calibrations = calibrations
-
+        self.calibration_models = calibration_models
         self.configWidget = pydanticConfigWidget(self.sensor, exclude=['parameter'])
 
         self.parameterWidget = QtWidgets.QWidget(self)
@@ -91,13 +91,13 @@ class sensorConfigWidget(QtWidgets.QWidget):
 
     def __create_calibration_widget__(self):
         self.__calbutton_clicked__ = self.sender()
-        self.__calwidget__ = sensorCoeffWidget(calibrations=self.calibrations, redvypr_device=self.device)
+        self.__calwidget__ = sensorCoeffWidget(calibrations=self.calibrations, redvypr_device=self.device, calibration_models=self.calibration_models)
         self.applyCoeffButton = QtWidgets.QPushButton('Apply')
         self.applyCoeffButton.clicked.connect(self.applyCalibration_clicked)
         self.cancelCoeffButton = QtWidgets.QPushButton('Cancel')
         self.cancelCoeffButton.clicked.connect(self.applyCalibration_clicked)
-        self.__calwidget__.sensorCoeffWidget_layout.addWidget(self.applyCoeffButton, 2, 0)
-        self.__calwidget__.sensorCoeffWidget_layout.addWidget(self.cancelCoeffButton, 2, 1)
+        self.__calwidget__.sensorCoeffWidget_layout.addWidget(self.applyCoeffButton, 4, 0)
+        self.__calwidget__.sensorCoeffWidget_layout.addWidget(self.cancelCoeffButton, 4, 1)
 
         self.__calwidget__.show()
 
@@ -246,12 +246,18 @@ class sensorCoeffWidget(QtWidgets.QWidget):
     Widget to choose/load/remove new calibrations from files
     """
 
-    def __init__(self, *args, calibrations, redvypr_device=None, calibration_models = None):
+    def __init__(self, *args, calibrations, redvypr_device=None, calibration_models=None):
         funcname = __name__ + '__init__()'
         super(QtWidgets.QWidget, self).__init__(*args)
         logger.debug(funcname)
         layout = QtWidgets.QVBoxLayout(self)
         self.calibrations = calibrations
+        #if calibration_models is None and redvypr_device is not None:
+        #    calhints = typing.get_type_hints(redvypr_device.config)['calibrations']
+        #    calibration_models = typing.get_args(typing.get_args(calhints)[0])
+        print('Hallo hallo hallo')
+        print('Calibration models',calibration_models)
+        print('Hallo hallo hallo')
         self.calibration_models = calibration_models
         self.device = redvypr_device
         self.sensorCoeffWidget = QtWidgets.QWidget()
@@ -278,7 +284,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         if calibration_models is None:
             self.addCoeffButton.setEnabled(False)
         else:
-            self.addCoeffButton.clicked.connect(self.__add_coefficient__)
+            self.addCoeffButton.clicked.connect(self.__add_calibration__)
         #self.filterCoeffButton = QtWidgets.QPushButton('Filter coefficient')
         #self.filterCoeffButton.setEnabled(False)
         self.remCoeffButton = QtWidgets.QPushButton('Remove coefficients')
@@ -298,8 +304,11 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         #self.sensorCoeffWidget_layout.addWidget(self.filterCoeffButton, 3, 1)
 
 
-    def __add_coefficient__(self):
-        funcname = __name__ + '.__add_coefficient__():'
+    def __add_calibration__(self):
+        """
+        Opens a widget that allows to add a user defined calibration
+        """
+        funcname = __name__ + '.__add_calibration__():'
         logger.debug(funcname)
         # Create an add calibration widget
         self.addCalibrationWidget = QtWidgets.QWidget()
@@ -310,7 +319,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
             caltype = c.calibration_type
             self.calibrationModelCombo.addItem(caltype)
 
-        self.calibrationModelCombo.currentIndexChanged.connect(self.__add_coefficient_type_changed__)
+        self.calibrationModelCombo.currentIndexChanged.connect(self.__add_calibration_type_changed__)
         self.addCalibrationApply = QtWidgets.QPushButton('Apply')
         self.addCalibrationApply.clicked.connect(self.__addCalibrationClicked__)
         self.addCalibrationWidget_layout.addWidget(QtWidgets.QLabel('Calibration type'), 0, 0)
@@ -318,7 +327,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         self.addCalibrationWidget_layout.addWidget(self.addCalibrationApply, 2, 0,1,2)
         self.addCalibrationWidget.show()
 
-        self.__add_coefficient_type_changed__(0)
+        self.__add_calibration_type_changed__(0)
 
     def __addCalibrationClicked__(self):
         print('Add clicked')
@@ -328,13 +337,17 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         # Redraw the list
         self.__sensorCoeffWidget_list_populate__()
 
-    def __add_coefficient_type_changed__(self, calibration_index):
+    def __add_calibration_type_changed__(self, calibration_index):
+        """
+        Function is called when a calibration_model is changed
+        """
         calmodel = self.calibration_models[calibration_index]
         cal = calmodel()
         self.__cal_new_tmp__ = cal
-        print('Index',calibration_index)
+        #print('Index',calibration_index)
         try:
-            self.__add_coefficient_calConfigWidget_tmp__.delete_later()
+            #self.__add_coefficient_calConfigWidget_tmp__.delete_later()
+            self.__add_coefficient_calConfigWidget_tmp__.setParent(None)
         except:
             pass
         self.__add_coefficient_calConfigWidget_tmp__ = gui.pydanticConfigWidget(cal, config_location='right')

@@ -34,7 +34,7 @@ class sensor_DHFS50(pydantic.BaseModel):
     parameter: parameter_DHFS50 = parameter_DHFS50()
     sn: str = pydantic.Field(default='', description='The serial number and/or MAC address of the sensor')
     comment: str = pydantic.Field(default='')
-    use_config: bool = pydantic.Field(default=False, description='Use the configuration (True)')
+    convert_rawdata: bool = pydantic.Field(default=True, description='Uses the calibrations of the parameter to convert rawdata into meaningful units')
     avg_data: list = pydantic.Field(default=[60, 300], description='List of averaging intervals')
     show_rawdata: bool = pydantic.Field(default=True, description='Show the raw data in the gui')
     show_convdata: bool = pydantic.Field(default=True, description='Show the converted data in the gui')
@@ -302,23 +302,21 @@ def process_IMU_packet(dataline,data, macstr, macs_found):
     # print('IMU packet',datapacket)
 
 
-def process_HF_data(dataline, data, device_info, loggerconfig, config, macs_found):
+def process_HF_data(dataline, data, device_info, sensorconfig, config, macs_found):
     """
     Processes Heatflow raw data
     """
     funcname = __name__ + '.process_HF_data():'
-    try:
-        datapacket = parse_HF_raw(dataline)
-    except:
-        logger.debug(' Could not decode {:s}'.format(str(dataline)))
-        datapacket = None
+    datapackets = []
+    datapacket = parse_HF_raw(dataline)
 
     macstr = datapacket['sn']
     sn = datapacket['sn']
     if datapacket is not None:
         devicename = 'DHF_raw_' + macstr
         datapacket['datatype'] = 'raw'
-        datapacket_HF = data_packets.create_datadict(device=devicename, hostinfo=device_info['hostinfo'],tu=data['t'])
+        datapacket['t'] = data['_redvypr']['t']
+        datapacket_HF = data_packets.create_datadict(device=devicename, hostinfo=device_info['hostinfo'], tu=data['t'])
         datapacket_HF.update(datapacket)
         if macstr not in macs_found['HF']:
             logger.debug(funcname + 'New MAC found, will add keyinfo')
@@ -327,16 +325,15 @@ def process_HF_data(dataline, data, device_info, loggerconfig, config, macs_foun
             # print('datapacket',datapacket)
             macs_found['HF'].append(macstr)
         # Convert the data (if calibration found)
-        return datapacket_HF
-        if loggerconfig is not None:
-            flag_convert = True and config.sensorconfigurations[sn].use_config
+        datapackets.append(datapacket_HF)
+        if sensorconfig is not None:
+            flag_convert = config.sensorconfigurations[sn].convert_rawdata
             if flag_convert:
-                datapacket_HFSI = convert_HF(datapacket, config.sensorconfigurations)
-                # print('datapacket hfsi',datapacket_HFSI)
+                datapacket_HFSI = convert_HF(datapacket_HF, config.sensorconfigurations)               # print('datapacket hfsi',datapacket_HFSI)
                 # print('sn {:s}', sn)
                 if datapacket_HFSI is not None:
                     datapacket_HFSI['devicename'] = 'DHF_SI_' + macstr
-                    datapacket['datatype'] = 'converted_cal' # Here the UUID of the calibration could be added
+                    datapacket_HFSI['datatype'] = 'converted_cal' # Here the UUID of the calibration could be added
                     # Check if units should be set, this is only done once
                     if macstr not in macs_found['HFSI']:
                         logger.debug(funcname + 'New MAC found, will add keyinfo')
@@ -365,7 +362,13 @@ def process_HF_data(dataline, data, device_info, loggerconfig, config, macs_foun
 
                         # print('datapacket', datapacket)
                         macs_found['HFSI'].append(macstr)
+
+                datapackets.append(datapacket_HFSI)
         # print('HF packet',datapacket)
+        print('DATAPACKETS')
+        print('datapackets',datapackets)
+        print('DATAPACKETS')
+        return datapackets
 
 
 def process_HFS_data(dataline, data, device_info):
@@ -978,7 +981,7 @@ class DHFSWidget(QtWidgets.QWidget):
     def __configClicked__(self):
 
         #self.configWidget = DHFS50Widget_config(sn = self.sn, redvypr_device=self.device)
-        self.configWidget = sensorConfigWidget(sensor=self.configuration,calibrations=self.device.config.calibrations)
+        self.configWidget = sensorConfigWidget(sensor=self.configuration, calibrations=self.device.config.calibrations)
         self.configWidget.show()
 
 

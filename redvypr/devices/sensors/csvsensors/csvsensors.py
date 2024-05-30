@@ -146,13 +146,13 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                                 if macstr is not None:
                                     # Check if the logger is already existing
                                     try:
-                                        loggerconfig = config.sensorconfigurations[sn]
+                                        sensorconfig = config.sensorconfigurations[sn]
                                     except:
                                         logger.debug(funcname + ' New sensor', exc_info=True)
                                         statusmessage = {'status': 'newlogger', 'sn': sn, 'packettype': packettype,'dataline':dataline,'data':data}
                                         statusqueue.put(statusmessage)
                                         #print('new logger statusmessage', statusmessage)
-                                        loggerconfig = None
+                                        sensorconfig = None
 
                                     if packettype == 'IMU':
                                         try:
@@ -165,7 +165,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                                     elif packettype == 'TAR':
                                         #print('Parsing TAR')
                                         try:
-                                            datapackets_TAR = process_TAR_data(dataline, data, device_info, loggerconfig)
+                                            datapackets_TAR = process_TAR_data(dataline, data, device_info, sensorconfig)
                                         except:
                                             logger.info(' Could not process data {:s}'.format(str(dataline)), exc_info=True)
                                             datapackets_TAR = []
@@ -186,8 +186,8 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                                         # Heatflow data in raw units
                                         print('HF packet')
                                         try:
-                                            datapacket_HF = process_HF_data(dataline, data, device_info, loggerconfig, config, macs_found)
-                                            if datapacket_HF is not None:
+                                            datapackets_HF = process_HF_data(dataline, data, device_info, sensorconfig, config, macs_found)
+                                            for datapacket_HF in datapackets_HF:
                                                 dataqueue.put(datapacket_HF)
                                         except:
                                             logger.debug(' Could not decode {:s}'.format(str(dataline)), exc_info=True)
@@ -302,6 +302,11 @@ class Device(redvypr_device):
         funcname = __name__ + '__init__()'
         super(Device, self).__init__(**kwargs)
         logger.debug(funcname)
+
+        # Fill the calibration models
+        calhints = typing.get_type_hints(self.config)['calibrations']
+        self.calibration_models = typing.get_args(typing.get_args(calhints)[0])
+
         #configtest = redvypr_config.dict_to_configDict(sensorconfig)
         #self.config['sensorconfigurations'][configtest['sn']] = configtest
         #for i,s in enumerate(self.config['sensors'].data):
@@ -321,12 +326,18 @@ class Device(redvypr_device):
         self.sensordata_raw = {} # The datapackets
         self.sensordata = {} # The data by mac/parameter
         self.calfiles_processed = []
+
+        # Add buffer for sensorconfigurations
+        for sn in self.config.sensorconfigurations.keys():
+            self.sensordata[sn] = {'__np__': 0, '__raddr__': None, '__devices__': []}
+            self.sensordata_raw[sn] = []
         # Check if there are already calibrations saved, and if yes, add the original files as read
         # Here a md5sum check could be done
         #for sn in self.config['calibrations'].keys():
         #    for cal in self.config['calibrations'][sn]:
         #        fname = cal['original_file']
         #        self.calfiles_processed.append(fname)
+
 
         self.populate_calibration()
 
@@ -775,15 +786,15 @@ class initDeviceWidget(QtWidgets.QWidget):
     def loggerconfig_changed(self):
         funcname = __name__ + '.loggerconfig_changed():'
         logger.debug(funcname)
-        self.__update_configLoggerList__()
+        self.__update_configSensorList__()
     def __newlogger__(self,newlogger):
         funcname = __name__ + '.__newlogger__():'
         logger.debug(funcname)
-        self.__update_configLoggerList__()
+        self.__update_configSensorList__()
     def finalize_init(self):
         funcname = __name__ + '.__create_configLoggers_widget__():'
         logger.debug(funcname)
-        self.__update_configLoggerList__()
+        self.__update_configSensorList__()
 
     def __create_configLoggers_widget__(self):
         """
@@ -798,7 +809,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         #self.configLoggerWidgets['loggerlist'].currentRowChanged.connect(self.__configloggerlist_changed__)
         self.configLoggerWidgets['loggerconfig'] = QtWidgets.QWidget()
         self.configLoggerWidgets['loggerconfig_layout'] = QtWidgets.QVBoxLayout(self.configLoggerWidgets['loggerconfig'])
-        self.__update_configLoggerList__()
+        self.__update_configSensorList__()
 
     def __configlogger_clicked__(self):
         funcname = __name__ + '__configlogger_clicked__():'
@@ -877,7 +888,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             logger_new.sn = sn
             self.device.config.sensorconfigurations[sn] = logger_new
 
-            self.__update_configLoggerList__()
+            self.__update_configSensorList__()
             self.configLoggerWidgets['addwidget'].close()
 
     def __update_configLoggerList_status__(self):
@@ -911,14 +922,14 @@ class initDeviceWidget(QtWidgets.QWidget):
                 if item_np_old.text() != item_np.text():
                     self.configLoggerWidgets['loggerlist'].setItem(irow, colnp, item_np)
             except:
-                logger.info(funcname,exc_info=True)
+                logger.info(funcname, exc_info=True)
                 raddr = None
 
         self.configLoggerWidgets['loggerlist'].resizeColumnsToContents()
 
-    def __update_configLoggerList__(self):
+    def __update_configSensorList__(self):
         """
-        update the logger list of logger configuration widget
+        update the table of sensor configuration widgets
         """
         funcname = __name__ + '____update_configLoggerList__():'
         logger.debug(funcname)
@@ -952,12 +963,12 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.configLoggerWidgets['loggerlist'].setCellWidget(irow, 2, button_configure)
             try:
                 raddr = self.device.sensordata[sn]['__raddr__']
-                print('Raddr 2',raddr)
+                #print('Raddr 2',raddr)
                 item_publisher = QtWidgets.QTableWidgetItem(raddr.publisher)
                 self.configLoggerWidgets['loggerlist'].setItem(irow, 4, item_publisher)
-                print('Done')
+                #print('Done')
             except:
-                logger.info('fdsf',exc_info=True)
+                logger.debug('invalid redvypr address',exc_info=True)
                 raddr = None
 
         self.configLoggerWidgets['loggerlist'].resizeColumnsToContents()
@@ -976,20 +987,18 @@ class initDeviceWidget(QtWidgets.QWidget):
             logger.debug('Config widget for temperature array (TAR)')
             sensor = self.device.config.sensorconfigurations[sn]
             #config_widget = TARWidget_config(self, sn=sn, redvypr_device=self.device)
-            config_widget = sensorConfigWidget(sensor=sensor, calibrations=self.device.config.calibrations)
+            config_widget = sensorConfigWidget(sensor=sensor, calibrations=self.device.config.calibrations, calibration_models=self.device.calibration_models)
             clayout.addWidget(config_widget)
         elif sensor_type.lower() == 'dhfs50':
             logger.debug('DHFS50')
             sensor = self.device.config.sensorconfigurations[sn]
             #config_widget = DHFS50Widget_config(sn = sn, redvypr_device = self.device)
-            config_widget = sensorConfigWidget(sensor = sensor, calibrations = self.device.config.calibrations)
+            config_widget = sensorConfigWidget(sensor = sensor, calibrations = self.device.config.calibrations, calibration_models=self.device.calibration_models)
             clayout.addWidget(config_widget)
         elif sensor_type.lower() == 'hfv4ch':
             logger.debug('Four channel logger')
             config_widget = HFVWidget_config(sn = sn, redvypr_device = self.device)
             clayout.addWidget(config_widget)
-
-
 
         return cwidget
 
@@ -1013,9 +1022,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
     def create_sensorcoefficientWidget(self):
         # Get the calibration models from the type hints of the config
-        calhints = typing.get_type_hints(self.device.config)['calibrations']
-        calibration_models = typing.get_args(typing.get_args(calhints)[0])
-        self.sensorCoeffWidget = sensorCoeffWidget(calibrations=self.device.config.calibrations, redvypr_device=self.device, calibration_models = calibration_models)
+        self.sensorCoeffWidget = sensorCoeffWidget(calibrations=self.device.config.calibrations, redvypr_device=self.device, calibration_models = self.device.calibration_models)
 
     def config_changed(self):
         """
@@ -1111,6 +1118,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
         tabwidget.addTab(self,'Raw data')
         tabwidget.addTab(self.allconvertedWidget,'Converted data')
         tabwidget.addTab(self.sensorwidget, 'Sensors')
+        # add already existing sensors
+        for sn in self.device.config.sensorconfigurations:
+            sensor = self.device.config.sensorconfigurations[sn]
+            status = {}
+            status['sn'] = sensor.sn
+            status['sensor_type'] = sensor.sensor_type
+            self.add_newsensor(status)
         # Connect a new sensor configuration signal
         self.device.newlogger_signal.connect(self.add_newsensor)
 
@@ -1126,7 +1140,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         #testwidget3 = HFVWidget(sn='KALTEST', redvypr_device=self.device)
         #tabwidget.addTab(testwidget3, 'KALTEST')
 
-    def add_newsensor(self,status):
+    def add_newsensor(self, status):
         """
         Function is called with when a new sensor signal is emitted by the device
         """
@@ -1201,7 +1215,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             ptype = data['type']
             datatype = data['datatype']
             # can be IMU, HFV, HF, TAR
-            print('Ptype',ptype,sn)
+            print('Ptype',ptype,sn,datatype)
             #self.device.config.sensorconfigurations[sn]
             #try:
             #    self.device.sensordata_raw[sn] # List for the raw datapackets
