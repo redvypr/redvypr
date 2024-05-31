@@ -24,7 +24,7 @@ class sensorConfigWidget(QtWidgets.QWidget):
     """
     Widget to configure a sensor
     """
-
+    config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
     def __init__(self, *args, sensor, calibrations, redvypr_device=None, calibration_models=None):
         funcname = __name__ + '__init__()'
         super(QtWidgets.QWidget, self).__init__(*args)
@@ -351,8 +351,10 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         except:
             pass
         self.__add_coefficient_calConfigWidget_tmp__ = gui.pydanticConfigWidget(cal, config_location='right')
+        self.__add_coefficient_calConfigWidget_tmp__.config_changed_flag.connect(self.__config_changed__)
         self.addCalibrationWidget_layout.addWidget(self.__add_coefficient_calConfigWidget_tmp__,1,0,1,2)
-
+    def __config_changed__(self):
+        self.config_changed_flag.emit()
     def chooseCalibrationFiles(self):
         """
 

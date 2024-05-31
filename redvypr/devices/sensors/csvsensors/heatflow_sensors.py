@@ -66,7 +66,11 @@ def convert_HF(datapacket, loggerconfigurations=None):
     except:
         mac = None
 
-    datapacketSI = {}
+    #datapacketSI = {}
+    devicename = 'DHF_SI_' + mac
+    datapacketSI = data_packets.create_datadict(device=devicename, hostinfo=datapacket['_redvypr']['host'], tu=datapacket['t'])
+
+
     datapacketSI['type'] = 'HFSI'
     datapacketSI['sensortype'] = datapacket['sensortype']
     datapacketSI['sn'] = datapacket['sn']
@@ -83,6 +87,7 @@ def convert_HF(datapacket, loggerconfigurations=None):
             c = None
 
         if c is not None:
+            datapacketSI['datatype'] = 'converted_cal'  # Here the id of the calibration could be added
             #print('Found configuration',c)
             if True:
                 flag_mac_calib = True
@@ -113,7 +118,7 @@ def convert_HF(datapacket, loggerconfigurations=None):
                 return datapacketSI
 
         if flag_mac_calib == False:
-            logger.debug(funcname + 'Did not findcalibration for {:s}'.format(mac))
+            logger.debug(funcname + 'Did not find calibration for {:s}'.format(mac))
             return None
 
     return None
@@ -332,8 +337,6 @@ def process_HF_data(dataline, data, device_info, sensorconfig, config, macs_foun
                 datapacket_HFSI = convert_HF(datapacket_HF, config.sensorconfigurations)               # print('datapacket hfsi',datapacket_HFSI)
                 # print('sn {:s}', sn)
                 if datapacket_HFSI is not None:
-                    datapacket_HFSI['devicename'] = 'DHF_SI_' + macstr
-                    datapacket_HFSI['datatype'] = 'converted_cal' # Here the UUID of the calibration could be added
                     # Check if units should be set, this is only done once
                     if macstr not in macs_found['HFSI']:
                         logger.debug(funcname + 'New MAC found, will add keyinfo')
@@ -921,8 +924,6 @@ class DHFSWidget(QtWidgets.QWidget):
             self.parameter_unit.append(None)
             self.parameter_unitconv.append(None)
 
-
-
         #self.create_coeff_widget()
         self.XYplots = []
         self.layout = QtWidgets.QVBoxLayout(self)
@@ -982,8 +983,12 @@ class DHFSWidget(QtWidgets.QWidget):
 
         #self.configWidget = DHFS50Widget_config(sn = self.sn, redvypr_device=self.device)
         self.configWidget = sensorConfigWidget(sensor=self.configuration, calibrations=self.device.config.calibrations)
+        self.configWidget.config_changed_flag.connect(self.__configChanged__)
         self.configWidget.show()
 
+    def __configChanged__(self):
+        print('Config changed')
+        # Updating the widgets
 
     def add_XYplots(self):
 
@@ -1082,6 +1087,11 @@ class DHFSWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         #print('Got data for widget',data)
         mac = data['sn']
+
+        col_parameter = 0
+        col_unit = 1
+        col_data = 2
+        row_time = 0
         #print('Got data', data['_redvypr']['device'],mac)
         if mac in self.sn:
             for plot in self.XYplots:
@@ -1091,19 +1101,20 @@ class DHFSWidget(QtWidgets.QWidget):
             # Update table
             if data['type'] == 'HF':  # Raw data
                 #print('Updating')
+                # Time
                 tdata = datetime.datetime.utcfromtimestamp(data['t'])
                 tdatastr = tdata.strftime('%Y-%m-%d %H:%M:%S.%f')
                 item = QtWidgets.QTableWidgetItem(tdatastr)
-                self.datatable_raw.setItem(0, 2, item)
+                self.datatable_raw.setItem(row_time, col_data, item)
                 for p_index,p in enumerate(self.parameter):
                     # The parameter
                     item = QtWidgets.QTableWidgetItem(p)
-                    self.datatable_raw.setItem(p_index + 1, 0, item)
+                    self.datatable_raw.setItem(p_index + 1, col_parameter, item)
                     # The data
                     try:
                         chdata = "{:+.6f}".format(data[p])
                         item = QtWidgets.QTableWidgetItem(str(chdata))
-                        self.datatable_raw.setItem(p_index + 1, 2, item)
+                        self.datatable_raw.setItem(p_index + 1, col_data, item)
                     except Exception as e:
                         logger.debug(funcname, exc_info=True)
 
@@ -1119,20 +1130,24 @@ class DHFSWidget(QtWidgets.QWidget):
                             self.parameter_unit[p_index] = str('NA')
 
                         item = QtWidgets.QTableWidgetItem(self.parameter_unit[p_index])
-                        self.datatable_raw.setItem(p_index + 1, 1, item)
+                        self.datatable_raw.setItem(p_index + 1, col_unit, item)
                         #print('Keyinfo', keyinfo)
                         #print('Parameter', p)
                         #print('datastream',datastream)
                         #print('keyinfo', keyinfo)
 
-
-            elif data['type'] == 'HFSI':  # Raw data
-                #print('Updating HFSI')
+            elif data['type'] == 'HFSI':  # converted data
+                print('Updating HFSI')
+                # Time
                 tdata = datetime.datetime.utcfromtimestamp(data['t'])
                 tdatastr = tdata.strftime('%Y-%m-%d %H:%M:%S.%f')
                 item = QtWidgets.QTableWidgetItem(tdatastr)
-                self.datatable_conv.setItem(0, 1, item)
+                self.datatable_conv.setItem(row_time, col_data, item)
                 for p_index, p in enumerate(self.parameter):
+                    print('parameter',p)
+                    # The parameter
+                    item = QtWidgets.QTableWidgetItem(p)
+                    self.datatable_conv.setItem(p_index + 1, col_parameter, item)
                     if self.parameter_unitconv[p_index] is None:
                         datastream = redvypr_address(data, datakey=p)
                         ##datastream = data_packets.get_datastream_from_data(data, p)
@@ -1144,16 +1159,17 @@ class DHFSWidget(QtWidgets.QWidget):
                             self.parameter_unitconv[p_index] = str('NA')
 
                         item = QtWidgets.QTableWidgetItem(self.parameter_unitconv[p_index])
-                        self.datatable_conv.setItem(0, p_index + 1, item)
+                        self.datatable_conv.setItem(p_index + 1, col_unit, item)
                         # print('Keyinfo', keyinfo)
                         #print('Parameter', p)
                         #print('datastream', datastream)
                         #print('keyinfo', keyinfo)
 
+                    # Update the data
                     try:
                         chdata = "{:+.6f}".format(data[p])
                         item = QtWidgets.QTableWidgetItem(str(chdata))
-                        self.datatable_conv.setItem(1, p_index + 1, item)
+                        self.datatable_conv.setItem(p_index + 1, col_data, item)
                     except Exception as e:
                         logger.debug(funcname, exc_info=True)
 

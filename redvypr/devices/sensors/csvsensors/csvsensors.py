@@ -272,23 +272,6 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                                 else:
                                     logger.debug(funcname + 'unknown packettype {:s}'.format(packettype))
 
-                                #if datapacket is not None:
-                                #    devicename = datapacket.pop('devicename')
-                                #    datapacket_redvypr = data_packets.datapacket(device = devicename, tu = data['_redvypr']['t'], hostinfo=device_info['hostinfo'])
-                                #    datapacket_redvypr.update(datapacket)
-                                #    dataqueue.put(datapacket_redvypr)
-
-                                #if datapacket_HFSI is not None:
-                                #    #print('Hallo HFSI',datapacket_HFSI)
-                                #    devicename = datapacket_HFSI.pop('devicename')
-                                #    datapacket_redvypr = data_packets.datapacket(device=devicename, tu = data['_redvypr']['t'],
-                                #                                                 hostinfo=device_info['hostinfo'])
-                                #    datapacket_redvypr.update(datapacket_HFSI)
-                                #    # datapacket['_redvypr']['device']
-                                #    #print('Sensing datapacket SI ....',datapacket_redvypr)
-                                #    dataqueue.put(datapacket_redvypr)
-
-
 class Device(redvypr_device):
     """
     heatflow_serial device
@@ -342,6 +325,49 @@ class Device(redvypr_device):
         self.populate_calibration()
 
 
+    def find_calibration_for_parameter(self):
+        funcname = __name__ + 'find_calibration_for_parameter():'
+        print(funcname)
+        print('calibrations', self.calibrations)
+        cals = self.calibrations
+        match = ['parameter', 'sn']
+
+        parameter = self.get_parameter(self.sensor.parameter)
+        for i, para_dict in enumerate(parameter):
+            para = para_dict['parameter']
+            para_parent = para_dict['parent']
+            para_name = para_dict['name']
+            para_index = para_dict['index']
+            print('Searching for calibration for parameter', i)
+            print('Para', para_index, para)
+            cal_match = []
+            cal_match_date = []
+            for cal in cals:
+                match_all = True
+                for m in match:
+                    mcal = getattr(cal, m)
+                    mpara = getattr(para, m)
+                    if mcal != mpara:
+                        match_all = False
+
+                if match_all:
+                    print('Found matching parameter')
+                    print('Cal', cal)
+                    cal_match.append(cal)
+                    td = datetime.datetime.strptime(cal.date, '%Y-%m-%d %H:%M:%S.%f')
+                    cal_match_date.append(td)
+
+            if len(cal_match) > 0:
+                imin = numpy.argmin(cal_match)
+                print('Assigning matching parameter')
+                # Apply calibration to parameter (could also be a function)
+                if para_parent.__class__.__base__ == pydantic.BaseModel:
+                    print('Setting parameter to:', para_index, cal)
+                    setattr(para_parent, para_index, cal)
+                elif isinstance(para_parent, list):
+                    print('Updating list with calibrations')
+                    para_parent[para_index] = cal
+                # self.sensor.parameter.NTC_A[i] = cal_match[imin]
 
     def logger_autocalibration(self):
         """
