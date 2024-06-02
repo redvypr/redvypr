@@ -320,54 +320,121 @@ class Device(redvypr_device):
         #    for cal in self.config['calibrations'][sn]:
         #        fname = cal['original_file']
         #        self.calfiles_processed.append(fname)
-
-
         self.populate_calibration()
 
+    def get_sensor_parameter(self, sensor):
+        funcname = __name__ + '.get_sensor_parameter():'
+        logger.debug(funcname)
+        parameter = sensor.parameter
+        def __get_parameter_recursive__(index, parameter, parameter_all):
+            for i, ptmp in enumerate(parameter):
+                if isinstance(ptmp, list):
+                    index_new = index + '[{}]'.format(i)
+                    __get_parameter_recursive__(index_new, ptmp, parameter_all)
+                # A pydantic parameter object
+                elif ptmp.__class__.__base__ == pydantic.BaseModel:
+                    if isinstance(parameter, list):
+                        name = '{}[{}]'.format(index,i)
+                    else:
+                        name = str(i)
+                    parameter_all.append({'parameter': ptmp, 'name': name,'parent':parameter,'index':i})
 
-    def find_calibration_for_parameter(self):
+
+        parameter_all = []
+        # Parameter should be a pydantic class
+        if parameter.__class__.__base__ == pydantic.BaseModel:
+            # Loop over all attributes
+            for ptmp in parameter:
+                par1 = ptmp[0]
+                ptmp_child = getattr(parameter, par1)
+                if isinstance(ptmp_child, list):
+                    __get_parameter_recursive__(par1, ptmp_child, parameter_all)
+                # A pydantic parameter object
+                elif ptmp_child.__class__.__base__ == pydantic.BaseModel:
+                    parameter_all.append({'parameter':ptmp_child,'name':par1,'parent':parameter,'index':par1})
+
+
+                #print('ptmp',ptmp)
+
+        else:
+            raise Exception('parameter should be an instance of pydantic.BaseModel')
+
+
+        return parameter_all
+
+    def find_calibrations_for_sensor(self, sensor, match=['parameter', 'sn']):
+        funcname = __name__ + '.find_calibrations_for_sensor():'
+        logger.debug(funcname)
+        parameter_all = self.get_sensor_parameter(sensor)
+        for parameter_dict in parameter_all:
+            logger.debug(funcname + 'Find calibration for {}'.format(parameter_dict['name']))
+            cals = self.find_calibration_for_parameter(parameter_dict, sensor, match)
+            if cals is not None:
+                logger.debug(funcname + 'Calibration found')
+                calibration = cals[0][0]
+                #print('Setting calibration',calibration)
+                self.set_calibration_for_parameter(parameter_dict, calibration)
+            else:
+                logger.debug(funcname + 'No calibration found')
+
+    def find_calibration_for_parameter(self, parameter_dict, sensor, match=['parameter', 'sn']):
+        """ Searches through calibrations to find a best match for the parameter.
+        """
         funcname = __name__ + 'find_calibration_for_parameter():'
-        print(funcname)
-        print('calibrations', self.calibrations)
-        cals = self.calibrations
-        match = ['parameter', 'sn']
-
-        parameter = self.get_parameter(self.sensor.parameter)
-        for i, para_dict in enumerate(parameter):
-            para = para_dict['parameter']
-            para_parent = para_dict['parent']
-            para_name = para_dict['name']
-            para_index = para_dict['index']
-            print('Searching for calibration for parameter', i)
-            print('Para', para_index, para)
+        logger.debug(funcname)
+        cals = self.config.calibrations
+        #print('Parameter dict',parameter_dict)
+        if True:
+            para = parameter_dict['parameter']
+            para_parent = parameter_dict['parent']
+            para_name = parameter_dict['name']
+            para_index = parameter_dict['index']
+            logger.debug(funcname + 'Searching for calibration for parameter {}'.format(para_name))
+            #print('Para', para_index, para)
             cal_match = []
             cal_match_date = []
             for cal in cals:
+                logger.debug(funcname + 'Scanning calibration SN:{}, date: {}, ID: {}'.format(cal.sn, cal.date,cal.calibration_id))
                 match_all = True
                 for m in match:
-                    mcal = getattr(cal, m)
-                    mpara = getattr(para, m)
+                    if m == 'sn': # Compare sn of sensor with sn of calibration
+                        mcal = getattr(cal, m)
+                        mpara = sensor.sn
+                    else:
+                        mcal = getattr(cal, m)
+                        mpara = getattr(para, m)
+                    print('match',m,'mcal',mcal,'mpara',mpara,mcal!=mpara)
                     if mcal != mpara:
                         match_all = False
 
                 if match_all:
-                    print('Found matching parameter')
-                    print('Cal', cal)
+                    logger.debug(funcname + 'Found matching parameter')
+                    logger.debug(funcname + 'Calibration: {}'.format(cal))
                     cal_match.append(cal)
                     td = datetime.datetime.strptime(cal.date, '%Y-%m-%d %H:%M:%S.%f')
                     cal_match_date.append(td)
 
+            # Return the calibrations if found, otherwise None
             if len(cal_match) > 0:
-                imin = numpy.argmin(cal_match)
-                print('Assigning matching parameter')
-                # Apply calibration to parameter (could also be a function)
-                if para_parent.__class__.__base__ == pydantic.BaseModel:
-                    print('Setting parameter to:', para_index, cal)
-                    setattr(para_parent, para_index, cal)
-                elif isinstance(para_parent, list):
-                    print('Updating list with calibrations')
-                    para_parent[para_index] = cal
-                # self.sensor.parameter.NTC_A[i] = cal_match[imin]
+                return [cal_match,cal_match_date]
+            else:
+                return None
+
+    def set_calibration_for_parameter(self, parameter_dict, calibration):
+        funcname = __name__ + '.set_calibration_for_parameter():'
+        logger.debug(funcname)
+        para = parameter_dict['parameter']
+        para_parent = parameter_dict['parent']
+        para_name = parameter_dict['name']
+        para_index = parameter_dict['index']
+        # Apply calibration to parameter (could also be a function)
+        if para_parent.__class__.__base__ == pydantic.BaseModel:
+            logger.debug(funcname + 'Setting parameter {} to calibration {}'.format(para_index, calibration))
+            setattr(para_parent, para_index, calibration)
+        elif isinstance(para_parent, list):
+            logger.debug(funcname + 'Setting parameter in list {} to calibration {}'.format(para_index, calibration))
+            para_parent[para_index] = calibration
+
 
     def logger_autocalibration(self):
         """
@@ -1013,13 +1080,13 @@ class initDeviceWidget(QtWidgets.QWidget):
             logger.debug('Config widget for temperature array (TAR)')
             sensor = self.device.config.sensorconfigurations[sn]
             #config_widget = TARWidget_config(self, sn=sn, redvypr_device=self.device)
-            config_widget = sensorConfigWidget(sensor=sensor, calibrations=self.device.config.calibrations, calibration_models=self.device.calibration_models)
+            config_widget = sensorConfigWidget(sensor=sensor, calibrations=self.device.config.calibrations, calibration_models=self.device.calibration_models, redvypr_device=self.device)
             clayout.addWidget(config_widget)
         elif sensor_type.lower() == 'dhfs50':
             logger.debug('DHFS50')
             sensor = self.device.config.sensorconfigurations[sn]
             #config_widget = DHFS50Widget_config(sn = sn, redvypr_device = self.device)
-            config_widget = sensorConfigWidget(sensor = sensor, calibrations = self.device.config.calibrations, calibration_models=self.device.calibration_models)
+            config_widget = sensorConfigWidget(sensor = sensor, calibrations = self.device.config.calibrations, calibration_models=self.device.calibration_models, redvypr_device=self.device)
             clayout.addWidget(config_widget)
         elif sensor_type.lower() == 'hfv4ch':
             logger.debug('Four channel logger')

@@ -45,50 +45,10 @@ class sensorConfigWidget(QtWidgets.QWidget):
 
     def __assign_calibrations__(self):
         funcname = __name__ + '__assign_calibrations():'
-        print(funcname)
-        print('calibrations',self.calibrations)
-        cals = self.calibrations
-        match = ['parameter','sn']
-
-        parameter = self.get_parameter(self.sensor.parameter)
-        for i, para_dict in enumerate(parameter):
-            para = para_dict['parameter']
-            para_parent = para_dict['parent']
-            para_name = para_dict['name']
-            para_index = para_dict['index']
-            print('Searching for calibration for parameter',i)
-            print('Para',para_index,para)
-            cal_match = []
-            cal_match_date = []
-            for cal in cals:
-                match_all = True
-                for m in match:
-                    mcal = getattr(cal, m)
-                    mpara = getattr(para, m)
-                    if mcal != mpara:
-                        match_all = False
-
-                if match_all:
-                    print('Found matching parameter')
-                    print('Cal',cal)
-                    cal_match.append(cal)
-                    td = datetime.datetime.strptime(cal.date,'%Y-%m-%d %H:%M:%S.%f')
-                    cal_match_date.append(td)
-
-            if len(cal_match) > 0:
-                imin = numpy.argmin(cal_match)
-                print('Assigning matching parameter')
-                # Apply calibration to parameter (could also be a function)
-                if para_parent.__class__.__base__ == pydantic.BaseModel:
-                    print('Setting parameter to:', para_index, cal)
-                    setattr(para_parent, para_index, cal)
-                elif isinstance(para_parent, list):
-                    print('Updating list with calibrations')
-                    para_parent[para_index] = cal
-                #self.sensor.parameter.NTC_A[i] = cal_match[imin]
-
+        print('Find calibration for sensor',self.sensor)
+        self.device.find_calibrations_for_sensor(self.sensor)
         self.__fill_calibration_table__()
-
+        print('Done assigning')
     def __create_calibration_widget__(self):
         self.__calbutton_clicked__ = self.sender()
         self.__calwidget__ = sensorCoeffWidget(calibrations=self.calibrations, redvypr_device=self.device, calibration_models=self.calibration_models)
@@ -136,6 +96,11 @@ class sensorConfigWidget(QtWidgets.QWidget):
 
 
     def get_parameter(self, parameter):
+        """
+        Gets all parameter from the sensor
+        :param parameter:
+        :return:
+        """
         def __get_parameter_recursive__(index, parameter, parameter_all):
             for i, ptmp in enumerate(parameter):
                 if isinstance(ptmp, list):
@@ -163,9 +128,6 @@ class sensorConfigWidget(QtWidgets.QWidget):
                 elif ptmp_child.__class__.__base__ == pydantic.BaseModel:
                     parameter_all.append({'parameter':ptmp_child,'name':par1,'parent':parameter})
 
-
-                print('ptmp',ptmp)
-
         else:
             raise Exception('parameter should be an instance of pydantic.BaseModel')
 
@@ -176,12 +138,12 @@ class sensorConfigWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         self.parameterTable.clear()
         parameter_all = self.get_parameter(self.sensor.parameter)
-        print('Parameter all',parameter_all)
+        #print('Parameter all',parameter_all)
         nRows = len(parameter_all)
-        nCols = 7
+        nCols = 8
         self.parameterTable.setRowCount(nRows)
         self.parameterTable.setColumnCount(nCols)
-        self.parameterTable.setHorizontalHeaderLabels(['Sensor Parameter','Choose calibration','Show calibration','Cal SN','Cal Parameter','Cal Date','Cal Comment'])
+        self.parameterTable.setHorizontalHeaderLabels(['Sensor Parameter','Calibration Type','Choose calibration','Show calibration','Cal SN','Cal Parameter','Cal Date','Cal Comment'])
         #print('Config parameter',self.config.parameter)
 
         for i, para_dict in enumerate(parameter_all):
@@ -203,25 +165,29 @@ class sensorConfigWidget(QtWidgets.QWidget):
             # Parameter
             item = QtWidgets.QTableWidgetItem(name)
             self.parameterTable.setItem(i, 0, item)
-            self.parameterTable.setCellWidget(i, 1, but_choose)
-            self.parameterTable.setCellWidget(i, 2, but_show)
+            # Calibration type
+            item_type = QtWidgets.QTableWidgetItem(para.calibration_type)
+            self.parameterTable.setItem(i, 1, item_type)
+            self.parameterTable.setCellWidget(i, 1+1, but_choose)
+            self.parameterTable.setCellWidget(i, 2+1, but_show)
             # SN
             item = QtWidgets.QTableWidgetItem(para.sn)
-            self.parameterTable.setItem(i, 1+2, item)
+            self.parameterTable.setItem(i, 1+2+1, item)
             # Parameter
             item = QtWidgets.QTableWidgetItem(para.parameter)
-            self.parameterTable.setItem(i, 2+2, item)
+            self.parameterTable.setItem(i, 2+2+1, item)
             # Date
             item = QtWidgets.QTableWidgetItem(para.date)
-            self.parameterTable.setItem(i, 3+2, item)
+            self.parameterTable.setItem(i, 3+2+1, item)
             # Comment
             item = QtWidgets.QTableWidgetItem(para.comment)
-            self.parameterTable.setItem(i, 4+2, item)
+            self.parameterTable.setItem(i, 4+2+1, item)
 
         self.parameterTable.resizeColumnsToContents()
 
     def __show_calibration__(self):
-        print('Showing calibration')
+        funcname = __name__ + '.show_calibration():'
+        logger.debug(funcname)
     def fill_parameter_widgets(self):
         funcname = __name__ +'.fill_parameter_widgets():'
         self.parameterLayout = QtWidgets.QGridLayout(self.parameterWidget)
@@ -245,7 +211,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
     """
     Widget to choose/load/remove new calibrations from files
     """
-
+    config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
     def __init__(self, *args, calibrations, redvypr_device=None, calibration_models=None):
         funcname = __name__ + '__init__()'
         super(QtWidgets.QWidget, self).__init__(*args)
@@ -355,6 +321,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         self.addCalibrationWidget_layout.addWidget(self.__add_coefficient_calConfigWidget_tmp__,1,0,1,2)
     def __config_changed__(self):
         self.config_changed_flag.emit()
+
     def chooseCalibrationFiles(self):
         """
 
