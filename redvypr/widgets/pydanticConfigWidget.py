@@ -388,7 +388,6 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
             else:
                 #print('loop')
                 datatmp = data
-
                 typestr = datatmp.__class__.__name__
                 flag_modifiable = True
                 indexstr = str(index)

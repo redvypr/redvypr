@@ -39,9 +39,15 @@ class sensorConfigWidget(QtWidgets.QWidget):
         self.parameterWidget = QtWidgets.QWidget(self)
         self.fill_parameter_widgets()
 
+        self.combinedWidget = QtWidgets.QWidget()
+        self.combinedWidget_layout = QtWidgets.QHBoxLayout(self.combinedWidget)
+
+        self.combinedWidget_layout.addWidget(self.configWidget,1)
+        self.combinedWidget_layout.addWidget(self.parameterWidget,2)
         self.layout = QtWidgets.QGridLayout(self)
-        self.layout.addWidget(self.configWidget,0,0)
-        self.layout.addWidget(self.parameterWidget,0,1)
+        self.layout.addWidget(self.combinedWidget, 0, 0, 1, 2)
+        #self.layout.addWidget(self.configWidget, 0, 0)
+        #self.layout.addWidget(self.parameterWidget,0,1)
 
     def __assign_calibrations__(self):
         funcname = __name__ + '__assign_calibrations():'

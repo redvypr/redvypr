@@ -362,7 +362,7 @@ class Device(redvypr_device):
 
         return parameter_all
 
-    def find_calibrations_for_sensor(self, sensor, match=['parameter', 'sn']):
+    def find_calibrations_for_sensor(self, sensor, match={'parameter':None, 'sn':None}):
         funcname = __name__ + '.find_calibrations_for_sensor():'
         logger.debug(funcname)
         parameter_all = self.get_sensor_parameter(sensor)
@@ -371,13 +371,14 @@ class Device(redvypr_device):
             cals = self.find_calibration_for_parameter(parameter_dict, sensor, match)
             if cals is not None:
                 logger.debug(funcname + 'Calibration found')
-                calibration = cals[0][0]
+                # cals is a list of calibrations sorted by date
+                calibration = cals[0]
                 #print('Setting calibration',calibration)
                 self.set_calibration_for_parameter(parameter_dict, calibration)
             else:
                 logger.debug(funcname + 'No calibration found')
 
-    def find_calibration_for_parameter(self, parameter_dict, sensor, match=['parameter', 'sn']):
+    def find_calibration_for_parameter(self, parameter_dict, sensor, match={'parameter':None, 'sn':None}):
         """ Searches through calibrations to find a best match for the parameter.
         """
         funcname = __name__ + 'find_calibration_for_parameter():'
@@ -396,15 +397,23 @@ class Device(redvypr_device):
             for cal in cals:
                 logger.debug(funcname + 'Scanning calibration SN:{}, date: {}, ID: {}'.format(cal.sn, cal.date,cal.calibration_id))
                 match_all = True
-                for m in match:
-                    if m == 'sn': # Compare sn of sensor with sn of calibration
+                for m in match.keys():
+                    mcontent = match[m]
+                    if m == 'sn' and mcontent is None: # Compare sn of sensor with sn of calibration
                         mcal = getattr(cal, m)
                         mpara = sensor.sn
                     else:
                         mcal = getattr(cal, m)
                         mpara = getattr(para, m)
-                    print('match',m,'mcal',mcal,'mpara',mpara,mcal!=mpara)
-                    if mcal != mpara:
+
+                    # Check if the data in the dictionary shall be compared, of the content of the parameter
+                    if mcontent is None:
+                        mcompare = mpara
+                    else:
+                        mcompare = mcontent
+
+                    print('match', m, 'mcal', mcal, 'mcompare', mcompare, mcal != mcompare)
+                    if mcal != mcompare:
                         match_all = False
 
                 if match_all:
@@ -413,10 +422,13 @@ class Device(redvypr_device):
                     cal_match.append(cal)
                     td = datetime.datetime.strptime(cal.date, '%Y-%m-%d %H:%M:%S.%f')
                     cal_match_date.append(td)
+                    # Here the list is sorted by date
 
             # Return the calibrations if found, otherwise None
             if len(cal_match) > 0:
-                return [cal_match,cal_match_date]
+                # Sort the list according to the date
+                cal_match_sorted = sorted(cal_match, reverse=True, key=lambda x: datetime.datetime.strptime(x.date, '%Y-%m-%d %H:%M:%S.%f'))
+                return cal_match_sorted
             else:
                 return None
 
@@ -434,7 +446,6 @@ class Device(redvypr_device):
         elif isinstance(para_parent, list):
             logger.debug(funcname + 'Setting parameter in list {} to calibration {}'.format(para_index, calibration))
             para_parent[para_index] = calibration
-
 
     def logger_autocalibration(self):
         """

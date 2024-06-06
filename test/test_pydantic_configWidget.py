@@ -1,0 +1,55 @@
+from PyQt5 import QtWidgets, QtCore, QtGui
+import redvypr.gui
+import sys
+import copy
+from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
+import pydantic
+import typing
+import numpy as np
+import uuid
+
+class config_test(pydantic.BaseModel):
+    """
+    Calibration model for a heatflow sensor
+    """
+    structure_version: str = '1.0'
+    calibration_type: typing.Literal['heatflow'] = 'heatflow'
+    parameter: str = 'HF'
+    sn: str = '' # The serial number of the sensor
+    sensor_model: str = ''  # The sensor model
+    coeff: float = np.NaN
+    coeff_std: typing.Optional[float] = None
+    unit:  str = 'W m-2 mV-1'
+    unit_input: str = 'mV'
+    date: str = '1970-01-01 00:00:00.000'
+    calibration_id: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex, description='ID of the calibration, can be choosen by the user. ID should be unique')
+    comment: typing.Optional[str] = None
+
+
+configtest = config_test()
+
+def main():
+    app = QtWidgets.QApplication(sys.argv)
+    screen = app.primaryScreen()
+    #print('Screen: %s' % screen.name())
+    size = screen.size()
+    #print('Size: %d x %d' % (size.width(), size.height()))
+    rect = screen.availableGeometry()
+    width = int(rect.width()*4/5)
+    height = int(rect.height()*2/3)
+
+    widget = QtWidgets.QWidget()
+    layout = QtWidgets.QVBoxLayout(widget)
+
+    configtree = pydanticConfigWidget(config=configtest, config_location='right')
+    # Set the size
+
+    layout.addWidget(configtree)
+    widget.resize(1000, 800)  # TODO, calculate the size of the widget
+    widget.show()
+    sys.exit(app.exec_())
+
+
+
+if __name__ == '__main__':
+    main()
