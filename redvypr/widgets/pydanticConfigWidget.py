@@ -170,6 +170,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             if index_datatype is not None:
                 self.__configCombo.setCurrentIndex(index_datatype)
                 item.__datatypestr__ = datatypestr_tmp
+
             # Get the index for the combo
             self.__configCombo.currentIndexChanged.connect(self.__comboTypeChanged)
             self.configGui_layout.addWidget(self.__configCombo)
