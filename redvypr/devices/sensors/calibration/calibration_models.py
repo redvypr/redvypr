@@ -60,8 +60,11 @@ class calibration_HF(pydantic.BaseModel):
     coeff_std: typing.Optional[float] = None
     unit:  str = 'W m-2 mV-1'
     unit_input: str = 'mV'
-    date: str = '1970-01-01 00:00:00.000'
-    calibration_id: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex, description='ID of the calibration, can be choosen by the user. ID should be unique')
+    date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970, 1, 1, 0, 0, 0),
+                                             description='The calibration date')
+    calibration_id: str = pydantic.Field(default='',
+                                         description='ID of the calibration, can be choosen by the user.')
+    calibration_uuid: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex, description='uuid of the calibration, can be choosen by the user. ID should be unique')
     comment: typing.Optional[str] = None
 
 class calibration_NTC(pydantic.BaseModel):
@@ -78,6 +81,8 @@ class calibration_NTC(pydantic.BaseModel):
     #coeff_std: typing.Optional[float] = None
     unit:  str = 'T'
     unit_input: str = 'ohm'
-    date: str = '1970-01-01 00:00:00.000'
-    calibration_id: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex, description='ID of the calibration, can be choosen by the user')
+    date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
+    calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be choosen by the user')
+    calibration_uuid: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex,
+                                         description='uuid of the calibration, can be choosen by the user')
     comment: typing.Optional[str] = None

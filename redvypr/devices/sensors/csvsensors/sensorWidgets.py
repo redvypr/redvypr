@@ -52,6 +52,22 @@ class sensorConfigWidget(QtWidgets.QWidget):
     def __assign_calibrations__(self):
         funcname = __name__ + '__assign_calibrations():'
         print('Find calibration for sensor',self.sensor)
+        match_dict = {}
+        match_dict = {'parameter': None, 'sn': None}
+        if self.auto_check_sn.isChecked():
+            sn_calibration = self.auto_check_sn_edit.text()
+            match_dict['sn'] = sn_calibration
+
+        if self.auto_check_date.isChecked():
+            datetmp = self.auto_check_date_edit.dateTime()
+            date = datetmp.toPyDateTime()
+            print('datetmp',datetmp,type(datetmp))
+            match_dict['date'] = date
+
+        #self.parameterLayout.addWidget(self.auto_check_date_combo_oldest, 2, 2)
+        #self.parameterLayout.addWidget(self.auto_check_id, 3, 0)
+        #self.parameterLayout.addWidget(self.auto_check_id_edit, 3, 1)
+        print('Match dict',match_dict)
         self.device.find_calibrations_for_sensor(self.sensor)
         self.__fill_calibration_table__()
         print('Done assigning')
@@ -203,13 +219,40 @@ class sensorConfigWidget(QtWidgets.QWidget):
 
         self.auto_check_sn = QtWidgets.QCheckBox('SN')
         self.auto_check_sn.setEnabled(False)
+        self.auto_check_sn.setChecked(True)
         self.auto_check_sn_edit = QtWidgets.QLineEdit()
         self.auto_check_sn_edit.setText(self.sn)
         self.auto_check_sn_edit.setEnabled(False)
-        self.parameterLayout.addWidget(self.parameterAuto, 0, 0, 1 , 2)
+
+        self.auto_check_date = QtWidgets.QCheckBox('Date')
+        self.auto_check_date.setEnabled(False)
+        self.auto_check_date.setChecked(True)
+        t0 = QtCore.QDateTime(1970,1,1,0,0,0)
+        self.auto_check_date_edit = QtWidgets.QDateTimeEdit(t0)
+        self.auto_check_date_edit.setDisplayFormat("yyyy-MM-dd HH:MM:ss")
+        #self.auto_check_date_edit = QtWidgets.QLineEdit()
+        #self.auto_check_date_edit.setText('1970-01-01 00:00:00')
+        #self.auto_check_date_edit.setEnabled(False)
+        self.auto_check_date_combo_oldest = QtWidgets.QComboBox()
+        self.auto_check_date_combo_oldest.addItem('newest')
+        self.auto_check_date_combo_oldest.addItem('oldest')
+
+        self.auto_check_id = QtWidgets.QCheckBox('Calibration id')
+        self.auto_check_id.setEnabled(False)
+        self.auto_check_id.setChecked(True)
+        self.auto_check_id_edit = QtWidgets.QLineEdit()
+        self.auto_check_id_edit.setText('')
+        self.auto_check_id_edit.setEnabled(False)
+
+        self.parameterLayout.addWidget(self.parameterAuto, 0, 0, 1 , 3)
         self.parameterLayout.addWidget(self.auto_check_sn, 1, 0)
         self.parameterLayout.addWidget(self.auto_check_sn_edit, 1, 1)
-        self.parameterLayout.addWidget(self.parameterTable, 2, 0, 1, 2)
+        self.parameterLayout.addWidget(self.auto_check_date, 2, 0)
+        self.parameterLayout.addWidget(self.auto_check_date_edit, 2, 1)
+        self.parameterLayout.addWidget(self.auto_check_date_combo_oldest, 2, 2)
+        self.parameterLayout.addWidget(self.auto_check_id, 3, 0)
+        self.parameterLayout.addWidget(self.auto_check_id_edit, 3, 1)
+        self.parameterLayout.addWidget(self.parameterTable, 4, 0, 1, 3)
         self.__fill_calibration_table__()
 
 
