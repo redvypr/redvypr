@@ -121,8 +121,6 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         # Add a stretch
         self.configGui_layout.addItem(self.stretchy_spacer_thing)
 
-
-
     def __openConfigGui__(self, item):
         funcname = __name__ + '.__openConfigGui__():'
         logger.debug(funcname)
@@ -463,6 +461,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 data_value = data  #
                 # Check for the types
                 type_hints_index = None
+                typestr = data_value.__class__.__name__
                 try:
                     parentdata = parent.__data__
                     if parentdata.__class__.__base__ == pydantic.BaseModel:
@@ -471,9 +470,9 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                         # save the type hints
                         type_hints_index = type_hints[index]
                         typestr = type_hints[index].__name__
+
                 except:
                     logger.info('bad',exc_info=True)
-                    typestr = data_value.__class__.__name__
 
 
                 indexstr = str(index)

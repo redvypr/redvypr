@@ -29,6 +29,7 @@ class sensorConfigWidget(QtWidgets.QWidget):
         funcname = __name__ + '__init__()'
         super(QtWidgets.QWidget, self).__init__(*args)
         logger.debug(funcname)
+        self.datefmt = '%Y-%m-%d %H:%M:%S'
         self.device = redvypr_device
         self.sensor = sensor
         self.sn = sensor.sn
@@ -54,6 +55,7 @@ class sensorConfigWidget(QtWidgets.QWidget):
         print('Find calibration for sensor',self.sensor)
         match_dict = {}
         match_dict = {'parameter': None, 'sn': None}
+        match_dict['date_sort'] = self.auto_check_date_combo_oldest.currentText()
         if self.auto_check_sn.isChecked():
             sn_calibration = self.auto_check_sn_edit.text()
             match_dict['sn'] = sn_calibration
@@ -64,11 +66,13 @@ class sensorConfigWidget(QtWidgets.QWidget):
             print('datetmp',datetmp,type(datetmp))
             match_dict['date'] = date
 
-        #self.parameterLayout.addWidget(self.auto_check_date_combo_oldest, 2, 2)
-        #self.parameterLayout.addWidget(self.auto_check_id, 3, 0)
-        #self.parameterLayout.addWidget(self.auto_check_id_edit, 3, 1)
-        print('Match dict',match_dict)
-        self.device.find_calibrations_for_sensor(self.sensor)
+        if self.auto_check_id.isChecked():
+            calibration_id = self.auto_check_id_edit.text()
+            match_dict['calibration_id'] = calibration_id
+        else:
+            match_dict['calibration_id'] = None
+
+        self.device.find_calibrations_for_sensor(self.sensor, match_dict)
         self.__fill_calibration_table__()
         print('Done assigning')
     def __create_calibration_widget__(self):
@@ -199,7 +203,8 @@ class sensorConfigWidget(QtWidgets.QWidget):
             item = QtWidgets.QTableWidgetItem(para.parameter)
             self.parameterTable.setItem(i, 2+2+1, item)
             # Date
-            item = QtWidgets.QTableWidgetItem(para.date)
+            datestr = para.date.strftime(self.datefmt)
+            item = QtWidgets.QTableWidgetItem(datestr)
             self.parameterTable.setItem(i, 3+2+1, item)
             # Comment
             item = QtWidgets.QTableWidgetItem(para.comment)
@@ -213,19 +218,19 @@ class sensorConfigWidget(QtWidgets.QWidget):
     def fill_parameter_widgets(self):
         funcname = __name__ +'.fill_parameter_widgets():'
         self.parameterLayout = QtWidgets.QGridLayout(self.parameterWidget)
-        self.parameterAuto = QtWidgets.QPushButton('Autofill calibrations')
+        self.parameterAuto = QtWidgets.QPushButton('Assign calibration')
         self.parameterAuto.clicked.connect(self.__assign_calibrations__)
         self.parameterTable = QtWidgets.QTableWidget()
 
         self.auto_check_sn = QtWidgets.QCheckBox('SN')
         self.auto_check_sn.setEnabled(False)
-        self.auto_check_sn.setChecked(True)
+        #self.auto_check_sn.setChecked(True)
         self.auto_check_sn_edit = QtWidgets.QLineEdit()
         self.auto_check_sn_edit.setText(self.sn)
-        self.auto_check_sn_edit.setEnabled(False)
+        #self.auto_check_sn_edit.setEnabled(False)
 
         self.auto_check_date = QtWidgets.QCheckBox('Date')
-        self.auto_check_date.setEnabled(False)
+        #self.auto_check_date.setEnabled(False)
         self.auto_check_date.setChecked(True)
         t0 = QtCore.QDateTime(1970,1,1,0,0,0)
         self.auto_check_date_edit = QtWidgets.QDateTimeEdit(t0)
@@ -238,11 +243,11 @@ class sensorConfigWidget(QtWidgets.QWidget):
         self.auto_check_date_combo_oldest.addItem('oldest')
 
         self.auto_check_id = QtWidgets.QCheckBox('Calibration id')
-        self.auto_check_id.setEnabled(False)
+        #self.auto_check_id.setEnabled(False)
         self.auto_check_id.setChecked(True)
         self.auto_check_id_edit = QtWidgets.QLineEdit()
         self.auto_check_id_edit.setText('')
-        self.auto_check_id_edit.setEnabled(False)
+        #self.auto_check_id_edit.setEnabled(False)
 
         self.parameterLayout.addWidget(self.parameterAuto, 0, 0, 1 , 3)
         self.parameterLayout.addWidget(self.auto_check_sn, 1, 0)
@@ -264,6 +269,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
     def __init__(self, *args, calibrations, redvypr_device=None, calibration_models=None):
         funcname = __name__ + '__init__()'
         super(QtWidgets.QWidget, self).__init__(*args)
+        self.datefmt = '%Y-%m-%d %H:%M:%S'
         logger.debug(funcname)
         layout = QtWidgets.QVBoxLayout(self)
         self.calibrations = calibrations
@@ -483,7 +489,8 @@ class sensorCoeffWidget(QtWidgets.QWidget):
             item.setData(role, cal)
             self.sensorCoeffWidget_list.setItem(i, icol_para, item)
             # Caldate
-            item = QtWidgets.QTableWidgetItem(cal.date)
+            datestr = cal.date.strftime(self.datefmt)
+            item = QtWidgets.QTableWidgetItem(datestr)
             item.setData(role, cal)
             self.sensorCoeffWidget_list.setItem(i, icol_date, item)
 
