@@ -34,6 +34,9 @@ import redvypr.config as redvyprConfig
 
 
 class redvypr_device_parameter(pydantic.BaseModel):
+    """
+    The is the base config of any redvypr device.
+    """
     name: str = pydantic.Field(default='')
     uuid: str = pydantic.Field(default='')
     #template: dict = pydantic.Field(default={}) # Candidate for removal

@@ -834,7 +834,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.csvformattable.setItem(0, 1, t_item)
         self.csvformattable.setItem(3, 1, tu_item)
         for i,d in enumerate(self.device.config.datastreams):
-            print('d',d)
+            #print('d',d)
             ds_item = QtWidgets.QTableWidgetItem("Datastream_{:02d}".format(i))
             addr_item = QtWidgets.QTableWidgetItem(str(d.address))
             addrs_item = QtWidgets.QTableWidgetItem(str(d.address_found))
@@ -891,24 +891,24 @@ class initDeviceWidget(QtWidgets.QWidget):
         columns = []
         nrows = 0
         for dtype in self.device.config['datatypeformat'].keys():
-            print('d',dtype)
+            #print('d',dtype)
             d = self.device.config['datatypeformat'][dtype]
             columns.append('Subscription for {:s}'.format(dtype))
             columns.append('Format for {:s}'.format(dtype))
 
             nrows = max([len(d),nrows])
 
-        print('Columns',columns)
+        #print('Columns',columns)
         ncols = len(columns)
         self.dataformattable.setColumnCount(ncols)
         self.dataformattable.setRowCount(nrows)
         self.dataformattable.setHorizontalHeaderLabels(columns)
         # And now the data itself
         for i,dtype in enumerate(self.device.config['datatypeformat'].keys()):
-            print('d',dtype)
+            #print('d',dtype)
             d = self.device.config['datatypeformat'][dtype]
             for irow,dsub in enumerate(d):
-                print('dsub',dsub)
+                #print('dsub',dsub)
                 item0 = QtWidgets.QTableWidgetItem(str(dsub[0]))
                 item1 = QtWidgets.QTableWidgetItem(str(dsub[1]))
                 self.dataformattable.setItem(irow, i * 2,item0)

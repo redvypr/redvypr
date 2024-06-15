@@ -1,0 +1,948 @@
+import ast
+import copy
+import os
+import time
+import datetime
+import logging
+import queue
+import sys
+import yaml
+from PyQt5 import QtWidgets, QtCore, QtGui
+import inspect
+import uuid
+import re
+from pyqtconsole.console import PythonConsole
+from pyqtconsole.highlighter import format
+# Import redvypr specific stuff
+from redvypr.gui import redvypr_ip_widget, QPlainTextEditLogger, displayDeviceWidget_standard, \
+    deviceControlWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget, deviceTabWidget
+import redvypr.gui as gui
+from redvypr.version import version
+import redvypr.files as files
+import redvypr
+import faulthandler
+faulthandler.enable()
+
+logging.basicConfig(stream=sys.stderr)
+logger = logging.getLogger('redvypr_main_widget')
+logger.setLevel(logging.INFO)
+
+_logo_file = files.logo_file
+_icon_file = files.icon_file
+
+#
+#
+# ########################
+# Here the gui part starts
+# ########################
+#
+#
+#
+
+
+#
+#
+#
+# redvyprwidget
+#
+#
+#
+
+class redvyprWidget(QtWidgets.QWidget):
+    """This is the main widget of redvypr.
+
+    """
+
+    def __init__(self, width=None, height=None, config=None, hostname='redvypr', hostinfo_opt={}):
+        """ Args:
+            width:
+            height:
+            config: Either a string containing a path of a yaml file, or a list with strings of yaml files
+        """
+        super(redvyprWidget, self).__init__()
+        self.setGeometry(50, 50, 500, 300)
+
+        # Lets create the heart of redvypr
+        self.redvypr = redvypr.redvypr(hostname=hostname,
+                               hostinfo_opt=hostinfo_opt)  # Configuration comes later after all widgets are initialized
+
+        self.redvypr.device_path_changed.connect(self.__populate_devicepathlistWidget)
+        self.redvypr.device_added.connect(self._add_device_gui)
+        # Fill the layout
+        self.devicetabs = QtWidgets.QTabWidget()
+        self.devicetabs.setMovable(True)
+        self.devicetabs.setTabsClosable(True)
+        self.devicetabs.tabCloseRequested.connect(self.closeTab)
+
+        # Create home tab
+        self.createHomeWidget()
+        tab_index = self.devicetabs.addTab(self.__homeWidget, 'Home')
+        self.devicetabs.setTabIcon(tab_index, QtGui.QIcon(_icon_file))
+
+        # The configuration of the redvypr
+        self.create_devicepathwidget()
+        self.create_statuswidget()
+        # self.devicetabs.addTab(self.__devicepathwidget,'Status')
+        self.devicetabs.addTab(self.__statuswidget, 'Status')
+
+        # A widget containing all connections
+        self.create_devicewidgetsummary()  # Creates self.devicesummarywidget
+        self.devicetabs.addTab(self.devicesummarywidget, 'Devices')  # Add device summary widget
+        if False:
+            # A logwidget
+            self.logwidget = QtWidgets.QPlainTextEdit()
+            self.logwidget.setReadOnly(True)
+            self.logwidget_handler = QPlainTextEditLogger()
+            self.logwidget_handler.add_widget(self.logwidget)
+            self.devicetabs.addTab(self.logwidget, 'Log')  # Add a logwidget
+            # Connect the logwidget to the logging
+            # logger.addHandler(self.logwidget_handler)
+            # self.logwidget.append("Hallo!")
+
+        # A timer to gather all the data from the devices
+        self.devicereadtimer = QtCore.QTimer()
+        self.devicereadtimer.timeout.connect(self.readguiqueue)
+        self.devicereadtimer.start(100)
+        # self.devicereadtimer.start(500)
+
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout.addWidget(self.devicetabs)
+        if ((width is not None) and (height is not None)):
+            self.resize(int(width), int(height))
+
+        self.redvypr.parse_configuration(config)
+        # Update hostinformation widgets
+        self.__update_hostinfo_widget__()
+        self.__populate_devicepathlistWidget()
+
+    def createHomeWidget(self):
+        """
+        Creates the home widget with the basic information/control/config functionality
+        :return:
+        """
+        self.__homeWidget = QtWidgets.QTabWidget()
+        self.__homeWidget_layout = QtWidgets.QVBoxLayout(self.__homeWidget)
+        self.__deviceTableWidget = gui.deviceTableWidget(redvyprWidget=self)
+        self.__homeWidget_layout.addWidget(self.__deviceTableWidget)
+
+    def open_ipwidget(self):
+        self.ipwidget = redvypr_ip_widget()
+
+    def open_console(self):
+        """ Opens a pyqtconsole console widget
+
+        """
+        if True:
+            width = 800
+            height = 500
+            # Console
+            self.console = PythonConsole(formats={
+                'keyword': format('darkBlue', 'bold')
+            })
+            self.console.setWindowIcon(QtGui.QIcon(_icon_file))
+            self.console.setWindowTitle("redvypr console")
+            self.console.push_local_ns('redvypr_widget', self)
+            self.console.push_local_ns('redvypr', self.redvypr)
+            self.console.resize(width, height)
+            self.console.show()
+
+            self.console.eval_queued()
+
+        # self.devicetabs.addTab(self.console,'Console')
+
+    def renamedevice(self, oldname, name):
+        """ Renames a devices
+        """
+        funcname = 'renamedevice()'
+        for dev in self.redvypr.devices:
+            devname = dev['device'].name
+            if (devname == name):  # Found a device with that name already, lets do nothging
+                logger.debug(funcname + ': Name already in use. Will not rename')
+                return False
+
+        for dev in self.redvypr.devices:
+            devname = dev['device'].name
+            if (devname == oldname):  # Found the device, lets rename it
+                dev['device'].change_name(name)
+                widget = dev['widget']
+                # Create a new infowidget
+                dev['controlwidget'].close()
+                dev['controlwidget'] = deviceControlWidget(dev, self)
+                # Note: commented for the moment to be replaced by the signals of the device itself
+                # dev['infowidget'].device_start.connect(self.redvypr.start_device_thread)
+                # dev['infowidget'].device_stop.connect(self.redvypr.stop_device_thread)
+                dev['controlwidget'].connect.connect(self.connect_device)
+                for i in range(self.devicetabs.count()):
+                    if (self.devicetabs.widget(i) == widget):
+                        self.devicetabs.setTabText(i, name)
+                        break
+
+                break
+
+        self.update_devicewidgetsummary()
+        return True
+
+    def create_devicewidgetsummary(self):
+        """ Creates the device summary widget
+        """
+        self.devicesummarywidget = QtWidgets.QWidget()
+        self.devicesummarywidget_layout = QtWidgets.QVBoxLayout(self.devicesummarywidget)
+
+    def update_devicewidgetsummary(self):
+        """ Updates the device summary widget
+        """
+        # Remove all
+        for i in reversed(range(self.devicesummarywidget_layout.count())):
+            item = self.devicesummarywidget_layout.itemAt(i)
+            self.devicesummarywidget_layout.removeItem(item)
+
+        # and refill it
+        for i, devicedict in enumerate(self.redvypr.devices):
+            self.devicesummarywidget_layout.addWidget(devicedict['controlwidget'])
+
+        self.devicesummarywidget_layout.addStretch()
+
+    def readguiqueue(self):
+        """This periodically called function reads the guiqueue and calls
+        the widgets of the devices update function (if they exist)
+
+        """
+        # Update devices
+        for devicedict in self.redvypr.devices:
+            device = devicedict['device']
+            if True:
+                # Feed the data into the modules/functions/objects and
+                # let them treat the data
+                for i, guiqueue in enumerate(devicedict['guiqueue']):
+                    while True:
+                        try:
+                            data = guiqueue.get(block=False)
+                        except Exception as e:
+                            # print('Exception gui',e)
+                            break
+                        try:
+                            devicedict['gui'][i].update(data)
+                        except Exception as e:
+                            break
+                            # logger.exception(e)
+
+    def load_config(self):
+        """ Loads a configuration file
+        """
+        funcname = self.__class__.__name__ + '.load_config()'
+        logger.debug(funcname)
+        conffile, _ = QtWidgets.QFileDialog.getOpenFileName(self, "QFileDialog.getOpenFileName()", "",
+                                                            "Yaml Files (*.yaml);;All Files (*)")
+        if conffile:
+            self.redvypr.parse_configuration(conffile)
+
+    def save_config(self):
+        """ Saves a configuration file
+        """
+        funcname = self.__class__.__name__ + '.save_config():'
+        logger.debug(funcname)
+        data_save = self.redvypr.get_config()
+        if True:
+            tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
+            fname_suggestion = 'config_' + self.redvypr.hostinfo['hostname'] + '_' + tstr + '.yaml'
+
+            fname_full, _ = QtWidgets.QFileDialog.getSaveFileName(self, "QFileDialog.getSaveFileName()",
+                                                                  fname_suggestion,
+                                                                  "Yaml Files (*.yaml);;All Files (*)")
+
+            if fname_full:
+                logger.debug('Saving to file {:s}'.format(fname_full))
+                with open(fname_full, 'w') as fyaml:
+                    yaml.dump(data_save, fyaml)
+
+    def open_add_device_widget(self):
+        """
+        Opens a widget to let the user add redvypr devices
+        """
+        app = QtWidgets.QApplication.instance()
+        screen = app.primaryScreen()
+        # print('Screen: %s' % screen.name())
+        size = screen.size()
+        # print('Size: %d x %d' % (size.width(), size.height()))
+        rect = screen.availableGeometry()
+        # print('Available: %d x %d' % (rect.width(), rect.height()))
+        self.add_device_widget = gui.redvyprAddDeviceWidget(redvypr=self.redvypr)
+        self.add_device_widget.resize(int(rect.width() * 0.75), int(rect.height() * 0.75))
+        self.add_device_widget.show()
+
+    def _add_device_gui(self, devicelist):
+        """ Function is called via the redvypr.add_device signal and is adding
+        all the gui functionality to the device
+
+        """
+        funcname = __name__ + '._add_device_gui()'
+        logger.debug(funcname)
+        devicedict = devicelist[0]
+        ind_devices = devicelist[1]
+        devicemodule = devicelist[2]
+
+        # First create the device and then do the widget stuff here
+        device = devicedict['device']
+        #
+        # Now add all the widgets to the device
+        #
+        # Create the init widget
+        try:
+            deviceinitwidget_bare = devicemodule.initDeviceWidget
+        except Exception as e:
+            logger.debug(funcname + ': Widget does not have a deviceinitwidget using standard one:' + str(e))
+            # logger.exception(e)
+            deviceinitwidget_bare = redvypr_deviceInitWidget  # Use a standard widget
+
+        try:
+            deviceinitwidget = deviceinitwidget_bare(device)
+        except Exception as e:
+            logger.warning(funcname + ': Could not add deviceinitwidget because of:')
+            logger.exception(e)
+            deviceinitwidget = QtWidgets.QWidget()  # Use a standard widget
+
+        # Connect the connect signal with connect_device()
+        try:
+            logger.debug(funcname + ': Connect signal connected')
+            deviceinitwidget.connect.connect(self.connect_device)
+        except Exception as e:
+            logger.debug('Widget does not have connect signal:' + str(e))
+
+        device.deviceinitwidget = deviceinitwidget
+        # Add the info widget
+        deviceinfowidget = redvypr_deviceInfoWidget(device)
+        deviceinfowidget.connect.connect(self.connect_device)
+
+        #
+        # Check if we have a widget to display the data
+        # Create the displaywidget
+        #
+        try:
+            devicedisplaywidget = devicemodule.displayDeviceWidget
+        except Exception as e:
+            logger.debug(funcname + ': No displaywidget found for {:s}'.format(str(devicemodule)))
+            ## Using the standard display widget
+            # devicedisplaywidget = displayDeviceWidget_standard
+            devicedisplaywidget = None
+
+        # The widget shown in the tab
+        devicewidget = QtWidgets.QWidget()
+        devicewidget.device = device  # Add the device to the devicewidget
+        devicelayout = QtWidgets.QVBoxLayout(devicewidget)
+        devicetab = QtWidgets.QTabWidget()
+        # devicetab = deviceTabWidget()
+        # devicetab.setStyleSheet("QTabBar::tab:disabled {"+\
+        #                "width: 200px;"+\
+        #                "color: transparent;"+\
+        #                "background: transparent;}")
+        devicetab.setMovable(True)
+        devicelayout.addWidget(devicetab)
+
+        # Add init widget
+        # TODO: Needs to be updated to pydantic
+        try:
+            tablabelinit = str(device.config['redvypr_device']['gui_tablabel_init'])
+        except:
+            tablabelinit = 'Init'
+        # print('Device hallo hallo',device.config)
+        # device.config['redvypr_device']['gui_tablabel_status']
+
+        devicetab.addTab(deviceinitwidget, tablabelinit)
+
+        # Devices can have their specific display objects, if one is
+        # found, initialize it, otherwise just the init Widget
+        if (devicedisplaywidget is not None):
+            initargs = inspect.signature(devicedisplaywidget.__init__)
+            initdict = {}
+            if ('device' in initargs.parameters.keys()):
+                initdict['device'] = device
+
+            if ('tabwidget' in initargs.parameters.keys()):
+                initdict['tabwidget'] = devicetab
+
+            if ('deviceinitwidget' in initargs.parameters.keys()):
+                initdict['deviceinitwidget'] = deviceinitwidget
+
+            # https://stackoverflow.com/questions/334655/passing-a-dictionary-to-a-function-as-keyword-parameters
+            devicedisplaywidget_called = devicedisplaywidget(**initdict)
+            # Add the widget to the device
+            device.devicedisplaywidget = devicedisplaywidget_called
+            # Test if the widget has a tabname
+            try:
+                tablabeldisplay = devicedisplaywidget_called.tabname
+            except:
+                try:
+                    tablabeldisplay = str(device.device_parameter.gui_tablabel_display)
+                except:
+                    try:
+                        tablabeldisplay = str(device.config['redvypr_device']['gui_tablabel_display'])
+                    except:
+                        tablabeldisplay = 'Display'
+
+            # Check if the widget has included itself, otherwise add the displaytab
+            # This is useful to have the displaywidget add several tabs
+            # by using the tabwidget argument of the initdict
+            if (devicetab.indexOf(devicedisplaywidget_called)) < 0:
+                devicetab.addTab(devicedisplaywidget_called, tablabeldisplay)
+                # Append the widget to the processing queue
+            self.redvypr.devices[ind_devices]['gui'].append(devicedisplaywidget_called)
+            self.redvypr.devices[ind_devices]['displaywidget'] = self.redvypr.devices[ind_devices]['gui'][0]
+            self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
+        else:
+            self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
+            self.redvypr.devices[ind_devices]['displaywidget'] = None
+
+        self.redvypr.devices[ind_devices]['widget'] = devicewidget  # This is the displaywidget
+        # Create the infowidget (for the overview of all devices)
+        self.redvypr.devices[ind_devices]['controlwidget'] = deviceControlWidget(self.redvypr.devices[ind_devices],
+                                                                                 self)
+        self.redvypr.devices[ind_devices]['controlwidget'].connect.connect(self.connect_device)
+
+        #
+        # Add the devicelistentry to the widget, this gives the full information to the device
+        #
+        # 22.11.2022 TODO, this needs to be replaced by functional arguments instead of properties
+        self.redvypr.devices[ind_devices]['initwidget'].redvyprdevicelistentry = self.redvypr.devices[ind_devices]
+        self.redvypr.devices[ind_devices]['initwidget'].redvypr = self.redvypr
+        if (len(self.redvypr.devices[ind_devices]['gui']) > 0):
+            self.redvypr.devices[ind_devices]['gui'][0].redvyprdevicelistentry = self.redvypr.devices[ind_devices]
+            self.redvypr.devices[ind_devices]['gui'][0].redvypr = self.redvypr
+
+        # Add the widget to the devicetab, or as a sole window or hide
+        widgetname = device.name
+        widgetloc = device.device_parameter.gui_dock
+        if widgetloc == 'Window':
+            devicewidget.setParent(None)
+            devicewidget.setWindowTitle(widgetname)
+            devicewidget.show()
+        elif widgetloc == 'Hide':
+            devicewidget.setParent(None)
+            devicewidget.setWindowTitle(widgetname)
+            devicewidget.hide()
+        else:
+            self.devicetabs.addTab(devicewidget, widgetname)
+            self.devicetabs.setCurrentWidget(devicewidget)
+        # self.devicetabs.addTab(devicewidget, device.name)
+        # devicetab.addTab(deviceinfowidget, 'Device status')
+
+        # All set, now call finalizing functions
+        # Finalize the initialization by calling a helper function (if exist)
+        try:
+            deviceinitwidget.finalize_init()
+        except Exception as e:
+            logger.debug(funcname + ':finalize_init():' + str(e))
+
+        try:
+            devicedisplaywidget_called.finalize_init()
+        except Exception as e:
+            logger.debug(funcname + ':finalize_init():' + str(e))
+
+            # Update the summary
+        self.update_devicewidgetsummary()
+
+    def connect_device_gui(self):
+        """ Wrapper for the gui
+        """
+        # Get the current tab
+        curtab = self.devicetabs.currentWidget()
+        try:
+            device = curtab.device
+        except:
+            device = None
+        self.open_connect_widget(device=device)
+
+    def connect_device(self, device):
+        """ Handles the connect signal from devices, called when the connection between the device shall be changed
+        """
+        logger.debug('Connect clicked')
+        if (type(device) == dict):
+            device = device['device']
+        self.open_connect_widget(device=device)
+
+    def open_connect_widget(self, device=None):
+        funcname = __name__ + '.open_connect_widget()'
+        logger.debug(funcname + ':' + str(device))
+        # self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
+        self.__con_widget = gui.redvyprSubscribeWidget(redvypr=self.redvypr, device=device)
+        self.__con_widget.show()
+
+    def __hostname_changed_click(self):
+        hostname, ok = QtWidgets.QInputDialog.getText(self, 'redvypr hostname', 'Enter new hostname:')
+        if ok:
+            self.redvypr.hostinfo['hostname'] = hostname
+            self.__hostname_line.setText(hostname)
+
+    def __update_hostinfo_widget__(self):
+        """
+        Updates the hostinformation
+        Returns:
+
+        """
+        funcname = __name__ + '.__update_hostinfo_widget__()'
+        print(funcname)
+
+    def __update_status_widget__(self):
+        """
+        Updates the status information
+        Returns:
+
+        """
+        if self.redvypr.datadistthread.is_alive() == False:
+            self.__status_dt.setText(
+                'Datadistribution thread is not running! This is bad, consider restarting redvypr.')
+            self.__status_dt.setStyleSheet("QLabel { background-color : white; color : red; }")
+            self.__status_dtneeded.setText('')
+        else:
+            npackets = self.redvypr.packets_processed
+            if (npackets > 0) and (self.redvypr.dt_avg_datadist > 0):
+                packets_pstr = npackets / self.redvypr.dt_avg_datadist
+            else:
+                packets_pstr = 0.0
+            self.__status_dtneeded.setText(
+                ' (needed {:0.5f}s, {:6.1f} packets/s)'.format(self.redvypr.dt_avg_datadist, packets_pstr))
+
+    def create_statuswidget(self):
+        """Creates the statuswidget
+
+        """
+        self.redvypr.status_update_signal.connect(self.__update_status_widget__)
+        self.redvypr.hostconfig_changed_signal.connect(self.__update_hostinfo_widget__)
+        self.__statuswidget = QtWidgets.QWidget()
+        layout = QtWidgets.QFormLayout(self.__statuswidget)
+        # dt
+        self.__status_dt = QtWidgets.QLabel('Distribution time: {:0.5f}s'.format(self.redvypr.dt_datadist))
+        self.__status_dtneeded = QtWidgets.QLabel(' (needed {:0.5f}s)'.format(self.redvypr.dt_avg_datadist))
+
+        layout.addRow(self.__status_dt, self.__status_dtneeded)
+
+        # Hostname
+        self.__hostname_label = QtWidgets.QLabel('Hostname:')
+        self.__hostname_line = QtWidgets.QLabel('')
+        self.__hostname_line.setAlignment(QtCore.Qt.AlignRight)
+        self.__hostname_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.__hostname_line.setText(self.redvypr.hostinfo['hostname'])
+        # UUID
+        self.__uuid_label = QtWidgets.QLabel('UUID:')
+        self.__uuid_line = QtWidgets.QLabel('')
+        self.__uuid_line.setAlignment(QtCore.Qt.AlignRight)
+        self.__uuid_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.__uuid_line.setText(self.redvypr.hostinfo['uuid'])
+        # IP
+        self.__ip_label = QtWidgets.QLabel('IP:')
+        self.__ip_line = QtWidgets.QLabel('')
+        self.__ip_line.setAlignment(QtCore.Qt.AlignRight)
+        self.__ip_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.__ip_line.setText(self.redvypr.hostinfo['addr'])
+
+        # Location
+        try:
+            location = self.redvypr.hostinfo_opt['location'].data
+        except:
+            location = ''
+
+        self.__loc_label = QtWidgets.QLabel('Location:')
+        self.__loc_text = QtWidgets.QLineEdit(location)
+        self.__loc_text.textold = self.__loc_text.text()  # the old text to check again
+        self.__loc_text.editingFinished.connect(self.__hostinfo_opt_changed_text)
+
+        # Description
+        try:
+            description = self.redvypr.hostinfo_opt['description'].data
+        except:
+            description = ''
+
+        self.__desc_label = QtWidgets.QLabel('Description:')
+        self.__desc_text = QtWidgets.QLineEdit(description)
+        self.__desc_text.textold = self.__desc_text.text()  # the old text to check again
+        self.__desc_text.editingFinished.connect(self.__hostinfo_opt_changed_text)
+
+        # Lon
+        try:
+            lon = self.redvypr.hostinfo_opt['lon'].data
+        except:
+            lon = -9999.0
+
+        # Lon/Lat
+        try:
+            lat = self.redvypr.hostinfo_opt['lat'].data
+        except:
+            lat = -9999.0
+
+        self.__lon_label = QtWidgets.QLabel('Longitude:')
+        self.__lat_label = QtWidgets.QLabel('Latitude:')
+        self.__lon_text = QtWidgets.QDoubleSpinBox()
+        self.__lon_text.setMinimum(-9999)
+        self.__lon_text.setMaximum(360)
+        self.__lon_text.setSingleStep(0.00001)
+        self.__lon_text.setDecimals(5)
+        self.__lon_text.setValue(lon)
+        self.__lon_text.oldvalue = self.__lon_text.value()
+        self.__lon_text.editingFinished.connect(self.__hostinfo_opt_changed_text)
+
+        self.__lat_text = QtWidgets.QDoubleSpinBox()
+        self.__lat_text.setMinimum(-9999)
+        self.__lat_text.setMaximum(90)
+        self.__lat_text.setSingleStep(0.00001)
+        self.__lat_text.setDecimals(5)
+        self.__lat_text.setValue(lat)
+        self.__lat_text.oldvalue = self.__lat_text.value()
+        self.__lat_text.editingFinished.connect(self.__hostinfo_opt_changed_text)
+
+        # Change the hostname
+        self.__hostinfo_opt_btn = QtWidgets.QPushButton('Edit optional information')
+        self.__hostinfo_opt_btn.clicked.connect(self.__hostinfo_opt_changed_click)
+
+        self.__statuswidget_pathbtn = QtWidgets.QPushButton('Edit device path')
+        self.__statuswidget_pathbtn.clicked.connect(self.show_devicepathwidget)
+
+        layout.addRow(self.__hostname_label, self.__hostname_line)
+        layout.addRow(self.__uuid_label, self.__uuid_line)
+        layout.addRow(self.__ip_label, self.__ip_line)
+        layout.addRow(self.__desc_label, self.__desc_text)
+        layout.addRow(self.__loc_label, self.__loc_text)
+        layout.addRow(self.__lon_label, self.__lon_text)
+        layout.addRow(self.__lat_label, self.__lat_text)
+        layout.addRow(self.__hostinfo_opt_btn)
+        layout.addRow(self.__statuswidget_pathbtn)
+
+        logo = QtGui.QPixmap(_logo_file)
+        logolabel = QtWidgets.QLabel()
+        logolabel.setPixmap(logo)
+        # layout.addRow(logolabel)
+
+    def __hostinfo_opt_changed_text(self):
+        """
+        Called when the textedit was done, updates the hostinformation,
+        Returns:
+
+        """
+        funcname = __name__ + '.__hostinfo_opt_changed_text()'
+        print(funcname)
+        FLAG_CHANGE = False
+        # Location text
+        if self.__loc_text.textold == self.__loc_text.text():
+            print('Not really a change of the text')
+        else:
+            self.__loc_text.textold = self.__loc_text.text()
+            self.redvypr.hostinfo_opt['location'].data = self.__loc_text.text()
+            FLAG_CHANGE = True
+
+        # Location text
+        if self.__desc_text.textold == self.__desc_text.text():
+            print('Not really a change of the description text')
+        else:
+            self.__desc_text.textold = self.__desc_text.text()
+            self.redvypr.hostinfo_opt['description'].data = self.__desc_text.text()
+            FLAG_CHANGE = True
+
+        # Longitude
+        if self.__lon_text.oldvalue == self.__lon_text.value():
+            print('Not really a change of the longitude')
+        else:
+            self.__lon_text.oldvalue = self.__lon_text.value()
+            self.redvypr.hostinfo_opt['lon'].data = self.__lon_text.value()
+            FLAG_CHANGE = True
+
+        # Latitude
+        if self.__lat_text.oldvalue == self.__lat_text.value():
+            print('Not really a change of the latitude')
+        else:
+            self.__lat_text.oldvalue = self.__lat_text.value()
+            self.redvypr.hostinfo_opt['lat'].data = self.__lat_text.value()
+            FLAG_CHANGE = True
+
+        if FLAG_CHANGE:
+            print('Things have changed, lets send a signal')
+            try:
+                self.__hostinfo_opt_edit.reload_config()
+            except:
+                pass
+            self.redvypr.hostconfig_changed_signal.emit()
+
+    def __hostinfo_opt_changed_click(self):
+        """
+        Opens a widget that allow to change the optional hostinformation
+        Returns:
+
+        """
+        # Optional hostinformation
+        self.__hostinfo_opt_edit = gui.configWidget(self.redvypr.hostinfo_opt, loadsavebutton=False,
+                                                    redvypr_instance=self.redvypr)
+
+        self.__hostinfo_opt_edit.show()
+
+    def show_devicepathwidget(self):
+        """A widget to show the pathes to search for additional devices
+
+        """
+        self.__devicepathwidget.show()
+
+    def create_devicepathwidget(self):
+        """A widget to show the pathes to search for additional devices
+
+        """
+        self.__devicepathwidget = QtWidgets.QWidget()
+        self.__devicepathlab = QtWidgets.QLabel('Devicepathes')  # Button to add a path
+        self.__deviceaddpathbtn = QtWidgets.QPushButton('Add')  # Button to add a path
+        self.__deviceaddpathbtn.clicked.connect(self.adddevicepath)
+        self.__devicerempathbtn = QtWidgets.QPushButton('Remove')  # Button to remove a path
+        self.__devicerempathbtn.clicked.connect(self.remdevicepath)
+        layout = QtWidgets.QFormLayout(self.__devicepathwidget)
+        self.__devicepathlist = QtWidgets.QListWidget()
+        layout.addRow(self.__devicepathlab)
+        layout.addRow(self.__devicepathlist)
+        layout.addRow(self.__deviceaddpathbtn, self.__devicerempathbtn)
+        self.__populate_devicepathlistWidget()
+
+    def __populate_devicepathlistWidget(self):
+        self.__devicepathlist.clear()
+        for d in self.redvypr.device_paths:
+            itm = QtWidgets.QListWidgetItem(d)
+            self.__devicepathlist.addItem(itm)
+
+    def __property_widget(self, device=None):
+        """
+
+        Returns:
+
+        """
+        w = QtWidgets.QWidget()
+        if (device == None):
+            props = self.properties
+        else:
+            props = device.properties
+
+    def adddevicepath(self):
+        """Adds a path to the devicepathlist
+        """
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, 'Devicepath', '')
+        if folder:
+            self.redvypr.adddevicepath(folder)
+
+    def remdevicepath(self):
+        """Removes the selected device pathes
+        """
+        ind = self.__devicepathlist.currentRow()
+        rempath = self.__devicepathlist.item(ind).text()
+        # Remove from the main widget and redraw the whole list (is done by the signal emitted by redvypr)
+        self.redvypr.remdevicepath(rempath)
+
+    def closeTab(self, currentIndex):
+        """ Closing a device tab and removing the device
+        """
+        funcname = __name__ + '.closeTab()'
+        logger.debug('Closing the tab now')
+        currentWidget = self.devicetabs.widget(currentIndex)
+        # Search for the corresponding device
+        for sendict in self.redvypr.devices:
+            if (sendict['widget'] == currentWidget):
+                device = sendict['device']
+                self.redvypr.rem_device(device)
+                # Close the widgets (init/display)
+                currentWidget.close()
+                # Info
+                sendict['controlwidget'].close()
+
+                self.devicetabs.removeTab(currentIndex)
+                break
+
+        self.update_devicewidgetsummary()
+
+    def close_application(self):
+        funcname = __name__ + '.close_application():'
+        print(funcname + ' Closing ...')
+        try:
+            self.add_device_widget.close()
+        except:
+            pass
+
+        for sendict in self.redvypr.devices:
+            print(funcname + ' Stopping {:s}'.format(sendict['device'].name))
+            sendict['device'].thread_stop()
+
+        time.sleep(1)
+        for sendict in self.redvypr.devices:
+            try:
+                sendict['device'].thread.kill()
+            except:
+                pass
+
+        print('All stopped, sys.exit()')
+        # sys.exit()
+        os._exit(1)
+
+    def closeEvent(self, event):
+        self.close_application()
+
+
+#
+#
+# The main widget
+#
+#
+class redvyprMainWidget(QtWidgets.QMainWindow):
+    def __init__(self, width=None, height=None, config=None, hostname='redvypr', hostinfo_opt={}):
+        super(redvyprMainWidget, self).__init__()
+        # self.setGeometry(0, 0, width, height)
+
+        # self.setWindowTitle("redvypr")
+        self.setWindowTitle(hostname)
+        # Add the icon
+        # self.setWindowIcon(QtGui.QIcon(_icon_file))
+
+        self.redvypr_widget = redvyprWidget(config=config, hostname=hostname, hostinfo_opt=hostinfo_opt)
+        self.setCentralWidget(self.redvypr_widget)
+        quitAction = QtWidgets.QAction("&Quit", self)
+        quitAction.setShortcut("Ctrl+Q")
+        quitAction.setStatusTip('Close the program')
+        quitAction.triggered.connect(self.close_application)
+
+        loadcfgAction = QtWidgets.QAction("&Load", self)
+        loadcfgAction.setShortcut("Ctrl+O")
+        loadcfgAction.setStatusTip('Load a configuration file')
+        loadcfgAction.triggered.connect(self.load_config)
+
+        savecfgAction = QtWidgets.QAction("&Save", self)
+        savecfgAction.setShortcut("Ctrl+S")
+        savecfgAction.setStatusTip('Saves a configuration file')
+        savecfgAction.triggered.connect(self.save_config)
+
+        pathAction = QtWidgets.QAction("&Devicepath", self)
+        pathAction.setShortcut("Ctrl+L")
+        pathAction.setStatusTip('Edit the device path')
+        pathAction.triggered.connect(self.redvypr_widget.show_devicepathwidget)
+
+        deviceAction = QtWidgets.QAction("&Add device", self)
+        deviceAction.setShortcut("Ctrl+A")
+        deviceAction.setStatusTip('Add a device')
+        deviceAction.triggered.connect(self.open_add_device_widget)
+
+        devcurAction = QtWidgets.QAction("&Go to device tab", self)
+        devcurAction.setShortcut("Ctrl+D")
+        devcurAction.setStatusTip('Go to the device tab')
+        devcurAction.triggered.connect(self.gotodevicetab)
+
+        conAction = QtWidgets.QAction("&Connect devices", self)
+        conAction.setShortcut("Ctrl+C")
+        conAction.setStatusTip('Connect the input/output datastreams of the devices')
+        conAction.triggered.connect(self.connect_device_gui)
+
+        self.statusBar()
+
+        mainMenu = self.menuBar()
+        fileMenu = mainMenu.addMenu('&File')
+        fileMenu.addAction(loadcfgAction)
+        fileMenu.addAction(savecfgAction)
+        fileMenu.addAction(pathAction)
+        fileMenu.addAction(quitAction)
+
+        deviceMenu = mainMenu.addMenu('&Devices')
+        deviceMenu.addAction(devcurAction)
+        deviceMenu.addAction(deviceAction)
+        deviceMenu.addAction(conAction)
+
+        # Help and About menu
+        toolMenu = mainMenu.addMenu('&Tools')
+        toolAction = QtWidgets.QAction("&Choose Device/Datakey ", self)
+        toolAction.setStatusTip('Opens a window to choose an available device and/or datakeys')
+        toolAction.triggered.connect(self.show_deviceselect)
+        consoleAction = QtWidgets.QAction("&Open console", self)
+        consoleAction.triggered.connect(self.open_console)
+        consoleAction.setShortcut("Ctrl+N")
+        IPAction = QtWidgets.QAction("&Network interfaces", self)
+        IPAction.triggered.connect(self.open_ipwidget)
+        toolMenu.addAction(toolAction)
+        toolMenu.addAction(IPAction)
+        toolMenu.addAction(consoleAction)
+
+        # Help and About menu
+        helpAction = QtWidgets.QAction("&About", self)
+        helpAction.setStatusTip('Information about the software version')
+        helpAction.triggered.connect(self.about)
+
+        helpMenu = mainMenu.addMenu('&Help')
+        helpMenu.addAction(helpAction)
+
+        self.resize(width, height)
+        self.show()
+
+    def open_console(self):
+        self.redvypr_widget.open_console()
+
+    def open_ipwidget(self):
+        self.redvypr_widget.open_ipwidget()
+
+    def gotodevicetab(self):
+        self.redvypr_widget.devicetabs.setCurrentWidget(self.redvypr_widget.devicesummarywidget)
+
+    def connect_device_gui(self):
+        self.redvypr_widget.connect_device_gui()
+
+    def about(self):
+        """
+Opens an "about" widget showing basic information.
+        """
+        self._about_widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(self._about_widget)
+        label1 = QtWidgets.QTextEdit()
+        label1.setReadOnly(True)
+        label1.setText(__platform__)
+        font = label1.document().defaultFont()
+        fontMetrics = QtGui.QFontMetrics(font)
+        textSize = fontMetrics.size(0, label1.toPlainText())
+        w = textSize.width() + 10
+        h = textSize.height() + 20
+        label1.setMinimumSize(w, h)
+        label1.setMaximumSize(w, h)
+        label1.resize(w, h)
+        label1.setReadOnly(True)
+
+        layout.addWidget(label1)
+        icon = QtGui.QPixmap(_logo_file)
+        iconlabel = QtWidgets.QLabel()
+        iconlabel.setPixmap(icon)
+        layout.addWidget(iconlabel)
+        self._about_widget.show()
+
+    def show_deviceselect(self):
+        self.__deviceselect__ = gui.datastreamWidget(redvypr=self.redvypr_widget.redvypr, deviceonly=True)
+        self.__deviceselect__.show()
+
+    def open_add_device_widget(self):
+        self.redvypr_widget.open_add_device_widget()
+
+    def load_config(self):
+        self.redvypr_widget.load_config()
+
+    def save_config(self):
+        self.redvypr_widget.save_config()
+
+    def close_application(self):
+        self.redvypr_widget.close_application()
+
+        sys.exit()
+
+    def closeEvent(self, event):
+        self.close_application()
+
+
+def split_quotedstring(qstr, separator=','):
+    """ Splits a string
+    """
+    r = re.compile("'.+?'")  # Single quoted string
+
+    d = qstr[:]
+    quoted_list = r.findall(d)
+    quoted_dict = {}
+    for fstr in quoted_list:
+        u1 = uuid.uuid4()
+        d = d.replace(fstr, u1.hex, 1)
+        quoted_dict[u1.hex] = fstr
+
+    ds = d.split(separator)
+    for i, dpart in enumerate(ds):
+        for k in quoted_dict.keys():
+            dpart = dpart.replace(k, quoted_dict[k])
+            ds[i] = dpart
+
+    return ds

@@ -57,7 +57,7 @@ class deviceTableWidget(QtWidgets.QTableWidget):
         self.setColumnCount(nCols)
         self.setHorizontalHeaderLabels(colheader)
         for irow,d in enumerate(self.redvypr.devices):
-            print('d',d)
+            #print('d',d)
             device = d['device']
             devicedict = d
             # Devicename
@@ -333,8 +333,7 @@ class redvyprAddDeviceWidget(QtWidgets.QWidget):
         self.devicetree.sortByColumn(0, QtCore.Qt.AscendingOrder)
 
     def __item_changed__(self, new, old):
-        print('Item changed')
-        print('new',new, old)
+        logger.debug('Item changed')
         if new.devdict is not None:
             self.__update_device_info__(new.devdict)
             self.addbtn.setEnabled(True)
@@ -342,7 +341,7 @@ class redvyprAddDeviceWidget(QtWidgets.QWidget):
             self.addbtn.setEnabled(False)
 
     def __apply_item__(self):
-        print('Apply')
+        logger.debug('Apply')
 
     def __update_device_info__(self,devdict):
         """ Populates the self.__devices_info widget with the info of the module
@@ -389,15 +388,17 @@ class redvyprAddDeviceWidget(QtWidgets.QWidget):
             if len(devname) > 0:
                 device_parameter.name = devname
 
-            print('devicemodulename',devicemodulename)
-            print('Adding device, config',device_parameter)
+            logger.debug('devicemodulename {}'.format(devicemodulename))
+            logger.debug('Adding device, config {}'.format(device_parameter))
             if self.redvypr is not None:
                 self.redvypr.add_device(devicemodulename=devicemodulename, device_parameter=device_parameter)
             self.devname.clear()
             # Update the name
             #self.__device_name()
+            # Closing
+            self.close()
         else:
-            print('Not a device')
+            logger.warning(funcname + 'Not a device')
 
 
 
@@ -686,13 +687,13 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
         if (self.device is not None):
             if self.__commitbtn.__status__ == 'add':
                 address_add = str(self.subscribe_edit.text())
-                print('Adding?', address_add)
+                logger.debug('Adding? {}'.format(address_add))
                 if (len(address_add) > 0):
-                    print('Adding', address_add)
+                    logger.debug('Adding {}'.format(address_add))
                     self.device.subscribe_address(address_add)
                     self.update_list(self.device)
                 else:
-                    print('Nothing to add')
+                    logger.debug('Nothing to add')
             elif self.__commitbtn.__status__ == 'remove':
                 raddr = self.__commitbtn.redvypr_addr_remove
                 self.device.unsubscribe_address(raddr)
@@ -826,12 +827,12 @@ class deviceControlWidget(QtWidgets.QWidget):
     def loglevel_changed(self):
         loglevel = self.logwidget.currentText()
         logger = self.devicedict['logger']
-        print('loglevel changed to',loglevel)
+        logger.info('loglevel changed to {}'.format(loglevel))
         if(logger is not None):
             logger.setLevel(loglevel)
 
     def get_info(self):        
-        self.infowidget       = QtWidgets.QPlainTextEdit()
+        self.infowidget = QtWidgets.QPlainTextEdit()
         self.infowidget.setReadOnly(True)
         sortstat ={}
         for i in sorted(self.devicedict['statistics']):

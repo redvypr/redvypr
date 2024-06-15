@@ -22,7 +22,7 @@ setup(name='redvypr',
       #packages=['redvypr'],
       packages=find_packages(),
       scripts = [],
-      entry_points={ 'console_scripts': ['redvypr=redvypr:redvypr_main']},
+      entry_points={ 'console_scripts': ['redvypr=redvypr.redvypr_main:redvypr_main']},
       package_data = {'':['VERSION','icon/*','utils/csv2dict/*.yaml']},
       install_requires=[ 'pyaml', 'pyqtgraph','netCDF4', 'pyqtconsole', 'pyserial','qtawesome','pynmea2','pydantic>2.0','xlsxwriter','pympler'],
       classifiers=[
