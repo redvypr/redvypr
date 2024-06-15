@@ -179,13 +179,6 @@ class redvyprWidget(QtWidgets.QWidget):
             if (devname == oldname):  # Found the device, lets rename it
                 dev['device'].change_name(name)
                 widget = dev['widget']
-                ## Create a new infowidget
-                #dev['controlwidget'].close()
-                #dev['controlwidget'] = deviceControlWidget(dev, self)
-                ## Note: commented for the moment to be replaced by the signals of the device itself
-                ## dev['infowidget'].device_start.connect(self.redvypr.start_device_thread)
-                ## dev['infowidget'].device_stop.connect(self.redvypr.stop_device_thread)
-                #dev['controlwidget'].connect.connect(self.connect_device)
                 for i in range(self.devicetabs.count()):
                     if (self.devicetabs.widget(i) == widget):
                         self.devicetabs.setTabText(i, name)
@@ -193,28 +186,7 @@ class redvyprWidget(QtWidgets.QWidget):
 
                 break
 
-        self.update_devicewidgetsummary()
         return True
-
-    def create_devicewidgetsummary(self):
-        """ Creates the device summary widget
-        """
-        self.devicesummarywidget = QtWidgets.QWidget()
-        self.devicesummarywidget_layout = QtWidgets.QVBoxLayout(self.devicesummarywidget)
-
-    def update_devicewidgetsummary(self):
-        """ Updates the device summary widget
-        """
-        # Remove all
-        for i in reversed(range(self.devicesummarywidget_layout.count())):
-            item = self.devicesummarywidget_layout.itemAt(i)
-            self.devicesummarywidget_layout.removeItem(item)
-
-        # and refill it
-        for i, devicedict in enumerate(self.redvypr.devices):
-            self.devicesummarywidget_layout.addWidget(devicedict['controlwidget'])
-
-        self.devicesummarywidget_layout.addStretch()
 
     def readguiqueue(self):
         """This periodically called function reads the guiqueue and calls
@@ -437,25 +409,21 @@ class redvyprWidget(QtWidgets.QWidget):
             devicewidget.hide()
         else:
             self.devicetabs.addTab(devicewidget, widgetname)
-            self.devicetabs.setCurrentWidget(devicewidget)
-        # self.devicetabs.addTab(devicewidget, device.name)
-        # devicetab.addTab(deviceinfowidget, 'Device status')
+            #self.devicetabs.setCurrentWidget(devicewidget)
 
         # All set, now call finalizing functions
         # Finalize the initialization by calling a helper function (if exist)
         try:
             deviceinitwidget.finalize_init()
         except Exception as e:
-            logger.debug(funcname + ':finalize_init():' + str(e))
+            pass
+            #logger.debug(funcname + ':finalize_init():' + str(e))
 
         try:
             devicedisplaywidget_called.finalize_init()
         except Exception as e:
-            logger.debug(funcname + ':finalize_init():' + str(e))
-
-        # Update the summary
-        # TODO: Remove this
-        #self.update_devicewidgetsummary()
+            pass
+            #logger.debug(funcname + ':finalize_init():' + str(e))
 
     def connect_device_gui(self):
         """ Wrapper for the gui
@@ -833,8 +801,6 @@ class redvyprWidget(QtWidgets.QWidget):
 
                 self.devicetabs.removeTab(currentIndex)
                 break
-
-        self.update_devicewidgetsummary()
 
     def close_application(self):
         funcname = __name__ + '.close_application():'

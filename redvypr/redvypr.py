@@ -627,7 +627,6 @@ class redvypr(QtCore.QObject):
                     except:
                         base_config = {}
 
-                    base_config['gui_dock'] = 'Window'
                     # Check if the devicemodulename kind of fits
                     FLAG_DEVICEMODULENAME_EXACT = False
                     # Make an exact test first
