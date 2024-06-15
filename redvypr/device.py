@@ -372,6 +372,9 @@ class redvypr_device(QtCore.QObject):
         
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(device_parameter.loglevel)
+        # Timer to ping the status of thread
+        self.__stoptimer__ = QtCore.QTimer()
+        self.__stoptimer__.timeout.connect(self.__check_thread_status)  # Add to the timer another update
 
     def subscription_changed_global(self,devchange):
         """
@@ -615,6 +618,24 @@ class redvypr_device(QtCore.QObject):
         else:
             self.logger.warning(funcname + ' thread is not running, doing nothing')
 
+    def __check_thread_status(self):
+        """
+        Regular thread status thread to test of thread is already stopped. Emit signal if stopped
+        :return:
+        """
+        self.__stop_checks -= 1
+        running2 = self.thread_running()
+        info_dict = {}
+        info_dict['uuid'] = self.uuid
+        info_dict['thread_running'] = running2
+        # Thread is not running anymore, stop timer and sent signal
+        if info_dict['thread_running'] == False:
+            self.__stoptimer__.stop()
+            self.thread_stopped.emit(info_dict)
+        if self.__stop_checks < 0:
+            self.logger.warning('Could not stop device, giving up')
+            self.__stoptimer__.stop()
+
     def thread_stop(self):
         """
         Sends a stop command to the thread_communication queue
@@ -627,12 +648,11 @@ class redvypr_device(QtCore.QObject):
         #print('Sending command',command)
         running = self.thread_running()
         if(running):
+            self.__stoptimer__.stop()
+            self.__stop_checks = 10 # Number of checks of stopped
             self.__send_command__(command)
-            running2 = self.thread_running()
-            info_dict = {}
-            info_dict['uuid'] = self.uuid
-            info_dict['thread_running'] = running2
-            self.thread_stopped.emit(info_dict)
+            # Start a timer and check if the thread was stopped
+            self.__stoptimer__.start(250)
         else:
             self.logger.warning(funcname + ' thread is not running, doing nothing')
 

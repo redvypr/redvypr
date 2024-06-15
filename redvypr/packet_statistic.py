@@ -103,7 +103,7 @@ def rem_device_from_statistics(deviceaddress, statdict):
     return keys_removed
 
 
-def do_data_statistics(data, statdict,address_data = None):
+def do_data_statistics(data, statdict, address_data = None):
     """
     Fills in the statistics dictionary with the data packet information
     Args:

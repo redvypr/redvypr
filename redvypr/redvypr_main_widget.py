@@ -64,7 +64,7 @@ class redvyprWidget(QtWidgets.QWidget):
 
         # Lets create the heart of redvypr
         self.redvypr = redvypr.redvypr(hostname=hostname,
-                               hostinfo_opt=hostinfo_opt)  # Configuration comes later after all widgets are initialized
+                                       metadata=hostinfo_opt)  # Configuration comes later after all widgets are initialized
 
         self.redvypr.device_path_changed.connect(self.__populate_devicepathlistWidget)
         self.redvypr.device_added.connect(self._add_device_gui)
@@ -78,17 +78,11 @@ class redvyprWidget(QtWidgets.QWidget):
         self.createHomeWidget()
         tab_index = self.devicetabs.addTab(self.__homeWidget, 'Home')
         self.devicetabs.setTabIcon(tab_index, QtGui.QIcon(_icon_file))
-
-        # The configuration of the redvypr
-        self.create_devicepathwidget()
-        self.create_statuswidget()
-        # self.devicetabs.addTab(self.__devicepathwidget,'Status')
-        self.devicetabs.addTab(self.__statuswidget, 'Status')
-
         # A widget containing all connections
-        self.create_devicewidgetsummary()  # Creates self.devicesummarywidget
-        self.devicetabs.addTab(self.devicesummarywidget, 'Devices')  # Add device summary widget
+
         if False:
+            self.create_devicewidgetsummary()  # Creates self.devicesummarywidget
+            self.devicetabs.addTab(self.devicesummarywidget, 'Devices')  # Add device summary widget
             # A logwidget
             self.logwidget = QtWidgets.QPlainTextEdit()
             self.logwidget.setReadOnly(True)
@@ -123,7 +117,27 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__homeWidget = QtWidgets.QTabWidget()
         self.__homeWidget_layout = QtWidgets.QVBoxLayout(self.__homeWidget)
         self.__deviceTableWidget = gui.deviceTableWidget(redvyprWidget=self)
+        #font = QtGui.QFont('Arial', 20)
+        font = QtGui.QFont('Arial')
+        font.setBold(True)
+        self.__mainLabel = QtWidgets.QLabel('Host information')
+        self.__mainLabel.setFont(font)
+        self.__mainLabel.setAlignment(QtCore.Qt.AlignCenter)
+        self.__homeWidget_layout.addWidget(self.__mainLabel)
+        # The configuration of the redvypr
+        self.create_devicepathwidget()
+        self.create_statuswidget_compact()
+        # self.devicetabs.addTab(self.__devicepathwidget,'Status')
+        self.__homeWidget_layout.addWidget(self.__statuswidget_compact)
+
+        # Device path
+        self.__deviceAddButton = QtWidgets.QPushButton('Add device')
+        self.__deviceAddButton.clicked.connect(self.open_add_device_widget)
+        self.__deviceAddButton.setFont(font)
+        self.__homeWidget_layout.addWidget(self.__deviceAddButton)
         self.__homeWidget_layout.addWidget(self.__deviceTableWidget)
+        # Configure button
+        self.__homeWidget_layout.addWidget(self.__host_config_btn)
 
     def open_ipwidget(self):
         self.ipwidget = redvypr_ip_widget()
@@ -165,13 +179,13 @@ class redvyprWidget(QtWidgets.QWidget):
             if (devname == oldname):  # Found the device, lets rename it
                 dev['device'].change_name(name)
                 widget = dev['widget']
-                # Create a new infowidget
-                dev['controlwidget'].close()
-                dev['controlwidget'] = deviceControlWidget(dev, self)
-                # Note: commented for the moment to be replaced by the signals of the device itself
-                # dev['infowidget'].device_start.connect(self.redvypr.start_device_thread)
-                # dev['infowidget'].device_stop.connect(self.redvypr.stop_device_thread)
-                dev['controlwidget'].connect.connect(self.connect_device)
+                ## Create a new infowidget
+                #dev['controlwidget'].close()
+                #dev['controlwidget'] = deviceControlWidget(dev, self)
+                ## Note: commented for the moment to be replaced by the signals of the device itself
+                ## dev['infowidget'].device_start.connect(self.redvypr.start_device_thread)
+                ## dev['infowidget'].device_stop.connect(self.redvypr.stop_device_thread)
+                #dev['controlwidget'].connect.connect(self.connect_device)
                 for i in range(self.devicetabs.count()):
                     if (self.devicetabs.widget(i) == widget):
                         self.devicetabs.setTabText(i, name)
@@ -393,10 +407,12 @@ class redvyprWidget(QtWidgets.QWidget):
             self.redvypr.devices[ind_devices]['displaywidget'] = None
 
         self.redvypr.devices[ind_devices]['widget'] = devicewidget  # This is the displaywidget
-        # Create the infowidget (for the overview of all devices)
-        self.redvypr.devices[ind_devices]['controlwidget'] = deviceControlWidget(self.redvypr.devices[ind_devices],
-                                                                                 self)
-        self.redvypr.devices[ind_devices]['controlwidget'].connect.connect(self.connect_device)
+
+        # TODO: remove
+        ## Create the infowidget (for the overview of all devices)
+        #self.redvypr.devices[ind_devices]['controlwidget'] = deviceControlWidget(self.redvypr.devices[ind_devices],
+        #                                                                         self)
+        #self.redvypr.devices[ind_devices]['controlwidget'].connect.connect(self.connect_device)
 
         #
         # Add the devicelistentry to the widget, this gives the full information to the device
@@ -437,8 +453,9 @@ class redvyprWidget(QtWidgets.QWidget):
         except Exception as e:
             logger.debug(funcname + ':finalize_init():' + str(e))
 
-            # Update the summary
-        self.update_devicewidgetsummary()
+        # Update the summary
+        # TODO: Remove this
+        #self.update_devicewidgetsummary()
 
     def connect_device_gui(self):
         """ Wrapper for the gui
@@ -487,19 +504,89 @@ class redvyprWidget(QtWidgets.QWidget):
         Returns:
 
         """
+
+
         if self.redvypr.datadistthread.is_alive() == False:
-            self.__status_dt.setText(
+            self.__status_thread.setText(
                 'Datadistribution thread is not running! This is bad, consider restarting redvypr.')
-            self.__status_dt.setStyleSheet("QLabel { background-color : white; color : red; }")
-            self.__status_dtneeded.setText('')
+            self.__status_thread.setStyleSheet("QLabel { background-color : white; color : red; }")
         else:
-            npackets = self.redvypr.packets_processed
+            try:
+                npackets = self.redvypr.packets_processed
+            except:
+                npackets = 0
             if (npackets > 0) and (self.redvypr.dt_avg_datadist > 0):
                 packets_pstr = npackets / self.redvypr.dt_avg_datadist
             else:
                 packets_pstr = 0.0
-            self.__status_dtneeded.setText(
-                ' (needed {:0.5f}s, {:6.1f} packets/s)'.format(self.redvypr.dt_avg_datadist, packets_pstr))
+
+            trun = time.time() - self.redvypr.t_thread_start
+            npackets_total = self.redvypr.packets_counter
+            statusstr = 'Running: {:.0f}s, dt: {:0.5f}s (needed {:0.5f}s, {:6.1f} packets/s), Packets processed {:d}'.format(trun, self.redvypr.dt_datadist, self.redvypr.dt_avg_datadist, packets_pstr, npackets_total)
+            self.__status_thread.setText(statusstr)
+
+    def create_statuswidget_compact(self):
+        """Creates the statuswidget
+
+        """
+        self.redvypr.status_update_signal.connect(self.__update_status_widget__)
+        self.redvypr.hostconfig_changed_signal.connect(self.__update_hostinfo_widget__)
+        self.__statuswidget_compact = QtWidgets.QWidget()
+        layout = QtWidgets.QFormLayout(self.__statuswidget_compact)
+        self.__status_thread_label = QtWidgets.QLabel('Data distribution thread:')
+        # dt
+        self.__status_thread = QtWidgets.QLabel('')
+        self.__update_status_widget__()
+        layout.addRow(self.__status_thread_label,self.__status_thread)#, self.__status_dtneeded)
+
+        # Hostname
+        self.__hostname_label = QtWidgets.QLabel('Hostname:')
+        self.__hostname_line = QtWidgets.QLabel('')
+        self.__hostname_line.setAlignment(QtCore.Qt.AlignRight)
+        self.__hostname_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.__hostname_line.setText(self.redvypr.hostinfo['hostname'])
+        # UUID
+        self.__uuid_label = QtWidgets.QLabel('UUID:')
+        self.__uuid_line = QtWidgets.QLabel('')
+        self.__uuid_line.setAlignment(QtCore.Qt.AlignRight)
+        self.__uuid_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.__uuid_line.setText(self.redvypr.hostinfo['uuid'])
+        # IP
+        self.__ip_label = QtWidgets.QLabel('IP:')
+        self.__ip_line = QtWidgets.QLabel('')
+        self.__ip_line.setAlignment(QtCore.Qt.AlignRight)
+        self.__ip_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.__ip_line.setText(self.redvypr.hostinfo['addr'])
+        # Configuration
+        #self.__host_config_label = QtWidgets.QLabel('Configure:')
+        self.__host_config_btn = QtWidgets.QPushButton('Configure')
+        self.__host_config_btn.clicked.connect(self.__open_configWidget)
+        self.__host_config_widget = QtWidgets.QWidget()
+        self.__host_config_widget_layout = QtWidgets.QFormLayout(self.__host_config_widget)
+        # Configuration widgets for detailed configuration, opened when clicked configure button
+        # Change the hostname
+        self.__hostinfo_opt_btn = QtWidgets.QPushButton('Edit optional information')
+        self.__hostinfo_opt_btn.clicked.connect(self.__hostinfo_opt_changed_click)
+
+        self.__statuswidget_pathbtn = QtWidgets.QPushButton('Edit device path')
+        self.__statuswidget_pathbtn.clicked.connect(self.show_devicepathwidget)
+
+        layout.addRow(self.__hostname_label, self.__hostname_line)
+        layout.addRow(self.__uuid_label, self.__uuid_line)
+        layout.addRow(self.__ip_label, self.__ip_line)
+        layout.addRow(self.__ip_label, self.__ip_line)
+        #layout.addRow(self.__host_config_label,self.__host_config_btn)
+        self.__host_config_widget_layout.addRow(self.__hostinfo_opt_btn)
+        self.__host_config_widget_layout.addRow(self.__statuswidget_pathbtn)
+
+
+        logo = QtGui.QPixmap(_logo_file)
+        logolabel = QtWidgets.QLabel()
+        logolabel.setPixmap(logo)
+        # layout.addRow(logolabel)
+
+    def __open_configWidget(self):
+        self.__host_config_widget.show()
 
     def create_statuswidget(self):
         """Creates the statuswidget
@@ -536,7 +623,7 @@ class redvyprWidget(QtWidgets.QWidget):
 
         # Location
         try:
-            location = self.redvypr.hostinfo_opt['location'].data
+            location = self.redvypr.metadata['location'].data
         except:
             location = ''
 
@@ -547,7 +634,7 @@ class redvyprWidget(QtWidgets.QWidget):
 
         # Description
         try:
-            description = self.redvypr.hostinfo_opt['description'].data
+            description = self.redvypr.metadata['description'].data
         except:
             description = ''
 
@@ -558,13 +645,13 @@ class redvyprWidget(QtWidgets.QWidget):
 
         # Lon
         try:
-            lon = self.redvypr.hostinfo_opt['lon'].data
+            lon = self.redvypr.metadata['lon'].data
         except:
             lon = -9999.0
 
         # Lon/Lat
         try:
-            lat = self.redvypr.hostinfo_opt['lat'].data
+            lat = self.redvypr.metadata['lat'].data
         except:
             lat = -9999.0
 
@@ -624,7 +711,7 @@ class redvyprWidget(QtWidgets.QWidget):
             print('Not really a change of the text')
         else:
             self.__loc_text.textold = self.__loc_text.text()
-            self.redvypr.hostinfo_opt['location'].data = self.__loc_text.text()
+            self.redvypr.metadata['location'].data = self.__loc_text.text()
             FLAG_CHANGE = True
 
         # Location text
@@ -632,7 +719,7 @@ class redvyprWidget(QtWidgets.QWidget):
             print('Not really a change of the description text')
         else:
             self.__desc_text.textold = self.__desc_text.text()
-            self.redvypr.hostinfo_opt['description'].data = self.__desc_text.text()
+            self.redvypr.metadata['description'].data = self.__desc_text.text()
             FLAG_CHANGE = True
 
         # Longitude
@@ -640,7 +727,7 @@ class redvyprWidget(QtWidgets.QWidget):
             print('Not really a change of the longitude')
         else:
             self.__lon_text.oldvalue = self.__lon_text.value()
-            self.redvypr.hostinfo_opt['lon'].data = self.__lon_text.value()
+            self.redvypr.metadata['lon'].data = self.__lon_text.value()
             FLAG_CHANGE = True
 
         # Latitude
@@ -648,7 +735,7 @@ class redvyprWidget(QtWidgets.QWidget):
             print('Not really a change of the latitude')
         else:
             self.__lat_text.oldvalue = self.__lat_text.value()
-            self.redvypr.hostinfo_opt['lat'].data = self.__lat_text.value()
+            self.redvypr.metadata['lat'].data = self.__lat_text.value()
             FLAG_CHANGE = True
 
         if FLAG_CHANGE:
@@ -666,7 +753,7 @@ class redvyprWidget(QtWidgets.QWidget):
 
         """
         # Optional hostinformation
-        self.__hostinfo_opt_edit = gui.configWidget(self.redvypr.hostinfo_opt, loadsavebutton=False,
+        self.__hostinfo_opt_edit = gui.configWidget(self.redvypr.metadata, loadsavebutton=False,
                                                     redvypr_instance=self.redvypr)
 
         self.__hostinfo_opt_edit.show()
@@ -740,8 +827,9 @@ class redvyprWidget(QtWidgets.QWidget):
                 self.redvypr.rem_device(device)
                 # Close the widgets (init/display)
                 currentWidget.close()
-                # Info
-                sendict['controlwidget'].close()
+                # TODO: remove
+                ## Info
+                #sendict['controlwidget'].close()
 
                 self.devicetabs.removeTab(currentIndex)
                 break

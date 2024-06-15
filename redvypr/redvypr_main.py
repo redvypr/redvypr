@@ -2,7 +2,6 @@ import ast
 import os
 import logging
 import sys
-import pkg_resources
 from PyQt5 import QtWidgets, QtCore, QtGui
 import multiprocessing
 import argparse
@@ -218,7 +217,7 @@ def redvypr_main():
 
         signal.signal(signal.SIGINT, handleIntSignal)
         app = QtCore.QCoreApplication(sys.argv)
-        redvypr_obj = redvypr.redvypr(config=config_all, hostinfo_opt=hostinfo_opt,hostname=hostname,nogui=True)
+        redvypr_obj = redvypr.redvypr(config=config_all, metadata=hostinfo_opt, hostname=hostname, nogui=True)
         # Check if the devices shall be listed only
         if (args.list_devices):
             devices = redvypr_obj.get_known_devices()

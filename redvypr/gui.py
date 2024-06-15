@@ -67,7 +67,10 @@ class deviceTableWidget(QtWidgets.QTableWidget):
             self.setItem(irow, colindex, item_name)
             # Start
             button_start = QtWidgets.QPushButton('Start')
+            button_start.setCheckable(True)
             button_start.__device = device
+            device.thread_started.connect(self.deviceThreadStatusChanged)
+            device.thread_stopped.connect(self.deviceThreadStatusChanged)
             button_start.__devicedict = devicedict
             button_start.clicked.connect(self.deviceStartStopClicked)
             colindex = colheader.index('Start')
@@ -107,12 +110,49 @@ class deviceTableWidget(QtWidgets.QTableWidget):
 
         self.resizeColumnsToContents()
 
+    def deviceThreadStatusChanged(self):
+        """ Updating all buttons depending on the thread status (if its alive, graying out things)
+        """
+        device_tmp = self.sender()
+        startbutton = self.__startbutton_clicked
+        #print('Update!',device)
+        status = device_tmp.get_thread_status()
+        thread_status = status['thread_running']
+        if self.__startbutton_clicked is not None:
+            #print('Hall', status)
+            #print('Hall', thread_status)
+            # Running
+            if (thread_status):
+                startbutton.setText('Stop')
+                startbutton.setChecked(True)
+            # Not running
+            else:
+                startbutton.setText('Start')
+                # Check if an error occured and the startbutton
+                if (startbutton.isChecked()):
+                    startbutton.setChecked(False)
+                # self.conbtn.setEnabled(True)
+
+        self.__startbutton_clicked = None
+
     def deviceSubscribeClicked(self):
         button = self.sender()
         print('Subscribe')
     def deviceStartStopClicked(self):
         button = self.sender()
-        print('Start Stop')
+        self.__startbutton_clicked = button
+        device = button.__device
+        if button.isChecked():
+            logger.debug("button pressed")
+            button.setText('Starting')
+            device.thread_start()
+            # self.device_start.emit(self.device)
+        else:
+            logger.debug('button released')
+            button.setText('Stopping')
+            button.setChecked(True)
+            device.thread_stop()
+
 
     def widgetlocChanged(self, index):
         """
@@ -433,7 +473,6 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
 
         font = QtGui.QFont('Arial', 20)
         font.setBold(True)
-
         lab = QtWidgets.QLabel('Device subscriptions')
         lab.setFont(font)
         lab.setAlignment(QtCore.Qt.AlignCenter)
@@ -858,7 +897,7 @@ class deviceControlWidget(QtWidgets.QWidget):
         else:
             self.device.thread_start()
 
-    def thread_status(self,statusdict):
+    def thread_status(self, statusdict):
         """ Function regularly called by redvypr to update the thread status
         """
         status = statusdict['thread_running']

@@ -114,8 +114,8 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
     packet_counter = 0 # Global counter of packets received by the redvypr instance
     tinfo = time.time()
     tstop = time.time()
+    thread_start = time.time()
     dt_sleep = dt
-
 
     while True:
         try:
@@ -284,10 +284,11 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
             dt_dist = tstop - tstart  # The time for all the looping
             dt_avg += dt_dist
             navg += 1
+            # Time to sleep, remove processing time
             dt_sleep = max([0, dt - dt_dist])
             if ((tstop - tinfo) > dt_info):
                 tinfo = tstop
-                info_dict = {'type':'dt_avg','dt_avg': dt_avg / navg,'packets_processed': packets_processed}
+                info_dict = {'type':'dt_avg','dt_avg': dt_avg / navg,'packets_processed': packets_processed,'packets_counter':packet_counter,'thread_start':thread_start}
                 packets_processed = 0
                 # print(info_dict)
                 try:
@@ -312,35 +313,36 @@ class redvypr(QtCore.QObject):
     device_status_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
     hostconfig_changed_signal    = QtCore.pyqtSignal()  # Signal notifying if the configuration of the host changed (hostname, hostinfo_opt)
 
-    def __init__(self, parent=None, config=None, hostname='redvypr', hostinfo_opt={}, nogui=False):
+    def __init__(self, parent=None, config=None, hostname='redvypr', metadata={}, nogui=False):
         # super(redvypr, self).__init__(parent)
         super(redvypr, self).__init__()
         print(__platform__)
         funcname = __name__ + '.__init__()'
         logger.debug(funcname)
         self.hostinfo = create_hostinfo(hostname=hostname)
+        # TODO: replace with pydantic
         #print('Hostinfo opt',hostinfo_opt)
         try:
-            hostinfo_opt['description']
+            metadata['description']
         except:
-            hostinfo_opt['description'] = ''
+            metadata['description'] = ''
 
         try:
-            hostinfo_opt['location']
+            metadata['location']
         except:
-            hostinfo_opt['location'] = ''
+            metadata['location'] = ''
 
         try:
-            hostinfo_opt['lon']
+            metadata['lon']
         except:
-            hostinfo_opt['lon'] = -9999.0
+            metadata['lon'] = -9999.0
 
         try:
-            hostinfo_opt['lat']
+            metadata['lat']
         except:
-            hostinfo_opt['lat'] = -9999.0
+            metadata['lat'] = -9999.0
 
-        self.hostinfo_opt = configuration(template=hostinfo_opt)
+        self.metadata = configuration(template=metadata)
 
         self.config = {}  # Might be overwritten by parse_configuration()
         self.properties = {}  # Properties that are distributed with the device
@@ -350,8 +352,7 @@ class redvypr(QtCore.QObject):
         self.datastreams_dict = {} # Information about all datastreams, this is updated by distribute data
         self.deviceinfo_all   = {} # Information about all devices, this is updated by distribute data
 
-
-
+        self.packets_counter = 0 # Counter for the total number of packets processed
         self.dt_datadist = 0.01  # The time interval of datadistribution
         self.dt_avg_datadist = 0.00  # The time interval of datadistribution
         self.datadistinfoqueue = queue.Queue(maxsize=1000)  # A queue to get informations from the datadistthread
@@ -359,6 +360,7 @@ class redvypr(QtCore.QObject):
         # Lets start the distribution!
         self.datadistthread = threading.Thread(target=distribute_data, args=(
         self.devices, self.hostinfo, self.deviceinfo_all, self.datadistinfoqueue, self.redvyprqueue, self.dt_datadist), daemon=True)
+        self.t_thread_start = time.time()
         self.datadistthread.start()
         logger.info(funcname + ':Searching for devices')
         self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths, redvypr_devices=redvyprdevices, loglevel = logger.getEffectiveLevel())
@@ -418,17 +420,22 @@ class redvypr(QtCore.QObject):
             try: # Reading data coming from distribute_data thread
                 data = self.datadistinfoqueue.get(block=False)
                 #print('Got data',data)
-                if('dt_avg' in data['type']):
-                    self.dt_avg_datadist   = data['dt_avg']
-                    self.packets_processed = data['packets_processed']
-                    self.status_update_signal.emit()
-                elif ('deviceinfo_all' in data['type']):
-                    data.pop('type')  # Remove the type key
-                    # Store the data of the changed devices
-                    self.__device_status_changed_data__ = data
+                try:
+                    if('dt_avg' in data['type']):
+                        self.dt_avg_datadist   = data['dt_avg']
+                        self.packets_processed = data['packets_processed']
+                        self.packets_counter = data['packets_counter']
+                        self.t_thread_start = data['thread_start']
+                        self.status_update_signal.emit()
+                    elif ('deviceinfo_all' in data['type']):
+                        data.pop('type')  # Remove the type key
+                        # Store the data of the changed devices
+                        self.__device_status_changed_data__ = data
 
-                    #print('datastreams changed', data)
-                    self.device_status_changed_signal.emit()
+                        #print('datastreams changed', data)
+                        self.device_status_changed_signal.emit()
+                except:
+                    logger.info(funcname + 'Error',exc_info=True)
 
             except Exception as e:
                 #logger.exception(e)
@@ -471,7 +478,7 @@ class redvypr(QtCore.QObject):
         funcname = __name__ + '.get_config():'
         config = {}
         config['hostname']     = self.hostinfo['hostname']
-        config['hostinfo_opt'] = copy.deepcopy(self.hostinfo_opt)
+        config['hostinfo_opt'] = copy.deepcopy(self.metadata)
         config['devicepath'] = []
         for p in self.device_paths:
             config['devicepath'].append(p)
@@ -507,12 +514,12 @@ class redvypr(QtCore.QObject):
         Returns:
             True or False
         """
-        funcname = "parse_configuration()"
+        funcname = "parse_configuration():"
         parsed_devices = []
         logger.debug(funcname)
 
         if (redvypr_config is not None):
-            logger.debug(funcname + ':Configuration: ' + str(redvypr_config))
+            logger.debug(funcname + 'Configuration: ' + str(redvypr_config))
             if (type(redvypr_config) == str):
                 redvypr_config = [redvypr_config]
         else:
@@ -522,29 +529,29 @@ class redvypr(QtCore.QObject):
         device_tmp = []
         for configraw in redvypr_config:
             if (type(configraw) == str):
-                logger.debug(funcname + ':Opening yaml file: ' + str(configraw))
+                logger.debug(funcname + 'Opening yaml file: ' + str(configraw))
                 if (os.path.exists(configraw)):
                     fconfig = open(configraw)
                     try:
                         config_tmp = yaml.load(fconfig, Loader=yaml.SafeLoader)
                     except:
-                        logger.warning(funcname + ' Could not load yaml file with safe loader')
+                        logger.warning(funcname + 'Could not load yaml file with safe loader')
                         fconfig.close()
                         fconfig = open(configraw)
                         try:
                             config_tmp = yaml.load(fconfig, Loader=yaml.CLoader)
-                            print('Config tmp',config_tmp)
+                            logger.debug('Config tmp {}'.format(config_tmp))
                         except:
                             logger.warning(funcname + ' Could not load yaml file with x loader')
                             continue
                 else:
-                    logger.warning(funcname + ':Yaml file: ' + str(configraw) + ' does not exist!')
+                    logger.warning(funcname + 'Yaml file: ' + str(configraw) + ' does not exist!')
                     continue
             elif(type(configraw) == dict):
-                logger.debug(funcname + ':Opening dictionary')
+                logger.debug(funcname + 'Opening dictionary')
                 config_tmp = configraw
             else:
-                logger.warning(funcname + ': Unknown type of configuration {:s}'.format(type(configraw)))
+                logger.warning(funcname + 'Unknown type of configuration {:s}'.format(type(configraw)))
                 continue
 
             # Merge the configuration into one big dictionary
@@ -582,15 +589,15 @@ class redvypr(QtCore.QObject):
             # Check for hostinformation
             # Add the hostname
             try:
-                logger.info(funcname + ': Setting hostname to {:s}'.format(config['hostname']))
+                logger.info(funcname + 'Setting hostname to {:s}'.format(config['hostname']))
                 self.hostinfo['hostname'] = config['hostname']
             except:
                 pass
 
             try:
-                logger.info(funcname + ': Setting optional hostinfomation: {:s}'.format(str(config['hostinfo_opt'])))
+                logger.info(funcname + 'Setting optional hostinfomation: {:s}'.format(str(config['hostinfo_opt'])))
                 c = redvyprconfig.dict_to_configDict(config['hostinfo_opt'])
-                self.hostinfo_opt.update(c)
+                self.metadata.update(c)
             except Exception as e:
                 #logger.exception(e)
                 pass
@@ -648,19 +655,16 @@ class redvypr(QtCore.QObject):
                                 device['devicemodulename_orig'] = device['devicemodulename']
                                 device['devicemodulename'] = smod['name']
 
-                    logger.info(funcname + ' adding device {}'.format(device['devicemodulename']))
+                    logger.info(funcname + 'Adding device {}'.format(device['devicemodulename']))
                     dev_added = self.add_device(devicemodulename=device['devicemodulename'], deviceconfig=device_config, device_parameter=base_config)
-
                     # Subscriptions
                     # Name
                     #
                     parsed_devices.append(dev_added)
 
-
         # Emit a signal that the configuration has been changed
         self.hostconfig_changed_signal.emit()
         return True
-
 
     def device_loglevel(self, device, loglevel=None):
         """ Returns the loglevel of the device
@@ -688,15 +692,10 @@ class redvypr(QtCore.QObject):
 
 
         """
-
         funcname = self.__class__.__name__ + '.add_device():'
         logger.debug(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(deviceconfig))
         #logger.info(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(deviceconfig))
         devicelist = []
-
-
-
-
         device_found = False
         # Loop over all modules and check of we find the name
         for smod in self.redvypr_device_scan.redvypr_devices_flat:
@@ -744,8 +743,8 @@ class redvypr(QtCore.QObject):
                         config = deviceconfig['config']
                         #print('Config',config)
                         pydantic_device_config = devicemodule.device_config.model_validate(config)
-                    except Exception as e:
-                        logger.exception(e)
+                    except:
+                        logger.debug('No config found',exc_info=True)
                         pydantic_device_config = devicemodule.device_config()
 
                     logger.debug(funcname + ':Found pydantic configuration {:s}'.format(str(devicemodule)))
@@ -880,12 +879,12 @@ class redvypr(QtCore.QObject):
                     try:
                         level = deviceconfig['loglevel']
                     except Exception as e:
-                        logger.info('Setting loglevel to standard',exc_info=True)
+                        logger.info(funcname + 'Setting loglevel to standard')
                         # Set the loglevel
                         level = logger.getEffectiveLevel()
 
                     levelname = logging.getLevelName(level)
-                    logger.debug(funcname + ' Setting the loglevel to {}'.format(levelname))
+                    logger.debug(funcname + 'Setting the loglevel to {}'.format(levelname))
                     device_parameter.loglevel = levelname
                     # Check for an autostart
                     try:
@@ -947,11 +946,11 @@ class redvypr(QtCore.QObject):
                 try:
                     subscribe_addresses =  deviceconfig['subscriptions']
                 except:
-                    logger.info('Subscriptions',exc_info=True)
+                    logger.debug(funcname + ' No subscriptions found')
 
                     subscribe_addresses = []
 
-                logger.debug(funcname + 'Subscribing to ...')
+                logger.debug(funcname + 'Subscribing to')
                 for a in subscribe_addresses:
                     logger.debug(funcname + 'subscribing: {}'.format(a))
                     device.subscribe_address(a)

@@ -1384,7 +1384,7 @@ class Device(redvypr_device):
         device_info['devicename']       = self.name
         device_info['devicemodulename'] = self.devicemodulename
         device_info['deviceuuid']       = self.uuid
-        device_info['hostinfo_opt']     = copy.deepcopy(self.redvypr.hostinfo_opt)
+        device_info['hostinfo_opt']     = copy.deepcopy(self.redvypr.metadata)
         start(device_info,copy.deepcopy(config), dataqueue, datainqueue, statusqueue)
 
     def __process_statusdata__(self):
@@ -1637,7 +1637,7 @@ class Device(redvypr_device):
         """
         funcname = __name__ + '.send_hostinfo_command():'
         self.logger.debug(funcname)
-        hostinfo = {'hostinfo_opt': copy.deepcopy(self.redvypr.hostinfo_opt)}
+        hostinfo = {'hostinfo_opt': copy.deepcopy(self.redvypr.metadata)}
         #print('hostinfo', hostinfo,time.time())
         self.thread_command('hostinfo_opt', hostinfo)
 
