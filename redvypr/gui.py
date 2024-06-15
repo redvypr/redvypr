@@ -47,10 +47,15 @@ class deviceTableWidget(QtWidgets.QTableWidget):
         self.redvypr.device_added.connect(self.populate_table)
         self.redvypr.device_removed.connect(self.populate_table)
         self.populate_table()
+        self._updatetimer = QtCore.QTimer()
+        self._updatetimer.timeout.connect(self.updateDevicePackets)
+        self._updatetimer.start(2000)
     def populate_table(self):
         nRows = len(self.redvypr.devices)
         colheader = ['Name', 'Start', 'Subscribe', 'Loglevel', 'Window location', 'Configure', 'View',
                          'Packets published', 'Packets received']
+
+        self.colheader = colheader
         nCols = len(colheader)
         self.clear()
         self.setRowCount(nRows)
@@ -107,8 +112,60 @@ class deviceTableWidget(QtWidgets.QTableWidget):
             combo_choose.currentIndexChanged.connect(self.widgetlocChanged)
             colindex = colheader.index('Loglevel')
             self.setCellWidget(irow, colindex, combo_choose)
+            # Configure
+            button_configure = QtWidgets.QPushButton('Configure')
+            button_configure.__device = device
+            button_configure.__devicedict = devicedict
+            button_configure.setEnabled(False)
+            button_configure.clicked.connect(self.deviceConfigureClicked)
+            colindex = colheader.index('Configure')
+            self.setCellWidget(irow, colindex, button_configure)
+            # View
+            button_view = QtWidgets.QPushButton('View')
+            button_view.__device = device
+            button_view.__devicedict = devicedict
+            button_view.clicked.connect(self.deviceViewClicked)
+            colindex = colheader.index('View')
+            self.setCellWidget(irow, colindex, button_view)
 
         self.resizeColumnsToContents()
+        self.updateDevicePackets()
+
+    def updateDevicePackets(self):
+        """
+        Updates the packets numbers in the table
+        :return:
+        """
+        funcname = __name__ + '.updateDevicePackets():'
+        #logger.debug(funcname)
+        for irow, d in enumerate(self.redvypr.devices):
+            npub = d['device'].statistics['packets_published']
+            colindex = self.colheader.index('Packets published')
+            item_pub = QtWidgets.QTableWidgetItem(str(npub))
+            self.setItem(irow, colindex, item_pub)
+            nrecv = d['device'].statistics['packets_received']
+            colindex = self.colheader.index('Packets received')
+            item_recv = QtWidgets.QTableWidgetItem(str(nrecv))
+            self.setItem(irow, colindex, item_recv)
+
+    def deviceViewClicked(self):
+        funcname = __name__ + '.deviceViewClicked():'
+        logger.debug(funcname)
+        devicedict = self.sender().__devicedict
+        tabindex = self.redvyprWidget.devicetabs.indexOf(devicedict['widget'])
+        try:
+            if tabindex > -1:
+                self.redvyprWidget.devicetabs.setCurrentWidget(devicedict['widget'])
+            else:
+                devicedict['widget'].setFocus()
+                devicedict['widget'].raise_()
+                devicedict['widget'].activateWindow()
+        except:
+            logger.debug('View', exc_info=True)
+
+    def deviceConfigureClicked(self):
+        funcname = __name__ + '.deviceConfigureClicked():'
+        logger.debug(funcname)
 
     def deviceThreadStatusChanged(self):
         """ Updating all buttons depending on the thread status (if its alive, graying out things)
@@ -136,8 +193,14 @@ class deviceTableWidget(QtWidgets.QTableWidget):
         self.__startbutton_clicked = None
 
     def deviceSubscribeClicked(self):
+        funcname = __name__ + '.deviceSubscribeClicked()'
         button = self.sender()
-        print('Subscribe')
+        device = button.__device
+        logger.debug(funcname + ':' + str(device))
+        # self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
+        self.__subscribeWidget = redvyprSubscribeWidget(redvypr=self.redvypr, device=device)
+        self.__subscribeWidget.show()
+
     def deviceStartStopClicked(self):
         button = self.sender()
         self.__startbutton_clicked = button
@@ -164,24 +227,29 @@ class deviceTableWidget(QtWidgets.QTableWidget):
         combo = self.sender()
         widgetloc = combo.currentText()
         devicewidget = combo.__devicedict['widget']
+        device = combo.__device
         tabindex = self.redvyprWidget.devicetabs.indexOf(devicewidget)
-        print('Index', index, combo.__device, widgetloc, tabindex)
+        #print('Index', index, combo.__device, widgetloc, tabindex)
         widgetname = combo.__device.name
         if widgetloc == 'Window':
             if tabindex > -1:
                 self.redvyprWidget.devicetabs.removeTab(tabindex)
                 devicewidget.setParent(None)
                 devicewidget.setWindowTitle(widgetname)
+                device.device_parameter.gui_dock = widgetloc
                 devicewidget.show()
+
         elif widgetloc == 'Hide':
             if tabindex > -1:
                 self.redvyprWidget.devicetabs.removeTab(tabindex)
                 devicewidget.setParent(None)
                 devicewidget.setWindowTitle(widgetname)
+                device.device_parameter.gui_dock = widgetloc
                 devicewidget.show()
         else:
             if tabindex == -1:
                 self.redvyprWidget.devicetabs.addTab(devicewidget, widgetname)
+                device.device_parameter.gui_dock = widgetloc
 
 
 class deviceTabWidget(QtWidgets.QTabWidget):
