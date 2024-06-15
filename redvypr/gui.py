@@ -97,7 +97,10 @@ class deviceTableWidget(QtWidgets.QTableWidget):
                     log_combo.addItem(l)
 
                 log_combo.setCurrentText(levelname)
-                colindex = colheader.index('Window location')
+                log_combo.__device = device
+                log_combo.__devicedict = devicedict
+                log_combo.currentIndexChanged.connect(self.loglevelChanged)
+                colindex = colheader.index('Loglevel')
                 self.setCellWidget(irow, colindex, log_combo)
             # Dock location
             combo_choose = QtWidgets.QComboBox()
@@ -110,7 +113,8 @@ class deviceTableWidget(QtWidgets.QTableWidget):
             device_dockstr = device.device_parameter.gui_dock
             combo_choose.setCurrentText(device_dockstr)
             combo_choose.currentIndexChanged.connect(self.widgetlocChanged)
-            colindex = colheader.index('Loglevel')
+
+            colindex = colheader.index('Window location')
             self.setCellWidget(irow, colindex, combo_choose)
             # Configure
             button_configure = QtWidgets.QPushButton('Configure')
@@ -215,6 +219,14 @@ class deviceTableWidget(QtWidgets.QTableWidget):
             button.setText('Stopping')
             button.setChecked(True)
             device.thread_stop()
+
+    def loglevelChanged(self):
+        devicedict = self.sender().__devicedict
+        loglevel = self.sender().currentText()
+        logger = devicedict['logger']
+        logger.info('loglevel changed to {}'.format(loglevel))
+        if(logger is not None):
+            logger.setLevel(loglevel)
 
 
     def widgetlocChanged(self, index):
