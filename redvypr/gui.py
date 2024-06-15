@@ -23,16 +23,133 @@ _icon_file = files.icon_file
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr')
+logger = logging.getLogger('gui')
 logger.setLevel(logging.DEBUG)
+
+
+
+class deviceTableWidget(QtWidgets.QTableWidget):
+    """
+    Tablewidget that displays all devices of the redvypr instance, gives informations and controls possibility.
+
+    """
+
+    def __init__(self, redvyprWidget=None):
+        """
+
+        Args:
+            redvypr:
+            device:
+        """
+        super(deviceTableWidget, self).__init__()
+        self.redvyprWidget = redvyprWidget
+        self.redvypr = redvyprWidget.redvypr
+        self.redvypr.device_added.connect(self.populate_table)
+        self.redvypr.device_removed.connect(self.populate_table)
+        self.populate_table()
+    def populate_table(self):
+        nRows = len(self.redvypr.devices)
+        colheader = ['Name', 'Start', 'Subscribe', 'Loglevel', 'Window location', 'Configure', 'View',
+                         'Packets published', 'Packets received']
+        nCols = len(colheader)
+        self.clear()
+        self.setRowCount(nRows)
+        self.setColumnCount(nCols)
+        self.setHorizontalHeaderLabels(colheader)
+        for irow,d in enumerate(self.redvypr.devices):
+            print('d',d)
+            device = d['device']
+            devicedict = d
+            # Devicename
+            colindex = colheader.index('Name')
+            devicename = device.name
+            item_name = QtWidgets.QTableWidgetItem(devicename)
+            self.setItem(irow, colindex, item_name)
+            # Start
+            button_start = QtWidgets.QPushButton('Start')
+            button_start.__device = device
+            button_start.__devicedict = devicedict
+            button_start.clicked.connect(self.deviceStartStopClicked)
+            colindex = colheader.index('Start')
+            self.setCellWidget(irow, colindex, button_start)
+            # Subscribe
+            button_subscribe = QtWidgets.QPushButton('Subscribe')
+            button_subscribe.__device = device
+            button_subscribe.__devicedict = devicedict
+            button_subscribe.clicked.connect(self.deviceSubscribeClicked)
+            colindex = colheader.index('Subscribe')
+            self.setCellWidget(irow, colindex, button_subscribe)
+            # Loglevel
+            if True:
+                level = device.logger.getEffectiveLevel()
+                levelname = logging.getLevelName(level)
+                loglevels = ['INFO', 'DEBUG', 'WARNING', 'ERROR', 'CRITICAL']
+                log_combo = QtWidgets.QComboBox()
+                for i, l in enumerate(loglevels):
+                    log_combo.addItem(l)
+
+                log_combo.setCurrentText(levelname)
+                colindex = colheader.index('Window location')
+                self.setCellWidget(irow, colindex, log_combo)
+            # Dock location
+            combo_choose = QtWidgets.QComboBox()
+            combo_choose.addItem('Tab')
+            combo_choose.addItem('Window')
+            combo_choose.addItem('Hide')
+            combo_choose.__device = device
+            combo_choose.__devicedict = devicedict
+            # Change the combo to the device setup
+            device_dockstr = device.device_parameter.gui_dock
+            combo_choose.setCurrentText(device_dockstr)
+            combo_choose.currentIndexChanged.connect(self.widgetlocChanged)
+            colindex = colheader.index('Loglevel')
+            self.setCellWidget(irow, colindex, combo_choose)
+
+        self.resizeColumnsToContents()
+
+    def deviceSubscribeClicked(self):
+        button = self.sender()
+        print('Subscribe')
+    def deviceStartStopClicked(self):
+        button = self.sender()
+        print('Start Stop')
+
+    def widgetlocChanged(self, index):
+        """
+        Functions checks if a device widget shall be attached to the tab layout
+        or is a free floating window
+        :param index:
+        :return:
+        """
+        combo = self.sender()
+        widgetloc = combo.currentText()
+        devicewidget = combo.__devicedict['widget']
+        tabindex = self.redvyprWidget.devicetabs.indexOf(devicewidget)
+        print('Index', index, combo.__device, widgetloc, tabindex)
+        widgetname = combo.__device.name
+        if widgetloc == 'Window':
+            if tabindex > -1:
+                self.redvyprWidget.devicetabs.removeTab(tabindex)
+                devicewidget.setParent(None)
+                devicewidget.setWindowTitle(widgetname)
+                devicewidget.show()
+        elif widgetloc == 'Hide':
+            if tabindex > -1:
+                self.redvyprWidget.devicetabs.removeTab(tabindex)
+                devicewidget.setParent(None)
+                devicewidget.setWindowTitle(widgetname)
+                devicewidget.show()
+        else:
+            if tabindex == -1:
+                self.redvyprWidget.devicetabs.addTab(devicewidget, widgetname)
 
 
 class deviceTabWidget(QtWidgets.QTabWidget):
     def resizeEvent(self, event):
-        print("Window has been resized",event)
-        print('fds',event.size().width())
+        #print("Window has been resized",event)
+        #print('fds',event.size().width())
         wtran = event.size().width()-500
-        print('fsfsd',self.widget(1).width())
+        #print('fsfsd',self.widget(1).width())
         self.setStyleSheet("QTabBar::tab:disabled {"+\
                         "width: {:d}px;".format(wtran)+\
                         "color: transparent;"+\
@@ -77,7 +194,7 @@ class redvyprAddDeviceWidget(QtWidgets.QWidget):
     """ A widget that lists all devices found in modules and in the python files included in the path list.
 
     """
-    def __init__(self, redvypr_device_scan=None,redvypr=None):
+    def __init__(self, redvypr_device_scan=None, redvypr=None):
         """
 
         Args:
@@ -624,7 +741,7 @@ class deviceControlWidget(QtWidgets.QWidget):
     device_stop  = QtCore.pyqtSignal(dict) # Signal requesting a stop of device
     connect      = QtCore.pyqtSignal(dict) # Signal requesting a change of the connection
 
-    def __init__(self,devicedict,redvyprwidget):
+    def __init__(self, devicedict, redvyprwidget):
         super(deviceControlWidget, self).__init__()
         self.devicedict = devicedict
         self.device = devicedict['device']
@@ -634,7 +751,7 @@ class deviceControlWidget(QtWidgets.QWidget):
         self.devicetab = self.redvyprwidget.devicetabs # The parent tab with all devices listed
         self.namelabel = QtWidgets.QLabel(devicedict['device'].name)
         label = self.namelabel
-        fsize         = label.fontMetrics().size(0, label.text())
+        fsize = label.fontMetrics().size(0, label.text())
         label.setFont(QtGui.QFont('Arial', fsize.height()+4))        
         #self.numlabel = QtWidgets.QLabel(str(devicedict['device'].numdevice))
         #label = self.numlabel

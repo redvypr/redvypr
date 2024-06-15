@@ -25,6 +25,7 @@ import inspect
 import pkg_resources
 import redvypr
 import pydantic
+import typing
 from redvypr.data_packets import commandpacket
 from redvypr.packet_statistic import do_data_statistics
 from redvypr.redvypr_address import redvypr_address
@@ -35,8 +36,8 @@ import redvypr.config as redvyprConfig
 class redvypr_device_parameter(pydantic.BaseModel):
     name: str = pydantic.Field(default='')
     uuid: str = pydantic.Field(default='')
-    template: dict = pydantic.Field(default={}) # Candidate for removal
-    config: dict = pydantic.Field(default={})  # Candidate for removal
+    #template: dict = pydantic.Field(default={}) # Candidate for removal
+    #config: dict = pydantic.Field(default={})  # Candidate for removal
     publishes: bool = False
     subscribes: bool = False
     multiprocess: str = pydantic.Field(default='qthread')
@@ -48,6 +49,7 @@ class redvypr_device_parameter(pydantic.BaseModel):
     # Not as parameter, but necessary for initialization
     maxdevices: int = pydantic.Field(default=-1)
     gui_tablabel_display: str = 'Display'
+    gui_dock: typing.Literal['Tab','Window','Hide'] = pydantic.Field(default='Tab')
 
 
 class deviceQThread(QtCore.QThread):
@@ -312,7 +314,7 @@ class redvypr_device(QtCore.QObject):
 
     #def __init__(self, name='redvypr_device', uuid = '', redvypr = None, dataqueue = None, comqueue = None, datainqueue=None,statusqueue=None,template = {},config = {},publishes=False,subscribes=False, multiprocess='thread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False,devicemodulename=''):
     def __init__(self, device_parameter = None, redvypr=None, dataqueue=None, comqueue=None, datainqueue=None,
-                 statusqueue = None, template = {}, config = {}, statistics=None, startfunction = None):
+                 statusqueue=None, template={}, config={}, statistics=None, startfunction=None):
         """
         """
         super(redvypr_device, self).__init__()
