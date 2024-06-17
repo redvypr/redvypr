@@ -1,11 +1,13 @@
 import ast
 import os
+import re
 import logging
 import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 import multiprocessing
 import argparse
 import signal
+import yaml
 # Import redvypr specific stuff
 import redvypr
 import redvypr.files as files
@@ -29,6 +31,95 @@ except:
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
+
+
+def merge_configuration(redvypr_config=None):
+    """
+    Merges a list of configurations
+    :param redvypr_config:
+    :return:
+    """
+    funcname = "merge_configuration():"
+    print('MERGE MERGE')
+    parsed_devices = []
+    logger.debug(funcname)
+
+    if (redvypr_config is not None):
+        logger.debug(funcname + 'Configuration: ' + str(redvypr_config))
+        if (type(redvypr_config) == str):
+            redvypr_config = [redvypr_config]
+    else:
+        return False
+
+    config_tmp = redvypr.RedvyprConfig()
+    print('Hallo config', config_tmp)
+    print('Done')
+    devices_all = []
+    devicepath_all = []
+    for iconf, configraw in enumerate(redvypr_config):
+        print('Configraw',configraw)
+        print('iconf', iconf,type(configraw))
+        if isinstance(configraw, redvypr.RedvyprConfig):
+            logger.info(funcname + ' Found redvypr config')
+            config_tmp = configraw
+        elif (type(configraw) == str):
+            logger.info(funcname + 'Opening yaml file: ' + str(configraw))
+            if (os.path.exists(configraw)):
+                fconfig = open(configraw)
+                try:
+                    config_tmp = yaml.load(fconfig, Loader=yaml.SafeLoader)
+                except:
+                    logger.warning(funcname + 'Could not load yaml file with safe loader')
+                    fconfig.close()
+                    fconfig = open(configraw)
+                    try:
+                        config_tmp = yaml.load(fconfig, Loader=yaml.CLoader)
+                        logger.debug('Config tmp {}'.format(config_tmp))
+                    except:
+                        logger.warning(funcname + ' Could not load yaml file with x loader')
+                        continue
+
+                config_tmp = redvypr.RedvyprConfig(**config_tmp)
+            else:
+                logger.warning(funcname + 'Yaml file: ' + str(configraw) + ' does not exist!')
+                continue
+        elif (type(configraw) == dict):
+            logger.debug(funcname + 'Opening dictionary')
+            config_tmp = redvypr.RedvyprConfig(**configraw)
+        else:
+            logger.warning(funcname + 'Unknown type of configuration {:s}'.format(type(configraw)))
+            continue
+
+        # Merge the configuration into one big dictionary
+        devices_all.extend(config_tmp.devices)
+        devicepath_all.extend(config_tmp.devicepath)
+        print('Config tmp', config_tmp)
+        # config = config.model_copy(update=config_tmp)
+    config_tmp2 = redvypr.RedvyprConfig(devices=devices_all, devicepath=devicepath_all)
+    config = config_tmp2.model_copy(update=config_tmp.model_dump(exclude=['devices', 'devicepath']))
+    print('Config', config)
+    return config
+
+def split_quotedstring(qstr, separator=','):
+    """ Splits a string
+    """
+    r = re.compile("'.+?'")  # Single quoted string
+
+    d = qstr[:]
+    quoted_list = r.findall(d)
+    quoted_dict = {}
+    for fstr in quoted_list:
+        u1 = uuid.uuid4()
+        d = d.replace(fstr, u1.hex, 1)
+        quoted_dict[u1.hex] = fstr
+
+    ds = d.split(separator)
+    for i, dpart in enumerate(ds):
+        for k in quoted_dict.keys():
+            dpart = dpart.replace(k, quoted_dict[k])
+            ds[i] = dpart
+
+    return ds
 
 #
 #
@@ -54,7 +145,7 @@ def redvypr_main():
     parser.add_argument('--nogui', '-ng', help=config_help_nogui, action='store_true')
     parser.add_argument('--add_path', '-p', help=config_help_path)
     parser.add_argument('--hostname', '-hn', help=config_help_hostname)
-    parser.add_argument('--hostinfo', '-o', help=config_optional, action='append')
+    parser.add_argument('--metadata', '-m', help=config_optional, action='append')
     parser.add_argument('--add_device', '-a', help=config_help_add, action='append')
     parser.add_argument('--list_devices', '-l', help=config_help_list, action='store_true')
     parser.set_defaults(nogui=False)
@@ -84,9 +175,9 @@ def redvypr_main():
         # print('devicepath',args.add_path)
         modpath = os.path.abspath(args.add_path)
         # print('devicepath',args.add_path,modpath)
-        configp = {'devicepath': modpath}
         # print('Modpath',modpath)
-        config_all.append(configp)
+        config_add = redvypr.RedvyprConfig(devicepath=modpath)
+        config_all.append(config_add)
 
     # Add the configuration
     config = args.config
@@ -95,11 +186,12 @@ def redvypr_main():
 
     # Add device
     if (args.add_device is not None):
-        hostconfig = {'devices': []}
+        devices_add = []
         #print('devices!', args.add_device)
         for d in args.add_device:
-            deviceconfig = {'base_config':{},'config':{},'subscriptions':[]}
-            deviceconfig['base_config'] = {'autostart':False,'loglevel':logging_level,'multiprocess':'qthread'}
+            deviceconfig = redvypr.RedvyprDeviceConfig().model_dump()
+            #deviceconfig = {'base_config':{},'config':{},'subscriptions':[]}
+            #deviceconfig['base_config'] = {'autostart':False,'loglevel':logging_level,'multiprocess':'qthread'}
             if(',' in d):
                 logger.debug('Found options')
                 #devicemodulename = d.split(',')[0]
@@ -127,8 +219,6 @@ def redvypr_main():
                                 data = ast.literal_eval(data[1:-1])
                             except Exception as e:
                                 logger.info('Error parsing options:', exc_info=True)
-
-
                         else:
                             try:
                                 data = int(data)
@@ -165,10 +255,15 @@ def redvypr_main():
                 devicemodulename = d
 
             deviceconfig['devicemodulename'] = devicemodulename
-            hostconfig['devices'].append(deviceconfig)
-            logger.info('Adding device {:s}, autostart: {:s},'.format(d,str(deviceconfig['base_config']['autostart'])))
+            devconfig = redvypr.RedvyprDeviceConfig(**deviceconfig)
+            devices_add.append(devconfig)
+            logger.info('Adding device {}'.format(d))
 
-        config_all.append(hostconfig)
+        config_devices = redvypr.RedvyprConfig(devices=devices_add)
+        print('Devices to add')
+        print('D',config_devices)
+        print('Done')
+        config_all.append(config_devices)
 
     # Add hostname
     if (args.hostname is not None):
@@ -176,32 +271,34 @@ def redvypr_main():
     else:
         hostname = 'redvypr'
 
-    # Add hostname
-    if (args.hostinfo is not None):
-        hostinfo = args.hostinfo
-    else:
-        hostinfo = []
-
-    # Add optional hostinformations
-    hostinfo_opt = {}
-    for i in hostinfo:
-        for info in i.split(','):
-            #print('Info',info)
-            if(':' in info):
-                key = info.split(':')[0]
-                data = info.split(':')[1]
-                try:
-                    data = int(data)
-                except:
+    # Add metadata
+    if (args.metadata is not None):
+        metadata = args.metadata
+        # Add optional metadata
+        metadata_tmp = {}
+        for i in metadata:
+            for info in i.split(','):
+                #print('Info',info)
+                if(':' in info):
+                    key = info.split(':')[0]
+                    data = info.split(':')[1]
                     try:
-                        data = float(data)
+                        data = int(data)
                     except:
-                        pass
+                        try:
+                            data = float(data)
+                        except:
+                            pass
 
-                hostinfo_opt[key] = data
-            else:
-                logger.warning('Not a key:data pair in hostinfo, skipping {:sf}'.format(info))
+                    metadata_tmp[key] = data
+                else:
+                    logger.warning('Not a key:data pair in metadata, skipping {:sf}'.format(info))
 
+        metadata_obj = redvypr.RedvyprMetadata(metadata_tmp)
+        config_metadata = redvypr.RedvyprConfig(metadata=metadata_obj)
+        config_all.append(config_metadata)
+
+    config = merge_configuration(config_all)
     #config_all.append({'hostinfo_opt':hostinfo_opt})
     #print('Hostinfo', hostinfo)
     #print('Hostinfo opt', hostinfo_opt)
@@ -217,7 +314,7 @@ def redvypr_main():
 
         signal.signal(signal.SIGINT, handleIntSignal)
         app = QtCore.QCoreApplication(sys.argv)
-        redvypr_obj = redvypr.redvypr(config=config_all, metadata=hostinfo_opt, hostname=hostname, nogui=True)
+        redvypr_obj = redvypr.redvypr(config=config, hostname=hostname, nogui=True)
         # Check if the devices shall be listed only
         if (args.list_devices):
             devices = redvypr_obj.get_known_devices()
@@ -240,7 +337,7 @@ def redvypr_main():
 
         logger.debug(
             'Available screen size: {:d} x {:d} using {:d} x {:d}'.format(rect.width(), rect.height(), width, height))
-        ex = redvyprMainWidget(width=width, height=height, config=config_all,hostname=hostname,hostinfo_opt=hostinfo_opt)
+        ex = redvyprMainWidget(width=width, height=height, config=config, hostname=hostname)
 
         sys.exit(app.exec_())
 

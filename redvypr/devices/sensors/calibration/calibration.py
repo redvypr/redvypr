@@ -22,7 +22,7 @@ import random
 import pydantic
 import typing
 from redvypr.data_packets import check_for_command
-from redvypr.device import redvypr_device, redvypr_device_parameter
+from redvypr.device import redvypr_device, RedvyprDeviceParameter
 import redvypr.files as redvypr_files
 import redvypr.gui
 import redvypr.data_packets

@@ -4,7 +4,6 @@ import logging
 import sys
 import re
 import numpy as np
-import redvypr.config
 import redvypr.redvypr_address as redvypr_address
 import collections
 

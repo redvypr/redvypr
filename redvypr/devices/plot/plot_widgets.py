@@ -13,7 +13,7 @@ import pyqtgraph
 import redvypr.data_packets
 import redvypr.gui
 import redvypr.files as files
-from redvypr.configdata import configtemplate_to_dict, configdata, getdata
+#from redvypr.configdata import configtemplate_to_dict, configdata, getdata
 from copy import deepcopy as dc
 
 _logo_file = files.logo_file

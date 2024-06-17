@@ -10,15 +10,14 @@ import yaml
 import copy
 import pyqtgraph
 import qtawesome as qta
-
 import redvypr.data_packets
-from redvypr.gui import configWidget
+#from redvypr.gui import configWidget
 from redvypr.devices.plot.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
 import redvypr.files as files
 from redvypr.device import redvypr_device
 from redvypr.data_packets import check_for_command
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
-from redvypr.configdata import configdata, getdata
+#from redvypr.configdata import configdata, getdata
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file

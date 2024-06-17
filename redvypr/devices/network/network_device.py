@@ -38,7 +38,7 @@ import pydantic
 import typing
 from redvypr.device import redvypr_device
 from redvypr.data_packets import check_for_command
-from redvypr.widgets.gui_config_widgets import dictQTreeWidget
+from redvypr.widgets.pydanticConfigWidget import dictQTreeWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard
 
 logging.basicConfig(stream=sys.stderr)

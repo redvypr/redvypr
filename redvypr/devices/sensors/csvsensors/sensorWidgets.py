@@ -322,7 +322,6 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         self.sensorCoeffWidget_layout.addWidget(self.remCoeffButton, 2, 1)
         self.sensorCoeffWidget_layout.addWidget(self.loadCoeffSubFolder, 3, 0)
         self.sensorCoeffWidget_layout.addWidget(self.editCoeff, 3, 1)
-        #self.sensorCoeffWidget_layout.addWidget(self.filterCoeffButton, 3, 1)
 
 
     def __add_calibration__(self):
@@ -374,6 +373,11 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         self.__add_coefficient_calConfigWidget_tmp__ = gui.pydanticConfigWidget(cal, config_location='right')
         self.__add_coefficient_calConfigWidget_tmp__.config_changed_flag.connect(self.__config_changed__)
         self.addCalibrationWidget_layout.addWidget(self.__add_coefficient_calConfigWidget_tmp__,1,0,1,2)
+
+        # does not work yet
+        #width1 = self.self.__add_coefficient_calConfigWidget_tmp__.horizontalScrollBar().sizeHint().width()
+        #width0 = self.sensorCoeffWidget_list.horizontalScrollBar().sizeHint().width()
+        #self.resize(width0 + width1, self.sensorCoeffWidget_list.sizeHint().height())
     def __config_changed__(self):
         self.config_changed_flag.emit()
 

@@ -14,7 +14,7 @@ import re
 from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
 # Import redvypr specific stuff
-from redvypr.gui import redvypr_ip_widget, QPlainTextEditLogger, displayDeviceWidget_standard, \
+from redvypr.gui import QPlainTextEditLogger, displayDeviceWidget_standard, \
     deviceControlWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget, deviceTabWidget
 import redvypr.gui as gui
 from redvypr.version import version
@@ -63,8 +63,14 @@ class redvyprWidget(QtWidgets.QWidget):
         self.setGeometry(50, 50, 500, 300)
 
         # Lets create the heart of redvypr
-        self.redvypr = redvypr.redvypr(hostname=hostname,
-                                       metadata=hostinfo_opt)  # Configuration comes later after all widgets are initialized
+        if config is not None:
+            config_tmp = config.model_dump(exclude='devices')
+            config_tmp_obj = redvypr.RedvyprConfig(**config_tmp)
+        else:
+            config_tmp_obj = config
+
+        # Configuration comes later after all widgets are initialized
+        self.redvypr = redvypr.redvypr(hostname=hostname, config=config_tmp_obj)
 
         self.redvypr.device_path_changed.connect(self.__populate_devicepathlistWidget)
         self.redvypr.device_added.connect(self._add_device_gui)
@@ -78,33 +84,18 @@ class redvyprWidget(QtWidgets.QWidget):
         self.createHomeWidget()
         tab_index = self.devicetabs.addTab(self.__homeWidget, 'Home')
         self.devicetabs.setTabIcon(tab_index, QtGui.QIcon(_icon_file))
-        # A widget containing all connections
-
-        if False:
-            self.create_devicewidgetsummary()  # Creates self.devicesummarywidget
-            self.devicetabs.addTab(self.devicesummarywidget, 'Devices')  # Add device summary widget
-            # A logwidget
-            self.logwidget = QtWidgets.QPlainTextEdit()
-            self.logwidget.setReadOnly(True)
-            self.logwidget_handler = QPlainTextEditLogger()
-            self.logwidget_handler.add_widget(self.logwidget)
-            self.devicetabs.addTab(self.logwidget, 'Log')  # Add a logwidget
-            # Connect the logwidget to the logging
-            # logger.addHandler(self.logwidget_handler)
-            # self.logwidget.append("Hallo!")
-
         # A timer to gather all the data from the devices
         self.devicereadtimer = QtCore.QTimer()
         self.devicereadtimer.timeout.connect(self.readguiqueue)
         self.devicereadtimer.start(100)
         # self.devicereadtimer.start(500)
-
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.addWidget(self.devicetabs)
         if ((width is not None) and (height is not None)):
             self.resize(int(width), int(height))
 
-        self.redvypr.parse_configuration(config)
+        # TODO, configuration was done earlier, check if this is still ok
+        self.redvypr.add_devices_from_config(config)
         # Update hostinformation widgets
         self.__update_hostinfo_widget__()
         self.__populate_devicepathlistWidget()
@@ -227,7 +218,9 @@ class redvyprWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.save_config():'
         logger.debug(funcname)
-        data_save = self.redvypr.get_config()
+        config = self.redvypr.get_config()
+        data_save = config.model_dump()
+        print('Data save',data_save)
         if True:
             tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
             fname_suggestion = 'config_' + self.redvypr.hostinfo['hostname'] + '_' + tstr + '.yaml'
@@ -235,7 +228,7 @@ class redvyprWidget(QtWidgets.QWidget):
             fname_full, _ = QtWidgets.QFileDialog.getSaveFileName(self, "QFileDialog.getSaveFileName()",
                                                                   fname_suggestion,
                                                                   "Yaml Files (*.yaml);;All Files (*)")
-
+            print('fname',fname_full)
             if fname_full:
                 logger.debug('Saving to file {:s}'.format(fname_full))
                 with open(fname_full, 'w') as fyaml:
@@ -835,7 +828,7 @@ class redvyprWidget(QtWidgets.QWidget):
 #
 #
 class redvyprMainWidget(QtWidgets.QMainWindow):
-    def __init__(self, width=None, height=None, config=None, hostname='redvypr', hostinfo_opt={}):
+    def __init__(self, width=None, height=None, config=None, hostname=None):
         super(redvyprMainWidget, self).__init__()
         # self.setGeometry(0, 0, width, height)
 
@@ -844,7 +837,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         # Add the icon
         # self.setWindowIcon(QtGui.QIcon(_icon_file))
 
-        self.redvypr_widget = redvyprWidget(config=config, hostname=hostname, hostinfo_opt=hostinfo_opt)
+        self.redvypr_widget = redvyprWidget(config=config, hostname=hostname)
         self.setCentralWidget(self.redvypr_widget)
         quitAction = QtWidgets.QAction("&Quit", self)
         quitAction.setShortcut("Ctrl+Q")
@@ -980,23 +973,4 @@ Opens an "about" widget showing basic information.
         self.close_application()
 
 
-def split_quotedstring(qstr, separator=','):
-    """ Splits a string
-    """
-    r = re.compile("'.+?'")  # Single quoted string
 
-    d = qstr[:]
-    quoted_list = r.findall(d)
-    quoted_dict = {}
-    for fstr in quoted_list:
-        u1 = uuid.uuid4()
-        d = d.replace(fstr, u1.hex, 1)
-        quoted_dict[u1.hex] = fstr
-
-    ds = d.split(separator)
-    for i, dpart in enumerate(ds):
-        for k in quoted_dict.keys():
-            dpart = dpart.replace(k, quoted_dict[k])
-            ds[i] = dpart
-
-    return ds

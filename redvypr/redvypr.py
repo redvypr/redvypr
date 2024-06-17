@@ -22,6 +22,7 @@ import uuid
 import random
 import re
 import pydantic
+import typing
 from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
 import platform
@@ -29,14 +30,9 @@ import platform
 import redvypr.data_packets as data_packets
 import redvypr.redvypr_address as redvypr_address
 import redvypr.packet_statistic as redvypr_packet_statistic
-from redvypr.gui import redvypr_ip_widget, QPlainTextEditLogger, displayDeviceWidget_standard, \
-    deviceControlWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget, deviceTabWidget
-import redvypr.gui as gui
-from redvypr.config import configuration
-import redvypr.config as redvyprconfig
 from redvypr.version import version
 import redvypr.files as files
-from redvypr.device import redvypr_device, redvypr_device_scan, redvypr_device_parameter
+from redvypr.device import RedvyprDeviceConfig, redvypr_device, redvypr_device_scan, RedvyprDeviceParameter
 import redvypr.devices as redvyprdevices
 import faulthandler
 faulthandler.enable()
@@ -62,13 +58,26 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr')
 logger.setLevel(logging.INFO)
 
+
+
+
 # Pydantic
-class redvypr_config(pydantic.BaseModel):
-    hostname: str = pydantic.Field(default='redvypr')
+
+class RedvyprMetadata(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="allow")
     description: str = pydantic.Field(default='')
     lon: float = pydantic.Field(default=-9999)
     lat: float = pydantic.Field(default=-9999)
-    devices: dict = pydantic.Field(default={})
+class RedvyprConfig(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="allow")
+    hostname: str = pydantic.Field(default='redvypr')
+    metadata: RedvyprMetadata = pydantic.Field(default=RedvyprMetadata())
+    #devices: list = pydantic.Field(default=[])
+    #devices: typing.List[RedvyprDeviceConfig] = pydantic.Field(default=[])
+    devices: typing.List[typing.Annotated[typing.Union[RedvyprDeviceConfig], pydantic.Field(discriminator='device_type')]] = pydantic.Field(default=[])
+    devicepath: list = pydantic.Field(default=[])
+    loglevel: str = pydantic.Field(default='')
+
 
 
 
@@ -313,44 +322,36 @@ class redvypr(QtCore.QObject):
     device_status_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
     hostconfig_changed_signal    = QtCore.pyqtSignal()  # Signal notifying if the configuration of the host changed (hostname, hostinfo_opt)
 
-    def __init__(self, parent=None, config=None, hostname='redvypr', metadata={}, nogui=False):
-        # super(redvypr, self).__init__(parent)
+    def __init__(self, config=None, hostname=None, nogui=False):
         super(redvypr, self).__init__()
         print(__platform__)
         funcname = __name__ + '.__init__()'
         logger.debug(funcname)
-        self.hostinfo = create_hostinfo(hostname=hostname)
-        # TODO: replace with pydantic
-        #print('Hostinfo opt',hostinfo_opt)
+        if config is None:
+            config = RedvyprConfig(hostname=hostname)
+
+        # Overwrite hostname with argument
+        if hostname is not None:
+            config.hostname = hostname
+
+        # global loglevel
         try:
-            metadata['description']
+            logger.setLevel(config.loglevel)
         except:
-            metadata['description'] = ''
+            logger.debug('Could not set loglevel to: "{}"'.format(config.loglevel))
+            pass
 
-        try:
-            metadata['location']
-        except:
-            metadata['location'] = ''
 
-        try:
-            metadata['lon']
-        except:
-            metadata['lon'] = -9999.0
+        self.hostinfo = create_hostinfo(hostname=config.hostname)
+        self.metadata = config.metadata
 
-        try:
-            metadata['lat']
-        except:
-            metadata['lat'] = -9999.0
-
-        self.metadata = configuration(template=metadata)
-
-        self.config = {}  # Might be overwritten by parse_configuration()
+        self.config = config # This is the initial version
         self.properties = {}  # Properties that are distributed with the device
         self.numdevice = 0
         self.devices = []  # List containing dictionaries with information about all attached devices
         self.device_paths = []  # A list of pathes to be searched for devices
         self.datastreams_dict = {} # Information about all datastreams, this is updated by distribute data
-        self.deviceinfo_all   = {} # Information about all devices, this is updated by distribute data
+        self.deviceinfo_all = {} # Information about all devices, this is updated by distribute data
 
         self.packets_counter = 0 # Counter for the total number of packets processed
         self.dt_datadist = 0.01  # The time interval of datadistribution
@@ -365,21 +366,114 @@ class redvypr(QtCore.QObject):
         logger.info(funcname + ':Searching for devices')
         self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths, redvypr_devices=redvyprdevices, loglevel = logger.getEffectiveLevel())
         logger.info(funcname + ':Done searching for devices')
-
-        # Parsing configuration
-        self.parse_configuration(config)
-
-        ## A timer to check the status of all threads
+        # And now add the devices
+        self.add_devices_from_config(config)
+        # A timer to check the status of all threads
         self.devicethreadtimer = QtCore.QTimer()
         self.devicethreadtimer.timeout.connect(self.update_status)  # Add to the timer another update
         self.devicethreadtimer.start(250)
 
-
-        ## A timer to print the status in the nogui environment
+        # A timer to print the status in the nogui environment
         if (nogui):
             self.statustimer = QtCore.QTimer()
             self.statustimer.timeout.connect(self.print_status)
             self.statustimer.start(5000)
+
+    def get_config(self):
+        """
+        Creates a configuration dictionary out of the current state.
+
+        Returns:
+            config: configuration dictionary
+
+        """
+        funcname = __name__ + '.get_config():'
+        # Devices
+        devices = []
+        for devicedict in self.devices:
+            device = devicedict['device']
+            device_config_tmp = device.get_config()
+            devices.append(device_config_tmp)
+
+        loglevel_tmp = logging.getLevelName(logger.getEffectiveLevel())
+        config = RedvyprConfig(hostname=self.hostinfo['hostname'], metadata=self.metadata,
+                               devicepaths=self.device_paths, loglevel=loglevel_tmp,
+                               redvyp_version=version, date_created=str(datetime.datetime.utcnow()),
+                               devices=devices)
+
+        return config
+
+
+
+    def add_devices_from_config(self, config=None):
+        funcname = "add_devices_from_config():"
+        # Apply the configuration
+        if True:
+            # Add device path if found
+            devpath = config.devicepath
+            if (type(devpath) == str):
+                devpath = [devpath]
+
+            FLAG_NEW_DEVPATH = False
+            for p in devpath:
+                if (p not in self.device_paths):
+                    self.device_paths.append(p)
+                    FLAG_NEW_DEVPATH = True
+
+            if FLAG_NEW_DEVPATH:
+                self.redvypr_device_scan.scan_devicepath()
+                self.device_path_changed.emit()  # Notify about the changes
+
+            # Adding the devices found in the config ['devices']
+            # Check if we have a list or something
+            print('devices',config.devices,iter(config.devices))
+            try:
+                iter(config.devices)
+                hasdevices = True
+            except:
+                hasdevices = False
+
+            # Add the devices
+            if (hasdevices):
+                for device in config.devices:
+                    print('Adding device', device)
+                    # Device specifig configuration
+                    device_config = device.config
+                    # The base configuration, same for all devices
+                    base_config = device.base_config
+                    # Check if the devicemodulename kind of fits
+                    FLAG_DEVICEMODULENAME_EXACT = False
+                    # Make an exact test first
+                    for smod in self.redvypr_device_scan.redvypr_devices_flat:
+                        # print('device:',smod['name'],device['devicemodulename'])
+                        # The smod['name'] looks like 'redvypr.devices.network.zeromq_device'
+                        # Check first if devicemodulename has a '.', if not, use split smod['name'] and use the last one
+                        if '.' in device.devicemodulename:
+                            if (device.devicemodulename == smod['name']):
+                                FLAG_DEVICEMODULENAME_EXACT = True
+                                break
+                        else:
+                            smodname = smod['name'].split('.')[-1]
+                            # print('smodname',smodname)
+                            if (device.devicemodulename == smodname):
+                                FLAG_DEVICEMODULENAME_EXACT = True
+                                device.devicemodulename_orig = device.devicemodulename
+                                device.devicemodulename = smod['name']
+                                break
+
+                    # Make a test if the string is within the devicemodulename
+                    if FLAG_DEVICEMODULENAME_EXACT == False:
+                        for smod in self.redvypr_device_scan.redvypr_devices_flat:
+                            if (device.devicemodulename in smod['name']):  # This is a weaker test, can be potentially replaced by regex
+                                #device.devicemodulename_orig = device.devicemodulename
+                                device.devicemodulename = smod['name']
+
+                    logger.info(funcname + 'Adding device {}'.format(device.devicemodulename))
+                    dev_added = self.add_device(devicemodulename=device.devicemodulename, deviceconfig=device_config,
+                                                device_parameter=base_config)
+
+        # Emit a signal that the configuration has been changed
+        self.hostconfig_changed_signal.emit()
 
     def get_deviceinfo(self,publishes=None,subscribes=None):
         """
@@ -467,204 +561,6 @@ class redvypr(QtCore.QObject):
 
         return statusstr
 
-    def get_config(self):
-        """
-        Creates a configuration dictionary out of the current state.
-
-        Returns:
-            config: configuration dictionary
-
-        """
-        funcname = __name__ + '.get_config():'
-        config = {}
-        config['hostname']     = self.hostinfo['hostname']
-        config['hostinfo_opt'] = copy.deepcopy(self.metadata)
-        config['devicepath'] = []
-        for p in self.device_paths:
-            config['devicepath'].append(p)
-        # Loglevel
-        config['loglevel'] = logger.level
-        # redvypr_version
-        config['redvypr_version'] = version
-        # time
-        config['creation_time'] = str(datetime.datetime.utcnow())
-        # Devices
-        config['devices'] = []
-        for devicedict in self.devices:
-            device = devicedict['device']
-            devsave = {}
-            base_config_exclude = {'uuid','publishes','subscribes','description','numdevice','devicemodulename'}
-            devsave['base_config'] = device.device_parameter.model_dump(exclude=base_config_exclude)
-            devsave['devicemodulename'] = devicedict['devicemodulename']
-            devsave['config'] = device.config.model_dump()
-            # Treat subscriptions
-            devsave['subscriptions'] = []
-            for raddr in device.subscribed_addresses:
-                devsave['subscriptions'].append(raddr.address_str)
-
-            config['devices'].append(devsave)
-
-        return config
-
-    def parse_configuration(self, redvypr_config=None):
-        """ Parses a dictionary with a configuration, if the file does not exists it will return with false, otherwise self.config will be updated
-
-        Arguments:
-            redvypr_config (str, dict or list of strs and dicts):
-        Returns:
-            True or False
-        """
-        funcname = "parse_configuration():"
-        parsed_devices = []
-        logger.debug(funcname)
-
-        if (redvypr_config is not None):
-            logger.debug(funcname + 'Configuration: ' + str(redvypr_config))
-            if (type(redvypr_config) == str):
-                redvypr_config = [redvypr_config]
-        else:
-            return False
-
-        config = {} # This is a merged config of all configurations
-        device_tmp = []
-        for configraw in redvypr_config:
-            if (type(configraw) == str):
-                logger.debug(funcname + 'Opening yaml file: ' + str(configraw))
-                if (os.path.exists(configraw)):
-                    fconfig = open(configraw)
-                    try:
-                        config_tmp = yaml.load(fconfig, Loader=yaml.SafeLoader)
-                    except:
-                        logger.warning(funcname + 'Could not load yaml file with safe loader')
-                        fconfig.close()
-                        fconfig = open(configraw)
-                        try:
-                            config_tmp = yaml.load(fconfig, Loader=yaml.CLoader)
-                            logger.debug('Config tmp {}'.format(config_tmp))
-                        except:
-                            logger.warning(funcname + ' Could not load yaml file with x loader')
-                            continue
-                else:
-                    logger.warning(funcname + 'Yaml file: ' + str(configraw) + ' does not exist!')
-                    continue
-            elif(type(configraw) == dict):
-                logger.debug(funcname + 'Opening dictionary')
-                config_tmp = configraw
-            else:
-                logger.warning(funcname + 'Unknown type of configuration {:s}'.format(type(configraw)))
-                continue
-
-            # Merge the configuration into one big dictionary
-            config.update(config_tmp)
-
-            if 'devices' in config_tmp.keys():
-                device_tmp.extend(config_tmp['devices'])
-
-        if len(device_tmp)>0:
-            config['devices'] = device_tmp
-
-        # Apply the merged configuration
-        if True:
-            #self.config = config
-            # global loglevel
-            if ('loglevel' in config.keys()):
-                logger.setLevel(config['loglevel'])
-            # Add device path if found
-            if ('devicepath' in config.keys()):
-                devpath = config['devicepath']
-
-                if (type(devpath) == str):
-                    devpath = [devpath]
-
-                FLAG_NEW_DEVPATH=False
-                for p in devpath:
-                    if (p not in self.device_paths):
-                        self.device_paths.append(p)
-                        FLAG_NEW_DEVPATH = True
-
-                if FLAG_NEW_DEVPATH:
-                    self.redvypr_device_scan.scan_devicepath()
-                    self.device_path_changed.emit()  # Notify about the changes
-
-            # Check for hostinformation
-            # Add the hostname
-            try:
-                logger.info(funcname + 'Setting hostname to {:s}'.format(config['hostname']))
-                self.hostinfo['hostname'] = config['hostname']
-            except:
-                pass
-
-            try:
-                logger.info(funcname + 'Setting optional hostinfomation: {:s}'.format(str(config['hostinfo_opt'])))
-                c = redvyprconfig.dict_to_configDict(config['hostinfo_opt'])
-                self.metadata.update(c)
-            except Exception as e:
-                #logger.exception(e)
-                pass
-
-
-            # Adding the devices found in the config ['devices']
-            # Check if we have a list or something
-            try:
-                iter(config['devices'])
-                hasdevices = True
-            except:
-                hasdevices = False
-
-            # Add the devices
-            if (hasdevices):
-                for device in config['devices']:
-                    print('Device',device)
-                    # Device specifig configuration
-                    try:
-                        device_config = device['config']
-                    except:
-                        device_config = {}
-
-                    # The base configuration, same for all devices
-                    try:
-                        base_config = device['base_config']
-                    except:
-                        base_config = {}
-
-                    # Check if the devicemodulename kind of fits
-                    FLAG_DEVICEMODULENAME_EXACT = False
-                    # Make an exact test first
-                    for smod in self.redvypr_device_scan.redvypr_devices_flat:
-                        #print('device:',smod['name'],device['devicemodulename'])
-                        # The smod['name'] looks like 'redvypr.devices.network.zeromq_device'
-                        # Check first if devicemodulename has a '.', if not, use split smod['name'] and use the last one
-                        if '.' in device['devicemodulename']:
-                            if (device['devicemodulename'] == smod['name']):
-                                FLAG_DEVICEMODULENAME_EXACT = True
-                                break
-                        else:
-                            smodname = smod['name'].split('.')[-1]
-                            #print('smodname',smodname)
-                            if (device['devicemodulename'] == smodname):
-                                FLAG_DEVICEMODULENAME_EXACT = True
-                                device['devicemodulename_orig'] = device['devicemodulename']
-                                device['devicemodulename'] = smod['name']
-                                break
-
-                    # Make a test if the string is within the devicemodulename
-                    if FLAG_DEVICEMODULENAME_EXACT == False:
-                        for smod in self.redvypr_device_scan.redvypr_devices_flat:
-                            if (device['devicemodulename'] in smod['name']): # This is a weaker test, can be potentially replaced by regex
-                                device['devicemodulename_orig'] = device['devicemodulename']
-                                device['devicemodulename'] = smod['name']
-
-                    logger.info(funcname + 'Adding device {}'.format(device['devicemodulename']))
-                    dev_added = self.add_device(devicemodulename=device['devicemodulename'], deviceconfig=device_config, device_parameter=base_config)
-                    # Subscriptions
-                    # Name
-                    #
-                    parsed_devices.append(dev_added)
-
-        # Emit a signal that the configuration has been changed
-        self.hostconfig_changed_signal.emit()
-        return True
-
     def device_loglevel(self, device, loglevel=None):
         """ Returns the loglevel of the device
         """
@@ -709,15 +605,15 @@ class redvypr(QtCore.QObject):
                     FLAG_HAS_PYDANTICBASE = True
                     FLAG_PYDANTIC = True
                     # Create or use a given device parameter object
-                    if isinstance(device_parameter, redvypr_device_parameter):
+                    if isinstance(device_parameter, RedvyprDeviceParameter):
                         pass
                     elif isinstance(device_parameter, dict):
                         print('Will update from config dictionary')
-                        device_parameter_tmp = redvypr_device_parameter()
+                        device_parameter_tmp = RedvyprDeviceParameter()
                         device_parameter = device_parameter_tmp.model_copy(update=device_parameter)
                     else:
                         print('Standard base_config')
-                        device_parameter = redvypr_device_parameter()
+                        device_parameter = RedvyprDeviceParameter()
 
                     device_parameter.devicemodulename = devicemodulename
                     device_parameter.numdevice = self.numdevice
@@ -756,24 +652,6 @@ class redvypr(QtCore.QObject):
                     #logger.exception(e)
                     FLAG_HAS_PYDANTIC = False
 
-                # If no pydantic was found, do it the old style (to be removed soon)
-                if FLAG_PYDANTIC == False:
-                    logger.info('Adding old style configuration device')
-                    # Try to get a configuration template (oldstyle)
-                    try:
-                        config_template = devicemodule.config_template
-                        logger.debug(funcname + ':Found configuation template of device {:s}'.format(str(devicemodule)))
-                        #templatedict = configtemplate_to_dict(config_template)
-                        self.__fill_config__(device_parameter, config_template, deviceconfig)
-                        FLAG_HAS_TEMPLATE = True
-                    except Exception as e:
-                        logger.debug(
-                            funcname + ':No configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
-                        logger.exception(e)
-                        logger.debug(funcname + ' template=False')
-                        FLAG_HAS_TEMPLATE = False
-
-
                 if(device_parameter.maxdevices > 0):
                     ndevices = 0
                     for d in self.devices:
@@ -784,7 +662,6 @@ class redvypr(QtCore.QObject):
                     if ndevices >= device_parameter.maxdevices:
                         logger.warning(funcname + ' Could not add {:s}, maximum number of {:d} devices reached'.format(devicemodulename,maxdevices))
                         return
-
 
                 # If the device does not have a name, add a standard but unique one
                 devicenames = self.get_all_devicenames()
@@ -857,20 +734,6 @@ class redvypr(QtCore.QObject):
                         logger.debug(funcname + ' Using pydantic config')
                         configu = pydantic_device_config
                         config_template = None
-                    else: # Legacy configuration, TODO: Remove soon
-                        # Merge the config with a potentially existing template to fill in default values
-                        if FLAG_HAS_TEMPLATE:
-                            config = deviceconfig['config']
-                            # print('With template', config_template)
-                            # print('With configuration', config)
-                            # config = apply_config_to_dict(config,templatedict)
-                            # config = copy.deepcopy(config)
-                            # redvypr.config.dict_to_configDict(templatedict, process_template=True)
-                            configu = configuration(template=config_template, config=config)
-                        else:  # Make a configuration without a template directly from the config dict
-                            # print('Without template')
-                            configu = configuration(config)
-                            config_template = None
 
                     logger.debug(funcname + 'Config for device')
                     logger.debug(funcname + 'Config: {:s}'.format(str(configu)))
@@ -963,64 +826,6 @@ class redvypr(QtCore.QObject):
             logger.warning(funcname + ': Could not add device (not found): {:s}'.format(str(devicemodulename)))
 
         return devicelist
-
-    def __fill_config__(self, device_parameter, config_template, deviceconfig, thread=None):
-        """ Fills device_parameter with data from config_template
-        """
-        funcname = __name__ + '.fill_config():'
-        try:
-            device_parameter.max_devices = config_template['redvypr_device']['max_devices']
-        except:
-            pass
-        # Try to get information about publish/subscribe capabilities described in the config_template
-        try:
-            device_parameter.publishes = config_template['redvypr_device']['publishes']
-        except:
-            pass
-        try:
-            device_parameter.subscribes = config_template['redvypr_device']['subscribes']
-        except:
-            pass
-
-        try:
-            deviceconfig['config']
-        except:
-            deviceconfig['config'] = {}
-
-        try:
-            device_parameter.name = deviceconfig['config']['name']
-        except:
-            pass
-
-        try:
-            level = deviceconfig['loglevel']
-            if type(level) == int:
-                levelname = logging.getLevelName(level)
-            else:
-                levelname = level
-
-            device_parameter.loglevel = levelname
-        except Exception as e:
-            logger.debug(funcname + 'Loglevel not found', exc_info=True)
-
-
-        try:
-            device_parameter.autostart = deviceconfig['autostart']
-        except:
-            pass
-
-        try:
-            device_parameter.gui_dock = deviceconfig['gui_dock']
-        except:
-            logger.info('Hall',exc_info=True)
-            pass
-
-        if (thread == None):
-            try:
-                device_parameter.multiprocess = deviceconfig['mp'].lower()
-            except:
-                pass
-
 
     def start_device_thread(self, device):
         """ Functions starts the device thread that is the core of each device

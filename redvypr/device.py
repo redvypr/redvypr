@@ -29,11 +29,53 @@ import typing
 from redvypr.data_packets import commandpacket
 from redvypr.packet_statistic import do_data_statistics
 from redvypr.redvypr_address import redvypr_address
-import redvypr.config as redvyprConfig
 
 
 
-class redvypr_device_parameter(pydantic.BaseModel):
+class DeviceMetadata(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="allow")
+    description: str = pydantic.Field(default='')
+    lon: float = pydantic.Field(default=-9999)
+    lat: float = pydantic.Field(default=-9999)
+
+class RedvyprDeviceBaseConfig(pydantic.BaseModel):
+    """
+    The is the base config of any redvypr device.
+    """
+    name: str = pydantic.Field(default='')
+    multiprocess: str = pydantic.Field(default='qthread')
+    loglevel: str = pydantic.Field(default='')
+    autostart: bool = False
+    devicemodulename: str = pydantic.Field(default='')
+    description: str = ''
+    gui_tablabel_display: str = 'Display'
+    gui_dock: typing.Literal['Tab','Window','Hide'] = pydantic.Field(default='Tab')
+
+class RedvyprDeviceConfig(pydantic.BaseModel):
+    """
+    Device configuration that is used for saving and loading files
+    """
+    base_config: RedvyprDeviceBaseConfig = pydantic.Field(default=RedvyprDeviceBaseConfig())
+    devicemodulename: str = pydantic.Field(default='', description='')
+    config: typing.Optional[pydantic.BaseModel] = pydantic.Field(default=None, description='')
+    subscriptions: list = pydantic.Field(default=[])
+    metadata: typing.Optional[DeviceMetadata] = pydantic.Field(default=None, description='')
+    device_type: typing.Literal['redvypr device'] = pydantic.Field(default='redvypr device')
+
+class RedvyprDeviceParameter(RedvyprDeviceBaseConfig):
+    """
+    The is the base config with extra parameter that dont need to be saved
+    """
+    uuid: str = pydantic.Field(default='')
+    #template: dict = pydantic.Field(default={}) # Candidate for removal
+    #config: dict = pydantic.Field(default={})  # Candidate for removal
+    publishes: bool = False
+    subscribes: bool = False
+    numdevice: int = pydantic.Field(default=-1)
+    # Not as parameter, but necessary for initialization
+    maxdevices: int = pydantic.Field(default=-1)
+
+class redvypr_device_parameter_legacy(pydantic.BaseModel):
     """
     The is the base config of any redvypr device.
     """
@@ -688,12 +730,8 @@ class redvypr_device(QtCore.QObject):
                         device_info = {'device':self.name,'uuid':self.uuid,'thread_uuid':thread_uuid,'hostinfo':self.redvypr.hostinfo,'address_str':self.address_str}
                         if config is None:
                             self.logger.debug('Using internal configuration')
-                            if type(self.config) == redvypr.config.configuration:
-                                self.logger.debug('Redvypr configuration')
-                                config = copy.deepcopy(self.config) # The thread/multiprocess gets a copy
-                            else:
-                                self.logger.debug('Pydantic configuration')
-                                config = self.config.model_dump()
+                            self.logger.debug('Pydantic configuration')
+                            config = self.config.model_dump()
 
                         else:
                             self.logger.debug('Using external configuration')
@@ -1027,9 +1065,17 @@ class redvypr_device(QtCore.QObject):
         return None
     def get_config(self):
         """
-        Returns a copy of the configuration as a dict, not as a configuration object
+        Returns a RedvyprDeviceConfig of the device
         """
-        return copy.deepcopy(self.config)
+        # Treat subscriptions
+        subscriptions = []
+        for raddr in self.subscribed_addresses:
+            subscriptions.append(raddr.address_str)
+        base_config = RedvyprDeviceBaseConfig(**self.device_parameter.model_dump())
+        config = RedvyprDeviceConfig(base_config=base_config, config=self.config,
+                                     devicemodulename=self.devicemodulename, subscriptions=subscriptions)
+
+        return config
 
     def get_info(self):
         """

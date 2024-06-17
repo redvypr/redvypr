@@ -15,7 +15,6 @@ import hashlib
 import re
 import pydantic
 import typing
-import redvypr.config
 from redvypr.device import redvypr_device
 from redvypr.data_packets import check_for_command
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict

@@ -7,12 +7,11 @@ import datetime
 import pydantic
 from pydantic.color import Color as pydColor
 from PyQt5 import QtWidgets, QtCore, QtGui
-from redvypr.device import redvypr_device, redvypr_device_parameter
-from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, dictQTreeWidget
+from redvypr.device import redvypr_device, RedvyprDeviceParameter
+#from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, dictQTreeWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget
 from redvypr.widgets.redvypr_addressWidget import datastreamWidget
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, pydanticQTreeWidget
-import redvypr.configdata
 import redvypr.files as files
 import redvypr.data_packets as data_packets
 import redvypr.device as device
@@ -494,7 +493,7 @@ class redvyprAddDeviceWidget(QtWidgets.QWidget):
 
         if item.devdict is not None:
             devicemodulename = item.devdict['name']
-            device_parameter = redvypr_device_parameter()
+            device_parameter = RedvyprDeviceParameter()
             if self.mp_thread.isChecked():
                 device_parameter.multiprocess = 'thread'
             elif self.mp_qthread.isChecked():
