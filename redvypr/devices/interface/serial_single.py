@@ -20,14 +20,14 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('serial_single')
 logger.setLevel(logging.DEBUG)
 
-class device_base_config(pydantic.BaseModel):
+class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = True
     description: str = 'Reads to and write from a serial device'
     gui_tablabel_display: str = 'Serial data'
 
 
-class device_config(pydantic.BaseModel):
+class DeviceCustomConfig(pydantic.BaseModel):
     baud: int = 4800
     parity: int = serial.PARITY_NONE
     stopbits: int = serial.STOPBITS_ONE

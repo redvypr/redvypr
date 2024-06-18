@@ -32,7 +32,7 @@ logger = logging.getLogger('csvlogger')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
-class device_base_config(pydantic.BaseModel):
+class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = False
     subscribes: bool = True
     description: str = "Saves subscribed datastreams in a comma separated value (csv) file"
@@ -52,7 +52,7 @@ class csv_datastream_config(pydantic.BaseModel):
     comment: str= pydantic.Field(default='', description='Comment')
     unit: str = pydantic.Field(default='', description='Unit of the data')
 
-class device_config(pydantic.BaseModel):
+class DeviceCustomConfig(pydantic.BaseModel):
     separator: str = pydantic.Field(default=',',description='Separator between the columns')
     datastreams: typing.Optional[typing.List[csv_datastream_config]] = pydantic.Field(default=[csv_datastream_config(),csv_datastream_config(address='/k:hallo')])
     dt_sync: int = pydantic.Field(default=5,description='Time after which an open file is synced on disk')
@@ -461,7 +461,7 @@ class Device(RedvyprDevice):
         self.csvcolumns = []       # List with the columns, containing dictionaries with the format
         self.csvcolumns_info = []  # List with the columns, containing dictionaries with the format
 
-        for dconf in self.config.datastreams:
+        for dconf in self.custom_config.datastreams:
             address = dconf.address
             print('Subscribing dconf',dconf)
             self.subscribe_address(address)
@@ -1082,13 +1082,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         print('Config',config)
         return config
 
-    def update_device_config(self):
+    def update_DeviceCustomConfig(self):
         """
         Updates the device config based on the widgets
         Returns:
 
         """
-        funcname = self.__class__.__name__ + '.update_device_config():'
+        funcname = self.__class__.__name__ + '.update_DeviceCustomConfig():'
         logger.debug(funcname)
         self.widgets_to_config(self.device.custom_config)
 
@@ -1098,7 +1098,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if button.isChecked():
             logger.debug(funcname + "button pressed")
-            self.update_device_config()
+            self.update_DeviceCustomConfig()
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')

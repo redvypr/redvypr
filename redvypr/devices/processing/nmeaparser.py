@@ -24,12 +24,12 @@ logger.setLevel(logging.DEBUG)
 description = 'Parses NMEA data strings'
 
 redvypr_devicemodule = True
-class device_base_config(pydantic.BaseModel):
+class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = False
     description: str = 'NMEA0183 parsing device'
 
-class device_config(pydantic.BaseModel):
+class DeviceCustomConfig(pydantic.BaseModel):
     dt_status: float = 2.0
     messages:list = pydantic.Field(default=[])
     datakey: str = pydantic.Field(default='',description='The datakey to look for NMEA data, if empty scan all fields and use the first match')

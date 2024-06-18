@@ -34,7 +34,7 @@ logger = logging.getLogger('csvsensors')
 logger.setLevel(logging.DEBUG)
 
 
-class device_base_config(pydantic.BaseModel):
+class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = True
     description: str = 'Processing of temperature and heatflow sensordata'
@@ -42,7 +42,7 @@ class device_base_config(pydantic.BaseModel):
 
 
 
-class device_config(pydantic.BaseModel):
+class DeviceCustomConfig(pydantic.BaseModel):
     sensorconfigurations: typing.Dict[str,typing.Annotated[typing.Union[sensor_DHFS50,logger_HFV4CH, sensor_TAR], pydantic.Field(discriminator='sensor_type')]] = pydantic.Field(default={},description='Configuration of sensors, keys are their serial numbers')
     calibrations: typing.List[typing.Annotated[typing.Union[calibration_NTC, calibration_HF], pydantic.Field(discriminator='calibration_type')]] = pydantic.Field(default=[], description = 'List of sensor calibrations')
     calibration_files: list = pydantic.Field(default=[])
@@ -287,7 +287,7 @@ class Device(RedvyprDevice):
         logger.debug(funcname)
 
         # Fill the calibration models
-        calhints = typing.get_type_hints(self.config)['calibrations']
+        calhints = typing.get_type_hints(self.custom_config)['calibrations']
         self.calibration_models = typing.get_args(typing.get_args(calhints)[0])
 
         #configtest = redvypr_config.dict_to_configDict(sensorconfig)
@@ -298,20 +298,20 @@ class Device(RedvyprDevice):
         #    self.subscribe_address(s)
         self.nosensorname = '<no sensor>'
         try:
-            self.config.calibrations[0]
+            self.custom_config.calibrations[0]
         except:
             logger.debug(funcname + ' Will add <no sensor>')
             nosensor = calibration_HF()
             nosensor.sn = self.nosensorname
             #print('nosensorconfig',nosensorconfig)
-            self.config.calibrations.append(nosensor)
+            self.custom_config.calibrations.append(nosensor)
         # Sensordata
         self.sensordata_raw = {} # The datapackets
         self.sensordata = {} # The data by mac/parameter
         self.calfiles_processed = []
 
         # Add buffer for sensorconfigurations
-        for sn in self.config.sensorconfigurations.keys():
+        for sn in self.custom_config.sensorconfigurations.keys():
             self.sensordata[sn] = {'__np__': 0, '__raddr__': None, '__devices__': []}
             self.sensordata_raw[sn] = []
         # Check if there are already calibrations saved, and if yes, add the original files as read
@@ -383,7 +383,7 @@ class Device(RedvyprDevice):
         """
         funcname = __name__ + 'find_calibration_for_parameter():'
         logger.debug(funcname)
-        cals = self.config.calibrations
+        cals = self.custom_config.calibrations
         #print('Parameter dict',parameter_dict)
         if True:
             para = parameter_dict['parameter']
@@ -458,7 +458,7 @@ class Device(RedvyprDevice):
         # Find calibrations for loggers
         loggers_autocal = ['DHFS50']
         # sn of the logger and the calibrations are the same for autocalibration
-        for calibration in self.config.calibrations:
+        for calibration in self.custom_config.calibrations:
             sn = calibration.sn
             if True:
                 try:
@@ -479,7 +479,7 @@ class Device(RedvyprDevice):
                         #print('latest',latest,latest.keys())
                         for parameter in latest.keys():
                             logger.debug(funcname + ' updating {:s}'.format(parameter))
-                            self.config.sensorconfigurations[sn]['parameter'][parameter] = latest[parameter]
+                            self.custom_config.sensorconfigurations[sn]['parameter'][parameter] = latest[parameter]
 
                         if ret == True:
                             #print('Newlogger')
@@ -491,16 +491,16 @@ class Device(RedvyprDevice):
     def add_calibration_file(self, calfile, reload=True):
         funcname = __name__ + 'add_calibration_file():'
         logger.debug(funcname)
-        calfiles_tmp = list(self.config.calibration_files)
+        calfiles_tmp = list(self.custom_config.calibration_files)
         if (calfile in calfiles_tmp) and reload:
             #print('Removing file first')
             self.rem_calibration_file(calfile)
 
-        calfiles_tmp = list(self.config.calibration_files)
+        calfiles_tmp = list(self.custom_config.calibration_files)
         #print('Hallo',calfiles_tmp)
         if calfile not in calfiles_tmp:
             #print('Adding file 2',calfile)
-            self.config.calibration_files.append(calfile)
+            self.custom_config.calibration_files.append(calfile)
         else:
             logger.debug(funcname + ' File is already listed')
 
@@ -509,16 +509,16 @@ class Device(RedvyprDevice):
     def rem_calibration_file(self, calfile):
         funcname = __name__ + 'rem_calibration_file():'
         logger.debug(funcname)
-        calfiles_tmp = list(self.config.calibration_files)
+        calfiles_tmp = list(self.custom_config.calibration_files)
         if calfile in calfiles_tmp:
             calibration = self.read_calibration_file(calfile)
             calibration_json = json.dumps(calibration.model_dump())
-            for cal_old in self.config.calibrations:
+            for cal_old in self.custom_config.calibrations:
                 # Test if the calibration is existing
                 if calibration_json == json.dumps(cal_old.model_dump()):
                     logger.debug(funcname + ' Removing calibration')
-                    self.config.calibration_files.remove(calfile)
-                    self.config.calibrations.remove(cal_old)
+                    self.custom_config.calibration_files.remove(calfile)
+                    self.custom_config.calibrations.remove(cal_old)
                     self.calfiles_processed.remove(calfile)
                     return True
 
@@ -532,7 +532,7 @@ class Device(RedvyprDevice):
         #    for fname in glob.glob(globstr):
         #        fnames.append(fname)
 
-        for fname in self.config.calibration_files:
+        for fname in self.custom_config.calibration_files:
             fnames.append(str(fname))
 
         self.coeff_filenames = fnames
@@ -559,14 +559,14 @@ class Device(RedvyprDevice):
         """
         flag_new_calibration = True
         calibration_json = json.dumps(calibration.model_dump())
-        for cal_old in self.config.calibrations:
+        for cal_old in self.custom_config.calibrations:
             if calibration_json == json.dumps(cal_old.model_dump()):
                 flag_new_calibration = False
                 break
 
         if flag_new_calibration:
             print('Sending new calibration signal')
-            self.config.calibrations.append(calibration)
+            self.custom_config.calibrations.append(calibration)
             self.newcalibration_signal.emit()
             return True
         else:
@@ -658,7 +658,7 @@ class Device(RedvyprDevice):
         """
         funcname = __name__ + '.get_latest_callibration_coeffs():'
         try:
-            self.config.calibrations[sn]
+            self.custom_config.calibrations[sn]
         except Exception as e:
             logger.warning('sn not found')
             return None
@@ -667,7 +667,7 @@ class Device(RedvyprDevice):
         parameters_latest = {}
         # Find all calibrations for sn
         calibrations_sn = []
-        for calibration in self.config.calibrations:
+        for calibration in self.custom_config.calibrations:
             if calibration.sn == sn:
                 calibrations_sn.append(calibration)
 
@@ -709,7 +709,7 @@ class Device(RedvyprDevice):
         pass
 
     def thread_start(self):
-        config = copy.deepcopy(self.config)
+        config = copy.deepcopy(self.custom_config)
         #config['calibration'] = self.calibration
         self.statusqueue_thread = threading.Thread(target=self.read_statusqueue, daemon=True)
         self.statusqueue_thread.start()
@@ -723,7 +723,7 @@ class Device(RedvyprDevice):
         funcname = __name__ + '.add_sensorconfig():'
         logger.debug(funcname)
         try:
-            sensor_new = sn not in self.config.sensorconfigurations.keys()
+            sensor_new = sn not in self.custom_config.sensorconfigurations.keys()
             if sensor_new:
                 logger.debug(funcname + 'Adding new sensor of type {:s} with sn {:s}'.format(sensor_type, sn))
                 self.sensordata[sn] = {'__np__':0,'__raddr__':None,'__devices__':[]}
@@ -731,24 +731,24 @@ class Device(RedvyprDevice):
                 if sensor_type.lower() == 'hfv4ch':
                     sensor_config = logger_HFV4CH()
                     sensor_config.sn = sn
-                    self.config.sensorconfigurations[sn] = sensor_config
+                    self.custom_config.sensorconfigurations[sn] = sensor_config
                     ret = True
                 elif sensor_type.lower() == 'dhfs50':
                     sensor_config = sensor_DHFS50()
                     sensor_config.sn = sn
-                    self.config.sensorconfigurations[sn] = sensor_config
+                    self.custom_config.sensorconfigurations[sn] = sensor_config
                     ret = True
                 elif sensor_type.lower() == 'tar':
                     # Add a temperature array logger
                     sensor_config = sensor_TAR()
                     sensor_config.init_from_data(config)
-                    self.config.sensorconfigurations[sn] = sensor_config
+                    self.custom_config.sensorconfigurations[sn] = sensor_config
                     ret = True
                 else:
                     ret = None
 
                 if ret is not None:
-                    config = self.config.model_dump()
+                    config = self.custom_config.model_dump()
                     print('config for new logger', config)
                     self.thread_command('config', data={'config': config})
                     status = {'sn':sn, 'sensor_type':sensor_type,'config':config}

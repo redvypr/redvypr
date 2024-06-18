@@ -88,8 +88,8 @@ class Device(RedvyprDevice):
         print('Connecting devices')
         # Check of devices have not been added
         plot_devices = []
-        for plot in self.config['plots']:  # Loop over all plots
-            print('Config',self.config)
+        for plot in self.custom_config['plots']:  # Loop over all plots
+            print('Config', self.custom_config)
             print('plot',plot)
             if (str(getdata(plot['type'])).lower() == 'numdisp'):
                 datastream = plot['datastream']

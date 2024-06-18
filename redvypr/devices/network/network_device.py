@@ -71,13 +71,13 @@ logger.setLevel(logging.DEBUG)
 #config_template['redvypr_device']['description'] = description
 redvypr_devicemodule = True
 
-class device_base_config(pydantic.BaseModel):
+class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = True
     description: str = 'Send and receive data using standard network protocols as TCP or UDP'
     gui_tablabel_display: str = 'Network Status'
 
-class device_config(pydantic.BaseModel):
+class DeviceCustomConfig(pydantic.BaseModel):
     address: str = pydantic.Field(default='<IP>', description='The IP address, this can be also <IP> or <broadcast>')
     port: int = pydantic.Field(default=18196, description='The network port used')
     protocol: typing.Literal['tcp', 'udp'] = pydantic.Field(default='tcp', description= 'The network protocol used.')
@@ -652,44 +652,44 @@ class Device(RedvyprDevice):
         """ Fills a config, if essential entries are missing
         """
         try:
-            self.config.address
+            self.custom_config.address
         except:
             self.configaddress = get_ip()
 
 
-        if(self.config.address == None):
-            self.config.address = get_ip()
-        elif(self.config.address == ''):
-            self.config.address = get_ip()
-        elif(self.config.address == '<ip>'):
-            self.config.address = get_ip()
-        elif(self.config.address == '<IP>'):
-            self.config.address = get_ip()
+        if(self.custom_config.address == None):
+            self.custom_config.address = get_ip()
+        elif(self.custom_config.address == ''):
+            self.custom_config.address = get_ip()
+        elif(self.custom_config.address == '<ip>'):
+            self.custom_config.address = get_ip()
+        elif(self.custom_config.address == '<IP>'):
+            self.custom_config.address = get_ip()
             
         try:
-            self.config.port
+            self.custom_config.port
         except:
-            self.config.port = 18196
+            self.custom_config.port = 18196
             
         try:
-            self.config.protocol
+            self.custom_config.protocol
         except:
-            self.config.protocol = 'tcp'
+            self.custom_config.protocol = 'tcp'
         
         try:    
-            self.config.direction
+            self.custom_config.direction
         except:
-            self.config.direction = 'publish' # publish/receive
+            self.custom_config.direction = 'publish' # publish/receive
             
         try:
-            self.config.datakey
+            self.custom_config.datakey
         except: 
-            self.config.datakey = 'data' #
+            self.custom_config.datakey = 'data' #
 
         try:
-            self.config.serialize
+            self.custom_config.serialize
         except:
-            self.config.serialize = 'raw' # yaml/str/raw
+            self.custom_config.serialize = 'raw' # yaml/str/raw
 
     def status(self):
         funcname = 'status()'

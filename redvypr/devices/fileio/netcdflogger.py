@@ -31,13 +31,13 @@ logger = logging.getLogger('netcdflogger')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
-class device_base_config(pydantic.BaseModel):
+class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = False
     subscribes: bool = True
     description: str = "Saves subscribed devices in a netCDF4 file"
     gui_tablabel_display: str = 'netCDF logging status'
 
-class device_config(pydantic.BaseModel):
+class DeviceCustomConfig(pydantic.BaseModel):
     dt_sync: int = pydantic.Field(default=5,description='Time after which an open file is synced on disk')
     dt_newfile: int = pydantic.Field(default=3600,description='Time after which a new file is created')
     dt_newfile_unit: typing.Literal['none','seconds','hours','days'] = pydantic.Field(default='seconds')
@@ -682,13 +682,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         print('Config',config)
         return config
 
-    def update_device_config(self):
+    def update_DeviceCustomConfig(self):
         """
         Updates the device config based on the widgets
         Returns:
 
         """
-        funcname = self.__class__.__name__ + '.update_device_config():'
+        funcname = self.__class__.__name__ + '.update_DeviceCustomConfig():'
         logger.debug(funcname)
         self.widgets_to_config(self.device.custom_config)
 
@@ -698,7 +698,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if button.isChecked():
             logger.debug(funcname + "button pressed")
-            self.update_device_config()
+            self.update_DeviceCustomConfig()
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')

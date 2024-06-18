@@ -41,7 +41,7 @@ logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
 
-class device_base_config(pydantic.BaseModel):
+class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = False
     subscribes: bool = True
     description: str = 'Calibration of sensors'
@@ -68,7 +68,7 @@ class sensor_data(pydantic.BaseModel):
 def get_uuid():
     return 'CAL_' + str(uuid.uuid4())
 
-class device_config(pydantic.BaseModel):
+class DeviceCustomConfig(pydantic.BaseModel):
     calibrationdata: typing.Optional[typing.List[sensor_data]] = pydantic.Field(default=[])
     calibrationdata_time: typing.Optional[typing.List] = pydantic.Field(default=[])
     #calibration_coeffs: typing.Optional[typing.List] = pydantic.Field(default=[])
@@ -93,11 +93,11 @@ class Device(RedvyprDevice):
         super(Device, self).__init__(**kwargs)
         logger.debug(funcname)
         # Check the number of sensors and of the ref sensors is valid
-        nsensors = len(self.config.calibrationdata)
-        iref = self.config.ind_ref_sensor
+        nsensors = len(self.custom_config.calibrationdata)
+        iref = self.custom_config.ind_ref_sensor
         if(iref >= nsensors):
             logger.warning('Index of reference sensor is larger than number of sensors, resetting to zero')
-            self.config.ind_ref_sensor = -1
+            self.custom_config.ind_ref_sensor = -1
 
 
         # Convert calibrationdata to normal data
@@ -105,7 +105,7 @@ class Device(RedvyprDevice):
 
     def add_standard_config(self):
         # Check if we have NTC or heatflow calibration
-        if str(self.config.calibrationtype).lower() == 'ntc':
+        if str(self.custom_config.calibrationtype).lower() == 'ntc':
             print('NTC calibration')
             # config_template['sensors']           = {'type':'list','default':['§(NTC[0-9])|(T)§/§DHF_raw.*§','§(NTC[0-9])|(T)§/§DHF_raw.*§','§(NTC[0-9])|(T)§/§DHF_raw.*§','§(NTC[0-9])|(T)§/§DHF_raw.*§'], 'description':'The subscriptions for the sensors to be calibrated, for each subscription the first will be taken and not used for the next sensor'}
             sensors = ['{(NTC[0-9])}/{DHF_raw.*}', '{(NTC[0-9])}/{DHF_raw.*}', '{(NTC[0-9])}/{DHF_raw.*}',
@@ -116,7 +116,7 @@ class Device(RedvyprDevice):
 
             for s in manualsensors:
                 self.add_sensor(s, 'manual')
-        elif str(self.config.calibrationtype).lower() == 'heatflow':
+        elif str(self.custom_config.calibrationtype).lower() == 'heatflow':
             print('Heatflow calibration')
             # config_template['sensors']           = {'type':'list','default':['§(NTC[0-9])|(T)§/§DHF_raw.*§','§(NTC[0-9])|(T)§/§DHF_raw.*§','§(NTC[0-9])|(T)§/§DHF_raw.*§','§(NTC[0-9])|(T)§/§DHF_raw.*§'], 'description':'The subscriptions for the sensors to be calibrated, for each subscription the first will be taken and not used for the next sensor'}
             sensors = ['{(HF[0-9])}/{DHF_raw.*}', '{(HF[0-9])}/{DHF_raw.*}', '{(HF[0-9])}/{DHF_raw.*}']
@@ -137,14 +137,14 @@ class Device(RedvyprDevice):
         if sentype == 'datastream':
             logger.debug(funcname + ' Adding datastream')
             sensor = sensor_data(mac=newsen, inputtype=sentype)
-            self.config.calibrationdata.append(sensor)
-            index = len(self.config.calibrationdata) - 1
+            self.custom_config.calibrationdata.append(sensor)
+            index = len(self.custom_config.calibrationdata) - 1
         else:
             logger.debug(funcname + ' Adding manual sensor')
             print('config',str(newsen))
             sensor = sensor_data(mac=newsen, inputtype=sentype)
-            self.config.calibrationdata.append(sensor)
-            index = len(self.config.calibrationdata) - 1
+            self.custom_config.calibrationdata.append(sensor)
+            index = len(self.custom_config.calibrationdata) - 1
 
         self.__make_calibrationdata_equally_long__()
         self.subscribe_to_sensors()
@@ -154,16 +154,16 @@ class Device(RedvyprDevice):
         funcname = __name__ + '.rem_sensor()'
         logger.debug(funcname)
         if True:
-            self.config.calibrationdata.pop(index)
+            self.custom_config.calibrationdata.pop(index)
             #self.devicedisplaywidget.datastreams.pop(index)
-            if len(self.config.calibrationdata) == 0:
-                self.config.calibrationdata_time = []
+            if len(self.custom_config.calibrationdata) == 0:
+                self.custom_config.calibrationdata_time = []
 
     def subscribe_to_sensors(self):
         funcname = __name__ + '.subscribe_to_sensors():'
         logger.debug(funcname)
         self.unsubscribe_all()
-        for i,sdata in enumerate(self.config.calibrationdata):
+        for i,sdata in enumerate(self.custom_config.calibrationdata):
             if sdata.inputtype == 'datastream':
                 datastream = sdata.subscribe
                 if len(datastream) > 0:
@@ -173,9 +173,9 @@ class Device(RedvyprDevice):
     def rem_data(self, index):
         funcname = __name__ + '.rem_data()'
         logger.debug(funcname)
-        self.config.calibrationdata_time.pop(index)
+        self.custom_config.calibrationdata_time.pop(index)
         if True:
-            for sdata in self.config.calibrationdata:
+            for sdata in self.custom_config.calibrationdata:
                 sdata.data.pop(index)
                 sdata.rawdata.pop(index)
                 sdata.time_data.pop(index)
@@ -192,23 +192,23 @@ class Device(RedvyprDevice):
         logger.debug(funcname)
         # Search first if there has been an entry already
         flag_new_entry = True
-        for i,t in enumerate(self.config.calibrationdata_time):
+        for i,t in enumerate(self.custom_config.calibrationdata_time):
             if t == time:
                 flag_new_entry = False
                 break
 
         # create a new entry
         if flag_new_entry:
-            self.config.calibrationdata_time.append(time)
-            i = len(self.config.calibrationdata_time) - 1
-            for sdata in self.config.calibrationdata:
+            self.custom_config.calibrationdata_time.append(time)
+            i = len(self.custom_config.calibrationdata_time) - 1
+            for sdata in self.custom_config.calibrationdata:
                 sdata.data.append(np.NaN)
                 sdata.rawdata.append(np.NaN)
                 sdata.time_data.append(np.NaN)
                 sdata.time_rawdata.append(np.NaN)
 
         # And finally add the data
-        sdata = self.config.calibrationdata[sensorindex]
+        sdata = self.custom_config.calibrationdata[sensorindex]
         sdata.data[i] = data
         sdata.rawdata[i] = rawdata
         sdata.time_data[i] = float(time_data)
@@ -222,13 +222,13 @@ class Device(RedvyprDevice):
         # Check if all lists have the same length, if not, fill them with None
         lmax = 0
         if True:
-            for sdata in self.config.calibrationdata:
+            for sdata in self.custom_config.calibrationdata:
                 lmax = max(len(sdata.data),lmax)
 
 
         print('lmax',lmax)
         if True:
-            for sdata in self.config.calibrationdata:
+            for sdata in self.custom_config.calibrationdata:
                 while len(sdata.data) < lmax:
                     sdata.data.append(np.NaN)
                     sdata.rawdata.append(np.NaN)

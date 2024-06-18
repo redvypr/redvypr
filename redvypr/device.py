@@ -345,30 +345,30 @@ class RedvyprDevice(QtCore.QObject):
         """
         """
         super(RedvyprDevice, self).__init__()
-        self.publishes   = device_parameter.publishes    # publishes data, a typical sensor is doing this
-        self.subscribes  = device_parameter.subscribes   # subscribes other devices data, a typical datalogger is doing this
+        self.publishes = device_parameter.publishes    # publishes data, a typical sensor is doing this
+        self.subscribes = device_parameter.subscribes   # subscribes other devices data, a typical datalogger is doing this
         self.datainqueue = datainqueue
-        self.dataqueue   = dataqueue
-        self.comqueue    = comqueue
+        self.dataqueue = dataqueue
+        self.comqueue = comqueue
         self.statusqueue = statusqueue
-        self.config      = custom_config
-        self.redvypr     = redvypr
-        self.name        = device_parameter.name
+        self.custom_config = custom_config
+        self.redvypr = redvypr
+        self.name = device_parameter.name
         self.devicemodulename = device_parameter.devicemodulename
-        self.uuid        = device_parameter.uuid
+        self.uuid = device_parameter.uuid
         try:
             self.host_uuid = redvypr.hostinfo['uuid']
         except:
             self.host_uuid = ''
         self.thread_uuid = ''
-        self.host        = redvypr.hostinfo
-        self.loglevel    = device_parameter.loglevel
-        self.numdevice   = device_parameter.numdevice
+        self.host = redvypr.hostinfo
+        self.loglevel = device_parameter.loglevel
+        self.numdevice = device_parameter.numdevice
         self.description = 'redvypr_device'
-        self.statistics  = statistics
-        self.mp          = device_parameter.multiprocess
-        self.autostart   = device_parameter.autostart
-        self.thread      = None
+        self.statistics = statistics
+        self.mp = device_parameter.multiprocess
+        self.autostart = device_parameter.autostart
+        self.thread = None
         self.device_parameter = device_parameter
         # Create a redvypr_address
         # self.address_str
@@ -712,8 +712,11 @@ class RedvyprDevice(QtCore.QObject):
                         if config is None:
                             self.logger.debug('Using internal configuration')
                             self.logger.debug('Pydantic configuration')
-                            config = self.config.model_dump()
-
+                            try:
+                                config = self.custom_config.model_dump()
+                            except:
+                                self.logger.debug('None')
+                                pass
                         else:
                             self.logger.debug('Using external configuration')
 
@@ -1053,7 +1056,7 @@ class RedvyprDevice(QtCore.QObject):
         for raddr in self.subscribed_addresses:
             subscriptions.append(raddr.address_str)
         base_config = RedvyprDeviceBaseConfig(**self.device_parameter.model_dump())
-        config = RedvyprDeviceConfig(base_config=base_config, config=self.config,
+        config = RedvyprDeviceConfig(base_config=base_config, config=self.custom_config,
                                      devicemodulename=self.devicemodulename, subscriptions=subscriptions)
 
         return config

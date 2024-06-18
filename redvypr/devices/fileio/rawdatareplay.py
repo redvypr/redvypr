@@ -23,13 +23,13 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('rawdatareplay')
 logger.setLevel(logging.DEBUG)
 
-class device_base_config(pydantic.BaseModel):
+class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = False
     description: str = "Replays a raw redvypr data file"
     gui_tablabel_display: str = 'Replay status'
 
-class device_config(pydantic.BaseModel):
+class DeviceCustomConfig(pydantic.BaseModel):
     files: list = pydantic.Field(default=[], description='List of files to replay')
     replay_index: list = pydantic.Field(default=['0,-1,1'], description='The index of the packets to be replayed [start, end, nth]')
     loop: bool = pydantic.Field(default=False, description='Loop over all files if set')

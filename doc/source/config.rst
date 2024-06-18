@@ -5,7 +5,7 @@ Redvypr device configuration is realized using pydantic objects based on pydanti
 
    import pydantic
    import typing
-   class device_config(pydantic.BaseModel):
+   class DeviceCustomConfig(pydantic.BaseModel):
        description: str = 'Calibration of sensors'
 
 
@@ -50,12 +50,12 @@ Here the full example code::
         coeff: float = 1.0
 
 
-    class device_config(pydantic.BaseModel):
+    class DeviceCustomConfig(pydantic.BaseModel):
         description: str = 'Calibration of sensors'
         sensors: typing.Dict[str,typing.Annotated[typing.Union[sensorA,sensorB],pydantic.Field(discriminator='sensor_id')]] = pydantic.Field(default={})
 
 
-    test = device_config()
+    test = DeviceCustomConfig()
     A = sensorA()
     A1 = sensorA(coeff=3.0)
     B = sensorB()

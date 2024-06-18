@@ -28,13 +28,13 @@ logger.setLevel(logging.DEBUG)
 
 
 redvypr_devicemodule = True
-class device_base_config(pydantic.BaseModel):
+class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = True
     description: str = 'Reads to and writes from a serial devices'
     gui_tablabel_display: str = 'Serial device status'
 
-class serial_device_config(pydantic.BaseModel):
+class serial_DeviceCustomConfig(pydantic.BaseModel):
     use_device: bool = pydantic.Field(default=True, description='Flag if the device should be used')
     baud: int = 4800
     parity: typing.Literal[serial.PARITY_NONE, serial.PARITY_ODD, serial.PARITY_EVEN, serial.PARITY_MARK, serial.PARITY_SPACE] = pydantic.Field(default=serial.PARITY_NONE)
@@ -49,7 +49,7 @@ class serial_device_config(pydantic.BaseModel):
     devicename: str = pydantic.Field(default='')
 
 
-class device_config(pydantic.BaseModel):
+class DeviceCustomConfig(pydantic.BaseModel):
     serial_devices: typing.Optional[typing.List[serial_device_config]] = pydantic.Field(default=[])
     baud_standard: list = [300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200]
 
@@ -284,7 +284,7 @@ class Device(RedvyprDevice):
         serial_devices_new = []
         for comport in self.comports:
             FLAG_DEVICE_EXISTS = False
-            for d in self.config.serial_devices:
+            for d in self.custom_config.serial_devices:
                 if comport.device == d.device:
                     logger.debug(funcname + ' Found new device {}'.format(d.device))
                     FLAG_DEVICE_EXISTS = True
@@ -292,14 +292,14 @@ class Device(RedvyprDevice):
                     break
 
             if FLAG_DEVICE_EXISTS == False:
-                config = serial_device_config()
+                config = serial_DeviceCustomConfig()
                 config.device = comport.device
                 config.devicename = comport.device.split('/')[-1]
                 #self.config.serial_devices.append(config)
                 serial_devices_new.append(config)
 
-        self.config.serial_devices = serial_devices_new
-        logger.debug(funcname + ' serial devices {}'.format(self.config.serial_devices))
+        self.custom_config.serial_devices = serial_devices_new
+        logger.debug(funcname + ' serial devices {}'.format(self.custom_config.serial_devices))
 
 
 class initDeviceWidget(QtWidgets.QWidget):

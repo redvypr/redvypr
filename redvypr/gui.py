@@ -516,7 +516,7 @@ class redvyprAddDeviceWidget(QtWidgets.QWidget):
             logger.debug('devicemodulename {}'.format(devicemodulename))
             logger.debug('Adding device, config {}'.format(device_parameter))
             if self.redvypr is not None:
-                self.redvypr.add_device(devicemodulename=devicemodulename, device_parameter=device_parameter)
+                self.redvypr.add_device(devicemodulename=devicemodulename, base_config=device_parameter)
             self.devname.clear()
             # Update the name
             #self.__device_name()

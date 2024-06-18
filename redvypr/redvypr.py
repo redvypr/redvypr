@@ -462,7 +462,7 @@ class Redvypr(QtCore.QObject):
                             # print('smodname',smodname)
                             if (device.devicemodulename == smodname):
                                 FLAG_DEVICEMODULENAME_EXACT = True
-                                device.devicemodulename_orig = device.devicemodulename
+                                #device.devicemodulename_orig = device.devicemodulename
                                 device.devicemodulename = smod['name']
                                 break
 
@@ -475,7 +475,7 @@ class Redvypr(QtCore.QObject):
 
                     logger.info(funcname + 'Adding device {}'.format(device.devicemodulename))
                     dev_added = self.add_device(devicemodulename=device.devicemodulename, custom_config=device_config,
-                                                device_parameter=base_config)
+                                                base_config=base_config)
 
         # Emit a signal that the configuration has been changed
         self.hostconfig_changed_signal.emit()
@@ -578,7 +578,7 @@ class Redvypr(QtCore.QObject):
 
         return loglevel
 
-    def add_device(self, devicemodulename=None, custom_config=None, device_parameter=None):
+    def add_device(self, devicemodulename=None, custom_config=None, base_config=None):
         """
         Function adds a device to redvypr
 
@@ -610,12 +610,12 @@ class Redvypr(QtCore.QObject):
                     FLAG_HAS_PYDANTICBASE = True
                     FLAG_PYDANTIC = True
                     # Create or use a given device parameter object
-                    if isinstance(device_parameter, RedvyprDeviceParameter):
-                        pass
-                    elif isinstance(device_parameter, dict):
+                    if isinstance(base_config, RedvyprDeviceParameter):
+                        device_parameter = base_config
+                    elif isinstance(base_config, dict):
                         print('Will update from config dictionary')
                         device_parameter_tmp = RedvyprDeviceParameter()
-                        device_parameter = device_parameter_tmp.model_copy(update=device_parameter)
+                        device_parameter = device_parameter_tmp.model_copy(update=base_config)
                     else:
                         print('Standard base_config')
                         device_parameter = RedvyprDeviceParameter()
@@ -630,6 +630,7 @@ class Redvypr(QtCore.QObject):
                 except Exception as e:
                     logger.debug(
                         funcname + ':No pydantic base configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
+                    device_parameter = RedvyprDeviceParameter()
                     #logger.exception(e)
                     FLAG_HAS_PYDANTICBASE = False
                     FLAG_PYDANTIC = False
@@ -660,6 +661,7 @@ class Redvypr(QtCore.QObject):
                                                                                             str(e)))
                     #logger.exception(e)
                     FLAG_HAS_PYDANTIC = False
+                    pydantic_custom_config = None
 
                 if(device_parameter.maxdevices > 0):
                     ndevices = 0
