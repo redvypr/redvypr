@@ -70,11 +70,11 @@ class RedvyprMetadata(pydantic.BaseModel):
     lat: float = pydantic.Field(default=-9999)
 class RedvyprConfig(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="allow")
-    hostname: str = pydantic.Field(default='redvypr')
-    metadata: RedvyprMetadata = pydantic.Field(default=RedvyprMetadata())
+    hostname: typing.Optional[str] = pydantic.Field(default=None)
+    metadata: typing.Optional[RedvyprMetadata] = pydantic.Field(default=None)
     #devices: list = pydantic.Field(default=[])
     #devices: typing.List[RedvyprDeviceConfig] = pydantic.Field(default=[])
-    devices: typing.List[typing.Annotated[typing.Union[RedvyprDeviceConfig], pydantic.Field(discriminator='device_type')]] = pydantic.Field(default=[])
+    devices: typing.List[typing.Annotated[typing.Union[RedvyprDeviceConfig], pydantic.Field(discriminator='config_type')]] = pydantic.Field(default=[])
     devicepath: list = pydantic.Field(default=[])
     loglevel: str = pydantic.Field(default='')
 
@@ -308,7 +308,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
             logger.warning(funcname + 'Could not distribute packets:', exc_info=True)
 
 
-class redvypr(QtCore.QObject):
+class Redvypr(QtCore.QObject):
     """This is the redvypr heart. Here devices are added/threads
     are started and data is interchanged
 
@@ -322,8 +322,8 @@ class redvypr(QtCore.QObject):
     device_status_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
     hostconfig_changed_signal    = QtCore.pyqtSignal()  # Signal notifying if the configuration of the host changed (hostname, hostinfo_opt)
 
-    def __init__(self, config=None, hostname=None, nogui=False):
-        super(redvypr, self).__init__()
+    def __init__(self, config=None, hostname=None, nogui=False, loglevel=None):
+        super(Redvypr, self).__init__()
         print(__platform__)
         funcname = __name__ + '.__init__()'
         logger.debug(funcname)
@@ -335,12 +335,15 @@ class redvypr(QtCore.QObject):
             config.hostname = hostname
 
         # global loglevel
-        try:
-            logger.setLevel(config.loglevel)
-        except:
-            logger.debug('Could not set loglevel to: "{}"'.format(config.loglevel))
-            pass
-
+        print('Loglevel',loglevel)
+        if loglevel is not None:
+            logger.setLevel(loglevel)
+            logger.debug('Setting loglevel to global: "{}"'.format(loglevel))
+        else: # config loglevel
+            try:
+                logger.setLevel(config.loglevel)
+            except:
+                logger.debug('Could not set loglevel to: "{}"'.format(config.loglevel))
 
         self.hostinfo = create_hostinfo(hostname=config.hostname)
         self.metadata = config.metadata
@@ -364,7 +367,9 @@ class redvypr(QtCore.QObject):
         self.t_thread_start = time.time()
         self.datadistthread.start()
         logger.info(funcname + ':Searching for devices')
-        self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths, redvypr_devices=redvyprdevices, loglevel = logger.getEffectiveLevel())
+        loglevel_device_scan = logger.getEffectiveLevel()
+        print('Loglevel device scan',loglevel_device_scan,logging.getLevelName(loglevel_device_scan))
+        self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths, redvypr_devices=redvyprdevices, loglevel=loglevel_device_scan)
         logger.info(funcname + ':Done searching for devices')
         # And now add the devices
         self.add_devices_from_config(config)
@@ -600,7 +605,7 @@ class redvypr(QtCore.QObject):
                 # Try to get a pydantic base configuration, every device has
                 pydantic_base_config = None
                 try:
-                    pydantic_base_config = devicemodule.device_base_config()
+                    pydantic_base_config = devicemodule.DeviceBaseConfig()
                     logger.debug(funcname + ':Found pydantic base configuation {:s}'.format(str(devicemodule)))
                     FLAG_HAS_PYDANTICBASE = True
                     FLAG_PYDANTIC = True
@@ -622,8 +627,6 @@ class redvypr(QtCore.QObject):
                     device_parameter = device_parameter.model_copy(update=pydantic_base_config.model_dump())
                     print('Device parameter 2', device_parameter)
 
-
-
                 except Exception as e:
                     logger.debug(
                         funcname + ':No pydantic base configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
@@ -633,14 +636,16 @@ class redvypr(QtCore.QObject):
 
                 # Try to get a pydantic device specific configuration (the configuration only for the device)
                 try:
-                    pydantic_device_config = devicemodule.device_config()
+                    pydantic_device_config = devicemodule.DeviceCustomConfig()
+                    print('Device config of module',pydantic_device_config,type(pydantic_base_config))
+                    print('deviceconfig',deviceconfig, type(deviceconfig))
                     try:
-                        config = deviceconfig['config']
-                        #print('Config',config)
-                        pydantic_device_config = devicemodule.device_config.model_validate(config)
+                        config = deviceconfig.config
+                        print('Config',config)
+                        pydantic_device_config = devicemodule.DeviceCustomConfig.model_validate(config)
                     except:
                         logger.debug('No config found',exc_info=True)
-                        pydantic_device_config = devicemodule.device_config()
+                        pydantic_device_config = devicemodule.DeviceCustomConfig()
 
                     logger.debug(funcname + ':Found pydantic configuration {:s}'.format(str(devicemodule)))
                     #redvypr_device_parameter.config = pydantic_device_config
@@ -733,7 +738,6 @@ class redvypr(QtCore.QObject):
                     if FLAG_HAS_PYDANTIC:
                         logger.debug(funcname + ' Using pydantic config')
                         configu = pydantic_device_config
-                        config_template = None
 
                     logger.debug(funcname + 'Config for device')
                     logger.debug(funcname + 'Config: {:s}'.format(str(configu)))
@@ -756,7 +760,7 @@ class redvypr(QtCore.QObject):
 
                     # Creating the device
                     device = Device(device_parameter=device_parameter, config=configu, redvypr=self, dataqueue=dataqueue,
-                                    template=config_template, comqueue=comqueue, datainqueue=datainqueue,
+                                    comqueue=comqueue, datainqueue=datainqueue,
                                     statusqueue=statusqueue, statistics=statistics, startfunction=startfunction)
 
                     device.subscription_changed_signal.connect(self.process_subscription_changed)
@@ -806,10 +810,9 @@ class redvypr(QtCore.QObject):
                 # Subscribe to devices
                 #
                 try:
-                    subscribe_addresses =  deviceconfig['subscriptions']
+                    subscribe_addresses = deviceconfig.subscriptions
                 except:
                     logger.debug(funcname + ' No subscriptions found')
-
                     subscribe_addresses = []
 
                 logger.debug(funcname + 'Subscribing to')

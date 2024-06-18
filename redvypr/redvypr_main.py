@@ -40,7 +40,6 @@ def merge_configuration(redvypr_config=None):
     :return:
     """
     funcname = "merge_configuration():"
-    print('MERGE MERGE')
     parsed_devices = []
     logger.debug(funcname)
 
@@ -52,13 +51,11 @@ def merge_configuration(redvypr_config=None):
         return False
 
     config_tmp = redvypr.RedvyprConfig()
-    print('Hallo config', config_tmp)
-    print('Done')
     devices_all = []
     devicepath_all = []
     for iconf, configraw in enumerate(redvypr_config):
-        print('Configraw',configraw)
-        print('iconf', iconf,type(configraw))
+        #print('Configraw',configraw)
+        #print('iconf', iconf,type(configraw))
         if isinstance(configraw, redvypr.RedvyprConfig):
             logger.info(funcname + ' Found redvypr config')
             config_tmp = configraw
@@ -93,11 +90,11 @@ def merge_configuration(redvypr_config=None):
         # Merge the configuration into one big dictionary
         devices_all.extend(config_tmp.devices)
         devicepath_all.extend(config_tmp.devicepath)
-        print('Config tmp', config_tmp)
+        #print('Config tmp', config_tmp)
         # config = config.model_copy(update=config_tmp)
     config_tmp2 = redvypr.RedvyprConfig(devices=devices_all, devicepath=devicepath_all)
     config = config_tmp2.model_copy(update=config_tmp.model_dump(exclude=['devices', 'devicepath']))
-    print('Config', config)
+    #print('Config', config)
     return config
 
 def split_quotedstring(qstr, separator=','):
@@ -159,9 +156,11 @@ def redvypr_main():
     logging_level = logging.INFO
     if (args.verbose == None):
         logging_level = logging.INFO
+        loglevel_redvypr=None
     elif (args.verbose >= 1):
         print('Debug logging level')
         logging_level = logging.DEBUG
+        loglevel_redvypr = 'DEBUG'
 
     logger.setLevel(logging_level)
 
@@ -190,6 +189,7 @@ def redvypr_main():
         #print('devices!', args.add_device)
         for d in args.add_device:
             deviceconfig = redvypr.RedvyprDeviceConfig().model_dump()
+            deviceconfig['config'] = {} # Change the None manually to a dictionary
             #deviceconfig = {'base_config':{},'config':{},'subscriptions':[]}
             #deviceconfig['base_config'] = {'autostart':False,'loglevel':logging_level,'multiprocess':'qthread'}
             if(',' in d):
@@ -294,11 +294,13 @@ def redvypr_main():
                 else:
                     logger.warning('Not a key:data pair in metadata, skipping {:sf}'.format(info))
 
-        metadata_obj = redvypr.RedvyprMetadata(metadata_tmp)
+        metadata_obj = redvypr.RedvyprMetadata(**metadata_tmp)
         config_metadata = redvypr.RedvyprConfig(metadata=metadata_obj)
         config_all.append(config_metadata)
 
+    print('Config all',config_all)
     config = merge_configuration(config_all)
+    print('Config',config)
     #config_all.append({'hostinfo_opt':hostinfo_opt})
     #print('Hostinfo', hostinfo)
     #print('Hostinfo opt', hostinfo_opt)
@@ -314,7 +316,7 @@ def redvypr_main():
 
         signal.signal(signal.SIGINT, handleIntSignal)
         app = QtCore.QCoreApplication(sys.argv)
-        redvypr_obj = redvypr.redvypr(config=config, hostname=hostname, nogui=True)
+        redvypr_obj = redvypr.Redvypr(config=config, hostname=hostname, nogui=True, loglevel=loglevel_redvypr)
         # Check if the devices shall be listed only
         if (args.list_devices):
             devices = redvypr_obj.get_known_devices()
@@ -337,7 +339,7 @@ def redvypr_main():
 
         logger.debug(
             'Available screen size: {:d} x {:d} using {:d} x {:d}'.format(rect.width(), rect.height(), width, height))
-        ex = redvyprMainWidget(width=width, height=height, config=config, hostname=hostname)
+        ex = redvyprMainWidget(width=width, height=height, config=config, hostname=hostname, loglevel=loglevel_redvypr)
 
         sys.exit(app.exec_())
 

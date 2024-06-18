@@ -15,7 +15,7 @@ import logging
 import sys
 import threading
 import copy
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDeviceCustomConfig, redvypr_device
 import redvypr.data_packets
 from redvypr.data_packets import check_for_command
 import pydantic
@@ -26,21 +26,19 @@ logger = logging.getLogger('test_device')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
-class device_base_config(pydantic.BaseModel):
+class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = False
     description: str = 'A simple test device'
 
-class device_config(pydantic.BaseModel):
+class DeviceCustomConfig(RedvyprDeviceCustomConfig):
     delay_s: float = 1.0
-
-
 
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
     print('Config',config)
-    pdconfig = device_config.model_validate(config)
+    pdconfig = DeviceCustomConfig.model_validate(config)
     print('pdconfig',pdconfig)
     #data = {'_keyinfo':config['_keyinfo']}
     # dataqueue.put(data)

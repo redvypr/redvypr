@@ -38,9 +38,13 @@ class DeviceMetadata(pydantic.BaseModel):
     lon: float = pydantic.Field(default=-9999)
     lat: float = pydantic.Field(default=-9999)
 
+class RedvyprDeviceCustomConfig(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="allow")
+    config_type: typing.Literal['custom'] = pydantic.Field(default='custom')
+
 class RedvyprDeviceBaseConfig(pydantic.BaseModel):
     """
-    The is the base config of any redvypr device.
+    This is the base config of any redvypr device.
     """
     name: str = pydantic.Field(default='')
     multiprocess: str = pydantic.Field(default='qthread')
@@ -57,10 +61,10 @@ class RedvyprDeviceConfig(pydantic.BaseModel):
     """
     base_config: RedvyprDeviceBaseConfig = pydantic.Field(default=RedvyprDeviceBaseConfig())
     devicemodulename: str = pydantic.Field(default='', description='')
-    config: typing.Optional[pydantic.BaseModel] = pydantic.Field(default=None, description='')
+    config: typing.Optional[RedvyprDeviceCustomConfig] = pydantic.Field(default=None, description='')
     subscriptions: list = pydantic.Field(default=[])
     metadata: typing.Optional[DeviceMetadata] = pydantic.Field(default=None, description='')
-    device_type: typing.Literal['redvypr device'] = pydantic.Field(default='redvypr device')
+    config_type: typing.Literal['device'] = pydantic.Field(default='device')
 
 class RedvyprDeviceParameter(RedvyprDeviceBaseConfig):
     """
@@ -74,28 +78,6 @@ class RedvyprDeviceParameter(RedvyprDeviceBaseConfig):
     numdevice: int = pydantic.Field(default=-1)
     # Not as parameter, but necessary for initialization
     maxdevices: int = pydantic.Field(default=-1)
-
-class redvypr_device_parameter_legacy(pydantic.BaseModel):
-    """
-    The is the base config of any redvypr device.
-    """
-    name: str = pydantic.Field(default='')
-    uuid: str = pydantic.Field(default='')
-    #template: dict = pydantic.Field(default={}) # Candidate for removal
-    #config: dict = pydantic.Field(default={})  # Candidate for removal
-    publishes: bool = False
-    subscribes: bool = False
-    multiprocess: str = pydantic.Field(default='qthread')
-    loglevel: str = pydantic.Field(default='')
-    numdevice: int = pydantic.Field(default=-1)
-    autostart: bool = False
-    devicemodulename: str = pydantic.Field(default='')
-    description: str = ''
-    # Not as parameter, but necessary for initialization
-    maxdevices: int = pydantic.Field(default=-1)
-    gui_tablabel_display: str = 'Display'
-    gui_dock: typing.Literal['Tab','Window','Hide'] = pydantic.Field(default='Tab')
-
 
 class deviceQThread(QtCore.QThread):
     def __init__(self, startfunction, start_arguments):
@@ -287,7 +269,7 @@ class redvypr_device_scan():
                     # Clean empty dictionaries
 
                 except Exception as e:
-                    self.logger.info(funcname + ' Could not import module: ' + str(e))  # If the module is valid add it to devices
+                    #self.logger.info(funcname + ' Could not import module: ' + str(e))  # If the module is valid add it to devices
                     self.logger.debug('Could not import module', exc_info=True)
 
 
@@ -359,7 +341,7 @@ class redvypr_device(QtCore.QObject):
 
     #def __init__(self, name='redvypr_device', uuid = '', redvypr = None, dataqueue = None, comqueue = None, datainqueue=None,statusqueue=None,template = {},config = {},publishes=False,subscribes=False, multiprocess='thread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False,devicemodulename=''):
     def __init__(self, device_parameter = None, redvypr=None, dataqueue=None, comqueue=None, datainqueue=None,
-                 statusqueue=None, template={}, config={}, statistics=None, startfunction=None):
+                 statusqueue=None, config={}, statistics=None, startfunction=None):
         """
         """
         super(redvypr_device, self).__init__()
@@ -369,7 +351,6 @@ class redvypr_device(QtCore.QObject):
         self.dataqueue   = dataqueue
         self.comqueue    = comqueue
         self.statusqueue = statusqueue
-        self.template    = template
         self.config      = config
         self.redvypr     = redvypr
         self.name        = device_parameter.name
@@ -418,7 +399,7 @@ class redvypr_device(QtCore.QObject):
         self.__stoptimer__ = QtCore.QTimer()
         self.__stoptimer__.timeout.connect(self.__check_thread_status)  # Add to the timer another update
 
-    def subscription_changed_global(self,devchange):
+    def subscription_changed_global(self, devchange):
         """
         Function is called by redvypr after another device emitted the subscription_changed_signal
 

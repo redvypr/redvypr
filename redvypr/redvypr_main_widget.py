@@ -53,7 +53,7 @@ class redvyprWidget(QtWidgets.QWidget):
 
     """
 
-    def __init__(self, width=None, height=None, config=None, hostname='redvypr', hostinfo_opt={}):
+    def __init__(self, width=None, height=None, config=None, hostname='redvypr', loglevel=None):
         """ Args:
             width:
             height:
@@ -61,6 +61,15 @@ class redvyprWidget(QtWidgets.QWidget):
         """
         super(redvyprWidget, self).__init__()
         self.setGeometry(50, 50, 500, 300)
+        # global loglevel
+        if loglevel is not None:
+            logger.debug('Setting loglevel to global: "{}"'.format(loglevel))
+            logger.setLevel(loglevel)
+        else:  # config loglevel
+            try:
+                logger.setLevel(config.loglevel)
+            except:
+                logger.debug('Could not set loglevel to: "{}"'.format(config.loglevel))
 
         # Lets create the heart of redvypr
         if config is not None:
@@ -70,8 +79,7 @@ class redvyprWidget(QtWidgets.QWidget):
             config_tmp_obj = config
 
         # Configuration comes later after all widgets are initialized
-        self.redvypr = redvypr.redvypr(hostname=hostname, config=config_tmp_obj)
-
+        self.redvypr = redvypr.Redvypr(hostname=hostname, config=config_tmp_obj, loglevel=loglevel)
         self.redvypr.device_path_changed.connect(self.__populate_devicepathlistWidget)
         self.redvypr.device_added.connect(self._add_device_gui)
         # Fill the layout
@@ -131,7 +139,8 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__homeWidget_layout.addWidget(self.__host_config_btn)
 
     def open_ipwidget(self):
-        self.ipwidget = redvypr_ip_widget()
+        pass
+        #self.ipwidget = redvypr_ip_widget()
 
     def open_console(self):
         """ Opens a pyqtconsole console widget
@@ -828,7 +837,7 @@ class redvyprWidget(QtWidgets.QWidget):
 #
 #
 class redvyprMainWidget(QtWidgets.QMainWindow):
-    def __init__(self, width=None, height=None, config=None, hostname=None):
+    def __init__(self, width=None, height=None, config=None, hostname=None, loglevel=None):
         super(redvyprMainWidget, self).__init__()
         # self.setGeometry(0, 0, width, height)
 
@@ -837,7 +846,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         # Add the icon
         # self.setWindowIcon(QtGui.QIcon(_icon_file))
 
-        self.redvypr_widget = redvyprWidget(config=config, hostname=hostname)
+        self.redvypr_widget = redvyprWidget(config=config, hostname=hostname, loglevel=loglevel)
         self.setCentralWidget(self.redvypr_widget)
         quitAction = QtWidgets.QAction("&Quit", self)
         quitAction.setShortcut("Ctrl+Q")

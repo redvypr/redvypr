@@ -1,4 +1,5 @@
-    -0.8.0  - complete rewrite of configutation for a fill pydantic version
+    -0.8.1  - API renaming, changed class names to CapWord style according to PEP08, cleanup of configuration
+    -0.8.0  - complete rewrite of configuration for a fill pydantic version
     -0.7.9  - complete split of redvypr, redvypr_widget and redvypr_main
     -0.7.8  - configuration cleanup, start of cleaner gui, windows can now be hidden/docked to tab or floating by themselfs
     -0.7.7  - datapacket object that allows datakey expansion, enables xlsxlogger to write "flattened" out list/arrays
