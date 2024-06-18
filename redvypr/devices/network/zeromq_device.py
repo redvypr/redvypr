@@ -35,7 +35,7 @@ import yaml
 import copy
 import zmq
 import socket
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 
 

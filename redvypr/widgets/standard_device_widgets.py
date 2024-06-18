@@ -6,7 +6,7 @@ import time
 import logging
 import sys
 import yaml
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 #from redvypr.widgets.gui_config_widgets import configWidget
 
 logging.basicConfig(stream=sys.stderr)
@@ -83,7 +83,7 @@ class displayDeviceWidget_standard(QtWidgets.QWidget):
 #
 class redvypr_deviceInitWidget(QtWidgets.QWidget):
     connect = QtCore.pyqtSignal(
-        redvypr_device)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+        RedvyprDevice)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
 
     def __init__(self, device=None):
         """

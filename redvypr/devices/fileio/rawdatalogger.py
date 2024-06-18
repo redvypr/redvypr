@@ -12,7 +12,7 @@ import os
 import queue
 import pydantic
 import typing
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 from redvypr.packet_statistic import do_data_statistics, create_data_statistic_dict
 
@@ -268,7 +268,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 #
 #
 class initDeviceWidget(QtWidgets.QWidget):
-    connect      = QtCore.pyqtSignal(redvypr_device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    connect      = QtCore.pyqtSignal(RedvyprDevice) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)
@@ -294,7 +294,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.extension_check = QtWidgets.QCheckBox('Extension')
 
         try:
-            filename = self.device.config.filename
+            filename = self.device.custom_config.filename
         except:
             filename = ''
 
@@ -320,7 +320,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.dt_newfile = edit
         self.dt_newfile.setToolTip('Create a new file every N seconds.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
         try:
-            self.dt_newfile.setText(str(self.device.config.dt_newfile))
+            self.dt_newfile.setText(str(self.device.custom_config.dt_newfile))
         except Exception as e:
             self.dt_newfile.setText('0')
             
@@ -331,7 +331,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.size_newfile = edit
         self.size_newfile.setToolTip('Create a new file every N bytes.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
         try:
-            self.size_newfile.setText(str(self.device.config.size_newfile))
+            self.size_newfile.setText(str(self.device.custom_config.size_newfile))
         except Exception as e:
             self.size_newfile.setText('0')
             
@@ -497,7 +497,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = self.__class__.__name__ + '.config_to_widgets():'
         logger.debug(funcname)
 
-        config = self.device.config
+        config = self.device.custom_config
         #print('config',config)
         self.dt_newfile.setText(str(config.dt_newfile))
         for i in range(self.newfiletimecombo.count()):
@@ -587,7 +587,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.update_device_config():'
         logger.debug(funcname)
-        self.widgets_to_config(self.device.config)
+        self.widgets_to_config(self.device.custom_config)
 
     def start_clicked(self):
         funcname = self.__class__.__name__ + '.start_clicked():'

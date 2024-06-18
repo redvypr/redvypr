@@ -189,7 +189,7 @@ def redvypr_main():
         #print('devices!', args.add_device)
         for d in args.add_device:
             deviceconfig = redvypr.RedvyprDeviceConfig().model_dump()
-            deviceconfig['config'] = {} # Change the None manually to a dictionary
+            deviceconfig['custom_config'] = {} # Change the None manually to a dictionary
             #deviceconfig = {'base_config':{},'config':{},'subscriptions':[]}
             #deviceconfig['base_config'] = {'autostart':False,'loglevel':logging_level,'multiprocess':'qthread'}
             if(',' in d):
@@ -250,7 +250,7 @@ def redvypr_main():
                             deviceconfig['subscriptions'].append(data)
                         else:
                             print('Adding key',key,data)
-                            deviceconfig['config'][key] = data
+                            deviceconfig['custom_config'][key] = data
             else:
                 devicemodulename = d
 
@@ -301,6 +301,7 @@ def redvypr_main():
     print('Config all',config_all)
     config = merge_configuration(config_all)
     print('Config',config)
+
     #config_all.append({'hostinfo_opt':hostinfo_opt})
     #print('Hostinfo', hostinfo)
     #print('Hostinfo opt', hostinfo_opt)

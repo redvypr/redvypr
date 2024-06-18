@@ -36,7 +36,7 @@ import yaml
 import copy
 import pydantic
 import typing
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 from redvypr.widgets.pydanticConfigWidget import dictQTreeWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard
@@ -635,7 +635,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
             logger.info('Start to receive data from address (UDP):' + str(config))
             start_udp_recv(dataqueue,datainqueue,statusqueue,config=config,device_info=device_info)
 
-class Device(redvypr_device):
+class Device(RedvyprDevice):
     network_status_changed = QtCore.pyqtSignal()  # Signal notifying that the network status changed
     def __init__(self, **kwargs):
         """
@@ -735,7 +735,7 @@ class Device(redvypr_device):
 class initDeviceWidget(QtWidgets.QWidget):
     #device_start = QtCore.pyqtSignal(Device)
     #device_stop = QtCore.pyqtSignal(Device)
-    connect      = QtCore.pyqtSignal(redvypr_device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    connect      = QtCore.pyqtSignal(RedvyprDevice) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QFormLayout(self)
@@ -864,17 +864,17 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         # Disconnect all signals
         self.connect_signals_options(connect=False)
-        if (self.device.config.protocol == 'tcp'):
+        if (self.device.custom_config.protocol == 'tcp'):
             self._combo_proto.setCurrentIndex(0)
         else:
             self._combo_proto.setCurrentIndex(1)
 
-        if(self.device.config.address is not None):
-            self.addressline.setText(self.device.config.address)
-        if(self.device.config.port is not None):
-            self.portline.setText(str(self.device.config.port))
+        if(self.device.custom_config.address is not None):
+            self.addressline.setText(self.device.custom_config.address)
+        if(self.device.custom_config.port is not None):
+            self.portline.setText(str(self.device.custom_config.port))
             
-        if(self.device.config.direction == 'publish'):
+        if(self.device.custom_config.direction == 'publish'):
             self._combo_inout.setCurrentIndex(0)
         else:
             self._combo_inout.setCurrentIndex(1)
@@ -883,17 +883,17 @@ class initDeviceWidget(QtWidgets.QWidget):
             self._combo_ser.setCurrentIndex(i)
             txt = self._combo_ser.currentText()
             #print('txt',i,txt)
-            if(txt.lower() == self.device.config.serialize.lower()):
+            if(txt.lower() == self.device.custom_config.serialize.lower()):
                 #print('break')
                 break
 
-        if(self.device.config.serialize.lower() == 'all'):
+        if(self.device.custom_config.serialize.lower() == 'all'):
             self._data_pub_all.setChecked(True)
         else:
             self._data_pub_dict.setChecked(True)
 
 
-        self.dataentry.setText(self.device.config.datakey)
+        self.dataentry.setText(self.device.custom_config.datakey)
         self.connect_signals_options(connect=True)
             
     def process_options(self):
@@ -902,7 +902,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.process_options()'
         config   = {}
         logger.debug(funcname)
-        config = self.device.config
+        config = self.device.custom_config
 
         config.address   = self.addressline.text()
         config.direction = self._combo_inout.currentText().lower()
@@ -937,7 +937,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             logger.warning(funcname + ': Port is not an int')
 
 
-        self.device.config = config
+        self.device.custom_config = config
         logger.debug(funcname + ': config: ' + str(config))
 
 

@@ -329,7 +329,7 @@ class redvyprWidget(QtWidgets.QWidget):
         # Add init widget
         # TODO: Needs to be updated to pydantic
         try:
-            tablabelinit = str(device.config['redvypr_device']['gui_tablabel_init'])
+            tablabelinit = str(device.custom_config['redvypr_device']['gui_tablabel_init'])
         except:
             tablabelinit = 'Init'
         # print('Device hallo hallo',device.config)
@@ -363,7 +363,7 @@ class redvyprWidget(QtWidgets.QWidget):
                     tablabeldisplay = str(device.device_parameter.gui_tablabel_display)
                 except:
                     try:
-                        tablabeldisplay = str(device.config['redvypr_device']['gui_tablabel_display'])
+                        tablabeldisplay = str(device.custom_config['redvypr_device']['gui_tablabel_display'])
                     except:
                         tablabeldisplay = 'Display'
 

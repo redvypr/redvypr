@@ -15,7 +15,7 @@ import hashlib
 import re
 import pydantic
 import typing
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
 
@@ -685,7 +685,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
 #
 #
 class initDeviceWidget(QtWidgets.QWidget):
-    connect      = QtCore.pyqtSignal(redvypr_device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    connect      = QtCore.pyqtSignal(RedvyprDevice) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)
@@ -730,11 +730,11 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         # Looping the data?
         self.loop_checkbox = QtWidgets.QCheckBox('Loop')
-        loopflag = bool(self.device.config.loop)
+        loopflag = bool(self.device.custom_config.loop)
         self.loop_checkbox.setChecked(loopflag)
         self.loop_checkbox.stateChanged.connect(self.speedup_changed)
         self.replace_time_checkbox = QtWidgets.QCheckBox('Replace time')
-        replace_time_flag = bool(self.device.config.replace_time)
+        replace_time_flag = bool(self.device.custom_config.replace_time)
         self.replace_time_checkbox.setChecked(replace_time_flag)
         self.replace_time_checkbox.stateChanged.connect(self.speedup_changed)
         # Speedup
@@ -743,7 +743,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.speedup_edit.setValidator(onlyDouble)
         self.speedup_edit.setToolTip('Speedup of the packet replay.')
         self.speedup_label = QtWidgets.QLabel("Speedup factor")
-        speedup = float(self.device.config.speedup)
+        speedup = float(self.device.custom_config.speedup)
         self.speedup_edit.setText("{:.1f}".format(speedup))
         self.speedup_edit.textChanged.connect(self.speedup_changed)
         
@@ -777,11 +777,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = self.__class__.__name__ + '.speedup_changed()'
         logger.debug(funcname)
         # Speedup
-        self.device.config.speedup = float(self.speedup_edit.text())
+        self.device.custom_config.speedup = float(self.speedup_edit.text())
         loopflag = self.loop_checkbox.isChecked()
         replace_time_flag = self.replace_time_checkbox.isChecked()
-        self.device.config.loop = loopflag
-        self.device.config.replace_time = replace_time_flag
+        self.device.custom_config.loop = loopflag
+        self.device.custom_config.replace_time = replace_time_flag
 
     def table_changed(self,row,col):
         funcname = self.__class__.__name__ + '.table_changed()'
@@ -796,7 +796,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 istart = int(rs[0])
                 iend = int(rs[1])
                 istep = int(rs[2])
-                self.device.config.replay_index[item.replay_index] = rindex
+                self.device.custom_config.replay_index[item.replay_index] = rindex
                 item.replay_index_str = rindex
             except Exception as e:
                 logger.exception(e)
@@ -823,15 +823,15 @@ class initDeviceWidget(QtWidgets.QWidget):
                 pass
             self.inlist.clear()
             self.inlist.setHorizontalHeaderLabels(self.__filelistheader__)
-            nfiles = len(self.device.config.files)
+            nfiles = len(self.device.custom_config.files)
             self.inlist.setRowCount(nfiles)
             rows = []
-            for i, f in enumerate(self.device.config.files):
-                if len(self.device.config.replay_index) < (i+1):
-                    self.device.config.replay_index.append(self.device.config.replay_index[-1])
-                    replayindex = self.device.config.replay_index[-1]
+            for i, f in enumerate(self.device.custom_config.files):
+                if len(self.device.custom_config.replay_index) < (i + 1):
+                    self.device.custom_config.replay_index.append(self.device.custom_config.replay_index[-1])
+                    replayindex = self.device.custom_config.replay_index[-1]
                 else:
-                    replayindex = self.device.config.replay_index[i]
+                    replayindex = self.device.custom_config.replay_index[i]
 
                 item = QtWidgets.QTableWidgetItem(str(replayindex))
                 item.replay_index = i
@@ -850,9 +850,9 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.inlist.resizeColumnsToContents()
 
             # Loop flag
-            loop = bool(self.device.config.loop)
+            loop = bool(self.device.custom_config.loop)
             self.loop_checkbox.setChecked(loop)
-            speedupstr = "{:.1f}".format(float(self.device.config.speedup))
+            speedupstr = "{:.1f}".format(float(self.device.custom_config.speedup))
             self.speedup_edit.setText(speedupstr)
             ## Add the packetnumber etc etc
             #self.scan_files(rows)
@@ -1024,7 +1024,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         rows = list(set(rows))
         rows.sort(reverse=True)  
         for i in rows:
-            self.device.config.files.pop(i)
+            self.device.custom_config.files.pop(i)
             
         self.update_filenamelist() 
 
@@ -1037,7 +1037,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self,"Rawdatafiles","","redvypr raw gzip (*.redvypr_yaml.gz);;redvypr raw (*.redvypr_yaml);;All Files (*)")
         for f in filenames:
             if regex_indexfile.match(f) is None:
-                self.device.config.files.append(f)
+                self.device.custom_config.files.append(f)
             else:
                 logger.info('Found index file {}, will not use it'.format(f))
             
@@ -1050,12 +1050,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         """ Resorts the files in config['files'] according to the sorting in the table
         """
         files_new = []
-        nfiles = len(self.device.config.files)
+        nfiles = len(self.device.custom_config.files)
         for i in range(nfiles):
             filename = self.inlist.item(i,self.col_fname).text()
             files_new.append(filename)
             
-        self.device.config.files = files_new
+        self.device.custom_config.files = files_new
         
     def con_clicked(self):
         funcname = self.__class__.__name__ + '.con_clicked():'

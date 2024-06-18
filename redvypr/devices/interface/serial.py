@@ -13,7 +13,7 @@ import threading
 import pydantic
 import typing
 from redvypr.data_packets import check_for_command, create_datadict
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 import redvypr.devices.plot.plot_widgets as redvypr_plot_widgets
 
@@ -265,7 +265,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
 
 
-class Device(redvypr_device):
+class Device(RedvyprDevice):
     """
     heatflow_serial device
     """
@@ -359,7 +359,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout_all.addWidget(QtWidgets.QLabel('Read port'), 0, 10)
         lwidth = 80 # width of the qlineedits
 
-        for irow,serial_device in enumerate(self.device.config.serial_devices):
+        for irow,serial_device in enumerate(self.device.custom_config.serial_devices):
             widget = QtWidgets.QWidget()
             serialwidgetdict = {}
             serialwidgetdict['widget'] = widget
@@ -368,7 +368,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             layout = QtWidgets.QGridLayout(widget)
             # Serial baud rates
             #baud = [300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 576000, 921600]
-            baudrates = self.device.config.baud_standard
+            baudrates = self.device.custom_config.baud_standard
             # find the index of the baudrate of the device, if its none add it to the list
             try:
                 ibaud = baudrates.index(serial_device.baud)

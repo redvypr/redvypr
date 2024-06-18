@@ -519,7 +519,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
         rows = list(set(rows))
         rows.sort(reverse=True)
         for index in rows:
-            calibration = self.device.config.calibrations.pop(index)
+            calibration = self.device.custom_config.calibrations.pop(index)
             logger.debug('Removed {}'.format(calibration))
 
         self.__sensorCoeffWidget_list_populate__()
@@ -538,7 +538,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
                 return
                 print('sn', sn)
                 self.calibrationConfigWidget.close()
-                calibrations = {'calibrations': self.device.config['calibrations'][sn]}
+                calibrations = {'calibrations': self.device.custom_config['calibrations'][sn]}
                 self.calibrationConfigWidget = gui.configWidget(calibrations, editable=False,
                                                                 configname='Coefficients of {:s}'.format(sn))
                 self.sensorCoeffWidget_layout.addWidget(self.calibrationConfigWidget, 0, 1)

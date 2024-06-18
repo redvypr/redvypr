@@ -20,7 +20,7 @@ import sys
 import threading
 import copy
 import zmq
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 import influxdb_client
 

@@ -9,7 +9,7 @@ import json
 import typing
 import pydantic
 from PyQt5 import QtWidgets, QtCore, QtGui
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 #from redvypr.packet_statistics import get_keys_from_data
 #import redvypr.packet_statistic as redvypr_packet_statistic
@@ -272,7 +272,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                                 else:
                                     logger.debug(funcname + 'unknown packettype {:s}'.format(packettype))
 
-class Device(redvypr_device):
+class Device(RedvyprDevice):
     """
     heatflow_serial device
     """
@@ -808,7 +808,7 @@ def find_calibration_for_logger(sn, calibration, caltype = 'latest'):
 #
 class initDeviceWidget(QtWidgets.QWidget):
     connect = QtCore.pyqtSignal(
-        redvypr_device)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+        RedvyprDevice)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
 
     def __init__(self, device = None):
         """
@@ -982,7 +982,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
 
-        if sn in list(self.device.config.sensorconfigurations.keys()):
+        if sn in list(self.device.custom_config.sensorconfigurations.keys()):
             logger.warning(' Cannot add logger {:s}, as it exsits already'.format(sn))
             return None
         else:
@@ -990,7 +990,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             logger_new.sn = sn
             # Get the template
             logger_new.sn = sn
-            self.device.config.sensorconfigurations[sn] = logger_new
+            self.device.custom_config.sensorconfigurations[sn] = logger_new
 
             self.__update_configSensorList__()
             self.configLoggerWidgets['addwidget'].close()
@@ -1005,7 +1005,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         colpub = 3
         coldev = 4
         colnp = 5
-        for irow, sn in enumerate(self.device.config.sensorconfigurations.keys()):
+        for irow, sn in enumerate(self.device.custom_config.sensorconfigurations.keys()):
             try:
                 raddr = self.device.sensordata[sn]['__raddr__']
                 print('Raddr',raddr)
@@ -1038,12 +1038,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '____update_configLoggerList__():'
         logger.debug(funcname)
         self.configLoggerWidgets['loggerlist'].clear()
-        nrows = len(self.device.config.sensorconfigurations.keys())
+        nrows = len(self.device.custom_config.sensorconfigurations.keys())
         ncols = 6
         self.configLoggerWidgets['loggerlist'].setRowCount(nrows)
         self.configLoggerWidgets['loggerlist'].setColumnCount(ncols)
         self.configLoggerWidgets['loggerlist'].setHorizontalHeaderLabels(['SN','Sensortype','Configure','Publisher','Devices','Numpackets'])
-        for irow,sn in enumerate(self.device.config.sensorconfigurations.keys()):
+        for irow,sn in enumerate(self.device.custom_config.sensorconfigurations.keys()):
             # Set blank everywhere
             for icol in range(ncols):
                 item_blank = QtWidgets.QTableWidgetItem('')
@@ -1051,7 +1051,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
             item = QtWidgets.QTableWidgetItem(str(sn))
-            sensor_type = str(self.device.config.sensorconfigurations[sn].sensor_type)
+            sensor_type = str(self.device.custom_config.sensorconfigurations[sn].sensor_type)
             #print('logger_short', logger_short)
             # Create a configuration widget for the sensor
             configwidget = self.__create_sensor_config_widget__(str(sn), sensor_type)
@@ -1089,15 +1089,15 @@ class initDeviceWidget(QtWidgets.QWidget):
             print('Generic logger ...')
         elif sensor_type.lower() == 'tar':
             logger.debug('Config widget for temperature array (TAR)')
-            sensor = self.device.config.sensorconfigurations[sn]
+            sensor = self.device.custom_config.sensorconfigurations[sn]
             #config_widget = TARWidget_config(self, sn=sn, redvypr_device=self.device)
-            config_widget = sensorConfigWidget(sensor=sensor, calibrations=self.device.config.calibrations, calibration_models=self.device.calibration_models, redvypr_device=self.device)
+            config_widget = sensorConfigWidget(sensor=sensor, calibrations=self.device.custom_config.calibrations, calibration_models=self.device.calibration_models, redvypr_device=self.device)
             clayout.addWidget(config_widget)
         elif sensor_type.lower() == 'dhfs50':
             logger.debug('DHFS50')
-            sensor = self.device.config.sensorconfigurations[sn]
+            sensor = self.device.custom_config.sensorconfigurations[sn]
             #config_widget = DHFS50Widget_config(sn = sn, redvypr_device = self.device)
-            config_widget = sensorConfigWidget(sensor = sensor, calibrations = self.device.config.calibrations, calibration_models=self.device.calibration_models, redvypr_device=self.device)
+            config_widget = sensorConfigWidget(sensor = sensor, calibrations = self.device.custom_config.calibrations, calibration_models=self.device.calibration_models, redvypr_device=self.device)
             clayout.addWidget(config_widget)
         elif sensor_type.lower() == 'hfv4ch':
             logger.debug('Four channel logger')
@@ -1126,7 +1126,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
     def create_sensorcoefficientWidget(self):
         # Get the calibration models from the type hints of the config
-        self.sensorCoeffWidget = sensorCoeffWidget(calibrations=self.device.config.calibrations, redvypr_device=self.device, calibration_models = self.device.calibration_models)
+        self.sensorCoeffWidget = sensorCoeffWidget(calibrations=self.device.custom_config.calibrations, redvypr_device=self.device, calibration_models = self.device.calibration_models)
 
     def config_changed(self):
         """
@@ -1223,8 +1223,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         tabwidget.addTab(self.allconvertedWidget,'Converted data')
         tabwidget.addTab(self.sensorwidget, 'Sensors')
         # add already existing sensors
-        for sn in self.device.config.sensorconfigurations:
-            sensor = self.device.config.sensorconfigurations[sn]
+        for sn in self.device.custom_config.sensorconfigurations:
+            sensor = self.device.custom_config.sensorconfigurations[sn]
             status = {}
             status['sn'] = sensor.sn
             status['sensor_type'] = sensor.sensor_type

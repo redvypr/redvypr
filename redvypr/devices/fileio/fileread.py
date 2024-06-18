@@ -9,7 +9,7 @@ import sys
 import yaml
 import copy
 import os
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 from redvypr.packet_statistic import do_data_statistics, create_data_statistic_dict
 
@@ -171,7 +171,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
 #
 #
 class initDeviceWidget(QtWidgets.QWidget):
-    connect      = QtCore.pyqtSignal(redvypr_device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    connect      = QtCore.pyqtSignal(RedvyprDevice) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)
@@ -317,7 +317,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         rows = list(set(rows))
         rows.sort(reverse=True)  
         for i in rows:
-            self.device.config['files'].pop(i)
+            self.device.custom_config['files'].pop(i)
             
         self.update_filenamelist() 
 
@@ -328,7 +328,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self,"Rawdatafiles","","redvypr raw (*.redvypr_yaml);;All Files (*)")
         for f in filenames: 
-            self.device.config['files'].append(f)
+            self.device.custom_config['files'].append(f)
             
         
         self.update_filenamelist()
@@ -341,11 +341,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         self.inlist.clear()
         self.inlist.setHorizontalHeaderLabels(self.__filelistheader__)
-        nfiles = len(self.device.config['files'])
+        nfiles = len(self.device.custom_config['files'])
         self.inlist.setRowCount(nfiles)
 
         rows = []        
-        for i,f in enumerate(self.device.config['files']):
+        for i,f in enumerate(self.device.custom_config['files']):
             item = QtWidgets.QTableWidgetItem(f)
             self.inlist.setItem(i,0,item)
             rows.append(i)
@@ -358,12 +358,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         """ Resorts the files in config['files'] according to the sorting in the table
         """
         files_new = []
-        nfiles = len(self.device.config['files'])
+        nfiles = len(self.device.custom_config['files'])
         for i in range(nfiles):
             filename = self.inlist.item(i,0).text()
             files_new.append(filename)
             
-        self.device.config['files'] = files_new
+        self.device.custom_config['files'] = files_new
         
     def con_clicked(self):
         funcname = self.__class__.__name__ + '.con_clicked():'
@@ -381,9 +381,9 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.resort_files()
             loop = self.loop_checkbox.isChecked()
             # Loop
-            self.device.config['loop']    = loop
+            self.device.custom_config['loop']    = loop
             # Speedup
-            self.device.config['speedup'] = float(self.speedup_edit.text())
+            self.device.custom_config['speedup'] = float(self.speedup_edit.text())
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')

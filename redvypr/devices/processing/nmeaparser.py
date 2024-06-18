@@ -12,7 +12,7 @@ import copy
 
 import redvypr.data_packets
 import redvypr.data_packets as data_packets
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 
 
@@ -115,7 +115,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
 
 class initDeviceWidget(QtWidgets.QWidget):
     connect = QtCore.pyqtSignal(
-        redvypr_device)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+        RedvyprDevice)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QVBoxLayout(self)

@@ -7,7 +7,7 @@ import datetime
 import pydantic
 from pydantic.color import Color as pydColor
 from PyQt5 import QtWidgets, QtCore, QtGui
-from redvypr.device import redvypr_device, RedvyprDeviceParameter
+from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 #from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, dictQTreeWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget
 from redvypr.widgets.redvypr_addressWidget import datastreamWidget
@@ -56,6 +56,7 @@ class deviceTableWidget(QtWidgets.QTableWidget):
 
         self.colheader = colheader
         nCols = len(colheader)
+        self.__startbuttons = []
         self.clear()
         self.setRowCount(nRows)
         self.setColumnCount(nCols)
@@ -71,6 +72,7 @@ class deviceTableWidget(QtWidgets.QTableWidget):
             self.setItem(irow, colindex, item_name)
             # Start
             button_start = QtWidgets.QPushButton('Start')
+            self.__startbuttons.append(button_start)
             button_start.setCheckable(True)
             button_start.__device = device
             device.thread_started.connect(self.deviceThreadStatusChanged)
@@ -174,11 +176,16 @@ class deviceTableWidget(QtWidgets.QTableWidget):
         """ Updating all buttons depending on the thread status (if its alive, graying out things)
         """
         device_tmp = self.sender()
-        startbutton = self.__startbutton_clicked
+        startbutton = None
+        # Search for the correct startbutton
+        for b in self.__startbuttons:
+            if b.__device == device_tmp:
+                startbutton = b
+        # startbutton = self.__startbutton_clicked
         #print('Update!',device)
         status = device_tmp.get_thread_status()
         thread_status = status['thread_running']
-        if self.__startbutton_clicked is not None:
+        if startbutton is not None:
             #print('Hall', status)
             #print('Hall', thread_status)
             # Running
@@ -193,7 +200,6 @@ class deviceTableWidget(QtWidgets.QTableWidget):
                     startbutton.setChecked(False)
                 # self.conbtn.setEnabled(True)
 
-        self.__startbutton_clicked = None
 
     def deviceSubscribeClicked(self):
         funcname = __name__ + '.deviceSubscribeClicked()'
@@ -206,7 +212,7 @@ class deviceTableWidget(QtWidgets.QTableWidget):
 
     def deviceStartStopClicked(self):
         button = self.sender()
-        self.__startbutton_clicked = button
+        #self.__startbutton_clicked = button
         device = button.__device
         if button.isChecked():
             logger.debug("button pressed")
@@ -1079,7 +1085,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
     Information widget of a device
     """
     connect = QtCore.pyqtSignal(
-        redvypr_device)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+        RedvyprDevice)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self, device = None, dt_update = 1000):
         funcname = __name__ + '.__init__():'
         logger.debug(funcname)

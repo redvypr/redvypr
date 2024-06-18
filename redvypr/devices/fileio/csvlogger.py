@@ -22,7 +22,7 @@ import gzip
 import os
 import pydantic
 import typing
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 import redvypr.data_packets as data_packets
 import redvypr.redvypr_address as redvypr_address
 import redvypr.gui
@@ -446,7 +446,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
 
 
-class Device(redvypr_device):
+class Device(RedvyprDevice):
     """
     csvlogger device
     """
@@ -503,11 +503,11 @@ class Device(redvypr_device):
 #
 #
 class initDeviceWidget(QtWidgets.QWidget):
-    connect      = QtCore.pyqtSignal(redvypr_device) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    connect      = QtCore.pyqtSignal(RedvyprDevice) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)
-        print('Hallo,device config',device.config)
+        print('Hallo,device config', device.custom_config)
         self.device   = device
         self.redvypr  = device.redvypr
         self.label    = QtWidgets.QLabel("Csvlogger setup")
@@ -547,7 +547,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.extension_check = QtWidgets.QCheckBox('Extension')
 
         try:
-            filename = self.device.config['filename']
+            filename = self.device.custom_config['filename']
         except:
             filename = ''
 
@@ -573,7 +573,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.dt_newfile = edit
         self.dt_newfile.setToolTip('Create a new file every N seconds.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
         try:
-            self.dt_newfile.setText(str(self.device.config['dt_newfile']))
+            self.dt_newfile.setText(str(self.device.custom_config['dt_newfile']))
         except Exception as e:
             self.dt_newfile.setText('0')
             
@@ -584,7 +584,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.size_newfile = edit
         self.size_newfile.setToolTip('Create a new file every N bytes.\nFilename is "filenamebase"_yyyymmdd_HHMMSS_count."ext".\nUse 0 to disable feature.')
         try:
-            self.size_newfile.setText(str(self.device.config['size_newfile']))
+            self.size_newfile.setText(str(self.device.custom_config['size_newfile']))
         except Exception as e:
             self.size_newfile.setText('0')
             
@@ -691,10 +691,10 @@ class initDeviceWidget(QtWidgets.QWidget):
             indtmp = index.column() - self.ncols_add
             if indtmp >= 0:
                 datastreamInd.append(indtmp)
-                datastreamsRem.append(self.device.config.datastreams[indtmp])
+                datastreamsRem.append(self.device.custom_config.datastreams[indtmp])
 
         for drem in datastreamsRem:
-            self.device.config.datastreams.remove(drem)
+            self.device.custom_config.datastreams.remove(drem)
 
         self.populate_csvformattable()
         print('Datastreamind',datastreamInd)
@@ -707,9 +707,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         if datastreamIndlog > 0:
             # Swap the items
             print('Swapping')
-            tmp = self.device.config.datastreams[datastreamIndnew]
-            self.device.config.datastreams[datastreamIndnew] = self.device.config.datastreams[datastreamIndold]
-            self.device.config.datastreams[datastreamIndold] = tmp
+            tmp = self.device.custom_config.datastreams[datastreamIndnew]
+            self.device.custom_config.datastreams[datastreamIndnew] = self.device.custom_config.datastreams[datastreamIndold]
+            self.device.custom_config.datastreams[datastreamIndold] = tmp
         else:
             print('Time & Description columns cannot be changed')
         # Redraw the table
@@ -730,7 +730,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         label = QtWidgets.QLabel('Add at column number')
         self.dstreamwidget.comboCol = QtWidgets.QComboBox()
         self.dstreamwidget.comboCol.addItem('end')
-        for i in range(len(self.device.config.datastreams)):
+        for i in range(len(self.device.custom_config.datastreams)):
             colindex = self.ncols_add + 1 + i
             self.dstreamwidget.comboCol.addItem(str(colindex))
 
@@ -751,15 +751,15 @@ class initDeviceWidget(QtWidgets.QWidget):
         colnumber = self.dstreamwidget.comboCol.currentText()
         #print('Colnumber',colnumber)
         if colnumber == 'end':
-            self.device.config.datastreams.append(newdatastream)
+            self.device.custom_config.datastreams.append(newdatastream)
         else:
             datastreamindex = int(colnumber) - (self.ncols_add + 1)
-            self.device.config.datastreams.insert(datastreamindex,newdatastream)
+            self.device.custom_config.datastreams.insert(datastreamindex, newdatastream)
 
         # update the column numbers
         self.dstreamwidget.comboCol.clear()
         self.dstreamwidget.comboCol.addItem('end')
-        for i in range(len(self.device.config.datastreams)):
+        for i in range(len(self.device.custom_config.datastreams)):
             colindex = self.ncols_add + 1 + i
             self.dstreamwidget.comboCol.addItem(str(colindex))
 
@@ -773,13 +773,13 @@ class initDeviceWidget(QtWidgets.QWidget):
             indexdatastream = col - self.ncols_add
             comment = str(item.text())
             print('Indexdatastream',indexdatastream,comment)
-            self.device.config.datastreams[indexdatastream].comment = comment
+            self.device.custom_config.datastreams[indexdatastream].comment = comment
             self.populate_csvformattable()
         elif row == self.row_field_unit:
             indexdatastream = col - self.ncols_add
             unit = str(item.text())
             print('Indexdatastream', indexdatastream, unit)
-            self.device.config.datastreams[indexdatastream].unit = unit
+            self.device.custom_config.datastreams[indexdatastream].unit = unit
             self.populate_csvformattable()
         else:
             try:
@@ -789,7 +789,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 print('Hallo',dstrf,f,newformat)
                 setattr(dstrf,f,newformat)
                 self.populate_csvformattable()
-                print('Config',self.device.config.model_dump())
+                print('Config', self.device.custom_config.model_dump())
             except Exception as e:
                 print('Could not change format',e)
 
@@ -798,7 +798,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         self.csvformattable.cellChanged.disconnect(self.cellChanged_csvformattable)
         self.ncols_add = 2 # number of additional rows
-        ncols = len(self.device.config.datastreams) + self.ncols_add
+        ncols = len(self.device.custom_config.datastreams) + self.ncols_add
         self._headerstate = self.csvformattable.horizontalHeader().saveState()
         self.csvformattable.clear()
         self.csvformattable.setColumnCount(ncols)
@@ -833,7 +833,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         tu_item = QtWidgets.QTableWidgetItem('seconds since 1970-01-01 00:00:00')
         self.csvformattable.setItem(0, 1, t_item)
         self.csvformattable.setItem(3, 1, tu_item)
-        for i,d in enumerate(self.device.config.datastreams):
+        for i,d in enumerate(self.device.custom_config.datastreams):
             #print('d',d)
             ds_item = QtWidgets.QTableWidgetItem("Datastream_{:02d}".format(i))
             addr_item = QtWidgets.QTableWidgetItem(str(d.address))
@@ -887,12 +887,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.populate_dataformattable():'
         logger.debug(funcname)
-        print('Hallo',self.device.config['datatypeformat'])
+        print('Hallo', self.device.custom_config['datatypeformat'])
         columns = []
         nrows = 0
-        for dtype in self.device.config['datatypeformat'].keys():
+        for dtype in self.device.custom_config['datatypeformat'].keys():
             #print('d',dtype)
-            d = self.device.config['datatypeformat'][dtype]
+            d = self.device.custom_config['datatypeformat'][dtype]
             columns.append('Subscription for {:s}'.format(dtype))
             columns.append('Format for {:s}'.format(dtype))
 
@@ -904,9 +904,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.dataformattable.setRowCount(nrows)
         self.dataformattable.setHorizontalHeaderLabels(columns)
         # And now the data itself
-        for i,dtype in enumerate(self.device.config['datatypeformat'].keys()):
+        for i,dtype in enumerate(self.device.custom_config['datatypeformat'].keys()):
             #print('d',dtype)
-            d = self.device.config['datatypeformat'][dtype]
+            d = self.device.custom_config['datatypeformat'][dtype]
             for irow,dsub in enumerate(d):
                 #print('dsub',dsub)
                 item0 = QtWidgets.QTableWidgetItem(str(dsub[0]))
@@ -999,7 +999,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = self.__class__.__name__ + '.config_to_widgets():'
         logger.debug(funcname)
 
-        config = self.device.config
+        config = self.device.custom_config
         print('config',config)
         self.dt_newfile.setText(str(config.dt_newfile))
         for i in range(self.newfiletimecombo.count()):
@@ -1090,7 +1090,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.update_device_config():'
         logger.debug(funcname)
-        self.widgets_to_config(self.device.config)
+        self.widgets_to_config(self.device.custom_config)
 
     def start_clicked(self):
         funcname = self.__class__.__name__ + '.start_clicked():'

@@ -104,7 +104,7 @@ import uuid as uuid_module
 import hashlib
 
 import redvypr
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 import redvypr.data_packets as data_packets
 import redvypr.files
@@ -1338,7 +1338,7 @@ def start(device_info, config, dataqueue, datainqueue, statusqueue):
 
 
 
-class Device(redvypr_device):
+class Device(RedvyprDevice):
     """
     iored device
     """

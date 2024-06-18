@@ -15,7 +15,7 @@ import logging
 import sys
 import threading
 import copy
-from redvypr.device import RedvyprDeviceCustomConfig, redvypr_device
+from redvypr.device import RedvyprDeviceCustomConfig, RedvyprDevice
 import redvypr.data_packets
 from redvypr.data_packets import check_for_command
 import pydantic

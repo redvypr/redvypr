@@ -312,30 +312,30 @@ class initDeviceWidget(QtWidgets.QWidget):
             button.setText('Close')
             serial_name = str(self._combo_serial_devices.currentText())
             serial_baud = int(self._combo_serial_baud.currentText())
-            self.device.config.comport = serial_name
-            self.device.config.baud = serial_baud
+            self.device.custom_config.comport = serial_name
+            self.device.custom_config.baud = serial_baud
             stopbits = self._combo_stopbits.currentText()
             if(stopbits=='1'):
-                self.device.config.stopbits =  serial.STOPBITS_ONE
+                self.device.custom_config.stopbits =  serial.STOPBITS_ONE
             elif(stopbits=='1.5'):
-                self.device.config.stopbits =  serial.STOPBITS_ONE_POINT_FIVE
+                self.device.custom_config.stopbits =  serial.STOPBITS_ONE_POINT_FIVE
             elif(stopbits=='2'):
-                self.device.config.stopbits =  serial.STOPBITS_TWO
+                self.device.custom_config.stopbits =  serial.STOPBITS_TWO
                 
             databits = int(self._combo_databits.currentText())
-            self.device.config.bytesize = databits
+            self.device.custom_config.bytesize = databits
 
             parity = self._combo_parity.currentText()
             if(parity=='None'):
-                self.device.config.parity = serial.PARITY_NONE
+                self.device.custom_config.parity = serial.PARITY_NONE
             elif(parity=='Even'):                
-                self.device.config.parity = serial.PARITY_EVEN
+                self.device.custom_config.parity = serial.PARITY_EVEN
             elif(parity=='Odd'):                
-                self.device.config.parity = serial.PARITY_ODD
+                self.device.custom_config.parity = serial.PARITY_ODD
             elif(parity=='Mark'):                
-                self.device.config.parity = serial.PARITY_MARK
+                self.device.custom_config.parity = serial.PARITY_MARK
             elif(parity=='Space'):                
-                self.device.config.parity = serial.PARITY_SPACE
+                self.device.custom_config.parity = serial.PARITY_SPACE
                 
 
             self.device.thread_start()

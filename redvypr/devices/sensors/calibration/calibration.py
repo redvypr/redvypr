@@ -22,7 +22,7 @@ import random
 import pydantic
 import typing
 from redvypr.data_packets import check_for_command
-from redvypr.device import redvypr_device, RedvyprDeviceParameter
+from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 import redvypr.files as redvypr_files
 import redvypr.gui
 import redvypr.data_packets
@@ -81,7 +81,7 @@ class device_config(pydantic.BaseModel):
     calibration_comment: str = ''
 
 
-class Device(redvypr_device):
+class Device(RedvyprDevice):
     """
     heatflow_serial device
     """
@@ -351,19 +351,19 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         funcname = __name__ + '.calc_ntc_coeffs():'
         logger.debug(funcname)
 
-        refindex = self.device.config.ind_ref_sensor
+        refindex = self.device.custom_config.ind_ref_sensor
         print('Refindex', refindex)
-        if refindex >= 0 and (len(self.device.config.calibrationdata_time) > 0):
-            refdata = np.asarray(self.device.config.calibrationdata[refindex].data)
+        if refindex >= 0 and (len(self.device.custom_config.calibrationdata_time) > 0):
+            refdata = np.asarray(self.device.custom_config.calibrationdata[refindex].data)
             coeff_hf = {}
             coeff_hf['hf'] = []
             coeff_hf['hf_std'] = []
             coeff_hf['hf_ratio'] = []
-            tdata = self.device.config.calibrationdata_time[0]
+            tdata = self.device.custom_config.calibrationdata_time[0]
             tdatetime = datetime.datetime.utcfromtimestamp(tdata)
             tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
             calibrations = []
-            for i, sdata in enumerate(self.device.config.calibrationdata):
+            for i, sdata in enumerate(self.device.custom_config.calibrationdata):
                 if i == refindex:
                     cal_NTC = calibration_NTC()
                     cal_NTC.parameter = sdata.parameter
@@ -373,7 +373,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
                     calibrations.append(cal_NTC)
                 else:
                     try:
-                        caldata = np.asarray(self.device.config.calibrationdata[i].data)
+                        caldata = np.asarray(self.device.custom_config.calibrationdata[i].data)
                         print('Caldata',caldata)
                         print('Shape caldata',np.shape(caldata))
                         calshape = np.shape(caldata)
@@ -408,7 +408,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         funcname = __name__ + '.update_coefftable_ntc():'
         logger.debug(funcname)
         self.calibration_ntc['coefftable'].clear()
-        nrows = len(self.device.config.calibrationdata)
+        nrows = len(self.device.custom_config.calibrationdata)
         try:
             self.calibration_ntc['coefftable'].setRowCount(nrows)
         except:
@@ -438,7 +438,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
             self.calibration_ntc['calibrationdata'] = calibrationdata
             self.calibration_ntc['coeffs'] = coeffs
             # Save the calibration as a private attribute
-            self.device.config.__calibration_coeffs__ = coeffs
+            self.device.custom_config.__calibration_coeffs__ = coeffs
             headers = ['Parameter','SN','Coeffs']
             self.calibration_ntc['coefftable'].setHorizontalHeaderLabels(headers)
             irow = 0
@@ -477,7 +477,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         funcname = __name__ + '.calibdata_to_dict():'
         logger.debug(funcname)
         calibdata = []
-        for sdata in self.device.config.calibrationdata:
+        for sdata in self.device.custom_config.calibrationdata:
             calibdata.append(sdata.model_dump())
 
         return calibdata
@@ -486,12 +486,12 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         funcname = __name__ + '.plot_data():'
         logger.debug(funcname)
         print('Hallo')
-        calibrationtype = self.device.config.calibrationtype.lower()
+        calibrationtype = self.device.custom_config.calibrationtype.lower()
         if calibrationtype == 'ntc':
             logger.debug(funcname + ' plotting NTC calibration')
             try:
-                calibrationdata = self.device.config.calibrationdata
-                coeffs = self.device.config.__calibration_coeffs__
+                calibrationdata = self.device.custom_config.calibrationdata
+                coeffs = self.device.custom_config.__calibration_coeffs__
             except Exception as e:
                 coeffs = None
                 logger.exception(e)
@@ -507,8 +507,8 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         funcname = __name__ + '.dhfs_command_clicked():'
         logger.debug(funcname)
         try:
-            calibrationdata = self.device.config.calibrationdata
-            coeffs = self.device.config.__calibration_coeffs__
+            calibrationdata = self.device.custom_config.calibrationdata
+            coeffs = self.device.custom_config.__calibration_coeffs__
         except Exception as e:
             logger.exception(e)
             logger.debug(funcname)
@@ -614,8 +614,8 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
 
     def __populate__calibrationfilelist__(self):
         funcname = __name__ + '__populate__calibrationfilelist__():'
-        calibrationdata = self.device.config.calibrationdata
-        coeffs = self.device.config.__calibration_coeffs__
+        calibrationdata = self.device.custom_config.calibrationdata
+        coeffs = self.device.custom_config.__calibration_coeffs__
 
         fnames_full = []
         folderpath = self.save_widget_dict['le'].text()
@@ -786,8 +786,8 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
         #    logger.exception(e)
         #    coeffs = None
 
-        calibrationdata = self.device.config.calibrationdata
-        coeffs = self.device.config.__calibration_coeffs__
+        calibrationdata = self.device.custom_config.calibrationdata
+        coeffs = self.device.custom_config.__calibration_coeffs__
 
         folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
         if len(folderpath) > 0:
@@ -825,8 +825,8 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
         funcname = __name__ + '.dhfs_command_clicked():'
         logger.debug(funcname)
         try:
-            calibrationdata = self.device.config.calibrationdata
-            coeffs = self.device.config.__calibration_coeffs__
+            calibrationdata = self.device.custom_config.calibrationdata
+            coeffs = self.device.custom_config.__calibration_coeffs__
         except Exception as e:
             logger.exception(e)
             logger.debug(funcname)
@@ -854,12 +854,12 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
         funcname = __name__ + '.plot_data():'
         logger.debug(funcname)
         print('Hallo')
-        calibrationtype = self.device.config.calibrationtype.lower()
+        calibrationtype = self.device.custom_config.calibrationtype.lower()
         if calibrationtype == 'ntc':
             logger.debug(funcname + ' plotting NTC calibration')
             try:
-                calibrationdata = self.device.config.calibrationdata
-                coeffs = self.device.config.__calibration_coeffs__
+                calibrationdata = self.device.custom_config.calibrationdata
+                coeffs = self.device.custom_config.__calibration_coeffs__
             except Exception as e:
                 coeffs = None
                 logger.exception(e)
@@ -883,19 +883,19 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
         funcname = __name__ + '.calc_hf_coeffs():'
         logger.debug(funcname)
 
-        refindex  = self.device.config.ind_ref_sensor
+        refindex  = self.device.custom_config.ind_ref_sensor
         print('Refindex', refindex)
-        if refindex >= 0 and (len(self.device.config.calibrationdata_time) > 0):
-            refdata = self.device.config.calibrationdata[refindex].data
+        if refindex >= 0 and (len(self.device.custom_config.calibrationdata_time) > 0):
+            refdata = self.device.custom_config.calibrationdata[refindex].data
             coeff_hf = {}
             coeff_hf['hf'] = []
             coeff_hf['hf_std'] = []
             coeff_hf['hf_ratio'] = []
-            tdata = self.device.config.calibrationdata_time[0]
+            tdata = self.device.custom_config.calibrationdata_time[0]
             tdatetime = datetime.datetime.utcfromtimestamp(tdata)
             tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
             calibrations = []
-            for i,sdata in enumerate(self.device.config.calibrationdata):
+            for i,sdata in enumerate(self.device.custom_config.calibrationdata):
                 if i == refindex:
                     cal_HF = calibration_HF()
                     cal_HF.sn = sdata.sn
@@ -908,7 +908,7 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
                     cal_HF.date = tdatas
                     cal_HF.sensor_model = sdata.sensor_model
                     # TODO, V to mV more smart
-                    caldata = np.asarray(self.device.config.calibrationdata[i].data) * 1000 # V to mV
+                    caldata = np.asarray(self.device.custom_config.calibrationdata[i].data) * 1000 # V to mV
                     print('Caldata',caldata)
                     print('Refdata', refdata)
                     ratio = np.asarray(refdata)/np.asarray(caldata)
@@ -927,21 +927,21 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
         calibrations = self.calc_hf_coeffs()
         if calibrations is not None:
             print('Calibrations',calibrations)
-            nrows = len(self.device.config.calibrationdata) - 1
+            nrows = len(self.device.custom_config.calibrationdata) - 1
             self.calibration_hf['coefftable'].clear()
             self.calibration_hf['coefftable'].setColumnCount(3)
             self.calibration_hf['coefftable'].setRowCount(nrows)
             colheaders = ['SN','Coeff','Coeff std']
             self.calibration_hf['coefftable'].setHorizontalHeaderLabels(colheaders)
             # Save the calibration as a private attribute
-            self.device.config.__calibration_coeffs__ = calibrations
-            refindex = self.device.config.ind_ref_sensor
+            self.device.custom_config.__calibration_coeffs__ = calibrations
+            refindex = self.device.custom_config.ind_ref_sensor
             imac   = 0
             icoeff = 1
             icoeff_std = 2
             irow   = -1
-            print('Calibrationdata',self.device.config.calibrationdata)
-            for i, sdata in enumerate(self.device.config.calibrationdata):
+            print('Calibrationdata', self.device.custom_config.calibrationdata)
+            for i, sdata in enumerate(self.device.custom_config.calibrationdata):
                 print('calibrationdata',i,sdata)
                 if i == refindex:
                     continue
@@ -1162,7 +1162,7 @@ def calc_ntc_coeffs_legacy(calibrationdata, Ntest = 100):
 #
 class initDeviceWidget(QtWidgets.QWidget):
     connect = QtCore.pyqtSignal(
-        redvypr_device)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+        RedvyprDevice)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
 
     def __init__(self, device=None):
         """
@@ -1255,7 +1255,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.caltype = QtWidgets.QComboBox()  # Calibration type of sensor
         self.caltype.addItem('Heatflow')
         self.caltype.addItem('NTC')
-        calibrationtype = self.device.config.calibrationtype.lower()
+        calibrationtype = self.device.custom_config.calibrationtype.lower()
         if calibrationtype == 'ntc':
             self.caltype.setCurrentIndex(1) # NTC
         else:
@@ -1283,7 +1283,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         nsensors = 0
         sensors = []
         buttons = []
-        for i,sdata in enumerate(self.device.config.calibrationdata):
+        for i,sdata in enumerate(self.device.custom_config.calibrationdata):
             if sdata.inputtype == 'datastream':
                 sensorNum = QtWidgets.QLabel(str(nsensors))
                 sensorSub = QtWidgets.QLineEdit(sdata.subscribe) # The subscribeable datastream
@@ -1329,7 +1329,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 self.sensorsConfig_datastream_layout.addWidget(sensorPlotType, nsensors, 6)
                 self.sensorsConfig_datastream_layout.addWidget(refbutton, nsensors, 7)
                 nsensors += 1
-                if i == int(self.device.config.ind_ref_sensor):
+                if i == int(self.device.custom_config.ind_ref_sensor):
                     refbutton.setChecked(True)
             else:
                 mansensorNum = QtWidgets.QLabel(str(nsensors))
@@ -1350,7 +1350,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 self.sensorsConfig_manual_layout.addWidget(mansensorName, nsensors, 1)
                 self.sensorsConfig_manual_layout.addWidget(mansensorRem, nsensors, 2)
                 self.sensorsConfig_manual_layout.addWidget(manrefbutton, nsensors, 3)
-                if i == int(self.device.config.ind_ref_sensor):
+                if i == int(self.device.custom_config.ind_ref_sensor):
                     manrefbutton.setChecked(True)
 
                 nsensors += 1
@@ -1366,8 +1366,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         plottype = sensorPlotType.currentText
         print('Hallo',sensorPlotType.currentText)
         indexsensor = sensorPlotType.listindex
-        self.device.config.calibrationdata[indexsensor].realtimeplot = plottype
-        print('Sensor config',self.device.config.calibrationdata[indexsensor])
+        self.device.custom_config.calibrationdata[indexsensor].realtimeplot = plottype
+        print('Sensor config', self.device.custom_config.calibrationdata[indexsensor])
 
     def refsensor_changed(self):
 
@@ -1375,11 +1375,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         if self.sender().isChecked():
             index = self.sender().refindex
-            self.device.config.ind_ref_sensor = index
-            self.device.config.name_ref_sensor = self.device.config.calibrationdata[index].sn
+            self.device.custom_config.ind_ref_sensor = index
+            self.device.custom_config.name_ref_sensor = self.device.custom_config.calibrationdata[index].sn
             # Update calibration table
             # self.update_coefftable_ntc()
-            print('Config', self.device.config)
+            print('Config', self.device.custom_config)
 
     def resubDatastream(self):
         funcname = __name__ + '.resubDatastream():'
@@ -1387,11 +1387,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         index = button.listindex
         print('Calibrationdata')
-        print('A', self.device.config.calibrationdata[index])
-        print('Calibrationdata',self.device.config.calibrationdata)
+        print('A', self.device.custom_config.calibrationdata[index])
+        print('Calibrationdata', self.device.custom_config.calibrationdata)
         print('resub',index)
-        self.device.config.calibrationdata[index].datastream = ''
-        print('B', self.device.config.calibrationdata[index])
+        self.device.custom_config.calibrationdata[index].datastream = ''
+        print('B', self.device.custom_config.calibrationdata[index])
         print('Calibrationdata ----------')
 
         self.updateDisplayWidget()
@@ -1416,8 +1416,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.sender().lineEditSub_addr.setText(datastream_dict['datastream_str'])
         index = self.sender().listindex
         print('Index',index)
-        print('sensordata', self.device.config.calibrationdata)
-        self.device.config.calibrationdata[index].subscribe = datastream_dict['datastream_str']
+        print('sensordata', self.device.custom_config.calibrationdata)
+        self.device.custom_config.calibrationdata[index].subscribe = datastream_dict['datastream_str']
         #self.device.devicedisplaywidget.datastreams[index] = None
         try:
             self.device.devicedisplaywidget.plot_widgets[index].datastream = None
@@ -1435,7 +1435,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
     def caltype_combobox_changed(self, value):
         print("combobox changed", value)
-        self.device.config.calibrationtype = value.lower()
+        self.device.custom_config.calibrationtype = value.lower()
         self.device.devicedisplaywidget.create_calibration_widget()
 
     def manualSensorChanged(self):
@@ -1445,7 +1445,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         sensorname = l.text()
         #print('Editing finished',sensorname)
         i = self.sender().listindex
-        self.device.config.calibrationdata[i].sn = sensorname
+        self.device.custom_config.calibrationdata[i].sn = sensorname
         #self.device.config['manualsensors']
         self.updateDisplayWidget()
 
@@ -1453,7 +1453,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.sensorAddClicked():'
         logger.debug(funcname)
         layout = self.sensorsConfig_layout
-        print('fsfs', self.device.config)
+        print('fsfs', self.device.custom_config)
 
         newsen = ''
         if self.sender() == self.sensoradd:
@@ -1463,7 +1463,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             print('Manual sensor')
             self.device.add_sensor(newsen, 'manual')
 
-        print('fsfs 2', self.device.config)
+        print('fsfs 2', self.device.custom_config)
 
         while layout.count():
             item = layout.takeAt(0)
@@ -1489,7 +1489,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             widget = item.widget()
             widget.deleteLater()
 
-        print('Config', self.device.config)
+        print('Config', self.device.custom_config)
         print('Index',sensorRem.listindex)
         if sensorRem.sensortype == 'manual':
             self.device.rem_sensor(sensorRem.listindex, 'manual')
@@ -1676,12 +1676,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.datainput_configwidget = QtWidgets.QWidget()
         self.inputlayout = QtWidgets.QGridLayout(self.datainput_configwidget)
         self.datainput_configwidgets = {}
-        self.datainput_configwidgets['lUUID'] = QtWidgets.QLineEdit(self.device.config.calibration_uuid)
+        self.datainput_configwidgets['lUUID'] = QtWidgets.QLineEdit(self.device.custom_config.calibration_uuid)
         self.datainput_configwidgets['lUUID'].setReadOnly(True)
         self.datainput_configwidgets['lUUID_label'] = QtWidgets.QLabel('Calibration UUID')
-        self.datainput_configwidgets['lID'] = QtWidgets.QLineEdit(self.device.config.calibration_id)
+        self.datainput_configwidgets['lID'] = QtWidgets.QLineEdit(self.device.custom_config.calibration_id)
         self.datainput_configwidgets['lID_label'] = QtWidgets.QLabel('Calibration ID')
-        self.datainput_configwidgets['lco'] = QtWidgets.QLineEdit(self.device.config.calibration_comment)
+        self.datainput_configwidgets['lco'] = QtWidgets.QLineEdit(self.device.custom_config.calibration_comment)
         self.datainput_configwidgets['lco_label'] = QtWidgets.QLabel('Calibration comment')
         self.inputlayout.addWidget(self.datainput_configwidgets['lUUID_label'], 0, 0)
         self.inputlayout.addWidget(self.datainput_configwidgets['lUUID'], 0, 1)
@@ -1718,7 +1718,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         # Add the tablewidget as a new tab
         self.tabwidget.addTab(self.tablewidget,'Calibration data')
         # Add the tablewidget as a new tab
-        calibrationtype = self.device.config.calibrationtype.lower()
+        calibrationtype = self.device.custom_config.calibrationtype.lower()
         self.tabwidget.addTab(self.calibration_widget, 'TMP')
 
         self.update_datatable()
@@ -1760,7 +1760,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         tadd = time.time()
         # def add_data(self, time, sensorindex, sentype, data, time_data, rawdata, time_rawdata):
-        if len(self.device.config.calibrationdata) > 0:
+        if len(self.device.custom_config.calibrationdata) > 0:
             self.device.add_data(tadd, 0, np.NaN, np.NaN, np.NaN, np.NaN)
             # Update the table
             self.update_datatable()
@@ -1798,7 +1798,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             myWidget.setParent(None)
             index -=1
 
-        calibrationtype = self.device.config.calibrationtype.lower()
+        calibrationtype = self.device.custom_config.calibrationtype.lower()
 
         if calibrationtype == 'ntc':
             logger.debug(funcname + ' Creating NTC calibration widget')
@@ -1829,7 +1829,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.calibdata_to_dict():'
         logger.debug(funcname)
         calibdata = []
-        for sdata in self.device.config.calibrationdata:
+        for sdata in self.device.custom_config.calibrationdata:
             calibdata.append(sdata.model_dump())
 
         return calibdata
@@ -1844,11 +1844,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def refsensor_changed(self, index):
         funcname = __name__ + '.refsensor_changed():'
         logger.debug(funcname)
-        self.device.config.ind_ref_sensor = index
-        self.device.config.name_ref_sensor = self.allsensornames[self.device.config.ind_ref_sensor.data]
+        self.device.custom_config.ind_ref_sensor = index
+        self.device.custom_config.name_ref_sensor = self.allsensornames[self.device.custom_config.ind_ref_sensor.data]
         # Update calibration table
         #self.update_coefftable_ntc()
-        print('Config',self.device.config)
+        print('Config', self.device.custom_config)
 
 
     def add_plots(self):
@@ -1871,7 +1871,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         nrows = 3
         nrow = 0
         ncol = 0
-        for i, sdata in enumerate(self.device.config.calibrationdata):
+        for i, sdata in enumerate(self.device.custom_config.calibrationdata):
             # Realtimedata
             if sdata.inputtype == 'datastream':
                 #config = {}
@@ -1926,9 +1926,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
         # Update the name of the reference sensor
         try:
-            self.device.config.name_ref_sensor = self.allsensornames[self.device.config.ind_ref_sensor]
+            self.device.custom_config.name_ref_sensor = self.allsensornames[self.device.custom_config.ind_ref_sensor]
         except:
-            self.device.config.name_ref_sensor = ''
+            self.device.custom_config.name_ref_sensor = ''
 
     def get_intervalldata(self):
         """
@@ -1955,7 +1955,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     t_intervall = [min(plot_widget.vlines_xpos), max(plot_widget.vlines_xpos)]
 
         for i, plot_widget in enumerate(self.plot_widgets):
-            sensor_data_tmp = self.device.config.calibrationdata[plot_widget.sensorindex]
+            sensor_data_tmp = self.device.custom_config.calibrationdata[plot_widget.sensorindex]
             print('a',sensor_data_tmp)
             print('b',sensor_data_tmp.realtimeplot)
             if True:
@@ -1982,8 +1982,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
                         self.device.add_data(tget,plot_widget.sensorindex,ydata,tdata,rawdata_all,timedata_all)
 
 
-        print('get intervalldata time',self.device.config.calibrationdata_time)
-        print('get intervalldata', self.device.config.calibrationdata)
+        print('get intervalldata time', self.device.custom_config.calibrationdata_time)
+        print('get intervalldata', self.device.custom_config.calibrationdata)
         self.update_datatable()
 
     def __datatable_item_changed__(self,item):
@@ -2013,9 +2013,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
         except:
             pass
 
-        ncols = 1 + len(self.device.config.calibrationdata)
+        ncols = 1 + len(self.device.custom_config.calibrationdata)
         self.datatable.setColumnCount(ncols)
-        ndatarows = len(self.device.config.calibrationdata_time)
+        ndatarows = len(self.device.custom_config.calibrationdata_time)
         self.datatable.setRowCount(self.irowdatastart + ndatarows)
 
         #self.datatable.horizontalHeader().ResizeMode(self.datatable.horizontalHeader().ResizeToContents)
@@ -2031,19 +2031,19 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
         # self.datatable.setHorizontalHeaderLabels(self.datacolumns)
         col = 0
-        print('fdsfd',self.device.config)
+        print('fdsfd', self.device.custom_config)
 
         for idata in range(ndatarows):
-            itemdata = self.device.config.calibrationdata_time[idata]
+            itemdata = self.device.custom_config.calibrationdata_time[idata]
             tdatetime = datetime.datetime.utcfromtimestamp(itemdata)
             itemdatastr = tdatetime.strftime('%d-%m-%Y %H:%M:%S.%f')
             item = QtWidgets.QTableWidgetItem(itemdatastr)
             self.datatable.setItem(self.irowdatastart + idata, 0, item)
 
 
-        print('config',self.device.config)
+        print('config', self.device.custom_config)
         if True:
-            for isensor,sdata in enumerate(self.device.config.calibrationdata):
+            for isensor,sdata in enumerate(self.device.custom_config.calibrationdata):
                 col += 1
                 print('sensor sdata:',isensor,sdata)
                 # Add all the metainformation
@@ -2171,11 +2171,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
         print('i',i,'d',d,'sn',sn,'unit',unit,'sensortype',sensortype)
         p = self.plot_widgets[i]
         if True:
-            self.device.config.calibrationdata[i].datastream = d
-            self.device.config.calibrationdata[i].sn = sn
-            self.device.config.calibrationdata[i].unit = unit
-            self.device.config.calibrationdata[i].sensor_model = sensortype
-            self.device.config.calibrationdata[i].parameter = parameter
+            self.device.custom_config.calibrationdata[i].datastream = d
+            self.device.custom_config.calibrationdata[i].sn = sn
+            self.device.custom_config.calibrationdata[i].unit = unit
+            self.device.custom_config.calibrationdata[i].sensor_model = sensortype
+            self.device.custom_config.calibrationdata[i].parameter = parameter
             self.allsensornames[i] = d
             p.datastream = d
         if isinstance(p,XYplotWidget.XYplot):
@@ -2196,7 +2196,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             col = p.datatablecolumn
             tmp = self.allsensornames[i]
             try:
-                self.device.config.name_ref_sensor = self.allsensornames[self.device.config.ind_ref_sensor]
+                self.device.custom_config.name_ref_sensor = self.allsensornames[self.device.custom_config.ind_ref_sensor]
             except:
                 logger.debug(funcname + ' Could not set ref sensor',exc_info=True)
             self.sensorcols[i] = senstr
@@ -2208,7 +2208,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def plot_ntc(self, coeffs = None):
         funcname = __name__ + '.plot_ntc():'
         logger.debug(funcname)
-        self.plot_coeff_widget = PlotWidgetNTC(self.device.config,coeffs)
+        self.plot_coeff_widget = PlotWidgetNTC(self.device.custom_config, coeffs)
         self.plot_coeff_widget.show()
 
 
@@ -2248,7 +2248,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                             if valid_datatype:
                                 ind = None
                                 # Check if the datastream is already used
-                                for indcaldata,caldata in enumerate(self.device.config.calibrationdata):
+                                for indcaldata,caldata in enumerate(self.device.custom_config.calibrationdata):
                                     datastream = caldata.datastream
                                     if d == datastream: # already subscribed
                                         ind = indcaldata

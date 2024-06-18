@@ -6,7 +6,7 @@ import yaml
 from PyQt5 import QtWidgets, QtCore, QtGui
 import pydantic
 import typing
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 from redvypr.widgets.redvypr_addressWidget import datastreamWidget
 import redvypr.files as files
 
@@ -30,7 +30,7 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
         self.label = QtWidgets.QLabel('Configuration of\n{:s}'.format(self.device.name))
         self.layout.addWidget(self.label)
         dataname = self.device.name + '.config'
-        self.configWidget = pydanticQTreeWidget(self.device.config, dataname=dataname, exclude = self.exclude)
+        self.configWidget = pydanticQTreeWidget(self.device.custom_config, dataname=dataname, exclude = self.exclude)
         self.layout.addWidget(self.configWidget)
 
 #

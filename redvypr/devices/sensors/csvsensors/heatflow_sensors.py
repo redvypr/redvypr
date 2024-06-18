@@ -431,7 +431,7 @@ class DHFS50Widget_config(QtWidgets.QWidget):
         self.sn = sn
         # Try to find a configuration for the logger
         try:
-            self.device.config.sensorconfigurations[self.sn]
+            self.device.custom_config.sensorconfigurations[self.sn]
             logger.debug(funcname + ' Found a configuration')
         except:
             logger.warning(funcname + ' Did not find a configuration')
@@ -440,11 +440,11 @@ class DHFS50Widget_config(QtWidgets.QWidget):
         self.layout = QtWidgets.QGridLayout(self)
         self.coeffInput = []
         self.coeff_widget = QtWidgets.QTabWidget()
-        print('Configuration',self.device.config.sensorconfigurations[self.sn])
+        print('Configuration', self.device.custom_config.sensorconfigurations[self.sn])
         snlabel = QtWidgets.QLabel('DHFS50 calibration coefficients of\n' + self.sn)
         self.layout.addWidget(snlabel,0,0)
 
-        nparameter = len(list(self.device.config.sensorconfigurations[self.sn].parameter))
+        nparameter = len(list(self.device.custom_config.sensorconfigurations[self.sn].parameter))
 
         #self.coeff_table = QtWidgets.QTableWidget()
         #self.coeff_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
@@ -453,7 +453,7 @@ class DHFS50Widget_config(QtWidgets.QWidget):
         self.parameter_buttons = {}
         self.parameter_widgets = {}
         self.parameter_calwidgets = {}
-        for i,k_tmp in enumerate(self.device.config.sensorconfigurations[self.sn].parameter):
+        for i,k_tmp in enumerate(self.device.custom_config.sensorconfigurations[self.sn].parameter):
             k = k_tmp[0]
             calibration = k_tmp[1]
             self.parameter_widgets[k] = QtWidgets.QWidget()
@@ -498,14 +498,14 @@ class DHFS50Widget_config(QtWidgets.QWidget):
             logger.debug('Adding {} to channel {:s}'.format(calibration_sent, parameter))
             #channels = self.device.config.sensorconfigurations[self.sn].channels
             #setattr(channels, channelname, calibration)
-            calibration_old = self.device.config.sensorconfigurations[self.sn].parameter
+            calibration_old = self.device.custom_config.sensorconfigurations[self.sn].parameter
             print('calibration_old', type(calibration_old))
             print('calibration_new', type(calibration_sent))
             print('hallohallo',calibration_old.model_validate(calibration_new))
             # Check if the new coefficients fit
             try:
                 calibration_old.model_validate(calibration_new)
-                setattr(self.device.config.sensorconfigurations[self.sn].parameter, parameter, calibration_new)
+                setattr(self.device.custom_config.sensorconfigurations[self.sn].parameter, parameter, calibration_new)
                 self.parameter_calwidgets[parameter].reload_data(calibration_new)
             except:
                 logger.debug('Calibration format does not fit',exc_info = True)
@@ -513,7 +513,7 @@ class DHFS50Widget_config(QtWidgets.QWidget):
 
 
         #self.fill_coeff_table()
-        print('configuration',self.device.config.sensorconfigurations[self.sn])
+        print('configuration', self.device.custom_config.sensorconfigurations[self.sn])
 
 
 #
@@ -545,7 +545,7 @@ class HFVWidget_config(QtWidgets.QWidget):
 
         # Try to find a configuration for the logger
         try:
-            self.device.config.sensorconfigurations[self.sn]
+            self.device.custom_config.sensorconfigurations[self.sn]
             logger.debug(funcname + ' Found a configuration')
         except:
             logger.warning(funcname + ' Did not find a configuration')
@@ -616,7 +616,7 @@ class HFVWidget_config(QtWidgets.QWidget):
             logger.debug(funcname + 'Removing sensor')
         else:
             logger.debug('Adding {:s} to channel {:s}'.format(sn, channelname))
-            channels = self.device.config.sensorconfigurations[self.sn].channels
+            channels = self.device.custom_config.sensorconfigurations[self.sn].channels
             setattr(channels,channelname,calibration)
 
         self.fill_coeff_table()
@@ -650,10 +650,10 @@ class HFVWidget_config(QtWidgets.QWidget):
         self.coeff_table.setVerticalHeaderLabels(
             ['Serialnum', 'Model', 'Coefficient', 'Calibration date', 'Comment'])
         self.coeff_table.setHorizontalHeaderLabels(self.channelnames )
-        for ch,ch_tmp in enumerate(self.device.config.sensorconfigurations[self.sn].channels):
+        for ch,ch_tmp in enumerate(self.device.custom_config.sensorconfigurations[self.sn].channels):
             chstr = ch_tmp[0]
             sn_sensor_attached = None
-            channels = self.device.config.sensorconfigurations[self.sn].channels
+            channels = self.device.custom_config.sensorconfigurations[self.sn].channels
             calibration = getattr(channels,chstr)
             print('Got channel',calibration)
             sn_sensor_attached = calibration.sn
@@ -742,7 +742,7 @@ class HFVWidget(QtWidgets.QWidget):
         self.sn = sn
         # Try to find a configuration for the logger
         try:
-            self.device.config.sensorconfigurations[self.sn]
+            self.device.custom_config.sensorconfigurations[self.sn]
             logger.debug(funcname + ' Found a configuration')
         except:
             logger.warning(funcname + ' Did not find a configuration, will need to create one')
@@ -908,7 +908,7 @@ class DHFSWidget(QtWidgets.QWidget):
 
         if self.device is not None:
             try:
-                self.configuration = self.device.config.sensorconfigurations[sn]
+                self.configuration = self.device.custom_config.sensorconfigurations[sn]
             except Exception as e:
                 logger.exception(e)
 
@@ -982,7 +982,7 @@ class DHFSWidget(QtWidgets.QWidget):
     def __configClicked__(self):
 
         #self.configWidget = DHFS50Widget_config(sn = self.sn, redvypr_device=self.device)
-        self.configWidget = sensorConfigWidget(sensor=self.configuration, calibrations=self.device.config.calibrations)
+        self.configWidget = sensorConfigWidget(sensor=self.configuration, calibrations=self.device.custom_config.calibrations)
         self.configWidget.config_changed_flag.connect(self.__configChanged__)
         self.configWidget.show()
 

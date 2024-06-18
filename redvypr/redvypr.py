@@ -32,7 +32,7 @@ import redvypr.redvypr_address as redvypr_address
 import redvypr.packet_statistic as redvypr_packet_statistic
 from redvypr.version import version
 import redvypr.files as files
-from redvypr.device import RedvyprDeviceConfig, redvypr_device, redvypr_device_scan, RedvyprDeviceParameter
+from redvypr.device import RedvyprDeviceConfig, RedvyprDevice, redvypr_device_scan, RedvyprDeviceParameter
 import redvypr.devices as redvyprdevices
 import faulthandler
 faulthandler.enable()
@@ -443,7 +443,7 @@ class Redvypr(QtCore.QObject):
                 for device in config.devices:
                     print('Adding device', device)
                     # Device specifig configuration
-                    device_config = device.config
+                    device_config = device.custom_config
                     # The base configuration, same for all devices
                     base_config = device.base_config
                     # Check if the devicemodulename kind of fits
@@ -474,7 +474,7 @@ class Redvypr(QtCore.QObject):
                                 device.devicemodulename = smod['name']
 
                     logger.info(funcname + 'Adding device {}'.format(device.devicemodulename))
-                    dev_added = self.add_device(devicemodulename=device.devicemodulename, deviceconfig=device_config,
+                    dev_added = self.add_device(devicemodulename=device.devicemodulename, custom_config=device_config,
                                                 device_parameter=base_config)
 
         # Emit a signal that the configuration has been changed
@@ -578,13 +578,13 @@ class Redvypr(QtCore.QObject):
 
         return loglevel
 
-    def add_device(self, devicemodulename=None, deviceconfig=None, device_parameter=None):
+    def add_device(self, devicemodulename=None, custom_config=None, device_parameter=None):
         """
         Function adds a device to redvypr
 
         Args:
             :param devicemodulename:
-            :param deviceconfig: A dictionary with the configuration, this is filled by i.e. a yaml file with the configuration or if clicked in the gui just the name of the device
+            :param custom_config: A dictionary with the configuration, this is filled by i.e. a yaml file with the configuration or if clicked in the gui just the name of the device
             :param device_parameter:
 
         Returns:
@@ -593,7 +593,7 @@ class Redvypr(QtCore.QObject):
 
         """
         funcname = self.__class__.__name__ + '.add_device():'
-        logger.debug(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(deviceconfig))
+        logger.debug(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(custom_config))
         #logger.info(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(deviceconfig))
         devicelist = []
         device_found = False
@@ -637,15 +637,19 @@ class Redvypr(QtCore.QObject):
                 # Try to get a pydantic device specific configuration (the configuration only for the device)
                 try:
                     pydantic_device_config = devicemodule.DeviceCustomConfig()
-                    print('Device config of module',pydantic_device_config,type(pydantic_base_config))
-                    print('deviceconfig',deviceconfig, type(deviceconfig))
+                    print('Device config of module',pydantic_device_config,type(pydantic_device_config))
+                    print('deviceconfig', custom_config, type(custom_config))
+
                     try:
-                        config = deviceconfig.config
-                        print('Config',config)
-                        pydantic_device_config = devicemodule.DeviceCustomConfig.model_validate(config)
+                        print('Custom_Config',custom_config)
+                        if custom_config is not None:
+                            print('Dump',custom_config.model_dump())
+                            pydantic_custom_config = devicemodule.DeviceCustomConfig.model_validate(custom_config.model_dump())
+                        else:
+                            pydantic_custom_config = devicemodule.DeviceCustomConfig()
                     except:
                         logger.debug('No config found',exc_info=True)
-                        pydantic_device_config = devicemodule.DeviceCustomConfig()
+                        pydantic_custom_config = devicemodule.DeviceCustomConfig()
 
                     logger.debug(funcname + ':Found pydantic configuration {:s}'.format(str(devicemodule)))
                     #redvypr_device_parameter.config = pydantic_device_config
@@ -726,7 +730,7 @@ class Redvypr(QtCore.QObject):
                                 funcname + ' Device does not have a start function, will add the standard function')
                             startfunction = devicemodule.start
                     else:
-                        Device = redvypr_device
+                        Device = RedvyprDevice
                         startfunction = devicemodule.start
 
                     # Config used at all?
@@ -737,13 +741,12 @@ class Redvypr(QtCore.QObject):
 
                     if FLAG_HAS_PYDANTIC:
                         logger.debug(funcname + ' Using pydantic config')
-                        configu = pydantic_device_config
 
-                    logger.debug(funcname + 'Config for device')
-                    logger.debug(funcname + 'Config: {:s}'.format(str(configu)))
+                    logger.debug(funcname + 'Custom config for device')
+                    logger.debug(funcname + 'Config: {:s}'.format(str(pydantic_custom_config)))
                     # Set the loglevel
                     try:
-                        level = deviceconfig['loglevel']
+                        level = custom_config['loglevel']
                     except Exception as e:
                         logger.info(funcname + 'Setting loglevel to standard')
                         # Set the loglevel
@@ -754,12 +757,12 @@ class Redvypr(QtCore.QObject):
                     device_parameter.loglevel = levelname
                     # Check for an autostart
                     try:
-                        device_parameter.autostart = deviceconfig['autostart']
+                        device_parameter.autostart = custom_config['autostart']
                     except Exception as e:
                         device_parameter.autostart = False
 
                     # Creating the device
-                    device = Device(device_parameter=device_parameter, config=configu, redvypr=self, dataqueue=dataqueue,
+                    device = Device(device_parameter=device_parameter, custom_config=pydantic_custom_config, redvypr=self, dataqueue=dataqueue,
                                     comqueue=comqueue, datainqueue=datainqueue,
                                     statusqueue=statusqueue, statistics=statistics, startfunction=startfunction)
 
@@ -810,7 +813,7 @@ class Redvypr(QtCore.QObject):
                 # Subscribe to devices
                 #
                 try:
-                    subscribe_addresses = deviceconfig.subscriptions
+                    subscribe_addresses = custom_config.subscriptions
                 except:
                     logger.debug(funcname + ' No subscriptions found')
                     subscribe_addresses = []

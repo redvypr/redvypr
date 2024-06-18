@@ -200,7 +200,7 @@ class TARWidget(QtWidgets.QWidget):
         self.configuration = None
         if self.device is not None:
             try:
-                self.configuration = self.device.config.sensorconfigurations[sn]
+                self.configuration = self.device.custom_config.sensorconfigurations[sn]
             except Exception as e:
                 logger.exception(e)
 
@@ -314,7 +314,7 @@ class TARWidget_config(QtWidgets.QWidget):
         self.sn = sn
         # Try to find a configuration for the logger
         try:
-            conf = self.device.config.sensorconfigurations[self.sn]
+            conf = self.device.custom_config.sensorconfigurations[self.sn]
             logger.debug(funcname + ' Found a configuration')
         except:
             logger.warning(funcname + ' Did not find a configuration')
@@ -334,8 +334,8 @@ class TARWidget_config(QtWidgets.QWidget):
     def __assign_calibrations__(self):
         funcname = __name__ + '__assign_calibrations():'
         print(funcname)
-        print('calibrations',self.device.config.calibrations)
-        cals = self.device.config.calibrations
+        print('calibrations', self.device.custom_config.calibrations)
+        cals = self.device.custom_config.calibrations
         match = ['parameter','sn']
         for i, para in enumerate(self.config.parameter.NTC_A):
             print('Searching for calibration for parameter',i)
@@ -366,7 +366,7 @@ class TARWidget_config(QtWidgets.QWidget):
 
     def __create_calibration_widget__(self):
         self.__calbutton_clicked__ = self.sender()
-        calibrations = redvypr_device = self.device.config.calibrations
+        calibrations = redvypr_device = self.device.custom_config.calibrations
         self.__calwidget__ = sensorCoeffWidget(calibrations=calibrations, redvypr_device=self.device)
         self.applyCoeffButton = QtWidgets.QPushButton('Apply')
         self.applyCoeffButton.clicked.connect(self.applyCalibration_clicked)

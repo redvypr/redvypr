@@ -14,7 +14,7 @@ import redvypr.data_packets
 #from redvypr.gui import configWidget
 from redvypr.devices.plot.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
 import redvypr.files as files
-from redvypr.device import redvypr_device
+from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
 #from redvypr.configdata import configdata, getdata
@@ -64,7 +64,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 dataqueue.put(data)  # This has to be done, otherwise the gui does not get any data ...
 
 
-class Device(redvypr_device):
+class Device(RedvyprDevice):
     def __init__(self, **kwargs):
         """
         """
@@ -133,7 +133,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.deviceinitwidget = deviceinitwidget
         # Let the configuration only be done by here, not in the initwidget
         #self.deviceinitwidget.config_widget.configtree.setEnabled(False)
-        self.config = device.config
+        self.config = device.custom_config
         self.layout = QtWidgets.QVBoxLayout(self)
         self.device = device
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
@@ -581,7 +581,7 @@ class PlotGridWidget(QtWidgets.QWidget):
         """
         self.layout.addWidget(plotwidget, j, i, height, width)
         # Add the location information
-        configuration = plotwidget.config
+        configuration = plotwidget.custom_config
         configuration['location']['x'].data = i
         configuration['location']['y'].data = j
         configuration['location']['height'].data = height
@@ -647,7 +647,7 @@ class PlotGridWidget(QtWidgets.QWidget):
             if (d['plot'] == plotwidget):
                 print('removing from list')
                 self.all_plots.remove(d)
-                self.device.config['plots'].remove(plotwidget.config)
+                self.device.config['plots'].remove(plotwidget.custom_config)
                 try:
                     r = d['rubber']
                     r.close()
@@ -672,7 +672,7 @@ class PlotGridWidget(QtWidgets.QWidget):
             print('removing from list')
             self.all_plots.remove(d)
             self.layout.removeWidget(plotwidget)
-            self.device.config['plots'].remove(plotwidget.config)
+            self.device.config['plots'].remove(plotwidget.custom_config)
             try:
                 r = d['rubber']
                 r.close()
@@ -712,12 +712,12 @@ class PlotGridWidget(QtWidgets.QWidget):
                     di = max(iall) - min(iall) + 1
                     jnew = min(jall)
                     dj = max(jall) - min(jall) + 1
-                    print('d',d['plot'].config)
+                    print('d', d['plot'].custom_config)
                     # Update the location of the configuration
-                    d['plot'].config['location']['x'].data = inew
-                    d['plot'].config['location']['y'].data = jnew
-                    d['plot'].config['location']['width'].data = di
-                    d['plot'].config['location']['height'].data = dj
+                    d['plot'].custom_config['location']['x'].data = inew
+                    d['plot'].custom_config['location']['y'].data = jnew
+                    d['plot'].custom_config['location']['width'].data = di
+                    d['plot'].custom_config['location']['height'].data = dj
                     self.layout.removeWidget(plotwidget)
                     self.layout.addWidget(plotwidget, jnew, inew, dj, di)
 

@@ -61,7 +61,7 @@ class RedvyprDeviceConfig(pydantic.BaseModel):
     """
     base_config: RedvyprDeviceBaseConfig = pydantic.Field(default=RedvyprDeviceBaseConfig())
     devicemodulename: str = pydantic.Field(default='', description='')
-    config: typing.Optional[RedvyprDeviceCustomConfig] = pydantic.Field(default=None, description='')
+    custom_config: typing.Optional[RedvyprDeviceCustomConfig] = pydantic.Field(default=None, description='')
     subscriptions: list = pydantic.Field(default=[])
     metadata: typing.Optional[DeviceMetadata] = pydantic.Field(default=None, description='')
     config_type: typing.Literal['device'] = pydantic.Field(default='device')
@@ -333,7 +333,7 @@ class redvypr_device_scan():
         return devicecheck
 
 
-class redvypr_device(QtCore.QObject):
+class RedvyprDevice(QtCore.QObject):
     thread_started = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     thread_stopped = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     status_signal  = QtCore.pyqtSignal(dict)   # Signal with the status of the device
@@ -341,17 +341,17 @@ class redvypr_device(QtCore.QObject):
 
     #def __init__(self, name='redvypr_device', uuid = '', redvypr = None, dataqueue = None, comqueue = None, datainqueue=None,statusqueue=None,template = {},config = {},publishes=False,subscribes=False, multiprocess='thread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False,devicemodulename=''):
     def __init__(self, device_parameter = None, redvypr=None, dataqueue=None, comqueue=None, datainqueue=None,
-                 statusqueue=None, config={}, statistics=None, startfunction=None):
+                 statusqueue=None, custom_config=None, statistics=None, startfunction=None):
         """
         """
-        super(redvypr_device, self).__init__()
+        super(RedvyprDevice, self).__init__()
         self.publishes   = device_parameter.publishes    # publishes data, a typical sensor is doing this
         self.subscribes  = device_parameter.subscribes   # subscribes other devices data, a typical datalogger is doing this
         self.datainqueue = datainqueue
         self.dataqueue   = dataqueue
         self.comqueue    = comqueue
         self.statusqueue = statusqueue
-        self.config      = config
+        self.config      = custom_config
         self.redvypr     = redvypr
         self.name        = device_parameter.name
         self.devicemodulename = device_parameter.devicemodulename
