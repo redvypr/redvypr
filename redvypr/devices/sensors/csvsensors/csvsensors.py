@@ -59,7 +59,7 @@ packettypes = ['HF','HFS','HFV','IMU','TAR'] # This should be specified within t
 def start(device_info, config = None, dataqueue = None, datainqueue = None, statusqueue = None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
-    config = device_config.model_validate(config)
+    config = DeviceCustomConfig.model_validate(config)
     macs_found_HF = []  # List of all mac addresses found
     macs_found_HFSI = []  # List of all mac addresses found
     macs_found_IMU = []  # List of all mac addresses found
@@ -95,7 +95,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                 #config['sensorconfigurations'] = data['sensorconfigurations']
                 logger.debug(funcname + ' sensorconfigurations updated (sensorconfigurations)')
             elif (command == 'config'):
-                config = device_config.model_validate(data['config'])
+                config = DeviceCustomConfig.model_validate(data['config'])
                 logger.debug(funcname + ' sensorconfigurations updated (config)')
 
 
@@ -940,8 +940,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout = self.configLoggerWidgets['addwidget_layout']
         self.configLoggerWidgets['loggercombo'] = QtWidgets.QComboBox()
         #print('Options',typing.get_type_hints(self.device.config.sensorconfigurations))
-        print('Options',typing.get_type_hints(device_config))
-        sensorconfigurations_options_tmp = typing.get_type_hints(device_config)['sensorconfigurations'] # This is a typing.Dict
+        print('Options',typing.get_type_hints(DeviceCustomConfig))
+        sensorconfigurations_options_tmp = typing.get_type_hints(DeviceCustomConfig)['sensorconfigurations'] # This is a typing.Dict
         sensorconfigurations_options_tmp2 = typing.get_args(sensorconfigurations_options_tmp)[1] # This is a Union
         sensorconfigurations_options = typing.get_args(sensorconfigurations_options_tmp2) # This is a tuple with the arguments
         for hf_logger in sensorconfigurations_options:

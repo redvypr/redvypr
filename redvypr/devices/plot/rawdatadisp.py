@@ -7,6 +7,8 @@ import numpy as np
 import logging
 import sys
 import yaml
+import pydantic
+import typing
 from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 
@@ -14,14 +16,15 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('rawdatadisp')
 logger.setLevel(logging.DEBUG)
 
-description = 'Displays data as text received from connected devices'
+class DeviceBaseConfig(pydantic.BaseModel):
+    publishes: bool = False
+    subscribes: bool = True
+    description: str = 'Displays data as text received from connected devices'
+    gui_tablabel_display: str = 'Rawdata display'
 
-config_template = {}
-config_template['bufsize']        = {'type': 'int','default':10000,'description':'The buffer size of the text display (the MaximumBlockCount of the QPlainTextEdit)'}
-config_template['redvypr_device'] = {}
-config_template['redvypr_device']['publishes']    = False
-config_template['redvypr_device']['subscribes']   = True
-config_template['redvypr_device']['description'] = description
+class DeviceCustomConfig(pydantic.BaseModel):
+    bufsize: int = pydantic.Field(default=10000, description='The buffer size of the text display (the MaximumBlockCount of the QPlainTextEdit)')
+
 redvypr_devicemodule = True
 
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
@@ -60,7 +63,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.clearbtn.clicked.connect(self.cleartext)
         self.scrollchk = QtWidgets.QCheckBox('Scroll to end')
         self.text.setReadOnly(True)
-        self.text.setMaximumBlockCount(self.device.custom_config['bufsize'])
+        self.text.setMaximumBlockCount(self.device.custom_config.bufsize)
         layout.addRow(self.text)
         layout.addRow(self.scrollchk,self.clearbtn)
         self.text.insertPlainText("Hello, this is the raw data display device!\n")

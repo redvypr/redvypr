@@ -34,7 +34,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
     description: str = 'Reads to and writes from a serial devices'
     gui_tablabel_display: str = 'Serial device status'
 
-class serial_DeviceCustomConfig(pydantic.BaseModel):
+class SerialDeviceCustomConfig(pydantic.BaseModel):
     use_device: bool = pydantic.Field(default=True, description='Flag if the device should be used')
     baud: int = 4800
     parity: typing.Literal[serial.PARITY_NONE, serial.PARITY_ODD, serial.PARITY_EVEN, serial.PARITY_MARK, serial.PARITY_SPACE] = pydantic.Field(default=serial.PARITY_NONE)
@@ -50,7 +50,7 @@ class serial_DeviceCustomConfig(pydantic.BaseModel):
 
 
 class DeviceCustomConfig(pydantic.BaseModel):
-    serial_devices: typing.Optional[typing.List[serial_device_config]] = pydantic.Field(default=[])
+    serial_devices: typing.Optional[typing.List[SerialDeviceCustomConfig]] = pydantic.Field(default=[])
     baud_standard: list = [300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200]
 
 def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):

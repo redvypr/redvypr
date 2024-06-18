@@ -474,8 +474,9 @@ class Redvypr(QtCore.QObject):
                                 device.devicemodulename = smod['name']
 
                     logger.info(funcname + 'Adding device {}'.format(device.devicemodulename))
+                    subscriptions = device.subscriptions
                     dev_added = self.add_device(devicemodulename=device.devicemodulename, custom_config=device_config,
-                                                base_config=base_config)
+                                                base_config=base_config, subscriptions=subscriptions)
 
         # Emit a signal that the configuration has been changed
         self.hostconfig_changed_signal.emit()
@@ -578,7 +579,7 @@ class Redvypr(QtCore.QObject):
 
         return loglevel
 
-    def add_device(self, devicemodulename=None, custom_config=None, base_config=None):
+    def add_device(self, devicemodulename=None, custom_config=None, base_config=None, subscriptions=[]):
         """
         Function adds a device to redvypr
 
@@ -815,7 +816,7 @@ class Redvypr(QtCore.QObject):
                 # Subscribe to devices
                 #
                 try:
-                    subscribe_addresses = custom_config.subscriptions
+                    subscribe_addresses = subscriptions
                 except:
                     logger.debug(funcname + ' No subscriptions found')
                     subscribe_addresses = []
