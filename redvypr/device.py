@@ -1047,6 +1047,7 @@ class RedvyprDevice(QtCore.QObject):
                     return d[device]['_keyinfo'][dkey]
 
         return None
+
     def get_config(self):
         """
         Returns a RedvyprDeviceConfig of the device

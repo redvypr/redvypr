@@ -20,7 +20,7 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
     """
     Config widget for a pydantic configuration
     """
-    def __init__(self, device = None, exclude = []):
+    def __init__(self, device=None, exclude=[]):
         funcname = __name__ + '.__init__():'
         super().__init__()
         logger.debug(funcname)
@@ -30,7 +30,15 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
         self.label = QtWidgets.QLabel('Configuration of\n{:s}'.format(self.device.name))
         self.layout.addWidget(self.label)
         dataname = self.device.name + '.config'
-        self.configWidget = pydanticQTreeWidget(self.device.custom_config, dataname=dataname, exclude = self.exclude)
+        config = self.device.custom_config
+        if config is None:
+            logger.warning('No config existing')
+            self.configWidget = QtWidgets.QLabel('No config existing!')
+        else:
+            print('Config to edit',self.device.custom_config)
+            print('tpye',type(self.device.custom_config))
+            self.configWidget = pydanticConfigWidget(self.device.custom_config, configname=dataname, exclude=self.exclude)
+            #self.configWidget = pydanticQTreeWidget(self.device.custom_config, dataname=dataname, exclude=self.exclude)
         self.layout.addWidget(self.configWidget)
 
 #
@@ -41,7 +49,7 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
 class pydanticConfigWidget(QtWidgets.QWidget):
     #config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
-    def __init__(self, config=None, editable = True, configname = None, exclude = [], config_location='bottom'):
+    def __init__(self, config=None, editable=True, configname=None, exclude=[], config_location='bottom'):
         funcname = __name__ + '.__init__():'
         super().__init__()
         self.exclude = exclude
@@ -332,11 +340,6 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             self.configWidget.reload_data()
             self.config_changed_flag.emit()
 
-
-
-
-
-
 class pydanticQTreeWidget(QtWidgets.QTreeWidget):
     """ Qtreewidget that display a pydantic object
     """
@@ -420,21 +423,22 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
         funcname = __name__ + '.create_item():'
         logger.debug(funcname)
 
-        #print('Hallo',type(data))
+        print('Hallo',type(data))
+        print('Hallo2',data.__class__.__base__)
         flag_basemodel = False
         if isinstance(data, dict):
-            #print('dict')
+            print('dict')
             flag_iterate = True
         elif isinstance(data, list):
-            #print('list')
+            print('list')
             flag_iterate = True
         #elif isinstance(data, pydantic.BaseModel):
-        elif data.__class__.__base__ == pydantic.BaseModel:
-            #print('basemodel')
+        elif pydantic.BaseModel in data.__class__.__mro__:
+            print('basemodel')
             flag_iterate = True
             flag_basemodel = True
         else:
-            #print('item')
+            print('item')
             flag_iterate = False
 
         # Try to get extra information
@@ -460,6 +464,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 # Check for the types
                 type_hints_index = None
                 typestr = data_value.__class__.__name__
+                print('Data',data,typestr)
                 try:
                     parentdata = parent.__data__
                     if parentdata.__class__.__base__ == pydantic.BaseModel:
@@ -471,7 +476,6 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
 
                 except:
                     logger.info('bad',exc_info=True)
-
 
                 indexstr = str(index)
                 # Check if item should be excluded
@@ -506,7 +510,6 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 if indexstr in self.exclude:
                     return
 
-
                 #print('gf',index)
                 #print('gf type', type(index))
                 #print('Hallo',str(index))
@@ -538,7 +541,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                         #print('List', newindex)
                         newdata = datatmp[numi]
                         newindex = numi
-                    elif data.__class__.__base__ == pydantic.BaseModel:
+                    elif pydantic.BaseModel in data.__class__.__mro__:
                         #print('numi',numi)
                         #print('newindex', newindex)
                         newdata = newindex[1]
@@ -546,6 +549,8 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                         #print('basemodel newdata',newdata)
                         #print('newindex',newindex)
                         #print('newparent',newparent)
+                    else:
+                        logger.warning('Cannot iterate over type {}',type(data))
 
                     self.create_item(newindex, newdata, newparent, edit_flags = edit_flags)
 
@@ -588,9 +593,9 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
         funcname = __name__ + '.create_qtree():'
         logger.debug(funcname)
         self.blockSignals(True)
-        #print('data',self.data)
+        print('data',self.data)
         if True:
-            self.create_item(self.dataname,self.data,self.root)
+            self.create_item(self.dataname, self.data, self.root)
 
         self.dataitem = self.root.child(0)
         self.resizeColumnToContents(0)

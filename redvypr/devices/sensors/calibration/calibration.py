@@ -2224,7 +2224,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 #print('p',i,p.datastream,p.subscription_redvypr)
                 if plot_widget.datastream is None: # No datastream assigned yet, check if the data packet is worth subscription
                     #print('subscribing ...')
-                    datakeys     = redvypr.data_packets.datapacket(data).datakeys()
+                    datakeys = redvypr.data_packets.datapacket(data).datakeys()
                     for k in datakeys:
                         daddr = redvypr.redvypr_address(data,datakey=k)
                         d = daddr.get_str()

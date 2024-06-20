@@ -7,7 +7,7 @@ import logging
 import sys
 import yaml
 from redvypr.device import RedvyprDevice
-#from redvypr.widgets.gui_config_widgets import configWidget
+from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr')
@@ -82,8 +82,8 @@ class displayDeviceWidget_standard(QtWidgets.QWidget):
 #
 #
 class redvypr_deviceInitWidget(QtWidgets.QWidget):
-    connect = QtCore.pyqtSignal(
-        RedvyprDevice)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    subscribed = QtCore.pyqtSignal(
+        RedvyprDevice)  # Signal displaying a subscription
 
     def __init__(self, device=None):
         """
@@ -121,19 +121,26 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
             #self.killbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
 
         # Connect button
-        self.conbutton = QtWidgets.QPushButton("Subscribe")
-        self.conbutton.clicked.connect(self.connect_clicked)
+        self.configure_button = QtWidgets.QPushButton("Configure")
+        self.configure_button.clicked.connect(self.configure_clicked)
+        # self.conbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+        self.config_widgets.append(self.configure_button)
+
+        # Connect button
+        self.subscribe_button = QtWidgets.QPushButton("Subscribe")
+        self.subscribe_button.clicked.connect(self.subscribe_clicked)
         #self.conbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
-        self.config_widgets.append(self.conbutton)
+        self.config_widgets.append(self.subscribe_button)
 
         #self.layout.addWidget(self.config_widget, 0, 0, 1, 4)
         self.layout.addWidget(self.label, 0, 0, 1, 4)
-        self.layout.addWidget(self.conbutton, 1, 0, 1, 4)
+        self.layout.addWidget(self.configure_button, 1, 0, 1, 4)
+        self.layout.addWidget(self.subscribe_button, 2, 0, 1, 4)
         if (self.device.mp == 'multiprocess')  or (self.device.mp == 'qthread'):
-            self.layout.addWidget(self.startbutton, 2, 0, 1, 3)
-            self.layout.addWidget(self.killbutton, 2, 3)
+            self.layout.addWidget(self.startbutton, 3, 0, 1, 3)
+            self.layout.addWidget(self.killbutton, 3, 3)
         else:
-            self.layout.addWidget(self.startbutton, 2, 0, 1, 4)
+            self.layout.addWidget(self.startbutton, 4, 0, 1, 4)
 
         # If the config is changed, update the device widget
 
@@ -197,8 +204,17 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
                 self.startbutton.setChecked(False)
             # self.conbtn.setEnabled(True)
 
-    def connect_clicked(self):
+    def subscribe_clicked(self):
         button = self.sender()
-        self.connect.emit(self.device)
+        self.subscribed.emit(self.device)
+
+    def configure_clicked(self):
+        button = self.sender()
+
+        funcname = __name__ + '.config_clicked():'
+        logger.debug(funcname)
+        self.config_widget = pydanticDeviceConfigWidget(self.device)
+        self.config_widget.show()
+        #self.subscribed.emit(self.device)
 
 

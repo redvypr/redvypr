@@ -297,10 +297,6 @@ class redvyprWidget(QtWidgets.QWidget):
             logger.debug('Widget does not have connect signal:' + str(e))
 
         device.deviceinitwidget = deviceinitwidget
-        # Add the info widget
-        deviceinfowidget = redvypr_deviceInfoWidget(device)
-        deviceinfowidget.connect.connect(self.connect_device)
-
         #
         # Check if we have a widget to display the data
         # Create the displaywidget
@@ -381,13 +377,6 @@ class redvyprWidget(QtWidgets.QWidget):
             self.redvypr.devices[ind_devices]['displaywidget'] = None
 
         self.redvypr.devices[ind_devices]['widget'] = devicewidget  # This is the displaywidget
-
-        # TODO: remove
-        ## Create the infowidget (for the overview of all devices)
-        #self.redvypr.devices[ind_devices]['controlwidget'] = deviceControlWidget(self.redvypr.devices[ind_devices],
-        #                                                                         self)
-        #self.redvypr.devices[ind_devices]['controlwidget'].connect.connect(self.connect_device)
-
         #
         # Add the devicelistentry to the widget, this gives the full information to the device
         #

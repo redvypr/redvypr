@@ -46,8 +46,6 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                     FLAG_RUN = False
                     break
 
-
-
         time.sleep(0.05)
 
 

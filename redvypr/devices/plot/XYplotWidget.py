@@ -154,12 +154,9 @@ class XYplot(QtWidgets.QFrame):
                 plot.addItem(self.vLineMouse, ignoreBounds=True)
 
             self.layout.addWidget(plot)
-
             self.plotWidget = plot
             self.legendWidget = legend
             # plot_dict = {'widget': plot, 'lines': []}
-
-        # self.plot_dict = plot_dict
 
     def pyqtgraphAddLineAction(self):
         funcname = __name__ + '.pyqtgraphAddLineAction()'

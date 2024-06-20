@@ -121,7 +121,7 @@ class deviceTableWidget(QtWidgets.QTableWidget):
             button_configure = QtWidgets.QPushButton('Configure')
             button_configure.__device = device
             button_configure.__devicedict = devicedict
-            button_configure.setEnabled(False)
+            button_configure.setEnabled(True)
             button_configure.clicked.connect(self.deviceConfigureClicked)
             colindex = colheader.index('Configure')
             self.setCellWidget(irow, colindex, button_configure)
@@ -168,10 +168,6 @@ class deviceTableWidget(QtWidgets.QTableWidget):
         except:
             logger.debug('View', exc_info=True)
 
-    def deviceConfigureClicked(self):
-        funcname = __name__ + '.deviceConfigureClicked():'
-        logger.debug(funcname)
-
     def deviceThreadStatusChanged(self):
         """ Updating all buttons depending on the thread status (if its alive, graying out things)
         """
@@ -209,6 +205,15 @@ class deviceTableWidget(QtWidgets.QTableWidget):
         # self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
         self.__subscribeWidget = redvyprSubscribeWidget(redvypr=self.redvypr, device=device)
         self.__subscribeWidget.show()
+
+    def deviceConfigureClicked(self):
+        button = self.sender()
+        funcname = __name__ + '.deviceConfigureClicked():'
+        button = self.sender()
+        device = button.__device
+        logger.debug(funcname + ':' + str(device))
+        self.__info_widget = redvypr_deviceInfoWidget(device)
+        self.__info_widget.show()
 
     def deviceStartStopClicked(self):
         button = self.sender()
@@ -1148,8 +1153,6 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         npub = self.device.statistics['packets_published']
         self.packetRecv_label.setText('Packets received {:d}'.format(nrecv))
         self.packetPubl_label.setText('Packets published {:d}'.format(npub))
-
-
 
         devs = self.device.get_subscribed_devices()
         self.sublist.clear()
