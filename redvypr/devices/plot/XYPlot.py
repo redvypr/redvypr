@@ -55,6 +55,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '__init__():'
         logger.debug(funcname)
         super(QtWidgets.QWidget, self).__init__()
+        self.device = device
         self.layout        = QtWidgets.QGridLayout(self)
         self.xyplot = XYplotWidget.XYplot(redvypr_device=device)
         self.layout.addWidget(self.xyplot)
+        self.device.config_changed_signal.connect(self.config_changed)
+
+    def config_changed(self):
+        print('XYplot config changed')
+        print('Config',self.device.custom_config)

@@ -38,8 +38,13 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
             print('Config to edit',self.device.custom_config)
             print('tpye',type(self.device.custom_config))
             self.configWidget = pydanticConfigWidget(self.device.custom_config, configname=dataname, exclude=self.exclude)
+            self.configWidget.config_changed_flag.connect(self.config_changed)
             #self.configWidget = pydanticQTreeWidget(self.device.custom_config, dataname=dataname, exclude=self.exclude)
         self.layout.addWidget(self.configWidget)
+
+    def config_changed(self):
+        print('Config changed')
+        self.device.config_changed()
 
 #
 #

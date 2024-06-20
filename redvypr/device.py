@@ -333,13 +333,14 @@ class redvypr_device_scan():
         return devicecheck
 
 
+# TODO: properly implement status signal with status dict similar to thread_started/stopped
 class RedvyprDevice(QtCore.QObject):
     thread_started = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     thread_stopped = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     status_signal  = QtCore.pyqtSignal(dict)   # Signal with the status of the device
     subscription_changed_signal = QtCore.pyqtSignal()  # Signal notifying that a subscription changed
+    config_changed_signal = QtCore.pyqtSignal()  # Signal notifying that the configuration of the device has changed
 
-    #def __init__(self, name='redvypr_device', uuid = '', redvypr = None, dataqueue = None, comqueue = None, datainqueue=None,statusqueue=None,template = {},config = {},publishes=False,subscribes=False, multiprocess='thread',startfunction = None, loglevel = 'INFO',numdevice = -1,statistics=None,autostart=False,devicemodulename=''):
     def __init__(self, device_parameter = None, redvypr=None, dataqueue=None, comqueue=None, datainqueue=None,
                  statusqueue=None, custom_config=None, statistics=None, startfunction=None):
         """
@@ -398,6 +399,14 @@ class RedvyprDevice(QtCore.QObject):
         # Timer to ping the status of thread
         self.__stoptimer__ = QtCore.QTimer()
         self.__stoptimer__.timeout.connect(self.__check_thread_status)  # Add to the timer another update
+
+    def config_changed(self):
+        """
+        Function should be called when the configuration of the device has changed
+        :return:
+        """
+        self.config_changed_signal.emit()
+        # TODO: Status changed to be emmited as well
 
     def subscription_changed_global(self, devchange):
         """
