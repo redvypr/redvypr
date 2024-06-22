@@ -46,7 +46,7 @@ class RedvyprAddress():
             if type(addrstr) == type(self): # If addrstr is redvypr_address, convert it to str
                 self.address_str = addrstr.address_str
             #elif type(addrstr) == dict:  # Address from datapacket # This does not work with inherited classes like redvypr_address
-            elif isinstance(addrstr,dict):  # Address from datapacket # This should work with dict and inherited classes like redvypr_address
+            elif isinstance(addrstr, dict):  # Address from redvypr datapacket # This should work with dict and inherited classes like redvypr_address
                 #print('Data packet',addrstr)
                 if True:
                     try:
@@ -70,6 +70,10 @@ class RedvyprAddress():
 
             elif addrstr == '*':
                 self.address_str = self.create_addrstr()
+            elif addrstr.startswith('RedvyprAddress(') and addrstr.endswith(')'):
+                # string that can be evaluated
+                redvypr_address_tmp = eval(addrstr)
+                self.address_str = redvypr_address_tmp.address_str
             else:
                 self.address_str = addrstr
 

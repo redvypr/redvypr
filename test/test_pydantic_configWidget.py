@@ -22,13 +22,15 @@ class config_test(pydantic.BaseModel):
     coeff: float = np.NaN
     coeff_std: typing.Optional[float] = None
     unit:  str = 'W m-2 mV-1'
-    raddr: RedvyprAddressStr = pydantic.Field(default=RedvyprAddress('d:test'))
+    raddr: RedvyprAddressStr = pydantic.Field(default=str(RedvyprAddress('d:test')))
     unit_input: str = 'mV'
     date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
     calibration_id: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex, description='ID of the calibration, can be choosen by the user. ID should be unique')
     comment: typing.Optional[str] = None
     uniontest: typing.Union[str,float] = pydantic.Field(default='fdsf')
     calibrations: typing.List[typing.Union[float, str]] = pydantic.Field(default=[], description = 'List of sensor calibrations')
+    #some_dict: typing.Dict[typing.Union[str,float]] = pydantic.Field(default={},
+    some_dict: typing.Dict[str,typing.Union[float, bool, list]] = pydantic.Field(default={},description='Configuration of sensors, keys are their serial numbers')
 
 configtest = config_test()
 

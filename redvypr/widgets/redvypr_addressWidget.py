@@ -18,24 +18,48 @@ logger.setLevel(logging.DEBUG)
 class RedvyprAddressWidgetSimple(QtWidgets.QWidget):
     """
     """
-    def __init__(self, redvypr_address_str):
+    address_finished = QtCore.pyqtSignal(str)  # Signal notifying that the configuration has changed
+    def __init__(self, redvypr_address_str='/d:*'):
         """
         """
-
         super(QtWidgets.QWidget, self).__init__()
         self.layout = QtWidgets.QFormLayout(self)
         self.__configwidget = QtWidgets.QWidget()
+        self.redvypr_address = None
         self.__configwidget_input = QtWidgets.QLineEdit()
-        self.__configwidget_input.setText('/d:*')  # str(data))
+        self.__configwidget_input.editingFinished.connect(self._test_input)
+        self.__configwidget_input.setText(redvypr_address_str)  # str(data))
+
         self.layout.addRow(QtWidgets.QLabel('Enter redvypr address'))
         self.layout.addRow(QtWidgets.QLabel('Address string'), self.__configwidget_input)
         # Buttons
         self.__configwidget_apply = QtWidgets.QPushButton('Apply')
-        #self.__configwidget_apply.clicked.connect(self.applyGuiInput)
+        self.__configwidget_apply.clicked.connect(self.applyClicked)
         self.__configwidget_apply.__configType = 'configRedvyprAddressStr'
         self.__configwidget_cancel = QtWidgets.QPushButton('Cancel')
         self.layout.addRow(self.__configwidget_apply)
         self.layout.addRow(self.__configwidget_cancel)
+
+    def applyClicked(self):
+        self._test_input()
+        self.address_finished.emit(str(self.redvypr_address))
+    def _test_input(self):
+        """
+        Tests if the text in the qlineedit is a valid redvypr address
+        :return: RedvyprAddress or None
+        """
+        addr_str = self.__configwidget_input.text()
+        print('Addr str',addr_str)
+        try:
+            self.redvypr_address = RedvyprAddress(addr_str)
+            self.__configwidget_apply.setEnabled(True)
+        except:
+            logger.debug('Could not parse address string {}'.format(addr_str),exc_info=True)
+            self.redvypr_address = None
+            self.__configwidget_apply.setEnabled(False)
+
+        print('Reevypr address',self.redvypr_address)
+        return self.redvypr_address
 
 
 
@@ -173,7 +197,7 @@ class address_filterWidget(QtWidgets.QWidget):
             self.btn_showfilter.setText('Show Filter')
 
 
-#
+#TODO: Check if this can be removed
 class datastreamWidget(QtWidgets.QWidget):
     """ Widget that lets the user choose available subscribed devices (if device is not None) and datakeys. This
     devicelock: The user cannot change the device anymore

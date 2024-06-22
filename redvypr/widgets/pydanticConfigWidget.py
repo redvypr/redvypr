@@ -108,6 +108,10 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         elif (item.__datatypestr__ == 'RedvyprAddressStr'):
             print('Hallo address')
             self.createConfigWidgetRedvyprAddressStr(item)
+        elif (item.__datatypestr__ == 'list'):
+            self.createConfigWidgetList(item)
+        else:
+            logger.info('Skipping {}'.format(item.__datatypestr__))
 
     def __comboTypeChanged(self,index):
         """
@@ -135,7 +139,56 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         # Add a stretch
         self.configGui_layout.addItem(self.stretchy_spacer_thing)
 
+
+    def interprete_type_hints(self, type_hints):
+        type_dict = None
+        print('Type hints', type_hints)
+        print('Name',type_hints.__name__)
+        if type_hints is not None:
+            type_dict = {'type_args':[]}
+
+            # Get the different type hints
+            type_args = typing.get_args(type_hints)
+            print('Type args', len(type_args), type(type_hints))
+            index_datatype = None
+            # Create a combo to allow the user to choose between the different
+            # data type choices
+            # checks if type hints are annotations or types/unions
+            # Annotations are used for extra information, type/unions for
+            print('Classname', type_hints.__class__.__name__)
+            isannotated = 'Annotated' in type_hints.__class__.__name__
+            type_dict['isannotated'] = isannotated
+            print('Isannotated', isannotated)
+            if len(type_args) > 0 and not (isannotated):
+                # Remove str from args, as this is a mandatary entry for dict, but not needed
+                if 'dict' in type_hints.__name__.lower() and type_args[0].__name__.lower() == 'str':
+                    print('Removing str entry for dict')
+                    type_args_new = list(type_args)
+                    type_args_new.pop(0)
+                    type_args = tuple(type_args_new)
+
+                for arg in type_args:
+                    if 'union' in arg.__name__.lower():
+                        print('Union')
+                        type_args_union = typing.get_args(arg)
+                        for arg_union in type_args_union:
+                            argstr = arg_union.__name__
+                            print('Adding',argstr)
+                            type_dict['type_args'].append(argstr)
+                    else:
+                        argstr = arg.__name__
+                        type_dict['type_args'].append(argstr)
+
+        return type_dict
+
+
     def __openConfigGui__(self, item):
+        """
+        Function is called when an item is double clicked. It creates the
+        config widget.
+        :param item:
+        :return:
+        """
         funcname = __name__ + '.__openConfigGui__():'
         logger.debug(funcname)
         # Remove the stretch and all widgets
@@ -161,17 +214,18 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         except:
             type_hints = None
 
-        if type_hints is not None:
-            # Get the different type hints
-            type_args = typing.get_args(type_hints)
-            print('Type hints', type_hints,len(type_args),type(type_hints))
+
+        type_dict = self.interprete_type_hints(type_hints)
+
+        if type_dict is not None:
             index_datatype = None
-            print('Classname',type_hints.__class__.__name__)
-            isannotated = 'Annotated' in type_hints.__class__.__name__
-            if len(type_args)>0 and not(isannotated):
+            # Create a combo to allow the user to choose between the different
+            # data type choices
+            # checks if type hints are annotations or types/unions
+            # Annotations are used for extra information, type/unions for
+            if len(type_dict['type_args'])>0 and not(type_dict['isannotated']):
                 self.__configCombo = QtWidgets.QComboBox()
-                for arg in type_args:
-                    argstr = arg.__name__
+                for argstr in type_dict['type_args']:
                     self.__configCombo.addItem(argstr)
                     index = self.__configCombo.count() - 1
                     datatypestr_tmp = item.__data__.__class__.__name__
@@ -194,6 +248,9 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         self.configGui_layout.addWidget(self.__configwidget)
         # Add a stretch
         self.configGui_layout.addItem(self.stretchy_spacer_thing)
+
+    def createConfigWidgetList(self, item):
+        print('createConfigWidgetList')
 
     def createConfigWidgetStr(self, item):
         index = item.__dataindex__
@@ -225,11 +282,13 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             parentparent = parent.__parent__
             self.__configwidget = QtWidgets.QWidget()
             self.__layoutwidget = QtWidgets.QFormLayout(self.__configwidget)
-            self.__configwidget_input = RedvyprAddressWidgetSimple('/d:*')
+            self.__configwidget_input = RedvyprAddressWidgetSimple(data)
+            self.__configwidget_input.__configType = 'configRedvyprAddress'
+            self.__configwidget_input.item = item
+            self.__configwidget_input.address_finished.connect(self.applyGuiInput)
             self.__layoutwidget.addWidget(self.__configwidget_input)
-            print('2')
         except:
-            logger.info('fds',exc_info=True)
+            logger.info('Error in RedvyprAddress',exc_info=True)
 
 
     def createConfigWidgetDateTime(self, item, dateformat='yyyy-MM-dd HH:MM:ss'):
@@ -346,12 +405,12 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             self.__configwidget_input
             data = self.__configwidget_input.value()  # Works for int/float spinboxes
             data_set = True
+
         elif self.sender().__configType == 'configStr':
             data = self.__configwidget_input.text()  # Textbox
             data_set = True
 
         elif self.sender().__configType == 'configRedvyprAddressStr':
-            print('Addressstr')
             data = self.__configwidget_input.text()  # Textbox
             data_set = True
 
@@ -364,6 +423,13 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         elif self.sender().__configType == 'configBool':
             data = self.__configwidget_input.currentText() == 'True' # Combobox
             data_set = True
+
+        elif self.sender().__configType == 'configRedvyprAddress':
+            addr = self.sender().redvypr_address
+            data = str(addr)
+            data_set = True
+        else:
+            logger.warning('Unknown config type {}'.format(self.sender().__configType))
 
         if data_set:
             #print('Type',type(item.__dataparent__))
@@ -441,7 +507,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
         self.expandAll()
         self.resizeColumnToContents(0)
 
-    def create_item(self, index, data, parent, edit_flags = None):
+    def create_item(self, index, data, parent, edit_flags=None):
         """
         Creates recursively qtreewidgetitems. If the item to be created is a sequence (dict or list), it calls itself as often as it finds a real value
         Args:
@@ -455,8 +521,9 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
         funcname = __name__ + '.create_item():'
         logger.debug(funcname)
 
-        print('Hallo',type(data))
-        print('Hallo2',data.__class__.__base__)
+        print('Parent',parent)
+        #print('Hallo',type(data))
+        #print('Hallo2',data.__class__.__base__)
         flag_basemodel = False
         if isinstance(data, dict):
             print('dict')
@@ -470,7 +537,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
             flag_iterate = True
             flag_basemodel = True
         else:
-            print('item')
+            #print('item')
             flag_iterate = False
 
         # Try to get extra information
@@ -491,7 +558,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
             pass
 
         if edit_flags['editable'] and self.show_editable_only:
-            if(flag_iterate == False): # Check if we have an item that is something with data (not a pydantic module, list or dict)
+            if True:
                 data_value = data  #
                 # Check for the types
                 type_hints_index = None
@@ -501,9 +568,10 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                     # Get the defined type of the data
                     if pydantic.BaseModel in parentdata.__class__.__mro__:
                         type_hints = typing.get_type_hints(parentdata,include_extras=True)
-                        #print('type hints',type_hints)
+
                         # save the type hints
                         type_hints_index = type_hints[index]
+                        print('type hints index', type_hints_index)
                         typestr = type_hints[index].__name__
                         # If annotated data is available look search for known datatypes
                         if typestr == 'Annotated':
@@ -515,16 +583,20 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                                     break
 
                 except:
-                    logger.info('bad',exc_info=True)
+                    parentdata = None
+                    logger.info('bad {}'.format(index),exc_info=True)
+
 
                 indexstr = str(index)
                 # Check if item should be excluded
                 if indexstr in self.exclude:
                     return
+
+            if (flag_iterate == False):  # Check if we have an item that is something with data (not a pydantic module, list or dict)
                 item = QtWidgets.QTreeWidgetItem([indexstr, str(data_value),typestr])
                 #item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)  # editable
                 item.__data__ = data
-                item.__dataparent__ = parent.__data__ # can be used to reference the data (and change it)
+                item.__dataparent__ = parentdata# parent.__data__ # can be used to reference the data (and change it)
                 item.__dataindex__ = index
                 item.__datatypestr__ = typestr
                 item.__parent__ = parent
@@ -540,8 +612,8 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 else: # Update the data (even if it hasnt changed
                     parent.child(index_child).setText(1,str(data_value))
 
-            else:
-                #print('loop')
+            else: # Check if we have an item that is something with data (not a pydantic module, list or dict)
+                print('loop')
                 datatmp = data
                 typestr = datatmp.__class__.__name__
                 flag_modifiable = True
@@ -556,15 +628,17 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 # Create new item
                 newparent = QtWidgets.QTreeWidgetItem([str(index), '',typestr])
                 item = newparent
-                newparent.__data__         = datatmp
-                newparent.__dataindex__    = index
-                newparent.__datatypestr__  = typestr
-                newparent.__parent__       = parent
-                newparent.__modifiable__   = flag_modifiable
-                try:
-                    newparent.__dataparent__ = parent.__data__  # can be used to reference the data (and change it)
-                except:
-                    newparent.__dataparent__ = None
+                newparent.__data__ = datatmp
+                newparent.__dataindex__ = index
+                newparent.__datatypestr__ = typestr
+                newparent.__parent__ = parent
+                newparent.__dataparent__ = parentdata  # parent.__data__ # can be used to reference the data (and change it)
+                newparent.__modifiable__ = flag_modifiable
+                newparent.__type_hints__ = type_hints_index
+                #try:
+                #    newparent.__dataparent__ = parent.__data__  # can be used to reference the data (and change it)
+                #except:
+                #    newparent.__dataparent__ = None
 
                 index_child = self.item_is_child(parent, newparent)
                 if index_child == None:  # Check if the item is already existing, if no add it
