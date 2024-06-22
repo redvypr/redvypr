@@ -179,7 +179,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     # Add additional information, if not present yet
                     redvypr_packet_statistic.treat_datadict(data, device.name, hostinfo, numpacket, tread,devicedict['devicemodulename'])
                     # Get the devicename using an address
-                    raddr = redvypr_address.redvypr_address(data)
+                    raddr = redvypr_address.RedvyprAddress(data)
                     devicename_stat = raddr.address_str
                     #devicename_stat = data_packets.get_devicename_from_data(data, uuid=True)
                     #

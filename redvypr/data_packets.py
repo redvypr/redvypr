@@ -117,7 +117,7 @@ class datapacket(dict):
 
         keys.sort()
         for k in keys:
-            datastreams.append(redvypr.redvypr_address(self, datakey = k))
+            datastreams.append(redvypr.RedvyprAddress(self, datakey = k))
 
         return datastreams
 

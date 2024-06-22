@@ -33,6 +33,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
     subscribes: bool = True
     description: str = 'Reads to and writes from a serial devices'
     gui_tablabel_display: str = 'Serial device status'
+    gui_icon: str = 'mdi.serial-port'
 
 class SerialDeviceCustomConfig(pydantic.BaseModel):
     use_device: bool = pydantic.Field(default=True, description='Flag if the device should be used')

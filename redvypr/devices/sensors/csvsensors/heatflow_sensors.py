@@ -9,7 +9,7 @@ import pydantic
 import typing
 from redvypr.devices.plot import XYplotWidget
 from redvypr.devices.plot import plot_widgets
-from redvypr.redvypr_address import redvypr_address
+from redvypr.redvypr_address import RedvyprAddress
 from redvypr.devices.sensors.calibration.calibration_models import calibration_HF, calibration_NTC
 import redvypr.gui as gui
 from .sensorWidgets import sensorCoeffWidget, sensorConfigWidget
@@ -1034,8 +1034,8 @@ class DHFSWidget(QtWidgets.QWidget):
                     avg_str = str(avg_s) + 's'
                     avg_datakey = 'HF_avg_{}'.format(avg_str)
                     std_datakey = 'HF_std_{}'.format(avg_str)
-                    raddress = redvypr_address(datakey=avg_datakey,devicename='{DHF_SIAVG_.*}')
-                    raddress_std = redvypr_address(datakey=std_datakey, devicename='{DHF_SIAVG_.*}')
+                    raddress = RedvyprAddress(datakey=avg_datakey, devicename='{DHF_SIAVG_.*}')
+                    raddress_std = RedvyprAddress(datakey=std_datakey, devicename='{DHF_SIAVG_.*}')
                     address = raddress.address_str
                     address_std = raddress_std.address_str
                     #'HF_avg_10s'
@@ -1053,8 +1053,8 @@ class DHFSWidget(QtWidgets.QWidget):
                         avg_str = str(avg_s) + 's'
                         avg_datakey = 'NTC{}_avg_{}'.format(NNTC,avg_str)
                         std_datakey = 'NTC{}_std_{}'.format(NNTC,avg_str)
-                        raddress = redvypr_address(datakey=avg_datakey, devicename='{DHF_SIAVG_.*}')
-                        raddress_std = redvypr_address(datakey=std_datakey, devicename='{DHF_SIAVG_.*}')
+                        raddress = RedvyprAddress(datakey=avg_datakey, devicename='{DHF_SIAVG_.*}')
+                        raddress_std = RedvyprAddress(datakey=std_datakey, devicename='{DHF_SIAVG_.*}')
                         address = raddress.address_str
                         address_std = raddress_std.address_str
                         plot_widget_NTC_SI_AVG.add_line(address, name=address, linewidth=1, error_addr=address_std)
@@ -1120,7 +1120,7 @@ class DHFSWidget(QtWidgets.QWidget):
 
                     if self.parameter_unit[p_index] is None:
                         #datastream = data_packets.get_datastream_from_data(data,p)
-                        datastream = redvypr_address(data, datakey = p)
+                        datastream = RedvyprAddress(data, datakey = p)
                         #print('datastream',datastream)
                         #keyinfo = self.device.get_metadata_datakey(datastream)
                         keyinfo = {}
@@ -1149,7 +1149,7 @@ class DHFSWidget(QtWidgets.QWidget):
                     item = QtWidgets.QTableWidgetItem(p)
                     self.datatable_conv.setItem(p_index + 1, col_parameter, item)
                     if self.parameter_unitconv[p_index] is None:
-                        datastream = redvypr_address(data, datakey=p)
+                        datastream = RedvyprAddress(data, datakey=p)
                         ##datastream = data_packets.get_datastream_from_data(data, p)
                         #keyinfo = self.device.get_metadata_datakey(datastream)
                         keyinfo = {}

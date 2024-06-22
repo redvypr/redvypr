@@ -1,3 +1,4 @@
+    -0.8.2  - qtawesome icons for the devices including configuration
     -0.8.1  - API renaming, changed class names to CapWord style according to PEP08, cleanup of configuration
     -0.8.0  - complete rewrite of configuration for a fill pydantic version
     -0.7.9  - complete split of redvypr, redvypr_widget and redvypr_main

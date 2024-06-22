@@ -3,7 +3,7 @@ import logging
 import sys
 import redvypr.files as files
 import redvypr.data_packets as data_packets
-from redvypr.redvypr_address import redvypr_address
+from redvypr.redvypr_address import RedvyprAddress
 
 
 _logo_file = files.logo_file
@@ -11,8 +11,33 @@ _icon_file = files.icon_file
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr')
+logger = logging.getLogger('redvypr_addressWidget')
 logger.setLevel(logging.DEBUG)
+
+
+class RedvyprAddressWidgetSimple(QtWidgets.QWidget):
+    """
+    """
+    def __init__(self, redvypr_address_str):
+        """
+        """
+
+        super(QtWidgets.QWidget, self).__init__()
+        self.layout = QtWidgets.QFormLayout(self)
+        self.__configwidget = QtWidgets.QWidget()
+        self.__configwidget_input = QtWidgets.QLineEdit()
+        self.__configwidget_input.setText('/d:*')  # str(data))
+        self.layout.addRow(QtWidgets.QLabel('Enter redvypr address'))
+        self.layout.addRow(QtWidgets.QLabel('Address string'), self.__configwidget_input)
+        # Buttons
+        self.__configwidget_apply = QtWidgets.QPushButton('Apply')
+        #self.__configwidget_apply.clicked.connect(self.applyGuiInput)
+        self.__configwidget_apply.__configType = 'configRedvyprAddressStr'
+        self.__configwidget_cancel = QtWidgets.QPushButton('Cancel')
+        self.layout.addRow(self.__configwidget_apply)
+        self.layout.addRow(self.__configwidget_cancel)
+
+
 
 
 class address_filterWidget(QtWidgets.QWidget):
@@ -21,7 +46,7 @@ class address_filterWidget(QtWidgets.QWidget):
         """
         """
         self.redvypr = redvypr
-        self.filter_address = redvypr_address('*')
+        self.filter_address = RedvyprAddress('*')
         self.filter_on = False
         super(QtWidgets.QWidget, self).__init__()
         self.layout = QtWidgets.QGridLayout(self)
@@ -119,7 +144,7 @@ class address_filterWidget(QtWidgets.QWidget):
         datakey = self.line_datakeyfilter.text()
         devicename = self.line_devicefilter.text()
         publisher = self.line_publishingdevicefilter.text()
-        self.filter_address = redvypr_address(datakey=datakey, hostname=host, devicename=devicename, publisher=publisher)
+        self.filter_address = RedvyprAddress(datakey=datakey, hostname=host, devicename=devicename, publisher=publisher)
         #print('Update filteraddress',self.filter_address.get_str())
         self.line_filterstr.setText(self.filter_address.get_str())
         self.filterChanged.emit()
@@ -213,7 +238,7 @@ class datastreamWidget(QtWidgets.QWidget):
 
         # A combobox to choose between different styles of the address
         self.addrtype_combo = QtWidgets.QComboBox()  # Combo for the different combination types
-        redvypr_addresstypes = redvypr_address().get_common_address_formats()
+        redvypr_addresstypes = RedvyprAddress().get_common_address_formats()
         for t in redvypr_addresstypes:
             self.addrtype_combo.addItem(t)
 
@@ -254,7 +279,7 @@ class datastreamWidget(QtWidgets.QWidget):
         funcname = __name__ + '.__addrManualChanged():'
         logger.debug(funcname + " manual address: {}".format(addrstr))
         try:
-            self.addressline.datakey_address = redvypr_address(addrstr)
+            self.addressline.datakey_address = RedvyprAddress(addrstr)
             self.buttondone.setEnabled(True)
         except:
             self.buttondone.setEnabled(False)
@@ -322,7 +347,7 @@ class datastreamWidget(QtWidgets.QWidget):
                             datakeys = devs_forwarded[devaddress]['datakeys']
                             if len(datakeys) > 0:
                                 flag_datastreams = True
-                                devaddress_redvypr = redvypr_address(devaddress)
+                                devaddress_redvypr = RedvyprAddress(devaddress)
                                 if self.filterWidget.filter_on:
                                     if devaddress_redvypr not in self.filterWidget.filter_address:
                                         print('No filter match for ', devaddress_redvypr)
@@ -346,7 +371,7 @@ class datastreamWidget(QtWidgets.QWidget):
                                     itmk.iskey = True
                                     itmk.device = dev
                                     itmk.devaddress = devaddress
-                                    itmk.datakey_address = redvypr_address(devaddress,datakey=dkey)
+                                    itmk.datakey_address = RedvyprAddress(devaddress, datakey=dkey)
                                     if self.filterWidget.filter_on:
                                         if itmk.datakey_address not in self.filterWidget.filter_address:
                                             print('No filter match for ', itmk.datakey_address)

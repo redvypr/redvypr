@@ -158,7 +158,7 @@ def create_info_packet(device_info,url_pub,url_rep):
     uuid = device_info['hostinfo']['uuid']
     #https://stackoverflow.com/questions/5384914/how-do-i-delete-items-from-a-dictionary-while-iterating-over-it
     for subdevice in list(deviceinfo_all[device_info['devicename']].keys()):
-        subdevaddr = data_packets.redvypr_address(subdevice)
+        subdevaddr = data_packets.redvypraddress(subdevice)
         if subdevaddr.uuid != uuid: # Remove all remote devices from this iored device
             deviceinfo_all[device_info['devicename']].pop(subdevice)
 
@@ -373,7 +373,7 @@ def start_zmq_sub(dataqueue, comqueue, statusqueue_zmq, config, remote_uuid, sta
     by the main start thread.
     """
     funcname = __name__ + '.start_recv(): '
-    raddr_iored_remote = data_packets.redvypr_address(local_hostinfo=hostinfos[remote_uuid]['host'],devicename=hostinfos[remote_uuid]['devicename'])
+    raddr_iored_remote = data_packets.redvypraddress(local_hostinfo=hostinfos[remote_uuid]['host'], devicename=hostinfos[remote_uuid]['devicename'])
     addrstr_iored_remote = raddr_iored_remote.get_str('<device>:<host>@<addr>::<uuid>')
     datastreams_dict = {}
     status = {'sub':[],'uuid':remote_uuid,'type':'status'}
@@ -884,7 +884,7 @@ def zmq_publish_data(sock_zmq_pub,data,address_style='<device>:<host>@<addr>::<u
     # print('Got data from queue',data)
     #
     #addrstr = data_packets.get_address_from_data('', data, style=address_style)
-    raddr = data_packets.redvypr_address(datapacket=data)
+    raddr = data_packets.redvypraddress(datapacket=data)
     addrstr = raddr.get_str(address_style)
     # datasend = addrstr[1:].encode('utf-8') + ' '.encode('utf-8') + datab
     tsend = 't{:.6f}'.format(time.time()).encode('utf-8')
@@ -1484,7 +1484,7 @@ class Device(RedvyprDevice):
                                 # print('devicekey', dkeyhost,dkey)
                                 d = deviceinfo_all[hostdevice][deviceaddress]
                                 # print('device', d)
-                                daddr = data_packets.redvypr_address(deviceaddress)
+                                daddr = data_packets.redvypraddress(deviceaddress)
                                 if daddr.uuid == self.host_uuid:  # This should not happen but anyways
                                     # print('Own device, doing nothing')
                                     pass
@@ -1510,7 +1510,7 @@ class Device(RedvyprDevice):
                         devices_rem = []
                         for dold in all_devices:
                             #print('dold',dold)
-                            daddr = data_packets.redvypr_address(dold)
+                            daddr = data_packets.redvypraddress(dold)
                             #print('daddr',daddr)
                             if daddr.uuid == self.host_uuid:  # This should not happen but anyways
                                 self.logger.debug(funcname + 'Own device, doing nothing')
@@ -1577,7 +1577,7 @@ class Device(RedvyprDevice):
         #
         for dold in all_devices:
             #print('dold', dold)
-            daddr = data_packets.redvypr_address(dold)
+            daddr = data_packets.redvypraddress(dold)
             #print('daddr', daddr)
             if daddr.uuid == uuidremove:  # If the uuids are the same
                 FLAG_CHANGED = True
@@ -1718,7 +1718,7 @@ class Device(RedvyprDevice):
         #print('All remote devices',all_remote_devices)
         sub_list = []
         for address_string in all_remote_devices:
-            daddr = data_packets.redvypr_address(address_string)
+            daddr = data_packets.redvypraddress(address_string)
             if(daddr.uuid == self.host_uuid): # Test if this is the local host, if yes, continue
                 #print('Thats this host')
                 continue
@@ -1756,7 +1756,7 @@ class Device(RedvyprDevice):
         unsubscribe_addresses = []
         for remote_uuid in self.zmq_subscribed_to.keys():
             for substring_zmq in self.zmq_subscribed_to[remote_uuid]: # loop over all subscribe strings
-                subaddr_zmq = data_packets.redvypr_address(substring_zmq)
+                subaddr_zmq = data_packets.redvypraddress(substring_zmq)
                 FLAG_REMOVE = True
                 for subaddr, subdev in zip(all_subscriptions[0], all_subscriptions[1]):
                     # Omit own host
@@ -1841,7 +1841,7 @@ class Device(RedvyprDevice):
         self.autosubscribe = False
         all_remote_devices = self.statistics['device_redvypr'].keys()
         for address_string in all_remote_devices:
-            daddr = data_packets.redvypr_address(address_string)
+            daddr = data_packets.redvypraddress(address_string)
             if(daddr.uuid == self.host_uuid): # Only take remote uuids
                 continue
             self.logger.info('Subscribing to {:s}'.format(daddr.uuid))
@@ -1856,7 +1856,7 @@ class Device(RedvyprDevice):
 
         all_remote_devices = self.statistics['device_redvypr'].keys()
         for address_string in all_remote_devices:
-            daddr = data_packets.redvypr_address(address_string)
+            daddr = data_packets.redvypraddress(address_string)
             if(daddr.uuid == self.host_uuid): # Only take remote uuids
                 continue
             self.logger.info('Unsubscribing from {:s}'.format(daddr.uuid))

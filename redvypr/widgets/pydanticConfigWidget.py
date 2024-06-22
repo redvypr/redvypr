@@ -7,7 +7,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import pydantic
 import typing
 from redvypr.device import RedvyprDevice
-from redvypr.widgets.redvypr_addressWidget import datastreamWidget
+from redvypr.widgets.redvypr_addressWidget import RedvyprAddressWidgetSimple
 import redvypr.files as files
 
 
@@ -96,7 +96,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         :param item:
         :return:
         """
-        #print('Create configwidget', item)
+        print('Create configwidget', item, item.__datatypestr__)
         if (item.__datatypestr__ == 'int') or (item.__datatypestr__ == 'float'):
             self.createConfigWidgetNumber(item, dtype=item.__datatypestr__)
         elif (item.__datatypestr__ == 'str'):
@@ -105,6 +105,9 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             self.createConfigWidgetDateTime(item)
         elif (item.__datatypestr__ == 'bool'):
             self.createConfigWidgetBool(item)
+        elif (item.__datatypestr__ == 'RedvyprAddressStr'):
+            print('Hallo address')
+            self.createConfigWidgetRedvyprAddressStr(item)
 
     def __comboTypeChanged(self,index):
         """
@@ -161,9 +164,11 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         if type_hints is not None:
             # Get the different type hints
             type_args = typing.get_args(type_hints)
-            #print('Type hints', type_hints,len(type_args))
+            print('Type hints', type_hints,len(type_args),type(type_hints))
             index_datatype = None
-            if len(type_args)>0:
+            print('Classname',type_hints.__class__.__name__)
+            isannotated = 'Annotated' in type_hints.__class__.__name__
+            if len(type_args)>0 and not(isannotated):
                 self.__configCombo = QtWidgets.QComboBox()
                 for arg in type_args:
                     argstr = arg.__name__
@@ -209,6 +214,23 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         self.__configwidget_cancel = QtWidgets.QPushButton('Cancel')
         self.__layoutwidget.addRow(self.__configwidget_apply)
         self.__layoutwidget.addRow(self.__configwidget_cancel)
+
+    def createConfigWidgetRedvyprAddressStr(self, item):
+        funcname = __name__ + 'createConfigWidgetRedvyprAddressStr():'
+        logger.debug(funcname)
+        try:
+            index = item.__dataindex__
+            parent = item.__parent__
+            data = item.__data__
+            parentparent = parent.__parent__
+            self.__configwidget = QtWidgets.QWidget()
+            self.__layoutwidget = QtWidgets.QFormLayout(self.__configwidget)
+            self.__configwidget_input = RedvyprAddressWidgetSimple('/d:*')
+            self.__layoutwidget.addWidget(self.__configwidget_input)
+            print('2')
+        except:
+            logger.info('fds',exc_info=True)
+
 
     def createConfigWidgetDateTime(self, item, dateformat='yyyy-MM-dd HH:MM:ss'):
 
@@ -325,6 +347,11 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             data = self.__configwidget_input.value()  # Works for int/float spinboxes
             data_set = True
         elif self.sender().__configType == 'configStr':
+            data = self.__configwidget_input.text()  # Textbox
+            data_set = True
+
+        elif self.sender().__configType == 'configRedvyprAddressStr':
+            print('Addressstr')
             data = self.__configwidget_input.text()  # Textbox
             data_set = True
 
@@ -469,15 +496,23 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 # Check for the types
                 type_hints_index = None
                 typestr = data_value.__class__.__name__
-                print('Data',data,typestr)
                 try:
                     parentdata = parent.__data__
-                    if parentdata.__class__.__base__ == pydantic.BaseModel:
-                        type_hints = typing.get_type_hints(parentdata)
+                    # Get the defined type of the data
+                    if pydantic.BaseModel in parentdata.__class__.__mro__:
+                        type_hints = typing.get_type_hints(parentdata,include_extras=True)
                         #print('type hints',type_hints)
                         # save the type hints
                         type_hints_index = type_hints[index]
                         typestr = type_hints[index].__name__
+                        # If annotated data is available look search for known datatypes
+                        if typestr == 'Annotated':
+                            #print('Annotated')
+                            annotations = typing.get_args(type_hints[index])
+                            for annotation in annotations:
+                                if annotation == 'RedvyprAddressStr':
+                                    typestr = annotation
+                                    break
 
                 except:
                     logger.info('bad',exc_info=True)
@@ -656,8 +691,29 @@ class dictQTreeWidget(QtWidgets.QTreeWidget):
         self.expandAll()
         self.resizeColumnToContents(0)
 
-    def seq_iter(self,obj):
-        return redvypr.configdata.seq_iter(obj)
+    def seq_iter(self, obj):
+        """
+        To treat dictsionaries and lists equally this functions returns either the keys of dictionararies or the indices of a list.
+        This allows a
+        index = seq_iter(data)
+        for index in data:
+            data[index]
+
+        with index being a key or an int.
+
+        Args:
+            obj:
+
+        Returns:
+            list of indicies
+
+        """
+        if isinstance(obj, dict):
+            return obj
+        elif isinstance(obj, list):
+            return range(0, len(obj))
+        else:
+            return None
 
     def create_item(self, index, data, parent):
         """

@@ -28,7 +28,7 @@ import pydantic
 import typing
 from redvypr.data_packets import commandpacket
 from redvypr.packet_statistic import do_data_statistics
-from redvypr.redvypr_address import redvypr_address
+from redvypr.redvypr_address import RedvyprAddress
 
 
 
@@ -52,8 +52,10 @@ class RedvyprDeviceBaseConfig(pydantic.BaseModel):
     autostart: bool = False
     devicemodulename: str = pydantic.Field(default='')
     description: str = ''
+    gui_tablabel_init: str = 'Init'
     gui_tablabel_display: str = 'Display'
     gui_dock: typing.Literal['Tab','Window','Hide'] = pydantic.Field(default='Tab')
+    gui_icon: str = 'mdi.network-outline'
 
 class RedvyprDeviceConfig(pydantic.BaseModel):
     """
@@ -430,7 +432,7 @@ class RedvyprDevice(QtCore.QObject):
         Returns:
             str: datastream strong
         """
-        addr = redvypr_address(datakey = datakey,devicename=self.name,local_hostinfo=self.redvypr.hostinfo)
+        addr = RedvyprAddress(datakey = datakey, devicename=self.name, local_hostinfo=self.redvypr.hostinfo)
         return addr
 
     def subscribe_address(self, address, force=False):
@@ -447,8 +449,8 @@ class RedvyprDevice(QtCore.QObject):
         self.logger.debug(funcname + ' subscribing to device {:s}'.format(str(address)))
         #print('Address',address,type(address))
         if type(address) == str or (type(address) == redvyprConfig.configString):
-            raddr = redvypr_address(str(address))
-        elif type(address) == redvypr_address:
+            raddr = RedvyprAddress(str(address))
+        elif type(address) == RedvyprAddress:
             raddr = address
         else:
             raise TypeError('address needs to be a str or a redvypr_address')
@@ -478,7 +480,7 @@ class RedvyprDevice(QtCore.QObject):
         self.logger.debug(funcname + ' unsubscribing from device {:s}'.format(str(address)))
         #print('Address', address, type(address))
         if (type(address) == str):
-            raddr = redvypr_address(address)
+            raddr = RedvyprAddress(address)
         else:
             raddr = address
 
@@ -528,7 +530,7 @@ class RedvyprDevice(QtCore.QObject):
         #self.address_str = self.name + ':' + self.redvypr.hostinfo['hostname'] + '@' + self.redvypr.hostinfo[
         #    'addr'] + '::' + self.redvypr.hostinfo['uuid']
         #self.address = redvypr_address(self.address_str)
-        self.address = redvypr_address(devicename=self.name, local_hostinfo= self.redvypr.hostinfo, publisher=self.name)
+        self.address = RedvyprAddress(devicename=self.name, local_hostinfo= self.redvypr.hostinfo, publisher=self.name)
         self.address_str = self.address.get_str(address_format='/u/a/h/p/d/')
 
     def address_string(self, address_format='/u/a/h/p/d'):
@@ -813,7 +815,7 @@ class RedvyprDevice(QtCore.QObject):
         addr_str = list(self.statistics['device_redvypr'].keys())
         addr_list = []
         for a in addr_str:
-            raddr = redvypr_address(a)
+            raddr = RedvyprAddress(a)
             if local is None:
                 addr_list.append(raddr)
             else: # Check if we have a local or remote address
@@ -851,7 +853,7 @@ class RedvyprDevice(QtCore.QObject):
         for devaddr in devaddrs:
             dkeys = self.statistics['device_redvypr'][devaddr.address_str]['datakeys']
             for dkey in dkeys:
-                raddr = redvypr_address(devaddr, datakey=dkey)
+                raddr = RedvyprAddress(devaddr, datakey=dkey)
                 dstr = raddr.get_str()
                 datastreams.append(dstr)
 
@@ -873,7 +875,7 @@ class RedvyprDevice(QtCore.QObject):
             return d
         else:
             if type(address) == str:
-                raddr = redvypr_address(address)
+                raddr = RedvyprAddress(address)
                 dtmp = copy.deepcopy(self.statistics['device_redvypr'])
                 for a in dtmp.keys():
                     if a in raddr:
@@ -893,7 +895,7 @@ class RedvyprDevice(QtCore.QObject):
         devs_publishing_to = []
         for dev in reversed(devs):
             for subaddr in dev.subscribed_addresses:
-                daddr = redvypr_address(subaddr)
+                daddr = RedvyprAddress(subaddr)
                 if (self.address in daddr) and (dev is not self):
                     devs_publishing_to.append(dev)
                     break
@@ -914,7 +916,7 @@ class RedvyprDevice(QtCore.QObject):
             for dev in reversed(devs):
                 datastreams_dev = dev.get_datastreams()
                 for d in datastreams_dev:
-                    daddr = redvypr_address(d)
+                    daddr = RedvyprAddress(d)
                     if (subaddr in daddr) and (dev is not self):
                         datastreams.append(d)
 
@@ -978,7 +980,7 @@ class RedvyprDevice(QtCore.QObject):
         funcname = self.__class__.__name__ + '.get_datakeyinfo()'
         self.logger.debug(funcname)
         if isinstance(address,str):
-            daddr = redvypr.redvypr_address(address)
+            daddr = redvypr.RedvyprAddress(address)
         else:
             daddr = address
 
@@ -990,7 +992,7 @@ class RedvyprDevice(QtCore.QObject):
             d = devinfo_all[hostdevice]
             for device in d:
                 for dkey in d[device]['_keyinfo'].keys():
-                    dstreamaddr_info = redvypr.redvypr_address(device, datakey=dkey)
+                    dstreamaddr_info = redvypr.RedvyprAddress(device, datakey=dkey)
                     # print('dstreamddr_info',dstreamaddr_info)
                     if daddr in dstreamaddr_info:
                         try:
@@ -1013,7 +1015,7 @@ class RedvyprDevice(QtCore.QObject):
         """
         funcname = self.__class__.__name__ + '.get_datakeyinfo()'
         self.logger.debug(funcname)
-        daddr = redvypr.redvypr_address(datastream)
+        daddr = redvypr.RedvyprAddress(datastream)
         #d = copy.deepcopy(self.statistics['device_redvypr'])
         devinfo_all = copy.deepcopy(self.redvypr.deviceinfo_all)
         #print('Datastream',datastream,daddr)
@@ -1022,7 +1024,7 @@ class RedvyprDevice(QtCore.QObject):
             d = devinfo_all[hostdevice]
             for device in d:
                 for dkey in d[device]['_keyinfo'].keys():
-                    dstreamaddr_info = redvypr.redvypr_address(device, datakey = dkey)
+                    dstreamaddr_info = redvypr.RedvyprAddress(device, datakey = dkey)
                     #print('dstreamddr_info',dstreamaddr_info)
                     if daddr in dstreamaddr_info:
                         try:
@@ -1045,12 +1047,12 @@ class RedvyprDevice(QtCore.QObject):
         """
         funcname = self.__class__.__name__ + '.get_datastream_keyinfo()'
         self.logger.debug(funcname)
-        daddr = redvypr.redvypr_address(datastream)
+        daddr = redvypr.RedvyprAddress(datastream)
         d = copy.deepcopy(self.statistics['device_redvypr'])
         # print('Datastream',datastream,daddr)
         for device in d:
             for dkey in d[device]['_keyinfo'].keys():
-                dstreamaddr_info = redvypr.redvypr_address(device, datakey=dkey)
+                dstreamaddr_info = redvypr.RedvyprAddress(device, datakey=dkey)
                 # print('dstreamddr_info',dstreamaddr_info)
                 if daddr in dstreamaddr_info:
                     return d[device]['_keyinfo'][dkey]

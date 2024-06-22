@@ -27,6 +27,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
     subscribes: bool = True
     description: str = "Saves the raw redvypr packets into a file"
     gui_tablabel_display: str = 'Logging status'
+    gui_icon: str = 'mdi.code-json'
 
 class DeviceCustomConfig(pydantic.BaseModel):
     dt_sync: int = pydantic.Field(default=5, description='Time after which an open file is synced on disk')
@@ -579,13 +580,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         #print('Config',config)
         return config
 
-    def update_DeviceCustomConfig(self):
+    def update_device_config(self):
         """
         Updates the device config based on the widgets
         Returns:
 
         """
-        funcname = self.__class__.__name__ + '.update_DeviceCustomConfig():'
+        funcname = self.__class__.__name__ + '.update_device_config():'
         logger.debug(funcname)
         self.widgets_to_config(self.device.custom_config)
 
@@ -595,7 +596,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if button.isChecked():
             logger.debug(funcname + "button pressed")
-            self.update_DeviceCustomConfig()
+            self.update_device_config()
             logger.debug(funcname + " Clearing datainqueue")
             q = self.device.datainqueue
             while not q.empty():

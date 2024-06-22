@@ -14,6 +14,7 @@ import pyqtgraph
 import redvypr.data_packets
 import redvypr.gui
 import redvypr.files as files
+from redvypr.redvypr_address import RedvyprAddress
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -35,13 +36,13 @@ class dataBufferLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
 class configLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
     buffersize: int = pydantic.Field(default=20000,description='The size of the buffer holding the data of the line')
     numplot: int = pydantic.Field(default=2000, description='The number of data points to be plotted maximally')
-    name: str = pydantic.Field(default='$y',description='The name of the line, this is shown in the legend, use $y to use the realtimedata address')
-    x_addr: str = pydantic.Field(default='$t(y)',description='The realtimedata address of the x-axis, use $t(y) to automatically choose the time corresponding to the y-data')
-    y_addr: str = pydantic.Field(default='',description='The realtimedata address of the x-axis')
-    error_addr: str = pydantic.Field(default='',description='The realtimedata address for an optional error band around the line')
-    color: pydColor = pydantic.Field(default=pydColor('red'),description='The color of the line')
-    linewidth: float = pydantic.Field(default=1.0,description='The linewidth')
-    databuffer: dataBufferLine = pydantic.Field(default=dataBufferLine(),description='The databuffer',editable=False)
+    name: str = pydantic.Field(default='$y', description='The name of the line, this is shown in the legend, use $y to use the realtimedata address')
+    x_addr: str = pydantic.Field(default='$t(y)', description='The realtimedata address of the x-axis, use $t(y) to automatically choose the time corresponding to the y-data')
+    y_addr: str = pydantic.Field(default='', description='The realtimedata address of the x-axis')
+    error_addr: str = pydantic.Field(default='', description='The realtimedata address for an optional error band around the line')
+    color: pydColor = pydantic.Field(default=pydColor('red'), description='The color of the line')
+    linewidth: float = pydantic.Field(default=1.0, description='The linewidth')
+    databuffer: dataBufferLine = pydantic.Field(default=dataBufferLine(), description='The databuffer', editable=False)
 
 class configXYplot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
@@ -230,13 +231,13 @@ class XYplot(QtWidgets.QFrame):
         """
         funcname = __name__ + '.add_line()'
         self.logger.debug(funcname)
-        if isinstance(y_addr,redvypr.redvypr_address):
+        if isinstance(y_addr, redvypr.RedvyprAddress):
             logger.debug('Redvypr y-address')
             y_addr = y_addr.address_str
-        if isinstance(x_addr, redvypr.redvypr_address):
+        if isinstance(x_addr, redvypr.RedvyprAddress):
             logger.debug('Redvypr x-address')
             x_addr = x_addr.address_str
-        if isinstance(error_addr, redvypr.redvypr_address):
+        if isinstance(error_addr, redvypr.RedvyprAddress):
             logger.debug('Redvypr error-address')
             error_addr = error_addr.address_str
         #print('add line',y_addr,color)
@@ -364,7 +365,7 @@ class XYplot(QtWidgets.QFrame):
                 print('Line',line,iline)
                 x_addr = line.x_addr
                 y_addr = line.y_addr
-                y_raddr = redvypr.redvypr_address(y_addr)
+                y_raddr = redvypr.RedvyprAddress(y_addr)
                 print('x_addr', x_addr)
                 print('y_addr', y_addr)
                 if (x_addr == '$t(y)'):
@@ -372,9 +373,9 @@ class XYplot(QtWidgets.QFrame):
                     #xtmp = redvypr.data_packets.modify_addrstr(y_raddr.address_str, datakey='t')
                     ## print('xtmp',xtmp)
                     #x_raddr = redvypr.redvypr_address(xtmp)
-                    x_raddr = redvypr.redvypr_address(y_addr, datakey='t')
+                    x_raddr = redvypr.RedvyprAddress(y_addr, datakey='t')
                 else:
-                    x_raddr = redvypr.redvypr_address(x_addr)
+                    x_raddr = redvypr.RedvyprAddress(x_addr)
 
                 print('x_addrnew', x_addr,x_raddr)
                 # These attributes are used in plot.Device.connect_devices to actually subscribe to the fitting devices
@@ -393,7 +394,7 @@ class XYplot(QtWidgets.QFrame):
 
                 # Error address
                 if len(line.error_addr) > 0:
-                    line._error_raddr = redvypr.redvypr_address(line.error_addr)
+                    line._error_raddr = redvypr.RedvyprAddress(line.error_addr)
                     errorplot = pyqtgraph.ErrorBarItem(name=line._name_applied,pen=pen)
                     line._errorplot = errorplot  # Add the line as an attribute to the configuration
                     errorplot._line_config = line

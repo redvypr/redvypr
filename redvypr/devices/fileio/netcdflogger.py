@@ -196,7 +196,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             break
 
                 #statistics = data_packets.do_data_statistics(data,statistics)
-                packet_address = redvypr.redvypr_address(data)
+                packet_address = redvypr.RedvyprAddress(data)
                 address_format = '/h/p/d/'
                 packet_address_str = packet_address.get_str(address_format)
                 publisher = packet_address.publisher
@@ -682,13 +682,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         print('Config',config)
         return config
 
-    def update_DeviceCustomConfig(self):
+    def update_device_config(self):
         """
         Updates the device config based on the widgets
         Returns:
 
         """
-        funcname = self.__class__.__name__ + '.update_DeviceCustomConfig():'
+        funcname = self.__class__.__name__ + '.update_device_config():'
         logger.debug(funcname)
         self.widgets_to_config(self.device.custom_config)
 
@@ -698,7 +698,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if button.isChecked():
             logger.debug(funcname + "button pressed")
-            self.update_DeviceCustomConfig()
+            self.update_device_config()
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')

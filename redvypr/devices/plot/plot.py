@@ -94,7 +94,7 @@ class Device(RedvyprDevice):
             if (str(getdata(plot['type'])).lower() == 'numdisp'):
                 datastream = plot['datastream']
                 if (len(datastream) > 0):
-                    address = redvypr.data_packets.redvypr_address(datastream)
+                    address = redvypr.data_packets.redvypraddress(datastream)
                     plot_devices.append(address)
 
             elif (str(plot['type']).lower() == 'graph'):

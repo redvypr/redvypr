@@ -8,6 +8,7 @@ import queue
 import sys
 import yaml
 from PyQt5 import QtWidgets, QtCore, QtGui
+import qtawesome
 import inspect
 import uuid
 import re
@@ -323,9 +324,8 @@ class redvyprWidget(QtWidgets.QWidget):
         devicelayout.addWidget(devicetab)
 
         # Add init widget
-        # TODO: Needs to be updated to pydantic
         try:
-            tablabelinit = str(device.custom_config['redvypr_device']['gui_tablabel_init'])
+            tablabelinit = str(device.device_parameter.gui_tablabel_init)
         except:
             tablabelinit = 'Init'
         # print('Device hallo hallo',device.config)
@@ -358,10 +358,7 @@ class redvyprWidget(QtWidgets.QWidget):
                 try:
                     tablabeldisplay = str(device.device_parameter.gui_tablabel_display)
                 except:
-                    try:
-                        tablabeldisplay = str(device.custom_config['redvypr_device']['gui_tablabel_display'])
-                    except:
-                        tablabeldisplay = 'Display'
+                    tablabeldisplay = 'Display'
 
             # Check if the widget has included itself, otherwise add the displaytab
             # This is useful to have the displaywidget add several tabs
@@ -387,6 +384,13 @@ class redvyprWidget(QtWidgets.QWidget):
             self.redvypr.devices[ind_devices]['gui'][0].redvyprdevicelistentry = self.redvypr.devices[ind_devices]
             self.redvypr.devices[ind_devices]['gui'][0].redvypr = self.redvypr
 
+        # Get an icon for the device
+        try:
+            iconname = device.device_parameter.gui_icon
+            device_icon = qtawesome.icon(iconname)
+            logger.debug(funcname + 'Found icon for device')
+        except:
+            device_icon = None
         # Add the widget to the devicetab, or as a sole window or hide
         widgetname = device.name
         widgetloc = device.device_parameter.gui_dock
@@ -399,7 +403,10 @@ class redvyprWidget(QtWidgets.QWidget):
             devicewidget.setWindowTitle(widgetname)
             devicewidget.hide()
         else:
-            self.devicetabs.addTab(devicewidget, widgetname)
+            if device_icon is not None:
+                self.devicetabs.addTab(devicewidget, device_icon, widgetname)
+            else:
+                self.devicetabs.addTab(devicewidget, widgetname)
             #self.devicetabs.setCurrentWidget(devicewidget)
 
         # All set, now call finalizing functions

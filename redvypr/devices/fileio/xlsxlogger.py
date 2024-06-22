@@ -34,6 +34,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
     subscribes: bool = True
     description: str = "Saves subscribed devices in a xlsx file"
     gui_tablabel_display: str = 'xlsx logging status'
+    gui_icon: str = 'fa5s.file-excel'
 
 class DeviceCustomConfig(pydantic.BaseModel):
     dt_sync: int = pydantic.Field(default=5,description='Time after which an open file is synced on disk')
@@ -198,7 +199,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             break
 
                 #statistics = data_packets.do_data_statistics(data,statistics)
-                packet_address = redvypr.redvypr_address(data)
+                packet_address = redvypr.RedvyprAddress(data)
                 address_format = '/h/p/d/'
                 packet_address_str = packet_address.get_str(address_format)
                 #print('Address',packet_address)
@@ -721,13 +722,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         print('Config',config)
         return config
 
-    def update_DeviceCustomConfig(self):
+    def update_device_config(self):
         """
         Updates the device config based on the widgets
         Returns:
 
         """
-        funcname = self.__class__.__name__ + '.update_DeviceCustomConfig():'
+        funcname = self.__class__.__name__ + '.update_device_config():'
         logger.debug(funcname)
         self.widgets_to_config(self.device.custom_config)
 
@@ -737,7 +738,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if button.isChecked():
             logger.debug(funcname + "button pressed")
-            self.update_DeviceCustomConfig()
+            self.update_device_config()
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')
@@ -780,11 +781,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.filetable.setColumnCount(len(headers))
         self.filetable.setHorizontalHeaderLabels(headers)
         self.filetable.resizeColumnsToContents()
-        self.filelab= QtWidgets.QLabel("File: ")
-        self.byteslab   = QtWidgets.QLabel("Bytes written: ")
+        self.filelab = QtWidgets.QLabel("File: ")
+        self.byteslab = QtWidgets.QLabel("Bytes written: ")
         self.packetslab = QtWidgets.QLabel("Packets written: ")
         # Table that displays all datastreams and the format as it is written to the file
-        self.deviceinfoQtree = redvypr.gui.dictQTreeWidget(dataname='file status', show_datatype = False)
+        self.deviceinfoQtree = redvypr.gui.dictQTreeWidget(dataname='file status', show_datatype=False)
         # Update layout
         updatelayout = QtWidgets.QHBoxLayout()
         self.update_auto = QtWidgets.QCheckBox('Autoupdate file status')

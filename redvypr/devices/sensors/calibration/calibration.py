@@ -1001,7 +1001,7 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
 
         try:
             #print('Datastream',self.datastream,type(self.datastream))
-            daddr = redvypr.redvypr_address(self.datastream)
+            daddr = redvypr.RedvyprAddress(self.datastream)
         except:
             print('No datastream yet')
             daddr = None
@@ -1897,7 +1897,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
                 # Remember the original subscription and the (potentially) first match
                 plot_widget.subscription = sdata.subscribe  # Original subscription
-                plot_widget.subscription_redvypr = redvypr.redvypr_address(
+                plot_widget.subscription_redvypr = redvypr.RedvyprAddress(
                     str(sdata.subscribe))  # Original subscription
 
                 # Check if there is already an subscription
@@ -2191,7 +2191,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             print('p.unit', p.unit)
             p.sensortype = sensortype
             # Add devicename to the column
-            daddr = redvypr.redvypr_address(d)
+            daddr = redvypr.RedvyprAddress(d)
             senstr = daddr.get_str('/d/k/')
             col = p.datatablecolumn
             tmp = self.allsensornames[i]
@@ -2226,7 +2226,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     #print('subscribing ...')
                     datakeys = redvypr.data_packets.datapacket(data).datakeys()
                     for k in datakeys:
-                        daddr = redvypr.redvypr_address(data,datakey=k)
+                        daddr = redvypr.RedvyprAddress(data, datakey=k)
                         d = daddr.get_str()
                         #print('k', k)
                         #print('d', d)

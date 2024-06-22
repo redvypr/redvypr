@@ -79,7 +79,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                     msg = pynmea2.parse(dataparse)
                     talker = msg.talker
                     sentence_type = msg.sentence_type
-                    daddr = redvypr.redvypr_address(data)
+                    daddr = redvypr.RedvyprAddress(data)
                     devname = sentence_type + '_' + daddr.devicename
                     print('Devicename', daddr.devicename)
                     data_parsed = redvypr.data_packets.create_datadict(data=msg.talker, datakey='talker', device=devname)

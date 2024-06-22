@@ -28,6 +28,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
     subscribes: bool = False
     description: str = "Replays a raw redvypr data file"
     gui_tablabel_display: str = 'Replay status'
+    gui_icon: str = 'mdi.code-json'
 
 class DeviceCustomConfig(pydantic.BaseModel):
     files: list = pydantic.Field(default=[], description='List of files to replay')

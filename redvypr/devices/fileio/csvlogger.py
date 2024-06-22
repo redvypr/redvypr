@@ -37,6 +37,8 @@ class DeviceBaseConfig(pydantic.BaseModel):
     subscribes: bool = True
     description: str = "Saves subscribed datastreams in a comma separated value (csv) file"
     gui_tablabel_display: str = 'csv logging status'
+    gui_icon: str = 'fa5s.file-csv'
+
 
 class csv_datastream_strformat(pydantic.BaseModel):
     str_type: str = pydantic.Field(default='"{:s}"')
@@ -266,7 +268,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         for dstr in datastreams:
                             if dstream['address_found'] == '': # Not assigned yet
                                 #print('Trying to assign')
-                                raddr = redvypr.redvypr_address(dstream['address'])
+                                raddr = redvypr.RedvyprAddress(dstream['address'])
                                 if dstr in raddr: # Found something
                                     print('Found ', dstr, 'in', raddr)
                                     address_found_format = '/h/d/k' # The format
@@ -279,7 +281,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                                     print('Got streamdata',streamdata)
                                     break
                             else: # Get the data
-                                streamdata = redvypr.redvypr_address(dstream['address_found']).get_data(data) # returns None if not fitting
+                                streamdata = redvypr.RedvyprAddress(dstream['address_found']).get_data(data) # returns None if not fitting
                                 if streamdata is not None:
                                     data_fill[ind_dstream] = streamdata
                                     FLAG_WRITE_PACKET = True
@@ -1082,13 +1084,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         print('Config',config)
         return config
 
-    def update_DeviceCustomConfig(self):
+    def update_device_config(self):
         """
         Updates the device config based on the widgets
         Returns:
 
         """
-        funcname = self.__class__.__name__ + '.update_DeviceCustomConfig():'
+        funcname = self.__class__.__name__ + '.update_device_config():'
         logger.debug(funcname)
         self.widgets_to_config(self.device.custom_config)
 
@@ -1098,7 +1100,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         button = self.sender()
         if button.isChecked():
             logger.debug(funcname + "button pressed")
-            self.update_DeviceCustomConfig()
+            self.update_device_config()
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')

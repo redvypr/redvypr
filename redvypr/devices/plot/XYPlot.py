@@ -16,7 +16,7 @@ from redvypr.data_packets import check_for_command
 import redvypr.data_packets as data_packets
 import redvypr.gui as gui
 #import redvypr.config as redvypr_config
-from redvypr.redvypr_address import redvypr_address
+from redvypr.redvypr_address import RedvyprAddress
 #from redvypr.devices.plot import plot_widgets
 from redvypr.devices.plot import XYplotWidget
 import redvypr.files as redvypr_files
@@ -40,7 +40,6 @@ class DeviceBaseConfig(pydantic.BaseModel):
 
 class DeviceCustomConfig(XYplotWidget.configXYplot):
     test: str='dfsd'
-
 
 
 def start(device_info, config = None, dataqueue = None, datainqueue = None, statusqueue = None):

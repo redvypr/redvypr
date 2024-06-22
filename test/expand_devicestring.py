@@ -38,12 +38,12 @@ for i,datastream in enumerate(d):
 
 
 # Test the address
-addr = redvypr.data_packets.redvypr_address('data/randdata_1:redvypr@192.168.178.26::04283d40-ef3c-11ec-ab8f-21d63600f1d0')
+addr = redvypr.data_packets.redvypraddress('data/randdata_1:redvypr@192.168.178.26::04283d40-ef3c-11ec-ab8f-21d63600f1d0')
 for stype in addr.strtypes:
     print('Address:',addr.get_str(stype))
 
 
-addr2 = redvypr.data_packets.redvypr_address('')
+addr2 = redvypr.data_packets.redvypraddress('')
 print('strtpyes',addr2.get_strtypes())
 
 addr3 = redvypr.data_packets.redvypr_address('test')
@@ -51,7 +51,7 @@ print(addr3)
 
 print('Test if address is in data_packet')
 #addr4 = redvypr.data_packets.redvypr_address('data/*::20221207150955.421856-93328248922693-013peter')
-addr4 = redvypr.data_packets.redvypr_address('data/*')
+addr4 = redvypr.data_packets.redvypraddress('data/*')
 inpacket = data_packet in addr4
 print('Addr4',addr4)
 print('in packet:',addr4,inpacket)

@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 import sys
-from redvypr.redvypr_address import redvypr_address
+from redvypr.redvypr_address import RedvyprAddress
 import redvypr.data_packets as data_packets
 
 
@@ -16,7 +16,7 @@ class average_data():
         sn = data['sn']
         self.sn = sn
         self.macstr = sn
-        data_addr = redvypr_address(data)
+        data_addr = RedvyprAddress(data)
         devname = data_addr.devicename
         devsplit = devname.rsplit('_',maxsplit=1)[0]
         self.devicename = devsplit + '_AVG_' + self.macstr

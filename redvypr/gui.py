@@ -11,11 +11,11 @@ from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 #from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, dictQTreeWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget
 from redvypr.widgets.redvypr_addressWidget import datastreamWidget
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, pydanticQTreeWidget
+from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, pydanticQTreeWidget, dictQTreeWidget
 import redvypr.files as files
 import redvypr.data_packets as data_packets
 import redvypr.device as device
-from redvypr.redvypr_address import redvypr_address
+from redvypr.redvypr_address import RedvyprAddress
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -590,7 +590,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
         self.subscribe_edit = LineEditFocus()
         self.subscribe_edit.focusInSignal.connect(self.__focus_in__)
         self.subscribe_edit.focusOutSignal.connect(self.__focus_out__)
-        self.subscribe_edit.redvypr_address = redvypr_address('*')
+        self.subscribe_edit.redvypr_address = RedvyprAddress('*')
 
         self.__commitbtn = QtWidgets.QPushButton('Subscribe')
         self.__commitbtn.clicked.connect(self.commit_clicked)
@@ -604,7 +604,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
         #self.__commitbtn.setEnabled(False)
         # Combo with formats
         self.__formatLabel = QtWidgets.QLabel('Address format')
-        addr_formats = redvypr_address().get_common_address_formats()
+        addr_formats = RedvyprAddress().get_common_address_formats()
         self.__formatCombo = QtWidgets.QComboBox()
         self.__formatCombo.currentIndexChanged.connect(self.__subscribe_editChanged__)
         for f in addr_formats:
@@ -683,7 +683,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
             self.__commitbtn.__status__ = 'add'
             self.__commitbtn.setEnabled(True)
             #self.__commitbtn.redvypr_addr_remove = devstr
-            self.subscribe_edit.redvypr_address = newitem.redvypr_address
+            self.subscribe_edit.redvypr_address = newitem.RedvyprAddress
             self.__subscribe_editChanged__()
 
             #if(subscribed):
@@ -756,7 +756,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
                     if True:
                         devs_forwarded = dev.get_device_info()
                         for devaddress in devs_forwarded.keys():
-                            devaddress_redvypr = redvypr_address(devaddress)
+                            devaddress_redvypr = RedvyprAddress(devaddress)
                             subscribed = False
                             for a in self.device.subscribed_addresses:
                                 subscribed = a in devaddress_redvypr

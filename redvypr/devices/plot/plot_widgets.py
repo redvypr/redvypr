@@ -381,9 +381,9 @@ class redvypr_graph_widget(QtWidgets.QFrame):
                     logger.debug(funcname + ' Using time variable of y')
                     xtmp = redvypr.data_packets.modify_addrstr(yaddr.address_str,datakey='t')
                     #print('xtmp',xtmp)
-                    xaddr = redvypr.data_packets.redvypr_address(xtmp)
+                    xaddr = redvypr.data_packets.redvypraddress(xtmp)
                 else:
-                    xaddr = redvypr.data_packets.redvypr_address(x)
+                    xaddr = redvypr.data_packets.redvypraddress(x)
 
                 # These attributes are used in plot.Device.connect_devices to actually subscribe to the fitting devices
                 line['x'].xaddr = xaddr
@@ -668,7 +668,7 @@ class redvypr_numdisp_widget(QtWidgets.QFrame):
                 pass
 
         if (getdata(self.config['datastreamlabel'])): # TODO, let the user choose the datastream display options (UUID, key, key + address ...)
-            self.redvypr_addrconv = redvypr.data_packets.redvypr_address(self.config['datastream'].data)
+            self.redvypr_addrconv = redvypr.data_packets.redvypraddress(self.config['datastream'].data)
             dstrlabel = self.config['datastreamlabel'].data
             dstr = self.redvypr_addrconv.get_str(dstrlabel)
             self.devicedisp.setText(dstr)

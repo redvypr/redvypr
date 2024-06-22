@@ -4,7 +4,8 @@ import time
 import logging
 import sys
 import yaml
-
+import pydantic
+import typing
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr_address')
@@ -16,7 +17,14 @@ s.append('/k:data/d:"/d:hallo"/')
 s.append('/k:data/d:{.*Hallo/d:}/')
 
 
-class redvypr_address():
+RedvyprAddressStr = typing.Annotated[
+    str,
+    pydantic.WithJsonSchema({'type': 'string'}, mode='serialization'),
+    'RedvyprAddressStr'
+]
+
+
+class RedvyprAddress():
     """
     """
 
@@ -32,8 +40,6 @@ class redvypr_address():
         self.__delimiter_id = ':'
 
         # Try to convert redvypr_address to dict
-
-
         self._common_address_formats = ['/d/k', '/k/','/d/','/p/','/p/d/','/u/a/h/d/', '/u/a/h/d/k/', '/a/h/d/', '/a/h/p/']
         if addrstr is not None: # Address from addrstr
             #print('addrstr',type(addrstr),type(self))
@@ -67,7 +73,6 @@ class redvypr_address():
             else:
                 self.address_str = addrstr
 
-
             # Replace potentially given arguments
             if any([addrstr, local_hostinfo, datakey, devicename, hostname, addr, uuid, publisher]):
                 parsed_addrstr = self.parse_addrstr(self.address_str)
@@ -85,9 +90,6 @@ class redvypr_address():
                     parsed_addrstr['publisher'] = publisher
 
                 self.address_str = self.create_addrstr(parsed_addrstr['datakey'], parsed_addrstr['devicename'], parsed_addrstr['hostname'], parsed_addrstr['addr'], parsed_addrstr['uuid'], parsed_addrstr['publisher'], local_hostinfo=local_hostinfo)
-
-
-
 
         else:  # addrstr from single ingredients
             self.address_str = self.create_addrstr(datakey, devicename, hostname, addr, uuid, publisher, local_hostinfo=local_hostinfo)
@@ -268,7 +270,7 @@ class redvypr_address():
     def __repr__(self):
         #astr2 = self.get_str('<key>/<device>:<host>@<addr>')
         astr2 = self.address_str
-        astr = "redvypr_address('" + astr2 + "')"
+        astr = "RedvyprAddress('" + astr2 + "')"
         return astr
 
     def __eq__(self, addr):
@@ -283,7 +285,7 @@ class redvypr_address():
         Returns:
 
         """
-        if type(addr) == redvypr_address:
+        if type(addr) == RedvyprAddress:
             streq = self.address_str == addr.address_str
             return streq
         elif type(addr) == str:
@@ -341,7 +343,7 @@ class redvypr_address():
 
             return matchflag3
 
-        elif(type(data) == redvypr_address):
+        elif(type(data) == RedvyprAddress):
             addr = data
             datakeyflag = self.compare_address_substrings(self.datakey, addr.datakey)
             deviceflag  = self.compare_address_substrings(self.devicename, addr.devicename)
@@ -365,7 +367,7 @@ class redvypr_address():
             return matchflag3  # 1 or matchflag2
 
         elif type(data) == str:
-            raddr = redvypr_address(str(data))
+            raddr = RedvyprAddress(str(data))
             contains = raddr in self
             return contains
         else:

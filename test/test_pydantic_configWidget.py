@@ -3,6 +3,7 @@ import redvypr.gui
 import sys
 import copy
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
+from redvypr.redvypr_address import RedvyprAddress, RedvyprAddressStr
 import pydantic
 import datetime
 import typing
@@ -21,11 +22,14 @@ class config_test(pydantic.BaseModel):
     coeff: float = np.NaN
     coeff_std: typing.Optional[float] = None
     unit:  str = 'W m-2 mV-1'
+    raddr: RedvyprAddressStr = pydantic.Field(default=RedvyprAddress('d:test'))
     unit_input: str = 'mV'
     date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
     calibration_id: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex, description='ID of the calibration, can be choosen by the user. ID should be unique')
     comment: typing.Optional[str] = None
+    uniontest: typing.Union[str,float] = pydantic.Field(default='fdsf')
     calibrations: typing.List[typing.Union[float, str]] = pydantic.Field(default=[], description = 'List of sensor calibrations')
+
 configtest = config_test()
 
 def main():

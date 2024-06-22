@@ -1,7 +1,7 @@
 import sys
 import logging
 import copy
-from .redvypr_address import redvypr_address
+from .redvypr_address import RedvyprAddress
 import redvypr.data_packets as data_packets
 import time
 
@@ -111,7 +111,7 @@ def do_data_statistics(data, statdict, address_data = None):
         statdict:
     """
     if address_data is None:
-        raddr = redvypr_address(data)
+        raddr = RedvyprAddress(data)
     else:
         raddr = address_data
 

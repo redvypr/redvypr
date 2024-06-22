@@ -16,7 +16,7 @@ from redvypr.data_packets import check_for_command
 import redvypr.data_packets as data_packets
 import redvypr.gui as gui
 #import redvypr.config as redvypr_config
-from redvypr.redvypr_address import redvypr_address
+from redvypr.redvypr_address import RedvyprAddress
 from redvypr.devices.plot import plot_widgets
 from redvypr.devices.plot import XYplotWidget
 import redvypr.files as redvypr_files
@@ -778,7 +778,7 @@ class Device(RedvyprDevice):
             elif type(status) == dict:
                 if status['status'] == 'newlogger':
                     logger.debug('New Sensor')
-                    newsensor_address = redvypr_address(status['data'])
+                    newsensor_address = RedvyprAddress(status['data'])
                     if status['packettype'] == 'HFV':
                         logger.info('New 4Channel logger')
                         sn = status['sn']
@@ -1334,8 +1334,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
             #        return None
 
             print('Hallo',sn)
-            print('fds',redvypr_address)
-            raddr = redvypr_address(data)
+            print('fds', RedvyprAddress)
+            raddr = RedvyprAddress(data)
             print('Hallo',raddr)
             # Add the data to self.device
             self.device.sensordata_raw[sn].append(data)
