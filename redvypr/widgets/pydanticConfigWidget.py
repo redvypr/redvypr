@@ -90,61 +90,53 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.configWidget, 0, 0)
         #self.layout.addWidget(self.closeButton, 1, 0)
 
-    def __createConfigWidgetForItem(self, item):
-        """
-        creates self.__configwidget for item type
-        :param item:
-        :return:
-        """
-        print('Create configwidget', item, item.__datatypestr__)
-        if (item.__datatypestr__ == 'int') or (item.__datatypestr__ == 'float'):
-            self.createConfigWidgetNumber(item, dtype=item.__datatypestr__)
-        elif (item.__datatypestr__ == 'str'):
-            self.createConfigWidgetStr(item)
-        elif (item.__datatypestr__ == 'datetime'):
-            self.createConfigWidgetDateTime(item)
-        elif (item.__datatypestr__ == 'bool'):
-            self.createConfigWidgetBool(item)
-        elif (item.__datatypestr__ == 'RedvyprAddressStr'):
-            print('Hallo address')
-            self.createConfigWidgetRedvyprAddressStr(item)
-        elif (item.__datatypestr__ == 'list'):
-            self.createConfigWidgetList(item)
-        else:
-            logger.info('Skipping {}'.format(item.__datatypestr__))
-
-    def __comboTypeChanged(self,index):
-        """
-        Called when the combobox of the datatype is changed
-        :param index:
-        :return:
-        """
-        #print('Index',index)
+    def __comboUpdateItem(self, index):
+        # print('Index',index)
         user_role_config = 11
         role = QtCore.Qt.UserRole + user_role_config
         item = self.__configCombo.itemData(index, role)
         # Get the datatypestr and call the gui create function again
         datatypestr = self.__configCombo.currentText()
         item.__datatypestr__ = datatypestr
+    def __comboTypeChanged(self,index):
+        """
+        Called when the combobox of the datatype is changed
+        :param index:
+        :return:
+        """
+        self.__comboUpdateItem(index)
+        user_role_config = 11
+        role = QtCore.Qt.UserRole + user_role_config
+        item = self.__configCombo.itemData(index, role)
+        self.CreateConfigWidgetForItem(item)
+        self.__configwidget.setParent(None)
+
+        self.configGui_layout.addWidget(self.__configwidget)
+        self.configGui_layout.removeItem(self.stretchy_spacer_thing)
+        #print('Clear gui')
+        #self.__clearConfigGui__()
+        print('Populate gui')
+        self.__populateConfigGui__()
+        #self.__openConfigGui__(item)
+
         #print('Open config gui with item',item)
         # Changed the datatype, now recreate the widgets
-        self.configGui_layout.removeItem(self.stretchy_spacer_thing)
-        try:
-            self.__configwidget.close()
-        except:
-            pass
+        #self.configGui_layout.removeItem(self.stretchy_spacer_thing)
+        #try:
+        #    self.__configwidget.close()
+        #except:
+        #    pass
 
-        self.__createConfigWidgetForItem(item)
-        self.configGui_layout.addWidget(self.__configwidget)
-        # Add a stretch
-        self.configGui_layout.addItem(self.stretchy_spacer_thing)
 
+        #self.configGui_layout.addWidget(self.__configwidget)
+        ## Add a stretch
+        #self.configGui_layout.addItem(self.stretchy_spacer_thing)
 
     def interprete_type_hints(self, type_hints):
         type_dict = None
         print('Type hints', type_hints)
-        print('Name',type_hints.__name__)
         if type_hints is not None:
+            print('Name', type_hints.__name__)
             type_dict = {'type_args':[]}
 
             # Get the different type hints
@@ -181,6 +173,41 @@ class pydanticConfigWidget(QtWidgets.QWidget):
 
         return type_dict
 
+    def __populateConfigGui__(self):
+        print('Additional widgets',self.additional_config_gui_widgets)
+        for w in self.additional_config_gui_widgets:
+            try:
+                print('Adding widget',w)
+                self.configGui_layout.addWidget(w)
+            except:
+                logger.debug('Could not add widget',exc_info=True)
+
+        self.configGui_layout.addWidget(self.__configwidget)
+        self.configGui_layout.addItem(self.stretchy_spacer_thing)
+
+    def __clearConfigGui__(self):
+        self.configGui_layout.removeItem(self.stretchy_spacer_thing)
+        if False:
+            # Remove the stretch and all widgets
+            self.configGui_layout.removeItem(self.stretchy_spacer_thing)
+            try:
+                self.__configwidget.close()
+            except:
+                pass
+            try:
+                self.__configCombo.close()
+            except:
+                pass
+
+            try:
+                self.__remove_button.close()
+            except:
+                pass
+
+        for i in reversed(range(self.configGui_layout.count())):
+            self.configGui_layout.itemAt(i).widget().setParent(None)
+            #self.configGui_layout.itemAt(i).widget().hide()
+
 
     def __openConfigGui__(self, item):
         """
@@ -191,17 +218,9 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.__openConfigGui__():'
         logger.debug(funcname)
-        # Remove the stretch and all widgets
-        self.configGui_layout.removeItem(self.stretchy_spacer_thing)
-        try:
-            self.__configwidget.close()
-        except:
-            pass
-        try:
-            self.__configCombo.close()
-        except:
-            pass
-
+        has_combo = False
+        self.additional_config_gui_widgets = []
+        self.__clearConfigGui__()
         #print('some information')
         #print(item.__data__)
         #print(item.__dataparent__)
@@ -223,8 +242,10 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             # data type choices
             # checks if type hints are annotations or types/unions
             # Annotations are used for extra information, type/unions for
+
             if len(type_dict['type_args'])>0 and not(type_dict['isannotated']):
                 self.__configCombo = QtWidgets.QComboBox()
+                has_combo = True
                 for argstr in type_dict['type_args']:
                     self.__configCombo.addItem(argstr)
                     index = self.__configCombo.count() - 1
@@ -239,18 +260,72 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 if index_datatype is not None:
                     self.__configCombo.setCurrentIndex(index_datatype)
                     item.__datatypestr__ = datatypestr_tmp
+                else:
+                    self.__configCombo.setCurrentIndex(0)
+                    self.__comboUpdateItem(0)
 
                 # Get the index for the combo
                 self.__configCombo.currentIndexChanged.connect(self.__comboTypeChanged)
-                self.configGui_layout.addWidget(self.__configCombo)
+                # Add the config combo to the layout
+                self.additional_config_gui_widgets.append(self.__configCombo)
+                # Add remove button, if the datatype allows it
+                item_data = item.__data__
 
-        self.__createConfigWidgetForItem(item)
-        self.configGui_layout.addWidget(self.__configwidget)
+        #self.__configWidget = QtWidgets.QLabel('Hallo')
+        #print('Configwidget 1',self.__configWidget)
+        self.CreateConfigWidgetForItem(item)
+        print('Configwidget 2', self.__configwidget)
+        #config_gui_widgets.append(self.__configwidget)
+        #self.configGui_layout.addWidget(self.__configwidget)
+        # Add a remove button if the item can be removed
+        parentdata = item.__dataparent__
+        if isinstance(parentdata, dict):
+            print('dict')
+        elif isinstance(parentdata, list):
+            print('Appending to list')
+            self.__remove_button = QtWidgets.QPushButton('Remove')
+            self.configGui_layout.addWidget(self.__remove_button)
+        elif pydantic.BaseModel in parentdata.__class__.__mro__:
+            print('basemodel')
         # Add a stretch
-        self.configGui_layout.addItem(self.stretchy_spacer_thing)
+        #self.configGui_layout.addItem(self.stretchy_spacer_thing)
+        #self.additional_config_gui_widgets.append(self.stretchy_spacer_thing)
+        self.__populateConfigGui__()
+        if has_combo:
+            self.__configCombo.setCurrentIndex(0)
+            #self.__comboTypeChanged(0)
+
+    def CreateConfigWidgetForItem(self, item):
+        """
+        creates self.__configwidget for item type
+        :param item:
+        :return:
+        """
+        print('Create configwidget', item, item.__datatypestr__)
+        try:
+            self.__configwidget.close()
+        except:
+            pass
+        if (item.__datatypestr__ == 'int') or (item.__datatypestr__ == 'float'):
+            self.createConfigWidgetNumber(item, dtype=item.__datatypestr__)
+        elif (item.__datatypestr__ == 'str'):
+            print('Str')
+            self.createConfigWidgetStr(item)
+        elif (item.__datatypestr__ == 'datetime'):
+            self.createConfigWidgetDateTime(item)
+        elif (item.__datatypestr__ == 'bool'):
+            self.createConfigWidgetBool(item)
+        elif (item.__datatypestr__ == 'RedvyprAddressStr'):
+            print('Hallo address')
+            self.createConfigWidgetRedvyprAddressStr(item)
+        elif (item.__datatypestr__ == 'list'):
+            self.createConfigWidgetList(item)
+        else:
+            logger.info('Skipping {}'.format(item.__datatypestr__))
 
     def createConfigWidgetList(self, item):
         print('createConfigWidgetList')
+        self.__configwidget = QtWidgets.QWidget()
 
     def createConfigWidgetStr(self, item):
         index = item.__dataindex__
@@ -271,6 +346,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         self.__configwidget_cancel = QtWidgets.QPushButton('Cancel')
         self.__layoutwidget.addRow(self.__configwidget_apply)
         self.__layoutwidget.addRow(self.__configwidget_cancel)
+        print('Done')
 
     def createConfigWidgetRedvyprAddressStr(self, item):
         funcname = __name__ + 'createConfigWidgetRedvyprAddressStr():'
@@ -390,12 +466,17 @@ class pydanticConfigWidget(QtWidgets.QWidget):
 
     def applyGuiInput(self):
         funcname = __name__ + '.applyGuiInput()'
+        logger.debug(funcname)
         item = self.sender().item
-        #print(item.__data__)
-        #print(item.__dataparent__)
-        #print(item.__dataindex__)
-        #print(item.__datatypestr__)
-        #print(item.__parent__)
+        print('Some info')
+        print(item.__data__)
+        print(item.__dataparent__)
+        print(item.__dataindex__)
+        item_data = item.__data__
+
+        print('datatypestr',item.__datatypestr__)
+        print(item.__parent__)
+        print('Some info done')
         data_set = False
         if self.sender().__configType == 'configNumber':
             #print(funcname + ' ' + self.sender().__configType)
@@ -432,9 +513,25 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             logger.warning('Unknown config type {}'.format(self.sender().__configType))
 
         if data_set:
-            #print('Type',type(item.__dataparent__))
-            setattr(item.__dataparent__,item.__dataindex__, data)
-            # item.setText(1, str(data_num))
+            # Check if the data is added
+            if isinstance(item_data, dict):
+                print('dict')
+            elif isinstance(item_data, list):
+                print('Appending to list')
+                item_data.append(data)
+            elif pydantic.BaseModel in item_data.__class__.__mro__:
+                print('basemodel')
+            else: # or changed
+                #print('Type',type(item.__dataparent__))
+                if pydantic.BaseModel in item.__dataparent__.__class__.__mro__:
+                    print('Adding to pydantic basemodel')
+                    setattr(item.__dataparent__,item.__dataindex__, data)
+                elif isinstance(item.__dataparent__, list):
+                    print('Changing data at index {}'.format(item.__dataindex__))
+                    item.__dataparent__[item.__dataindex__] = data
+                # item.setText(1, str(data_num))
+
+            # Reload and redraw all data
             self.configWidget.reload_data()
             self.config_changed_flag.emit()
 
