@@ -137,7 +137,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         print('Type hints', type_hints)
         if type_hints is not None:
             print('Name', type_hints.__name__)
-            type_dict = {'type_args':[]}
+            type_dict = {'type_args':[],'datatype_objects':{}}
 
             # Get the different type hints
             type_args = typing.get_args(type_hints)
@@ -167,9 +167,13 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                             argstr = arg_union.__name__
                             print('Adding',argstr)
                             type_dict['type_args'].append(argstr)
+                            # Add the object as well
+                            type_dict['datatype_objects'][argstr] = arg_union
                     else:
                         argstr = arg.__name__
                         type_dict['type_args'].append(argstr)
+                        # Add the object as well
+                        type_dict['datatype_objects'][argstr] = arg
 
         return type_dict
 
@@ -187,23 +191,6 @@ class pydanticConfigWidget(QtWidgets.QWidget):
 
     def __clearConfigGui__(self):
         self.configGui_layout.removeItem(self.stretchy_spacer_thing)
-        if False: # TODO: can be removed soon
-            # Remove the stretch and all widgets
-            self.configGui_layout.removeItem(self.stretchy_spacer_thing)
-            try:
-                self.__configwidget.close()
-            except:
-                pass
-            try:
-                self.__configCombo.close()
-            except:
-                pass
-
-            try:
-                self.__remove_button.close()
-            except:
-                pass
-
         for i in reversed(range(self.configGui_layout.count())):
             self.configGui_layout.itemAt(i).widget().setParent(None)
             #self.configGui_layout.itemAt(i).widget().hide()
@@ -358,7 +345,12 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             self.__configwidget.close()
         except:
             pass
-        if (item.__datatypestr__ == 'int') or (item.__datatypestr__ == 'float'):
+
+
+        if pydantic.BaseModel in item.__data__.__class__.__mro__:
+            print('Existing Basemodel ...')
+            self.createConfigWidgetBaseModel(item)
+        elif (item.__datatypestr__ == 'int') or (item.__datatypestr__ == 'float'):
             self.createConfigWidgetNumber(item, dtype=item.__datatypestr__)
         elif (item.__datatypestr__ == 'str'):
             print('Str')
@@ -372,11 +364,55 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             self.createConfigWidgetRedvyprAddressStr(item)
         elif (item.__datatypestr__ == 'list'):
             self.createConfigWidgetList(item)
+        elif (item.__datatypestr__ == 'dict'):
+            print('Dictionary')
+            self.createConfigWidgetDict(item)
         else:
-            logger.info('Skipping {}'.format(item.__datatypestr__))
+            try: # Check if there is a valid type_hint, otherwise do nothing
+                type_hints = item.__type_hints__
+                type_dict = self.interprete_type_hints(type_hints)
+                dobject = type_dict['datatype_objects'][item.__datatypestr__]
+                self.createConfigWidgetBaseModelNew(item)
+            except:
+                pass
+
+
 
     def createConfigWidgetList(self, item):
         print('createConfigWidgetList')
+        self.__configwidget = QtWidgets.QWidget()
+
+    def createConfigWidgetBaseModel(self, item):
+        print('createConfigWidgetBaseModel')
+        self.__configwidget = QtWidgets.QWidget()
+
+    def createConfigWidgetBaseModelNew(self, item):
+        print('createConfigWidgetBaseModel')
+        self.__configwidget = QtWidgets.QWidget()
+        type_hints = item.__type_hints__
+        # Test if the type has as a parent a Pydantic Basemodel
+        type_dict = self.interprete_type_hints(type_hints)
+        dobject = type_dict['datatype_objects'][item.__datatypestr__]
+        dobject_called = dobject()
+        print('Dobject', dobject)
+        print('Dobject called', dobject_called)
+        self.__configwidget = QtWidgets.QWidget()
+        self.__layoutwidget = QtWidgets.QVBoxLayout(self.__configwidget)
+        self.__configwidget_input = pydanticQTreeWidget(dobject_called)
+        self.__layoutwidget.addWidget(self.__configwidget_input)
+        # Buttons
+        self.__configwidget_apply = QtWidgets.QPushButton('Apply')
+        self.__configwidget_apply.clicked.connect(self.applyGuiInput)
+        self.__configwidget_apply.__configType = 'configBaseModel'
+        self.__configwidget_apply.__newitem = dobject_called
+        self.__configwidget_apply.item = item
+        self.__configwidget_cancel = QtWidgets.QPushButton('Cancel')
+        self.__layoutwidget.addWidget(self.__configwidget_apply)
+        self.__layoutwidget.addWidget(self.__configwidget_cancel)
+        print('Done')
+
+    def createConfigWidgetDict(self, item):
+        print('createConfigWidgetDict')
         self.__configwidget = QtWidgets.QWidget()
 
     def createConfigWidgetStr(self, item):
@@ -539,6 +575,11 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             data = self.__configwidget_input.value()  # Works for int/float spinboxes
             data_set = True
 
+        elif self.sender().__configType == 'configBaseModel':
+            print('Got a pydantic config')
+            data = self.__configwidget_apply.__newitem  # Works for int/float spinboxes
+            data_set = True
+
         elif self.sender().__configType == 'configStr':
             data = self.__configwidget_input.text()  # Textbox
             data_set = True
@@ -575,7 +616,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 item_data.append(data)
             elif pydantic.BaseModel in item_data.__class__.__mro__:
                 print('basemodel')
-            else: # or changed
+            else: # or an existing model was changed changed
                 #print('Type',type(item.__dataparent__))
                 if pydantic.BaseModel in item.__dataparent__.__class__.__mro__:
                     print('Adding to pydantic basemodel')
@@ -802,6 +843,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 newparent.__modifiable__ = flag_modifiable
                 newparent.__type_hints__ = type_hints_index
                 newparent.__flag_add_entry__ = flag_add_entry
+                newparent.__removable__ = removable
                 #try:
                 #    newparent.__dataparent__ = parent.__data__  # can be used to reference the data (and change it)
                 #except:

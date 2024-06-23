@@ -10,6 +10,10 @@ import typing
 import numpy as np
 import uuid
 
+
+class config_test_sub(pydantic.BaseModel):
+    a: str = 'Hello'
+    b: float = 1.0
 class config_test(pydantic.BaseModel):
     """
     Calibration model for a heatflow sensor
@@ -31,6 +35,8 @@ class config_test(pydantic.BaseModel):
     calibrations: typing.List[typing.Union[float, str]] = pydantic.Field(default=[], description = 'List of sensor calibrations')
     #some_dict: typing.Dict[typing.Union[str,float]] = pydantic.Field(default={},
     some_dict: typing.Dict[str,typing.Union[float, bool, list]] = pydantic.Field(default={},description='Configuration of sensors, keys are their serial numbers')
+    bmodellist: typing.List[typing.Union[float, config_test_sub]] = pydantic.Field(default=[],
+                                                                         description='List of floats and pydantic models')
 
 configtest = config_test()
 
