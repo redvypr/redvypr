@@ -14,6 +14,11 @@ import uuid
 class config_test_sub(pydantic.BaseModel):
     a: str = 'Hello'
     b: float = 1.0
+
+class config_test_allow_extra(pydantic.BaseModel):
+    model_config = {'extra':'allow'}
+    c: str = 'Hello'
+    d: float = 1.0
 class config_test(pydantic.BaseModel):
     """
     Calibration model for a heatflow sensor
@@ -35,8 +40,10 @@ class config_test(pydantic.BaseModel):
     calibrations: typing.List[typing.Union[float, str]] = pydantic.Field(default=[], description = 'List of sensor calibrations')
     #some_dict: typing.Dict[typing.Union[str,float]] = pydantic.Field(default={},
     some_dict: typing.Dict[str,typing.Union[float, bool, list]] = pydantic.Field(default={},description='Configuration of sensors, keys are their serial numbers')
-    bmodellist: typing.List[typing.Union[float, config_test_sub]] = pydantic.Field(default=[],
+    bmodellist: typing.List[typing.Union[float, config_test_sub,config_test_allow_extra]] = pydantic.Field(default=[],
                                                                          description='List of floats and pydantic models')
+
+    pyd: config_test_allow_extra = pydantic.Field(default=config_test_allow_extra())
 
 configtest = config_test()
 

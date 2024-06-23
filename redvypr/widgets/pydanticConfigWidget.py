@@ -220,6 +220,11 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         except:
             type_hints = None
 
+        # Add type hints to pydantic basemodel with extra=allow
+        if pydantic.BaseModel in item.__data__.__class__.__mro__:
+            if item.__flag_add_entry__:
+                type_hints = typing.Union[bool, int, float, str]
+
         type_dict = self.interprete_type_hints(type_hints)
 
         if type_dict is not None:
@@ -324,6 +329,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             parentdata.pop(item.__dataindex__)
         elif pydantic.BaseModel in parentdata.__class__.__mro__:
             print('Removing from basemodel')
+            delattr(parentdata, item.__dataindex__)
 
         # Reload and redraw all data
         self.configWidget.reload_data()
@@ -616,7 +622,8 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 item_data.append(data)
             elif pydantic.BaseModel in item_data.__class__.__mro__:
                 print('basemodel')
-            else: # or an existing model was changed changed
+                setattr(item_data, item.__dataindex__, data)
+            else: # or an existing model was changed
                 #print('Type',type(item.__dataparent__))
                 if pydantic.BaseModel in item.__dataparent__.__class__.__mro__:
                     print('Adding to pydantic basemodel')
@@ -727,9 +734,15 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
             flag_add_entry = True
         elif pydantic.BaseModel in data.__class__.__mro__:
             print('basemodel')
+            try:
+                model_config = data.model_config['extra']
+            except:
+                model_config = 'omitted'
             flag_iterate = True
             flag_basemodel = True
-            flag_add_entry = True # Here one should check if this is allowd
+            flag_add_entry = False
+            if 'allow' in model_config.lower():
+                flag_add_entry = True
         else:
             #print('item')
             flag_iterate = False
