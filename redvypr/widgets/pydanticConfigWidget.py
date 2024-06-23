@@ -187,7 +187,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
 
     def __clearConfigGui__(self):
         self.configGui_layout.removeItem(self.stretchy_spacer_thing)
-        if False:
+        if False: # TODO: can be removed soon
             # Remove the stretch and all widgets
             self.configGui_layout.removeItem(self.stretchy_spacer_thing)
             try:
@@ -233,7 +233,6 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         except:
             type_hints = None
 
-
         type_dict = self.interprete_type_hints(type_hints)
 
         if type_dict is not None:
@@ -266,8 +265,36 @@ class pydanticConfigWidget(QtWidgets.QWidget):
 
                 # Get the index for the combo
                 self.__configCombo.currentIndexChanged.connect(self.__comboTypeChanged)
-                # Add the config combo to the layout
-                self.additional_config_gui_widgets.append(self.__configCombo)
+                data = item.__data__
+
+                if isinstance(data, dict):
+                    print('Add options for dict')
+                    self.configGui_layout.addWidget(
+                        QtWidgets.QLabel('Add entry of type to dict {}'.format(item.__dataindex__)))
+
+                    self.__configKeyInput = QtWidgets.QLineEdit('newkey')
+                    # Widget for key/datatype to add
+                    addWidget_tmp = QtWidgets.QWidget()
+                    addWidget_tmp_layout = QtWidgets.QHBoxLayout(addWidget_tmp)
+                    addWidget_tmp_layout.addWidget(self.__configKeyInput)
+                    addWidget_tmp_layout.addWidget(self.__configCombo)
+                    self.additional_config_gui_widgets.append(addWidget_tmp)
+                elif isinstance(data, list):
+                    print('Add options for list')
+                    self.configGui_layout.addWidget(
+                        QtWidgets.QLabel('Add entry of type to list {}'.format(item.__dataindex__)))
+
+                    addWidget_tmp = QtWidgets.QWidget()
+                    addWidget_tmp_layout = QtWidgets.QHBoxLayout(addWidget_tmp)
+                    addWidget_tmp_layout.addWidget(QtWidgets.QLabel('Append type to list'))
+                    addWidget_tmp_layout.addWidget(self.__configCombo)
+                    self.additional_config_gui_widgets.append(addWidget_tmp)
+                #elif pydantic.BaseModel in data.__class__.__mro__:
+                #    print('Add options for basemodel')
+                else: # Ordinary item, adding nothing special
+                    # Add the config combo to the layout
+                    self.additional_config_gui_widgets.append(self.__configCombo)
+
                 # Add remove button, if the datatype allows it
                 item_data = item.__data__
 
@@ -279,14 +306,16 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         #self.configGui_layout.addWidget(self.__configwidget)
         # Add a remove button if the item can be removed
         parentdata = item.__dataparent__
-        if isinstance(parentdata, dict):
-            print('dict')
-        elif isinstance(parentdata, list):
-            print('Appending to list')
+        try:
+            removable = item.__removable__
+        except:
+            removable = False
+        if removable:
             self.__remove_button = QtWidgets.QPushButton('Remove')
+            self.__remove_button.item = item
+            self.__remove_button.clicked.connect(self.__removeClicked)
+            self.configGui_layout.addWidget(QtWidgets.QLabel('Remove entry'))
             self.configGui_layout.addWidget(self.__remove_button)
-        elif pydantic.BaseModel in parentdata.__class__.__mro__:
-            print('basemodel')
         # Add a stretch
         #self.configGui_layout.addItem(self.stretchy_spacer_thing)
         #self.additional_config_gui_widgets.append(self.stretchy_spacer_thing)
@@ -294,6 +323,29 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         if has_combo:
             self.__configCombo.setCurrentIndex(0)
             #self.__comboTypeChanged(0)
+
+    def __removeClicked(self):
+        funcname = __name__ + '.__removeClicked():'
+        logger.debug(funcname)
+        item = self.sender().item
+        parentdata = item.__dataparent__
+        if isinstance(parentdata, dict):
+            print('Removing from dict')
+            parentdata.pop(item.__dataindex__,None)
+        elif isinstance(parentdata, list):
+            print('Remiving from list')
+            parentdata.pop(item.__dataindex__)
+        elif pydantic.BaseModel in parentdata.__class__.__mro__:
+            print('Removing from basemodel')
+
+        # Reload and redraw all data
+        self.configWidget.reload_data()
+        self.config_changed_flag.emit()
+        #print(item.__data__)
+        #print(item.__dataparent__)
+        #print(item.__dataindex__)
+        #print(item.__datatypestr__)
+        #print(item.__parent__)
 
     def CreateConfigWidgetForItem(self, item):
         """
@@ -515,7 +567,9 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         if data_set:
             # Check if the data is added
             if isinstance(item_data, dict):
-                print('dict')
+                datakey = self.__configKeyInput.text()
+                print('dict',datakey)
+                item_data[datakey] = data
             elif isinstance(item_data, list):
                 print('Appending to list')
                 item_data.append(data)
@@ -625,17 +679,20 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
         if isinstance(data, dict):
             print('dict')
             flag_iterate = True
+            flag_add_entry = True
         elif isinstance(data, list):
             print('list')
             flag_iterate = True
-        #elif isinstance(data, pydantic.BaseModel):
+            flag_add_entry = True
         elif pydantic.BaseModel in data.__class__.__mro__:
             print('basemodel')
             flag_iterate = True
             flag_basemodel = True
+            flag_add_entry = True # Here one should check if this is allowd
         else:
             #print('item')
             flag_iterate = False
+            flag_add_entry = False
 
         # Try to get extra information
         if edit_flags is None:
@@ -654,6 +711,18 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
             #logger.debug('extra fields',exc_info=True)
             pass
 
+        # Get the parentdata
+        try:
+            parentdata = parent.__data__
+        except:
+            parentdata = None
+
+        try:  # If the parent allow to add entries, this item is removable
+            removable = parent.__flag_add_entry__
+            print('removable', removable)
+        except:
+            removable = False
+
         if edit_flags['editable'] and self.show_editable_only:
             if True:
                 data_value = data  #
@@ -661,7 +730,6 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 type_hints_index = None
                 typestr = data_value.__class__.__name__
                 try:
-                    parentdata = parent.__data__
                     # Get the defined type of the data
                     if pydantic.BaseModel in parentdata.__class__.__mro__:
                         type_hints = typing.get_type_hints(parentdata,include_extras=True)
@@ -680,7 +748,6 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                                     break
 
                 except:
-                    parentdata = None
                     logger.info('bad {}'.format(index),exc_info=True)
 
 
@@ -698,6 +765,8 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 item.__datatypestr__ = typestr
                 item.__parent__ = parent
                 item.__type_hints__ = type_hints_index
+                item.__flag_add_entry__ = flag_add_entry
+                item.__removable__ = removable
                 # Add the item to the data
                 #print('data',data)
                 #print('data',type(data))
@@ -709,7 +778,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 else: # Update the data (even if it hasnt changed
                     parent.child(index_child).setText(1,str(data_value))
 
-            else: # Check if we have an item that is something with data (not a pydantic module, list or dict)
+            else: # Item that is iterable and can be a parent
                 print('loop')
                 datatmp = data
                 typestr = datatmp.__class__.__name__
@@ -732,6 +801,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 newparent.__dataparent__ = parentdata  # parent.__data__ # can be used to reference the data (and change it)
                 newparent.__modifiable__ = flag_modifiable
                 newparent.__type_hints__ = type_hints_index
+                newparent.__flag_add_entry__ = flag_add_entry
                 #try:
                 #    newparent.__dataparent__ = parent.__data__  # can be used to reference the data (and change it)
                 #except:
