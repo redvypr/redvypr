@@ -104,15 +104,21 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         :param index:
         :return:
         """
+        funcname = __name__ + '__comboTypeChanged():'
+        logger.debug(funcname)
+        print('Index', index)
         self.__comboUpdateItem(index)
         user_role_config = 11
         role = QtCore.Qt.UserRole + user_role_config
         item = self.__configCombo.itemData(index, role)
-        self.CreateConfigWidgetForItem(item)
-        self.__configwidget.setParent(None)
 
-        self.configGui_layout.addWidget(self.__configwidget)
+
+        self.__configwidget.setParent(None)
+        #self.configGui_layout.addWidget(self.__configwidget)
         self.configGui_layout.removeItem(self.stretchy_spacer_thing)
+
+        self.CreateConfigWidgetForItem(item)
+        print('Item',item)
         #print('Clear gui')
         #self.__clearConfigGui__()
         print('Populate gui')
@@ -281,13 +287,22 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                     addWidget_tmp_layout.addWidget(QtWidgets.QLabel('Append type to list'))
                     addWidget_tmp_layout.addWidget(self.__configCombo)
                     self.additional_config_gui_widgets.append(addWidget_tmp)
-                #elif pydantic.BaseModel in data.__class__.__mro__:
-                #    print('Add options for basemodel')
+                elif pydantic.BaseModel in data.__class__.__mro__:
+                    print('Add options for basemodel')
+                    self.configGui_layout.addWidget(
+                        QtWidgets.QLabel('Add entry of type to pydantic BaseModel child {}'.format(item.__dataindex__)))
+
+                    self.__configKeyInput = QtWidgets.QLineEdit('newattribute')
+                    # Widget for key/datatype to add
+                    addWidget_tmp = QtWidgets.QWidget()
+                    addWidget_tmp_layout = QtWidgets.QHBoxLayout(addWidget_tmp)
+                    addWidget_tmp_layout.addWidget(self.__configKeyInput)
+                    addWidget_tmp_layout.addWidget(self.__configCombo)
+                    self.additional_config_gui_widgets.append(addWidget_tmp)
                 else: # Ordinary item, adding nothing special
                     # Add the config combo to the layout
                     self.additional_config_gui_widgets.append(self.__configCombo)
 
-                # Add remove button, if the datatype allows it
                 item_data = item.__data__
 
         #self.__configWidget = QtWidgets.QLabel('Hallo')
@@ -331,6 +346,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             print('Removing from basemodel')
             delattr(parentdata, item.__dataindex__)
 
+        self.__clearConfigGui__()
         # Reload and redraw all data
         self.configWidget.reload_data()
         self.config_changed_flag.emit()
@@ -352,11 +368,10 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         except:
             pass
 
-
-        if pydantic.BaseModel in item.__data__.__class__.__mro__:
-            print('Existing Basemodel ...')
-            self.createConfigWidgetBaseModel(item)
-        elif (item.__datatypestr__ == 'int') or (item.__datatypestr__ == 'float'):
+        #if pydantic.BaseModel in item.__data__.__class__.__mro__:
+        #    print('Existing Basemodel ...')
+        #    self.createConfigWidgetBaseModel(item)
+        if (item.__datatypestr__ == 'int') or (item.__datatypestr__ == 'float'):
             self.createConfigWidgetNumber(item, dtype=item.__datatypestr__)
         elif (item.__datatypestr__ == 'str'):
             print('Str')
@@ -621,8 +636,9 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 print('Appending to list')
                 item_data.append(data)
             elif pydantic.BaseModel in item_data.__class__.__mro__:
-                print('basemodel')
-                setattr(item_data, item.__dataindex__, data)
+                attribute_name = self.__configKeyInput.text()
+                logger.debug('Adding new attribut to basemodel {}'.format(attribute_name))
+                setattr(item_data, attribute_name, data)
             else: # or an existing model was changed
                 #print('Type',type(item.__dataparent__))
                 if pydantic.BaseModel in item.__dataparent__.__class__.__mro__:
@@ -784,10 +800,16 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 type_hints_index = None
                 typestr = data_value.__class__.__name__
                 try:
-                    # Get the defined type of the data
+                    # Check if the parent is a pydantic Basemodel child
                     if pydantic.BaseModel in parentdata.__class__.__mro__:
-                        type_hints = typing.get_type_hints(parentdata,include_extras=True)
+                        # Check if the item is an etxra field that can
+                        # be removed or a predefined field
+                        base_attributes = parentdata.model_construct().model_dump().keys()
+                        if index in base_attributes:
+                            print('Attribute {} is a predefined attribute, not removable'.format(index))
+                            removable = False
 
+                        type_hints = typing.get_type_hints(parentdata,include_extras=True)
                         # save the type hints
                         type_hints_index = type_hints[index]
                         print('type hints index', type_hints_index)
@@ -802,8 +824,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                                     break
 
                 except:
-                    logger.info('bad {}'.format(index),exc_info=True)
-
+                    logger.debug('Could not get type hints for {}'.format(index),exc_info=True)
 
                 indexstr = str(index)
                 # Check if item should be excluded
