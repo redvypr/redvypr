@@ -15,8 +15,35 @@ logger = logging.getLogger('redvypr_addressWidget')
 logger.setLevel(logging.DEBUG)
 
 
-class RedvyprAddressWidgetSimple(QtWidgets.QWidget):
+class RedvyprAddressTreeWidget(QtWidgets.QTreeWidget):
+    """ A widget that shows all RedvyprAdresses of a device
+    Not done yet
     """
+    def __init__(self, device=None):
+        """
+        """
+        super(QtWidgets.QWidget, self).__init__()
+        self.device = device
+        self.root = self.invisibleRootItem()
+        self.setColumnCount(1)
+        self.populate_tree()
+        self.expandAll()
+        self.resizeColumnToContents(0)
+
+    def populate_tree(self):
+        funcname = __name__ + '.populate_tree():'
+        self.clear()
+        addresses = self.device.get_deviceaddresses()
+
+        parent = self.root
+        for a in addresses:
+            item = QtWidgets.QTreeWidgetItem([str(a)])
+
+        parent.addChild(item)
+
+
+class RedvyprAddressWidgetSimple(QtWidgets.QWidget):
+    """ A widget that allows to enter an address
     """
     address_finished = QtCore.pyqtSignal(str)  # Signal notifying that the configuration has changed
     def __init__(self, redvypr_address_str='/d:*'):
@@ -197,7 +224,6 @@ class address_filterWidget(QtWidgets.QWidget):
             self.btn_showfilter.setText('Show Filter')
 
 
-#TODO: Check if this can be removed
 class datastreamWidget(QtWidgets.QWidget):
     """ Widget that lets the user choose available subscribed devices (if device is not None) and datakeys. This
     devicelock: The user cannot change the device anymore
@@ -207,7 +233,7 @@ class datastreamWidget(QtWidgets.QWidget):
     datakey_name_changed = QtCore.pyqtSignal(str)  # Signal notifying if the datakey has changed
 
     def __init__(self, redvypr, device=None, devicename_highlight=None, datakey=None, deviceonly=False,
-                 devicelock=False, subscribed_only=True, showapplybutton=True,datastreamstring='',closeAfterApply=True):
+                 devicelock=False, subscribed_only=True, showapplybutton=True,datastreamstring='',closeAfterApply=True, filter_include=[]):
         """
         Args:
             redvypr:
@@ -216,6 +242,7 @@ class datastreamWidget(QtWidgets.QWidget):
             datakey:
             deviceonly:
             devicelock:
+            filter_include: List of RedvyprAdresses the will be checked
             subscribed_only: Show the subscribed devices only
         """
 
@@ -223,8 +250,9 @@ class datastreamWidget(QtWidgets.QWidget):
         self.setWindowIcon(QtGui.QIcon(_icon_file))
         self.closeAfterApply = closeAfterApply
         self.redvypr = redvypr
+        self.external_filter_include = filter_include
         self.datastreamstring_orig = datastreamstring
-        self.datastreamstring      = datastreamstring
+        self.datastreamstring  = datastreamstring
         self.layout = QtWidgets.QVBoxLayout(self)
         self.deviceonly = deviceonly
         if (devicename_highlight == None):
@@ -347,8 +375,18 @@ class datastreamWidget(QtWidgets.QWidget):
                     flag_datastreams = False
                     if dev == self.device:
                         continue
-                    # Check for filter
+
                     print('Address', dev.address)
+                    # Check for external filter
+                    flag_external_filter = True
+                    for addr_include in self.external_filter_include:
+                        if dev.address not in addr_include:
+                            print('No filter match for external filter', dev.address)
+                            flag_external_filter = False
+
+                    if flag_external_filter == False:
+                        continue
+                    # Check for filter from filter widget
                     if self.filterWidget.filter_on:
                         if dev.address not in self.filterWidget.filter_address:
                             print('No filter match for ',dev.address)

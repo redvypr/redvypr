@@ -9,6 +9,8 @@ from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.widgets.redvyprSubscribeWidget import redvyprSubscribeWidget
 #from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, dictQTreeWidget
 from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
+from redvypr.widgets.redvypr_addressWidget import datastreamWidget
+from redvypr.redvypr_address import RedvyprAddress
 import redvypr.files as files
 import redvypr.device as device
 
@@ -597,6 +599,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         super().__init__()
         self.device = device
+        self.setWindowTitle(device.name)
         self.layout = QtWidgets.QGridLayout(self)
         tstr = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.update_label = QtWidgets.QLabel('Last update {:s}'.format(tstr))
@@ -608,6 +611,8 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         self.sublist = QtWidgets.QListWidget()
         self.subBtn = QtWidgets.QPushButton('Subscribe')
         self.subBtn.clicked.connect(self.connect_clicked)
+        self.ddBtn = QtWidgets.QPushButton('Data Devices')
+        self.ddBtn.clicked.connect(self.data_devices_clicked)
         self.confBtn = QtWidgets.QPushButton('Config')
         self.confBtn.clicked.connect(self.config_clicked)
         self.statBtn = QtWidgets.QPushButton('Statistics')
@@ -620,12 +625,28 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.publist_label)
         self.layout.addWidget(self.publist)
         self.layout.addWidget(self.statBtn)
+        self.layout.addWidget(self.ddBtn)
         self.layout.addWidget(self.confBtn)
         self.layout.addWidget(self.subBtn)
 
         self.updatetimer = QtCore.QTimer()
         self.updatetimer.timeout.connect(self.__update_info)
         self.updatetimer.start(dt_update)
+
+    def data_devices_clicked(self):
+        funcname = __name__ + '.data_devices_clicked():'
+        try:
+            self.data_device_widget.setParent(None)
+        except:
+            pass
+
+        # Filter the addresses
+        device_filter_address = RedvyprAddress(uuid=self.device.address.uuid,publisher=self.device.address.publisher)
+        filter_include = [device_filter_address]
+        print('Filter include',filter_include)
+        self.data_device_widget = datastreamWidget(redvypr=self.device.redvypr,filter_include=filter_include)
+        self.data_device_widget.setWindowTitle(self.device.name)
+        self.data_device_widget.show()
 
     def config_clicked(self):
         funcname = __name__ + '.config_clicked():'

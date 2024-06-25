@@ -402,6 +402,13 @@ class RedvyprDevice(QtCore.QObject):
         self.__stoptimer__ = QtCore.QTimer()
         self.__stoptimer__.timeout.connect(self.__check_thread_status)  # Add to the timer another update
 
+    def __update_address__(self):
+        # self.address_str = self.name + ':' + self.redvypr.hostinfo['hostname'] + '@' + self.redvypr.hostinfo[
+        #    'addr'] + '::' + self.redvypr.hostinfo['uuid']
+        # self.address = redvypr_address(self.address_str)
+        self.address = RedvyprAddress(devicename=self.name, local_hostinfo=self.redvypr.hostinfo, publisher=self.name)
+        self.address_str = self.address.get_str(address_format='/u/a/h/p/d/')
+
     def config_changed(self):
         """
         Function should be called when the configuration of the device has changed
@@ -525,13 +532,6 @@ class RedvyprDevice(QtCore.QObject):
         self.statistics['datastreams_dict'] = {}
         self.statistics['datastreams_info'] = {}
         self.logger.warning('This chnages only the device name but will not restart the thread.')
-
-    def __update_address__(self):
-        #self.address_str = self.name + ':' + self.redvypr.hostinfo['hostname'] + '@' + self.redvypr.hostinfo[
-        #    'addr'] + '::' + self.redvypr.hostinfo['uuid']
-        #self.address = redvypr_address(self.address_str)
-        self.address = RedvyprAddress(devicename=self.name, local_hostinfo= self.redvypr.hostinfo, publisher=self.name)
-        self.address_str = self.address.get_str(address_format='/u/a/h/p/d/')
 
     def address_string(self, address_format='/u/a/h/p/d'):
         """
@@ -802,7 +802,7 @@ class RedvyprDevice(QtCore.QObject):
 
     def get_deviceaddresses(self, local=None):
         """
-        Returns a list with RedvyprAddresses of all devices that publish data via this device. This is in many cases
+        Returns a list with RedvyprAddresses of all data devices that publish data via this device. This is in many cases
         the device itself but can also forwarded devices (i.e. iored) or because the device publishes data with different
 
         Args:

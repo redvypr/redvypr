@@ -959,7 +959,7 @@ Opens an "about" widget showing basic information.
         self._about_widget.show()
 
     def show_deviceselect(self):
-        self.__deviceselect__ = gui.datastreamWidget(redvypr=self.redvypr_widget.redvypr, deviceonly=True)
+        self.__deviceselect__ = redvypr.widgets.redvypr_addressWidget.datastreamWidget(redvypr=self.redvypr_widget.redvypr, deviceonly=True)
         self.__deviceselect__.show()
 
     def open_add_device_widget(self):
