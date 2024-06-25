@@ -42,6 +42,48 @@ class RedvyprAddressTreeWidget(QtWidgets.QTreeWidget):
         parent.addChild(item)
 
 
+class RedvyprAddressWidget(QtWidgets.QWidget):
+    """ A widget that allows to enter an address
+    """
+    address_finished = QtCore.pyqtSignal(str)  # Signal notifying that the configuration has changed
+    def __init__(self, redvypr_address_str='/d:*', redvypr=None):
+        """
+        """
+        super(QtWidgets.QWidget, self).__init__()
+        self.layout = QtWidgets.QFormLayout(self)
+        self.__configwidget = QtWidgets.QWidget()
+        self.redvypr_address = None
+        self.__datastreamwidget = datastreamWidget(redvypr=redvypr, showapplybutton=False)
+        self.__configwidget_input = self.__datastreamwidget.addressline
+        self.layout.addRow(self.__datastreamwidget)
+        # Buttons
+        self.__configwidget_apply = QtWidgets.QPushButton('Apply')
+        self.__configwidget_apply.clicked.connect(self.applyClicked)
+        self.__configwidget_apply.__configType = 'configRedvyprAddressStr'
+        self.layout.addRow(self.__configwidget_apply)
+
+    def applyClicked(self):
+        self._test_input()
+        self.address_finished.emit(str(self.redvypr_address))
+    def _test_input(self):
+        """
+        Tests if the text in the qlineedit is a valid redvypr address
+        :return: RedvyprAddress or None
+        """
+        addr_str = self.__configwidget_input.text()
+        print('Addr str',addr_str)
+        try:
+            self.redvypr_address = RedvyprAddress(addr_str)
+            self.__configwidget_apply.setEnabled(True)
+        except:
+            logger.debug('Could not parse address string {}'.format(addr_str),exc_info=True)
+            self.redvypr_address = None
+            self.__configwidget_apply.setEnabled(False)
+
+        print('Redvypr address',self.redvypr_address)
+        return self.redvypr_address
+
+
 class RedvyprAddressWidgetSimple(QtWidgets.QWidget):
     """ A widget that allows to enter an address
     """
@@ -85,7 +127,7 @@ class RedvyprAddressWidgetSimple(QtWidgets.QWidget):
             self.redvypr_address = None
             self.__configwidget_apply.setEnabled(False)
 
-        print('Reevypr address',self.redvypr_address)
+        print('Redvypr address',self.redvypr_address)
         return self.redvypr_address
 
 

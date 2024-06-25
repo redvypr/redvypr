@@ -611,9 +611,10 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         self.sublist = QtWidgets.QListWidget()
         self.subBtn = QtWidgets.QPushButton('Subscribe')
         self.subBtn.clicked.connect(self.connect_clicked)
-        self.ddBtn = QtWidgets.QPushButton('Data Devices')
-        self.ddBtn.clicked.connect(self.data_devices_clicked)
-        self.confBtn = QtWidgets.QPushButton('Config')
+        if self.device.publishes:
+            self.ddBtn = QtWidgets.QPushButton('Data devices publishing')
+            self.ddBtn.clicked.connect(self.data_devices_clicked)
+        self.confBtn = QtWidgets.QPushButton('Configure')
         self.confBtn.clicked.connect(self.config_clicked)
         self.statBtn = QtWidgets.QPushButton('Statistics')
         self.statBtn.clicked.connect(self.statistics_clicked)
@@ -625,7 +626,8 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.publist_label)
         self.layout.addWidget(self.publist)
         self.layout.addWidget(self.statBtn)
-        self.layout.addWidget(self.ddBtn)
+        if self.device.publishes:
+            self.layout.addWidget(self.ddBtn)
         self.layout.addWidget(self.confBtn)
         self.layout.addWidget(self.subBtn)
 

@@ -7,7 +7,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import pydantic
 import typing
 from redvypr.device import RedvyprDevice
-from redvypr.widgets.redvypr_addressWidget import RedvyprAddressWidgetSimple
+from redvypr.widgets.redvypr_addressWidget import RedvyprAddressWidgetSimple, RedvyprAddressWidget
 import redvypr.files as files
 
 
@@ -25,6 +25,10 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
         super().__init__()
         logger.debug(funcname)
         self.device = device
+        try:
+            redvypr = self.device.redvypr
+        except:
+            redvypr = None
         self.exclude = exclude
         self.layout = QtWidgets.QGridLayout(self)
         self.label = QtWidgets.QLabel('Configuration of\n{:s}'.format(self.device.name))
@@ -37,7 +41,7 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
         else:
             print('Config to edit',self.device.custom_config)
             print('tpye',type(self.device.custom_config))
-            self.configWidget = pydanticConfigWidget(self.device.custom_config, configname=dataname, exclude=self.exclude, config_location=config_location, show_datatype=show_datatype)
+            self.configWidget = pydanticConfigWidget(self.device.custom_config, configname=dataname, exclude=self.exclude, config_location=config_location, show_datatype=show_datatype, redvypr=redvypr)
             self.configWidget.config_changed_flag.connect(self.config_changed)
             #self.configWidget = pydanticQTreeWidget(self.device.custom_config, dataname=dataname, exclude=self.exclude)
         self.layout.addWidget(self.configWidget)
@@ -54,9 +58,10 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
 class pydanticConfigWidget(QtWidgets.QWidget):
     #config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
-    def __init__(self, config=None, editable=True, configname=None, exclude=[], config_location='bottom', show_datatype=False):
+    def __init__(self, config=None, editable=True, configname=None, exclude=[], config_location='bottom', show_datatype=False, redvypr=None):
         funcname = __name__ + '.__init__():'
         super().__init__()
+        self.redvypr = redvypr
         self.exclude = exclude
         self.layout = QtWidgets.QGridLayout(self)
         self.config_location = config_location
@@ -562,7 +567,10 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             parentparent = parent.__parent__
             self.__configwidget = QtWidgets.QWidget()
             self.__layoutwidget = QtWidgets.QFormLayout(self.__configwidget)
-            self.__configwidget_input = RedvyprAddressWidgetSimple(data)
+            if self.redvypr is not None:
+                self.__configwidget_input = RedvyprAddressWidget(data,redvypr=self.redvypr)
+            else:
+                self.__configwidget_input = RedvyprAddressWidgetSimple(data)
             self.__configwidget_input.__configType = 'configRedvyprAddress'
             self.__configwidget_input.item = item
             self.__configwidget_input.address_finished.connect(self.applyGuiInput)
