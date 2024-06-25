@@ -357,11 +357,15 @@ class datastreamWidget(QtWidgets.QWidget):
         if (deviceonly == False):
             pass
 
-        if (showapplybutton):
+        if True:
             self.buttondone = QtWidgets.QPushButton('Apply')
             self.buttondone.clicked.connect(self.done_clicked)
-            self.layout.addWidget(self.buttondone)
             self.buttondone.setEnabled(False)
+        if (showapplybutton):
+            self.layout.addWidget(self.buttondone)
+        else:
+            self.buttondone.hide()
+
 
         devicelist = []
         self.datakeylist_subscribed = {}
@@ -376,6 +380,7 @@ class datastreamWidget(QtWidgets.QWidget):
             self.addressline.datakey_address = RedvyprAddress(addrstr)
             self.buttondone.setEnabled(True)
         except:
+            logger.info('fdsf',exc_info=True)
             self.buttondone.setEnabled(False)
             return
         self.addressline.device = self.addressline.datakey_address.devicename

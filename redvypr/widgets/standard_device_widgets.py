@@ -220,7 +220,7 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         funcname = __name__ + '.config_clicked():'
         logger.debug(funcname)
         self.config_widget = pydanticDeviceConfigWidget(self.device)
-        self.config_widget.show()
+        self.config_widget.showMaximized()
         #self.subscribed.emit(self.device)
 
 

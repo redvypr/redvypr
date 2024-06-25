@@ -24,6 +24,7 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
         funcname = __name__ + '.__init__():'
         super().__init__()
         logger.debug(funcname)
+        self.setWindowTitle('Config of {}'.format(device.name))
         self.device = device
         try:
             redvypr = self.device.redvypr

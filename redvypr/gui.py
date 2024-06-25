@@ -654,7 +654,8 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         funcname = __name__ + '.config_clicked():'
         logger.debug(funcname)
         self.config_widget = pydanticDeviceConfigWidget(self.device)
-        self.config_widget.show()
+        #targetWidget.showFullScreen()
+        self.config_widget.showMaximized()
 
     def statistics_clicked(self):
         funcname = __name__ + '.statistics_clicked():'
