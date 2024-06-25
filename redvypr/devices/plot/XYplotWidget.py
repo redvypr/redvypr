@@ -14,7 +14,7 @@ import pyqtgraph
 import redvypr.data_packets
 import redvypr.gui
 import redvypr.files as files
-from redvypr.redvypr_address import RedvyprAddress
+from redvypr.redvypr_address import RedvyprAddress, RedvyprAddressStr
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -37,9 +37,9 @@ class configLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
     buffersize: int = pydantic.Field(default=20000,description='The size of the buffer holding the data of the line')
     numplot: int = pydantic.Field(default=2000, description='The number of data points to be plotted maximally')
     name: str = pydantic.Field(default='$y', description='The name of the line, this is shown in the legend, use $y to use the realtimedata address')
-    x_addr: str = pydantic.Field(default='$t(y)', description='The realtimedata address of the x-axis, use $t(y) to automatically choose the time corresponding to the y-data')
-    y_addr: str = pydantic.Field(default='', description='The realtimedata address of the x-axis')
-    error_addr: str = pydantic.Field(default='', description='The realtimedata address for an optional error band around the line')
+    x_addr: typing.Union[typing.Literal['$t(y)'],RedvyprAddressStr] = pydantic.Field(default='$t(y)', description='The realtimedata address of the x-axis, use $t(y) to automatically choose the time corresponding to the y-data')
+    y_addr: RedvyprAddressStr = pydantic.Field(default='', description='The realtimedata address of the x-axis')
+    error_addr: RedvyprAddressStr = pydantic.Field(default='', description='The realtimedata address for an optional error band around the line')
     color: pydColor = pydantic.Field(default=pydColor('red'), description='The color of the line')
     linewidth: float = pydantic.Field(default=1.0, description='The linewidth')
     databuffer: dataBufferLine = pydantic.Field(default=dataBufferLine(), description='The databuffer', editable=False)

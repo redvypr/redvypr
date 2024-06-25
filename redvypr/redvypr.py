@@ -953,7 +953,7 @@ class Redvypr(QtCore.QObject):
         return hosts
 
 
-    def get_device_objects(self, publishes = None, subscribes = True):
+    def get_device_objects(self, publishes=None, subscribes=True):
         """
         Returns a list of all devices of this redvypr instance. Returns all devices if neither "publishes" or "subscribes" is defined.
         Args:

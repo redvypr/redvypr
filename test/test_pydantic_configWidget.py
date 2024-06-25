@@ -44,6 +44,9 @@ class config_test(pydantic.BaseModel):
                                                                          description='List of floats and pydantic models')
 
     pyd: config_test_allow_extra = pydantic.Field(default=config_test_allow_extra())
+    literal: typing.Literal['a','b','c'] = 'a'
+    raddr_literal: typing.Union[pydantic.color.Color, typing.Literal['Hallo','Welt'],RedvyprAddressStr] = pydantic.Field(default=str(RedvyprAddress('d:test')))
+    color: pydantic.color.Color = pydantic.Field(default=pydantic.color.Color('red'), description='The color of the line')
 
 configtest = config_test()
 

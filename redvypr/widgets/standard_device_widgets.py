@@ -6,6 +6,8 @@ import time
 import logging
 import sys
 import yaml
+
+import redvypr.widgets.redvyprSubscribeWidget
 from redvypr.device import RedvyprDevice
 from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
 
@@ -206,6 +208,10 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
 
     def subscribe_clicked(self):
         button = self.sender()
+        # self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
+        self.__subscribeWidget = redvypr.widgets.redvyprSubscribeWidget.redvyprSubscribeWidget(redvypr=self.redvypr, device=self.device)
+        self.__subscribeWidget.show()
+
         self.subscribed.emit(self.device)
 
     def configure_clicked(self):

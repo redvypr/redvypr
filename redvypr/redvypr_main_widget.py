@@ -14,9 +14,11 @@ import uuid
 import re
 from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
+
+import redvypr.widgets.redvyprSubscribeWidget
 # Import redvypr specific stuff
-from redvypr.gui import QPlainTextEditLogger, displayDeviceWidget_standard, \
-    deviceControlWidget, datastreamWidget, redvypr_deviceInitWidget, redvypr_deviceInfoWidget, deviceTabWidget
+from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget
+#from redvypr.gui import datastreamWidget # Do we need this?
 import redvypr.gui as gui
 from redvypr.version import version
 import redvypr.files as files
@@ -446,7 +448,7 @@ class redvyprWidget(QtWidgets.QWidget):
         funcname = __name__ + '.open_connect_widget()'
         logger.debug(funcname + ':' + str(device))
         # self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
-        self.__con_widget = gui.redvyprSubscribeWidget(redvypr=self.redvypr, device=device)
+        self.__con_widget = redvypr.widgets.redvyprSubscribeWidget.redvyprSubscribeWidget(redvypr=self.redvypr, device=device)
         self.__con_widget.show()
 
     def __hostname_changed_click(self):

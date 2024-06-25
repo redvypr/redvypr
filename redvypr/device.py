@@ -802,7 +802,7 @@ class RedvyprDevice(QtCore.QObject):
 
     def get_deviceaddresses(self, local=None):
         """
-        Returns a list with redvypr_addresses of all devices that publish data via this device. This is in many cases
+        Returns a list with RedvyprAddresses of all devices that publish data via this device. This is in many cases
         the device itself but can also forwarded devices (i.e. iored) or because the device publishes data with different
 
         Args:
