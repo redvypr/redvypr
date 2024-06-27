@@ -5,6 +5,7 @@ import sys
 import yaml
 from PyQt5 import QtWidgets, QtCore, QtGui
 import pydantic
+from pydantic.color import Color as pydColor
 import typing
 from redvypr.device import RedvyprDevice
 from redvypr.widgets.redvypr_addressWidget import RedvyprAddressWidgetSimple, RedvyprAddressWidget
@@ -59,7 +60,8 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
 class pydanticConfigWidget(QtWidgets.QWidget):
     #config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
-    def __init__(self, config=None, editable=True, configname=None, exclude=[], config_location='bottom', show_datatype=False, redvypr=None, show_editable_only=True):
+    config_editing_done = QtCore.pyqtSignal()
+    def __init__(self, config=None, editable=True, configname=None, exclude=[], config_location='right', show_datatype=False, redvypr=None, show_editable_only=True):
         funcname = __name__ + '.__init__():'
         super().__init__()
         self.redvypr = redvypr
@@ -90,11 +92,15 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 self.layout.addWidget(self.configGui, 0, 1)
 
 
-        #self.closeButton = QtWidgets.QPushButton('Close')
-        #self.closeButton.clicked.connect(self.close)
+        self.closeButton = QtWidgets.QPushButton('Close')
+        self.closeButton.clicked.connect(self.closeClicked)
 
         self.layout.addWidget(self.configWidget, 0, 0)
-        #self.layout.addWidget(self.closeButton, 1, 0)
+        self.layout.addWidget(self.closeButton, 2, 0)
+
+    def closeClicked(self):
+        self.config_editing_done.emit()
+        self.close()
 
     def __comboUpdateItem(self, index):
         funcname = __name__ + '.__comboUpdateItem():'
@@ -710,13 +716,20 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             data_set = True
 
         elif self.sender().__configType == 'configColor':
-            print(funcname + ' Color')
+            #print(funcname + ' Color')
             color = self.__configwidget_input.currentColor()  # ComboBox
-            data = color.getRgbF()
+            #color1 = color.getRgbF()
+            color1 = color.getRgb()
+            color_tmp = (color1[0],color1[1],color1[2])
+            rint = int(color1[0] * 255)
+            gint = int(color1[1] * 255)
+            bint = int(color1[2] * 255)
+            data = pydColor(color_tmp)
+            #print('Got color',data)
             data_set = True
 
         elif self.sender().__configType == 'configBaseModel':
-            print('Got a pydantic config')
+            #print('Got a pydantic config')
             data = self.__configwidget_apply.__newitem  # Works for int/float spinboxes
             data_set = True
 

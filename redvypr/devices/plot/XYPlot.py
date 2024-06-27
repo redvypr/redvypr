@@ -36,6 +36,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = False
     subscribes: bool = True
     description: str = 'Device to plot XY-Data'
+    gui_icon: str = 'ph.chart-line-fill'
 
 
 

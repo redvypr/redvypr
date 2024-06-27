@@ -14,6 +14,7 @@ import pyqtgraph
 import redvypr.data_packets
 import redvypr.gui
 import redvypr.files as files
+from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from redvypr.redvypr_address import RedvyprAddress, RedvyprAddressStr
 
 _logo_file = files.logo_file
@@ -52,7 +53,7 @@ class configLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
     y_addr: RedvyprAddressStr = pydantic.Field(default='', description='The realtimedata address of the x-axis')
     error_addr: RedvyprAddressStr = pydantic.Field(default='', description='The realtimedata address for an optional error band around the line')
     color: pydColor = pydantic.Field(default=pydColor('red'), description='The color of the line')
-    linewidth: float = pydantic.Field(default=1.0, description='The linewidth')
+    linewidth: float = pydantic.Field(default=2.0, description='The linewidth')
     databuffer: dataBufferLine = pydantic.Field(default=dataBufferLine(), description='The databuffer', editable=False)
     plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_points'] = pydantic.Field(default='last_N_s', description='')
     last_N_s: float = pydantic.Field(default=6,
@@ -66,7 +67,7 @@ class configXYplot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
     type: str = 'XYplot'
     dt_update: float = pydantic.Field(default=0.25,description='Update time of the plot [s]')
-    interactive: str = pydantic.Field(default='mouse',description='Interactive modes')
+    interactive: typing.Literal['standard', 'mouse'] = pydantic.Field(default='standard',description='Interactive modes')
     backgroundcolor: pydColor = pydantic.Field(default=pydColor('lightgray'),description='Backgroundcolor')
     bordercolor: pydColor = pydantic.Field(default=pydColor('lightgray'), description='Bordercolor')
     show_legend: bool = pydantic.Field(default=True, description='Show legend (True) or hide (False)')
@@ -152,11 +153,17 @@ class XYplot(QtWidgets.QFrame):
             # https://stackoverflow.com/questions/44402399/how-to-disable-the-default-context-menu-of-pyqtgraph
             plot = pyqtgraph.PlotWidget(title=title, name=name)
             plot.plotItem.vb.menu.clear()
+            # General config
+            configAction = plot.plotItem.vb.menu.addAction('General config')
+            configAction.triggered.connect(self.pyqtgraphConfigAction)
             menu = plot.plotItem.vb.menu.addMenu('Line config')
             self.lineMenu = menu
+            removeMenu = plot.plotItem.vb.menu.addMenu('Remove line')
+            self.removeMenu = removeMenu
             # Add line
             addLineAction = plot.plotItem.vb.menu.addAction('Add line')
             addLineAction.triggered.connect(self.pyqtgraphAddLineAction)
+
 
 
             # plot = redvyprPlotWidget(title=title,name=name)
@@ -181,15 +188,40 @@ class XYplot(QtWidgets.QFrame):
             self.legendWidget = legend
             # plot_dict = {'widget': plot, 'lines': []}
 
+    def pyqtgraphConfigAction(self):
+        funcname = __name__ + '.pyqtgraphConfigAction()'
+        logger.debug(funcname)
+        self.ConfigWidget = pydanticConfigWidget(self.config, configname='new line',exclude=['lines'])
+        self.ConfigWidget.config_changed_flag.connect(self.apply_config)
+
+        self.ConfigWidget.show()
+
+    def pyqtgraphRemLineAction(self):
+        funcname = __name__ + '.pyqtgraphRemLineAction()'
+        logger.debug(funcname)
+        index_remove = self.sender()._iline
+        self.config.lines.pop(index_remove)
+        self.sender()._line._lineplot.clear()
+        self.apply_config()
+        #linename = self.sender()._linename
+
+        #lineConfig = self.sender()._line
+
     def pyqtgraphAddLineAction(self):
         funcname = __name__ + '.pyqtgraphAddLineAction()'
         logger.debug(funcname)
         newline = configLine()
-        self.addLineConfigWidget = redvypr.gui.pydanticConfigWidget(newline, configname='new line')
+        self.__newline = newline
+        self.addLineConfigWidget = pydanticConfigWidget(newline, configname='new line', redvypr=self.device.redvypr)
         self.addLineConfigWidget.setWindowTitle('Add line')
-        # self.configWidget.config_changed_flag.connect(self.apply_config)
+        self.addLineConfigWidget.config_editing_done.connect(self.pyqtgraphAddLineDone)
         self.addLineConfigWidget.show()
 
+    def pyqtgraphAddLineDone(self):
+        if self.__newline is not None:
+            self.config.lines.append(self.__newline)
+
+        self.apply_config()
     def pyqtgraphLineAction(self):
         """ Function is called whenever a line is configured
 
@@ -198,21 +230,10 @@ class XYplot(QtWidgets.QFrame):
         logger.debug(funcname)
         linename = self.sender()._linename
         lineConfig = self.sender()._line
-        self.lineConfigWidget = redvypr.gui.pydanticConfigWidget(lineConfig,configname=linename)
+        self.lineConfigWidget = pydanticConfigWidget(lineConfig,configname=linename)
         self.lineConfigWidget.setWindowTitle('Config {}'.format(linename))
-        #self.configWidget.config_changed_flag.connect(self.apply_config)
+        self.lineConfigWidget.config_editing_done.connect(self.apply_config)
         self.lineConfigWidget.show()
-
-    def pyqtgraphRedvyprAction(self, hallo):
-        """
-
-        """
-        funcname = __name__ + '.pyqtgraphRedvyprAction()'
-        logger.debug(funcname)
-        self.configWidget = redvypr.gui.configWidget(self.config)
-        self.configWidget.setWindowIcon(QtGui.QIcon(_icon_file))
-        self.configWidget.config_changed_flag.connect(self.apply_config)
-        self.configWidget.show()
 
     def mouseMoved(self, evt):
         """Function if mouse has been moved
@@ -296,6 +317,8 @@ class XYplot(QtWidgets.QFrame):
         funcname = __name__ + '.apply_config()'
         self.logger.debug(funcname)
         # Recreate the lineMenu
+        self.lineMenu.clear()
+        self.removeMenu.clear()
         for iline, line in enumerate(self.config.lines):
             name = self.config.lines[iline].name
             linename = "Line {}: {}".format(iline,name)
@@ -304,6 +327,13 @@ class XYplot(QtWidgets.QFrame):
             lineAction._iline = iline
             lineAction._linename = linename
             lineAction.triggered.connect(self.pyqtgraphLineAction)
+            # remove line menu
+            # Remove line
+            lineAction = self.removeMenu.addAction(linename)
+            lineAction._line = line
+            lineAction._iline = iline
+            lineAction._linename = linename
+            lineAction.triggered.connect(self.pyqtgraphRemLineAction)
 
         plot = self.plotWidget
         # Title

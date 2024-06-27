@@ -255,18 +255,19 @@ class deviceTableWidget(QtWidgets.QTableWidget):
                 self.redvyprWidget.devicetabs.removeTab(tabindex)
                 devicewidget.setParent(None)
                 devicewidget.setWindowTitle(widgetname)
-                device.device_parameter.gui_dock = widgetloc
-                devicewidget.show()
+            device.device_parameter.gui_dock = widgetloc
+            devicewidget.show()
 
         elif widgetloc == 'Hide':
             if tabindex > -1:
                 self.redvyprWidget.devicetabs.removeTab(tabindex)
                 devicewidget.setParent(None)
                 devicewidget.setWindowTitle(widgetname)
-                device.device_parameter.gui_dock = widgetloc
-                devicewidget.show()
+            device.device_parameter.gui_dock = widgetloc
+            devicewidget.show()
+            devicewidget.hide()
         else:
-            if tabindex == -1:
+            if tabindex == -1: #Add to tab, if not already there
                 self.redvyprWidget.devicetabs.addTab(devicewidget, widgetname)
                 device.device_parameter.gui_dock = widgetloc
 
@@ -292,9 +293,12 @@ def get_QColor(data):
     funcname = __name__ + '.get_QColor():'
     logger.debug(funcname)
     colordata = copy.deepcopy(data)
-
+    print('Colordata',colordata)
+    print('Type colordata', type(colordata))
     if(type(colordata) == str):
         color = QtGui.QColor(colordata)
+    elif (type(colordata) == tuple):
+        color = QtGui.QColor(colordata[0], colordata[1], colordata[2])
     elif (type(colordata) == list):
         color = QtGui.QColor(colordata[0], colordata[1], colordata[2])
     elif (type(colordata) == pydColor):
