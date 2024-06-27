@@ -667,7 +667,10 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         funcname = __name__ + '.connect_clicked():'
         logger.debug(funcname)
         button = self.sender()
-        self.connect.emit(self.device)
+        self.__subscribeWidget = redvyprSubscribeWidget.redvyprSubscribeWidget(redvypr=self.redvypr,
+                                                                                               device=self.device)
+        self.__subscribeWidget.show()
+        #self.connect.emit(self.device)
 
     def __update_info(self):
         funcname = __name__ + '.__update_info():'

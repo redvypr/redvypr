@@ -84,7 +84,6 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         dataqueue.put(data)
 
         # Put some pathological data into the queue
-        print('None')
         dataqueue.put(None)
         
 

@@ -28,14 +28,25 @@ logger.setLevel(logging.INFO)
 
 colors = ['red','blue','green','gray','yellow','purple']
 
-class dataBufferLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
+class dataBufferLine(pydantic.BaseModel):
+    model_config = {'extra': 'allow'}
+    skip_bufferdata_when_serialized: bool = pydantic.Field(default=True, description='Do not save the buffer data when serialized')
     tdata: list = pydantic.Field(default=[])
     xdata: list = pydantic.Field(default=[])
     ydata: list = pydantic.Field(default=[])
     errordata: list = pydantic.Field(default=[])
+
+    @pydantic.model_serializer
+    def ser_model(self) -> typing.Dict[str, typing.Any]:
+        if self.skip_bufferdata_when_serialized:
+            return {'tdata': [],'xdata': [],'ydata': [],'errordata': [], 'skip_bufferdata_when_serialized':self.skip_bufferdata_when_serialized}
+        else:
+            return {'tdata': self.tdata, 'xdata': self.xdata, 'ydata': self.ydata, 'errordata': self.errordata,
+                    'skip_bufferdata_when_serialized': self.skip_bufferdata_when_serialized}
+
 class configLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
     buffersize: int = pydantic.Field(default=20000,description='The size of the buffer holding the data of the line')
-    numplot: int = pydantic.Field(default=2000, description='The number of data points to be plotted maximally')
+    numplot_max: int = pydantic.Field(default=2000, description='The number of data points to be plotted maximally')
     name: str = pydantic.Field(default='$y', description='The name of the line, this is shown in the legend, use $y to use the realtimedata address')
     x_addr: typing.Union[typing.Literal['$t(y)'],RedvyprAddressStr] = pydantic.Field(default='$t(y)', description='The realtimedata address of the x-axis, use $t(y) to automatically choose the time corresponding to the y-data')
     y_addr: RedvyprAddressStr = pydantic.Field(default='', description='The realtimedata address of the x-axis')
@@ -43,6 +54,13 @@ class configLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
     color: pydColor = pydantic.Field(default=pydColor('red'), description='The color of the line')
     linewidth: float = pydantic.Field(default=1.0, description='The linewidth')
     databuffer: dataBufferLine = pydantic.Field(default=dataBufferLine(), description='The databuffer', editable=False)
+    plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_points'] = pydantic.Field(default='last_N_s', description='')
+    last_N_s: float = pydantic.Field(default=6,
+                                     description='Plots the last seconds, if plot_mode_x is set to last_N_s')
+    last_N_points: int = pydantic.Field(default=200,
+                                        description='Plots the last points, if plot_mode_x is set to last_N_points')
+    plot_every_Nth: int = pydantic.Field(default=1, description='Uses every Nth datapoint for plotting')
+
 
 class configXYplot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
@@ -59,6 +77,10 @@ class configXYplot(pydantic.BaseModel):
     xlabel: str = pydantic.Field(default='', description='')
     ylabel: str = pydantic.Field(default='', description='')
     lines: typing.Optional[typing.List[configLine]] = pydantic.Field(default=[configLine()])
+    automatic_subscription: bool = pydantic.Field(default=True,
+                                                  description='subscribes automatically the adresses of the lines at the host device')
+
+
 
 
 # config_template_graph['description'] = description_graph
@@ -253,7 +275,7 @@ class XYplot(QtWidgets.QFrame):
             index = len(self.config.lines) - 1
 
         self.config.lines[index].buffersize = bufsize
-        self.config.lines[index].numplot    = numplot
+        self.config.lines[index].numplot_max    = numplot
         self.config.lines[index].linewidth  = linewidth
         #print('Using color',color)
         color_tmp = pydColor(color)
@@ -282,8 +304,6 @@ class XYplot(QtWidgets.QFrame):
             lineAction._iline = iline
             lineAction._linename = linename
             lineAction.triggered.connect(self.pyqtgraphLineAction)
-
-        # Here a subscription should be done to the device ...
 
         plot = self.plotWidget
         # Title
@@ -365,54 +385,68 @@ class XYplot(QtWidgets.QFrame):
                 print('Line',line,iline)
                 x_addr = line.x_addr
                 y_addr = line.y_addr
-                y_raddr = redvypr.RedvyprAddress(y_addr)
-                print('x_addr', x_addr)
-                print('y_addr', y_addr)
-                if (x_addr == '$t(y)'):
-                    self.logger.debug(funcname + ' Using time variable of y')
-                    #xtmp = redvypr.data_packets.modify_addrstr(y_raddr.address_str, datakey='t')
-                    ## print('xtmp',xtmp)
-                    #x_raddr = redvypr.redvypr_address(xtmp)
-                    x_raddr = redvypr.RedvyprAddress(y_addr, datakey='t')
-                else:
-                    x_raddr = redvypr.RedvyprAddress(x_addr)
-
-                print('x_addrnew', x_addr,x_raddr)
-                # These attributes are used in plot.Device.connect_devices to actually subscribe to the fitting devices
-                line._x_raddr = x_raddr
-                line._y_raddr = y_raddr
-
-                #print('Color',self.config.lines[iline].color.as_rgb())
-                color = redvypr.gui.get_QColor(self.config.lines[iline].color)
-                # print('Set pen 2')
-                linewidth = self.config.lines[iline].linewidth
-                # print('Set pen 3')
-                #color = QtGui.QColor(200, 100, 100)
-                #print('COLOR!!!!', color, type(color), linewidth)
-                pen = pyqtgraph.mkPen(color, width=float(linewidth))
-                line._lineplot.setPen(pen)
-
-                # Error address
-                if len(line.error_addr) > 0:
-                    line._error_raddr = redvypr.RedvyprAddress(line.error_addr)
-                    errorplot = pyqtgraph.ErrorBarItem(name=line._name_applied,pen=pen)
-                    line._errorplot = errorplot  # Add the line as an attribute to the configuration
-                    errorplot._line_config = line
-                    plot.addItem(errorplot)
-                else:
-                    line._error_raddr = ''
-                    line._errorplot = None
-                    # print('Set pen 1')
+                if len(y_addr) > 0:
+                    y_raddr = redvypr.RedvyprAddress(y_addr)
+                    print('x_addr', x_addr)
+                    print('y_addr', y_addr)
+                    if (x_addr == '$t(y)'):
+                        self.logger.debug(funcname + ' Using time variable of y')
+                        #xtmp = redvypr.data_packets.modify_addrstr(y_raddr.address_str, datakey='t')
+                        ## print('xtmp',xtmp)
+                        #x_raddr = redvypr.redvypr_address(xtmp)
+                        x_raddr = redvypr.RedvyprAddress(y_addr, datakey='t')
+                    else:
+                        x_raddr = redvypr.RedvyprAddress(x_addr)
+                        # Subscribe
 
 
-                name = self.config.lines[iline].name
-                if (name.lower() == '$y'):
-                    self.logger.debug(funcname + ' Replacing with y')
-                    name = y_addr
+                    print('x_addrnew', x_addr,x_raddr)
+                    # These attributes are used in plot.Device.connect_devices to actually subscribe to the fitting devices
+                    line._x_raddr = x_raddr
+                    line._y_raddr = y_raddr
 
-                self.logger.debug(funcname + ' Setting the name')
-                self.legendWidget.addItem(line._lineplot, name)
-                line._lineplot.setData(name=name)
+                    #print('Color',self.config.lines[iline].color.as_rgb())
+                    color = redvypr.gui.get_QColor(self.config.lines[iline].color)
+                    # print('Set pen 2')
+                    linewidth = self.config.lines[iline].linewidth
+                    # print('Set pen 3')
+                    #color = QtGui.QColor(200, 100, 100)
+                    #print('COLOR!!!!', color, type(color), linewidth)
+                    pen = pyqtgraph.mkPen(color, width=float(linewidth))
+                    line._lineplot.setPen(pen)
+
+                    # Error address
+                    error_addr = None
+                    if len(line.error_addr) > 0:
+                        error_raddr = redvypr.RedvyprAddress(line.error_addr)
+                        line._error_raddr = error_raddr
+                        errorplot = pyqtgraph.ErrorBarItem(name=line._name_applied,pen=pen)
+                        line._errorplot = errorplot  # Add the line as an attribute to the configuration
+                        errorplot._line_config = line
+                        plot.addItem(errorplot)
+                    else:
+                        line._error_raddr = ''
+                        line._errorplot = None
+                        # print('Set pen 1')
+
+
+                    name = self.config.lines[iline].name
+                    if (name.lower() == '$y'):
+                        self.logger.debug(funcname + ' Replacing with y')
+                        name = y_addr
+
+                    self.logger.debug(funcname + ' Setting the name')
+                    self.legendWidget.addItem(line._lineplot, name)
+                    line._lineplot.setData(name=name)
+
+                    if self.config.automatic_subscription:
+                        logger.debug(funcname + 'Subscribing to x address {}'.format(x_raddr))
+                        self.device.subscribe_address(x_raddr)
+                        logger.debug(funcname + 'Subscribing to y address {}'.format(y_raddr))
+                        self.device.subscribe_address(y_raddr)
+                        if line._errorplot is not None:
+                            logger.debug(funcname + 'Subscribing to error address {}'.format(error_raddr))
+                            self.device.subscribe_address(error_raddr)
             except Exception as e:
                 logger.debug('Exception config lines: {:s}'.format(str(e)),exc_info=True)
                 raise ValueError('')
@@ -461,6 +495,62 @@ class XYplot(QtWidgets.QFrame):
 
         return data
 
+    def __get_data_for_line(self, line):
+        """
+        Provides the data for the line to plot
+        :return:
+
+        plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_points'] = pydantic.Field(default='all', description='')
+    last_N_s: float = pydantic.Field(default=60,
+                                     description='Plots the last seconds, if plot_mode_x is set to last_N_s')
+    last_N_points: int = pydantic.Field(default=200,
+                                        description='Plots the last points, if plot_mode_x is set to last_N_points')
+    plot_every_Nth: int = pydantic.Field(default=1, description='Uses every Nth datapoint for plotting')
+
+        """
+
+        if line.plot_mode_x == 'all':
+            ttmp = line.databuffer.tdata[::line.plot_every_Nth]
+            xtmp = line.databuffer.xdata[::line.plot_every_Nth]
+            ytmp = line.databuffer.ydata[::line.plot_every_Nth]
+            errtmp = line.databuffer.errordata[::line.plot_every_Nth]
+        elif line.plot_mode_x == 'last_N_s':
+            ttmp = line.databuffer.tdata[::line.plot_every_Nth]
+            xtmp = line.databuffer.xdata[::line.plot_every_Nth]
+            ytmp = line.databuffer.ydata[::line.plot_every_Nth]
+            errtmp = line.databuffer.errordata[::line.plot_every_Nth]
+            # Find the index
+            tnow = ttmp[-1]
+            tsearch = tnow - line.last_N_s
+            ttmp_ar = np.asarray(ttmp)
+            iplot = np.where(ttmp_ar >= tsearch)[0]
+            if len(iplot)>0:
+                istart = iplot[0]
+                ttmp = ttmp[istart:]
+                xtmp = xtmp[istart:]
+                ytmp = ytmp[istart:]
+                errtmp = errtmp[istart:]
+            else:
+                ttmp = []
+                xtmp = []
+                ytmp = []
+                errtmp = []
+
+        elif line.plot_mode_x == 'last_N_points':
+            ttmp = line.databuffer.tdata[::line.plot_every_Nth][-line.last_N_points:]
+            xtmp = line.databuffer.xdata[::line.plot_every_Nth][-line.last_N_points:]
+            ytmp = line.databuffer.ydata[::line.plot_every_Nth][-line.last_N_points:]
+            errtmp = line.databuffer.errordata[::line.plot_every_Nth][-line.last_N_points:]
+        else:
+            pass
+
+        # Reduce the number of points, if they are more than numplot_max
+        x = xtmp[-line.numplot_max:]
+        y = ytmp[-line.numplot_max:]
+        err = errtmp[-line.numplot_max:]
+        # pw.setXRange(min(x[:ind]),max(x[:ind]))
+        return [x,y,err]
+
     def update_plot(self, data):
         """ Updates the plot based on the given data
         """
@@ -474,6 +564,7 @@ class XYplot(QtWidgets.QFrame):
             if True:
                 # Check if the device is to be plotted
                 for iline, line in enumerate(self.config.lines):
+                    line.__newdata = False
                     error_raddr = line._error_raddr
                     #print('device',data['_redvypr']['device'])
                     #print('data',data)
@@ -516,11 +607,13 @@ class XYplot(QtWidgets.QFrame):
                             line.databuffer.xdata.append( float(newx[inew]) )
                             line.databuffer.ydata.append( float(newy[inew]) )
                             line.databuffer.errordata.append(float(newerror[inew]) )
-                            if len(line.databuffer.tdata) > line.buffersize:
+                            while len(line.databuffer.tdata) > line.buffersize:
                                 line.databuffer.tdata.pop(0)
                                 line.databuffer.xdata.pop(0)
                                 line.databuffer.ydata.pop(0)
                                 line.databuffer.errordata.pop(0)
+
+                            line.__newdata = True
 
                             #tdata = np.roll(tdata, -1)
                             #xdata = np.roll(xdata, -1)
@@ -562,22 +655,24 @@ class XYplot(QtWidgets.QFrame):
                 dt = tnow - tlastupdate
                 if dt > self.config.dt_update:
                     update = True
-                    line._tlastupdate = tnow
                 else:
                     update = False
                     # print('no update')
 
-                if (update):  # We could check here if data was changed above the for given line
-                    x = line.databuffer.xdata[-line.numplot:]
-                    y = line.databuffer.ydata[-line.numplot:]
-                    line._lineplot.setData(x=x, y=y)
-                    # Update the error
-                    if line._errorplot is not None:
-                        if len(x) > 0:
-                            #print('Updating errorplot')
-                            err = line.databuffer.errordata[-line.numplot:]
-                            #print('err',err,x,y)
-                            beamwidth=None
-                            line._errorplot.setData(x=np.asarray(x), y=np.asarray(y), top=np.asarray(err)*1, bottom=np.asarray(err)*1,beam=beamwidth)
-                    # pw.setXRange(min(x[:ind]),max(x[:ind]))
+                print('Update',update,line.__newdata)
+                if update and line.__newdata:  # We could check here if data was changed above the for given line
+                    line._tlastupdate = tnow
+                    try:
+                        [x,y,err]= self.__get_data_for_line(line)
+                        print('x',x)
+                        line._lineplot.setData(x=x, y=y)
+                        if line._errorplot is not None:
+                            beamwidth = None
+                            line._errorplot.setData(x=np.asarray(x), y=np.asarray(y), top=np.asarray(err) * 1,
+                                                    bottom=np.asarray(err) * 1, beam=beamwidth)
+
+                    except:
+                        logger.info('Could not update line',exc_info=True)
+
+
 

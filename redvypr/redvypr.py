@@ -723,6 +723,7 @@ class Redvypr(QtCore.QObject):
                     if (HASDEVICE):  # Module has its own device
                         Device = devicemodule.Device
                         # Check if a startfunction is implemented
+                        # TODO: This seems to be bogus, double check
                         try:
                             Device.start
                             startfunction = None

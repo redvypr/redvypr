@@ -59,7 +59,7 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
 class pydanticConfigWidget(QtWidgets.QWidget):
     #config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
-    def __init__(self, config=None, editable=True, configname=None, exclude=[], config_location='bottom', show_datatype=False, redvypr=None):
+    def __init__(self, config=None, editable=True, configname=None, exclude=[], config_location='bottom', show_datatype=False, redvypr=None, show_editable_only=True):
         funcname = __name__ + '.__init__():'
         super().__init__()
         self.redvypr = redvypr
@@ -72,7 +72,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             configname = 'pydanticConfig'
 
         self.config = config
-        self.configWidget = pydanticQTreeWidget(self.config, dataname=configname, exclude=self.exclude, show_datatype=show_datatype)
+        self.configWidget = pydanticQTreeWidget(self.config, dataname=configname, exclude=self.exclude, show_datatype=show_datatype, show_editable_only=show_editable_only)
         if editable:
             self.configWidget.itemDoubleClicked.connect(self.__openConfigGui__)
             self.configGui = QtWidgets.QWidget()  # Widget where the user can modify the content
@@ -246,140 +246,145 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         has_combo = False
         self.additional_config_gui_widgets = []
         self.__clearConfigGui__()
-        #print('some information')
-        #print(item.__data__)
-        #print(item.__dataparent__)
-        #print(item.__dataindex__)
-        #print(item.__datatypestr__)
-        #print(item.__parent__)
-        #print('Done')
-        try:
-            type_hints = item.__type_hints__
-        except:
-            type_hints = None
+        editable = item.__editable__
+        print('editable',editable)
+        if editable==False:
+            print('Not editable')
+        else:
+            #print('some information')
+            #print(item.__data__)
+            #print(item.__dataparent__)
+            #print(item.__dataindex__)
+            #print(item.__datatypestr__)
+            #print(item.__parent__)
+            #print('Done')
+            try:
+                type_hints = item.__type_hints__
+            except:
+                type_hints = None
 
-        # Add type hints to pydantic basemodel with extra=allow
-        if pydantic.BaseModel in item.__data__.__class__.__mro__:
-            if item.__flag_add_entry__:
-                type_hints = typing.Union[bool, int, float, str]
+            # Add type hints to pydantic basemodel with extra=allow
+            if pydantic.BaseModel in item.__data__.__class__.__mro__:
+                if item.__flag_add_entry__:
+                    type_hints = typing.Union[bool, int, float, str]
 
-        type_dict = self.interprete_type_hints(type_hints)
-        print('Type dict',type_dict)
-        if type_dict is not None:
-            index_datatype = None
-            # Create a combo to allow the user to choose between the different
-            # data type choices
-            # checks if type hints are annotations or types/unions
-            # Annotations are used for extra information, type/unions for
-            if type_dict['isliteral']:
-                print('Literal options',type_dict['literal_options'])
-                item.__datatypestr__ = 'literal'
-                item.__datatype__ = typing.Literal
-                item.__literal_options = type_dict['literal_options']
-            elif type_dict['isannotated']:
-                pass
-            # This is a union
-            elif len(type_dict['type_args'])>0:
-                self.__configCombo = QtWidgets.QComboBox()
-                has_combo = True
-                for iarg,argstr in enumerate(type_dict['type_args']):
-                    print('Argstr ...',argstr)
-                    # If annotated data is available look search for known datatypes
-                    if argstr == 'Annotated':
-                        print('Annotated argument')
-                        annotations = typing.get_args(typing.get_args(item.__type_hints__)[iarg])
-                        print('Annotations ...', annotations)
-                        for annotation in annotations:
-                            if annotation == 'RedvyprAddressStr':
-                                argstr = annotation
-                                break
-                    self.__configCombo.addItem(argstr)
-                    index = self.__configCombo.count() - 1
-                    datatypestr_tmp = item.__data__.__class__.__name__
-                    if argstr == datatypestr_tmp:
-                        index_datatype = index
-                    user_role_config = 11
-                    role = QtCore.Qt.UserRole + user_role_config
-                    self.__configCombo.setItemData(index, item, role)
-                    #print('index',index,'item',item,'argstr',argstr, datatypestr_tmp, item.__datatypestr__)
+            type_dict = self.interprete_type_hints(type_hints)
+            print('Type dict',type_dict)
+            if type_dict is not None:
+                index_datatype = None
+                # Create a combo to allow the user to choose between the different
+                # data type choices
+                # checks if type hints are annotations or types/unions
+                # Annotations are used for extra information, type/unions for
+                if type_dict['isliteral']:
+                    print('Literal options',type_dict['literal_options'])
+                    item.__datatypestr__ = 'literal'
+                    item.__datatype__ = typing.Literal
+                    item.__literal_options = type_dict['literal_options']
+                elif type_dict['isannotated']:
+                    pass
+                # This is a union
+                elif len(type_dict['type_args'])>0:
+                    self.__configCombo = QtWidgets.QComboBox()
+                    has_combo = True
+                    for iarg,argstr in enumerate(type_dict['type_args']):
+                        print('Argstr ...',argstr)
+                        # If annotated data is available look search for known datatypes
+                        if argstr == 'Annotated':
+                            print('Annotated argument')
+                            annotations = typing.get_args(typing.get_args(item.__type_hints__)[iarg])
+                            print('Annotations ...', annotations)
+                            for annotation in annotations:
+                                if annotation == 'RedvyprAddressStr':
+                                    argstr = annotation
+                                    break
+                        self.__configCombo.addItem(argstr)
+                        index = self.__configCombo.count() - 1
+                        datatypestr_tmp = item.__data__.__class__.__name__
+                        if argstr == datatypestr_tmp:
+                            index_datatype = index
+                        user_role_config = 11
+                        role = QtCore.Qt.UserRole + user_role_config
+                        self.__configCombo.setItemData(index, item, role)
+                        #print('index',index,'item',item,'argstr',argstr, datatypestr_tmp, item.__datatypestr__)
 
-                if index_datatype is not None:
-                    self.__configCombo.setCurrentIndex(index_datatype)
-                    item.__datatypestr__ = datatypestr_tmp
-                    item.__datatype__ = item.__data__.__class__
-                else:
-                    self.__configCombo.setCurrentIndex(0)
-                    self.__comboUpdateItem(0)
+                    if index_datatype is not None:
+                        self.__configCombo.setCurrentIndex(index_datatype)
+                        item.__datatypestr__ = datatypestr_tmp
+                        item.__datatype__ = item.__data__.__class__
+                    else:
+                        self.__configCombo.setCurrentIndex(0)
+                        self.__comboUpdateItem(0)
 
-                # Get the index for the combo
-                self.__configCombo.currentIndexChanged.connect(self.__comboTypeChanged)
-                data = item.__data__
+                    # Get the index for the combo
+                    self.__configCombo.currentIndexChanged.connect(self.__comboTypeChanged)
+                    data = item.__data__
 
-                if isinstance(data, dict):
-                    print('Add options for dict')
-                    self.configGui_layout.addWidget(
-                        QtWidgets.QLabel('Add entry of type to dict {}'.format(item.__dataindex__)))
+                    if isinstance(data, dict):
+                        print('Add options for dict')
+                        self.configGui_layout.addWidget(
+                            QtWidgets.QLabel('Add entry of type to dict {}'.format(item.__dataindex__)))
 
-                    self.__configKeyInput = QtWidgets.QLineEdit('newkey')
-                    # Widget for key/datatype to add
-                    addWidget_tmp = QtWidgets.QWidget()
-                    addWidget_tmp_layout = QtWidgets.QHBoxLayout(addWidget_tmp)
-                    addWidget_tmp_layout.addWidget(self.__configKeyInput)
-                    addWidget_tmp_layout.addWidget(self.__configCombo)
-                    self.additional_config_gui_widgets.append(addWidget_tmp)
-                elif isinstance(data, list):
-                    print('Add options for list')
-                    self.configGui_layout.addWidget(
-                        QtWidgets.QLabel('Add entry of type to list {}'.format(item.__dataindex__)))
+                        self.__configKeyInput = QtWidgets.QLineEdit('newkey')
+                        # Widget for key/datatype to add
+                        addWidget_tmp = QtWidgets.QWidget()
+                        addWidget_tmp_layout = QtWidgets.QHBoxLayout(addWidget_tmp)
+                        addWidget_tmp_layout.addWidget(self.__configKeyInput)
+                        addWidget_tmp_layout.addWidget(self.__configCombo)
+                        self.additional_config_gui_widgets.append(addWidget_tmp)
+                    elif isinstance(data, list):
+                        print('Add options for list')
+                        self.configGui_layout.addWidget(
+                            QtWidgets.QLabel('Add entry of type to list {}'.format(item.__dataindex__)))
 
-                    addWidget_tmp = QtWidgets.QWidget()
-                    addWidget_tmp_layout = QtWidgets.QHBoxLayout(addWidget_tmp)
-                    addWidget_tmp_layout.addWidget(QtWidgets.QLabel('Append type to list'))
-                    addWidget_tmp_layout.addWidget(self.__configCombo)
-                    self.additional_config_gui_widgets.append(addWidget_tmp)
-                elif pydantic.BaseModel in data.__class__.__mro__:
-                    print('Add options for basemodel')
-                    self.configGui_layout.addWidget(
-                        QtWidgets.QLabel('Add entry of type to pydantic BaseModel child {}'.format(item.__dataindex__)))
+                        addWidget_tmp = QtWidgets.QWidget()
+                        addWidget_tmp_layout = QtWidgets.QHBoxLayout(addWidget_tmp)
+                        addWidget_tmp_layout.addWidget(QtWidgets.QLabel('Append type to list'))
+                        addWidget_tmp_layout.addWidget(self.__configCombo)
+                        self.additional_config_gui_widgets.append(addWidget_tmp)
+                    elif pydantic.BaseModel in data.__class__.__mro__:
+                        print('Add options for basemodel')
+                        self.configGui_layout.addWidget(
+                            QtWidgets.QLabel('Add entry of type to pydantic BaseModel child {}'.format(item.__dataindex__)))
 
-                    self.__configKeyInput = QtWidgets.QLineEdit('newattribute')
-                    # Widget for key/datatype to add
-                    addWidget_tmp = QtWidgets.QWidget()
-                    addWidget_tmp_layout = QtWidgets.QHBoxLayout(addWidget_tmp)
-                    addWidget_tmp_layout.addWidget(self.__configKeyInput)
-                    addWidget_tmp_layout.addWidget(self.__configCombo)
-                    self.additional_config_gui_widgets.append(addWidget_tmp)
-                else: # Ordinary item, adding nothing special
-                    # Add the config combo to the layout
-                    self.additional_config_gui_widgets.append(self.__configCombo)
+                        self.__configKeyInput = QtWidgets.QLineEdit('newattribute')
+                        # Widget for key/datatype to add
+                        addWidget_tmp = QtWidgets.QWidget()
+                        addWidget_tmp_layout = QtWidgets.QHBoxLayout(addWidget_tmp)
+                        addWidget_tmp_layout.addWidget(self.__configKeyInput)
+                        addWidget_tmp_layout.addWidget(self.__configCombo)
+                        self.additional_config_gui_widgets.append(addWidget_tmp)
+                    else: # Ordinary item, adding nothing special
+                        # Add the config combo to the layout
+                        self.additional_config_gui_widgets.append(self.__configCombo)
 
-                item_data = item.__data__
+                    item_data = item.__data__
 
-        #self.__configWidget = QtWidgets.QLabel('Hallo')
-        #print('Configwidget 1',self.__configWidget)
-        self.CreateConfigWidgetForItem(item)
-        print('Configwidget 2', self.__configwidget)
-        #config_gui_widgets.append(self.__configwidget)
-        #self.configGui_layout.addWidget(self.__configwidget)
-        # Add a remove button if the item can be removed
-        parentdata = item.__dataparent__
-        try:
-            removable = item.__removable__
-        except:
-            removable = False
-        if removable:
-            self.__remove_button = QtWidgets.QPushButton('Remove')
-            self.__remove_button.item = item
-            self.__remove_button.clicked.connect(self.__removeClicked)
-            self.configGui_layout.addWidget(QtWidgets.QLabel('Remove entry'))
-            self.configGui_layout.addWidget(self.__remove_button)
-        # Add a stretch
-        #self.configGui_layout.addItem(self.stretchy_spacer_thing)
-        #self.additional_config_gui_widgets.append(self.stretchy_spacer_thing)
-        self.__populateConfigGui__()
-        if has_combo:
-            self.__configCombo.setCurrentIndex(0)
-            #self.__comboTypeChanged(0)
+            #self.__configWidget = QtWidgets.QLabel('Hallo')
+            #print('Configwidget 1',self.__configWidget)
+            self.CreateConfigWidgetForItem(item)
+            print('Configwidget 2', self.__configwidget)
+            #config_gui_widgets.append(self.__configwidget)
+            #self.configGui_layout.addWidget(self.__configwidget)
+            # Add a remove button if the item can be removed
+            parentdata = item.__dataparent__
+            try:
+                removable = item.__removable__
+            except:
+                removable = False
+            if removable:
+                self.__remove_button = QtWidgets.QPushButton('Remove')
+                self.__remove_button.item = item
+                self.__remove_button.clicked.connect(self.__removeClicked)
+                self.configGui_layout.addWidget(QtWidgets.QLabel('Remove entry'))
+                self.configGui_layout.addWidget(self.__remove_button)
+            # Add a stretch
+            #self.configGui_layout.addItem(self.stretchy_spacer_thing)
+            #self.additional_config_gui_widgets.append(self.stretchy_spacer_thing)
+            self.__populateConfigGui__()
+            if has_combo:
+                self.__configCombo.setCurrentIndex(0)
+                #self.__comboTypeChanged(0)
 
     def __removeClicked(self):
         funcname = __name__ + '.__removeClicked():'
@@ -836,7 +841,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
         self.expandAll()
         self.resizeColumnToContents(0)
 
-    def create_item(self, index, data, parent, edit_flags=None):
+    def create_item(self, index, data, parent, edit_flag=None):
         """
         Creates recursively qtreewidgetitems. If the item to be created is a sequence (dict or list), it calls itself as often as it finds a real value
         Args:
@@ -878,23 +883,26 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
             flag_iterate = False
             flag_add_entry = False
 
-        # Try to get extra information
-        if edit_flags is None:
-            edit_flags = {'editable':True}
 
+
+
+        # Find an optional "editable" flag
+        editable = True
         try:
-            #print('fsfdsf',parent.__data__)
+            print('test editable ...')
+            print('Editable',parent.__data__)
             attr = getattr(parent.__data__,index)
             mfields = parent.__data__.model_fields[index]
-            #print('Mfields',mfields)
+            print('Mfields ...',mfields)
             editable = mfields.json_schema_extra['editable']
             #editable = parent.__data__[index].json_schema_extra['editable']
-            #print('Editable',index,editable)
-            edit_flags['editable'] = editable
-        except Exception as e:
-            #logger.debug('extra fields',exc_info=True)
-            pass
+            logger.debug('{} has an editable flag with {}'.format(index,editable))
+            print('done test editable ...')
+        except:
+            editable = True
+            logger.info('extra fields',exc_info=True)
 
+        print('editable', editable)
         # Get the parentdata
         try:
             parentdata = parent.__data__
@@ -907,7 +915,15 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
         except:
             removable = False
 
-        if edit_flags['editable'] and self.show_editable_only:
+
+        if self.show_editable_only == False:
+            flag_show_item = True
+        elif editable and self.show_editable_only:
+            flag_show_item = True
+        else:
+            flag_show_item = False
+
+        if flag_show_item:
             if True:
                 data_value = data  #
                 # Check for the types
@@ -959,6 +975,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 item.__type_hints__ = type_hints_index
                 item.__flag_add_entry__ = flag_add_entry
                 item.__removable__ = removable
+                item.__editable__ = editable
                 # Add the item to the data
                 #print('data',data)
                 #print('data',type(data))
@@ -996,6 +1013,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 newparent.__type_hints__ = type_hints_index
                 newparent.__flag_add_entry__ = flag_add_entry
                 newparent.__removable__ = removable
+                newparent.__editable__ = editable
                 #try:
                 #    newparent.__dataparent__ = parent.__data__  # can be used to reference the data (and change it)
                 #except:
@@ -1027,7 +1045,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                     else:
                         logger.warning('Cannot iterate over type {}',type(data))
 
-                    self.create_item(newindex, newdata, newparent, edit_flags = edit_flags)
+                    self.create_item(newindex, newdata, newparent, edit_flag= edit_flag)
 
     def item_is_child(self,parent,child):
         """

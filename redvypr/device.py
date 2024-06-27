@@ -30,6 +30,8 @@ from redvypr.data_packets import commandpacket
 from redvypr.packet_statistic import do_data_statistics
 from redvypr.redvypr_address import RedvyprAddress
 
+logging.basicConfig(stream=sys.stderr)
+
 
 
 class DeviceMetadata(pydantic.BaseModel):
@@ -95,6 +97,20 @@ class deviceQThread(QtCore.QThread):
         self.startfunction(*self.start_arguments)
 
 
+def device_start_standard(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
+    funcname = __name__ + '.start():'
+    logger = logging.getLogger('device_start():')
+    while True:
+        data = datainqueue.get()
+        if(data is not None):
+            command = redvypr.data_packets.check_for_command(data, thread_uuid=device_info['thread_uuid'])
+            logger.debug('Got a command: {:s}'.format(str(data)))
+            if (command == 'stop'):
+                logger.debug('Command is for me: {:s}'.format(str(command)))
+                break
+
+            print('data',data)
+            dataqueue.put(data)
 
 
 
@@ -455,13 +471,12 @@ class RedvyprDevice(QtCore.QObject):
         funcname = self.__class__.__name__ + '.subscribe_address()'
         self.logger.debug(funcname + ' subscribing to device {:s}'.format(str(address)))
         #print('Address',address,type(address))
-        if type(address) == str or (type(address) == redvyprConfig.configString):
+        if type(address) == str:
             raddr = RedvyprAddress(str(address))
         elif type(address) == RedvyprAddress:
             raddr = address
         else:
             raise TypeError('address needs to be a str or a redvypr_address')
-
 
         FLAG_NEW = True
         # Test if the same address exists already
@@ -1068,7 +1083,7 @@ class RedvyprDevice(QtCore.QObject):
         for raddr in self.subscribed_addresses:
             subscriptions.append(raddr.address_str)
         base_config = RedvyprDeviceBaseConfig(**self.device_parameter.model_dump())
-        config = RedvyprDeviceConfig(base_config=base_config, config=self.custom_config,
+        config = RedvyprDeviceConfig(base_config=base_config, custom_config=self.custom_config.model_dump(),
                                      devicemodulename=self.devicemodulename, subscriptions=subscriptions)
 
         return config

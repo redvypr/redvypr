@@ -37,6 +37,7 @@ class config_test(pydantic.BaseModel):
     calibration_id: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex, description='ID of the calibration, can be choosen by the user. ID should be unique')
     comment: typing.Optional[str] = None
     uniontest: typing.Union[str,float] = pydantic.Field(default='fdsf')
+    uniontest_nonedit: typing.Union[str, float] = pydantic.Field(default='fdsf',editable=False)
     calibrations: typing.List[typing.Union[float, str]] = pydantic.Field(default=[], description = 'List of sensor calibrations')
     #some_dict: typing.Dict[typing.Union[str,float]] = pydantic.Field(default={},
     some_dict: typing.Dict[str,typing.Union[float, bool, list]] = pydantic.Field(default={},description='Configuration of sensors, keys are their serial numbers')
@@ -48,7 +49,17 @@ class config_test(pydantic.BaseModel):
     raddr_literal: typing.Union[pydantic.color.Color, typing.Literal['Hallo','Welt'],RedvyprAddressStr] = pydantic.Field(default=str(RedvyprAddress('d:test')))
     color: pydantic.color.Color = pydantic.Field(default=pydantic.color.Color('red'), description='The color of the line')
 
-configtest = config_test()
+class config_test_small(pydantic.BaseModel):
+    """
+    Calibration model for a heatflow sensor
+    """
+
+    uniontest_nonedit: typing.Union[str, float] = pydantic.Field(default='fdsf',editable=False)
+    a: float = pydantic.Field(default=1.0, editable=False)
+    uniontest_2: typing.Union[str,float] = pydantic.Field(default='fdsf')
+    uniontest: typing.Union[str, float] = pydantic.Field(default='fdsf')
+
+configtest = config_test_small()
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
@@ -63,8 +74,9 @@ def main():
     widget = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout(widget)
 
-    configtree = pydanticConfigWidget(config=configtest, config_location='right')
+    #configtree = pydanticConfigWidget(config=configtest, config_location='right')
     # Set the size
+    configtree = pydanticConfigWidget(config=configtest, config_location='right', show_editable_only=False)
 
     layout.addWidget(configtree)
     widget.resize(1000, 800)

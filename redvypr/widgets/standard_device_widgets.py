@@ -211,7 +211,6 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
         # self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
         self.__subscribeWidget = redvypr.widgets.redvyprSubscribeWidget.redvyprSubscribeWidget(redvypr=self.redvypr, device=self.device)
         self.__subscribeWidget.show()
-
         self.subscribed.emit(self.device)
 
     def configure_clicked(self):

@@ -9,7 +9,9 @@ import json
 import typing
 import pydantic
 from PyQt5 import QtWidgets, QtCore, QtGui
-from redvypr.device import RedvyprDevice
+
+import redvypr
+from redvypr.device import RedvyprDevice, device_start_standard
 from redvypr.data_packets import check_for_command
 #from redvypr.packet_statistics import get_keys_from_data
 #import redvypr.packet_statistic as redvypr_packet_statistic
@@ -39,12 +41,12 @@ class DeviceBaseConfig(pydantic.BaseModel):
 
 
 class DeviceCustomConfig(XYplotWidget.configXYplot):
-    test: str='dfsd'
+    pass
 
 
-def start(device_info, config = None, dataqueue = None, datainqueue = None, statusqueue = None):
-    funcname = __name__ + '.start():'
-    logger.debug(funcname)
+# Use the standard start function as the start function
+start = device_start_standard
+
 
 
 
@@ -55,11 +57,19 @@ class displayDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         super(QtWidgets.QWidget, self).__init__()
         self.device = device
-        self.layout        = QtWidgets.QGridLayout(self)
-        self.xyplot = XYplotWidget.XYplot(redvypr_device=device)
+        self.layout = QtWidgets.QGridLayout(self)
+        self.xyplot = XYplotWidget.XYplot(redvypr_device=device, config=self.device.custom_config)
         self.layout.addWidget(self.xyplot)
         self.device.config_changed_signal.connect(self.config_changed)
 
     def config_changed(self):
         print('XYplot config changed')
         print('Config',self.device.custom_config)
+        # Check if subscriptions need to be changed
+        self.xyplot.config = self.device.custom_config
+        self.xyplot.apply_config()
+
+    def update(self, data):
+        funcname = __name__ + '.update():'
+        print(funcname)
+        self.xyplot.update_plot(data)

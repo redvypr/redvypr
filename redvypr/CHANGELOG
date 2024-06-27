@@ -1,3 +1,8 @@
+    -0.8.3  - XYPlot working
+            - configwidget editable bug removed
+            - XYPlot with feature of plot last_N_points-
+            - redvypr device save config bug fixed (custom_config instead of config)
+            - several small bugs
     -0.8.2  - qtawesome icons for the devices including configuration
     -0.8.1  - API renaming, changed class names to CapWord style according to PEP08, cleanup of configuration
     -0.8.0  - complete rewrite of configuration for a fill pydantic version
