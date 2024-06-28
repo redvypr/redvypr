@@ -36,6 +36,10 @@ class dataBufferLine(pydantic.BaseModel):
     xdata: list = pydantic.Field(default=[])
     ydata: list = pydantic.Field(default=[])
     errordata: list = pydantic.Field(default=[])
+    tdata_addr: RedvyprAddressStr = pydantic.Field(default='')
+    xdata_addr: RedvyprAddressStr = pydantic.Field(default='')
+    ydata_addr: RedvyprAddressStr = pydantic.Field(default='')
+    errordata_addr: RedvyprAddressStr = pydantic.Field(default='')
 
     @pydantic.model_serializer
     def ser_model(self) -> typing.Dict[str, typing.Any]:
@@ -48,17 +52,20 @@ class dataBufferLine(pydantic.BaseModel):
 class configLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
     buffersize: int = pydantic.Field(default=20000,description='The size of the buffer holding the data of the line')
     numplot_max: int = pydantic.Field(default=2000, description='The number of data points to be plotted maximally')
-    name: str = pydantic.Field(default='$y', description='The name of the line, this is shown in the legend, use $y to use the realtimedata address')
+    name: str = pydantic.Field(default='Line', description='The name of the line, this is shown in the legend, $y to use the redvypr address')
+    unit: str = pydantic.Field(default='', description='The unit of the line')
+    label: str = pydantic.Field(default='', description='The of the line')
+    label_format: str = pydantic.Field(default='{NAME} {Y_ADDR} [{UNIT}]', description='The name of the line, this is shown in the legend, $y to use the redvypr address')
     x_addr: typing.Union[typing.Literal['$t(y)'],RedvyprAddressStr] = pydantic.Field(default='$t(y)', description='The realtimedata address of the x-axis, use $t(y) to automatically choose the time corresponding to the y-data')
-    y_addr: RedvyprAddressStr = pydantic.Field(default='', description='The realtimedata address of the x-axis')
+    y_addr: RedvyprAddressStr = pydantic.Field(default='/d:somedevice/k:data', description='The realtimedata address of the x-axis')
     error_addr: RedvyprAddressStr = pydantic.Field(default='', description='The realtimedata address for an optional error band around the line')
     color: pydColor = pydantic.Field(default=pydColor('red'), description='The color of the line')
     linewidth: float = pydantic.Field(default=2.0, description='The linewidth')
     databuffer: dataBufferLine = pydantic.Field(default=dataBufferLine(), description='The databuffer', editable=False)
-    plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_points'] = pydantic.Field(default='last_N_s', description='')
-    last_N_s: float = pydantic.Field(default=6,
+    plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_points'] = pydantic.Field(default='all', description='')
+    last_N_s: float = pydantic.Field(default=60,
                                      description='Plots the last seconds, if plot_mode_x is set to last_N_s')
-    last_N_points: int = pydantic.Field(default=200,
+    last_N_points: int = pydantic.Field(default=1000,
                                         description='Plots the last points, if plot_mode_x is set to last_N_points')
     plot_every_Nth: int = pydantic.Field(default=1, description='Uses every Nth datapoint for plotting')
 
@@ -75,9 +82,10 @@ class configXYplot(pydantic.BaseModel):
     datetick_x: bool = pydantic.Field(default=True, description='x-axis is a date axis')
     datetick_y: bool = pydantic.Field(default=True, description='y-axis is a date axis')
     title: str = pydantic.Field(default='', description='')
+    name: str = pydantic.Field(default='', description='The name of the plotWidget')
     xlabel: str = pydantic.Field(default='', description='')
     ylabel: str = pydantic.Field(default='', description='')
-    lines: typing.Optional[typing.List[configLine]] = pydantic.Field(default=[configLine()])
+    lines: typing.Optional[typing.List[configLine]] = pydantic.Field(default=[configLine()], editable=True)
     automatic_subscription: bool = pydantic.Field(default=True,
                                                   description='subscribes automatically the adresses of the lines at the host device')
 
@@ -156,15 +164,18 @@ class XYplot(QtWidgets.QFrame):
             # General config
             configAction = plot.plotItem.vb.menu.addAction('General config')
             configAction.triggered.connect(self.pyqtgraphConfigAction)
+            # Line config menu
             menu = plot.plotItem.vb.menu.addMenu('Line config')
             self.lineMenu = menu
+            # Clear buffer
+            bufferMenu = plot.plotItem.vb.menu.addMenu('Clear buffer')
+            self.bufferMenu = bufferMenu
+            # Remove menu
             removeMenu = plot.plotItem.vb.menu.addMenu('Remove line')
             self.removeMenu = removeMenu
             # Add line
             addLineAction = plot.plotItem.vb.menu.addAction('Add line')
             addLineAction.triggered.connect(self.pyqtgraphAddLineAction)
-
-
 
             # plot = redvyprPlotWidget(title=title,name=name)
             plot.register(name=name)
@@ -230,10 +241,18 @@ class XYplot(QtWidgets.QFrame):
         logger.debug(funcname)
         linename = self.sender()._linename
         lineConfig = self.sender()._line
-        self.lineConfigWidget = pydanticConfigWidget(lineConfig,configname=linename)
+        self.lineConfigWidget = pydanticConfigWidget(lineConfig, configname=linename, redvypr=self.device.redvypr)
         self.lineConfigWidget.setWindowTitle('Config {}'.format(linename))
         self.lineConfigWidget.config_editing_done.connect(self.apply_config)
         self.lineConfigWidget.show()
+
+    def pyqtgraphBufferAction(self):
+        """ Function is called whenever a clear buffer action is called
+
+        """
+        funcname = __name__ + '.pyqtgraphBufferAction()'
+        logger.debug(funcname)
+        self.clear_buffer()
 
     def mouseMoved(self, evt):
         """Function if mouse has been moved
@@ -296,8 +315,8 @@ class XYplot(QtWidgets.QFrame):
             index = len(self.config.lines) - 1
 
         self.config.lines[index].buffersize = bufsize
-        self.config.lines[index].numplot_max    = numplot
-        self.config.lines[index].linewidth  = linewidth
+        self.config.lines[index].numplot_max = numplot
+        self.config.lines[index].linewidth = linewidth
         #print('Using color',color)
         color_tmp = pydColor(color)
         self.config.lines[index].color = color_tmp
@@ -305,7 +324,19 @@ class XYplot(QtWidgets.QFrame):
         self.config.lines[index].y_addr = y_addr
         self.config.lines[index].error_addr = error_addr
         self.config.lines[index].name = name
+        # Add the address as well to the data
+        self.config.lines[index].databuffer.xdata_addr = x_addr
         self.apply_config()
+
+    def construct_labelname(self, line):
+        name = line.name
+        unit = line.unit
+        x_addr = line.x_addr
+        y_addr = line.y_addr
+        labelname = line.label_format
+        labelname = labelname.format(NAME=name,UNIT=unit,X_ADDR=x_addr,Y_ADDR=y_addr)
+        print('Labelname',labelname)
+        return labelname
 
     def apply_config(self):
         """
@@ -319,9 +350,14 @@ class XYplot(QtWidgets.QFrame):
         # Recreate the lineMenu
         self.lineMenu.clear()
         self.removeMenu.clear()
+        self.bufferMenu.clear()
+        # Add a clear buffer action
+        bufferAction = self.bufferMenu.addAction('All lines')
+        bufferAction.triggered.connect(self.pyqtgraphBufferAction)
         for iline, line in enumerate(self.config.lines):
-            name = self.config.lines[iline].name
-            linename = "Line {}: {}".format(iline,name)
+            labelname = self.construct_labelname(line)
+            line.label = labelname
+            linename = "Line {}: {}".format(iline,labelname)
             lineAction = self.lineMenu.addAction(linename)
             lineAction._line = line
             lineAction._iline = iline
@@ -384,7 +420,7 @@ class XYplot(QtWidgets.QFrame):
             except:
                 line._name_applied = 'line {:d}'.format(iline)
 
-            lineplot = pyqtgraph.PlotDataItem(name=line._name_applied)
+            lineplot = pyqtgraph.PlotDataItem(name=labelname)
             line._lineplot = lineplot  # Add the line as an attribute to the configuration
             lineplot._line_config = line
             try:
@@ -404,6 +440,7 @@ class XYplot(QtWidgets.QFrame):
                 color = QtGui.QColor(255, 10, 10)
 
             line._tlastupdate = 0
+            print('Adding line')
             plot.addItem(lineplot)
             # Configuration
 
@@ -460,14 +497,25 @@ class XYplot(QtWidgets.QFrame):
                         # print('Set pen 1')
 
 
-                    name = self.config.lines[iline].name
-                    if (name.lower() == '$y'):
-                        self.logger.debug(funcname + ' Replacing with y')
-                        name = y_addr
+                    #name = self.config.lines[iline].name
+                    #if '$y' in name.lower():
+                    #    self.logger.debug(funcname + ' Replacing with y')
+                    #    name = name.replace('$y',y_addr)
+                    #    #name = y_addr
+
+
+
+                    # Check if the addresses changed and clear the buffer if necessary
+                    if line.databuffer.xdata_addr == line.x_addr:
+                        print('Address did not change')
+                    else:
+                        print('Address changed, clearing buffer')
+                        #self.clear_buffer(line)
 
                     self.logger.debug(funcname + ' Setting the name')
-                    self.legendWidget.addItem(line._lineplot, name)
-                    line._lineplot.setData(name=name)
+                    self.legendWidget.addItem(line._lineplot, line.label)
+                    print('Setting the data')
+                    line._lineplot.setData(name=line.label,x=[],y=[])
 
                     if self.config.automatic_subscription:
                         logger.debug(funcname + 'Subscribing to x address {}'.format(x_raddr))
@@ -483,15 +531,18 @@ class XYplot(QtWidgets.QFrame):
 
         self.logger.debug(funcname + ' done.')
 
-    def clear_buffer(self):
+    def clear_buffer(self, line=None):
         """ Clears the buffer of all lines
         """
-        # Check if the device is to be plotted
+        if line is not None:
+            lines = [line]
+        else:
+            lines = self.config.lines
 
-        for iline, line in enumerate(self.config.lines):
-            line.databuffer = dataBufferLine()
+        for iline, line_tmp in enumerate(lines):
+            line_tmp.databuffer = dataBufferLine()
             # Set the data
-            line._lineplot.setData(x=line.databuffer.xdata, y=line.databuffer.ydata)
+            line_tmp._lineplot.setData(x=line_tmp.databuffer.xdata, y=line_tmp.databuffer.ydata)
 
     def get_data(self, xlim):
         """
@@ -585,26 +636,28 @@ class XYplot(QtWidgets.QFrame):
         """ Updates the plot based on the given data
         """
         funcname = self.__class__.__name__ + '.update_plot():'
+        print(funcname + 'Update',len(self.config.lines))
         tnow = time.time()
         # print(funcname + 'got data',data,tnow)
-
         # try:
         if True:
-            # Loop over all plot axes
+            # Loop over all lines
             if True:
                 # Check if the device is to be plotted
                 for iline, line in enumerate(self.config.lines):
                     line.__newdata = False
                     error_raddr = line._error_raddr
-                    #print('device',data['_redvypr']['device'])
-                    #print('data',data)
-                    #print('line',line)
-                    #print('line A', line._x_raddr, (data in line._x_raddr))
-                    #print('line B', line._y_raddr, (data in line._y_raddr))
-                    #print('fdsfsfsd',(data in line._x_raddr) and (data in line._y_raddr))
+                    if len(self.config.lines)>1:
+                        print('device',data['_redvypr']['device'])
+                        print('data',data)
+                        print('line',line)
+                        print('line A', line._x_raddr, (data in line._x_raddr))
+                        print('line B', line._y_raddr, (data in line._y_raddr))
+                        print('fdsfsfsd',(data in line._x_raddr) and (data in line._y_raddr))
                     if (data in line._x_raddr) and (data in line._y_raddr):
                         pw = self.plotWidget  # The plot widget
-                        #print('Databuffer',line.databuffer)
+                        if len(self.config.lines) > 1:
+                            print('Databuffer',line.databuffer)
                         tdata = line.databuffer.tdata  # The line to plot
                         xdata = line.databuffer.xdata  # The line to plot
                         ydata = line.databuffer.ydata  # The line to plot
@@ -612,6 +665,11 @@ class XYplot(QtWidgets.QFrame):
                         newt = data['_redvypr']['t']  # Add also the time of the packet
                         newx = data[line._x_raddr.datakey]
                         newy = data[line._y_raddr.datakey]
+
+                        if len(self.config.lines) > 1:
+                            print('data',data)
+                            print('newx datakey', line._x_raddr.datakey)
+                            print('newx', newx)
 
                         if (type(newx) is not list):
                             newx = [newx]
@@ -673,9 +731,7 @@ class XYplot(QtWidgets.QFrame):
                                             unit = None
 
                                 if unit is not None:
-                                    name = line.name
-                                    name_new = name + ' [{:s}]'.format(unit)
-                                    self.config.lines[iline].name = name_new
+                                    self.config.lines[iline].unit = unit
                                     self.apply_config()
 
             # Update the lines plot
@@ -689,12 +745,13 @@ class XYplot(QtWidgets.QFrame):
                     update = False
                     # print('no update')
 
-                print('Update',update,line.__newdata)
+                if len(self.config.lines) > 1:
+                    print('Update',update,line.__newdata)
                 if update and line.__newdata:  # We could check here if data was changed above the for given line
                     line._tlastupdate = tnow
                     try:
                         [x,y,err]= self.__get_data_for_line(line)
-                        print('x',x)
+                        #print('x',x)
                         line._lineplot.setData(x=x, y=y)
                         if line._errorplot is not None:
                             beamwidth = None
@@ -705,4 +762,5 @@ class XYplot(QtWidgets.QFrame):
                         logger.info('Could not update line',exc_info=True)
 
 
-
+            if len(self.config.lines) > 1:
+                print('DONE DONE DONE')

@@ -1334,7 +1334,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
             #        return None
 
             print('Hallo',sn)
-            print('fds', RedvyprAddress)
             raddr = RedvyprAddress(data)
             print('Hallo',raddr)
             # Add the data to self.device
@@ -1377,11 +1376,17 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     self.device.sensordata[sn][ptype][p] = self.device.sensordata[sn][ptype][p][-self.maxlen:]
 
             # Send the data to the sensorwidget
-            try:
-                self.sensorwidgets[sn].update(data)
-            except Exception as e:
-                logger.debug(funcname, exc_info=True)
-                # logger.exception(e)
+            print('Update sensor widget',sn)
+            for w in self.sensorwidgets:
+                try:
+                   self.sensorwidgets[w].update(data)
+                except:
+                    logger.debug(funcname, exc_info=True)
+            #try:
+            #    self.sensorwidgets[sn].update(data)
+            #except:
+            #    logger.debug(funcname, exc_info=True)
+            #    # logger.exception(e)
 
             # Update rows and columns
             nsensors  = len(list(self.device.sensordata_raw.keys()))

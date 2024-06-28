@@ -45,6 +45,7 @@ class deviceTableWidget(QtWidgets.QTableWidget):
         self.populate_table()
         self._updatetimer = QtCore.QTimer()
         self._updatetimer.timeout.connect(self.updateDevicePackets)
+        self._updatetimer.timeout.connect(self.deviceThreadStatusCheckAll)
         self._updatetimer.start(2000)
     def populate_table(self):
         nRows = len(self.redvypr.devices)
@@ -165,6 +166,16 @@ class deviceTableWidget(QtWidgets.QTableWidget):
         except:
             logger.debug('View', exc_info=True)
 
+    def deviceThreadStatusCheckAll(self):
+        """
+        Function checks the thread status of all devices and updates the buttons
+        """
+        for b in self.__startbuttons:
+            device_tmp = b.__device
+            startbutton = b
+            status = device_tmp.get_thread_status()
+            thread_status = status['thread_running']
+            self.__update_start_button(startbutton, thread_status)
     def deviceThreadStatusChanged(self):
         """ Updating all buttons depending on the thread status (if its alive, graying out things)
         """
@@ -178,6 +189,9 @@ class deviceTableWidget(QtWidgets.QTableWidget):
         #print('Update!',device)
         status = device_tmp.get_thread_status()
         thread_status = status['thread_running']
+        self.__update_start_button(startbutton, thread_status)
+
+    def __update_start_button(self,startbutton, thread_status):
         if startbutton is not None:
             #print('Hall', status)
             #print('Hall', thread_status)

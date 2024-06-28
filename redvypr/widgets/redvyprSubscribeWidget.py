@@ -169,7 +169,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
             self.__commitbtn.__status__ = 'add'
             self.__commitbtn.setEnabled(True)
             #self.__commitbtn.redvypr_addr_remove = devstr
-            self.subscribe_edit.redvypr_address = newitem.RedvyprAddress
+            self.subscribe_edit.redvypr_address = newitem.redvypr_address#.RedvyprAddress
             self.__subscribe_editChanged__()
 
             #if(subscribed):

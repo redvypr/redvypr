@@ -1312,6 +1312,11 @@ class initDeviceWidget(QtWidgets.QWidget):
                 sensorPlotType.addItem('XY Plot')
                 sensorPlotType.listindex = i
                 sensorPlotType.sensortype = 'datastream'
+
+                if 'XY' in sdata.realtimeplot:
+                    sensorPlotType.setCurrentIndex(1)  # XY
+                else:
+                    sensorPlotType.setCurrentIndex(0)  # Table
                 sensorPlotType.currentIndexChanged.connect(self.__realtimePlotChanged__)
 
                 refbutton = QtWidgets.QRadioButton("Reference")
@@ -1363,11 +1368,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.__realtimePlotChanged__():'
         print(funcname + ' {}'.format(index))
         sensorPlotType = self.sender()
-        plottype = sensorPlotType.currentText
+        plottype = sensorPlotType.currentText()
         print('Hallo',sensorPlotType.currentText)
         indexsensor = sensorPlotType.listindex
         self.device.custom_config.calibrationdata[indexsensor].realtimeplot = plottype
         print('Sensor config', self.device.custom_config.calibrationdata[indexsensor])
+        self.updateDisplayWidget()
 
     def refsensor_changed(self):
 
@@ -1879,7 +1885,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 #self.datastreams.append(None)
                 #plot_widget = plot_widgets.redvypr_graph_widget(config=config)
                 if 'XY' in sdata.realtimeplot:
-                    plot_widget = XYplotWidget.XYplot()
+                    config = XYplotWidget.configXYplot(interactive='mouse')
+                    plot_widget = XYplotWidget.XYplot(config=config, redvypr_device=self.device)
                     plot_widget.plotWidget.scene().sigMouseMoved.connect(self.anyMouseMoved)
                     plot_widget.plotWidget.scene().sigMouseClicked.connect(self.anyMouseClicked)
                     plot_widget.vlines = []  # List of vertical lines

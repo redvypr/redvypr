@@ -295,7 +295,7 @@ class datastreamWidget(QtWidgets.QWidget):
         self.external_filter_include = filter_include
         self.datastreamstring_orig = datastreamstring
         self.datastreamstring  = datastreamstring
-        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout = QtWidgets.QHBoxLayout(self)
         self.deviceonly = deviceonly
         if (devicename_highlight == None):
             self.devicename_highlight = 'Na'
@@ -341,16 +341,21 @@ class datastreamWidget(QtWidgets.QWidget):
         self.filterWidget = address_filterWidget(redvypr = redvypr)
 
         # Add widgets to layout
-        self.layout.addWidget(self.filterWidget)
-        self.layout.addWidget(self.deviceavaillabel)
-        self.layout.addWidget(self.devicelist)
+        self.layout_left = QtWidgets.QVBoxLayout()
+        self.layout_right = QtWidgets.QVBoxLayout()
+        self.layout.addLayout(self.layout_left)
+        self.layout.addLayout(self.layout_right)
+        self.layout_right.addWidget(self.filterWidget)
+        self.layout_left.addWidget(self.deviceavaillabel)
+        self.layout_left.addWidget(self.devicelist)
 
-        self.layout.addWidget(QtWidgets.QLabel('Manual Address'))
-        self.layout.addWidget(self.addressline_manual)
-        self.layout.addWidget(QtWidgets.QLabel('Address format'))
-        self.layout.addWidget(self.addrtype_combo)
-        self.layout.addWidget(QtWidgets.QLabel('Address'))
-        self.layout.addWidget(self.addressline)
+        self.layout_right.addWidget(QtWidgets.QLabel('Manual Address'))
+        self.layout_right.addWidget(self.addressline_manual)
+        self.layout_right.addWidget(QtWidgets.QLabel('Address format'))
+        self.layout_right.addWidget(self.addrtype_combo)
+        self.layout_right.addWidget(QtWidgets.QLabel('Address'))
+        self.layout_right.addWidget(self.addressline)
+
 
 
         # The datakeys
@@ -362,11 +367,12 @@ class datastreamWidget(QtWidgets.QWidget):
             self.buttondone.clicked.connect(self.done_clicked)
             self.buttondone.setEnabled(False)
         if (showapplybutton):
-            self.layout.addWidget(self.buttondone)
+            self.layout_right.addWidget(self.buttondone)
         else:
             self.buttondone.hide()
 
-
+        # Add a stretch
+        self.layout_right.addStretch()
         devicelist = []
         self.datakeylist_subscribed = {}
 

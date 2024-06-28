@@ -67,10 +67,11 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
 
         # Calculate some sine
         data_rand = float(np.random.rand(1) - 0.5)
+        data_rand_2 = float(np.random.rand(1) - 0.5)
         f_sin = 1 / 30  # Frequency in Hz
         A_sin = 10  # Amplitude
         data_sine = float(A_sin * np.sin(f_sin * time.time()))
-        dataqueue.put({'sine_rand': data_rand + data_sine,'count': counter})
+        dataqueue.put({'sine_rand': data_rand + data_sine,'count': counter,'sine': data_sine})
         counter += 1
         time.sleep(config['delay_s'])
         #print('Hallo')

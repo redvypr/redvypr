@@ -231,7 +231,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 logger.debug('Could not add widget',exc_info=True)
 
         self.configGui_layout.addWidget(self.__configwidget)
-        self.configGui_layout.addItem(self.stretchy_spacer_thing)
+        #self.configGui_layout.addItem(self.stretchy_spacer_thing)
 
     def __clearConfigGui__(self):
         self.configGui_layout.removeItem(self.stretchy_spacer_thing)

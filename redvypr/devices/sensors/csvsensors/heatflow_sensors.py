@@ -999,7 +999,7 @@ class DHFSWidget(QtWidgets.QWidget):
             # Raw
             subtmp_raw = '/d:{{DHF_raw_{}}}/k:{}/'.format(self.sn, p)
             self.device_subscriptions_raw.append(subtmp_raw)
-            config = XYplotWidget.configXYplot(title='{}'.format(p))
+            config = XYplotWidget.configXYplot(title='{} {}'.format(self.sn, p))
             self.plot_widget_HF_raw = XYplotWidget.XYplot(config=config, redvypr_device=self.device)
             self.plot_widget_HF_raw.set_line(0, subtmp_raw, name=p, color='red', linewidth=2)
             # Create the button to plot the widget
@@ -1093,11 +1093,11 @@ class DHFSWidget(QtWidgets.QWidget):
         col_data = 2
         row_time = 0
         #print('Got data', data['_redvypr']['device'],mac)
-        if mac in self.sn:
-            for plot in self.XYplots:
-                #print('plot update',plot)
-                plot.update_plot(data)
+        for plot in self.XYplots:
+            print('plot update',len(plot.config.lines), mac)
+            plot.update_plot(data)
 
+        if mac in self.sn:
             # Update table
             if data['type'] == 'HF':  # Raw data
                 #print('Updating')
