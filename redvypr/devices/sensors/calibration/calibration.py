@@ -79,6 +79,8 @@ class DeviceCustomConfig(pydantic.BaseModel):
     calibration_id: str = ''
     calibration_uuid: str = pydantic.Field(default_factory=get_uuid)
     calibration_comment: str = ''
+    calibration_file_structure: str = pydantic.Field(default_factory=get_uuid)
+    calibration_directory_structure: typing.Literal['flat','sensor_model/sn/parameter/'] = pydantic.Field(default='sensor_model/sn/parameter/')
 
 
 class Device(RedvyprDevice):
@@ -897,13 +899,13 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
             calibrations = []
             for i,sdata in enumerate(self.device.custom_config.calibrationdata):
                 if i == refindex:
-                    cal_HF = calibration_HF()
+                    cal_HF = calibration_HF(calibration_id=self.device.custom_config.calibration_id,calibration_comment=self.device.custom_config.calibration_comment, calibration_uuid=self.device.custom_config.calibration_uuid)
                     cal_HF.sn = sdata.sn
                     cal_HF.date = tdatas
                     cal_HF.comment = 'reference sensor'
                     calibrations.append(cal_HF)
                 else:
-                    cal_HF = calibration_HF()
+                    cal_HF = calibration_HF(calibration_id=self.device.custom_config.calibration_id,calibration_comment=self.device.custom_config.calibration_comment, calibration_uuid=self.device.custom_config.calibration_uuid)
                     cal_HF.sn = sdata.sn
                     cal_HF.date = tdatas
                     cal_HF.sensor_model = sdata.sensor_model
@@ -1503,14 +1505,11 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.device.rem_sensor(sensorRem.listindex, 'datastream')
 
         self.populateSensorInputWidgets()
-        print('fdsf')
-        print('fdsf',self.device.devicedisplaywidget)
         self.updateDisplayWidget()
 
     def updateDisplayWidget(self):
         funcname = __name__ + '.updateDisplayWidget():'
         logger.debug(funcname)
-        print('Updating')
         self.populateSensorInputWidgets()
         self.device.devicedisplaywidget.clear_widgets()
         self.device.devicedisplaywidget.create_widgets()
@@ -1688,7 +1687,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.datainput_configwidgets['lID'] = QtWidgets.QLineEdit(self.device.custom_config.calibration_id)
         self.datainput_configwidgets['lID_label'] = QtWidgets.QLabel('Calibration ID')
         self.datainput_configwidgets['lco'] = QtWidgets.QLineEdit(self.device.custom_config.calibration_comment)
+        self.datainput_configwidgets['lco'].editingFinished.connect(self.update_custom_config_from_widgets)
         self.datainput_configwidgets['lco_label'] = QtWidgets.QLabel('Calibration comment')
+        self.datainput_configwidgets['lID'].editingFinished.connect(self.update_custom_config_from_widgets)
         self.inputlayout.addWidget(self.datainput_configwidgets['lUUID_label'], 0, 0)
         self.inputlayout.addWidget(self.datainput_configwidgets['lUUID'], 0, 1)
         self.inputlayout.addWidget(self.datainput_configwidgets['lID_label'], 1, 0)
@@ -1731,6 +1732,15 @@ class displayDeviceWidget(QtWidgets.QWidget):
         # This needs to be done after the tab, as it changes text of the tab
         self.create_calibration_widget()  # Is adding a widget to self.calibration_widget
         #self.order_tabs()
+
+    def update_custom_config_from_widgets(self):
+        funcname = __name__ + '.update_custom_config_from_widgets():'
+        print(funcname)
+        self.device.custom_config.calibration_comment = self.datainput_configwidgets['lco'].text()
+        self.device.custom_config.calibration_id = self.datainput_configwidgets['lID'].text()
+        print('Config')
+        print(self.device.custom_config)
+        print('Done')
 
     def remCalibrationData(self):
         """

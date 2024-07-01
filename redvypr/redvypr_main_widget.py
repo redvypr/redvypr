@@ -218,7 +218,7 @@ class redvyprWidget(QtWidgets.QWidget):
     def load_config(self):
         """ Loads a configuration file
         """
-        funcname = self.__class__.__name__ + '.load_config()'
+        funcname = self.__class__.__name__ + '.load_config():'
         logger.debug(funcname)
         conffile, _ = QtWidgets.QFileDialog.getOpenFileName(self, "QFileDialog.getOpenFileName()", "",
                                                             "Yaml Files (*.yaml);;All Files (*)")

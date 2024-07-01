@@ -785,7 +785,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.byteslab = QtWidgets.QLabel("Bytes written: ")
         self.packetslab = QtWidgets.QLabel("Packets written: ")
         # Table that displays all datastreams and the format as it is written to the file
-        self.deviceinfoQtree = redvypr.gui.dictQTreeWidget(dataname='file status', show_datatype=False)
+        self.deviceinfoQtree = redvypr.widgets.pydanticConfigWidget.dictQTreeWidget(dataname='file status', show_datatype=False)
         # Update layout
         updatelayout = QtWidgets.QHBoxLayout()
         self.update_auto = QtWidgets.QCheckBox('Autoupdate file status')
