@@ -79,9 +79,8 @@ class DeviceCustomConfig(pydantic.BaseModel):
     calibration_id: str = ''
     calibration_uuid: str = pydantic.Field(default_factory=get_uuid)
     calibration_comment: str = ''
-    calibration_file_structure: str = pydantic.Field(default_factory=get_uuid)
-    calibration_directory_structure: typing.Literal['flat','sensor_model/sn/parameter/'] = pydantic.Field(default='sensor_model/sn/parameter/')
-
+    calibration_file_structure: str = pydantic.Field(default='{SENSOR_MODEL}_{SN}_{PARAMETER}_{CALDATE}.yaml')
+    calibration_directory_structure: str = pydantic.Field(default='{SENSOR_MODEL}/{SN}/{PARAMETER}/')
 
 class Device(RedvyprDevice):
     """
@@ -237,11 +236,48 @@ class Device(RedvyprDevice):
                     sdata.time_data.append(np.NaN)
                     sdata.time_rawdata.append(np.NaN)
 
+    def save_calibrations(self, folder, calibrations):
+        """
+        Saves a list of calibrations into a folder structure
 
+        :param folder:
+        :return:
+        """
+        funcname = __name__ + '__save_calibration__():'
+        overwrite = True
+        create_path = True
+        fnames_full = self.save_widget_dict['fnames_full']
+        #calibration_file_structure: str = pydantic.Field(default='{SENSOR_MODEL}_{SN}_{PARAMETER}_{CALDATE}.yaml')
+        #calibration_directory_structure: str = pydantic.Field(default='{SENSOR_MODEL}/{SN}/{PARAMETER}/')
+        for cal in calibrations:
+            folder_path_orig = self.custom_config.calibration_directory_structure
+            folder_path = folder_path_orig.format(SENSOR_MODEL=cal.sensor_model, SN=cal.sn, PARAMETER=cal.parameter)
+            calfilename_orig = self.custom_config.calibration_file_structure
+            calfilename = calfilename_orig(SENSOR_MODEL=cal.sensor_model, SN=cal.sn, PARAMETER=cal.parameter)
+            fname_full = os.path.join(folder_path,calfilename)
+            if os.path.isdir(folder_path):
+                print('Path exists: {}'.format(folder_path))
+            else:
+                print('Creating directory: {}'.format(folder_path))
+                os.mkdir(folder_path)
 
+            if os.path.isfile(fname_full):
+                logger.warning('File is already existing {:s}'.format(fname_full))
+                file_exist = True
+            else:
+                file_exist = False
 
+            if overwrite or (file_exist == False):
+                logger.info('Saving file to {:s}'.format(fname_full))
+                if cal.comment == 'reference sensor':
+                    logger.debug(funcname + ' Will not save calibration (reference sensor)')
+                else:
+                    cdump = cal.model_dump()
+                    # data_save = yaml.dump(cdump)
 
-
+                    with open(fname_full, 'w') as fyaml:
+                        yaml.dump(cdump, fyaml)
+                    print('Cal', cal)
 
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     """

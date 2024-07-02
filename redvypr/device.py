@@ -277,7 +277,7 @@ class redvypr_device_scan():
                 FLAG_POTENTIAL_MODULE = False
 
             if(FLAG_POTENTIAL_MODULE):
-                #print('Found potential package',d.location, d.project_name, d.version, d.key)
+                print('Found potential package',d.location, d.project_name, d.version, d.key)
                 libstr2 = d.key.replace('-','_')  # Need to replace - with _, because - is not allowed in python
                 try:
                     testmodule = importlib.import_module(libstr2)

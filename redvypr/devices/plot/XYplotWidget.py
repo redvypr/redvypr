@@ -59,6 +59,9 @@ class configLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
     x_addr: typing.Union[typing.Literal['$t(y)'],RedvyprAddressStr] = pydantic.Field(default='$t(y)', description='The realtimedata address of the x-axis, use $t(y) to automatically choose the time corresponding to the y-data')
     y_addr: RedvyprAddressStr = pydantic.Field(default='/d:somedevice/k:data', description='The realtimedata address of the x-axis')
     error_addr: RedvyprAddressStr = pydantic.Field(default='', description='The realtimedata address for an optional error band around the line')
+    error_mode: typing.Literal['off', 'standard', 'factor', 'constant'] = pydantic.Field(default='off', description='')
+    error_factor: float = pydantic.Field(default=1.1, description='')
+    error_constant: float = pydantic.Field(default=.01, description='')
     color: pydColor = pydantic.Field(default=pydColor('red'), description='The color of the line')
     linewidth: float = pydantic.Field(default=2.0, description='The linewidth')
     databuffer: dataBufferLine = pydantic.Field(default=dataBufferLine(), description='The databuffer', editable=False)
@@ -484,7 +487,7 @@ class XYplot(QtWidgets.QFrame):
 
                     # Error address
                     error_addr = None
-                    if len(line.error_addr) > 0:
+                    if line.error_mode != 'off':
                         error_raddr = redvypr.RedvyprAddress(line.error_addr)
                         line._error_raddr = error_raddr
                         errorplot = pyqtgraph.ErrorBarItem(name=line._name_applied,pen=pen)
@@ -676,12 +679,26 @@ class XYplot(QtWidgets.QFrame):
                         if (type(newy) is not list):
                             newy = [newy]
 
-                        if len(line.error_addr) > 0:
+                        if  line.error_mode != 'off':
+                            error_mode: typing.Literal['off','standard', 'factor', 'constant'] = pydantic.Field(
+                                default='standard', description='')
+                            error_factor: float = pydantic.Field(default=1.1, description='')
+                            error_constant: float = pydantic.Field(default=.01, description='')
                             #print('errordata',error_raddr.datakey)
-                            newerror = data[error_raddr.datakey]
-                            if (type(newerror) is not list):
-                                newerror = [newerror]
-                            #print('newerror',newerror)
+                            if len(line.error_addr) > 0 and line.error_mode == 'standard':
+                                print('Error standard')
+                                newerror = data[error_raddr.datakey]
+                                if (type(newerror) is not list):
+                                    newerror = [newerror]
+                                #print('newerror',newerror)
+                            elif line.error_mode == 'factor':
+                                print('Error factor')
+                                errdata = np.asarray(newy)
+                                errdata_factor = errdata * line.error_factor - errdata.mean()
+                                newerror = errdata_factor.tolist()
+                            elif line.error_mode == 'constant':
+                                print('Error constant')
+                                newerror = [line.error_constant] * len(newx)
                         else:
                             newerror = [0]
 
@@ -751,7 +768,7 @@ class XYplot(QtWidgets.QFrame):
                     line._tlastupdate = tnow
                     try:
                         [x,y,err]= self.__get_data_for_line(line)
-                        #print('x',x)
+                        print('x',x,'err',err)
                         line._lineplot.setData(x=x, y=y)
                         if line._errorplot is not None:
                             beamwidth = None
