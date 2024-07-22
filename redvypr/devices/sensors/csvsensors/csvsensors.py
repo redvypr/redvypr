@@ -1,3 +1,10 @@
+"""
+register sensors
+ - check if data fits (in start), check_valid_data
+ - if yes process_data, gives redvyprData
+ - display data (widget)
+"""
+
 import datetime
 import numpy as np
 import logging
@@ -164,14 +171,15 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
 
                                     elif packettype == 'TAR':
                                         #print('Parsing TAR')
-                                        try:
-                                            datapackets_TAR = process_TAR_data(dataline, data, device_info, sensorconfig)
-                                        except:
-                                            logger.info(' Could not process data {:s}'.format(str(dataline)), exc_info=True)
-                                            datapackets_TAR = []
+                                        if sensorconfig is not None:
+                                            try:
+                                                datapackets_TAR = process_TAR_data(dataline, data, device_info, sensorconfig)
+                                            except:
+                                                logger.info(' Could not process data {:s}'.format(str(dataline)), exc_info=True)
+                                                datapackets_TAR = []
 
-                                        for datapacket_TAR in datapackets_TAR:
-                                            dataqueue.put(datapacket_TAR)
+                                            for datapacket_TAR in datapackets_TAR:
+                                                dataqueue.put(datapacket_TAR)
 
                                     elif packettype == 'HFS':
                                         # Heatflow data in physical units
@@ -1286,18 +1294,23 @@ class displayDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname+ ' Adding widget for {} and type {}'.format(sn, sensortype))
         # Add widgets
         # can beIMU, HFV, HF, TAR
-        if sensortype == 'HFV':
+        if sensortype.lower() == 'HFV'.lower():
             sensorwidget = HFVWidget(sn=sn, redvypr_device=self.device)
             self.sensorwidgets[sn] = sensorwidget
             self.sensorlist.addItem(sn)
             self.sensorstack.addWidget(sensorwidget)
-        elif sensortype == 'TAR':
+        elif sensortype.lower() == 'TAR'.lower():
             sensorwidget = TARWidget(sn=sn, redvypr_device=self.device)
             self.sensorwidgets[sn] = sensorwidget
             self.sensorlist.addItem(sn)
             self.sensorstack.addWidget(sensorwidget)
-        else:# HF, IMU
+        elif sensortype.lower() == 'HF'.lower():
             sensorwidget = DHFSWidget(sn=sn, redvypr_device=self.device)
+            self.sensorwidgets[sn] = sensorwidget
+            self.sensorlist.addItem(sn)
+            self.sensorstack.addWidget(sensorwidget)
+        else:# HF, IMU
+            sensorwidget = QtWidgets.QLabel('Unknown Sensor {}'.format(sensortype))
             self.sensorwidgets[sn] = sensorwidget
             self.sensorlist.addItem(sn)
             self.sensorstack.addWidget(sensorwidget)
@@ -1379,7 +1392,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             print('Update sensor widget',sn)
             for w in self.sensorwidgets:
                 try:
-                   self.sensorwidgets[w].update(data)
+                   self.sensorwidgets[w].update_data(data)
                 except:
                     logger.debug(funcname, exc_info=True)
             #try:

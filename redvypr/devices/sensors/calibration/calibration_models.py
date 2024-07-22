@@ -47,6 +47,51 @@ def get_date_from_calibration(calibration, parameter, return_str = False, strfor
         return td
 
 
+class calibration_const(pydantic.BaseModel):
+    """
+    Calibration model for a NTC sensor
+    """
+    structure_version: str = '1.0'
+    calibration_type: typing.Literal['const'] = 'const'
+    parameter: str = pydantic.Field(default = 'XYZ',description='The calibrated parameter')
+    sn: str = '' # The serial number of the sensor
+    sensor_model: str = ''  # The sensor model
+    coeff: float = pydantic.Field(default = 1.0)
+    unit: str = 'NA'
+    unit_input: str = 'NA'
+    date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
+    calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be choosen by the user')
+    calibration_uuid: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex,
+                                         description='uuid of the calibration, can be choosen by the user')
+    comment: typing.Optional[str] = None
+
+    def raw2data(self, raw_data):
+        data = raw_data * self.coeff
+        return data
+
+class calibration_poly(pydantic.BaseModel):
+    """
+    Calibration model for a sensor with a polynomial response
+    """
+    structure_version: str = '1.0'
+    calibration_type: typing.Literal['poly'] = 'poly'
+    parameter: str = pydantic.Field(default = 'XYZ',description='The calibrated parameter')
+    sn: str = '' # The serial number of the sensor
+    sensor_model: str = ''  # The sensor model
+    coeff: list = pydantic.Field(default = [1.0, 0], description='The calibration polynomial. The first entry is the one with the highest exponent, the last the constant: y = coeff[-1] + x * coeff[-2] + x**2 * coeff[-3]')
+    unit: str = 'NA'
+    unit_input: str = 'NA'
+    date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
+    calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be choosen by the user')
+    calibration_uuid: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex,
+                                         description='uuid of the calibration, can be choosen by the user')
+    comment: typing.Optional[str] = None
+
+    def raw2data(self, raw_data):
+        data = np.polyval(self.coeff,raw_data)
+        return data
+
+
 class calibration_HF(pydantic.BaseModel):
     """
     Calibration model for a heatflow sensor
@@ -79,7 +124,7 @@ class calibration_NTC(pydantic.BaseModel):
     Toff: float = 273.15 # Offset between K and degC
     coeff: list = pydantic.Field(default = [np.NaN, np.NaN, np.NaN, np.NaN])
     #coeff_std: typing.Optional[float] = None
-    unit:  str = 'T'
+    unit: str = 'T'
     unit_input: str = 'ohm'
     date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
     calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be choosen by the user')

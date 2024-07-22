@@ -238,11 +238,11 @@ class TARWidget(QtWidgets.QWidget):
         self.datatable_all.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.layout_all.addWidget(self.datatable_all,0,1)
 
-    def update(self, data):
+    def update_data(self, data):
         """
         Updating the local data with datapacket
         """
-        funcname = __name__ + '__update__()'
+        funcname = __name__ + '.update_data()'
         logger.debug(funcname)
         devicename = data['_redvypr']['device']
         #print('Devicename',devicename)

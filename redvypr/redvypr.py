@@ -32,7 +32,7 @@ import redvypr.redvypr_address as redvypr_address
 import redvypr.packet_statistic as redvypr_packet_statistic
 from redvypr.version import version
 import redvypr.files as files
-from redvypr.device import RedvyprDeviceConfig, RedvyprDevice, redvypr_device_scan, RedvyprDeviceParameter
+from redvypr.device import RedvyprDeviceConfig, RedvyprDeviceBaseConfig, RedvyprDevice, redvypr_device_scan, RedvyprDeviceParameter
 import redvypr.devices as redvyprdevices
 import faulthandler
 faulthandler.enable()
@@ -76,8 +76,8 @@ class RedvyprConfig(pydantic.BaseModel):
     #devices: typing.List[RedvyprDeviceConfig] = pydantic.Field(default=[])
     devices: typing.List[typing.Annotated[typing.Union[RedvyprDeviceConfig], pydantic.Field(discriminator='config_type')]] = pydantic.Field(default=[])
     devicepath: list = pydantic.Field(default=[])
-    loglevel: str = pydantic.Field(default='')
-
+    loglevel: typing.Literal['INFO','DEBUG','WARNING'] = pydantic.Field(default='INFO')
+    gui_home_icon: str = 'redvypr'
 
 
 
@@ -324,11 +324,14 @@ class Redvypr(QtCore.QObject):
 
     def __init__(self, config=None, hostname=None, nogui=False, loglevel=None):
         super(Redvypr, self).__init__()
-        print(__platform__)
+        #print(__platform__)
+        self.__platform__ = __platform__
         funcname = __name__ + '.__init__()'
         logger.debug(funcname)
         if config is None:
+            print('Creating config')
             config = RedvyprConfig(hostname=hostname)
+            print('Config',config)
 
         # Overwrite hostname with argument
         if hostname is not None:
@@ -372,7 +375,8 @@ class Redvypr(QtCore.QObject):
         self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths, redvypr_devices=redvyprdevices, loglevel=loglevel_device_scan)
         logger.info(funcname + ':Done searching for devices')
         # And now add the devices
-        self.add_devices_from_config(config)
+        print('Config a',self.config)
+        self.add_devices_from_config(config=self.config)
         # A timer to check the status of all threads
         self.devicethreadtimer = QtCore.QTimer()
         self.devicethreadtimer.timeout.connect(self.update_status)  # Add to the timer another update
@@ -410,10 +414,13 @@ class Redvypr(QtCore.QObject):
 
 
 
-    def add_devices_from_config(self, config=None):
+    def add_devices_from_config(self, config):
         funcname = "add_devices_from_config():"
+        logger.debug(funcname)
         # Apply the configuration
-        if True:
+        if config is not None:
+            print('Config parameter', config, type(config))
+            print('Devicepath', type(config), type(config.hostname), config.devicepath)
             # Add device path if found
             devpath = config.devicepath
             if (type(devpath) == str):
@@ -611,8 +618,14 @@ class Redvypr(QtCore.QObject):
                     FLAG_HAS_PYDANTICBASE = True
                     FLAG_PYDANTIC = True
                     # Create or use a given device parameter object
+                    print('type base config',type(base_config))
                     if isinstance(base_config, RedvyprDeviceParameter):
+                        print('Got a device parameter config')
                         device_parameter = base_config
+                    elif isinstance(base_config, RedvyprDeviceBaseConfig):
+                        print('Got a base config',base_config)
+                        device_parameter = RedvyprDeviceParameter(**base_config.model_dump())
+                        print('parameter',device_parameter)
                     elif isinstance(base_config, dict):
                         print('Will update from config dictionary')
                         device_parameter_tmp = RedvyprDeviceParameter()

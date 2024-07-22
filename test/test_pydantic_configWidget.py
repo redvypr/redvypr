@@ -41,6 +41,8 @@ class config_test(pydantic.BaseModel):
     calibrations: typing.List[typing.Union[float, str]] = pydantic.Field(default=[], description = 'List of sensor calibrations')
     #some_dict: typing.Dict[typing.Union[str,float]] = pydantic.Field(default={},
     some_dict: typing.Dict[str,typing.Union[float, bool, list]] = pydantic.Field(default={},description='Configuration of sensors, keys are their serial numbers')
+    some_dict2: typing.Dict[str, typing.Union[config_test_sub,float, bool, list]] = pydantic.Field(default={},
+                                                                                  description='Configuration of sensors, keys are their serial numbers')
     bmodellist: typing.List[typing.Union[float, config_test_sub,config_test_allow_extra]] = pydantic.Field(default=[],
                                                                          description='List of floats and pydantic models')
 
@@ -56,8 +58,14 @@ class config_test_small(pydantic.BaseModel):
 
     uniontest_nonedit: typing.Union[str, float] = pydantic.Field(default='fdsf',editable=False)
     a: float = pydantic.Field(default=1.0, editable=False)
+    b: dict = {}
     uniontest_2: typing.Union[str,float] = pydantic.Field(default='fdsf')
     uniontest: typing.Union[str, float] = pydantic.Field(default='fdsf')
+    uniontest_3: typing.Union[str, float, config_test_sub] = pydantic.Field(default='fdsf')
+    some_dict2: typing.Dict[str, typing.Union[config_test_sub, config_test_allow_extra, float, bool, list]] = pydantic.Field(default={},
+                                                                                                    description='Configuration of sensors, keys are their serial numbers')
+    bmodellist: typing.List[typing.Union[float, config_test_sub, config_test_allow_extra]] = pydantic.Field(default=[],
+                                                                                                            description='List of floats and pydantic models')
 
 configtest = config_test_small()
 

@@ -293,7 +293,7 @@ class Device(RedvyprDevice):
                     break
 
             if FLAG_DEVICE_EXISTS == False:
-                config = serial_DeviceCustomConfig()
+                config = SerialDeviceCustomConfig()
                 config.device = comport.device
                 config.devicename = comport.device.split('/')[-1]
                 #self.config.serial_devices.append(config)

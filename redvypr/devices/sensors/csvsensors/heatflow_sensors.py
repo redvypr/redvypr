@@ -838,11 +838,11 @@ class HFVWidget(QtWidgets.QWidget):
         self.rawconvtabs.addTab(self.convdatawidget, 'Converted data')
 
 
-    def update(self, data):
+    def update_data(self, data):
         """
         Updating the local data with datapacket
         """
-        funcname = __name__ + '.update()'
+        funcname = __name__ + '.update_data()'
         logger.debug(funcname)
         mac = data['sn']
         if mac in self.sn:
@@ -918,7 +918,7 @@ class DHFSWidget(QtWidgets.QWidget):
         self.parameter_unitconv = []
         print('Adding parameter')
         for ptmp in self.configuration.parameter:
-            print('Parameter',ptmp)
+            #print('Parameter',ptmp)
             p = ptmp[0]
             self.parameter.append(p)
             self.parameter_unit.append(None)
@@ -1079,7 +1079,7 @@ class DHFSWidget(QtWidgets.QWidget):
         but = self.sender()
         but.__widget__.show()
 
-    def update(self, data):
+    def update_data(self, data):
         """
         Updating the local data with datapacket
         """

@@ -72,7 +72,7 @@ class redvyprWidget(QtWidgets.QWidget):
             try:
                 logger.setLevel(config.loglevel)
             except:
-                logger.debug('Could not set loglevel to: "{}"'.format(config.loglevel))
+                logger.debug('Could not set loglevel')
 
         # Lets create the heart of redvypr
         if config is not None:
@@ -94,7 +94,18 @@ class redvyprWidget(QtWidgets.QWidget):
         # Create home tab
         self.createHomeWidget()
         tab_index = self.devicetabs.addTab(self.__homeWidget, 'Home')
-        self.devicetabs.setTabIcon(tab_index, QtGui.QIcon(_icon_file))
+        # Add an icon
+        try:
+            iconname = self.redvypr.config.gui_home_icon
+            if iconname == 'redvypr':
+                home_icon = QtGui.QIcon(_icon_file)
+            else:
+                home_icon = qtawesome.icon(iconname)
+            logger.debug('Found icon for home')
+            self.devicetabs.setTabIcon(tab_index, home_icon)
+        except:
+            device_icon = None
+
         # A timer to gather all the data from the devices
         self.devicereadtimer = QtCore.QTimer()
         self.devicereadtimer.timeout.connect(self.readguiqueue)
@@ -138,8 +149,8 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__deviceAddButton.setFont(font)
         self.__homeWidget_layout.addWidget(self.__deviceAddButton)
         self.__homeWidget_layout.addWidget(self.__deviceTableWidget)
-        # Configure button
-        self.__homeWidget_layout.addWidget(self.__host_config_btn)
+        ## Configure button
+        #self.__homeWidget_layout.addWidget(self.__host_config_btn)
 
     def open_ipwidget(self):
         pass
@@ -526,11 +537,10 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__ip_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         self.__ip_line.setText(self.redvypr.hostinfo['addr'])
         # Configuration
-        #self.__host_config_label = QtWidgets.QLabel('Configure:')
-        self.__host_config_btn = QtWidgets.QPushButton('Configure')
-        self.__host_config_btn.clicked.connect(self.__open_configWidget)
-        self.__host_config_widget = QtWidgets.QWidget()
-        self.__host_config_widget_layout = QtWidgets.QFormLayout(self.__host_config_widget)
+        #self.__host_config_btn = QtWidgets.QPushButton('Configure')
+        #self.__host_config_btn.clicked.connect(self.__open_configWidget)
+        #self.__host_config_widget = QtWidgets.QWidget()
+        #self.__host_config_widget_layout = QtWidgets.QFormLayout(self.__host_config_widget)
         # Configuration widgets for detailed configuration, opened when clicked configure button
         # Change the hostname
         self.__hostinfo_opt_btn = QtWidgets.QPushButton('Edit optional information')
@@ -544,8 +554,8 @@ class redvyprWidget(QtWidgets.QWidget):
         layout.addRow(self.__ip_label, self.__ip_line)
         layout.addRow(self.__ip_label, self.__ip_line)
         #layout.addRow(self.__host_config_label,self.__host_config_btn)
-        self.__host_config_widget_layout.addRow(self.__hostinfo_opt_btn)
-        self.__host_config_widget_layout.addRow(self.__statuswidget_pathbtn)
+        #self.__host_config_widget_layout.addRow(self.__hostinfo_opt_btn)
+        #self.__host_config_widget_layout.addRow(self.__statuswidget_pathbtn)
 
 
         logo = QtGui.QPixmap(_logo_file)
@@ -871,10 +881,10 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         deviceAction.setStatusTip('Add a device')
         deviceAction.triggered.connect(self.open_add_device_widget)
 
-        devcurAction = QtWidgets.QAction("&Go to device tab", self)
-        devcurAction.setShortcut("Ctrl+D")
-        devcurAction.setStatusTip('Go to the device tab')
-        devcurAction.triggered.connect(self.gotodevicetab)
+        devcurAction = QtWidgets.QAction("&Go to home tab", self)
+        devcurAction.setShortcut("Ctrl+H")
+        devcurAction.setStatusTip('Go to the home tab')
+        devcurAction.triggered.connect(self.goto_home_tab)
 
         conAction = QtWidgets.QAction("&Connect devices", self)
         conAction.setShortcut("Ctrl+C")
@@ -903,10 +913,10 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         consoleAction = QtWidgets.QAction("&Open console", self)
         consoleAction.triggered.connect(self.open_console)
         consoleAction.setShortcut("Ctrl+N")
-        IPAction = QtWidgets.QAction("&Network interfaces", self)
-        IPAction.triggered.connect(self.open_ipwidget)
+        #IPAction = QtWidgets.QAction("&Network interfaces", self)
+        #IPAction.triggered.connect(self.open_ipwidget)
         toolMenu.addAction(toolAction)
-        toolMenu.addAction(IPAction)
+        #toolMenu.addAction(IPAction)
         toolMenu.addAction(consoleAction)
 
         # Help and About menu
@@ -926,8 +936,8 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
     def open_ipwidget(self):
         self.redvypr_widget.open_ipwidget()
 
-    def gotodevicetab(self):
-        self.redvypr_widget.devicetabs.setCurrentWidget(self.redvypr_widget.devicesummarywidget)
+    def goto_home_tab(self):
+        self.redvypr_widget.devicetabs.setCurrentWidget(self.redvypr_widget.__homeWidget)
 
     def connect_device_gui(self):
         self.redvypr_widget.connect_device_gui()
@@ -940,7 +950,7 @@ Opens an "about" widget showing basic information.
         layout = QtWidgets.QVBoxLayout(self._about_widget)
         label1 = QtWidgets.QTextEdit()
         label1.setReadOnly(True)
-        label1.setText(__platform__)
+        label1.setText(self.redvypr_widget.redvypr.__platform__)
         font = label1.document().defaultFont()
         fontMetrics = QtGui.QFontMetrics(font)
         textSize = fontMetrics.size(0, label1.toPlainText())
