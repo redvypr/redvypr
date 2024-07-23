@@ -273,22 +273,13 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             elif len(type_args):
                 # Remove str from args, as this is a mandatary entry for dict, but not needed
                 if 'dict' in type_hints.__name__.lower() and (type_args[0].__name__.lower() == 'str' or type_args[0].__name__.lower() == 'int'):
-                    print('Hallo type hints',type_hints)
                     logger.debug(funcname + 'Removing str/int entry for dict')
-                    print('type args now', type_args)
-                    ##type_args_new = list(type_args)
-                    ##type_args_new.pop(0)
-                    ##print('type args new new', type_args_new)
-                    ##type_args = tuple(type_args_new)
                     type_args = type_args[1]
                     [type_args, argstr] = self.interprete_type_hint_annotation(type_args)
                     if 'union' in argstr.lower():
-                        print('type args pre now now', type_args)
                         type_args = typing.get_args(type_args)
-                    print('type args now now', type_args)
 
                 [type_args, tmp] = self.interprete_type_hint_annotation(type_args)
-                print('type args now now now', type_args)
                 # loop over all type args, if there is a union within (i.e. a list with some datatypes), loop over the union
                 # for example typing.List[typing.Union[float, str]]
                 for arg in type_args:
@@ -300,7 +291,6 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                         type_args_union = typing.get_args(arg)
                         for arg_union in type_args_union:
                             [arg_union, argstr] = self.interprete_type_hint_annotation(arg_union)
-                            #argstr = arg_union.__name__
                             logger.debug(funcname + 'Adding datatype: {}'.format(argstr))
                             type_dict['type_args'].append(argstr)
                             # Add the object as well
@@ -313,10 +303,10 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         return type_dict
 
     def __populateConfigGui__(self):
-        print('Additional widgets',self.additional_config_gui_widgets)
+        logger.debug('Additional widgets {}'.format(self.additional_config_gui_widgets))
         for w in self.additional_config_gui_widgets:
             try:
-                print('Adding widget',w)
+                logger.debug('Adding widget {}'.format(w))
                 self.configGui_layout.addWidget(w)
             except:
                 logger.debug('Could not add widget',exc_info=True)
@@ -363,8 +353,8 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 type_hints = None
 
             type_dict = self.interprete_type_hints(type_hints)
-            print(funcname + ' Type hints', type_hints)
-            print(funcname + ' Type dict', type_dict)
+            #print(funcname + ' Type hints', type_hints)
+            #print(funcname + ' Type dict', type_dict)
             if type_dict is not None:
                 index_datatype = None
                 # Create a combo to allow the user to choose between the different
@@ -380,13 +370,12 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 #    pass
                 # This is a union of allowed types
                 elif (len(type_dict['type_args']))>0 and (type_hints.__name__.lower() == 'union'):
-                    print('Type args')
+                    logger.debug(funcname + 'Type args')
                     self.__configCombo = QtWidgets.QComboBox()
                     has_combo = True
                     logger.debug(funcname + 'Filling combo box')
                     for iarg,argstr in enumerate(type_dict['type_args']):
-                        print('Argstr ...',argstr)
-
+                        logger.debug('Argstr {}'.format(argstr))
                         self.__configCombo.addItem(argstr)
                         index = self.__configCombo.count() - 1
                         datatypestr_tmp = item.__data__.__class__.__name__
@@ -398,47 +387,17 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                         #print('index',index,'item',item,'argstr',argstr, datatypestr_tmp, item.__datatypestr__)
 
                     data = item.__data__
-                    print('data type',type(data))
                     # Check if the combo is meant to choose between different types
-                    print('Type dict',type_dict)
                     if type_dict['type_root'] == 'union':
                         logger.debug(funcname + 'Union')
                         # Add the config combo to the layout
                         self.additional_config_gui_widgets.append(self.__configCombo)
-                    #elif isinstance(data, dict):
-                    #    print('Add options for dict')
-                    #    flag_add = True
-                    #elif isinstance(data, list):
-                    #    logger.debug(funcname + 'Create options for adding items to list')
-                    #    self.configGui_layout.addWidget(
-                    #        QtWidgets.QLabel('Add entry of type to list {}'.format(item.__dataindex__)))
-                    #
-                    #    addWidget_tmp = QtWidgets.QWidget()
-                    #    addWidget_tmp_layout = QtWidgets.QHBoxLayout(addWidget_tmp)
-                    #    addWidget_tmp_layout.addWidget(QtWidgets.QLabel('Append type to list'))
-                    #    addWidget_tmp_layout.addWidget(self.__configCombo)
-                    #    self.additional_config_gui_widgets.append(addWidget_tmp)
-                    #    flag_add = True
-                    #elif pydantic.BaseModel in data.__class__.__mro__:
-                    #    #print('Add options for basemodel')
-                    #    self.configGui_layout.addWidget(
-                    #        QtWidgets.QLabel('Add entry of type to pydantic BaseModel child {}'.format(item.__dataindex__)))
-                    #
-                    #    self.__configKeyInput = QtWidgets.QLineEdit('newattribute')
-                    #    # Widget for key/datatype to add
-                    #    addWidget_tmp = QtWidgets.QWidget()
-                    #    addWidget_tmp_layout = QtWidgets.QHBoxLayout(addWidget_tmp)
-                    #    addWidget_tmp_layout.addWidget(self.__configKeyInput)
-                    #    addWidget_tmp_layout.addWidget(self.__configCombo)
-                    #    self.additional_config_gui_widgets.append(addWidget_tmp)
-                    #    flag_add = True
                     else: # Ordinary item, adding nothing special
                         logger.debug(funcname + 'Ordinary item')
                         ## Add the config combo to the layout
                         #self.additional_config_gui_widgets.append(self.__configCombo)
 
                     item_data = item.__data__
-
                     if index_datatype is not None:
                         self.__configCombo.setCurrentIndex(index_datatype)
                         item.__datatypestr__ = datatypestr_tmp
@@ -450,24 +409,14 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                     # Get the index for the combo
                     self.__configCombo.currentIndexChanged.connect(self.__comboTypeChanged)
 
-            #self.__configWidget = QtWidgets.QLabel('Hallo')
-            #print('Configwidget 1',self.__configWidget)
             self.CreateConfigWidgetForItem(item)
-            print('Flag add',flag_add)
+            # Do we still need this?
             if flag_add:
                 item.__flag_add__ = True
             else:
                 item.__flag_add__ = False
-            #print('Configwidget 2', self.__configwidget)
-            #config_gui_widgets.append(self.__configwidget)
-            #self.configGui_layout.addWidget(self.__configwidget)
             # Add a remove button if the item can be removed
             parentdata = item.__dataparent__
-            # Add a stretch
-            # self.configGui_layout.addItem(self.stretchy_spacer_thing)
-            # self.additional_config_gui_widgets.append(self.stretchy_spacer_thing)
-
-
             try:
                 removable = item.__removable__
             except:
@@ -476,17 +425,12 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 self.__remove_button = QtWidgets.QPushButton('Remove')
                 self.__remove_button.item = item
                 self.__remove_button.clicked.connect(self.__removeClicked)
-                #self.configGui_layout.addWidget(QtWidgets.QLabel('Remove entry'))
-                #self.configGui_layout.addWidget(self.__remove_button)
                 self.additional_config_gui_widgets.append(QtWidgets.QLabel('Remove entry'))
                 self.additional_config_gui_widgets.append(self.__remove_button)
 
-
             self.__populateConfigGui__()
-
             if has_combo:
                 self.__configCombo.setCurrentIndex(0)
-                #self.__comboTypeChanged(0)
 
     def __removeClicked(self):
         funcname = __name__ + '.__removeClicked():'
@@ -536,7 +480,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         #if pydantic.BaseModel in item.__data__.__class__.__mro__:
         #    print('Existing Basemodel ...')
         #    self.createConfigWidgetBaseModel(item)
-        print('Item datatypestr',item.__datatypestr__)
+        logger.debug(funcname + 'Item datatypestr {}'.format(item.__datatypestr__))
         if (item.__datatypestr__ == 'int') or (item.__datatypestr__ == 'float'):
             self.createConfigWidgetNumber(item, dtype=item.__datatypestr__)
         elif (item.__datatypestr__.lower() == 'color'):
@@ -570,7 +514,6 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             try: # Check if there is a valid type_hint, otherwise do nothing
                 type_hints = item.__type_hints__
                 type_dict = self.interprete_type_hints(type_hints)
-                print('Type hints',type_hints)
                 dobject = type_dict['datatype_objects'][item.__datatypestr__]
                 self.createConfigWidgetBaseModelNew(item)
             except:
