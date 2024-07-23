@@ -1,7 +1,7 @@
 """
 sensor
 function binary2raw -> dict with datakey (parameter)
-raw2unit (with optional calibrations)
+generic_sensor (with optional calibrations)
 
 """
 
@@ -39,7 +39,7 @@ _icon_file = redvypr_files.icon_file
 redvypr_devicemodule = True
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('raw2unit')
+logger = logging.getLogger('generic_sensor')
 logger.setLevel(logging.DEBUG)
 
 class Sensor(pydantic.BaseModel):

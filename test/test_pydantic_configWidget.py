@@ -64,8 +64,10 @@ class config_test_small(pydantic.BaseModel):
     uniontest_3: typing.Union[str, float, config_test_sub] = pydantic.Field(default='fdsf')
     some_dict2: typing.Dict[str, typing.Union[config_test_sub, config_test_allow_extra, float, bool, list]] = pydantic.Field(default={},
                                                                                                     description='Configuration of sensors, keys are their serial numbers')
-    bmodellist: typing.List[typing.Union[float, config_test_sub, config_test_allow_extra]] = pydantic.Field(default=[],
+    bmodellist: typing.List[typing.Union[RedvyprAddressStr, float, config_test_sub, config_test_allow_extra]] = pydantic.Field(default=[],
                                                                                                             description='List of floats and pydantic models')
+    parameter: typing.Dict[str, typing.Annotated[typing.Union[float, list, RedvyprAddressStr], 'Hallo']] = pydantic.Field(default={})
+    raddr: RedvyprAddressStr = pydantic.Field(default=str(RedvyprAddress('d:test')))
 
 configtest = config_test_small()
 
