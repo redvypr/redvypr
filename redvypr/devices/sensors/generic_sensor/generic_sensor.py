@@ -53,8 +53,8 @@ class BinarySensor(Sensor):
     """
     name: str = pydantic.Field(default='binsensor')
     regex_split: bytes = pydantic.Field(default=b'', description='Regex expression to split a binary string')
-    binary_format: typing.Dict = pydantic.Field(default={})
-    str_format: typing.Dict = pydantic.Field(default={})
+    binary_format: typing.Dict[str, str] = pydantic.Field(default={'data_char':'c'})
+    str_format: typing.Dict[str, str] = pydantic.Field(default={'data_float':'float'})
 
 
 class DeviceBaseConfig(pydantic.BaseModel):
@@ -64,22 +64,18 @@ class DeviceBaseConfig(pydantic.BaseModel):
 
 class DeviceCustomConfig(pydantic.BaseModel):
     sensors: typing.List[typing.Union[Sensor, BinarySensor]] = pydantic.Field(default=[], description = 'List of sensors')
-    sensors2: typing.Dict[str,typing.Union[Sensor, BinarySensor]] = pydantic.Field(default=[],
-                                                                                                         description='List of sensors')
     calibration_files: list = pydantic.Field(default=[])
-
-
-
-
 
 class BinaryDataSplitter():
     """
 
     """
     def __init__(self, sensors=[]):
+        funcname = __name__ + '__init__():'
         self.regex_splitters = []
         self.sensors = sensors
         for sensor in sensors:
+            logger.debug(funcname + 'Adding sensor {}'.format(sensor.name))
             sensor._str_functions = {}
             self.regex_splitters.append(sensor.regex_split)
             # Add functions for datatypes
@@ -93,11 +89,26 @@ class BinaryDataSplitter():
                 elif vartype.lower() == 'str':
                     sensor._str_functions[key] = str
 
+    def datapacket_process(self, data):
+        """
+        Processes a redvypr datapacket. Checks if subscription is valid and sends it to the proper sensor
+        :param data:
+        :return:
+        """
+        print('Hallo data',data)
 
-    def binary_process(self, binary_stream):
-        matches_all = self.binary_split(binary_stream)
+    def binary_process(self, binary_stream, sensors=None):
+        """
+
+        :param binary_stream:
+        :param sensors:
+        :return:
+        """
+        if sensors is None:
+            sensors = self.sensors
+        matches_all = self.binary_split(binary_stream, sensors)
         data_packets = []
-        for rematches,sensor in zip(matches_all,self.sensors):
+        for rematches,sensor in zip(matches_all,sensors):
             print('Match/Sensor',rematches,sensor)
             for rematch in rematches:
                 data_packet = redvypr_create_datadict(device=sensor.name)
@@ -130,14 +141,17 @@ class BinaryDataSplitter():
 
         return data_packets
 
-    def binary_split(self, binary_stream):
+    def binary_split(self, binary_stream, sensors=None):
         """
         Splits the data into pieces
         :param binary_stream:
+        :param sensors:
         :return:
         """
+        if sensors is None:
+            sensors = self.sensors
         matches_all = []
-        for sensor in self.sensors:
+        for sensor in sensors:
             regex = sensor.regex_split
             matches = []
             print('Regex',regex,binary_stream)
@@ -155,3 +169,16 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
     funcname = __name__ + '.start():'
     logger.debug(funcname)
     config = DeviceCustomConfig.model_validate(config)
+    splitter = BinaryDataSplitter(config.sensors)
+    print('Splitter',splitter)
+    while True:
+        data = datainqueue.get(block = True)
+        if(data is not None):
+            command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
+            logger.debug('Got a command: {:s}'.format(str(data)))
+            if (command == 'stop'):
+                logger.debug('Command is for me: {:s}'.format(str(command)))
+                break
+
+            sensordata = splitter.datapacket_process(data)
+

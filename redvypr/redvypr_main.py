@@ -89,11 +89,11 @@ def merge_configuration(redvypr_config=None):
 
         # Merge the configuration into one big dictionary
         devices_all.extend(config_tmp.devices)
-        devicepath_all.extend(config_tmp.devicepath)
+        devicepath_all.extend(config_tmp.devicepaths)
         #print('Config tmp', config_tmp)
         # config = config.model_copy(update=config_tmp)
-    config_tmp2 = redvypr.RedvyprConfig(devices=devices_all, devicepath=devicepath_all)
-    config = config_tmp2.model_copy(update=config_tmp.model_dump(exclude=['devices', 'devicepath']))
+    config_tmp2 = redvypr.RedvyprConfig(devices=devices_all, devicepaths=devicepath_all)
+    config = config_tmp2.model_copy(update=config_tmp.model_dump(exclude=['devices', 'devicepaths']))
     #print('Config', config)
     return config
 
@@ -175,7 +175,7 @@ def redvypr_main():
         modpath = os.path.abspath(args.add_path)
         # print('devicepath',args.add_path,modpath)
         # print('Modpath',modpath)
-        config_add = redvypr.RedvyprConfig(devicepath=modpath)
+        config_add = redvypr.RedvyprConfig(devicepaths=[modpath])
         config_all.append(config_add)
 
     # Add the configuration

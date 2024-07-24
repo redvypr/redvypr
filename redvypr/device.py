@@ -72,7 +72,7 @@ class RedvyprDeviceConfig(pydantic.BaseModel):
 
 class RedvyprDeviceParameter(RedvyprDeviceBaseConfig):
     """
-    The is the base config with extra parameter that dont need to be saved
+    This is the base config with extra parameter that dont need to be saved
     """
     uuid: str = pydantic.Field(default='')
     #template: dict = pydantic.Field(default={}) # Candidate for removal
@@ -153,7 +153,7 @@ class redvypr_device_scan():
 
 
     def scan_devicepath(self):
-        funcname = 'search_in_path()'
+        funcname = 'search_in_path():'
         self.logger.debug(funcname)
         self.device_modules = []  # Clear the list
         #
@@ -162,17 +162,17 @@ class redvypr_device_scan():
         # https://docs.python.org/3/library/importlib.html#checking-if-a-module-can-be-imported
         for dpath in self.device_paths:
             python_files = glob.glob(dpath + "/*.py")
-            self.logger.debug(funcname + ' will search in path for files: {:s}'.format(dpath))
+            self.logger.debug(funcname + 'Will search in path for files: {:s}'.format(dpath))
             for pfile in python_files:
-                self.logger.debug(funcname + ' opening {:s}'.format(pfile))
+                self.logger.debug(funcname + 'Opening {:s}'.format(pfile))
                 module_name = pathlib.Path(pfile).stem
                 spec = importlib.util.spec_from_file_location(module_name, pfile)
                 module = importlib.util.module_from_spec(spec)
                 try:
                     spec.loader.exec_module(module)
-                except Exception as e:
-                    self.logger.warning(funcname + ' could not import module: {:s}\n--------------------------------------------\n'.format(pfile))
-                    self.logger.exception(e)
+                except:
+                    self.logger.warning(funcname + 'Could not import module: {:s}\n--------------------------------------------\n'.format(pfile))
+                    self.logger.warning('Because',exc_info=True)
                     self.logger.warning(funcname + '\n--------------------------------------------\n')
 
                 module_members = inspect.getmembers(module, inspect.isclass)
@@ -191,6 +191,9 @@ class redvypr_device_scan():
 
                         self.redvypr_devices_flat.append(devdict)
                         self.__modules_scanned__.append(module)
+                        self.logger.debug(funcname + 'Found device: {}'.format(module_name))
+                else:
+                    self.logger.debug(funcname + 'Not a valid device')
 
 
 
@@ -546,7 +549,7 @@ class RedvyprDevice(QtCore.QObject):
         self.statistics['datastreams'] = []
         self.statistics['datastreams_dict'] = {}
         self.statistics['datastreams_info'] = {}
-        self.logger.warning('This chnages only the device name but will not restart the thread.')
+        self.logger.warning('This changes only the device name but will not restart the thread.')
 
     def address_string(self, address_format='/u/a/h/p/d'):
         """
@@ -1078,14 +1081,21 @@ class RedvyprDevice(QtCore.QObject):
         """
         Returns a RedvyprDeviceConfig of the device
         """
+        funcname = __name__ + '.get_config():'
+        self.logger.debug(funcname)
         # Treat subscriptions
         subscriptions = []
         for raddr in self.subscribed_addresses:
             subscriptions.append(raddr.address_str)
         base_config = RedvyprDeviceBaseConfig(**self.device_parameter.model_dump())
-        config = RedvyprDeviceConfig(base_config=base_config, custom_config=self.custom_config.model_dump(),
+        try:
+            custom_config_dict = self.custom_config.model_dump()
+        except:
+            custom_config_dict = None
+        config = RedvyprDeviceConfig(base_config=base_config, custom_config=custom_config_dict,
                                      devicemodulename=self.devicemodulename, subscriptions=subscriptions)
 
+        self.logger.debug(funcname + 'Config: {}'.format(config))
         return config
 
     def get_info(self):

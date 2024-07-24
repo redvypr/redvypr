@@ -276,9 +276,12 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                     logger.debug(funcname + 'Removing str/int entry for dict')
                     type_args = type_args[1]
                     [type_args, argstr] = self.interprete_type_hint_annotation(type_args)
+                    print('type args',type_args, 'argstr', argstr)
                     if 'union' in argstr.lower():
+                        print(funcname + 'Union')
                         type_args = typing.get_args(type_args)
 
+                print('type args',type_args)
                 [type_args, tmp] = self.interprete_type_hint_annotation(type_args)
                 # loop over all type args, if there is a union within (i.e. a list with some datatypes), loop over the union
                 # for example typing.List[typing.Union[float, str]]
@@ -507,6 +510,9 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         elif (item.__datatypestr__ == 'dict'):
             logger.debug(funcname + 'Dictionary')
             self.createConfigWidgetDict(item)
+        elif (item.__datatypestr__ == 'bytes'):
+            logger.debug(funcname + 'bytes')
+            self.createConfigWidgetBytes(item)
         elif pydantic.BaseModel in item.__data__.__class__.__mro__:
             logger.debug(funcname + 'BaseModel')
             self.createConfigWidgetBaseModelNew(item)
@@ -673,6 +679,26 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         self.__configwidget_apply = QtWidgets.QPushButton('Apply')
         self.__configwidget_apply.clicked.connect(self.applyGuiInput)
         self.__configwidget_apply.__configType = 'configStr'
+        self.__configwidget_apply.item = item
+        self.__configwidget_cancel = QtWidgets.QPushButton('Cancel')
+        self.__layoutwidget.addRow(self.__configwidget_apply)
+        self.__layoutwidget.addRow(self.__configwidget_cancel)
+
+    def createConfigWidgetBytes(self, item):
+        index = item.__dataindex__
+        parent = item.__parent__
+        data = item.__data__
+        parentparent = parent.__parent__
+        self.__configwidget = QtWidgets.QWidget()
+        self.__layoutwidget = QtWidgets.QFormLayout(self.__configwidget)
+        self.__configwidget_input = QtWidgets.QLineEdit()
+        self.__configwidget_input.setText(str(data))
+        self.__layoutwidget.addRow(QtWidgets.QLabel('Enter string for {:s}'.format(str(index))))
+        self.__layoutwidget.addRow(QtWidgets.QLabel('Value'), self.__configwidget_input)
+        # Buttons
+        self.__configwidget_apply = QtWidgets.QPushButton('Apply')
+        self.__configwidget_apply.clicked.connect(self.applyGuiInput)
+        self.__configwidget_apply.__configType = 'configBytes'
         self.__configwidget_apply.item = item
         self.__configwidget_cancel = QtWidgets.QPushButton('Cancel')
         self.__layoutwidget.addRow(self.__configwidget_apply)
@@ -894,6 +920,15 @@ class pydanticConfigWidget(QtWidgets.QWidget):
 
         elif self.sender().__configType == 'configStr':
             data = self.__configwidget_input.text()  # Textbox
+            data_set = True
+
+        elif self.sender().__configType == 'configBytes':
+            data = self.__configwidget_input.text()  # Textbox
+            print('data',data)
+            if data.startswith("b'") and data.endswith("'"):
+                data = eval(data)
+            else:
+                data = data.encode('utf-8')
             data_set = True
 
         elif self.sender().__configType == 'configRedvyprAddressStr':

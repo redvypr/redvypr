@@ -68,6 +68,8 @@ class config_test_small(pydantic.BaseModel):
                                                                                                             description='List of floats and pydantic models')
     parameter: typing.Dict[str, typing.Annotated[typing.Union[float, list, RedvyprAddressStr], 'Hallo']] = pydantic.Field(default={})
     raddr: RedvyprAddressStr = pydantic.Field(default=str(RedvyprAddress('d:test')))
+    str_format: typing.Dict[str,typing.Union[float,typing.Literal['float', 'int', 'str']]] = pydantic.Field(default={'data_float':'float'})
+
 
 configtest = config_test_small()
 

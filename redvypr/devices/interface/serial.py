@@ -43,9 +43,9 @@ class SerialDeviceCustomConfig(pydantic.BaseModel):
     bytesize: typing.Literal[serial.EIGHTBITS, serial.SEVENBITS, serial.SIXBITS] = pydantic.Field(default=serial.EIGHTBITS)
     dt_poll: float = 0.05
     dt_maxwait: float = pydantic.Field(default=5.0,description='Wait time in s for valid data, if time without a valid packets exceeds dt_maxwait the comport is closed and the read thread is stopped')
-    chunksize: int = pydantic.Field(default=1000, description='The maximum amount of bytes read with one chunk')
-    packetdelimiter: str = pydantic.Field(default='\n', description='The delimiter to distinuish packets')
-    packetstart: str = pydantic.Field(default='')
+    chunksize: int = pydantic.Field(default=0, description='The maximum amount of bytes read with one chunk')
+    packetdelimiter: str = pydantic.Field(default='', description='The delimiter to distinguish packets, leave empty to disable')
+    packetstart: str = pydantic.Field(default='', description='The delimiter to distinguish packets, leave empty to disable')
     device: str = pydantic.Field(default='')
     devicename: str = pydantic.Field(default='')
 
@@ -75,7 +75,6 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
     devicename = config['devicename']
     # Get the packet end and packet start characters
     newpacket = config['packetdelimiter']
-    startpacket = config['packetstart'].encode('utf-8')
     # Check if a delimiter shall be used (\n, \r\n, etc ...)
     if (len(newpacket) > 0):
         FLAG_DELIMITER = True
@@ -83,6 +82,9 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
         FLAG_DELIMITER = False
     if (type(newpacket) is not bytes):
         newpacket = newpacket.encode('utf-8')
+
+
+    startpacket = config['packetstart'].encode('utf-8')
 
     rawdata_all = b''
     dt_update = 1  # Update interval in seconds
@@ -293,9 +295,8 @@ class Device(RedvyprDevice):
                     break
 
             if FLAG_DEVICE_EXISTS == False:
-                config = SerialDeviceCustomConfig()
-                config.device = comport.device
-                config.devicename = comport.device.split('/')[-1]
+                devicename = comport.device.split('/')[-1]
+                config = SerialDeviceCustomConfig(device=comport.device, devicename=devicename)
                 #self.config.serial_devices.append(config)
                 serial_devices_new.append(config)
 
@@ -356,8 +357,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout_all.addWidget(QtWidgets.QLabel('Packet start'), 0, 6)
         layout_all.addWidget(QtWidgets.QLabel('Packet delimiter'), 0, 7)
         layout_all.addWidget(QtWidgets.QLabel('Packet size'), 0, 8)
-        layout_all.addWidget(QtWidgets.QLabel('Config'), 0, 9)
-        layout_all.addWidget(QtWidgets.QLabel('Read port'), 0, 10)
+        #layout_all.addWidget(QtWidgets.QLabel('Config'), 0, 9)
+        layout_all.addWidget(QtWidgets.QLabel('Use port'), 0, 9)
         lwidth = 80 # width of the qlineedits
 
         for irow,serial_device in enumerate(self.device.custom_config.serial_devices):
@@ -378,8 +379,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 baudrates.sort()
                 ibaud = baudrates.index(serial_device.baud)
 
-            serialwidgetdict['combo_serial_devices'] = QtWidgets.QComboBox()
-            serialwidgetdict['combo_serial_devices'].addItem(serial_device.device)
+            serialwidgetdict['combo_serial_devices'] = QtWidgets.QLabel(serial_device.device)
             # self._combo_serial_devices.currentIndexChanged.connect(self._serial_device_changed)
             serialwidgetdict['combo_serial_baud'] = QtWidgets.QComboBox()
             for b in baudrates:
@@ -415,36 +415,44 @@ class initDeviceWidget(QtWidgets.QWidget):
             serialwidgetdict['combo_databits'].addItem('6')
             serialwidgetdict['combo_databits'].addItem('5')
 
-            serialwidgetdict['button_serial_openclose'] = QtWidgets.QPushButton('Read')
+            serialwidgetdict['button_serial_openclose'] = QtWidgets.QPushButton('Use')
             serialwidgetdict['button_serial_openclose'].setCheckable(True)
             serialwidgetdict['button_serial_openclose'].setChecked(serial_device.use_device)
-            #serialwidgetdict['button_serial_openclose'].clicked.connect(self.start_clicked)
+            serialwidgetdict['button_serial_openclose'].clicked.connect(self.use_device_clicked)
 
-            serialwidgetdict['button_config'] = QtWidgets.QPushButton('Config')
-
+            #serialwidgetdict['button_config'] = QtWidgets.QPushButton('Config')
 
             # How to differentiate packets
+            packet_del = serial_device.packetdelimiter
             serialwidgetdict['packet_ident_lab'] = QtWidgets.QLabel('Packet identification')
             serialwidgetdict['packet_ident'] = QtWidgets.QLineEdit()
-            serialwidgetdict['packet_ident'].setText("\\n")
+            serialwidgetdict['packet_ident'].setText(packet_del)
             #serialwidgetdict['packet_ident'].setStyleSheet("border: 10px solid gray; width: 10px; height:25px;")
             #serialwidgetdict['packet_ident'].setMinimumSize(25, 25)
             serialwidgetdict['packet_ident'].setFixedWidth(lwidth)
+            # Set the tooltip
+            desc = serial_device.model_fields['packetdelimiter'].description
+            serialwidgetdict['packet_ident'].setToolTip(desc)
 
+            packet_start = serial_device.packetstart
             serialwidgetdict['packet_start_lab'] = QtWidgets.QLabel('Packet start')
             serialwidgetdict['packet_start'] = QtWidgets.QLineEdit()
-            serialwidgetdict['packet_start'].setText('$')
+            serialwidgetdict['packet_start'].setText(packet_start)
             serialwidgetdict['packet_start'].setFixedWidth(lwidth)
+            # Set the tooltip
+            desc = serial_device.model_fields['packetstart'].description
+            serialwidgetdict['packet_start'].setToolTip(desc)
             # Max packetsize
             serialwidgetdict['packet_size_lab'] = QtWidgets.QLabel("Maximum packet size")
-            serialwidgetdict['packet_size_lab'].setToolTip(
-                'The number of received bytes after which a packet is sent.\n Add 0 for no size check')
             onlyInt = QtGui.QIntValidator()
+            packet_size = str(serial_device.chunksize)
             serialwidgetdict['packet_size'] = QtWidgets.QLineEdit()
             serialwidgetdict['packet_size'].setValidator(onlyInt)
-            serialwidgetdict['packet_size'].setText('0')
+            serialwidgetdict['packet_size'].setText(packet_size)
             serialwidgetdict['packet_size'].setFixedWidth(lwidth)
-            # self.packet_ident
+            # Set the tooltip
+            desc = serial_device.model_fields['chunksize'].description
+            serialwidgetdict['packet_size'].setToolTip(desc)
 
             layout.addWidget(serialwidgetdict['packet_start'], 2, 1)
             layout.addWidget(serialwidgetdict['packet_start_lab'], 2, 0)
@@ -462,8 +470,8 @@ class initDeviceWidget(QtWidgets.QWidget):
             layout_all.addWidget(serialwidgetdict['packet_start'], irow + 1, 6)
             layout_all.addWidget(serialwidgetdict['packet_ident'], irow + 1, 7)
             layout_all.addWidget(serialwidgetdict['packet_size'], irow + 1, 8)
-            layout_all.addWidget(serialwidgetdict['button_config'], irow+1, 9)
-            layout_all.addWidget(serialwidgetdict['button_serial_openclose'], irow+1, 10)
+            #layout_all.addWidget(serialwidgetdict['button_config'], irow+1, 9)
+            layout_all.addWidget(serialwidgetdict['button_serial_openclose'], irow+1, 9)
 
             #self.statustimer = QtCore.QTimer()
             #self.statustimer.timeout.connect(self.update_buttons)
@@ -471,6 +479,12 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         layout_all.setRowStretch(layout_all.rowCount(), 1)
 
+    def use_device_clicked(self):
+        button = self.sender()
+        if button.isChecked():
+            button.setText('Use')
+        else:
+            button.setText('Ignore')
     def update_buttons(self):
         """ Updating all buttons depending on the thread status (if its alive, graying out things)
         """

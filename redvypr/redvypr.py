@@ -75,7 +75,7 @@ class RedvyprConfig(pydantic.BaseModel):
     #devices: list = pydantic.Field(default=[])
     #devices: typing.List[RedvyprDeviceConfig] = pydantic.Field(default=[])
     devices: typing.List[typing.Annotated[typing.Union[RedvyprDeviceConfig], pydantic.Field(discriminator='config_type')]] = pydantic.Field(default=[])
-    devicepath: list = pydantic.Field(default=[])
+    devicepaths: list = pydantic.Field(default=[])
     loglevel: typing.Literal['INFO','DEBUG','WARNING'] = pydantic.Field(default='INFO')
     gui_home_icon: str = 'redvypr'
 
@@ -420,9 +420,9 @@ class Redvypr(QtCore.QObject):
         # Apply the configuration
         if config is not None:
             print('Config parameter', config, type(config))
-            print('Devicepath', type(config), type(config.hostname), config.devicepath)
+            print('Devicepaths', type(config), type(config.hostname), config.devicepaths)
             # Add device path if found
-            devpath = config.devicepath
+            devpath = config.devicepaths
             if (type(devpath) == str):
                 devpath = [devpath]
 
@@ -644,7 +644,7 @@ class Redvypr(QtCore.QObject):
                 except Exception as e:
                     logger.debug(
                         funcname + ':No pydantic base configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
-                    device_parameter = RedvyprDeviceParameter()
+                    device_parameter = RedvyprDeviceParameter(devicemodulename=devicemodulename, numdevice=self.numdevice)
                     #logger.exception(e)
                     FLAG_HAS_PYDANTICBASE = False
                     FLAG_PYDANTIC = False
@@ -779,6 +779,7 @@ class Redvypr(QtCore.QObject):
                         device_parameter.autostart = False
 
                     # Creating the device
+                    print('Deviceparameter',device_parameter)
                     device = Device(device_parameter=device_parameter, custom_config=pydantic_custom_config, redvypr=self, dataqueue=dataqueue,
                                     comqueue=comqueue, datainqueue=datainqueue,
                                     statusqueue=statusqueue, statistics=statistics, startfunction=startfunction)
@@ -904,6 +905,9 @@ class Redvypr(QtCore.QObject):
         if folder:
             if (folder not in self.device_paths):
                 self.device_paths.append(folder)
+                #print('scanning')
+                #self.redvypr_device_scan.logger.setLevel(logging.DEBUG)
+                self.redvypr_device_scan.scan_devicepath()
                 self.device_path_changed.emit()  # Notify about the changes
 
     def remdevicepath(self, folder):

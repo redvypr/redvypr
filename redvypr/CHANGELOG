@@ -1,3 +1,7 @@
+    -0.8.4  - serial widget improved
+            - generic_sensor added
+            - configwidget strongly improved
+            - small bugs with device paths fixed
     -0.8.3  - XYPlot working
             - configwidget editable bug removed
             - XYPlot with feature of plot last_N_points-
