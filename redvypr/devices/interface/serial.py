@@ -42,7 +42,7 @@ class SerialDeviceCustomConfig(pydantic.BaseModel):
     stopbits: typing.Literal[serial.STOPBITS_ONE, serial.STOPBITS_ONE_POINT_FIVE,serial.STOPBITS_TWO] = pydantic.Field(default=serial.STOPBITS_ONE)
     bytesize: typing.Literal[serial.EIGHTBITS, serial.SEVENBITS, serial.SIXBITS] = pydantic.Field(default=serial.EIGHTBITS)
     dt_poll: float = 0.05
-    dt_maxwait: float = pydantic.Field(default=5.0,description='Wait time in s for valid data, if time without a valid packets exceeds dt_maxwait the comport is closed and the read thread is stopped')
+    dt_maxwait: float = pydantic.Field(default=-1.0,description='Wait time in s for valid data, if time without a valid packets exceeds dt_maxwait the comport is closed and the read thread is stopped')
     chunksize: int = pydantic.Field(default=0, description='The maximum amount of bytes read with one chunk')
     packetdelimiter: str = pydantic.Field(default='', description='The delimiter to distinguish packets, leave empty to disable')
     packetstart: str = pydantic.Field(default='', description='The delimiter to distinguish packets, leave empty to disable')
@@ -123,7 +123,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
 
 
     while True:
-        # Note: Here commands could be send as well
+        # Note: Here commands could be sent as well
         try:
             data = datainqueue.get(block=False)
         except:
@@ -192,7 +192,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
 
                             rawdata_all = rawdata_split[-1]
 
-        if ((time.time() - tnewpacket) > dt_maxwait):
+        if ((time.time() - tnewpacket) > dt_maxwait) and (dt_maxwait > 0):
             logger.warning('Did not find valid packet on serial device {:s}'.format(serial_name))
             data = create_datadict(device=devicename)
             data['t'] = time.time()
@@ -511,7 +511,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         for w in self.serialwidgets:
             serial_device = w['serial_device']
             config = {}
-            serial_name = str(w['combo_serial_devices'].currentText())
+            serial_name = str(w['combo_serial_devices'].text())
             serial_device.device = serial_name
             devicename = str(w['devicename'].text())
             serial_device.devicename = devicename

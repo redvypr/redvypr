@@ -4,35 +4,26 @@ function binary2raw -> dict with datakey (parameter)
 generic_sensor (with optional calibrations)
 
 """
-
-import datetime
-import numpy as np
 import logging
 import sys
-import threading
-import copy
-import yaml
-import json
 import typing
 import pydantic
 import re
 import struct
 
-from PyQt5 import QtWidgets, QtCore, QtGui
-from redvypr.device import RedvyprDevice
+
+
 from redvypr.data_packets import check_for_command
-#from redvypr.packet_statistics import get_keys_from_data
-#import redvypr.packet_statistic as redvypr_packet_statistic
 from  redvypr.data_packets import create_datadict as redvypr_create_datadict
-import redvypr.data_packets as data_packets
-import redvypr.gui as gui
 #import redvypr.config as redvypr_config
 from redvypr.redvypr_address import RedvyprAddress, RedvyprAddressStr
 from redvypr.devices.plot import plot_widgets
 from redvypr.devices.plot import XYplotWidget
 import redvypr.files as redvypr_files
+import redvypr.widgets.standard_device_widgets
 from redvypr.devices.sensors.calibration.calibration_models import calibration_HF, calibration_NTC, calibration_const, calibration_poly
 from redvypr.devices.sensors.csvsensors.sensorWidgets import sensorCoeffWidget, sensorConfigWidget
+from .sensor_definitions import Sensor, BinarySensor
 
 _icon_file = redvypr_files.icon_file
 
@@ -41,21 +32,6 @@ redvypr_devicemodule = True
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('generic_sensor')
 logger.setLevel(logging.DEBUG)
-
-class Sensor(pydantic.BaseModel):
-    name: str = pydantic.Field(default='sensor')
-    datastream: RedvyprAddressStr = ''
-    parameter: typing.Dict[str,typing.Annotated[typing.Union[calibration_const, calibration_poly], pydantic.Field(discriminator='calibration_type')]]  = pydantic.Field(default={})
-
-class BinarySensor(Sensor):
-    """
-    A binary sensor gets binary data that need to be converted first into a dictionary with the datakeys
-    """
-    name: str = pydantic.Field(default='binsensor')
-    regex_split: bytes = pydantic.Field(default=b'', description='Regex expression to split a binary string')
-    binary_format: typing.Dict[str, str] = pydantic.Field(default={'data_char':'c'})
-    str_format: typing.Dict[str, str] = pydantic.Field(default={'data_float':'float'})
-
 
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
@@ -175,10 +151,17 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
         data = datainqueue.get(block = True)
         if(data is not None):
             command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
-            logger.debug('Got a command: {:s}'.format(str(data)))
             if (command == 'stop'):
+                logger.debug('Got a command: {:s}'.format(str(data)))
                 logger.debug('Command is for me: {:s}'.format(str(command)))
                 break
 
             sensordata = splitter.datapacket_process(data)
+
+
+class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceInitWidget):
+    def __init__(self, *args, **kwargs):
+        funcname = __name__ + '__init__():'
+        logger.debug(funcname)
+        super().__init__(*args, **kwargs)
 

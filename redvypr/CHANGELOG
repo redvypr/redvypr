@@ -1,3 +1,4 @@
+    -0.8.5  - bug fixes in serial
     -0.8.4  - serial widget improved
             - generic_sensor added
             - configwidget strongly improved
