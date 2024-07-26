@@ -39,7 +39,8 @@ class DeviceBaseConfig(pydantic.BaseModel):
     description: str = 'Processing and conversion of raw data to unit using calibration models'
 
 class DeviceCustomConfig(pydantic.BaseModel):
-    sensors: typing.List[typing.Union[Sensor, BinarySensor]] = pydantic.Field(default=[], description = 'List of sensors')
+    sensors: typing.List[typing.Annotated[typing.Union[Sensor, BinarySensor], pydantic.Field(discriminator='sensortype')]]\
+        = pydantic.Field(default=[], description = 'List of sensors')
     calibration_files: list = pydantic.Field(default=[])
 
 class BinaryDataSplitter():
@@ -154,8 +155,8 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
     funcname = __name__ + '.start():'
     logger.debug(funcname)
     config = DeviceCustomConfig.model_validate(config)
-    splitter = BinaryDataSplitter(config.sensors)
-    print('Splitter',splitter)
+    #splitter = BinaryDataSplitter(config.sensors)
+    #print('Splitter',splitter)
     while True:
         data = datainqueue.get(block = True)
         if(data is not None):
@@ -165,7 +166,10 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                 logger.debug('Command is for me: {:s}'.format(str(command)))
                 break
 
-            sensordata = splitter.datapacket_process(data)
+            for sensor in config.sensors:
+                print('Sensor',sensor)
+                print('Type sensor', type(sensor))
+                sensordata = sensor.datapacket_process(data)
 
 
 class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceInitWidget):
