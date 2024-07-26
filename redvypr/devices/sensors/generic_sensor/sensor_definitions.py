@@ -5,7 +5,7 @@ from redvypr.devices.sensors.calibration.calibration_models import calibration_H
 
 class Sensor(pydantic.BaseModel):
     name: str = pydantic.Field(default='sensor')
-    datastream: RedvyprAddressStr = ''
+    datastream: RedvyprAddressStr = '*'
     parameter: typing.Dict[str,typing.Annotated[typing.Union[calibration_const, calibration_poly], pydantic.Field(discriminator='calibration_type')]]  = pydantic.Field(default={})
 
 class BinarySensor(Sensor):
@@ -19,4 +19,9 @@ class BinarySensor(Sensor):
 
 
 s4l_split = b'\$\x00(?P<counter32>[\x00-\xFF]{4})(?P<adc16>[\x00-\xFF]{2})\n'
-S4LB = BinarySensor(name='S4LB',regex_split=s4l_split)
+S4LB = BinarySensor(name='S4LB', regex_split=s4l_split)
+NMEARMC = BinarySensor(name='NMEA0183_RMC', regex_split=s4l_split)
+
+predefined_sensors = []
+predefined_sensors.append(S4LB)
+predefined_sensors.append(NMEARMC)

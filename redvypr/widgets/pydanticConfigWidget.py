@@ -100,11 +100,20 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 self.layout.addWidget(self.configGui, 0, 1)
 
 
-        self.closeButton = QtWidgets.QPushButton('Close')
+        self.closeButton = QtWidgets.QPushButton('Apply')
         self.closeButton.clicked.connect(self.closeClicked)
 
+        self.cancelButton = QtWidgets.QPushButton('Cancel')
+        self.cancelButton.clicked.connect(self.cancelClicked)
+
         self.layout.addWidget(self.configWidget, 0, 0)
-        self.layout.addWidget(self.closeButton, 2, 0, 1, 2)
+        self.layout.addWidget(self.closeButton, 2, 0, 1, 1)
+        self.layout.addWidget(self.cancelButton, 2, 1, 1, 1)
+
+    def cancelClicked(self):
+        funcname = __name__ + '.cancel():'
+        logger.debug(funcname)
+        self.close()
 
     def closeClicked(self):
         funcname = __name__ + '.close():'
