@@ -170,6 +170,10 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                 print('Sensor',sensor)
                 print('Type sensor', type(sensor))
                 sensordata = sensor.datapacket_process(data)
+                if type(sensordata) is list:
+                    for data_packet in sensordata:
+                        print('Publishing data_packet',data_packet)
+                        dataqueue.put(data_packet)
 
 
 class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceInitWidget):
