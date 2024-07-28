@@ -13,7 +13,7 @@ from redvypr.devices.sensors.calibration.calibration_models import calibration_H
 class Sensor(pydantic.BaseModel):
     name: str = pydantic.Field(default='sensor')
     sensortype: typing.Literal['sensor'] = pydantic.Field(default='sensor')
-    datastream: RedvyprAddressStr = '*'
+    datastream: RedvyprAddressStr = pydantic.Field(default=RedvyprAddress('/k:data'))
     parameter: typing.Dict[str, typing.Annotated[typing.Union[calibration_const, calibration_poly], pydantic.Field(
         discriminator='calibration_type')]] = pydantic.Field(default={})
 
@@ -35,6 +35,8 @@ class BinarySensor(Sensor):
     regex_split: bytes = pydantic.Field(default=b'', description='Regex expression to split a binary string')
     binary_format: typing.Dict[str, str] = pydantic.Field(default={'data_char': 'c'})
     str_format: typing.Dict[str, str] = pydantic.Field(default={'data_float': 'float'})
+    calibrations_raw: typing.Dict[str, typing.Annotated[typing.Union[calibration_const, calibration_poly], pydantic.Field(
+        discriminator='calibration_type')]] = pydantic.Field(default={})
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -94,6 +96,18 @@ class BinarySensor(Sensor):
                             data = data[0]
                         data_packet[keyname] = data
                         flag_data = True
+                        # Check if there is a calibration
+                        if keyname in self.calibrations_raw.keys():
+                            print('Found a calibration to convert raw data')
+                            calibration = self.calibrations_raw[keyname]
+                            try:
+                                keyname_cal = calibration.parameter_result
+                            except:
+                                keyname_cal = keyname + '_cal'
+
+                            data_cal = calibration.raw2data(data)
+                            data_packet[keyname_cal] = data_cal
+
                     if keyname in self.str_format.keys():
                         print('Found str key', keyname)
                         # get the right function
@@ -103,6 +117,7 @@ class BinarySensor(Sensor):
                         data_packet[keyname] = data
                         flag_data = True
                         print('Converted data to', data)
+
 
                 if flag_data:
                     data_packets.append(data_packet)
@@ -129,9 +144,18 @@ class BinarySensor(Sensor):
 
 
 s4l_split = b'B\x00(?P<counter32>[\x00-\xFF]{4})(?P<adc16>[\x00-\xFF]{2})\n'
-s4l_binary_format = {'counter32': '<L','adc16':'<H'}
+s4l_binary_format = {'counter32': '<L','adc16':'<h'}
+Vref = 3.0 # Reference voltage in V
+coeff_fac = Vref/2**15
+coeff_fac_counter = 1/1024
+calibration_adc16 = calibration_const(parameter_result='adc(V)',coeff=coeff_fac,
+                                      unit='V',unit_input='counts')
+calibration_counter32 = calibration_const(parameter_result='counter(s)',coeff=coeff_fac_counter,
+                                      unit='s',unit_input='counts')
+calibrations_raw = {'adc16':calibration_adc16,'counter32':calibration_counter32}
 S4LB = BinarySensor(name='S4LB', regex_split=s4l_split, binary_format=s4l_binary_format,
-                    datastream=str(RedvyprAddress('/k:data')))
+                    datastream=str(RedvyprAddress('/k:data')),
+                    calibrations_raw=calibrations_raw)
 NMEARMC = BinarySensor(name='NMEA0183_RMC', regex_split=s4l_split)
 
 predefined_sensors = []

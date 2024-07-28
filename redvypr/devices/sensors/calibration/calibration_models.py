@@ -54,6 +54,7 @@ class calibration_const(pydantic.BaseModel):
     structure_version: str = '1.0'
     calibration_type: typing.Literal['const'] = 'const'
     parameter: str = pydantic.Field(default = 'XYZ',description='The calibrated parameter')
+    parameter_result: typing.Optional[str] = pydantic.Field(default = None,description='The keyname of the output parameter')
     sn: str = '' # The serial number of the sensor
     sensor_model: str = ''  # The sensor model
     coeff: float = pydantic.Field(default = 1.0)

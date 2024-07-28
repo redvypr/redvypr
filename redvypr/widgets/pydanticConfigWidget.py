@@ -69,13 +69,14 @@ class pydanticConfigWidget(QtWidgets.QWidget):
     #config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the configuration has changed
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
     config_editing_done = QtCore.pyqtSignal()
-    def __init__(self, config=None, editable=True, configname=None, exclude=[], config_location='right', show_datatype=False, redvypr=None, show_editable_only=True):
+    def __init__(self, config=None, editable=True, configname=None, exclude=[], config_location='right', show_datatype=False, redvypr=None, show_editable_only=True, close_after_editing=True):
         funcname = __name__ + '.__init__():'
         super().__init__()
         self.redvypr = redvypr
         self.exclude = exclude
         self.layout = QtWidgets.QGridLayout(self)
         self.config_location = config_location
+        self.close_after_editing = close_after_editing
         #self.label = QtWidgets.QLabel('Configuration of\n{:s}'.format(self.device.name))
         #self.layout.addWidget(self.label)
         if configname is None:
@@ -113,13 +114,15 @@ class pydanticConfigWidget(QtWidgets.QWidget):
     def cancelClicked(self):
         funcname = __name__ + '.cancel():'
         logger.debug(funcname)
-        self.close()
+        if self.close_after_editing:
+            self.close()
 
     def closeClicked(self):
         funcname = __name__ + '.close():'
         logger.debug(funcname)
         self.config_editing_done.emit()
-        self.close()
+        if self.close_after_editing:
+            self.close()
 
     def __comboUpdateItem(self, index):
         """
@@ -1120,6 +1123,22 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
             editable = True
             #logger.debug('extra fields {}'.format(index),exc_info=True)
 
+        # Try to find a level flag
+        level = 0
+        try:
+            # print('test editable ...')
+            # print('Editable',parent.__data__)
+            attr = getattr(parent.__data__, index)
+            mfields = parent.__data__.model_fields[index]
+            # print('Mfields ...',mfields)
+            level = mfields.json_schema_extra['level']
+            # editable = parent.__data__[index].json_schema_extra['editable']
+            logger.debug('{} has an level with {}'.format(index, level))
+            # print('done test editable ...')
+        except:
+            level = 0
+            # logger.debug('extra fields {}'.format(index),exc_info=True)
+
         #print('editable', editable)
         # Get the parentdata
         try:
@@ -1194,6 +1213,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                 item.__flag_add_entry__ = flag_add_entry
                 item.__removable__ = removable
                 item.__editable__ = editable
+                item.__level__ = level
                 # Add the item to the data
                 #print('data',data)
                 #print('data',type(data))

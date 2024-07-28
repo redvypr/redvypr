@@ -1098,6 +1098,10 @@ class RedvyprDevice(QtCore.QObject):
         self.logger.debug(funcname + 'Config: {}'.format(config))
         return config
 
+    def get_status(self):
+        statusstr = 'Status'
+        return statusstr
+
     def get_info(self):
         """
         Returns a dictionary with the essential info of the device
