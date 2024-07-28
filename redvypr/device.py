@@ -995,7 +995,7 @@ class RedvyprDevice(QtCore.QObject):
         """
         Returns the metadata of the redvypr address
         """
-        funcname = self.__class__.__name__ + '.get_datakeyinfo()'
+        funcname = self.__class__.__name__ + '.get_metadata_datakey()'
         self.logger.debug(funcname)
         if isinstance(address,str):
             daddr = redvypr.RedvyprAddress(address)

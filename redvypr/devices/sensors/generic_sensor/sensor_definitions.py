@@ -4,7 +4,7 @@ from typing import Any
 import pydantic
 import struct
 import re
-from redvypr.data_packets import create_datadict as redvypr_create_datadict
+from redvypr.data_packets import create_datadict as redvypr_create_datadict, add_keyinfo2datapacket
 from redvypr.redvypr_address import RedvyprAddress, RedvyprAddressStr
 from redvypr.devices.sensors.calibration.calibration_models import calibration_HF, calibration_NTC, calibration_const, \
     calibration_poly
@@ -55,6 +55,27 @@ class BinarySensor(Sensor):
             elif vartype.lower() == 'str':
                 self._str_functions[key] = str
 
+    def create_keyinfo_datapacket(self):
+        """
+        Creates a datapacket with the keyinfo information
+        :return:
+        """
+        data_packet = redvypr_create_datadict(device=self.name)
+        flag_caldata = False
+        for key in self.calibrations_raw.keys():
+            flag_caldata = True
+            calibration = self.calibrations_raw[key]
+            unit = calibration.unit
+            unit_input = calibration.unit_input
+            key_result = calibration.parameter_result
+            data_packet = add_keyinfo2datapacket(data_packet, key, unit=unit_input)
+            data_packet = add_keyinfo2datapacket(data_packet, key_result, unit=unit)
+
+
+        if flag_caldata:
+            return data_packet
+        else:
+            return None
     def datapacket_process(self, data):
         """
         Processes a redvypr datapacket. Checks if subscription is valid and sends it to the proper sensor

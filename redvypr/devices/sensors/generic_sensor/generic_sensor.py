@@ -52,6 +52,13 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
     funcname = __name__ + '.start():'
     logger.debug(funcname)
     config = DeviceCustomConfig.model_validate(config)
+
+    for sensor in config.sensors:
+        logger.debug('Creating keyinfo packet for sensor {}'.format(sensor.name))
+        keyinfo_packet = sensor.create_keyinfo_datapacket()
+        print('Datapacket',keyinfo_packet)
+        dataqueue.put(keyinfo_packet)
+
     #splitter = BinaryDataSplitter(config.sensors)
     #print('Splitter',splitter)
     while True:
@@ -67,7 +74,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                 print('Sensor',sensor)
                 print('Type sensor', type(sensor))
                 sensordata = sensor.datapacket_process(data)
-                if type(sensordata) is list:
+                if type(sensordata) is list: # List means that there was a valid packet
                     for data_packet in sensordata:
                         print('Publishing data_packet',data_packet)
                         dataqueue.put(data_packet)
@@ -269,11 +276,13 @@ class SensorWidget(QtWidgets.QWidget):
         self.label = QtWidgets.QLabel(self.sensor.name)
         self.sensor_address = RedvyprAddress('/d:{}'.format(sensor.name))
         self.datatable = QtWidgets.QTableWidget()
-        self.datatable.setColumnCount(2)
+        self.datatable.setColumnCount(3)
         self.datatable.setRowCount(2)
         self.datakey_items = {} # Dictionary with the tablewidgetitems
+        self.datakey_units = {}  # Dictionary with the units
         self.icol_key = 0
         self.icol_data = 1
+        self.icol_unit = 2
         item_tstr = QtWidgets.QTableWidgetItem('NA')
         item_tustr = QtWidgets.QTableWidgetItem('NA')
         self.datakey_items['t'] = [item_tustr, item_tstr]
@@ -293,34 +302,55 @@ class SensorWidget(QtWidgets.QWidget):
         if data in self.sensor_address:
             print(funcname + ' Datapacket fits, Processing data')
             keys = redvypr.data_packets.datapacket(data).datakeys()
-            t = keys.remove('t')
-            # Display always the time
-            tdata = datetime.datetime.utcfromtimestamp(data['t'])
-            tudatastr = str(data['t'])
-            tdatastr = tdata.strftime('%Y-%m-%d %H:%M:%S.%f')
-            item_tustr = self.datakey_items['t'][0]
-            item_tstr = self.datakey_items['t'][1]
-            self.datatable.setItem(0, self.icol_data, item_tustr)
-            self.datatable.setItem(1, self.icol_data, item_tstr)
-            item_tustr.setText(tudatastr)
-            item_tstr.setText(tdatastr)
-            if True:
-                for k in keys:
-                    datastr = str(data[k]) # This can be done more fancy
-                    # Check if the datakey is already
-                    if k not in self.datakey_items:
-                        nrows = self.datatable.rowCount()
-                        #print(funcname + 'Creating new item {}'.format(nrows))
-                        datakeyitem = QtWidgets.QTableWidgetItem(k)
-                        dataitem = QtWidgets.QTableWidgetItem(datastr)
-                        #self.datatable.insertRow(nrows+1)
-                        self.datatable.setRowCount(nrows + 1)
-                        self.datatable.setItem(nrows, self.icol_key, datakeyitem)
-                        self.datatable.setItem(nrows, self.icol_data, dataitem)
-                        self.datakey_items[k] = dataitem
-                    else:
-                        dataitem = self.datakey_items[k]
-                        dataitem.setText(datastr)
+            if '_keyinfo' in data.keys():
+                logger.debug('Updating keyinfo')
+                # This should be done with device.get_metadata
+                for k in data['_keyinfo'].keys():
+                    unit = data['_keyinfo'][k]['unit']
+                    self.datakey_units[k] = unit
+
+            if 't' in keys:
+                t = keys.remove('t')
+                # Display always the time
+                tdata = datetime.datetime.utcfromtimestamp(data['t'])
+                tudatastr = str(data['t'])
+                tdatastr = tdata.strftime('%Y-%m-%d %H:%M:%S.%f')
+                item_tustr = self.datakey_items['t'][0]
+                item_tstr = self.datakey_items['t'][1]
+                self.datatable.setItem(0, self.icol_data, item_tustr)
+                self.datatable.setItem(1, self.icol_data, item_tstr)
+                item_tustr.setText(tudatastr)
+                item_tstr.setText(tdatastr)
+                if True:
+                    for k in keys:
+                        datastr = str(data[k]) # This can be done more fancy
+                        # Check if the datakey is already
+                        if k not in self.datakey_items:
+                            nrows = self.datatable.rowCount()
+                            #print(funcname + 'Creating new item {}'.format(nrows))
+                            datakeyitem = QtWidgets.QTableWidgetItem(k)
+                            dataitem = QtWidgets.QTableWidgetItem(datastr)
+                            try:
+                                unit = self.datakey_units[k]
+                            except:
+                                unit = 'NA'
+
+                            dataunititem = QtWidgets.QTableWidgetItem(unit)
+                            #self.datatable.insertRow(nrows+1)
+                            self.datatable.setRowCount(nrows + 1)
+                            self.datatable.setItem(nrows, self.icol_key, datakeyitem)
+                            self.datatable.setItem(nrows, self.icol_data, dataitem)
+                            self.datatable.setItem(nrows, self.icol_unit, dataunititem)
+                            self.datakey_items[k] = [dataitem,dataunititem]
+                        else:
+                            # Data
+                            dataitem = self.datakey_items[k][0]
+                            dataitem.setText(datastr)
+                            # Unit
+                            unit = self.datakey_units[k]
+                            dataunititem = self.datakey_items[k][1]
+                            dataunititem.setText(unit)
+
 
 
 
