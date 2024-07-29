@@ -51,7 +51,9 @@ class DeviceCustomConfig(pydantic.BaseModel):
 def start(device_info, config = None, dataqueue = None, datainqueue = None, statusqueue = None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
+    print('Got config',config)
     config = DeviceCustomConfig.model_validate(config)
+    print('Got config serialized', config)
 
     for sensor in config.sensors:
         logger.debug('Creating keyinfo packet for sensor {}'.format(sensor.name))

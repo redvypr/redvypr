@@ -7,6 +7,9 @@ import yaml
 import pydantic
 import typing
 
+from pydantic import BaseModel, Field, TypeAdapter
+from pydantic_core import SchemaSerializer, core_schema
+
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr_address')
 logger.setLevel(logging.DEBUG)
@@ -376,5 +379,28 @@ class RedvyprAddress():
             return contains
         else:
             raise ValueError('Unknown data type')
+
+
+    # # from https://github.com/pydantic/pydantic/issues/7779
+    # def __iter__(self):
+    #     return iter(self)
+    # @classmethod
+    # def _validate(cls, value: "Tags"):
+    #     return cls(value)
+    # @classmethod
+    # def __get_pydantic_core_schema__(cls, source_type, handler):
+    #     _ = source_type
+    #     schema = core_schema.no_info_after_validator_function(
+    #         cls._validate,
+    #         handler(set),
+    #         serialization=core_schema.plain_serializer_function_ser_schema(
+    #             set,
+    #             info_arg=False,
+    #             return_schema=core_schema.set_schema(),
+    #         ),
+    #     )
+    #     cls.__pydantic_serializer__ = SchemaSerializer(schema)  # <-- this is necessary for pydantic-core to serialize
+    #     return schema
+
 
 
