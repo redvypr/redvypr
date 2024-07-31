@@ -43,7 +43,10 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     #data = {'_keyinfo':config['_keyinfo']}
     # dataqueue.put(data)
     # Send a datapacket with information once (that will be put into the statistics)
-    datapacket_info = redvypr.data_packets.add_keyinfo2datapacket(datapacket={}, datakey='sine_rand', unit='random unit', description='sinus with random data', infokey='mac', info='ABCDEF1234')
+    datapacket_info = redvypr.data_packets.add_metadata2datapacket(datapacket={}, datakey='sine_rand', metadata='random unit')
+    # Metadata can also be given as a dict
+    metadata = {'description':'sinus with random data', 'mac':'ABCDEF1234'}
+    datapacket_info = redvypr.data_packets.add_metadata2datapacket(datapacket_info, datakey='sine_rand', metadict=metadata)
     dataqueue.put(datapacket_info)
 
     i = 0

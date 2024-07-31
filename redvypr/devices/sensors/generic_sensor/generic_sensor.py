@@ -12,17 +12,17 @@ import re
 import struct
 import time
 import datetime
+import numbers
 from PyQt5 import QtWidgets, QtCore, QtGui
 import qtawesome
 from redvypr.data_packets import check_for_command
 from  redvypr.data_packets import create_datadict as redvypr_create_datadict
 #import redvypr.config as redvypr_config
 from redvypr.redvypr_address import RedvyprAddress, RedvyprAddressStr
-from redvypr.devices.plot import plot_widgets
-from redvypr.devices.plot import XYplotWidget
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 import redvypr.widgets.standard_device_widgets
+from redvypr.devices.plot.XYplotWidget import XYplot, configXYplot
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from redvypr.devices.sensors.calibration.calibration_models import calibration_HF, calibration_NTC, calibration_const, calibration_poly
 from redvypr.devices.sensors.csvsensors.sensorWidgets import sensorCoeffWidget, sensorConfigWidget
@@ -56,10 +56,11 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
     print('Got config serialized', config)
 
     for sensor in config.sensors:
-        logger.debug('Creating keyinfo packet for sensor {}'.format(sensor.name))
-        keyinfo_packet = sensor.create_keyinfo_datapacket()
-        print('Datapacket',keyinfo_packet)
-        dataqueue.put(keyinfo_packet)
+        logger.debug('Creating metadata packet for sensor {}'.format(sensor.name))
+        metadata_datapacket = sensor.create_metadata_datapacket()
+        print('Metadata datapacket',metadata_datapacket)
+        if metadata_datapacket is not None:
+            dataqueue.put(metadata_datapacket)
 
     #splitter = BinaryDataSplitter(config.sensors)
     #print('Splitter',splitter)
@@ -266,95 +267,6 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
 
 
 
-class SensorWidget(QtWidgets.QWidget):
-    def __init__(self, *args, sensor=None, **kwargs):
-        funcname = __name__ + '__init__():'
-        #logger.debug(funcname)
-        print('fds',kwargs,type(kwargs))
-        self.sensor = sensor
-        print('Sensor',self.sensor)
-        super().__init__(*args, **kwargs)
-        self.layout = QtWidgets.QGridLayout(self)
-        self.label = QtWidgets.QLabel(self.sensor.name)
-        self.sensor_address = RedvyprAddress('/d:{}'.format(sensor.name))
-        self.datatable = QtWidgets.QTableWidget()
-        self.datatable.setColumnCount(3)
-        self.datatable.setRowCount(2)
-        self.datakey_items = {} # Dictionary with the tablewidgetitems
-        self.datakey_units = {}  # Dictionary with the units
-        self.icol_key = 0
-        self.icol_data = 1
-        self.icol_unit = 2
-        item_tstr = QtWidgets.QTableWidgetItem('NA')
-        item_tustr = QtWidgets.QTableWidgetItem('NA')
-        self.datakey_items['t'] = [item_tustr, item_tstr]
-        item_key_tstr = QtWidgets.QTableWidgetItem('Time')
-        item_key_tustr = QtWidgets.QTableWidgetItem('Time (unix)')
-        self.datatable.setItem(0, self.icol_data, item_tustr)
-        self.datatable.setItem(1, self.icol_data, item_tstr)
-        self.datatable.setItem(0, self.icol_key, item_key_tustr)
-        self.datatable.setItem(1, self.icol_key, item_key_tstr)
-
-        self.layout.addWidget(self.label)
-        self.layout.addWidget(self.datatable)
-
-    def update_data(self,data):
-        funcname = __name__ + '.update_data():'
-        print(funcname + 'Got data for sensor ',self.sensor.name)
-        if data in self.sensor_address:
-            print(funcname + ' Datapacket fits, Processing data')
-            keys = redvypr.data_packets.datapacket(data).datakeys()
-            if '_keyinfo' in data.keys():
-                logger.debug('Updating keyinfo')
-                # This should be done with device.get_metadata
-                for k in data['_keyinfo'].keys():
-                    unit = data['_keyinfo'][k]['unit']
-                    self.datakey_units[k] = unit
-
-            if 't' in keys:
-                t = keys.remove('t')
-                # Display always the time
-                tdata = datetime.datetime.utcfromtimestamp(data['t'])
-                tudatastr = str(data['t'])
-                tdatastr = tdata.strftime('%Y-%m-%d %H:%M:%S.%f')
-                item_tustr = self.datakey_items['t'][0]
-                item_tstr = self.datakey_items['t'][1]
-                self.datatable.setItem(0, self.icol_data, item_tustr)
-                self.datatable.setItem(1, self.icol_data, item_tstr)
-                item_tustr.setText(tudatastr)
-                item_tstr.setText(tdatastr)
-                if True:
-                    for k in keys:
-                        datastr = str(data[k]) # This can be done more fancy
-                        # Check if the datakey is already
-                        if k not in self.datakey_items:
-                            nrows = self.datatable.rowCount()
-                            #print(funcname + 'Creating new item {}'.format(nrows))
-                            datakeyitem = QtWidgets.QTableWidgetItem(k)
-                            dataitem = QtWidgets.QTableWidgetItem(datastr)
-                            try:
-                                unit = self.datakey_units[k]
-                            except:
-                                unit = 'NA'
-
-                            dataunititem = QtWidgets.QTableWidgetItem(unit)
-                            #self.datatable.insertRow(nrows+1)
-                            self.datatable.setRowCount(nrows + 1)
-                            self.datatable.setItem(nrows, self.icol_key, datakeyitem)
-                            self.datatable.setItem(nrows, self.icol_data, dataitem)
-                            self.datatable.setItem(nrows, self.icol_unit, dataunititem)
-                            self.datakey_items[k] = [dataitem,dataunititem]
-                        else:
-                            # Data
-                            dataitem = self.datakey_items[k][0]
-                            dataitem.setText(datastr)
-                            # Unit
-                            unit = self.datakey_units[k]
-                            dataunititem = self.datakey_items[k][1]
-                            dataunititem.setText(unit)
-
-
-
 
 
 
@@ -379,13 +291,20 @@ class displayDeviceWidget(QtWidgets.QWidget):
         # A timer that is regularly calling the device.status function
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_status)
-        self.statustimer.start(2000)
+        self.dt_update = 2
+        self.statustimer.start(self.dt_update * 1000)
 
         self.sensortable = QtWidgets.QTableWidget()
         self.device.config_changed_signal.connect(self.update_sensortable)
         #self.sensortable.setRowCount(1)
 
         layout.addWidget(self.sensortable, 0, 0)
+        # The table columns
+        self.icol_name = 0
+        self.icol_packet_proc = 1
+        self.icol_packet_proc__s = 2
+        self.icol_show = 3
+        self.icol_plot = 4
         self.update_sensortable()
 
 
@@ -394,36 +313,39 @@ class displayDeviceWidget(QtWidgets.QWidget):
         nsensors = len(self.device.custom_config.sensors)
         self.sensortable.clear()
         self.sensortable.setRowCount(nsensors)
-        colheaders = ['Name', 'Packets received', 'Packets processed', 'Show', 'Plot']
-        self.sensortable.setColumnCount(5)
+        colheaders = ['Name', 'Packets processed', 'Packets/s', 'Show', 'Plot']
+        self.sensortable.setColumnCount(4)
         self.sensortable.setHorizontalHeaderLabels(colheaders)
-        icol_name = 0
-        icol_packet_recv = 1
-        icol_packet_proc = 2
-        icol_show = 3
-        icol_plot = 4
+
         for irow, sensor in enumerate(self.device.custom_config.sensors):
             # Create a sensorwidget, if not exsisting
             try:
                 sensor.__sensorwidget__
             except:
-                sensor.__sensorwidget__ = SensorWidget(sensor=sensor)
+                sensor.__sensorwidget__ = SensorWidget(sensor=sensor, redvypr_device=self.device)
 
             name = sensor.name
             item_name = QtWidgets.QTableWidgetItem(name)
-            self.sensortable.setItem(irow, icol_name, item_name)
+            self.sensortable.setItem(irow, self.icol_name, item_name)
 
             show_icon = qtawesome.icon('ei.list')
             item_show = QtWidgets.QPushButton(show_icon, 'Show')
             item_show.__sensor__ = sensor
             item_show.clicked.connect(self.sensor_show_clicked)
-            self.sensortable.setCellWidget(irow, icol_show, item_show)
+            self.sensortable.setCellWidget(irow, self.icol_show, item_show)
 
-            plot_icon = qtawesome.icon('ph.chart-line-fill')
-            item_plot = QtWidgets.QPushButton(plot_icon, 'Plot')
-            item_plot.__sensor__ = sensor
-            item_plot.clicked.connect(self.sensor_plot_clicked)
-            self.sensortable.setCellWidget(irow, icol_plot, item_plot)
+            #plot_icon = qtawesome.icon('ph.chart-line-fill')
+            #item_plot = QtWidgets.QPushButton(plot_icon, 'Plot')
+            #item_plot.__sensor__ = sensor
+            #item_plot.clicked.connect(self.sensor_plot_clicked)
+            #self.sensortable.setCellWidget(irow, self.icol_plot, item_plot)
+
+            npackets = sensor.__sensorwidget__.packets_for_me
+            item_packet = QtWidgets.QTableWidgetItem(str(npackets))
+            self.sensortable.setItem(irow, self.icol_packet_proc, item_packet)
+
+            item_packet__s = QtWidgets.QTableWidgetItem(str(0))
+            self.sensortable.setItem(irow, self.icol_packet_proc__s, item_packet__s)
 
         self.sensortable.resizeColumnsToContents()
 
@@ -465,18 +387,159 @@ class displayDeviceWidget(QtWidgets.QWidget):
         except:
             logger.debug(funcname,exc_info=True)
 
+        # update the
+        for isensor, sensor in enumerate(self.device.custom_config.sensors):
+            npackets_old = sensor.__sensorwidget__.packets_for_me_old
+            npackets = sensor.__sensorwidget__.packets_for_me
+            npackets__s = (npackets - npackets_old)/self.dt_update
+            sensor.__sensorwidget__.packets_for_me_old = npackets
+
+            item = self.sensortable.item(isensor, self.icol_packet_proc)
+            item.setText(str(npackets))
+
+            item = self.sensortable.item(isensor, self.icol_packet_proc__s)
+            item.setText(str(npackets__s))
+
     def update(self, data):
         """
         """
         funcname = __name__ + '.update()'
         tnow = time.time()
-        print('got data',data)
         for sensor in self.device.custom_config.sensors:
-            print('Updating')
             try:
                 sensor.__sensorwidget__.update_data(data)
             except:
                 logger.info('Could not update',exc_info=True)
+
+
+
+class SensorWidget(QtWidgets.QWidget):
+    def __init__(self, *args, sensor=None, redvypr_device=None, **kwargs):
+        funcname = __name__ + '__init__():'
+        #logger.debug(funcname)
+        print('fds',kwargs,type(kwargs))
+        self.packets_received = 0
+        self.packets_for_me = 0
+        self.packets_for_me_old = 0
+        self.sensor = sensor
+        self.device = redvypr_device
+        print('Sensor',self.sensor)
+        super().__init__(*args, **kwargs)
+        self.layout = QtWidgets.QGridLayout(self)
+        self.label = QtWidgets.QLabel(self.sensor.name)
+        self.sensor_address = RedvyprAddress('/d:{}'.format(sensor.name))
+        self.datatable = QtWidgets.QTableWidget()
+        self.datatable.setRowCount(2)
+        self.datatable.setColumnCount(4)
+        colheaders = ['Datakey', 'Data', 'Unit', 'XY-Plot']
+        self.datatable.setHorizontalHeaderLabels(colheaders)
+        self.datakey_items = {} # Dictionary with the tablewidgetitems
+        self.datakey_units = {} # Dictionary with the units
+        self.datakey_plot = {}# Dictionary with the plot widgets
+        self.icol_key = 0
+        self.icol_data = 1
+        self.icol_unit = 2
+        self.icol_plot = 3
+        item_tstr = QtWidgets.QTableWidgetItem('NA')
+        item_tustr = QtWidgets.QTableWidgetItem('NA')
+        self.datakey_items['t'] = [item_tustr, item_tstr]
+        item_key_tstr = QtWidgets.QTableWidgetItem('Time')
+        item_key_tustr = QtWidgets.QTableWidgetItem('Time (unix)')
+        self.datatable.setItem(0, self.icol_data, item_tustr)
+        self.datatable.setItem(1, self.icol_data, item_tstr)
+        self.datatable.setItem(0, self.icol_key, item_key_tustr)
+        self.datatable.setItem(1, self.icol_key, item_key_tstr)
+
+        self.layout.addWidget(self.label)
+        self.layout.addWidget(self.datatable)
+
+    def sensor_plot_clicked(self):
+        print('Plot clicked')
+        self.sender().__xyplot__.show()
+
+
+    def update_data(self,data):
+        funcname = __name__ + '.update_data():'
+        logger.debug(funcname + 'Got data for sensor {}'.format(self.sensor.name))
+        #print('Data:',data)
+        if data in self.sensor_address:
+            #print(funcname + ' Datapacket fits, Processing data')
+            keys = redvypr.data_packets.datapacket(data).datakeys()
+            if '_keyinfo' in data.keys():
+                logger.debug('Updating keyinfo')
+                # This should be done with device.get_metadata
+                for k in data['_keyinfo'].keys():
+                    if 'unit' in data['_keyinfo'][k]:
+                        unit = data['_keyinfo'][k]['unit']
+                        self.datakey_units[k] = unit
+
+
+            if 't' in keys:
+                self.packets_for_me += 1
+                t = keys.remove('t')
+                # Display always the time
+                tdata = datetime.datetime.utcfromtimestamp(data['t'])
+                tudatastr = str(data['t'])
+                tdatastr = tdata.strftime('%Y-%m-%d %H:%M:%S.%f')
+                item_tustr = self.datakey_items['t'][0]
+                item_tstr = self.datakey_items['t'][1]
+                #self.datatable.setItem(0, self.icol_data, item_tustr)
+                #self.datatable.setItem(1, self.icol_data, item_tstr)
+                item_tustr.setText(tudatastr)
+                item_tstr.setText(tdatastr)
+                if True:
+                    for k in keys:
+                        datastr = str(data[k]) # This can be done more fancy
+                        # Check if the datakey is already
+                        if k not in self.datakey_items:
+                            nrows = self.datatable.rowCount()
+                            #print(funcname + 'Creating new item {}'.format(nrows))
+                            datakeyitem = QtWidgets.QTableWidgetItem(k)
+                            dataitem = QtWidgets.QTableWidgetItem(datastr)
+                            try:
+                                unit = self.datakey_units[k]
+                            except:
+                                unit = 'NA'
+
+                            dataunititem = QtWidgets.QTableWidgetItem(unit)
+                            #self.datatable.insertRow(nrows+1)
+                            self.datatable.setRowCount(nrows + 1)
+                            self.datatable.setItem(nrows, self.icol_key, datakeyitem)
+                            self.datatable.setItem(nrows, self.icol_data, dataitem)
+                            self.datatable.setItem(nrows, self.icol_unit, dataunititem)
+                            self.datakey_items[k] = [dataitem,dataunititem]
+                            # Add a XY-Plot, if datatype fits
+                            #if isinstance(data[k], numbers.Number):
+                            if True:
+                                logger.debug(funcname + 'Adding XY-Plot')
+                                config_plot = configXYplot(automatic_subscription=False)
+                                self.datakey_plot[k] = XYplot(config=config_plot, add_line=False, redvypr_device=self.device)
+                                yaddr = RedvyprAddress(self.sensor_address,datakey=k)
+                                self.datakey_plot[k].add_line(yaddr)
+                                plot_icon = qtawesome.icon('ph.chart-line-fill')
+                                item_plot = QtWidgets.QPushButton(plot_icon, 'Plot')
+                                item_plot.clicked.connect(self.sensor_plot_clicked)
+                                item_plot.__xyplot__ = self.datakey_plot[k]
+                                self.datatable.setCellWidget(nrows, self.icol_plot, item_plot)
+
+                        else:
+                            # Data
+                            dataitem = self.datakey_items[k][0]
+                            dataitem.setText(datastr)
+                            # Unit
+                            try:
+                                unit = self.datakey_units[k]
+                                dataunititem = self.datakey_items[k][1]
+                                dataunititem.setText(unit)
+                            except:
+                                pass
+                                #logger.debug('Could not update unit',exc_info=True)
+                            try:
+                                self.datakey_plot[k].update_plot(data)
+                                #pass
+                            except:
+                                pass
+
 
 
 

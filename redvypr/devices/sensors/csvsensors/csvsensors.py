@@ -250,16 +250,16 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                                                                 logger.debug(
                                                                     'New HFV logger {:s}'.format(datapacket_HFSI['sn']))
                                                                 macs_found_HFSI.append(datapacket_HFSI['sn'])
-                                                                data_packets.add_keyinfo2datapacket(datapacket_HFSI,
-                                                                                                    datakey=channel,
-                                                                                                    unit='W m-2',
-                                                                                                    description=None,
-                                                                                                    infokey='sn',
-                                                                                                    info=sn_sensor)
-                                                                data_packets.add_keyinfo2datapacket(datapacket_HFSI,
-                                                                                                    datakey=channel,
-                                                                                                    infokey='sensortype',
-                                                                                                    info=calibration.sensor_model)
+                                                                data_packets.add_metadata2datapacket(datapacket_HFSI,
+                                                                                                     datakey=channel,
+                                                                                                     unit='W m-2',
+                                                                                                     description=None,
+                                                                                                     infokey='sn',
+                                                                                                     info=sn_sensor)
+                                                                data_packets.add_metadata2datapacket(datapacket_HFSI,
+                                                                                                     datakey=channel,
+                                                                                                     infokey='sensortype',
+                                                                                                     info=calibration.sensor_model)
 
                                                                 macs_found['HFSI'].append(sn_combined)
 

@@ -7,7 +7,7 @@ import struct
 import re
 import sys
 import logging
-from redvypr.data_packets import create_datadict as redvypr_create_datadict, add_keyinfo2datapacket
+from redvypr.data_packets import create_datadict as redvypr_create_datadict, add_metadata2datapacket
 from redvypr.redvypr_address import RedvyprAddress, RedvyprAddressStr
 from redvypr.devices.sensors.calibration.calibration_models import calibration_HF, calibration_NTC, calibration_const, \
     calibration_poly
@@ -46,6 +46,7 @@ class BinarySensor(Sensor):
     regex_split: bytes = pydantic.Field(default=b'', description='Regex expression to split a binary string')
     binary_format: typing.Dict[str, str] = pydantic.Field(default={}, description='https://docs.python.org/3/library/struct.html, for example for 16bit signed data {"adc_data":"<h"}')
     str_format: typing.Dict[str, str] = pydantic.Field(default={})
+    datakey_metadata: typing.Dict[str, typing.Dict] = pydantic.Field(default={})
     calibrations_raw: typing.Dict[str, typing.Annotated[typing.Union[calibration_const, calibration_poly], pydantic.Field(
         discriminator='calibration_type')]] = pydantic.Field(default={})
 
@@ -55,7 +56,6 @@ class BinarySensor(Sensor):
         super().__init__(*args, **kwargs)
         self.__rdatastream__ = RedvyprAddress(self.datastream)
         self._str_functions = {}
-
         self._flag_binary_keys = len(self.binary_format.keys()) > 0
         self._flag_str_format_keys = len(self.str_format.keys()) > 0
         # Add functions for datatypes
@@ -69,26 +69,31 @@ class BinarySensor(Sensor):
             elif vartype.lower() == 'str':
                 self._str_functions[key] = decode_utf8
 
-    def create_keyinfo_datapacket(self):
+    def create_metadata_datapacket(self):
         """
-        Creates a datapacket with the keyinfo information
+        Creates a datapacket with the metadata information
         :return:
         """
         data_packet = redvypr_create_datadict(device=self.name)
-        flag_caldata = False
+        flag_metadata = False
+        for key_input in self.datakey_metadata.keys():
+            flag_metadata = True
+            metadata = self.datakey_metadata[key_input]
+            data_packet = add_metadata2datapacket(data_packet, key_input, metadict=metadata)
+
         for key_input in self.calibrations_raw.keys():
-            flag_caldata = True
+            flag_metadata = True
             calibration = self.calibrations_raw[key_input]
             unit = calibration.unit
             unit_input = calibration.unit_input
             key_result = calibration.parameter_result
             if (key_input is not None) and (unit_input is not None):
-                data_packet = add_keyinfo2datapacket(data_packet, key_input, unit=unit_input)
+                data_packet = add_metadata2datapacket(data_packet, key_input, metadata=unit_input)
             if (key_result is not None) and (unit is not None):
-                data_packet = add_keyinfo2datapacket(data_packet, key_result, unit=unit)
+                data_packet = add_metadata2datapacket(data_packet, key_result, metadata=unit)
 
         print('keyinfo_datapacket',data_packet)
-        if flag_caldata:
+        if flag_metadata:
             return data_packet
         else:
             return None
@@ -171,6 +176,8 @@ class BinarySensor(Sensor):
                     calibration = self.calibrations_raw[keyname]
                     try:
                         keyname_cal = calibration.parameter_result
+                        if keyname_cal is None:
+                            keyname_cal = keyname
                     except:
                         keyname_cal = keyname + '_cal'
 
@@ -221,6 +228,7 @@ S4LB = BinarySensor(name='S4LB', regex_split=s4l_split, binary_format=s4l_binary
 #https://de.wikipedia.org/wiki/NMEA_0183#Recommended_Minimum_Sentence_C_(RMC)
 nmea_rmc_split = b'\$[A-Z]+RMC,(?P<time>[0-9.]*),(?P<status>[A-Z]+),(?P<latdeg>[0-9]{2})(?P<latmin>[0-9.]+),(?P<NS>[NS]+),(?P<londeg>[0-9]{3})(?P<lonmin>[0-9.]+),(?P<EW>[EW]+),[0-9.]*,[0-9.]*,(?P<date>[0-9.]*),.*\n'
 nmea_rmc_str_format = {'time':'str','date':'str','latdeg':'float','latmin':'float','londeg':'float','lonmin':'float','NS':'str','EW':'str'}
+nmea_datakey_metadata = {'time':{'unit':'HHMMSS','description':'GNSS in UTC'},'lat':{'unit':'degN'},'lon':{'unit':'degE'}}
 nmea_rmc_test1 = b'$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A\r\n'
 nmea_rmc_test2 = b'$GPRMC,162614.22,A,5230.5900,N,01322.3900,E,10.0,90.0,131006,1.2,E,A*13\r\n'
 latevalstr = '(data_packet["latdeg"]+data_packet["latmin"]/60)*(float(data_packet["NS"]=="N")-float(data_packet["NS"]=="S"))'
@@ -232,11 +240,12 @@ nmea_calibration_python_str = {'lat':latevalstr,'lon':lonevalstr,'t':timeevalstr
 #nmea_unit = {'lat':'degN','lon':'degW'}
 calibration_lat = calibration_const(coeff=1.0, unit_input='degN')
 calibration_lon = calibration_const(coeff=1.0, unit_input='degW')
-calibrations_nmea_rmc = {'lat':calibration_lat,'lon':calibration_lon}
+#calibrations_nmea_rmc = {'lat':calibration_lat,'lon':calibration_lon}
 NMEARMC = BinarySensor(name='NMEA0183_RMC', regex_split=nmea_rmc_split,
                        str_format=nmea_rmc_str_format,
                        datastream=str(RedvyprAddress('/k:data')),
-                       calibrations_raw=calibrations_nmea_rmc,
+                       datakey_metadata = nmea_datakey_metadata,
+#                       calibrations_raw=calibrations_nmea_rmc,
                        calibration_python_str = nmea_calibration_python_str)
 
 predefined_sensors = []

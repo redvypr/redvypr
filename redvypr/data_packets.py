@@ -145,16 +145,14 @@ def create_datadict(data=None, datakey=None, tu=None, device=None, hostinfo=None
 
     return datadict
 
-def add_keyinfo2datapacket(datapacket,datakey,unit=None,description=None,infokey=None,info=None):
+def add_metadata2datapacket(datapacket, datakey, metakey='unit', metadata=None, metadict=None):
     """
 
     Args:
         datapacket:
         datakey:
-        unit:
-        description:
-        infokey:
-        info:
+        metakey:
+        metadata:
 
     Returns:
 
@@ -169,14 +167,12 @@ def add_keyinfo2datapacket(datapacket,datakey,unit=None,description=None,infokey
     except:
         datapacket['_keyinfo'][datakey] = {}
 
-    if(unit is not None):
-        datapacket['_keyinfo'][datakey]['unit'] = unit
+    if(metadata is not None):
+        datapacket['_keyinfo'][datakey][metakey] = metadata
 
-    if (description is not None):
-        datapacket['_keyinfo'][datakey]['description'] = description
-
-    if (infokey is not None):
-        datapacket['_keyinfo'][datakey][infokey] = info
+    # If a dictionary with metakeys is given
+    if (metadict is not None):
+        datapacket['_keyinfo'][datakey].update(metadict)
 
     return datapacket
 

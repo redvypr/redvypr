@@ -338,7 +338,7 @@ class XYplot(QtWidgets.QFrame):
         y_addr = line.y_addr
         labelname = line.label_format
         labelname = labelname.format(NAME=name,UNIT=unit,X_ADDR=x_addr,Y_ADDR=y_addr)
-        print('Labelname',labelname)
+        logger.debug('Labelname {}'.format(labelname))
         return labelname
 
     def apply_config(self):
@@ -443,7 +443,7 @@ class XYplot(QtWidgets.QFrame):
                 color = QtGui.QColor(255, 10, 10)
 
             line._tlastupdate = 0
-            print('Adding line')
+            logger.debug('Adding line')
             plot.addItem(lineplot)
             # Configuration
 
@@ -457,8 +457,8 @@ class XYplot(QtWidgets.QFrame):
                 y_addr = line.y_addr
                 if len(y_addr) > 0:
                     y_raddr = redvypr.RedvyprAddress(y_addr)
-                    print('x_addr', x_addr)
-                    print('y_addr', y_addr)
+                    #print('x_addr', x_addr)
+                    #print('y_addr', y_addr)
                     if (x_addr == '$t(y)'):
                         self.logger.debug(funcname + ' Using time variable of y')
                         #xtmp = redvypr.data_packets.modify_addrstr(y_raddr.address_str, datakey='t')
@@ -470,7 +470,7 @@ class XYplot(QtWidgets.QFrame):
                         # Subscribe
 
 
-                    print('x_addrnew', x_addr,x_raddr)
+                    #print('x_addrnew', x_addr,x_raddr)
                     # These attributes are used in plot.Device.connect_devices to actually subscribe to the fitting devices
                     line._x_raddr = x_raddr
                     line._y_raddr = y_raddr
@@ -510,14 +510,14 @@ class XYplot(QtWidgets.QFrame):
 
                     # Check if the addresses changed and clear the buffer if necessary
                     if line.databuffer.xdata_addr == line.x_addr:
-                        print('Address did not change')
+                        logger.debug('Address did not change')
                     else:
-                        print('Address changed, clearing buffer')
+                        logger.debug('Address changed, clearing buffer')
                         #self.clear_buffer(line)
 
                     self.logger.debug(funcname + ' Setting the name')
                     self.legendWidget.addItem(line._lineplot, line.label)
-                    print('Setting the data')
+                    logger.debug('Setting the data')
                     line._lineplot.setData(name=line.label,x=[],y=[])
 
                     if self.config.automatic_subscription:
@@ -639,7 +639,7 @@ class XYplot(QtWidgets.QFrame):
         """ Updates the plot based on the given data
         """
         funcname = self.__class__.__name__ + '.update_plot():'
-        print(funcname + 'Update',len(self.config.lines))
+        logger.debug(funcname + 'Update {}'.format(len(self.config.lines)))
         tnow = time.time()
         # print(funcname + 'got data',data,tnow)
         # try:
@@ -651,16 +651,17 @@ class XYplot(QtWidgets.QFrame):
                     line.__newdata = False
                     error_raddr = line._error_raddr
                     if len(self.config.lines)>1:
-                        print('device',data['_redvypr']['device'])
-                        print('data',data)
-                        print('line',line)
-                        print('line A', line._x_raddr, (data in line._x_raddr))
-                        print('line B', line._y_raddr, (data in line._y_raddr))
-                        print('fdsfsfsd',(data in line._x_raddr) and (data in line._y_raddr))
+                        #print('device',data['_redvypr']['device'])
+                        #print('data',data)
+                        #print('line',line)
+                        #print('line A', line._x_raddr, (data in line._x_raddr))
+                        #print('line B', line._y_raddr, (data in line._y_raddr))
+                        #print('fdsfsfsd',(data in line._x_raddr) and (data in line._y_raddr))
+                        pass
                     if (data in line._x_raddr) and (data in line._y_raddr):
                         pw = self.plotWidget  # The plot widget
-                        if len(self.config.lines) > 1:
-                            print('Databuffer',line.databuffer)
+                        #if len(self.config.lines) > 1:
+                        #    print('Databuffer',line.databuffer)
                         tdata = line.databuffer.tdata  # The line to plot
                         xdata = line.databuffer.xdata  # The line to plot
                         ydata = line.databuffer.ydata  # The line to plot
@@ -669,10 +670,10 @@ class XYplot(QtWidgets.QFrame):
                         newx = data[line._x_raddr.datakey]
                         newy = data[line._y_raddr.datakey]
 
-                        if len(self.config.lines) > 1:
-                            print('data',data)
-                            print('newx datakey', line._x_raddr.datakey)
-                            print('newx', newx)
+                        #if len(self.config.lines) > 1:
+                        #    print('data',data)
+                        #    print('newx datakey', line._x_raddr.datakey)
+                        #    print('newx', newx)
 
                         if (type(newx) is not list):
                             newx = [newx]
@@ -686,18 +687,18 @@ class XYplot(QtWidgets.QFrame):
                             error_constant: float = pydantic.Field(default=.01, description='')
                             #print('errordata',error_raddr.datakey)
                             if len(line.error_addr) > 0 and line.error_mode == 'standard':
-                                print('Error standard')
+                                #logger.debug('Error standard')
                                 newerror = data[error_raddr.datakey]
                                 if (type(newerror) is not list):
                                     newerror = [newerror]
                                 #print('newerror',newerror)
                             elif line.error_mode == 'factor':
-                                print('Error factor')
+                                #print('Error factor')
                                 errdata = np.asarray(newy)
                                 errdata_factor = errdata * line.error_factor - errdata.mean()
                                 newerror = errdata_factor.tolist()
                             elif line.error_mode == 'constant':
-                                print('Error constant')
+                                #print('Error constant')
                                 newerror = [line.error_constant] * len(newx)
                         else:
                             newerror = [0]
@@ -762,13 +763,13 @@ class XYplot(QtWidgets.QFrame):
                     update = False
                     # print('no update')
 
-                if len(self.config.lines) > 1:
-                    print('Update',update,line.__newdata)
+                #if len(self.config.lines) > 1:
+                #    print('Update',update,line.__newdata)
                 if update and line.__newdata:  # We could check here if data was changed above the for given line
                     line._tlastupdate = tnow
                     try:
                         [x,y,err]= self.__get_data_for_line(line)
-                        print('x',x,'err',err)
+                        #print('x',x,'err',err)
                         line._lineplot.setData(x=x, y=y)
                         if line._errorplot is not None:
                             beamwidth = None
@@ -780,4 +781,5 @@ class XYplot(QtWidgets.QFrame):
 
 
             if len(self.config.lines) > 1:
-                print('DONE DONE DONE')
+                pass
+                #print('DONE DONE DONE')
