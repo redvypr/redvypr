@@ -93,11 +93,7 @@ class configXYplot(pydantic.BaseModel):
                                                   description='subscribes automatically the adresses of the lines at the host device')
 
 
-
-
 # config_template_graph['description'] = description_graph
-
-
 class XYplot(QtWidgets.QFrame):
     """ Widget is plotting realtimedata using the pyqtgraph functionality
 

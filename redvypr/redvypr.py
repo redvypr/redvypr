@@ -324,15 +324,16 @@ class Redvypr(QtCore.QObject):
 
     def __init__(self, config=None, hostname=None, nogui=False, loglevel=None):
         super(Redvypr, self).__init__()
-        #print(__platform__)
         self.__platform__ = __platform__
         funcname = __name__ + '.__init__()'
         logger.debug(funcname)
+
         if config is None:
             print('Creating config')
             config = RedvyprConfig(hostname=hostname)
             print('Config',config)
 
+        # print(__platform__)
         # Overwrite hostname with argument
         if hostname is not None:
             config.hostname = hostname

@@ -5,6 +5,7 @@ import logging
 import sys
 import yaml
 import pydantic
+import pydantic_core
 import typing
 
 from pydantic import BaseModel, Field, TypeAdapter
@@ -30,7 +31,7 @@ RedvyprAddressStr = typing.Annotated[
 class RedvyprAddress():
     """
     """
-
+    address_str: str
     def __init__(self, addrstr=None, local_hostinfo=None, datakey=None, devicename=None, hostname=None, addr=None, uuid=None, publisher=None, redvypr_meta=None):
         # Some definitions
         self.__regex_symbol_start = '{'
@@ -381,26 +382,57 @@ class RedvyprAddress():
             raise ValueError('Unknown data type')
 
 
-    # # from https://github.com/pydantic/pydantic/issues/7779
-    # def __iter__(self):
-    #     return iter(self)
-    # @classmethod
-    # def _validate(cls, value: "Tags"):
-    #     return cls(value)
-    # @classmethod
-    # def __get_pydantic_core_schema__(cls, source_type, handler):
-    #     _ = source_type
-    #     schema = core_schema.no_info_after_validator_function(
-    #         cls._validate,
-    #         handler(set),
-    #         serialization=core_schema.plain_serializer_function_ser_schema(
-    #             set,
-    #             info_arg=False,
-    #             return_schema=core_schema.set_schema(),
-    #         ),
-    #     )
-    #     cls.__pydantic_serializer__ = SchemaSerializer(schema)  # <-- this is necessary for pydantic-core to serialize
-    #     return schema
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls,
+        _source_type: typing.Any,
+        _handler: pydantic.GetCoreSchemaHandler,
+    ) -> core_schema.CoreSchema:
+        """
+        Modified from here:
+        https://docs.pydantic.dev/latest/concepts/types/#handling-third-party-types
+        We return a pydantic_core.CoreSchema that behaves in the following ways:
+
+        * strs will be parsed as `RedvyprAddress` instances
+        * `RedvyprAddress` instances will be parsed as `RedvyprAddress` instances without any changes
+        * Nothing else will pass validation
+        * Serialization will always return just an str
+        """
+
+        def validate_from_str(value: str) -> RedvyprAddress:
+            result = RedvyprAddress(value)
+            return result
+
+        from_str_schema = core_schema.chain_schema(
+            [
+                core_schema.str_schema(),
+                core_schema.no_info_plain_validator_function(validate_from_str),
+            ]
+        )
+
+        return core_schema.json_or_python_schema(
+            json_schema=from_str_schema,
+            python_schema=core_schema.union_schema(
+                [
+                    # check if it's an instance first before doing any further work
+                    core_schema.is_instance_schema(RedvyprAddress),
+                    from_str_schema,
+                ]
+            ),
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda instance: instance.address_str
+            ),
+        )
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, _core_schema: core_schema.CoreSchema, handler: pydantic.GetJsonSchemaHandler
+    ) -> pydantic.json_schema.JsonSchemaValue:
+        # Use the same schema that would be used for `str`
+        return handler(core_schema.str_schema())
+
+
+
 
 
 

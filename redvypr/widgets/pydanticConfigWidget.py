@@ -944,7 +944,8 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             data_set = True
 
         elif self.sender().__configType == 'configRedvyprAddressStr':
-            data = self.__configwidget_input.text()  # Textbox
+            #data = self.__configwidget_input.text()  # Textbox
+            data = RedvyprAddress(self.__configwidget_input.text())  # Textbox
             data_set = True
 
         elif self.sender().__configType == 'configDateTime':
