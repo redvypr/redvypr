@@ -98,7 +98,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
             serial_device = serial.Serial(serial_name, baud, parity=parity, stopbits=stopbits, bytesize=bytesize,
                                           timeout=0)
 
-            data = create_datadict(device=devicename)
+            data = create_datadict(packetid=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['status'] = 'reading'
@@ -110,7 +110,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
         except Exception as e:
             # print('Serial device 2',serial_device)
             logger.debug(funcname + ': Exception open_serial_device {:s} {:d}: '.format(serial_name, baud) + str(e))
-            data = create_datadict(device=devicename)
+            data = create_datadict(packetid=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['status'] = 'could not open'
@@ -158,7 +158,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
                 #print('rawdata_all',rawdata_all)
                 FLAG_CHUNK = (len(rawdata_all)) > chunksize and (chunksize > 0)
                 if (FLAG_CHUNK):
-                    data = create_datadict(device=devicename)
+                    data = create_datadict(packetid=devicename)
                     data['t'] =  time.time()
                     data['data'] = rawdata_all
                     data['comport'] = serial_device.name
@@ -181,7 +181,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
                                     sentences_read += 1
                                     raw = rawdata_split[ind] + newpacket  # reconstruct the data
                                     # print('raw', raw)
-                                    data = create_datadict(device=devicename)
+                                    data = create_datadict(packetid=devicename)
                                     data['t' ] = tnewpacket
                                     data['data'] = raw
                                     data['comport'] = serial_device.name
@@ -194,7 +194,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
 
         if ((time.time() - tnewpacket) > dt_maxwait) and (dt_maxwait > 0):
             logger.warning('Did not find valid packet on serial device {:s}'.format(serial_name))
-            data = create_datadict(device=devicename)
+            data = create_datadict(packetid=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['status'] = 'timout (dt_maxwait)'
@@ -206,7 +206,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
             dbytes = bytes_read - bytes_read_old
             bytes_read_old = bytes_read
             bps = dbytes / dt_update  # bytes per second
-            data = create_datadict(device=devicename)
+            data = create_datadict(packetid=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['bps'] = bps
@@ -229,17 +229,21 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     serial_threads_datainqueues = []
     dt_poll = 0.05
     for comportconfig in config['serial_devices']:
-        queuesize = 100
-        config_thread = copy.deepcopy(comportconfig)
-        datainqueue_thread = queue.Queue(maxsize=queuesize)
-        serial_threads_datainqueues.append(datainqueue_thread)
-        args = [device_info,config_thread,dataqueue,datainqueue_thread,statusqueue]
-        serial_thread = threading.Thread(target=read_serial, args=args, daemon=True)
-        serial_threads.append(serial_thread)
-        logger.debug('Starting thread with config: {:s}'.format(str(config_thread)))
-        serial_thread.start()
+        logger.debug('Processing device {}'.format(comportconfig['devicename']))
+        if comportconfig['use_device'] == False:
+            logger.debug('Ignoring device {}'.format(comportconfig['devicename']))
+        else:
+            logger.debug('Configuring device {}'.format(comportconfig['devicename']))
+            queuesize = 100
+            config_thread = copy.deepcopy(comportconfig)
+            datainqueue_thread = queue.Queue(maxsize=queuesize)
+            serial_threads_datainqueues.append(datainqueue_thread)
+            args = [device_info,config_thread,dataqueue,datainqueue_thread,statusqueue]
+            serial_thread = threading.Thread(target=read_serial, args=args, daemon=True)
+            serial_threads.append(serial_thread)
+            logger.debug('Starting thread with config: {:s}'.format(str(config_thread)))
+            serial_thread.start()
 
-    got_dollar = False
     while True:
         try:
             data = datainqueue.get(block=False)

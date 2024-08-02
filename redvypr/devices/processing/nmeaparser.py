@@ -57,7 +57,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         #print('Data',data)
         # Check if the datakey is in the datapacket
         if len(config['datakey']) == 0:
-            datakeys = redvypr.data_packets.datapacket(data).datakeys()
+            datakeys = redvypr.data_packets.Datapacket(data).datakeys()
         else:
             if config['datakey'] in data.keys():
                 datakeys = [config['datakey']]

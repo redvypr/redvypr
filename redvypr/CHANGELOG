@@ -1,3 +1,6 @@
+    -0.8.7  - introduced packetid in datapackets
+            - Datapackets work now with Datapacket[RedvyprAddress]
+            - bug fixes in serial device
     -0.8.6  - generic_sensor and sensor definitions strongly improved.
             - RedvyprAddress is working as a pydantic datatype
     -0.8.5  - bug fixes in serial

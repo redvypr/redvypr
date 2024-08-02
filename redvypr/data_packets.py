@@ -18,7 +18,7 @@ regex_symbol_end = '}'
 
 redvypr_data_keys = ['_redvypr','_redvypr_command','_deviceinfo','_keyinfo']
 
-class datapacket(dict):
+class Datapacket(dict):
     def __init__(self, *args, **kwargs):
         if len(args)>0:
             if type(args[0]) == dict:
@@ -32,14 +32,25 @@ class datapacket(dict):
             self.update(dataself)
 
     def __getitem__(self, key):
+        # Check if the key is a string but is an "eval" operator
         if isinstance(key,str):
             if key.startswith('[') and key.endswith(']'):
                 evalstr = 'self' + key
-                data = self
+                #data = self
                 data = eval(evalstr, None)
                 return data
             else:
                 return super().__getitem__(key)
+        # Check if the key is a RedvyprAddress
+        elif isinstance(key, redvypr_address.RedvyprAddress):
+            datakey = key.datakey
+            if datakey.startswith('[') and datakey.endswith(']'):
+                evalstr = 'self' + datakey
+                #data = self
+                data = eval(evalstr, None)
+                return data
+            else:
+                return super().__getitem__(datakey)
         else:
             return super().__getitem__(key)
 
@@ -117,14 +128,14 @@ class datapacket(dict):
 
         keys.sort()
         for k in keys:
-            datastreams.append(redvypr.RedvyprAddress(self, datakey = k))
+            datastreams.append(redvypr_address.RedvyprAddress(self, datakey=k))
 
         return datastreams
 
 
 
 
-def create_datadict(data=None, datakey=None, tu=None, device=None, hostinfo=None):
+def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None, hostinfo=None):
     """ Creates a datadict dictionary used as internal datastructure in redvypr
     """
     if(tu == None):
@@ -136,6 +147,11 @@ def create_datadict(data=None, datakey=None, tu=None, device=None, hostinfo=None
 
     if (device is not None):
         datadict['_redvypr']['device'] = device
+        if (packetid is None):
+            datadict['_redvypr']['packetid'] = device
+
+    if (packetid is not None):
+        datadict['_redvypr']['packetid'] = packetid
 
     if (hostinfo is not None):
         datadict['_redvypr']['host'] = hostinfo

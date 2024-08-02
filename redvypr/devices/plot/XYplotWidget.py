@@ -15,7 +15,7 @@ import redvypr.data_packets
 import redvypr.gui
 import redvypr.files as files
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
-from redvypr.redvypr_address import RedvyprAddress, RedvyprAddressStr
+from redvypr.redvypr_address import RedvyprAddress
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -36,10 +36,10 @@ class dataBufferLine(pydantic.BaseModel):
     xdata: list = pydantic.Field(default=[])
     ydata: list = pydantic.Field(default=[])
     errordata: list = pydantic.Field(default=[])
-    tdata_addr: RedvyprAddressStr = pydantic.Field(default='')
-    xdata_addr: RedvyprAddressStr = pydantic.Field(default='')
-    ydata_addr: RedvyprAddressStr = pydantic.Field(default='')
-    errordata_addr: RedvyprAddressStr = pydantic.Field(default='')
+    tdata_addr: RedvyprAddress = pydantic.Field(default='')
+    xdata_addr: RedvyprAddress = pydantic.Field(default='')
+    ydata_addr: RedvyprAddress = pydantic.Field(default='')
+    errordata_addr: RedvyprAddress = pydantic.Field(default='')
 
     @pydantic.model_serializer
     def ser_model(self) -> typing.Dict[str, typing.Any]:
@@ -56,9 +56,9 @@ class configLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
     unit: str = pydantic.Field(default='', description='The unit of the line')
     label: str = pydantic.Field(default='', description='The of the line')
     label_format: str = pydantic.Field(default='{NAME} {Y_ADDR} [{UNIT}]', description='The name of the line, this is shown in the legend, $y to use the redvypr address')
-    x_addr: typing.Union[typing.Literal['$t(y)'],RedvyprAddressStr] = pydantic.Field(default='$t(y)', description='The realtimedata address of the x-axis, use $t(y) to automatically choose the time corresponding to the y-data')
-    y_addr: RedvyprAddressStr = pydantic.Field(default='/d:somedevice/k:data', description='The realtimedata address of the x-axis')
-    error_addr: RedvyprAddressStr = pydantic.Field(default='', description='The realtimedata address for an optional error band around the line')
+    x_addr: typing.Union[typing.Literal['$t(y)'],RedvyprAddress] = pydantic.Field(default='$t(y)', description='The realtimedata address of the x-axis, use $t(y) to automatically choose the time corresponding to the y-data')
+    y_addr: RedvyprAddress = pydantic.Field(default='/d:somedevice/k:data', description='The realtimedata address of the x-axis')
+    error_addr: RedvyprAddress = pydantic.Field(default='', description='The realtimedata address for an optional error band around the line')
     error_mode: typing.Literal['off', 'standard', 'factor', 'constant'] = pydantic.Field(default='off', description='')
     error_factor: float = pydantic.Field(default=1.1, description='')
     error_constant: float = pydantic.Field(default=.01, description='')
@@ -637,116 +637,120 @@ class XYplot(QtWidgets.QFrame):
         funcname = self.__class__.__name__ + '.update_plot():'
         logger.debug(funcname + 'Update {}'.format(len(self.config.lines)))
         tnow = time.time()
+        # Create a redvypr datapacket
+        rdata = redvypr.data_packets.Datapacket(data)
         # print(funcname + 'got data',data,tnow)
-        # try:
-        if True:
+        try:
+            # Check if the device is to be plotted
             # Loop over all lines
-            if True:
-                # Check if the device is to be plotted
-                for iline, line in enumerate(self.config.lines):
-                    line.__newdata = False
-                    error_raddr = line._error_raddr
-                    if len(self.config.lines)>1:
-                        #print('device',data['_redvypr']['device'])
-                        #print('data',data)
-                        #print('line',line)
-                        #print('line A', line._x_raddr, (data in line._x_raddr))
-                        #print('line B', line._y_raddr, (data in line._y_raddr))
-                        #print('fdsfsfsd',(data in line._x_raddr) and (data in line._y_raddr))
-                        pass
-                    if (data in line._x_raddr) and (data in line._y_raddr):
-                        pw = self.plotWidget  # The plot widget
-                        #if len(self.config.lines) > 1:
-                        #    print('Databuffer',line.databuffer)
-                        tdata = line.databuffer.tdata  # The line to plot
-                        xdata = line.databuffer.xdata  # The line to plot
-                        ydata = line.databuffer.ydata  # The line to plot
-                        # data can be a single float or a list, if its a list add it item by item
-                        newt = data['_redvypr']['t']  # Add also the time of the packet
-                        newx = data[line._x_raddr.datakey]
-                        newy = data[line._y_raddr.datakey]
+            for iline, line in enumerate(self.config.lines):
+                line.__newdata = False
+                error_raddr = line._error_raddr
+                if len(self.config.lines)>1:
+                    #print('device',data['_redvypr']['device'])
+                    #print('data',data)
+                    #print('line',line)
+                    #print('line A', line._x_raddr, (data in line._x_raddr))
+                    #print('line B', line._y_raddr, (data in line._y_raddr))
+                    #print('fdsfsfsd',(data in line._x_raddr) and (data in line._y_raddr))
+                    pass
 
-                        #if len(self.config.lines) > 1:
-                        #    print('data',data)
-                        #    print('newx datakey', line._x_raddr.datakey)
-                        #    print('newx', newx)
+                #print('data',data)
+                #print('line._x_raddr',line._x_raddr,data in line._x_raddr)
+                #print('line._y_raddr', line._y_raddr, data in line._y_raddr)
+                if (data in line._x_raddr) and (data in line._y_raddr):
+                    pw = self.plotWidget  # The plot widget
+                    #if len(self.config.lines) > 1:
+                    #    print('Databuffer',line.databuffer)
+                    tdata = line.databuffer.tdata  # The line to plot
+                    xdata = line.databuffer.xdata  # The line to plot
+                    ydata = line.databuffer.ydata  # The line to plot
+                    # data can be a single float or a list, if its a list add it item by item
+                    newt = rdata['_redvypr']['t']  # Add also the time of the packet
+                    newx = rdata[line._x_raddr.datakey]
+                    newy = rdata[line._y_raddr.datakey]
 
-                        if (type(newx) is not list):
-                            newx = [newx]
-                        if (type(newy) is not list):
-                            newy = [newy]
+                    #if len(self.config.lines) > 0:
+                    #    print('data xy plotwidget',rdata)
+                    #    print('newx datakey', line._x_raddr.datakey)
+                    #    print('newx', newx)
 
-                        if  line.error_mode != 'off':
-                            error_mode: typing.Literal['off','standard', 'factor', 'constant'] = pydantic.Field(
-                                default='standard', description='')
-                            error_factor: float = pydantic.Field(default=1.1, description='')
-                            error_constant: float = pydantic.Field(default=.01, description='')
-                            #print('errordata',error_raddr.datakey)
-                            if len(line.error_addr) > 0 and line.error_mode == 'standard':
-                                #logger.debug('Error standard')
-                                newerror = data[error_raddr.datakey]
-                                if (type(newerror) is not list):
-                                    newerror = [newerror]
-                                #print('newerror',newerror)
-                            elif line.error_mode == 'factor':
-                                #print('Error factor')
-                                errdata = np.asarray(newy)
-                                errdata_factor = errdata * line.error_factor - errdata.mean()
-                                newerror = errdata_factor.tolist()
-                            elif line.error_mode == 'constant':
-                                #print('Error constant')
-                                newerror = [line.error_constant] * len(newx)
-                        else:
-                            newerror = [0]
+                    if (type(newx) is not list):
+                        newx = [newx]
+                    if (type(newy) is not list):
+                        newy = [newy]
 
-                        if (len(newx) != len(newy)):
-                            logger.warning(
-                                'lengths of x and y data different (x:{:d}, y:{:d})'.format(len(newx), len(newy)))
-                            return
+                    if  line.error_mode != 'off':
+                        error_mode: typing.Literal['off','standard', 'factor', 'constant'] = pydantic.Field(
+                            default='standard', description='')
+                        error_factor: float = pydantic.Field(default=1.1, description='')
+                        error_constant: float = pydantic.Field(default=.01, description='')
+                        #print('errordata',error_raddr.datakey)
+                        if len(line.error_addr) > 0 and line.error_mode == 'standard':
+                            #logger.debug('Error standard')
+                            newerror = data[error_raddr.datakey]
+                            if (type(newerror) is not list):
+                                newerror = [newerror]
+                            #print('newerror',newerror)
+                        elif line.error_mode == 'factor':
+                            #print('Error factor')
+                            errdata = np.asarray(newy)
+                            errdata_factor = errdata * line.error_factor - errdata.mean()
+                            newerror = errdata_factor.tolist()
+                        elif line.error_mode == 'constant':
+                            #print('Error constant')
+                            newerror = [line.error_constant] * len(newx)
+                    else:
+                        newerror = [0]
 
-                        for inew in range(len(newx)):  # TODO this can be optimized using indices instead of a loop
-                            line.databuffer.tdata.append( float(newt) )
-                            line.databuffer.xdata.append( float(newx[inew]) )
-                            line.databuffer.ydata.append( float(newy[inew]) )
-                            line.databuffer.errordata.append(float(newerror[inew]) )
-                            while len(line.databuffer.tdata) > line.buffersize:
-                                line.databuffer.tdata.pop(0)
-                                line.databuffer.xdata.pop(0)
-                                line.databuffer.ydata.pop(0)
-                                line.databuffer.errordata.pop(0)
+                    if (len(newx) != len(newy)):
+                        logger.warning(
+                            'lengths of x and y data different (x:{:d}, y:{:d})'.format(len(newx), len(newy)))
+                        return
 
-                            line.__newdata = True
+                    for inew in range(len(newx)):  # TODO this can be optimized using indices instead of a loop
+                        line.databuffer.tdata.append( float(newt) )
+                        line.databuffer.xdata.append( float(newx[inew]) )
+                        line.databuffer.ydata.append( float(newy[inew]) )
+                        line.databuffer.errordata.append(float(newerror[inew]) )
+                        while len(line.databuffer.tdata) > line.buffersize:
+                            line.databuffer.tdata.pop(0)
+                            line.databuffer.xdata.pop(0)
+                            line.databuffer.ydata.pop(0)
+                            line.databuffer.errordata.pop(0)
 
-                            #tdata = np.roll(tdata, -1)
-                            #xdata = np.roll(xdata, -1)
-                            #ydata = np.roll(ydata, -1)
-                            #tdata[-1] = float(newt)
-                            #xdata[-1] = float(newx[inew])
-                            #ydata[-1] = float(newy[inew])
-                            #line.databuffer.tdata = tdata
-                            #line.databuffer.xdata = xdata
-                            #line.databuffer.ydata = ydata
+                        line.__newdata = True
 
-                        # Show the unit in the legend, if wished by the user and we have access to the device that can give us the metainformation
-                        if (self.config.show_units) and (self.device is not None):
-                            try:
-                                line._datakeys  # datakeys found, doing nothing
-                            except:
-                                line._datakeys = self.device.get_metadata_datakey(line._y_raddr)
-                                self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._datakeys)))
-                                unit = None
-                                for k in line._datakeys.keys():
-                                    # print('key',k,yaddr,k in yaddr)
-                                    if k in line._y_raddr:
-                                        try:
-                                            unit = line._datakeys[k]['unit']
-                                            break
-                                        except:
-                                            unit = None
+                        #tdata = np.roll(tdata, -1)
+                        #xdata = np.roll(xdata, -1)
+                        #ydata = np.roll(ydata, -1)
+                        #tdata[-1] = float(newt)
+                        #xdata[-1] = float(newx[inew])
+                        #ydata[-1] = float(newy[inew])
+                        #line.databuffer.tdata = tdata
+                        #line.databuffer.xdata = xdata
+                        #line.databuffer.ydata = ydata
 
-                                if unit is not None:
-                                    self.config.lines[iline].unit = unit
-                                    self.apply_config()
+                    # Show the unit in the legend, if wished by the user and we have access to the device that can give us the metainformation
+                    if (self.config.show_units) and (self.device is not None):
+                        try:
+                            line._datakeys  # datakeys found, doing nothing
+                        except:
+                            line._datakeys = self.device.get_metadata_datakey(line._y_raddr)
+                            self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._datakeys)))
+                            unit = None
+                            for k in line._datakeys.keys():
+                                # print('key',k,yaddr,k in yaddr)
+                                if k in line._y_raddr:
+                                    try:
+                                        unit = line._datakeys[k]['unit']
+                                        break
+                                    except:
+                                        unit = None
+
+                            if unit is not None:
+                                self.config.lines[iline].unit = unit
+                                self.apply_config()
 
             # Update the lines plot
             for iline, line in enumerate(self.config.lines):
@@ -779,3 +783,7 @@ class XYplot(QtWidgets.QFrame):
             if len(self.config.lines) > 1:
                 pass
                 #print('DONE DONE DONE')
+        except:
+            pass
+            #logger.info('Could not update data',exc_info=True)
+

@@ -51,9 +51,9 @@ class DeviceCustomConfig(pydantic.BaseModel):
 def start(device_info, config = None, dataqueue = None, datainqueue = None, statusqueue = None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
+    print('Got config serialized', config)
     print('Got config',config)
     config = DeviceCustomConfig.model_validate(config)
-    print('Got config serialized', config)
 
     for sensor in config.sensors:
         logger.debug('Creating metadata packet for sensor {}'.format(sensor.name))
@@ -464,7 +464,8 @@ class SensorWidget(QtWidgets.QWidget):
         #print('Data:',data)
         if data in self.sensor_address:
             #print(funcname + ' Datapacket fits, Processing data')
-            keys = redvypr.data_packets.datapacket(data).datakeys()
+            rdata = redvypr.data_packets.Datapacket(data)
+            keys = rdata.datakeys(expand=True)
             if '_keyinfo' in data.keys():
                 logger.debug('Updating keyinfo')
                 # This should be done with device.get_metadata
@@ -487,9 +488,10 @@ class SensorWidget(QtWidgets.QWidget):
                 #self.datatable.setItem(1, self.icol_data, item_tstr)
                 item_tustr.setText(tudatastr)
                 item_tstr.setText(tdatastr)
-                if True:
-                    for k in keys:
-                        datastr = str(data[k]) # This can be done more fancy
+
+                for k in keys:
+                    if True:
+                        datastr = str(rdata[k]) # This can be done more fancy
                         # Check if the datakey is already
                         if k not in self.datakey_items:
                             nrows = self.datatable.rowCount()

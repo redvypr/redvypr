@@ -251,7 +251,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
 
                 #statistics = data_packets.do_data_statistics(data,statistics)
-                datastreams = data_packets.datapacket(data).datastreams()
+                datastreams = data_packets.Datapacket(data).datastreams()
                 #print('Hallo data',data)
                 #print('Got datastreams',datastreams)
                 data_write = ['']*len(csvcolumns)

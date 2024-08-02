@@ -14,7 +14,7 @@ device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_k
 
 
 
-def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulename=''):
+def treat_datadict(data, devicename, hostinfo, numpacket, tpacket, devicemodulename=''):
     """ Treats a datadict received from a device and adds additional information from redvypr as hostinfo, numpackets etc.
     """
     # Add deviceinformation to the data package
@@ -24,23 +24,21 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket,devicemodulena
         data['_redvypr']['tag'] = {}
     if ('device' not in data['_redvypr'].keys()):
         data['_redvypr']['device'] = str(devicename)
-
+    #if ('publisher' not in data['_redvypr'].keys()):
+    #    data['_redvypr']['publisher'] = str(devicename)
+    if ('packetid' not in data['_redvypr'].keys()):
+        data['_redvypr']['packetid'] = str(devicename)
     if ('host' not in data['_redvypr'].keys()):
-        data['_redvypr']['host']   = hostinfo
+        data['_redvypr']['host'] = hostinfo
 
     # Tag the datapacket and add the local publishing device
     try:
         data['_redvypr']['tag'][hostinfo['uuid']] += 1
     except:
         data['_redvypr']['tag'][hostinfo['uuid']] = 1
-        data['_redvypr']['locuuid'] = hostinfo['uuid']
-        data['_redvypr']['locpub'] = str(devicename)
-
-    # Add the first publishing device
-    try:
-        data['_redvypr']['fpub']
-    except:
-        data['_redvypr']['fpub'] = str(devicename)
+        data['_redvypr']['localhost'] = hostinfo
+        #data['_redvypr']['localuuid'] = hostinfo['uuid']
+        data['_redvypr']['publisher'] = str(devicename)
 
     # Add the time to the datadict if its not already in
     if ('t' not in data['_redvypr'].keys()):

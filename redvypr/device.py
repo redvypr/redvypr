@@ -26,7 +26,7 @@ import pkg_resources
 import redvypr
 import pydantic
 import typing
-from redvypr.data_packets import commandpacket
+from redvypr.data_packets import commandpacket, create_datadict
 from redvypr.packet_statistic import do_data_statistics
 from redvypr.redvypr_address import RedvyprAddress
 
@@ -398,13 +398,11 @@ class RedvyprDevice(QtCore.QObject):
         self.__update_address__()
 
         # Add myself to the statistics
-        datapacket = {'_redvypr':{}}
-        datapacket['_redvypr']['device'] = self.name
+        datapacket = create_datadict(device=self.name,
+                                     packetid=self.name,
+                                     hostinfo=self.host)
         datapacket['_redvypr']['devicemodulename'] = self.devicemodulename
-        datapacket['_redvypr']['host']=self.host
-        datapacket['_redvypr']['locpub'] = str(self.name)
-        datapacket['_redvypr']['locuuid'] = self.host['uuid']
-        do_data_statistics(datapacket,self.statistics)
+        do_data_statistics(datapacket, self.statistics)
 
         # Adding the start function (the function that is executed as a thread or multiprocess and is doing all the work!)
         if(startfunction is not None):

@@ -256,7 +256,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     except:
                         data['t'] = data['_redvypr']['t']
 
-                    datapacket = data_packets.datapacket(data)
+                    datapacket = data_packets.Datapacket(data)
                     datakeys = datapacket.datakeys(expand=config['datakey_expansionlevel'])
                     print('datakeys')
                     datakeys.remove('t')

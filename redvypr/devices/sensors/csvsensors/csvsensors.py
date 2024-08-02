@@ -1363,7 +1363,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 self.device.sensordata_raw[sn] = self.device.sensordata_raw[sn][-self.maxlen:]
 
 
-            rdata = data_packets.datapacket(data)
+            rdata = data_packets.Datapacket(data)
             parameter = rdata.datakeys(expand=1)
             #try:
             #    parameter.remove('type')  # Remove type
@@ -1477,7 +1477,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             print('redraw',mac_redraw)
             for macdraw in mac_redraw:
                 data_redraw = table.sensordata[macdraw]
-                data_redraw_rdata = data_packets.datapacket(data_redraw)
+                data_redraw_rdata = data_packets.Datapacket(data_redraw)
                 parameter_redraw = data_redraw_rdata.datakeys(expand=1)
                 #print('parameter redraw',parameter_redraw)
                 index_col = columns.index(macdraw)
