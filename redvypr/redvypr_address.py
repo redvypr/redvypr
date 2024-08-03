@@ -347,14 +347,13 @@ class RedvyprAddress():
             pubflag = self.compare_address_substrings(self.publisher, pubstr)
             # Test the comparison
             compareflag = True
-            print('Compare',self.compare)
             if self.compare is not None:
                 if self.compare != '*':
                     evalstr = 'data' + self.compare
-                    print('Evalstr',evalstr)
+                    #print('Evalstr',evalstr)
                     try:
                         compareflag = eval(evalstr)
-                        print('Compareflag',compareflag)
+                        #print('Compareflag',compareflag)
                     except:
                         logger.info('Eval did not work out',exc_info=True)
                         compareflag = False
