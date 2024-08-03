@@ -334,7 +334,7 @@ class RedvyprAddress():
         """ Depending on the type of data
         - it checks if address is in data, if data is a redvypr data structure (datapacket)
         - it checks if addresses match between self and data, if data is a redvypr_address
-        - it converts a string or configString into a redvypr_address and checks if addresses match
+        - it converts a string into a RedvyprAddress and checks if the addresses match
         """
         if isinstance(data, dict): # check if data is a dictionary or an inherited type like redvypr.data_packets.datapacket
             datapacket = data
@@ -402,6 +402,7 @@ class RedvyprAddress():
         elif(type(data) == RedvyprAddress):
             addr = data
             datakeyflag = self.compare_address_substrings(self.datakey, addr.datakey)
+            packetidflag = self.compare_address_substrings(self.packetid, addr.packetid)
             deviceflag  = self.compare_address_substrings(self.devicename, addr.devicename)
             hostflag    = self.compare_address_substrings(self.hostname, addr.hostname)
             addrflag    = self.compare_address_substrings(self.addr, addr.addr)
@@ -416,12 +417,11 @@ class RedvyprAddress():
             # print('uuidflag',uuidflag)
             # print('localflag',localflag)
 
-            # matchflag1  = datakeyflag and deviceflag and hostflag and addrflag
-            # matchflag2 = datakeyflag  and deviceflag and uuidflag
-            matchflag3 = datakeyflag and deviceflag and hostflag and addrflag and uuidflag and pubflag
+            matchflag3 = datakeyflag and packetidflag and deviceflag and hostflag and addrflag and uuidflag and pubflag
 
             return matchflag3  # 1 or matchflag2
 
+        # string, convert to RedvyprAddress first
         elif type(data) == str:
             raddr = RedvyprAddress(str(data))
             contains = raddr in self
