@@ -35,14 +35,14 @@ class RedvyprAddress():
     """
     """
     address_str: str
-    def __init__(self, addrstr=None, local_hostinfo=None, datakey=None, devicename=None, hostname=None, addr=None, uuid=None, publisher=None, redvypr_meta=None):
+    def __init__(self, addrstr=None, local_hostinfo=None, datakey=None, devicename=None, hostname=None, addr=None, uuid=None, publisher=None, compare=None):
         # Some definitions
         self.__regex_symbol_start = '{'
         self.__regex_symbol_end = '}'
-        self.__addr_id_links = {'k': 'datakey', 'd': 'devicename','i': 'packetid', 'a': 'addr', 'u': 'uuid', 'h': 'hostname','p': 'publisher'}
-        self.__addr_id_links_r = {'datakey':'k', 'devicename': 'd' , 'packetid':'i', 'addr': 'a', 'uuid': 'u' , 'hostname':'h', 'publisher':'p'}
-        self.__addr_ids = ['datakey', 'devicename', 'packetid', 'hostname', 'addr', 'uuid','publisher']
-        self.__addr_idsexpand = ['datakeyexpand', 'deviceexpand', 'packetidexpand', 'hostexpand', 'addrexpand', 'uuidexpand','publisherexpand']
+        self.__addr_id_links = {'k': 'datakey', 'd': 'devicename','i': 'packetid', 'a': 'addr', 'u': 'uuid', 'h': 'hostname','p': 'publisher','c':'compare'}
+        self.__addr_id_links_r = {'datakey':'k', 'devicename': 'd' , 'packetid':'i', 'addr': 'a', 'uuid': 'u' , 'hostname':'h', 'publisher':'p','compare':'c'}
+        self.__addr_ids = ['datakey', 'devicename', 'packetid', 'addr', 'uuid', 'hostname', 'publisher','compare']
+        self.__addr_idsexpand = ['datakeyexpand', 'deviceexpand', 'packetidexpand', 'addrexpand', 'uuidexpand', 'hostexpand', 'publisherexpand','compareexpand']
         self.__delimiter_parts = '/'
         self.__delimiter_id = ':'
 
@@ -54,17 +54,17 @@ class RedvyprAddress():
                 self.address_str = addrstr.address_str
             #elif type(addrstr) == dict:  # Address from datapacket # This does not work with inherited classes like redvypr_address
             elif isinstance(addrstr, dict):  # Addressstr is a redvypr datapacket # This should work with dict and inherited classes like redvypr_address
-                #print('Data packet',addrstr)
                 if True:
                     try:
-                        publisher_packet = addrstr['_redvypr']['locpub']
+                        publisher_packet = addrstr['_redvypr']['publisher']
                     except:
                         publisher_packet = None
                 if True:
                     try:
                         addr_packet = addrstr['_redvypr']['host']['addr']
                     except:
-                        pass
+                        addr_packet = None
+
                 if True:
                     hostname_packet = addrstr['_redvypr']['host']['hostname']
                 if True:
@@ -74,7 +74,13 @@ class RedvyprAddress():
                 if True:
                     packetid = addrstr['_redvypr']['packetid']
 
-                self.address_str = self.create_addrstr(datakey, packetid, devicename_packet, hostname_packet, addr_packet, uuid_packet, publisher_packet,
+                self.address_str = self.create_addrstr(datakey=datakey,
+                                                       packetid=packetid,
+                                                       devicename=devicename_packet,
+                                                       hostname=hostname_packet,
+                                                       addr=addr_packet,
+                                                       uuid=uuid_packet,
+                                                       publisher=publisher_packet,
                                                        local_hostinfo=local_hostinfo)
 
             elif addrstr == '*':
@@ -87,8 +93,11 @@ class RedvyprAddress():
                 self.address_str = addrstr
 
             # Replace potentially given arguments
-            if any([addrstr, local_hostinfo, datakey, devicename, hostname, addr, uuid, publisher]):
+            #if any([addrstr, local_hostinfo, datakey, devicename, hostname, addr, uuid, publisher]):
+            if any([publisher, local_hostinfo, datakey, devicename, hostname, addr, uuid, publisher]):
                 parsed_addrstr = self.parse_addrstr(self.address_str)
+                if publisher is not None:
+                    parsed_addrstr['publisher'] = publisher
                 if addr is not None:
                     parsed_addrstr['addr'] = addr
                 if datakey is not None:
@@ -105,7 +114,7 @@ class RedvyprAddress():
                 self.address_str = self.create_addrstr(parsed_addrstr['datakey'], parsed_addrstr['devicename'], parsed_addrstr['hostname'], parsed_addrstr['addr'], parsed_addrstr['uuid'], parsed_addrstr['publisher'], local_hostinfo=local_hostinfo)
 
         else:  # addrstr from single ingredients
-            self.address_str = self.create_addrstr(datakey, devicename, hostname, addr, uuid, publisher, local_hostinfo=local_hostinfo)
+            self.address_str = self.create_addrstr(datakey, devicename, hostname, addr, uuid, publisher, local_hostinfo=local_hostinfo, compare=compare)
             # print('Address string',self.address_str)
 
         parsed_addrstr = self.parse_addrstr(self.address_str)
@@ -130,11 +139,14 @@ class RedvyprAddress():
         self.uuid = parsed_addrstr['uuid']
         self.uuidexpand = parsed_addrstr['uuidexpand']
 
+        self.compare = parsed_addrstr['compare']
+        self.compareexpand = parsed_addrstr['compareexpand']
+
         self.publisher = parsed_addrstr['publisher']
 
     def get_common_address_formats(self):
         return self._common_address_formats
-    def create_addrstr(self, datakey=None, packetid=None, devicename=None, hostname=None, addr=None, uuid=None, publisher=None, local_hostinfo=None):
+    def create_addrstr(self, datakey=None, packetid=None, devicename=None, hostname=None, addr=None, uuid=None, publisher=None, local_hostinfo=None, compare=None):
         """
             Creates an address string from given ingredients
             Args:
@@ -145,6 +157,7 @@ class RedvyprAddress():
                 addr:
                 uuid:
                 local_hostinfo:
+                compare:
 
             Returns:
 
@@ -171,6 +184,8 @@ class RedvyprAddress():
             hostname = local_hostinfo['hostname']
 
         address_str = self.__delimiter_parts
+        if compare is not None:
+            address_str += self.__addr_id_links_r['compare'] + self.__delimiter_id + compare + self.__delimiter_parts
         address_str += self.__addr_id_links_r['uuid'] + self.__delimiter_id + uuid + self.__delimiter_parts
         address_str += self.__addr_id_links_r['addr'] + self.__delimiter_id + addr + self.__delimiter_parts
         address_str += self.__addr_id_links_r['hostname'] + self.__delimiter_id + hostname  + self.__delimiter_parts
@@ -198,7 +213,6 @@ class RedvyprAddress():
                 return datapacket[self.datakey]
         else:
             return None
-
 
     def parse_addrstr(self, addrstr):
         """ Parses a redvypr address string
@@ -235,7 +249,8 @@ class RedvyprAddress():
                 else:
                     raise ValueError('Format needs to be <ID>{}<content>, not: {}'.format(self.__delimiter_id,str(addr_part_sp)))
 
-        # Check for expansion and fill not explictly defined ids with *
+        #print(parsed_addrstr)
+        # Check for expansion and fill not explicitly defined ids with *
         for addr_id,addr_idexpand in zip(self.__addr_ids,self.__addr_idsexpand):
             try:
                 addr_content = parsed_addrstr[addr_id]
@@ -247,11 +262,11 @@ class RedvyprAddress():
             else:
                 parsed_addrstr[addr_idexpand] = False
 
-
+        #print(parsed_addrstr)
         return parsed_addrstr
 
 
-    def get_str(self, address_format = '/u/a/h/d/p/k/'):
+    def get_str(self, address_format = '/u/a/h/d/p/i/k/'):
         """
 
         Args:
@@ -327,12 +342,23 @@ class RedvyprAddress():
             hostflag   = self.compare_address_substrings(self.hostname, datapacket['_redvypr']['host']['hostname'])
             addrflag   = self.compare_address_substrings(self.addr, datapacket['_redvypr']['host']['addr'])
             uuidflag   = self.compare_address_substrings(self.uuid, datapacket['_redvypr']['host']['uuid'])
-            try:
-                pubstr = datapacket['_redvypr']['locpub']
-            except:
-                pubstr = ''
+            pubstr = datapacket['_redvypr']['publisher']
 
             pubflag = self.compare_address_substrings(self.publisher, pubstr)
+            # Test the comparison
+            compareflag = True
+            print('Compare',self.compare)
+            if self.compare is not None:
+                if self.compare != '*':
+                    evalstr = 'data' + self.compare
+                    print('Evalstr',evalstr)
+                    try:
+                        compareflag = eval(evalstr)
+                        print('Compareflag',compareflag)
+                    except:
+                        logger.info('Eval did not work out',exc_info=True)
+                        compareflag = False
+            #self.compare
             #locpubflag = self.compare_address_substrings(self.uuid, datapacket['_redvypr']['host']['locpub'])
             #print('deviceflag', deviceflag)
             #print('hostflag', deviceflag)
@@ -369,7 +395,7 @@ class RedvyprAddress():
             #elif (deviceflag and uuidflag):
             #    return True
 
-            matchflag3 = deviceflag and hostflag and addrflag and uuidflag and pubflag
+            matchflag3 = deviceflag and hostflag and addrflag and uuidflag and pubflag and compareflag
 
             return matchflag3
 

@@ -180,6 +180,9 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     redvypr_packet_statistic.treat_datadict(data, device.name, hostinfo, numpacket, tread,devicedict['devicemodulename'])
                     # Get the devicename using an address
                     raddr = redvypr_address.RedvyprAddress(data)
+                    #print('data',data)
+                    #print('Raddr',raddr)
+                    #print('Raddr str', raddr.address_str)
                     devicename_stat = raddr.address_str
                     #devicename_stat = data_packets.get_devicename_from_data(data, uuid=True)
                     #
@@ -221,9 +224,8 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                             infoqueue.put_nowait(devinfo_send)
 
                     #
-                    # Create a dictionary of all datastreams
+                    # Create a dictionary of all devices
                     #
-                    datastreams_all.update(devicedict['statistics']['datastream_redvypr'])
                     try:
                         deviceinfo_all[device.name].update(devicedict['statistics']['device_redvypr'])
                     except:
@@ -232,15 +234,16 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     #
                     # Compare if datastreams changed
                     #
-                    if (list(datastreams_all.keys()) != list(datastreams_all_old.keys())):
-                        #print('Datastreams changed', len(datastreams_all.keys()))
-                        datastreams_all_old.update(datastreams_all)
-                        devices_changed.append(device.name)
-                        # Send an information about the change, that will trigger a pyqt signal in the main thread
-                        devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
-                                        'devices_changed': list(set(devices_changed)),
-                                        'devices_removed': devices_removed, 'change': 'datastreams changed','device_changed':device.name}
-                        infoqueue.put_nowait(devinfo_send)
+                    if False: # To be removed soon
+                        if (list(datastreams_all.keys()) != list(datastreams_all_old.keys())):
+                            #print('Datastreams changed', len(datastreams_all.keys()))
+                            datastreams_all_old.update(datastreams_all)
+                            devices_changed.append(device.name)
+                            # Send an information about the change, that will trigger a pyqt signal in the main thread
+                            devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
+                                            'devices_changed': list(set(devices_changed)),
+                                            'devices_removed': devices_removed, 'change': 'datastreams changed','device_changed':device.name}
+                            infoqueue.put_nowait(devinfo_send)
 
                     #
                     # And finally: Distribute the data

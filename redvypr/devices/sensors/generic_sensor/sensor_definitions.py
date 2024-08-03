@@ -266,9 +266,9 @@ NMEARMC = BinarySensor(name='NMEA0183_RMC', regex_split=nmea_rmc_split,
 
 # TAR
 tar_b2_test1 = b'$FC0FE7FFFE155D8C,TAR,B2,36533.125000,83117,3498.870,3499.174,3529.739,3490.359,3462.923,3467.226,3480.077,3443.092,3523.642,3525.567,3509.492,3561.330,3565.615,3486.693,3588.670,3539.169,3575.104,3523.946,3496.343,3480.160,3531.045,3501.624,3497.010,3557.235,3479.952,3458.297,3523.052,3487.223,3571.087,3525.740,3580.928,3534.818\n'
-#tar_b2_split = b'\$(?P<MAC64>[A-F,0-9]+),TAR,B2,(?P<counter>[0-9.]+),(?P<np>[0.9]+),(?P<TAR>[0-9.]+,*)\n'
-tar_b2_split = b'\$(?P<MAC64>.+),TAR,B2,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<TAR>.*)\n'
-nmea_rmc_str_format = {'MAC64':'str','counter':'float','np':'int','TAR':'array'}
+#tar_b2_split = b'\$(?P<MAC>[A-F,0-9]+),TAR,B2,(?P<counter>[0-9.]+),(?P<np>[0.9]+),(?P<TAR>[0-9.]+,*)\n'
+tar_b2_split = b'\$(?P<MAC>.+),TAR,B2,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<TAR>.*)\n'
+nmea_rmc_str_format = {'MAC':'str','counter':'float','np':'int','TAR':'array'}
 tar_b2 = BinarySensor(name='tar_b2', regex_split=tar_b2_split,
                        str_format=nmea_rmc_str_format,
                        datastream=str(RedvyprAddress('/k:data')),

@@ -67,6 +67,7 @@ class RedvyprDeviceConfig(pydantic.BaseModel):
     devicemodulename: str = pydantic.Field(default='', description='')
     custom_config: typing.Optional[RedvyprDeviceCustomConfig] = pydantic.Field(default=None, description='')
     subscriptions: list = pydantic.Field(default=[])
+    datakeytags: list = pydantic.Field(default=['mac','sn','id'],description='datakeys for which will be looked at at each packet and a statistic will be done')
     metadata: typing.Optional[DeviceMetadata] = pydantic.Field(default=None, description='')
     config_type: typing.Literal['device'] = pydantic.Field(default='device')
 

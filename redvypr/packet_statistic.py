@@ -116,8 +116,6 @@ def do_data_statistics(data, statdict, address_data = None):
     uuid = raddr.uuid
     devicename_stat = raddr.address_str
 
-    #[datastreams_stat, datastreams_dict] = get_datastreams_from_data(data, uuid=True, add_dict=True)
-    #statdict['datastream_redvypr'].update(datastreams_dict)
     # Create a hostinfo information
     try:
         statdict['host_redvypr'][uuid].update(data['_redvypr']['host'])
