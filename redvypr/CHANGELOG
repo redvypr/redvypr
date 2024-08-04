@@ -1,3 +1,5 @@
+    -0.8.?  - datastreamsWidget implemented
+            -
     -0.8.7  - introduced packetid in datapackets
             - Datapackets work now with Datapacket[RedvyprAddress]
             - bug fixes in serial device

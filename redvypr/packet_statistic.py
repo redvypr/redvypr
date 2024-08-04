@@ -10,7 +10,7 @@ logger = logging.getLogger('redvypr_packet_statistics')
 logger.setLevel(logging.DEBUG)
 
 # A dictionary for the device_redvypr entry in the statistics
-device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {},'packets_received':0,'packets_published':0,'packets_droped':0}
+device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], 'datakeys_expanded': {}, '_deviceinfo': {},'_keyinfo': {},'packets_received':0,'packets_published':0,'packets_droped':0}
 
 
 
@@ -64,6 +64,7 @@ def create_data_statistic_dict():
     statdict['packets_published'] = 0
     statdict['packets_received'] = 0
     statdict['datakeys'] = []
+    #statdict['datakeys_expanded'] = {}
     statdict['devicekeys'] = {}
     statdict['devices'] = []
     statdict['devices_dict'] = {}
@@ -154,6 +155,13 @@ def do_data_statistics(data, statdict, address_data = None):
         statdict['device_redvypr'][devicename_stat]['_keyinfo'].update(data['_keyinfo'])
     except:
         pass
+
+
+    # Deeper check, data types and expanded data types
+    rdata = data_packets.Datapacket(data)
+    datakeys_expanded = rdata.datakeys(expand=True)
+    print('Datakeys expanded',datakeys_expanded)
+    statdict['device_redvypr'][devicename_stat]['datakeys_expanded'].update(datakeys_expanded)
 
     return statdict
 

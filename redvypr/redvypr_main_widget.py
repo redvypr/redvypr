@@ -907,8 +907,8 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
 
         # Help and About menu
         toolMenu = mainMenu.addMenu('&Tools')
-        toolAction = QtWidgets.QAction("&Choose Device/Datakey ", self)
-        toolAction.setStatusTip('Opens a window to choose an available device and/or datakeys')
+        toolAction = QtWidgets.QAction("&Choose Datastreams ", self)
+        toolAction.setStatusTip('Opens a window to choose datastreams from the available devices')
         toolAction.triggered.connect(self.show_deviceselect)
         consoleAction = QtWidgets.QAction("&Open console", self)
         consoleAction.triggered.connect(self.open_console)
@@ -969,7 +969,7 @@ Opens an "about" widget showing basic information.
         self._about_widget.show()
 
     def show_deviceselect(self):
-        self.__deviceselect__ = redvypr.widgets.redvypr_addressWidget.datastreamWidget(redvypr=self.redvypr_widget.redvypr)
+        self.__deviceselect__ = redvypr.widgets.redvypr_addressWidget.datastreamsWidget(redvypr=self.redvypr_widget.redvypr)
         self.__deviceselect__.show()
 
     def open_add_device_widget(self):

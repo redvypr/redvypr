@@ -1288,6 +1288,8 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         self.sensoradd = QtWidgets.QPushButton('Add sensor')  # Add a sensor
         self.sensoradd.clicked.connect(self.sensorAddClicked)
+        self.sensorsadd = QtWidgets.QPushButton('Add sensors')  # Add several sensor by choosing a list of datastreams
+        self.sensorsadd.clicked.connect(self.sensorsAddClicked)
         self.mansensoradd = QtWidgets.QPushButton('Add manual sensor')  # Add a manual sensor
         self.mansensoradd.clicked.connect(self.sensorAddClicked)
         self.caltype = QtWidgets.QComboBox()  # Calibration type of sensor
@@ -1503,6 +1505,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         if self.sender() == self.sensoradd:
             print('datastream sensor')
             self.device.add_sensor(newsen,'datastream')
+        if self.sender() == self.sensorsadd:
+            logger.debug(funcname + ' multiple datastream sensors')
+            self.device.add_sensor(newsen, 'datastream')
         else:
             print('Manual sensor')
             self.device.add_sensor(newsen, 'manual')

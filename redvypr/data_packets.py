@@ -55,32 +55,40 @@ class Datapacket(dict):
             return super().__getitem__(key)
 
 
-    def __expand_datakeys_recursive__(self, data, keys, level=0, parent_key='f', key_list = [], max_level=1000):
+    def __expand_datakeys_recursive__(self, data, keys, level=0, parent_key='f', key_list = [], key_dict = {}, max_level=1000):
         for k in keys:
             #print('k',k)
             data_k = data[k]
+            # Check if k is a list or a dict
             if isinstance(k, int):
                 strformat = "[{}]".format(k)
+                key_dict.append(None)
             else:
                 strformat = "['{}']".format(k)
+                key_dict[k] = None
             if level < max_level:
                 if isinstance(data_k, list):
                     data_k_keys = range(0, len(data_k))
                     parent_key_new = parent_key + strformat
-                    self.__expand_datakeys_recursive__(data_k, data_k_keys, level=level + 1, parent_key=parent_key_new, key_list=key_list, max_level=max_level)
+                    key_dict[k] = []
+                    self.__expand_datakeys_recursive__(data_k, data_k_keys, level=level + 1, parent_key=parent_key_new, key_list=key_list, key_dict = key_dict[k], max_level=max_level)
                 elif isinstance(data_k, dict):
                     data_k_keys = data_k.keys()
                     parent_key_new = parent_key + strformat
-                    self.__expand_datakeys_recursive__(data_k, data_k_keys, level=level + 1, parent_key=parent_key_new, key_list=key_list, max_level=max_level)
+                    key_dict[k] = {}
+                    self.__expand_datakeys_recursive__(data_k, data_k_keys, level=level + 1, parent_key=parent_key_new, key_list=key_list, key_dict = key_dict[k], max_level=max_level)
                 elif isinstance(data_k, np.ndarray):
+                    logger.warning('Found an numpy array, this is not implemented yet')
                     pass
                 else: # This is not an iterative element anymore, lets use it
                     # Add index type of address if necessary only
                     if level > 0:
                         expanded_key = parent_key + strformat
                         key_list.append(expanded_key)
+                        key_dict[k] = (expanded_key,type(data[k]))
                     else:
                         key_list.append(k)
+                        key_dict[k] = (k,type(data[k]))
             else:
                 # Add index type of address if necessary only
                 if level > 0:
@@ -89,9 +97,12 @@ class Datapacket(dict):
                 else:
                     key_list.append(k)
 
-    def datakeys(self, expand=False):
+    def datakeys(self, expand=False, return_type='dict'):
         """
         Returns the datakeys of the redvypr dictionary
+        :param expand: True/False or level [int], if true return expanded datakeys with a level depth of 100
+        :param return_type: 'dict,'list','both'
+        :return:
         """
         keys = list(self.keys())
         for key_remove in redvypr_data_keys:
@@ -100,18 +111,25 @@ class Datapacket(dict):
             except:
                 pass
 
-        # Check if the datakey need to be expanded
+        # Check if the datakey needs to be expanded
         if expand == False:
             return keys
         else:
             keys_expand = []
-            if isinstance(expand,bool):
+            keys_dict_expand = {}
+            if isinstance(expand, bool):
                 max_level = 100
             else:
                 max_level = expand
 
-            self.__expand_datakeys_recursive__(self, keys, level=0, parent_key='', key_list=keys_expand, max_level=max_level)
-            return keys_expand
+            self.__expand_datakeys_recursive__(self, keys, level=0, parent_key='', key_list=keys_expand, key_dict=keys_dict_expand, max_level=max_level)
+
+            if return_type=='list':
+                return keys_expand
+            elif return_type=='dict':
+                return keys_dict_expand
+            else:
+                return (keys_expand, keys_dict_expand)
 
 
     def datastreams(self):
