@@ -1040,16 +1040,17 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
         try:
             #print('Datastream',self.datastream,type(self.datastream))
             daddr = redvypr.RedvyprAddress(self.datastream)
+            rdata = redvypr.data_packets.Datapacket(data)
         except:
             print('No datastream yet')
             daddr = None
 
         if daddr is not None:
-            if data in daddr:
+            if rdata in daddr:
                 #print('Got data to update')
-                data_tmp = data[daddr.datakey]
+                data_tmp = rdata[daddr.datakey]
                 self.data_buffer.append(data_tmp)
-                self.data_buffer_t.append(data['t'])
+                self.data_buffer_t.append(rdata['t'])
 
                 if len(self.data_buffer) > self.data_buffer_len:
                     self.data_buffer.pop(0)
@@ -2316,14 +2317,21 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     rdata = redvypr.data_packets.Datapacket(data)
                     # Try if we get data with the address
                     try:
-                        rdata[plot_widget.subscription_redvypr]
-                        logger.debug('Subscription fits!!!')
+                        datatest = rdata[plot_widget.subscription_redvypr]
+                        if (type(datatest) == int) or (type(datatest) == float):  # Check for valid datatype
+                            logger.debug(funcname + 'Valid data type ')
+                            valid_datatype = True
+                        else:
+                            logger.debug(funcname + 'Invalid data type ')
+                            valid_datatype = False
                         # create an address
                         datastream_fit = redvypr.RedvyprAddress(data, datakey=plot_widget.subscription_redvypr.datakey)
                         flag_fit = True
+                        logger.debug(funcname + 'Subscription fits')
                     except:
+                        logger.debug(funcname + 'Subscription failed',exc_info=True)
                         flag_fit = False
-                        pass
+
 
                     if flag_fit:
                         for indcaldata, caldata in enumerate(self.device.custom_config.calibrationdata):
@@ -2334,9 +2342,33 @@ class displayDeviceWidget(QtWidgets.QWidget):
                                 logger.debug(funcname + 'Already subscribed')
                                 break
 
-                    if flag_fit:
-                        pass
+                    if flag_fit and valid_datatype:
+                        datastream_fit_str = datastream_fit.get_str()
+                        logger.debug('Subscribing to address {}'.format(datastream_fit))
+                        keyinfo = self.device.get_metadata_datakey(datastream_fit_str)
+                        #print('Datakeyinfo', keyinfo)
+                        try:
+                            parameter = datastream_fit.datakey
+                        except:
+                            parameter = 'NA'
+                        try:
+                            sn = keyinfo[d]['sn']
+                        except:
+                            sn = ''
+                        try:
+                            unit = keyinfo[d]['unit']
+                        except:
+                            unit = 'NA'
+                        try:
+                            sensortype = keyinfo[d]['sensortype']
+                        except:
+                            sensortype = ''
+                        self.set_datastream(i, datastream_fit_str, sn=sn, unit=unit, sensortype=sensortype, parameter=parameter)
+                        self.device.deviceinitwidget.datastream_subscribed(i, datastream_fit_str)
+                        plot_widget.update_plot(data)
+
                     datakeys = redvypr.data_packets.Datapacket(data).datakeys()
+                    datakeys = []
                     for k in datakeys:
                         daddr = redvypr.RedvyprAddress(data, datakey=k)
                         d = daddr.get_str()
