@@ -137,7 +137,7 @@ class Device(RedvyprDevice):
         newsen = str(newsen)
         if sentype == 'datastream':
             logger.debug(funcname + ' Adding datastream')
-            sensor = sensor_data(mac=newsen, inputtype=sentype)
+            sensor = sensor_data(subscribe=newsen, inputtype=sentype)
             self.custom_config.calibrationdata.append(sensor)
             index = len(self.custom_config.calibrationdata) - 1
         else:
@@ -1307,6 +1307,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.butwidget = QtWidgets.QWidget()
         self.butlayout = QtWidgets.QHBoxLayout(self.butwidget)
         self.butlayout.addWidget(self.sensoradd)
+        self.butlayout.addWidget(self.sensorsadd)
         self.butlayout.addWidget(self.mansensoradd)
         self.butlayout.addWidget(QtWidgets.QLabel('Calibration Type'))
         self.butlayout.addWidget(self.caltype)
@@ -1443,6 +1444,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.updateDisplayWidget()
         self.device.subscribe_to_sensors()
 
+
+
     def chooseDatastream(self):
         funcname = __name__ + '.chooseDatastream():'
         logger.debug(funcname)
@@ -1495,10 +1498,38 @@ class initDeviceWidget(QtWidgets.QWidget):
         #self.device.config['manualsensors']
         self.updateDisplayWidget()
 
+
+    def sensorsAddClicked(self):
+        funcname = __name__ + '.sensorsAddClicked():'
+        logger.debug(funcname)
+        self.dstreamswidget = redvypr.gui.datastreamsWidget(self.device.redvypr)
+        self.dstreamswidget.apply.connect(self.sensorsApplyClicked)
+        self.dstreamswidget.show()
+
+    def sensorsApplyClicked(self,datastreamdict):
+        funcname = __name__ + '.sensorsApplyClicked():'
+        logger.debug(funcname)
+        # Adding all addresses
+        for addr in datastreamdict['addresses']:
+            newsen = addr.address_str
+            print('Adding',newsen)
+            self.device.add_sensor(newsen, 'datastream')
+
+        if len(datastreamdict['addresses'])>0:
+            layout = self.sensorsConfig_layout
+            while layout.count():
+                item = layout.takeAt(0)
+                #item.close()
+                widget = item.widget()
+                widget.deleteLater()
+
+            self.populateSensorInputWidgets()
+            self.updateDisplayWidget()
+
     def sensorAddClicked(self):
         funcname = __name__ + '.sensorAddClicked():'
         logger.debug(funcname)
-        layout = self.sensorsConfig_layout
+
         print('fsfs', self.device.custom_config)
 
         newsen = ''
@@ -1512,8 +1543,8 @@ class initDeviceWidget(QtWidgets.QWidget):
             print('Manual sensor')
             self.device.add_sensor(newsen, 'manual')
 
-        print('fsfs 2', self.device.custom_config)
-
+        #print('fsfs 2', self.device.custom_config)
+        layout = self.sensorsConfig_layout
         while layout.count():
             item = layout.takeAt(0)
             #item.close()
@@ -2277,11 +2308,34 @@ class displayDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.update():'
         logger.debug(funcname)
         try:
-            #print('Data',data)
-            for i,plot_widget in enumerate(self.plot_widgets):
+            print('Data',data)
+            for i, plot_widget in enumerate(self.plot_widgets):
                 #print('p',i,p.datastream,p.subscription_redvypr)
                 if plot_widget.datastream is None: # No datastream assigned yet, check if the data packet is worth subscription
-                    #print('subscribing ...')
+                    print('subscribing ...')
+                    rdata = redvypr.data_packets.Datapacket(data)
+                    # Try if we get data with the address
+                    try:
+                        rdata[plot_widget.subscription_redvypr]
+                        logger.debug('Subscription fits!!!')
+                        # create an address
+                        datastream_fit = redvypr.RedvyprAddress(data, datakey=plot_widget.subscription_redvypr.datakey)
+                        flag_fit = True
+                    except:
+                        flag_fit = False
+                        pass
+
+                    if flag_fit:
+                        for indcaldata, caldata in enumerate(self.device.custom_config.calibrationdata):
+                            datastream = caldata.datastream
+                            if datastream_fit == datastream:  # already subscribed
+                                ind = indcaldata
+                                flag_fit = False
+                                logger.debug(funcname + 'Already subscribed')
+                                break
+
+                    if flag_fit:
+                        pass
                     datakeys = redvypr.data_packets.Datapacket(data).datakeys()
                     for k in datakeys:
                         daddr = redvypr.RedvyprAddress(data, datakey=k)

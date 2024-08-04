@@ -408,6 +408,8 @@ class datastreamWidget(QtWidgets.QWidget):
         if(item.iskey): # If this is a datakey item
             addrtype = self.addrtype_combo.currentText()
             addrstring = item.datakey_address.get_str(addrtype)
+            print('Addresstype', addrtype)
+            print('Address',item.datakey_address)
             print('Addrstring',addrstring)
             print('Devstring', item.devaddress)
             self.addressline.setText(addrstring)
@@ -518,7 +520,12 @@ class datastreamWidget(QtWidgets.QWidget):
                 itmk.iskey = True
                 itmk.device = dev
                 itmk.devaddress = devaddress
+                print('Creating address with devaddress',devaddress)
+                #print('Creating address with devaddress parsed', devaddress.parsed_addrstr)
+                print('Creating address with datakey', addrstr)
                 itmk.datakey_address = RedvyprAddress(devaddress, datakey=addrstr)
+                print('Address',itmk.datakey_address)
+                print('Address parsed', itmk.datakey_address.parsed_addrstr)
                 if self.filterWidget.filter_on:
                     if itmk.datakey_address not in self.filterWidget.filter_address:
                         print('No filter match for ', itmk.datakey_address)
@@ -709,6 +716,10 @@ class datastreamsWidget(datastreamWidget):
 
         self.datastreamtable.setHorizontalHeaderLabels(['Address'])
         self.datastreamtable.resizeColumnsToContents()
+        if len(self.addresses_choosen)>0:
+            self.buttondone.setEnabled(True)
+        else:
+            self.buttondone.setEnabled(False)
 
     def rem_datastreams(self):
         funcname = __name__ + '.rem_datastreams():'

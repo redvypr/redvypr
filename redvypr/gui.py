@@ -9,7 +9,7 @@ from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.widgets.redvyprSubscribeWidget import redvyprSubscribeWidget
 #from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget, dictQTreeWidget
 from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
-from redvypr.widgets.redvypr_addressWidget import datastreamWidget
+from redvypr.widgets.redvypr_addressWidget import datastreamWidget, datastreamsWidget
 from redvypr.redvypr_address import RedvyprAddress
 import redvypr.files as files
 import redvypr.device as device
