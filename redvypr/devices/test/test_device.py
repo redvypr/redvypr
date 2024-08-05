@@ -82,6 +82,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         # Add complex data
         data = redvypr.data_packets.create_datadict(device='test_complex_data')
         data['data_list'] = [counter,data_sine,data_rand]
+        data['data_list_rand'] = [counter, counter + data_rand, 2 * counter + data_rand, -10 * counter + data_rand+ 3]
         data['data_ndarray_1d'] = np.zeros((5,)) + counter
         data['data_ndarray_2d'] = np.zeros((6,7)) + counter
         data['data_ndarray_2d_int'] = np.zeros((3,2),dtype=int) + int(counter)
