@@ -2562,7 +2562,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 #sensor_data['subscribe'] = ''
                 #sensor_data['datastream'] = ''
                 #sensor_data['comment'] = ''
+                item = QtWidgets.QTableWidgetItem(sdata.inputtype)
+                item.__calibrationdata__ = sdata
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                self.datatable.setItem(self.irowinput, col, item)
                 item = QtWidgets.QTableWidgetItem(sdata.parameter)
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
                 item.__calibrationdata__ = sdata
                 self.datatable.setItem(self.irowparameter, col, item)
                 item = QtWidgets.QTableWidgetItem(sdata.sn)
@@ -2574,9 +2579,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 item = QtWidgets.QTableWidgetItem(sdata.unit)
                 item.__calibrationdata__ = sdata
                 self.datatable.setItem(self.irowunit, col, item)
-                item = QtWidgets.QTableWidgetItem(sdata.inputtype)
-                item.__calibrationdata__ = sdata
-                self.datatable.setItem(self.irowinput, col, item)
+
                 #print('ndatarows',ndatarows)
                 for idata in range(ndatarows):
                     #print('isensor',isensor,'idata',idata)
