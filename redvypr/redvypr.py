@@ -257,9 +257,9 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         for addr in devicesub.subscribed_addresses: # Loop over all subscribed redvypr_addresses
                             # This is the main functionality for distribution, comparing a datapacket with a
                             # redvypr_address using "in"
-                            print('DAta',data)
-                            print('Addr', addr)
-                            print('DAta in add', data in addr)
+                            #print('DAta',data)
+                            #print('Addr', addr)
+                            #print('DAta in add', data in addr)
                             if (data in addr) and (numtag < 2): # Check if data packet fits with addr and if its not recirculated again
                                 try:
                                     print(funcname + 'data to be sent',data)

@@ -1,5 +1,6 @@
     -0.8.?  - datastreamsWidget implemented
             - bugs in RedvyprAddress with packetid defined or an update of datakey
+            - added polynomial fit to calibration.py and improved several small things
     -0.8.7  - introduced packetid in datapackets
             - Datapackets work now with Datapacket[RedvyprAddress]
             - bug fixes in serial device

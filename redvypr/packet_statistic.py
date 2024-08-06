@@ -160,7 +160,7 @@ def do_data_statistics(data, statdict, address_data = None):
     # Deeper check, data types and expanded data types
     rdata = data_packets.Datapacket(data)
     datakeys_expanded = rdata.datakeys(expand=True)
-    print('Datakeys expanded',datakeys_expanded)
+    #print('Datakeys expanded',datakeys_expanded)
     statdict['device_redvypr'][devicename_stat]['datakeys_expanded'].update(datakeys_expanded)
 
     return statdict

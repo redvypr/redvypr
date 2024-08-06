@@ -95,7 +95,7 @@ class RedvyprAddress():
             # Replace potentially given arguments
             #if any([addrstr, local_hostinfo, datakey, devicename, hostname, addr, uuid, publisher]):
             if any([packetid, publisher, local_hostinfo, datakey, devicename, hostname, addr, uuid, publisher]):
-                print('Replacing string with new stuff')
+                #print('Replacing string with new stuff')
                 (parsed_addrstr, parsed_addrstr_expand) = self.parse_addrstr(self.address_str)
                 if packetid is not None:
                     parsed_addrstr['packetid'] = packetid
@@ -375,12 +375,6 @@ class RedvyprAddress():
                         compareflag = False
             #self.compare
             #locpubflag = self.compare_address_substrings(self.uuid, datapacket['_redvypr']['host']['locpub'])
-            print('deviceflag', deviceflag)
-            print('packetidflag', packetidflag)
-            print('hostflag', deviceflag)
-            print('addrflag', addrflag)
-            print('uuidflag', uuidflag)
-            #print('uuidexpand', self.uuid,self.uuidexpand)
             # Loop over all datakeys in the packet
             if(len(self.datakey) > 0):
                 if self.datakey == '*': # always valid
@@ -392,13 +386,12 @@ class RedvyprAddress():
                 elif (self.datakey in datapacket.keys()): # Datakey (standard) in list of datakeys
                     pass
                 elif rtest.match(self.datakey): # check if key is of the form ['TAR'][0] with a regular expression
-                    print('square bracket')
                     try:
                         evalstr = 'datapacket' + self.datakey
                         data = eval(evalstr, None)
                         #print('data',data)
                     except:
-                        logger.debug('Eval comparison',exc_info=True)
+                        #logger.debug('Eval comparison {}'.format(evalstr),exc_info=True)
                         return False
 
                 else:  # If the key does not fit, return False
@@ -424,15 +417,6 @@ class RedvyprAddress():
             addrflag    = self.compare_address_substrings(self.addr, addr.addr)
             uuidflag    = self.compare_address_substrings(self.uuid, addr.uuid)
             pubflag = self.compare_address_substrings(self.publisher, addr.publisher)
-            #locpubflag = self.compare_address_substrings(self.local_publisher, addr.local_publisher)
-
-            # print('Datakeyflag',datakeyflag)
-            # print('Deviceflag',deviceflag)
-            # print('Hostflag',hostflag)
-            # print('addr',addrflag)
-            # print('uuidflag',uuidflag)
-            # print('localflag',localflag)
-
             matchflag3 = datakeyflag and packetidflag and deviceflag and hostflag and addrflag and uuidflag and pubflag
 
             return matchflag3  # 1 or matchflag2

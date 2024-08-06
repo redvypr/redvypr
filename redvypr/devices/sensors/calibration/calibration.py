@@ -28,7 +28,7 @@ import redvypr.gui
 import redvypr.data_packets
 from redvypr.devices.plot import XYplotWidget
 from redvypr.devices.plot import plot_widgets
-from .calibration_models import calibration_HF, calibration_NTC
+from .calibration_models import calibration_HF, calibration_NTC, calibration_poly
 
 _logo_file = redvypr_files.logo_file
 _icon_file = redvypr_files.icon_file
@@ -73,6 +73,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
     calibrationdata_time: typing.Optional[typing.List] = pydantic.Field(default=[])
     #calibration_coeffs: typing.Optional[typing.List] = pydantic.Field(default=[])
     calibrationtype: typing.Literal['polynom','ntc'] = pydantic.Field(default='polynom')
+    calibrationtype_extra: typing.Dict = pydantic.Field(default={})
     ind_ref_sensor: int = -1
     name_ref_sensor: str = ''
     dataformat: str = '{:.4f}'
@@ -307,12 +308,22 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
         tabtext = 'Polynom Calibration'
         # A widget for the calibration using a polynom
         self.device = self.parent().device
+        try:
+            degree = self.device.custom_config.calibrationtype_extra['poly_degree']
+        except:
+            degree = 2
+            self.device.custom_config.calibrationtype_extra['poly_degree'] = degree
+
         layout = QtWidgets.QVBoxLayout(self)
         self.calibration_poly = {}
         self.calibration_poly['widget'] = QtWidgets.QWidget()
         layout.addWidget(self.calibration_poly['widget'])
         self.calibration_poly['layout'] = QtWidgets.QFormLayout(self.calibration_poly['widget'])
-        self.calibration_poly['refcombo'] = QtWidgets.QComboBox()
+        self.calibration_poly['degree'] = QtWidgets.QSpinBox()
+        self.calibration_poly['degree'].setValue(degree)
+        self.calibration_poly['degree'].setMaximum(10)
+        self.calibration_poly['degree'].setMinimum(0)
+        self.calibration_poly['degree'].valueChanged.connect(self._poly_degree_changed)
         self.calibration_poly['plotbutton'] = QtWidgets.QPushButton('Plot')
         self.calibration_poly['plotbutton'].clicked.connect(self.plot_data)
         self.calibration_poly['calcbutton'] = QtWidgets.QPushButton('Calculate')
@@ -327,8 +338,9 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
             label.setStyleSheet("font-weight: bold")
             # label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
             label.setAlignment(QtCore.Qt.AlignCenter)
-            reflabel = QtWidgets.QLabel('Reference Sensor')
+            deglabel = QtWidgets.QLabel('Degree')
             self.calibration_poly['layout'].addRow(label)
+            self.calibration_poly['layout'].addRow(deglabel, self.calibration_poly['degree'])
             self.calibration_poly['layout'].addRow(self.calibration_poly['coefftable'])
             self.calibration_poly['layout'].addRow(self.calibration_poly['calcbutton'])
             self.calibration_poly['layout'].addRow(self.calibration_poly['plotbutton'])
@@ -336,7 +348,11 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
             # self.calibration_poly['layout'].setStretch(0, 1)
             # self.calibration_poly['layout'].setStretch(1, 10)
 
-
+    def _poly_degree_changed(self):
+        funcname = __name__ + '._poly_degree_changed():'
+        degree = self.calibration_poly['degree'].value()
+        logger.debug(funcname + 'Degree {}'.format(degree))
+        self.device.custom_config.calibrationtype_extra['poly_degree'] = degree
     def calc_poly_coeffs_clicked(self):
         """
         Calculate the coefficients
@@ -345,30 +361,27 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
         logger.debug(funcname)
         self.update_coefftable_poly()
 
-    def calc_poly_coeff(self, parameter, sdata, tdatetime, caldata, refdata):
+    def calc_poly_coeff(self, parameter, sdata, tdatetime, caldata, refdata, degree):
+        funcname = __name__ + '.calc_poly_coeff():'
+        logger.debug(funcname)
         cal_poly = calibration_poly(parameter = parameter, sn = sdata.sn, sensor_model = sdata.sensor_model)
         #cal_poly.parameter = sdata.parameter
         #cal_poly.sn = sdata.sn
         #cal_poly.sensor_model = sdata.sensor_model
         tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
         cal_poly.date = tdatas
-        R = np.asarray(caldata)
-        R = np.abs(R)
-        T = refdata
-        print('R', R)
-        print('T', T)
+        caldataa = np.asarray(caldata)
+        print('caldata', caldataa)
+        print('refdata', refdata)
         # And finally the fit
-        TOFF = 273.15
-        fitdata = fit_poly(T, R, TOFF)
-        P_R = fitdata['P_R']
-        cal_POLY.coeff = P_R.tolist()
-        print('P_R', P_R)
+        fitdata = np.polyfit(refdata,caldataa,degree)
+        cal_poly.coeff = fitdata.tolist()
         # T_test = calc_poly(R, P_R, TOFF)
-        T_test = calc_POLY(cal_POLY, R)
+        #T_test = calc_POLY(cal_POLY, R)
         # Calculate Ntest values between min and max
-        Ntest = 100
-        Rtest = np.linspace(min(R), max(R), Ntest)
-        T_Ntest = calc_POLY(cal_POLY, Rtest)
+        #Ntest = 100
+        #Rtest = np.linspace(min(R), max(R), Ntest)
+        #T_Ntest = calc_POLY(cal_POLY, Rtest)
 
         # caldata = np.asarray(self.device.config.calibrationdata[i].data) * 1000  # V to mV
         # print('Caldata', caldata)
@@ -376,9 +389,9 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
         # ratio = np.asarray(refdata) / np.asarray(caldata)
         # cal_POLY.coeff = float(ratio.mean())
         # cal_POLY.coeff_std = float(ratio.std())
-        print('Cal POLY', cal_POLY)
+        print('Cal POLY', cal_poly)
 
-        return cal_POLY
+        return cal_poly
 
     def calc_poly_coeffs(self):
         funcname = __name__ + '.calc_poly_coeffs():'
@@ -396,9 +409,10 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
             tdatetime = datetime.datetime.utcfromtimestamp(tdata)
             tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
             calibrations = []
+            degree = self.device.custom_config.calibrationtype_extra['poly_degree']
             for i, sdata in enumerate(self.device.custom_config.calibrationdata):
                 if i == refindex:
-                    cal_POLY = calibration_POLY()
+                    cal_POLY = calibration_poly()
                     cal_POLY.parameter = sdata.parameter
                     cal_POLY.sn = sdata.sn
                     cal_POLY.date = tdatas
@@ -413,14 +427,14 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
                         if len(calshape) == 1:
                             print('Normal array')
                             parameter = sdata.parameter
-                            cal_POLY = self.calc_poly_coeff(parameter, sdata, tdatetime, caldata, refdata)
+                            cal_POLY = self.calc_poly_coeff(parameter, sdata, tdatetime, caldata, refdata, degree)
                             calibrations.append(cal_POLY)
                         elif len(calshape) == 2:
                             print('Array of sensors')
                             cal_POLYs = []
                             for isub in range(calshape[1]):
                                 parameter = sdata.parameter + '[{}]'.format(isub)
-                                cal_POLYs.append(self.calc_poly_coeff(parameter, sdata, tdatetime, caldata[:,isub], refdata))
+                                cal_POLYs.append(self.calc_poly_coeff(parameter, sdata, tdatetime, caldata[:,isub], refdata, degree))
 
                             calibrations.append(cal_POLYs)
                         else:
@@ -1372,6 +1386,7 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
         self.data_buffer = []
         self.data_buffer_t = []
         self.data_buffer_len = 2000
+        self.headerlabel = None
 
     def get_data(self, t_intervall):
         # Relative data
@@ -1406,10 +1421,12 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
 
         try:
             #print('Datastream',self.datastream,type(self.datastream))
+            # self.datastream is defined in the displayWidget
             daddr = redvypr.RedvyprAddress(self.datastream)
+            dindex = self.sensorindex
             rdata = redvypr.data_packets.Datapacket(data)
         except:
-            print('No datastream yet')
+            logger.info('No datastream yet ',exc_info=True)
             daddr = None
 
         if daddr is not None:
@@ -1439,6 +1456,12 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
 
                 #print('len data buffer', self.data_buffer_t)
                 self.resizeColumnsToContents()
+                if self.headerlabel is None:
+                    hlabel = "{}:".format(dindex) + daddr.get_str('/k')
+                    self.setHorizontalHeaderLabels([hlabel])
+                    self.setVerticalHeaderLabels([])
+                    self.resizeColumnsToContents()
+                    #self.headerlabel = hlabel
 
 
 
@@ -2208,7 +2231,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
             self.update_datatable()
 
-
     def addBlankCalibrationData(self):
         """
         Adds a blank calibrationdata to the datatable
@@ -2224,8 +2246,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
         else:
             logger.warning(funcname + ' No sensors defined')
             return None
-
-
 
     def order_tabs(self):
         funcname = '.order_tabs():'
@@ -2244,7 +2264,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def create_calibration_widget(self):
         """
-        Creates a calibration widget that uses the averaged data in the datatable to calculate coeffecients
+        Creates a calibration widget that uses the averaged data in the datatable to calculate coefficients
         """
         funcname = __name__ + '.create_calibration_widget():'
         logger.debug(funcname)
@@ -2285,9 +2305,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.tabwidget.setTabText(index, tabtext)
         self.order_tabs()
 
-
-
-
     def calibdata_to_dict(self):
         funcname = __name__ + '.calibdata_to_dict():'
         logger.debug(funcname)
@@ -2315,6 +2332,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
 
     def add_plots(self):
+        """
+        Add the realtimedata plots/tables
+        :return:
+        """
         funcname = __name__ + '.add_plots():'
         logger.debug(funcname)
         # Clear "old" plots
@@ -2364,7 +2385,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 plot_widget.subscription_redvypr = redvypr.RedvyprAddress(
                     str(sdata.subscribe))  # Original subscription
 
-                # Check if there is already an subscription
+                # Check if there is already a subscription
                 if len(sdata.datastream) > 0:
                     plot_widget.datastream = sdata.datastream  # Datastream to be plotted
                     self.set_datastream(i, sdata.datastream, sn=sdata.sn, unit=sdata.unit, sensortype=sdata.sensor_model, parameter=sdata.parameter)
@@ -2454,16 +2475,40 @@ class displayDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '__datatable_item_changed__():'
         logger.debug(funcname)
         print(item)
-        try:
-            data = float(item.text())
-        except Exception as e:
-            print(e)
-            data = item.text()
+        #item = QtWidgets.QTableWidgetItem(sdata.sn)
+        #self.datatable.setItem(self.irowmac_sn, col, item)
+        #item = QtWidgets.QTableWidgetItem(sdata.sensor_model)
+        #self.datatable.setItem(self.irowsenstype, col, item)
+        #item = QtWidgets.QTableWidgetItem(sdata.unit)
+        #self.datatable.setItem(self.irowunit, col, item)
+        #item = QtWidgets.QTableWidgetItem(sdata.inputtype)
+        #self.datatable.setItem(self.irowinput, col, item)
+        row = self.datatable.row(item)
+        # Check if there is metadata to be changed
+        if row == self.irowmac_sn:
+            newsn = item.text()
+            logger.debug(funcname + 'Changing SN to:{}'.format(newsn))
+            item.__calibrationdata__.sn = newsn
+        elif row == self.irowunit:
+            newunit = item.text()
+            logger.debug(funcname + 'Changing unit to:{}'.format(newunit))
+            item.__calibrationdata__.unit = newunit
+        elif row == self.irowsenstype:
+            newmodel = item.text()
+            logger.debug(funcname + 'Changing unit to:{}'.format(newmodel))
+            item.__calibrationdata__.sensor_model = newmodel
+        else: # Or the data itself
+            try:
+                data = float(item.text())
+            except:
+                logger.debug(funcname + 'Could not change data',exc_info=True)
+                data = item.text()
 
-        try:
-            item.__parent__[item.__dindex__] = data
-        except Exception as e:
-            print(e)
+            # Add the data
+            try:
+                item.__parent__[item.__dindex__] = data
+            except:
+                logger.debug(funcname + 'Could not change data', exc_info=True)
 
 
     def update_datatable(self):
@@ -2509,7 +2554,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         if True:
             for isensor,sdata in enumerate(self.device.custom_config.calibrationdata):
                 col += 1
-                print('sensor sdata:',isensor,sdata)
+                #print('sensor sdata:',isensor,sdata)
                 # Add all the metainformation
                 #sensor_data['mac'] = ''
                 #sensor_data['unit'] = ''
@@ -2518,20 +2563,25 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 #sensor_data['datastream'] = ''
                 #sensor_data['comment'] = ''
                 item = QtWidgets.QTableWidgetItem(sdata.parameter)
+                item.__calibrationdata__ = sdata
                 self.datatable.setItem(self.irowparameter, col, item)
                 item = QtWidgets.QTableWidgetItem(sdata.sn)
+                item.__calibrationdata__ = sdata
                 self.datatable.setItem(self.irowmac_sn, col, item)
                 item = QtWidgets.QTableWidgetItem(sdata.sensor_model)
+                item.__calibrationdata__ = sdata
                 self.datatable.setItem(self.irowsenstype, col, item)
                 item = QtWidgets.QTableWidgetItem(sdata.unit)
+                item.__calibrationdata__ = sdata
                 self.datatable.setItem(self.irowunit, col, item)
                 item = QtWidgets.QTableWidgetItem(sdata.inputtype)
+                item.__calibrationdata__ = sdata
                 self.datatable.setItem(self.irowinput, col, item)
-                print('ndatarows',ndatarows)
+                #print('ndatarows',ndatarows)
                 for idata in range(ndatarows):
-                    print('isensor',isensor,'idata',idata)
+                    #print('isensor',isensor,'idata',idata)
                     itemdata = sdata.data[idata]
-                    print('Data',itemdata)
+                    #print('Data',itemdata)
                     if type(itemdata) == float:
                         try:
                             itemdatastr = "{:f}".format(itemdata)
@@ -2545,10 +2595,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
                         itemdatastr = 'NaN'
                     #sdata['time_data'][idata]
                     item = QtWidgets.QTableWidgetItem(itemdatastr)
+                    item.__calibrationdata__ = sdata
                     self.datatable.setItem(self.irowdatastart + idata, col, item)
                     if sdata.inputtype == 'manual':
                         item.__parent__ = sdata.data
                         item.__dindex__  = idata
+
 
 
         self.datatable.resizeColumnsToContents()

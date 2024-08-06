@@ -3,8 +3,6 @@
 test device
 
 """
-
-
 import datetime
 import logging
 import queue
@@ -19,7 +17,6 @@ from redvypr.device import RedvyprDeviceCustomConfig, RedvyprDevice
 import redvypr.data_packets
 from redvypr.data_packets import check_for_command
 import pydantic
-
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('test_device')
@@ -48,7 +45,6 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     metadata = {'description':'sinus with random data', 'mac':'ABCDEF1234'}
     datapacket_info = redvypr.data_packets.add_metadata2datapacket(datapacket_info, datakey='sine_rand', metadict=metadata)
     dataqueue.put(datapacket_info)
-
     i = 0
     counter = 0
     while True:
@@ -65,9 +61,8 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
 
         data = redvypr.data_packets.create_datadict(device = device_info['device'])
         data['data'] = float(np.random.rand(1)-0.5)
-        data['sometext'] = 'Hallo {}'.format(counter)
+        data['sometext'] = 'Hello {}'.format(counter)
         dataqueue.put(data)
-
         # Calculate some sine
         data_rand = float(np.random.rand(1) - 0.5)
         data_rand_2 = float(np.random.rand(1) - 0.5)
@@ -78,16 +73,14 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         counter += 1
         time.sleep(config['delay_s'])
         #print('Hallo')
-
         # Add complex data
         data = redvypr.data_packets.create_datadict(device='test_complex_data')
         data['data_list'] = [counter,data_sine,data_rand]
-        data['data_list_rand'] = [counter, counter + data_rand, 2 * counter + data_rand, -10 * counter + data_rand+ 3]
+        data['data_list_poly'] = [counter, counter + data_rand, 2 * counter + data_rand, -10 * counter + data_rand+ 3, 0.1 * counter**2 + 2 * counter + data_rand+ 3]
         data['data_ndarray_1d'] = np.zeros((5,)) + counter
         data['data_ndarray_2d'] = np.zeros((6,7)) + counter
         data['data_ndarray_2d_int'] = np.zeros((3,2),dtype=int) + int(counter)
         dataqueue.put(data)
-
         # Put some pathological data into the queue
         dataqueue.put(None)
         
