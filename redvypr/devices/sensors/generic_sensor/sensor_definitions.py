@@ -122,6 +122,10 @@ class BinarySensor(Sensor):
             binary_data = self.__rdatastream__.get_data(data)
             print('Binary data', binary_data)
             data_packets = self.binary_process(binary_data)
+            for data_packet in data_packets:
+                if 't' not in data_packet.keys():
+                    data_packet['t'] = data['t']
+
             return data_packets
 
     def binary_process(self, binary_stream):

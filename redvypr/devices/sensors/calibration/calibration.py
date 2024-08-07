@@ -82,6 +82,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
     calibration_comment: str = ''
     calibration_file_structure: str = pydantic.Field(default='{SENSOR_MODEL}_{SN}_{PARAMETER}_{CALDATE}.yaml')
     calibration_directory_structure: str = pydantic.Field(default='{SENSOR_MODEL}/{SN}/{PARAMETER}/')
+    gui_realtimedata_ncols: int = 3
 
 class Device(RedvyprDevice):
     """
@@ -1455,12 +1456,15 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
                     self.setItem(0, 0, item)
 
                 #print('len data buffer', self.data_buffer_t)
-                self.resizeColumnsToContents()
+                #self.resizeColumnsToContents()
+                ncols = self.rowCount()
+                header = self.horizontalHeader()
+                header.setSectionResizeMode(ncols-1, QtWidgets.QHeaderView.Stretch)
                 if self.headerlabel is None:
                     hlabel = "{}:".format(dindex) + daddr.get_str('/k')
                     self.setHorizontalHeaderLabels([hlabel])
                     self.setVerticalHeaderLabels([])
-                    self.resizeColumnsToContents()
+                    #self.resizeColumnsToContents()
                     #self.headerlabel = hlabel
 
 
@@ -1703,15 +1707,23 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.butlayout.addWidget(self.mansensoradd)
         self.butlayout.addWidget(QtWidgets.QLabel('Calibration Type'))
         self.butlayout.addWidget(self.caltype)
+        # Sensorswidget with scrollarea
         self.sensorsConfig_datastream = QtWidgets.QWidget()
+        self.sensorsConfig_datastream_scroll = QtWidgets.QScrollArea()
+        self.sensorsConfig_datastream_scroll.setWidgetResizable(True)
+        self.sensorsConfig_datastream_scroll.setWidget(self.sensorsConfig_datastream)
+        # The layout for the individual sensors
         self.sensorsConfig_datastream_layout = QtWidgets.QGridLayout(self.sensorsConfig_datastream)
         self.sensorsConfig_manual = QtWidgets.QWidget()
         self.sensorsConfig_manual_layout = QtWidgets.QGridLayout(self.sensorsConfig_manual)
+        self.sensorsConfig_manual_scroll = QtWidgets.QScrollArea()
+        self.sensorsConfig_manual_scroll.setWidgetResizable(True)
+        self.sensorsConfig_manual_scroll.setWidget(self.sensorsConfig_manual)
         self.sensorsConfig_layout.addWidget(self.butwidget)
         self.sensorsConfig_layout.addWidget(QtWidgets.QLabel('Datastreams'))
-        self.sensorsConfig_layout.addWidget(self.sensorsConfig_datastream)
+        self.sensorsConfig_layout.addWidget(self.sensorsConfig_datastream_scroll)
         self.sensorsConfig_layout.addWidget(QtWidgets.QLabel('Manual sensors'))
-        self.sensorsConfig_layout.addWidget(self.sensorsConfig_manual)
+        self.sensorsConfig_layout.addWidget(self.sensorsConfig_manual_scroll)
         ref_group=QtWidgets.QButtonGroup() # Number group
         nsensors = 0
         sensors = []
@@ -2108,9 +2120,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.remLineButton.clicked.connect(self.remCalibrationData)
         #self.loadcalibbutton = QtWidgets.QPushButton('Load Calibration')
         #self.loadcalibbutton.clicked.connect(self.load_calibration)
-
+        # The widget the realtime data is shown
         self.plot_widgets_parent = QtWidgets.QWidget()
         self.plot_widgets_parent_layout = QtWidgets.QGridLayout(self.plot_widgets_parent)
+        # Add a scroll area, to deal with a lot of data
+        self.plot_widgets_parent_scroll = QtWidgets.QScrollArea()
+        self.plot_widgets_parent_scroll.setWidget(self.plot_widgets_parent)
+        self.plot_widgets_parent_scroll.setWidgetResizable(True)
         self.add_plots()
 
         self.addintervall_time = QtWidgets.QDoubleSpinBox()
@@ -2124,7 +2140,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.clearbuffer_button = QtWidgets.QPushButton('Clear buffer')
         self.clearbuffer_button.clicked.connect(self.clear_buffer)
 
-        self.layout.addWidget(self.plot_widgets_parent,0,0,1,2)
+        self.layout.addWidget(self.plot_widgets_parent_scroll,0,0,1,2)
         self.layout.addWidget(self.addintervall_time, 1, 0)
         self.layout.addWidget(self.addintervall_combo, 1, 1)
         self.layout.addWidget(self.addintervall_button, 1, 2,1,2)
@@ -2342,6 +2358,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
         for p in self.plot_widgets:
             p.close()
 
+        #try:
+        #    self.plot_widgets_parent_layout.removeItem(self.realtimedata_vertical_spacer)
+        #except:
+        #    pass
+
         # Re-Initialize plot_widgets
         self.plot_widgets = []
         #self.datastreams = []  # List of all datastreams
@@ -2352,7 +2373,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.allsensornames = []
         nwidgets = 0
         ioff = 1
-        nrows = 3
         nrow = 0
         ncol = 0
         for i, sdata in enumerate(self.device.custom_config.calibrationdata):
@@ -2394,10 +2414,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
                 # Add the widget to the parent widget
                 self.plot_widgets_parent_layout.addWidget(plot_widget, nrow, ncol)
-                nrow += 1
-                if nrow >= nrows:
-                    nrow = 0
-                    ncol += 1
+                ncol += 1
+                if ncol >= self.device.custom_config.gui_realtimedata_ncols:
+                    ncol = 0
+                    nrow += 1
                 nwidgets += 1
             # Manualdata
             else:
@@ -2408,7 +2428,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 self.manualsensorcolsindex.append(i + ioff)
                 self.allsensornames.append(str(sdata.sn))
 
-
+        #self.realtimedata_vertical_spacer = QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        #self.plot_widgets_parent_layout.addItem(self.realtimedata_vertical_spacer, nrow+1, 0)
         # Update the name of the reference sensor
         try:
             self.device.custom_config.name_ref_sensor = self.allsensornames[self.device.custom_config.ind_ref_sensor]
@@ -2747,11 +2768,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     # Try if we get data with the address
                     try:
                         datatest = rdata[plot_widget.subscription_redvypr]
-                        if (type(datatest) == int) or (type(datatest) == float):  # Check for valid datatype
+                        if isinstance(datatest, int) or isinstance(datatest, float):  # Check for valid datatype
                             logger.debug(funcname + 'Valid data type ')
                             valid_datatype = True
                         else:
-                            logger.debug(funcname + 'Invalid data type ')
+                            logger.debug(funcname + 'Invalid data type: {}'.format(type(datatest)))
                             valid_datatype = False
                         # create an address
                         datastream_fit = redvypr.RedvyprAddress(data, datakey=plot_widget.subscription_redvypr.datakey)

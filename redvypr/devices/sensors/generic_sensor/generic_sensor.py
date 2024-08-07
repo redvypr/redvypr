@@ -465,7 +465,8 @@ class SensorWidget(QtWidgets.QWidget):
         if data in self.sensor_address:
             #print(funcname + ' Datapacket fits, Processing data')
             rdata = redvypr.data_packets.Datapacket(data)
-            keys = rdata.datakeys(expand=True)
+            keys = rdata.datakeys(expand=True, return_type='list')
+            print('Keys',keys)
             if '_keyinfo' in data.keys():
                 logger.debug('Updating keyinfo')
                 # This should be done with device.get_metadata
@@ -474,7 +475,7 @@ class SensorWidget(QtWidgets.QWidget):
                         unit = data['_keyinfo'][k]['unit']
                         self.datakey_units[k] = unit
 
-
+            print('keys',keys)
             if 't' in keys:
                 self.packets_for_me += 1
                 t = keys.remove('t')
