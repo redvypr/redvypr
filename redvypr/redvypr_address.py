@@ -139,6 +139,8 @@ class RedvyprAddress():
         # Add the attributes to the object
         self.datakey = parsed_addrstr['datakey']
         self.datakeyexpand = parsed_addrstr_expand['datakeyexpand']
+        self.datakeyeval = parsed_addrstr_expand['datakeyeval']
+
 
         self.packetid = parsed_addrstr['packetid']
         self.packetidexpand = parsed_addrstr_expand['packetidexpand']
@@ -278,6 +280,11 @@ class RedvyprAddress():
                 parsed_addrstr_expand[addr_idexpand] = True
             else:
                 parsed_addrstr_expand[addr_idexpand] = False
+
+        if parsed_addrstr['datakey'].startswith('[') and parsed_addrstr['datakey'].endswith(']'):
+            parsed_addrstr_expand['datakeyeval'] = True
+        else:
+            parsed_addrstr_expand['datakeyeval'] = False
 
         #print(parsed_addrstr)
         return (parsed_addrstr,parsed_addrstr_expand)

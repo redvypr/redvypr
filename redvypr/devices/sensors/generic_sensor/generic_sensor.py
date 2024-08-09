@@ -417,7 +417,6 @@ class SensorWidget(QtWidgets.QWidget):
     def __init__(self, *args, sensor=None, redvypr_device=None, **kwargs):
         funcname = __name__ + '__init__():'
         #logger.debug(funcname)
-        print('fds',kwargs,type(kwargs))
         self.packets_received = 0
         self.packets_for_me = 0
         self.packets_for_me_old = 0
@@ -458,7 +457,7 @@ class SensorWidget(QtWidgets.QWidget):
         self.sender().__xyplot__.show()
 
 
-    def update_data(self,data):
+    def update_data(self, data):
         funcname = __name__ + '.update_data():'
         logger.debug(funcname + 'Got data for sensor {}'.format(self.sensor.name))
         #print('Data:',data)
@@ -466,16 +465,24 @@ class SensorWidget(QtWidgets.QWidget):
             #print(funcname + ' Datapacket fits, Processing data')
             rdata = redvypr.data_packets.Datapacket(data)
             keys = rdata.datakeys(expand=True, return_type='list')
-            print('Keys',keys)
-            if '_keyinfo' in data.keys():
+            # Updating the metadata
+            if True: # TODO, this should be done based on a signal notifying that the metadata has changed
                 logger.debug('Updating keyinfo')
                 # This should be done with device.get_metadata
-                for k in data['_keyinfo'].keys():
-                    if 'unit' in data['_keyinfo'][k]:
-                        unit = data['_keyinfo'][k]['unit']
-                        self.datakey_units[k] = unit
+                #for k in data['_keyinfo'].keys():
+                for k in keys:
+                    try:
+                        self.datakey_units[k]
+                    except:
+                        logger.debug(funcname + 'Trying to get metadata for address')
+                        raddr_tmp = RedvyprAddress(data,datakey=k)
+                        metadata = self.device.get_metadata_datakey(raddr_tmp)
+                        print('MetaDATA', metadata)
+                        try:
+                            self.datakey_units[k] = metadata['unit']
+                        except:
+                            self.datakey_units[k] = None
 
-            print('keys',keys)
             if 't' in keys:
                 self.packets_for_me += 1
                 t = keys.remove('t')

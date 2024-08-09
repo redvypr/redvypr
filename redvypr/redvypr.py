@@ -420,6 +420,43 @@ class Redvypr(QtCore.QObject):
         return config
 
 
+    def get_devicemodulename_from_str(self, devicename):
+        """
+        Tries to find a devicemodulename from devicename
+        :param devicename:
+        :return:
+        """
+        devicemodulename = None
+        funcname = __name__ + '.get_devicemodulename_from_str():'
+        # Make an exact test first
+        for smod in self.redvypr_device_scan.redvypr_devices_flat:
+            # print('device:',smod['name'],device['devicemodulename'])
+            # The smod['name'] looks like 'redvypr.devices.network.zeromq_device'
+            # Check first if devicemodulename has a '.', if not, use split smod['name'] and use the last one
+            if '.' in devicename:
+                if (devicename == smod['name']):
+                    FLAG_DEVICEMODULENAME_EXACT = True
+                    break
+            else:
+                smodname = smod['name'].split('.')[-1]
+                # print('smodname',smodname)
+                if (devicename == smodname):
+                    logger.debug(funcname + ' Found exact fit {}'.format(devicename))
+                    FLAG_DEVICEMODULENAME_EXACT = True
+                    # device.devicemodulename_orig = device.devicemodulename
+                    devicemodulename = smod['name']
+                    break
+
+        # Make a test if the string is within the devicemodulename
+        if FLAG_DEVICEMODULENAME_EXACT == False:
+            logger.debug(funcname + ' Could not add exact fit, searching for substrings')
+            for smod in self.redvypr_device_scan.redvypr_devices_flat:
+                if (devicename in smod['name']):  # This is a weaker test, can be potentially replaced by regex
+                    # device.devicemodulename_orig = device.devicemodulename
+                    devicemodulename = smod['name']
+                    break
+
+        return devicemodulename
 
     def add_devices_from_config(self, config):
         funcname = "add_devices_from_config():"
@@ -460,37 +497,48 @@ class Redvypr(QtCore.QObject):
                     device_config = device.custom_config
                     # The base configuration, same for all devices
                     base_config = device.base_config
-                    # Check if the devicemodulename kind of fits
-                    FLAG_DEVICEMODULENAME_EXACT = False
-                    # Make an exact test first
-                    for smod in self.redvypr_device_scan.redvypr_devices_flat:
-                        # print('device:',smod['name'],device['devicemodulename'])
-                        # The smod['name'] looks like 'redvypr.devices.network.zeromq_device'
-                        # Check first if devicemodulename has a '.', if not, use split smod['name'] and use the last one
-                        if '.' in device.devicemodulename:
-                            if (device.devicemodulename == smod['name']):
-                                FLAG_DEVICEMODULENAME_EXACT = True
-                                break
-                        else:
-                            smodname = smod['name'].split('.')[-1]
-                            # print('smodname',smodname)
-                            if (device.devicemodulename == smodname):
-                                FLAG_DEVICEMODULENAME_EXACT = True
-                                #device.devicemodulename_orig = device.devicemodulename
-                                device.devicemodulename = smod['name']
-                                break
+                    devicename = device.devicemodulename
+                    devicemodulename = self.get_devicemodulename_from_str(devicename)
+                    if devicemodulename is not None:
+                        device.devicemodulename = devicemodulename
+                        logger.info(funcname + 'Adding device {}'.format(device.devicemodulename))
+                        subscriptions = device.subscriptions
+                        dev_added = self.add_device(devicemodulename=device.devicemodulename,
+                                                    custom_config=device_config,
+                                                    base_config=base_config, subscriptions=subscriptions)
 
-                    # Make a test if the string is within the devicemodulename
-                    if FLAG_DEVICEMODULENAME_EXACT == False:
+                    if False: # TODO: to be removed soon
+                        # Check if the devicemodulename kind of fits
+                        FLAG_DEVICEMODULENAME_EXACT = False
+                        # Make an exact test first
                         for smod in self.redvypr_device_scan.redvypr_devices_flat:
-                            if (device.devicemodulename in smod['name']):  # This is a weaker test, can be potentially replaced by regex
-                                #device.devicemodulename_orig = device.devicemodulename
-                                device.devicemodulename = smod['name']
+                            # print('device:',smod['name'],device['devicemodulename'])
+                            # The smod['name'] looks like 'redvypr.devices.network.zeromq_device'
+                            # Check first if devicemodulename has a '.', if not, use split smod['name'] and use the last one
+                            if '.' in device.devicemodulename:
+                                if (device.devicemodulename == smod['name']):
+                                    FLAG_DEVICEMODULENAME_EXACT = True
+                                    break
+                            else:
+                                smodname = smod['name'].split('.')[-1]
+                                # print('smodname',smodname)
+                                if (device.devicemodulename == smodname):
+                                    FLAG_DEVICEMODULENAME_EXACT = True
+                                    #device.devicemodulename_orig = device.devicemodulename
+                                    device.devicemodulename = smod['name']
+                                    break
 
-                    logger.info(funcname + 'Adding device {}'.format(device.devicemodulename))
-                    subscriptions = device.subscriptions
-                    dev_added = self.add_device(devicemodulename=device.devicemodulename, custom_config=device_config,
-                                                base_config=base_config, subscriptions=subscriptions)
+                        # Make a test if the string is within the devicemodulename
+                        if FLAG_DEVICEMODULENAME_EXACT == False:
+                            for smod in self.redvypr_device_scan.redvypr_devices_flat:
+                                if (device.devicemodulename in smod['name']):  # This is a weaker test, can be potentially replaced by regex
+                                    #device.devicemodulename_orig = device.devicemodulename
+                                    device.devicemodulename = smod['name']
+
+                        logger.info(funcname + 'Adding device {}'.format(device.devicemodulename))
+                        subscriptions = device.subscriptions
+                        dev_added = self.add_device(devicemodulename=device.devicemodulename, custom_config=device_config,
+                                                    base_config=base_config, subscriptions=subscriptions)
 
         # Emit a signal that the configuration has been changed
         self.hostconfig_changed_signal.emit()

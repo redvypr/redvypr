@@ -40,11 +40,12 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     #data = {'_keyinfo':config['_keyinfo']}
     # dataqueue.put(data)
     # Send a datapacket with information once (that will be put into the statistics)
-    datapacket_info = redvypr.data_packets.add_metadata2datapacket(datapacket={}, datakey='sine_rand', metadata='random unit')
+    datapacket_info = redvypr.data_packets.add_metadata2datapacket(datapacket={}, datakey='sine_rand', metadata={'unit':'random unit'})
     # Metadata can also be given as a dict
     metadata = {'description':'sinus with random data', 'mac':'ABCDEF1234'}
     datapacket_info = redvypr.data_packets.add_metadata2datapacket(datapacket_info, datakey='sine_rand', metadict=metadata)
     dataqueue.put(datapacket_info)
+
     i = 0
     counter = 0
     while True:
@@ -70,19 +71,30 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         A_sin = 10  # Amplitude
         data_sine = float(A_sin * np.sin(f_sin * time.time()))
         dataqueue.put({'sine_rand': data_rand + data_sine,'count': counter,'sine': data_sine})
-        counter += 1
+
         time.sleep(config['delay_s'])
         #print('Hallo')
         # Add complex data
         data = redvypr.data_packets.create_datadict(device='test_complex_data')
+        if counter == 0:
+            # Add metadata
+            metadata = {'description': 'Counter and polynomial functions of counter', 'unit': 'grigra'}
+            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_list_poly',
+                                                                           metadict=metadata)
+
+            metadata = {'temp':{'description': 'Temperature', 'unit': 'degC'},'pressure':{'unit':'Pa'}}
+            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_dict_list',
+                                                                metadict=metadata)
         data['data_list'] = [counter,data_sine,data_rand]
         data['data_list_poly'] = [counter, counter + data_rand, 2 * counter + data_rand, -10 * counter + data_rand+ 3, 0.1 * counter**2 + 2 * counter + data_rand+ 3]
+        data['data_dict_list'] = {'temp':[data_rand, 2*data_rand-10],'pressure':10+data_rand}
         data['data_ndarray_1d'] = np.zeros((5,)) + counter
         data['data_ndarray_2d'] = np.zeros((6,7)) + counter
         data['data_ndarray_2d_int'] = np.zeros((3,2),dtype=int) + int(counter)
         dataqueue.put(data)
         # Put some pathological data into the queue
         dataqueue.put(None)
+        counter += 1
         
 
 
