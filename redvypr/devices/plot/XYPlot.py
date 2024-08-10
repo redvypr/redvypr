@@ -72,5 +72,5 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def update(self, data):
         funcname = __name__ + '.update():'
-        print(funcname)
+        #print(funcname)
         self.xyplot.update_plot(data)

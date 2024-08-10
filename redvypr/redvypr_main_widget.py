@@ -277,7 +277,7 @@ class redvyprWidget(QtWidgets.QWidget):
         all the gui functionality to the device
 
         """
-        funcname = __name__ + '._add_device_gui()'
+        funcname = __name__ + '._add_device_gui():'
         logger.debug(funcname)
         devicedict = devicelist[0]
         ind_devices = devicelist[1]
@@ -292,23 +292,23 @@ class redvyprWidget(QtWidgets.QWidget):
         try:
             deviceinitwidget_bare = devicemodule.initDeviceWidget
         except Exception as e:
-            logger.debug(funcname + ': Widget does not have a deviceinitwidget using standard one:' + str(e))
+            logger.debug(funcname + 'Widget does not have a deviceinitwidget using standard one:' + str(e))
             # logger.exception(e)
             deviceinitwidget_bare = redvypr_deviceInitWidget  # Use a standard widget
 
         try:
             deviceinitwidget = deviceinitwidget_bare(device)
         except Exception as e:
-            logger.warning(funcname + ': Could not add deviceinitwidget because of:')
+            logger.warning(funcname + 'Could not add deviceinitwidget because of:')
             logger.exception(e)
             deviceinitwidget = QtWidgets.QWidget()  # Use a standard widget
 
         # Connect the connect signal with connect_device()
         try:
-            logger.debug(funcname + ': Connect signal connected')
+            logger.debug(funcname + 'Connect signal connected')
             deviceinitwidget.connect.connect(self.connect_device)
         except Exception as e:
-            logger.debug('Widget does not have connect signal:' + str(e))
+            logger.debug(funcname + 'Widget does not have connect signal:' + str(e))
 
         device.deviceinitwidget = deviceinitwidget
         #
@@ -318,7 +318,7 @@ class redvyprWidget(QtWidgets.QWidget):
         try:
             devicedisplaywidget = devicemodule.displayDeviceWidget
         except Exception as e:
-            logger.debug(funcname + ': No displaywidget found for {:s}'.format(str(devicemodule)))
+            logger.debug(funcname + 'No displaywidget found for {:s}'.format(str(devicemodule)))
             ## Using the standard display widget
             # devicedisplaywidget = displayDeviceWidget_standard
             devicedisplaywidget = None

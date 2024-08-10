@@ -262,7 +262,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                             #print('DAta in add', data in addr)
                             if (data in addr) and (numtag < 2): # Check if data packet fits with addr and if its not recirculated again
                                 try:
-                                    print(funcname + 'data to be sent',data)
+                                    #print(funcname + 'data to be sent',data)
                                     devicesub.datainqueue.put_nowait(data) # These are the datainqueues of the subscribing devices
                                     devicedict_sub['statistics']['packets_received'] += 1
                                     #print(devicedict_sub['statistics']['packets_received'])

@@ -36,10 +36,10 @@ class dataBufferLine(pydantic.BaseModel):
     xdata: list = pydantic.Field(default=[])
     ydata: list = pydantic.Field(default=[])
     errordata: list = pydantic.Field(default=[])
-    tdata_addr: RedvyprAddress = pydantic.Field(default='')
-    xdata_addr: RedvyprAddress = pydantic.Field(default='')
-    ydata_addr: RedvyprAddress = pydantic.Field(default='')
-    errordata_addr: RedvyprAddress = pydantic.Field(default='')
+    tdata_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
+    xdata_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
+    ydata_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
+    errordata_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
 
     @pydantic.model_serializer
     def ser_model(self) -> typing.Dict[str, typing.Any]:
@@ -57,8 +57,8 @@ class configLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
     label: str = pydantic.Field(default='', description='The of the line')
     label_format: str = pydantic.Field(default='{NAME} {Y_ADDR} [{UNIT}]', description='The name of the line, this is shown in the legend, $y to use the redvypr address')
     x_addr: typing.Union[typing.Literal['$t(y)'],RedvyprAddress] = pydantic.Field(default='$t(y)', description='The realtimedata address of the x-axis, use $t(y) to automatically choose the time corresponding to the y-data')
-    y_addr: RedvyprAddress = pydantic.Field(default='/d:somedevice/k:data', description='The realtimedata address of the x-axis')
-    error_addr: RedvyprAddress = pydantic.Field(default='', description='The realtimedata address for an optional error band around the line')
+    y_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress('/d:somedevice/k:data'), description='The realtimedata address of the x-axis')
+    error_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''), description='The realtimedata address for an optional error band around the line')
     error_mode: typing.Literal['off', 'standard', 'factor', 'constant'] = pydantic.Field(default='off', description='')
     error_factor: float = pydantic.Field(default=1.1, description='')
     error_constant: float = pydantic.Field(default=.01, description='')
@@ -106,6 +106,10 @@ class XYplot(QtWidgets.QFrame):
         funcname = __name__ + '.init():'
         super(QtWidgets.QFrame, self).__init__()
         self.device = redvypr_device
+        if self.device is not None:
+            self.redvypr = self.device.redvypr
+        else:
+            self.redvypr = None
         self.logger = logging.getLogger('XYplot')
         self.logger.setLevel(loglevel)
         self.description = 'XY plot'
@@ -143,7 +147,7 @@ class XYplot(QtWidgets.QFrame):
         """
         funcname = __name__ + '.create_widgets()'
         config = self.config
-        logger.debug(funcname)
+        self.logger.debug(funcname)
         i = 0
         if True:
             self.logger.debug(funcname + ': Adding plot ')  # + str(config))
@@ -201,7 +205,7 @@ class XYplot(QtWidgets.QFrame):
     def pyqtgraphConfigAction(self):
         funcname = __name__ + '.pyqtgraphConfigAction()'
         logger.debug(funcname)
-        self.ConfigWidget = pydanticConfigWidget(self.config, configname='new line',exclude=['lines'])
+        self.ConfigWidget = pydanticConfigWidget(self.config, configname='new line',exclude=['lines'], redvypr=self.redvypr)
         self.ConfigWidget.config_changed_flag.connect(self.apply_config)
 
         self.ConfigWidget.show()
@@ -237,7 +241,7 @@ class XYplot(QtWidgets.QFrame):
 
         """
         funcname = __name__ + '.pyqtgraphLineAction()'
-        logger.debug(funcname)
+        self.logger.debug(funcname)
         linename = self.sender()._linename
         lineConfig = self.sender()._line
         self.lineConfigWidget = pydanticConfigWidget(lineConfig, configname=linename, redvypr=self.device.redvypr)
@@ -250,7 +254,7 @@ class XYplot(QtWidgets.QFrame):
 
         """
         funcname = __name__ + '.pyqtgraphBufferAction()'
-        logger.debug(funcname)
+        self.logger.debug(funcname)
         self.clear_buffer()
 
     def mouseMoved(self, evt):
@@ -275,7 +279,7 @@ class XYplot(QtWidgets.QFrame):
         Sets the title of the plot
         """
         funcname = __name__ + '.set_title()'
-        logger.debug(funcname)
+        self.logger.debug(funcname)
         self.config.title = title
         self.plotWidget.setTitle(title)
 
@@ -293,20 +297,20 @@ class XYplot(QtWidgets.QFrame):
         funcname = __name__ + '.add_line()'
         self.logger.debug(funcname)
         if isinstance(y_addr, redvypr.RedvyprAddress):
-            logger.debug('Redvypr y-address')
+            self.logger.debug('Redvypr y-address')
             y_addr = y_addr.address_str
         if isinstance(x_addr, redvypr.RedvyprAddress):
-            logger.debug('Redvypr x-address')
+            self.logger.debug('Redvypr x-address')
             x_addr = x_addr.address_str
         if isinstance(error_addr, redvypr.RedvyprAddress):
-            logger.debug('Redvypr error-address')
+            self.logger.debug('Redvypr error-address')
             error_addr = error_addr.address_str
         #print('add line',y_addr,color)
         if color is None: # No color defined, take color from the colors list
             nlines = len(self.config.lines) - 1
             colind = nlines % len(colors)
             color = colors[colind]
-            logger.debug('Color')
+            self.logger.debug('Color')
 
         if index is None:
             rconfig = configLine()
@@ -334,7 +338,7 @@ class XYplot(QtWidgets.QFrame):
         y_addr = line.y_addr
         labelname = line.label_format
         labelname = labelname.format(NAME=name,UNIT=unit,X_ADDR=x_addr,Y_ADDR=y_addr)
-        logger.debug('Labelname {}'.format(labelname))
+        self.logger.debug('Labelname {}'.format(labelname))
         return labelname
 
     def apply_config(self):
@@ -396,7 +400,7 @@ class XYplot(QtWidgets.QFrame):
                 print('Line',line,iline)
                 x_addr = line.x_addr
                 y_addr = line.y_addr
-                if len(y_addr) > 0:
+                if len(y_addr) >= 0:
                     y_raddr = redvypr.RedvyprAddress(y_addr)
                     #print('x_addr', x_addr)
                     #print('y_addr', y_addr)
@@ -417,6 +421,7 @@ class XYplot(QtWidgets.QFrame):
                 # Error address
                 error_addr = None
                 if line.error_mode != 'off':
+                    print('Error mode 1')
                     error_raddr = redvypr.RedvyprAddress(line.error_addr)
                     line._error_raddr = error_raddr
                     errorplot = pyqtgraph.ErrorBarItem(name=line._name_applied,pen=pen)
@@ -424,22 +429,27 @@ class XYplot(QtWidgets.QFrame):
                     errorplot._line_config = line
                     plot.addItem(errorplot)
                 else:
-                    line._error_raddr = ''
+                    print('Error mode 2')
+                    line._error_raddr = redvypr.RedvyprAddress('')
                     line._errorplot = None
                     # print('Set pen 1')
             except:
-                logger.debug(funcname + 'Could not update addresses',exc_info=True)
+                self.logger.debug(funcname + 'Could not update addresses',exc_info=True)
+                continue
 
             # print('Line',line)
             # FLAG_HAVE_LINE = False
             self.get_metadata_for_line(line) # This is updating the unit
             labelname = self.construct_labelname(line)
+            line.label = labelname
+            linename = "Line {}: {}".format(iline, labelname)
 
             # check if we have already a lineplot, if yes, dont bother
             try:
-                line._lineplot
-                continue
+                self.logger.debug(funcname + 'We have already a lineplot, no update')
+                lineplot = line._lineplot
             except:
+                self.logger.debug(funcname + 'Creating new line with labelname {}'.format(labelname), exc_info=True)
                 lineplot = pyqtgraph.PlotDataItem(name=labelname)
                 line._lineplot = lineplot  # Add the line as an attribute to the configuration
                 plot.addItem(lineplot)
@@ -463,28 +473,31 @@ class XYplot(QtWidgets.QFrame):
                 line._lineplot.setPen(pen)
                 # Check if the addresses changed and clear the buffer if necessary
                 if line.databuffer.xdata_addr == line.x_addr:
-                    logger.debug('Address did not change')
+                    self.logger.debug('Address did not change')
                 else:
                     pass
                     # TODO, here an unsubscribe and resubscribe would be better
-                    #logger.debug('Address changed, clearing buffer')
+                    #self.logger.debug('Address changed, clearing buffer')
                     #self.clear_buffer(line)
 
                 self.logger.debug(funcname + ' Setting the name')
+                try:
+                    self.legendWidget.removeItem(line._lineplot)
+                except:
+                    self.logger.debug(funcname + ' Could not remove line')
                 self.legendWidget.addItem(line._lineplot, line.label)
-                logger.debug('Setting the data')
+                self.logger.debug('Setting the data')
                 line._lineplot.setData(name=line.label,x=[],y=[])
                 if self.config.automatic_subscription:
-                    logger.debug(funcname + 'Subscribing to x address {}'.format(x_raddr))
+                    self.logger.debug(funcname + 'Subscribing to x address {}'.format(x_raddr))
                     self.device.subscribe_address(x_raddr)
-                    logger.debug(funcname + 'Subscribing to y address {}'.format(y_raddr))
+                    self.logger.debug(funcname + 'Subscribing to y address {}'.format(y_raddr))
                     self.device.subscribe_address(y_raddr)
                     if line._errorplot is not None:
-                        logger.debug(funcname + 'Subscribing to error address {}'.format(error_raddr))
+                        self.logger.debug(funcname + 'Subscribing to error address {}'.format(error_raddr))
                         self.device.subscribe_address(error_raddr)
 
-                line.label = labelname
-                linename = "Line {}: {}".format(iline, labelname)
+
                 lineAction = self.lineMenu.addAction(linename)
                 lineAction._line = line
                 lineAction._iline = iline
@@ -498,7 +511,7 @@ class XYplot(QtWidgets.QFrame):
                 lineAction._linename = linename
                 lineAction.triggered.connect(self.pyqtgraphRemLineAction)
             except Exception as e:
-                logger.debug('Exception config lines: {:s}'.format(str(e)),exc_info=True)
+                self.logger.debug('Exception config lines: {:s}'.format(str(e)),exc_info=True)
                 raise ValueError('')
 
         self.logger.debug(funcname + ' done.')
@@ -664,15 +677,6 @@ class XYplot(QtWidgets.QFrame):
                         line._errorplot = None
                         # print('Set pen 1')
 
-
-                    #name = self.config.lines[iline].name
-                    #if '$y' in name.lower():
-                    #    self.logger.debug(funcname + ' Replacing with y')
-                    #    name = name.replace('$y',y_addr)
-                    #    #name = y_addr
-
-
-
                     # Check if the addresses changed and clear the buffer if necessary
                     if line.databuffer.xdata_addr == line.x_addr:
                         logger.debug('Address did not change')
@@ -704,7 +708,7 @@ class XYplot(QtWidgets.QFrame):
     def get_metadata_for_line(self, line):
         funcname = __name__ + '.get_metadata_for_line():'
         iline = self.config.lines.index(line)
-        logger.debug(funcname + 'Getting metadata for {}'.format(line._y_raddr))
+        self.logger.debug(funcname + 'Getting metadata for {}'.format(line._y_raddr))
         try:
             line._metadata  # metadata found, doing nothing
         except:
@@ -712,9 +716,9 @@ class XYplot(QtWidgets.QFrame):
             self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._metadata)))
             try:
                 unit = line._metadata['unit']
-                logger.debug(funcname + 'Found a unit for {}'.format(line._y_raddr))
+                self.logger.debug(funcname + 'Found a unit for {}'.format(line._y_raddr))
             except:
-                logger.debug(funcname + 'Did not find a unit', exc_info=True)
+                self.logger.debug(funcname + 'Did not find a unit', exc_info=True)
                 unit = None
 
             if unit is not None:
@@ -828,7 +832,7 @@ class XYplot(QtWidgets.QFrame):
         """ Updates the plot based on the given data
         """
         funcname = self.__class__.__name__ + '.update_plot():'
-        logger.debug(funcname + 'Update {}'.format(len(self.config.lines)))
+        self.logger.debug(funcname + 'Update {}'.format(len(self.config.lines)))
         tnow = time.time()
         # Create a redvypr datapacket
         rdata = redvypr.data_packets.Datapacket(data)
@@ -897,7 +901,7 @@ class XYplot(QtWidgets.QFrame):
                         newerror = [0]
 
                     if (len(newx) != len(newy)):
-                        logger.warning(
+                        self.logger.warning(
                             'lengths of x and y data different (x:{:d}, y:{:d})'.format(len(newx), len(newy)))
                         return
 
@@ -926,7 +930,7 @@ class XYplot(QtWidgets.QFrame):
 
                     # Show the unit in the legend, if wished by the user, and we have access to the device that can give us the metainformation
                     if (self.config.show_units) and (self.device is not None):
-                        logger.debug(funcname + 'Getting metadata for {}'.format(line._y_raddr))
+                        self.logger.debug(funcname + 'Getting metadata for {}'.format(line._y_raddr))
                         try:
                             line._metadata  # metadata found, doing nothing
                         except:
@@ -934,9 +938,9 @@ class XYplot(QtWidgets.QFrame):
                             self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._datakeys)))
                             try:
                                 unit = line._metadata['unit']
-                                logger.debug(funcname + 'Found a unit for {}'.format(line._y_raddr))
+                                self.logger.debug(funcname + 'Found a unit for {}'.format(line._y_raddr))
                             except:
-                                logger.debug(funcname + 'Did not find a unit',exc_info=True)
+                                self.logger.debug(funcname + 'Did not find a unit',exc_info=True)
                                 unit = None
 
                             if unit is not None:
@@ -968,13 +972,14 @@ class XYplot(QtWidgets.QFrame):
                                                     bottom=np.asarray(err) * 1, beam=beamwidth)
 
                     except:
-                        logger.info('Could not update line',exc_info=True)
+                        self.logger.info('Could not update line',exc_info=True)
 
 
             if len(self.config.lines) > 1:
                 pass
                 #print('DONE DONE DONE')
         except:
+            self.logger.info('Could not update data', exc_info=True)
             pass
-            #logger.info('Could not update data',exc_info=True)
+
 

@@ -332,6 +332,9 @@ class RedvyprAddress():
         astr = "RedvyprAddress('''" + astr2 + "''')"
         return astr
 
+    def __len__(self):
+        return len(self.address_str)
+
     def __eq__(self, addr):
         """
         Compares a second redvypr_address with this one by comparing the
