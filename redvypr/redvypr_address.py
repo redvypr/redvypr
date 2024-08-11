@@ -1,3 +1,7 @@
+"""
+Redvypr addresses are the base to identify and address redvypr data packets.
+"""
+
 import re
 import copy
 import time

@@ -1,6 +1,37 @@
 Design
 ======
 
+
+Dataflow and addressing
+-----------------------
+
+Each redvypr instance has a hostinfo dictionary the is created with `create_hostinfo(hostname=...)`::
+
+    import redvypr
+    hostinfo = redvypr.create_hostinfo(hostname='someredvypr')
+    r = redvypr.Redvypr(hostname='otherredvypr')
+    print('Hostinfo',hostinfo)
+    print('Hostinfo redvypr',r.hostinfo)
+
+gives as result::
+
+   Hostinfo {'hostname': 'someredvypr', 'tstart': 1723380212.3953316, 'addr': '192.168.178.157', 'uuid': '118902019882015-126'}
+   Hostinfo redvypr {'hostname': 'otherredvypr', 'tstart': 1723380212.3956072, 'addr': '192.168.178.157', 'uuid': '118902019882015-250'}
+Devices added to redvypr have a unique `name`, if more than one device of the same kind is added, redvypr automatically changes the name if necessary::
+
+   import redvypr
+   r = redvypr.Redvypr(hostname='otherredvypr')
+   # Add the first device
+   r.add_device('redvypr.devices.test.test_device')
+   # Add the second device of the same kind
+   r.add_device('redvypr.devices.test.test_device')
+   print('Device 0 name',r.devices[0]['device'].name)
+   print('Device 1 name',r.devices[1]['device'].name)
+yields::
+
+   Device 0 name test_device
+   Device 1 name test_device_1
+
 Misc notes
 ----------
 

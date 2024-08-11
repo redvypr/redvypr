@@ -48,10 +48,6 @@ class DeviceCustomConfig(XYplotWidget.configXYplot):
 # Use the standard start function as the start function
 start = device_start_standard
 
-
-
-
-
 class displayDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None,tabwidget=None):
         funcname = __name__ + '__init__():'
