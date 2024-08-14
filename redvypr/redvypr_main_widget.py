@@ -282,9 +282,15 @@ class redvyprWidget(QtWidgets.QWidget):
         devicedict = devicelist[0]
         ind_devices = devicelist[1]
         devicemodule = devicelist[2]
-
-        # First create the device and then do the widget stuff here
+        # The widget shown in the tab
         device = devicedict['device']
+        devicewidget = QtWidgets.QWidget()
+        devicewidget.device = device  # Add the device to the devicewidget
+        devicelayout = QtWidgets.QVBoxLayout(devicewidget)
+        # The tab for the init and device tab, TODO: This could be done more generic, if tabs are not wanted
+        devicetab = QtWidgets.QTabWidget()
+        devicetab.setMovable(True)
+        devicelayout.addWidget(devicetab)
         #
         # Now add all the widgets to the device
         #
@@ -296,8 +302,19 @@ class redvyprWidget(QtWidgets.QWidget):
             # logger.exception(e)
             deviceinitwidget_bare = redvypr_deviceInitWidget  # Use a standard widget
 
+
+        # Call the deviceinitwidget with extra arguments
+        initargs = inspect.signature(deviceinitwidget_bare.__init__)
+        initdict = {}
+        if ('device' in initargs.parameters.keys()):
+            initdict['device'] = device
+
+        if ('tabwidget' in initargs.parameters.keys()):
+            initdict['tabwidget'] = devicetab
+
+        # https://stackoverflow.com/questions/334655/passing-a-dictionary-to-a-function-as-keyword-parameters
         try:
-            deviceinitwidget = deviceinitwidget_bare(device)
+            deviceinitwidget = deviceinitwidget_bare(**initdict)
         except Exception as e:
             logger.warning(funcname + 'Could not add deviceinitwidget because of:')
             logger.exception(e)
@@ -322,19 +339,6 @@ class redvyprWidget(QtWidgets.QWidget):
             ## Using the standard display widget
             # devicedisplaywidget = displayDeviceWidget_standard
             devicedisplaywidget = None
-
-        # The widget shown in the tab
-        devicewidget = QtWidgets.QWidget()
-        devicewidget.device = device  # Add the device to the devicewidget
-        devicelayout = QtWidgets.QVBoxLayout(devicewidget)
-        devicetab = QtWidgets.QTabWidget()
-        # devicetab = deviceTabWidget()
-        # devicetab.setStyleSheet("QTabBar::tab:disabled {"+\
-        #                "width: 200px;"+\
-        #                "color: transparent;"+\
-        #                "background: transparent;}")
-        devicetab.setMovable(True)
-        devicelayout.addWidget(devicetab)
 
         # Add init widget
         try:

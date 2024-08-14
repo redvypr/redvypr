@@ -31,7 +31,87 @@ yields::
 
    Device 0 name test_device
    Device 1 name test_device_1
+This information is the base to identify a datapacket. In the following a number is published by a device, typically in the `start()` function::
 
+
+   import redvypr
+   import time
+   r = redvypr.Redvypr(hostname='otherredvypr')
+   # Add a data sending device
+   r1 = r.add_device('redvypr.devices.test.test_device_bare')
+   # Add a receiving device
+   r2 = r.add_device('redvypr.devices.test.test_device_receive')
+   r2.subscribe_address('*')
+   # Clean the queue first
+   print('Cleaning the queue')
+   while True:
+      time.sleep(0.2)
+      try:
+          data = r2.datainqueue.get(block=False)
+          print('Got data (mostly information)',data)
+      except:
+          break
+
+   print('Sending some important data')
+   r1.dataqueue.put(3.1415)
+   print('Wait for the data to be received by the second device')
+   data = r2.datainqueue.get(block=True)
+   print('Got data from r1\n',data)
+The last statement shows a dictionary of the form::
+
+   Got data from r1
+   {'data': 3.1415, '_redvypr': {'tag': {'118902019882015-047': 1}, 'device': 'test_device_bare',
+    'packetid': 'test_device_bare', 'host': {'hostname': 'otherredvypr', 'tstart': 1723435291.4256065,
+     'addr': '192.168.178.157', 'uuid': '118902019882015-047'},
+     'localhost': {'hostname': 'otherredvypr', 'tstart': 1723435291.4256065, 'addr': '192.168.178.157',
+     'uuid': '118902019882015-047'}, 'publisher': 'test_device_bare', 't': 1723435292.030152,
+     'devicemodulename': 'redvypr.devices.test.test_device_bare', 'numpacket': 5},
+     't': 1723435292.030152}
+Out of a simple number a dictionary was created, which are called datapackets. Creating and dealing with datapackets
+is one of the major tasks of redvypr.
+A redvypr packet can be received and sent by another redvypr instance::
+
+   import redvypr
+   import time
+   r = redvypr.Redvypr(hostname='veryotherredvypr')
+   # Add a data sending device
+   r1 = r.add_device('redvypr.devices.test.test_device_bare')
+   # Add a receiving device
+   r2 = r.add_device('redvypr.devices.test.test_device_receive')
+   r2.subscribe_address('*')
+   # Clean the queue first
+   print('Cleaning the queue')
+   while True:
+       time.sleep(0.2)
+       try:
+           data = r2.datainqueue.get(block=False)
+           print('Got data (mostly information)',data)
+       except:
+           break
+
+   print('Sending some important data')
+   data = {'data': 3.1415, '_redvypr': {'tag': {'118902019882015-047': 1}, 'device': 'test_device_bare',
+    'packetid': 'test_device_bare', 'host': {'hostname': 'otherredvypr', 'tstart': 1723435291.4256065,
+     'addr': '192.168.178.157', 'uuid': '118902019882015-047'},
+     'localhost': {'hostname': 'otherredvypr', 'tstart': 1723435291.4256065, 'addr': '192.168.178.157',
+     'uuid': '118902019882015-047'}, 'publisher': 'test_device_bare', 't': 1723435292.030152,
+     'devicemodulename': 'redvypr.devices.test.test_device_bare', 'numpacket': 5}, 't': 1723435292.030152}
+   r1.dataqueue.put(data)
+   print('Wait for the data to be received by the second device')
+   data = r2.datainqueue.get(block=True)
+   print('Got data from r1\n',data)
+
+
+The result is a very similar datapacket, with a new entry called `localhost`::
+
+   {'data': 3.1415, '_redvypr': {'tag': {'118902019882015-047': 1, '118902019882015-197': 1},
+   'device': 'test_device_bare', 'packetid': 'test_device_bare',
+   'host': {'hostname': 'otherredvypr', 'tstart': 1723435291.4256065, 'addr': '192.168.178.157',
+   'uuid': '118902019882015-047'},
+   'localhost': {'hostname': 'veryotherredvypr', 'tstart': 1723437492.1021655, 'addr': '192.168.178.157',
+   'uuid': '118902019882015-197'}, 'publisher': 'test_device_bare', 't': 1723435292.030152,
+   'devicemodulename': 'redvypr.devices.test.test_device_bare', 'numpacket': 5},
+   't': 1723435292.030152}
 Misc notes
 ----------
 

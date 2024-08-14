@@ -21,11 +21,14 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import random
 import pydantic
 import typing
+from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import check_for_command
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 import redvypr.files as redvypr_files
 import redvypr.gui
 import redvypr.data_packets
+from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
+from redvypr.gui import datastreamWidget
 from redvypr.devices.plot import XYplotWidget
 from redvypr.devices.plot import plot_widgets
 from .calibration_models import calibration_HF, calibration_NTC, calibration_poly
@@ -46,6 +49,30 @@ class DeviceBaseConfig(pydantic.BaseModel):
     subscribes: bool = True
     description: str = 'Calibration of sensors'
     gui_tablabel_display: str = 'Realtime data'
+
+
+class AutoCalEntry(pydantic.BaseModel):
+    """
+    An entry for the autocalibration procedure
+    """
+    parameter: RedvyprAddress = pydantic.Field(default=RedvyprAddress(),
+                                                       description='The parameter to be changed')
+    parameter_set: float = pydantic.Field(default=0.0, description='The value the parameter shall be changed to')
+    command: str = pydantic.Field(default='', description='The command to be sent')
+    autocalmode: str = pydantic.Field(default='', description='The mode [wait dt, wait for response from device]')
+    samplemode: str = pydantic.Field(default='', description='The sample mode after the value has been reached (based on autocalmode)')
+
+
+class AutoCalConfig(pydantic.BaseModel):
+    parameter: RedvyprAddress = pydantic.Field(default=RedvyprAddress(), description='The parameter to be changed')
+    entries: typing.Optional[typing.List[AutoCalEntry]] = pydantic.Field(default=[], editable=True)
+    parameter_delta: float = pydantic.Field(default=1.0, description='The delta between the next entry if a new is added', editable=True)
+    parameter_start: float = pydantic.Field(default=0, description='The start value of the parameter',
+                                            editable=True)
+    autocalmode: str = pydantic.Field(default='', description='The mode [wait dt, wait for response from device]')
+    samplemode: str = pydantic.Field(default='',
+                                     description='The sample mode after the value has been reached (based on autocalmode)')
+
 
 
 # Dictionary for sensordata
@@ -82,6 +109,8 @@ class DeviceCustomConfig(pydantic.BaseModel):
     calibration_comment: str = ''
     calibration_file_structure: str = pydantic.Field(default='{SENSOR_MODEL}_{SN}_{PARAMETER}_{CALDATE}.yaml')
     calibration_directory_structure: str = pydantic.Field(default='{SENSOR_MODEL}/{SN}/{PARAMETER}/')
+    autocal: bool = pydantic.Field(default=True)
+    autocal_config: AutoCalConfig = pydantic.Field(default=AutoCalConfig())
     gui_realtimedata_ncols: int = 3
 
 class Device(RedvyprDevice):
@@ -1585,6 +1614,103 @@ def calc_ntc_coeffs_legacy(calibrationdata, Ntest = 100):
 
 
 
+class autocalWidget(QtWidgets.QWidget):
+    def __init__(self, device=None):
+        """
+        Standard deviceinitwidget if the device is not providing one by itself.
+
+        Args:
+            device:
+        """
+        funcname = __name__ + '.__init__():'
+        logger.debug(funcname)
+        super().__init__()
+        self.device = device
+        self.config = self.device.custom_config.autocal_config
+        self.layout = QtWidgets.QGridLayout(self)
+        self.calentrytable = QtWidgets.QTableWidget()
+        self.parameterinput = QtWidgets.QPushButton('Parameter')
+        self.parameterinput.clicked.connect(self.parameterClicked)
+        self.parameterinput_edit = QtWidgets.QLineEdit()
+
+        self.parameter_start = QtWidgets.QDoubleSpinBox()
+        self.parameter_start.setValue(self.config.parameter_start)
+
+        self.parameter_delta = QtWidgets.QDoubleSpinBox()
+        self.parameter_delta.setValue(self.config.parameter_delta)
+
+        self.addentry = QtWidgets.QPushButton('Add entry')
+        self.addentry.clicked.connect(self.additem_clicked)
+        self.rementry = QtWidgets.QPushButton('Remove entry')
+        self.rementry.clicked.connect(self.remitem_clicked)
+
+        self.layout.addWidget(self.parameterinput_edit, 0, 0)
+        self.layout.addWidget(self.parameterinput, 0, 1)
+        self.layout.addWidget(QtWidgets.QLabel('Parameter start'), 0, 2)
+        self.layout.addWidget(self.parameter_start, 0, 3)
+        self.layout.addWidget(QtWidgets.QLabel('Parameter delta'), 0, 4)
+        self.layout.addWidget(self.parameter_delta, 0, 5)
+
+        self.layout.addWidget(self.addentry, 1, 0,1,-1)
+        self.layout.addWidget(self.rementry, 3, 1,1,-1)
+
+        self.layout.addWidget(self.calentrytable,2,0,1,-1)
+
+        self.update_entrytable()
+
+    def update_entrytable(self):
+        self.calentrytable.clear()
+        self.calentrytable.setColumnCount(4)
+        nrows = len(self.config.entries)
+        self.calentrytable.setRowCount(nrows)
+        colheader = ['Address','Parameter set']
+        col_parameter_set = 1
+        self.calentrytable.setHorizontalHeaderLabels(colheader)
+        for irow,entry in enumerate(self.config.entries):
+            parameter_set = str(entry.parameter_set)
+            item_set = QtWidgets.QTableWidgetItem(parameter_set)
+            self.calentrytable.setItem(irow,col_parameter_set,item_set)
+
+
+    def additem_clicked(self):
+        funcname = __name__ + '.additem_clicked()'
+        logger.debug(funcname)
+        parameter_start = self.parameter_start.value()
+        parameter_delta = self.parameter_delta.value()
+        self.parameter_start.setValue(parameter_start + parameter_delta)
+        entry = AutoCalEntry(parameter_set=parameter_start)
+        self.config.entries.append(entry)
+        self.update_entrytable()
+
+    def remitem_clicked(self):
+        funcname = __name__ + '.remitem_clicked()'
+        logger.debug(funcname)
+        indexes = []
+        for selectionRange in self.calentrytable.selectedRanges():
+            indexes.extend(range(selectionRange.topRow(), selectionRange.bottomRow()+1))
+            print("indexes", indexes) # indexes is a list like [0, 2] of selected rows
+
+        indexes.reverse()
+        for i in indexes:
+            self.config.entries.pop(i)
+
+        self.update_entrytable()
+
+    def send_commnd_to_device(self,calentry):
+        funcname = __name__ + '.send_commnd_to_device()'
+        logger.debug(funcname)
+        devicename = calentry.parameter.devicename
+        print('Devicename',devicename)
+
+    def parameterClicked(self):
+        self.pydantic_config = datastreamWidget(redvypr=self.device.redvypr)
+        self.pydantic_config.apply.connect(self.parameter_changed)
+        self.pydantic_config.show()
+    def parameter_changed(self, config):
+        print('Config',config)
+        device = config['device']
+        address = config['datastream_address']
+        self.config.parameter = address
 
 
 
@@ -1597,7 +1723,7 @@ class initDeviceWidget(QtWidgets.QWidget):
     connect = QtCore.pyqtSignal(
         RedvyprDevice)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
 
-    def __init__(self, device=None):
+    def __init__(self, device=None, tabwidget=None):
         """
         Standard deviceinitwidget if the device is not providing one by itself.
 
@@ -1610,7 +1736,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.layout = QtWidgets.QGridLayout(self)
         self.config_widgets = []
         self.device = device
-
+        self.tabwidget = tabwidget
         # Create widgets to choose the datastreams and manual sensors
         self.createSensorInputWidgets()
         #self.config_widget = redvypr.gui.configWidget(device.config,redvypr_instance=self.device.redvypr)
@@ -1646,7 +1772,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
-
         #self.config_widget.config_changed_flag.connect(self.config_changed)
 
 
@@ -1687,6 +1812,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.sensorsadd.clicked.connect(self.sensorsAddClicked)
         self.mansensoradd = QtWidgets.QPushButton('Add manual sensor')  # Add a manual sensor
         self.mansensoradd.clicked.connect(self.sensorAddClicked)
+        self.autocalbtn = QtWidgets.QPushButton('Autocalibration')  # Add an autocalibration
+        autocalibration = self.device.custom_config.autocal
+        self.autocalbtn.setCheckable(True)  #
+        self.autocalbtn.setChecked(autocalibration) # Set the checked state, the action is done in the displaywidget.__init__
+        self.autocalbtn.clicked.connect(self.sensorAutocalClicked)
+
         self.caltype = QtWidgets.QComboBox()  # Calibration type of sensor
         self.caltype.addItem('Polynom')
         #self.caltype.addItem('Heatflow')
@@ -1705,6 +1836,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.butlayout.addWidget(self.sensoradd)
         self.butlayout.addWidget(self.sensorsadd)
         self.butlayout.addWidget(self.mansensoradd)
+        self.butlayout.addWidget(self.autocalbtn)
         self.butlayout.addWidget(QtWidgets.QLabel('Calibration Type'))
         self.butlayout.addWidget(self.caltype)
         # Sensorswidget with scrollarea
@@ -1808,6 +1940,11 @@ class initDeviceWidget(QtWidgets.QWidget):
         ref_group.setExclusive(True)
         self.ref_group = ref_group
         self.sensors = sensors
+
+    def sensorAutocalClicked(self):
+        checked = self.autocalbtn.isChecked()
+        self.device.devicedisplaywidget.showAutocalWidget(checked)
+
 
     def __realtimePlotChanged__(self,index):
         funcname = __name__ + '.__realtimePlotChanged__():'
@@ -2052,7 +2189,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
 class displayDeviceWidget(QtWidgets.QWidget):
-    def __init__(self,device=None,tabwidget=None):
+    def __init__(self,device=None, tabwidget=None):
         funcname = __name__ + '__init__():'
         logger.debug(funcname)
         super(QtWidgets.QWidget, self).__init__()
@@ -2076,6 +2213,26 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.plot_widgets = []
         # Create all widgets
         self.create_widgets()
+
+        autocalflag = self.device.custom_config.autocal
+        if autocalflag:
+            self.showAutocalWidget(autocalflag)
+
+
+    def showAutocalWidget(self, checked):
+        tabwidget = self.tabwidget
+        print('Autocal checked',checked)
+        if checked:
+            logger.debug('Adding autocalibration')
+            self.autocalwidget = autocalWidget(device=self.device)
+            tabwidget.addTab(self.autocalwidget,'Autocalibration')
+        else:
+            try:
+                tabwidget.removeTab(tabwidget.indexOf(self.autocalwidget))
+                self.autocalwidget.close()
+            except:
+                logger.debug('Could not close autocalwidget',exc_info=True)
+
 
     def finalize_init(self):
         funcname = __name__ + 'finalize_init():'

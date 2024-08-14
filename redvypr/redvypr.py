@@ -382,7 +382,7 @@ class Redvypr(QtCore.QObject):
         self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths, redvypr_devices=redvyprdevices, loglevel=loglevel_device_scan)
         logger.info(funcname + ':Done searching for devices')
         # And now add the devices
-        print('Config a',self.config)
+        #print('Config a',self.config)
         self.add_devices_from_config(config=self.config)
         # A timer to check the status of all threads
         self.devicethreadtimer = QtCore.QTimer()
@@ -904,7 +904,8 @@ class Redvypr(QtCore.QObject):
         if (device_found == False):
             logger.warning(funcname + ': Could not add device (not found): {:s}'.format(str(devicemodulename)))
 
-        return devicelist
+        #return devicelist
+        return device
 
     def start_device_thread(self, device):
         """ Functions starts the device thread that is the core of each device
