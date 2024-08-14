@@ -1688,9 +1688,9 @@ class autocalWidget(QtWidgets.QWidget):
         indexes = []
         for selectionRange in self.calentrytable.selectedRanges():
             indexes.extend(range(selectionRange.topRow(), selectionRange.bottomRow()+1))
-            print("indexes", indexes) # indexes is a list like [0, 2] of selected rows
 
         indexes.reverse()
+        logger.debug(funcname + "Removing  indexes {}".format(indexes)) #
         for i in indexes:
             self.config.entries.pop(i)
 
