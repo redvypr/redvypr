@@ -400,10 +400,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
             item = self.sensortable.item(isensor, self.icol_packet_proc__s)
             item.setText(str(npackets__s))
 
-    def update(self, data):
+    def update_data(self, data):
         """
         """
-        funcname = __name__ + '.update()'
+        funcname = __name__ + '.update_data()'
         tnow = time.time()
         for sensor in self.device.custom_config.sensors:
             try:

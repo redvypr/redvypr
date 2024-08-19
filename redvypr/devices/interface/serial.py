@@ -666,7 +666,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             button.showing = False
             button.setText('Show')
             button.displaywidget.hide()
-    def update(self,data):
+    def update_data(self, data):
         #print('data',data)
         try:
             comport = data['comport']

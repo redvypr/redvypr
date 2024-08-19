@@ -60,10 +60,10 @@ class displayDeviceWidget_standard(QtWidgets.QWidget):
             logger.debug(funcname + str(e))
             pass
 
-    def update(self, data):
+    def update_data(self, data):
+        """ Function that is called from the redvypr_main widget if new data in a dataqueue has been received.
         """
-        """
-        funcname = __name__ + '.update()'
+        funcname = __name__ + '.update_data()'
         tnow = time.time()
         # print('got data',data)
 

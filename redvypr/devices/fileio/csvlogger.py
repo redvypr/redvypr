@@ -1152,7 +1152,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         layout.addLayout(hlayout)
         layout.addWidget(self.filetable)
 
-    def update(self,data):
+    def update_data(self,data):
         try:
             funcname = __name__ + '.update()'
             #print('data',data)

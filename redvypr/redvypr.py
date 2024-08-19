@@ -32,7 +32,7 @@ import redvypr.redvypr_address as redvypr_address
 import redvypr.packet_statistic as redvypr_packet_statistic
 from redvypr.version import version
 import redvypr.files as files
-from redvypr.device import RedvyprDeviceConfig, RedvyprDeviceBaseConfig, RedvyprDevice, redvypr_device_scan, RedvyprDeviceParameter
+from redvypr.device import RedvyprDeviceConfig, RedvyprDeviceBaseConfig, RedvyprDevice, redvypr_device_scan, RedvyprDeviceParameter, queuesize
 import redvypr.devices as redvyprdevices
 import faulthandler
 faulthandler.enable()
@@ -48,11 +48,6 @@ __platform__ += "Platform version: {:s}\n".format(platform.version())
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
-
-# The maximum size the dataqueues have, this should be more than
-# enough for a "normal" usage case
-queuesize = 10000
-# queuesize = 10
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr')
@@ -280,8 +275,8 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                                         devicedict['statistics']['packets_dropped'] += 1
                                     logger.debug(funcname + ':dataout of :' + devicedict_sub['device'].name + ' full: ' + str(e), exc_info=True)
 
-                    # The gui of the device
-                    for guiqueue in devicedict['guiqueue']:  # Put data into the guiqueue, this queue does always exist
+                    # Fan out the datapacket into the guiqueues of the device
+                    for (guiqueue,widget) in devicedict['guiqueues']:  # Put data into the guiqueue, this queue does always exist
                         try:
                             guiqueue.put_nowait(data)
                         except Exception as e:
@@ -433,6 +428,7 @@ class Redvypr(QtCore.QObject):
             # print('device:',smod['name'],device['devicemodulename'])
             # The smod['name'] looks like 'redvypr.devices.network.zeromq_device'
             # Check first if devicemodulename has a '.', if not, use split smod['name'] and use the last one
+            FLAG_DEVICEMODULENAME_EXACT = False
             if '.' in devicename:
                 if (devicename == smod['name']):
                     FLAG_DEVICEMODULENAME_EXACT = True
@@ -482,7 +478,7 @@ class Redvypr(QtCore.QObject):
 
             # Adding the devices found in the config ['devices']
             # Check if we have a list or something
-            print('devices',config.devices,iter(config.devices))
+            #print('devices',config.devices,iter(config.devices))
             try:
                 iter(config.devices)
                 hasdevices = True
@@ -492,53 +488,19 @@ class Redvypr(QtCore.QObject):
             # Add the devices
             if (hasdevices):
                 for device in config.devices:
-                    print('Adding device', device)
-                    # Device specifig configuration
-                    device_config = device.custom_config
-                    # The base configuration, same for all devices
-                    base_config = device.base_config
+                    logger.debug(funcname + 'Adding device {}'.format(device))
                     devicename = device.devicemodulename
                     devicemodulename = self.get_devicemodulename_from_str(devicename)
                     if devicemodulename is not None:
                         device.devicemodulename = devicemodulename
                         logger.info(funcname + 'Adding device {}'.format(device.devicemodulename))
+                        print('-------')
+                        print('Device',device)
+                        print('-------')
                         subscriptions = device.subscriptions
                         dev_added = self.add_device(devicemodulename=device.devicemodulename,
-                                                    custom_config=device_config,
-                                                    base_config=base_config, subscriptions=subscriptions)
-
-                    if False: # TODO: to be removed soon
-                        # Check if the devicemodulename kind of fits
-                        FLAG_DEVICEMODULENAME_EXACT = False
-                        # Make an exact test first
-                        for smod in self.redvypr_device_scan.redvypr_devices_flat:
-                            # print('device:',smod['name'],device['devicemodulename'])
-                            # The smod['name'] looks like 'redvypr.devices.network.zeromq_device'
-                            # Check first if devicemodulename has a '.', if not, use split smod['name'] and use the last one
-                            if '.' in device.devicemodulename:
-                                if (device.devicemodulename == smod['name']):
-                                    FLAG_DEVICEMODULENAME_EXACT = True
-                                    break
-                            else:
-                                smodname = smod['name'].split('.')[-1]
-                                # print('smodname',smodname)
-                                if (device.devicemodulename == smodname):
-                                    FLAG_DEVICEMODULENAME_EXACT = True
-                                    #device.devicemodulename_orig = device.devicemodulename
-                                    device.devicemodulename = smod['name']
-                                    break
-
-                        # Make a test if the string is within the devicemodulename
-                        if FLAG_DEVICEMODULENAME_EXACT == False:
-                            for smod in self.redvypr_device_scan.redvypr_devices_flat:
-                                if (device.devicemodulename in smod['name']):  # This is a weaker test, can be potentially replaced by regex
-                                    #device.devicemodulename_orig = device.devicemodulename
-                                    device.devicemodulename = smod['name']
-
-                        logger.info(funcname + 'Adding device {}'.format(device.devicemodulename))
-                        subscriptions = device.subscriptions
-                        dev_added = self.add_device(devicemodulename=device.devicemodulename, custom_config=device_config,
-                                                    base_config=base_config, subscriptions=subscriptions)
+                                                    custom_config=device.custom_config,
+                                                    base_config=device.base_config, subscriptions=subscriptions)
 
         # Emit a signal that the configuration has been changed
         self.hostconfig_changed_signal.emit()
@@ -657,7 +619,8 @@ class Redvypr(QtCore.QObject):
         """
         funcname = self.__class__.__name__ + '.add_device():'
         logger.debug(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(custom_config))
-        #logger.info(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(deviceconfig))
+        print('add_device custom_config:',custom_config)
+        print('add_device base_config:', base_config)
         devicelist = []
         device_found = False
         # Loop over all modules and check of we find the name
@@ -699,7 +662,12 @@ class Redvypr(QtCore.QObject):
                 except Exception as e:
                     logger.debug(
                         funcname + ':No pydantic base configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
-                    device_parameter = RedvyprDeviceParameter(devicemodulename=devicemodulename, numdevice=self.numdevice)
+                    # Standard base config with parameter
+                    if base_config is not None:
+                        device_parameter = RedvyprDeviceParameter(**base_config.model_dump())
+                        device_parameter.devicemodulename=devicemodulename
+                        device_parameter.numdevice=self.numdevice
+                        print('Device parameter ...',device_parameter)
                     #logger.exception(e)
                     FLAG_HAS_PYDANTICBASE = False
                     FLAG_PYDANTIC = False
@@ -774,6 +742,8 @@ class Redvypr(QtCore.QObject):
                     statusqueue = multiprocessing.Queue(maxsize=queuesize)
                     guiqueue = multiprocessing.Queue(maxsize=queuesize)
 
+                # guiqueues list
+                guiqueues = [[guiqueue, None]]
                 # Create a dictionary for the statistics and general information about the device
                 # This is used extensively in exchanging information about devices between redvypr instances and or other devices
                 statistics = redvypr_packet_statistic.create_data_statistic_dict()
@@ -827,17 +797,13 @@ class Redvypr(QtCore.QObject):
                     levelname = logging.getLevelName(level)
                     logger.debug(funcname + 'Setting the loglevel to {}'.format(levelname))
                     device_parameter.loglevel = levelname
-                    # Check for an autostart
-                    try:
-                        device_parameter.autostart = custom_config['autostart']
-                    except Exception as e:
-                        device_parameter.autostart = False
-
                     # Creating the device
                     print('Deviceparameter',device_parameter)
-                    device = Device(device_parameter=device_parameter, custom_config=pydantic_custom_config, redvypr=self, dataqueue=dataqueue,
+                    device = Device(device_parameter=device_parameter, custom_config=pydantic_custom_config,
+                                    redvypr=self, dataqueue=dataqueue,
                                     comqueue=comqueue, datainqueue=datainqueue,
-                                    statusqueue=statusqueue, statistics=statistics, startfunction=startfunction)
+                                    statusqueue=statusqueue, guiqueues=guiqueues,
+                                    statistics=statistics, startfunction=startfunction)
 
                     device.subscription_changed_signal.connect(self.process_subscription_changed)
                     self.numdevice += 1
@@ -848,7 +814,7 @@ class Redvypr(QtCore.QObject):
                     logger.exception(e)
 
 
-                devicedict = {'device':device, 'dataout': [], 'gui': [], 'guiqueue': [guiqueue],
+                devicedict = {'device':device, 'guiqueues': guiqueues,
                               'statistics': statistics, 'logger': devicelogger,'comqueue':comqueue}
 
                 # Add the modulename
@@ -876,6 +842,7 @@ class Redvypr(QtCore.QObject):
                 # Send a device_status packet to notify that a new device was added (deviceinfo_all) is updated
                 datapacket = data_packets.commandpacket(command='device_status')
                 device.dataqueue.put(datapacket)
+                print('Autostart autostart',autostart)
                 if (autostart):
                     logger.info(funcname + ': Starting device')
                     self.start_device_thread(device)

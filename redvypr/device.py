@@ -33,6 +33,12 @@ from redvypr.redvypr_address import RedvyprAddress
 
 logging.basicConfig(stream=sys.stderr)
 
+
+# The maximum size the dataqueues have, this should be more than
+# enough for a "normal" usage case
+queuesize = 10000
+# queuesize = 10
+
 class DeviceMetadata(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="allow")
     description: str = pydantic.Field(default='')
@@ -77,8 +83,8 @@ class RedvyprDeviceParameter(RedvyprDeviceBaseConfig):
     uuid: str = pydantic.Field(default='')
     #template: dict = pydantic.Field(default={}) # Candidate for removal
     #config: dict = pydantic.Field(default={})  # Candidate for removal
-    publishes: bool = False
-    subscribes: bool = False
+    publishes: bool = True
+    subscribes: bool = True
     numdevice: int = pydantic.Field(default=-1)
     # Not as parameter, but necessary for initialization
     maxdevices: int = pydantic.Field(default=-1)
@@ -363,7 +369,7 @@ class RedvyprDevice(QtCore.QObject):
     config_changed_signal = QtCore.pyqtSignal()  # Signal notifying that the configuration of the device has changed
 
     def __init__(self, device_parameter = None, redvypr=None, dataqueue=None, comqueue=None, datainqueue=None,
-                 statusqueue=None, custom_config=None, statistics=None, startfunction=None):
+                 statusqueue=None, guiqueues=None, custom_config=None, statistics=None, startfunction=None):
         """
         """
         super(RedvyprDevice, self).__init__()
@@ -378,6 +384,7 @@ class RedvyprDevice(QtCore.QObject):
         self.name = device_parameter.name
         self.devicemodulename = device_parameter.devicemodulename
         self.uuid = device_parameter.uuid
+        self.guiqueues = guiqueues
         try:
             self.host_uuid = redvypr.hostinfo['uuid']
         except:
@@ -418,6 +425,22 @@ class RedvyprDevice(QtCore.QObject):
         # Timer to ping the status of thread
         self.__stoptimer__ = QtCore.QTimer()
         self.__stoptimer__.timeout.connect(self.__check_thread_status)  # Add to the timer another update
+
+    def add_guiqueue(self, widget=None):
+        """
+        Adds a guiqueue to the guiqueues list. The queue can be used internally to process and display the data that is
+        sent, additionally also a widget can be added. The widget needs to provide a function .update_data.
+        :param widget:
+        :return: (Queue, widget)
+        """
+        if 'thread' in self.device_parameter.multiprocess:  # Thread or QThread
+            guiqueue = queue.Queue(maxsize=queuesize)
+        else: # multiprocess
+            guiqueue = multiprocessing.Queue(maxsize=queuesize)
+
+        newqueue = (guiqueue,widget)
+        self.guiqueues.append(newqueue)
+        return newqueue
 
     def __update_address__(self):
         # self.address_str = self.name + ':' + self.redvypr.hostinfo['hostname'] + '@' + self.redvypr.hostinfo[
@@ -1171,8 +1194,8 @@ class RedvyprDevice(QtCore.QObject):
         """
         print('get_info():')
         print('Name' + self.name)
-        print('redvypr' + self.redvypr)  
-        
+        print('redvypr' + self.redvypr)
+
     def __str__(self):
         return 'redvypr_device (' + self.devicemodulename + ') ' + self.address_string()
 

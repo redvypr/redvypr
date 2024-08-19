@@ -59,17 +59,20 @@ class AutoCalEntry(pydantic.BaseModel):
                                                        description='The parameter to be changed')
     parameter_set: float = pydantic.Field(default=0.0, description='The value the parameter shall be changed to')
     command: str = pydantic.Field(default='', description='The command to be sent')
-    autocalmode: str = pydantic.Field(default='', description='The mode [wait dt, wait for response from device]')
+    autocalmode: typing.Literal['timer','response','threshold'] = pydantic.Field(default='timer', description='The mode, i.e. the way autocal shall behave after the value is set.')
+    timer_wait: float = pydantic.Field(default=3.5, description='Seconds to wait')
     samplemode: str = pydantic.Field(default='', description='The sample mode after the value has been reached (based on autocalmode)')
 
 
 class AutoCalConfig(pydantic.BaseModel):
     parameter: RedvyprAddress = pydantic.Field(default=RedvyprAddress(), description='The parameter to be changed')
     entries: typing.Optional[typing.List[AutoCalEntry]] = pydantic.Field(default=[], editable=True)
+    start_index: int = pydantic.Field(default=0, description='The index of the entries to start with')
     parameter_delta: float = pydantic.Field(default=1.0, description='The delta between the next entry if a new is added', editable=True)
     parameter_start: float = pydantic.Field(default=0, description='The start value of the parameter',
                                             editable=True)
-    autocalmode: str = pydantic.Field(default='', description='The mode [wait dt, wait for response from device]')
+    autocalmode: typing.Literal['timer', 'response', 'threshold'] = pydantic.Field(default='timer',                                                                                     description='The mode, i.e. the way autocal shall behave after the value is set.')
+    timer_wait: float = pydantic.Field(default=3.5, description='Seconds to wait')
     samplemode: str = pydantic.Field(default='',
                                      description='The sample mode after the value has been reached (based on autocalmode)')
 
@@ -1643,6 +1646,12 @@ class autocalWidget(QtWidgets.QWidget):
         self.addentry.clicked.connect(self.additem_clicked)
         self.rementry = QtWidgets.QPushButton('Remove entry')
         self.rementry.clicked.connect(self.remitem_clicked)
+        self.start = QtWidgets.QPushButton('Start autocalibration')
+        self.start.clicked.connect(self.start_clicked)
+        self.start.setCheckable(True)
+        self.start_index = QtWidgets.QSpinBox()
+        self.start_index.setValue(self.config.start_index)
+        self.start_index.valueChanged.connect(self.start_index_changed)
 
         self.layout.addWidget(self.parameterinput_edit, 0, 0)
         self.layout.addWidget(self.parameterinput, 0, 1)
@@ -1652,25 +1661,148 @@ class autocalWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.parameter_delta, 0, 5)
 
         self.layout.addWidget(self.addentry, 1, 0,1,-1)
+        self.layout.addWidget(self.calentrytable, 2, 0, 1, -1)
         self.layout.addWidget(self.rementry, 3, 1,1,-1)
+        self.layout.addWidget(self.start, 4, 0, 1, -1)
+        self.layout.addWidget(QtWidgets.QLabel('Start index'), 4, 2)
+        self.layout.addWidget(self.start_index, 4, 3)
+        self.layout.addWidget(self.start, 4, 0, 1, 2)
 
-        self.layout.addWidget(self.calentrytable,2,0,1,-1)
-
+        self.col_status = 0
         self.update_entrytable()
+        # Adding myself to the guiqueue to get the data for autocalibration
+        self.device.add_guiqueue(widget=self)
+
+    def start_index_changed(self):
+        funcname = __name__ + '.start_index_changed():'
+        logger.debug(funcname)
+        self.config.start_index = self.start_index.value()
+
+    def start_clicked(self):
+        funcname = __name__ + '.start_clicked():'
+        logger.debug(funcname)
+        if self.start.isChecked():
+            start_index = self.config.start_index
+            self._autocal_entry_running = False
+            logger.debug('Starting at index {}'.format(start_index))
+            self._autocal_entry_index = start_index
+            self.autcal_run_timer = QtCore.QTimer()
+            self.autcal_run_timer.timeout.connect(self.autocal_run)
+            self.autcal_run_timer.start(1000)
+            self.autocal_run()
+        else:
+            logger.debug('Stopping')
+            self.autcal_run_timer.stop()
+
+    def autocal_run(self):
+        funcname = __name__ + '.autocal_run():'
+        logger.debug(funcname)
+        try:
+            self._autocal_entry_run = self.config.entries[self._autocal_entry_index]
+        except:
+            logger.debug(funcname + 'Could not get entry, stopping')
+            self.autcal_run_timer.stop()
+            self.start.setChecked(False)
+            return
+        print('Processing entry',self._autocal_entry_index)
+        # Check if an entry is processed
+        print('fds',self._autocal_entry_running)
+        parameter = self._autocal_entry_run.parameter
+        print('Device',parameter.devicename)
+        print('Datakey', parameter.datakey)
+
+
+        if self._autocal_entry_running:
+            print('Running, doing nothing, could update status here')
+            col_status = 0
+            item_status = self.calentrytable.item(self.config.start_index, self.col_status)
+            trun = time.time() - self._autocal_entry_tstart
+            item_status.setText('Running {:.1f}'.format(trun))
+        else:
+            # Find the device
+            devices = self.device.redvypr.get_devices()
+            flag_device_found = False
+            self._autocal_entry_device = None
+            for d in devices:
+                if d.name == parameter.devicename:
+                    logger.debug(funcname + 'Found a device')
+                    flag_device_found = True
+                    self._autocal_entry_device = d
+
+            if self._autocal_entry_device is not None:
+                logger.debug(funcname + 'Sending command')
+                comdata = {'temp':100}
+                self._autocal_entry_device.thread_command(command='set', data=comdata)
+
+            if self._autocal_entry_run.autocalmode == 'timer':
+                logger.debug(funcname + 'Processing entry with timer mode')
+                self._autocal_entry_running = True
+                self._autocal_entry_tstart = time.time()
+                dt_wait = self._autocal_entry_run.timer_wait
+
+                logger.debug(funcname + 'Waiting for {}'.format(dt_wait))
+                self.autcal_run_timer_entry = QtCore.QTimer()
+                self.autcal_run_timer_entry.timeout.connect(self.autocal_run_entry_wait)
+                self.autcal_run_timer_entry.start(int(dt_wait * 1000))
+                # Set item status
+                item_status = self.calentrytable.item(self.config.start_index, self.col_status)
+                trun = time.time() - self._autocal_entry_tstart
+                item_status.setText('Running {:.1f}'.format(trun))
+
+    def autocal_run_entry_wait(self):
+        funcname = __name__ + '.autocal_run_entry_wait():'
+        logger.debug(funcname + 'Waited long enough, sampling and increasing index')
+        self.autcal_run_timer_entry.stop()
+        # Increasing index
+        # Status of table
+        item_status = self.calentrytable.item(self.config.start_index, self.col_status)
+        trun = time.time() - self._autocal_entry_tstart
+        item_status.setText('Idle')
+        self.config.start_index += 1
+        start_index = self.config.start_index
+        logger.debug('Index {}'.format(start_index))
+        self._autocal_entry_index = start_index
+        self._autocal_entry_running = False
+        self.autocal_run() # Start a new round
 
     def update_entrytable(self):
         self.calentrytable.clear()
-        self.calentrytable.setColumnCount(4)
+        self.calentrytable.setColumnCount(6)
         nrows = len(self.config.entries)
         self.calentrytable.setRowCount(nrows)
-        colheader = ['Address','Parameter set']
-        col_parameter_set = 1
+        colheader = ['Status','Address','Parameter set','Mode','Timer wait','Samplemode']
+        col_status = 0
+        col_addr = 1
+        col_parameter_set = 2
+        col_mode = 3
+        col_timer_wait = 4
+        col_samplemode = 5
         self.calentrytable.setHorizontalHeaderLabels(colheader)
         for irow,entry in enumerate(self.config.entries):
+            print('Entry',entry)
+
+            item_status = QtWidgets.QTableWidgetItem('Idle')
+            self.calentrytable.setItem(irow, col_status, item_status)
+
+            addr = entry.parameter.get_str('/d/k')
+            item_addr = QtWidgets.QTableWidgetItem(addr)
+            self.calentrytable.setItem(irow, col_addr, item_addr)
+
             parameter_set = str(entry.parameter_set)
             item_set = QtWidgets.QTableWidgetItem(parameter_set)
             self.calentrytable.setItem(irow,col_parameter_set,item_set)
 
+            autocalmode = str(entry.autocalmode)
+            item_mode = QtWidgets.QTableWidgetItem(autocalmode)
+            self.calentrytable.setItem(irow, col_mode, item_mode)
+
+            timer_wait = str(entry.timer_wait)
+            item_wait = QtWidgets.QTableWidgetItem(timer_wait)
+            self.calentrytable.setItem(irow, col_timer_wait, item_wait)
+
+            samplemode = str(entry.samplemode)
+            item_samplemode = QtWidgets.QTableWidgetItem(samplemode)
+            self.calentrytable.setItem(irow, col_samplemode, item_samplemode)
 
     def additem_clicked(self):
         funcname = __name__ + '.additem_clicked()'
@@ -1706,11 +1838,19 @@ class autocalWidget(QtWidgets.QWidget):
         self.pydantic_config = datastreamWidget(redvypr=self.device.redvypr)
         self.pydantic_config.apply.connect(self.parameter_changed)
         self.pydantic_config.show()
-    def parameter_changed(self, config):
-        print('Config',config)
+    def parameter_changed(self,config):
+        funcname = __name__ + '.parameter_changed():'
+        logger.debug(funcname + 'Config {}'.format(config))
         device = config['device']
         address = config['datastream_address']
         self.config.parameter = address
+        self.parameterinput_edit.setText(self.config.parameter.get_str())
+
+    def update_data(self,data):
+        funcname = __name__ + '.update_data():'
+        logger.debug(funcname)
+        if data in self._autocal_entry_run.parameter:
+            print('Data for autocalibration',data)
 
 
 
@@ -2912,7 +3052,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
 
 
-    def update(self, data):
+    def update_data(self, data):
         funcname = __name__ + '.update():'
         logger.debug(funcname)
         try:

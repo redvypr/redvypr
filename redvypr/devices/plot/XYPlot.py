@@ -66,7 +66,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.xyplot.config = self.device.custom_config
         self.xyplot.apply_config()
 
-    def update(self, data):
-        funcname = __name__ + '.update():'
+    def update_data(self, data):
+        funcname = __name__ + '.update_data():'
         #print(funcname)
         self.xyplot.update_plot(data)

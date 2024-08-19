@@ -367,7 +367,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         layout.addLayout(hlayout)
         layout.addWidget(self.text)
 
-    def update(self,data):
+    def update_data(self,data):
         funcname = __name__ + '.update():'
         #print('data',data)
         try:

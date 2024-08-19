@@ -856,7 +856,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.deviceinfoQtree.reload_data(file_status)
             self.deviceinfoQtree.verticalScrollBar().setSliderPosition(yScroll)
 
-    def update(self,data):
+    def update_data(self,data):
         funcname = __name__ + '.update()'
         try:
             data['_deviceinfo']

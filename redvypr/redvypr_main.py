@@ -205,6 +205,7 @@ def redvypr_main():
                 for indo,option in enumerate(options):
                     #print('Option',option,len(option),indo)
                     if(option == 's'):
+                        print('Autostart')
                         deviceconfig['base_config']['autostart'] = True
                     elif (option == 'mp' or option == 'multiprocess') and (':' not in option):
                         deviceconfig['base_config']['multiprocess'] = 'multiprocess'

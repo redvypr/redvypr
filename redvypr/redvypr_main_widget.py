@@ -213,6 +213,32 @@ class redvyprWidget(QtWidgets.QWidget):
             if True:
                 # Feed the data into the modules/functions/objects and
                 # let them treat the data
+                for i, (guiqueue, gui_widget) in enumerate(devicedict['guiqueues']):
+                    while True:
+                        try:
+                            data = guiqueue.get(block=False)
+                        except Exception as e:
+                            # print('Exception gui',e)
+                            break
+
+                        # Updating the widget, if existing
+                        try:
+                            gui_widget.update_data(data)
+                        except Exception as e:
+                            break
+                            # logger.exception(e)
+
+    def readguiqueue_legacy(self):
+        """This periodically called function reads the guiqueue and calls
+        the widgets of the devices update function (if they exist)
+
+        """
+        # Update devices
+        for devicedict in self.redvypr.devices:
+            device = devicedict['device']
+            if True:
+                # Feed the data into the modules/functions/objects and
+                # let them treat the data
                 for i, guiqueue in enumerate(devicedict['guiqueue']):
                     while True:
                         try:
@@ -383,8 +409,10 @@ class redvyprWidget(QtWidgets.QWidget):
             if (devicetab.indexOf(devicedisplaywidget_called)) < 0:
                 devicetab.addTab(devicedisplaywidget_called, tablabeldisplay)
                 # Append the widget to the processing queue
-            self.redvypr.devices[ind_devices]['gui'].append(devicedisplaywidget_called)
-            self.redvypr.devices[ind_devices]['displaywidget'] = self.redvypr.devices[ind_devices]['gui'][0]
+
+            # Update the first entry of the guiqueue list with the displaywidget
+            self.redvypr.devices[ind_devices]['guiqueues'][0][1] = devicedisplaywidget_called
+            self.redvypr.devices[ind_devices]['displaywidget'] = devicedisplaywidget_called
             self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
         else:
             self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
@@ -397,9 +425,10 @@ class redvyprWidget(QtWidgets.QWidget):
         # 22.11.2022 TODO, this needs to be replaced by functional arguments instead of properties
         self.redvypr.devices[ind_devices]['initwidget'].redvyprdevicelistentry = self.redvypr.devices[ind_devices]
         self.redvypr.devices[ind_devices]['initwidget'].redvypr = self.redvypr
-        if (len(self.redvypr.devices[ind_devices]['gui']) > 0):
-            self.redvypr.devices[ind_devices]['gui'][0].redvyprdevicelistentry = self.redvypr.devices[ind_devices]
-            self.redvypr.devices[ind_devices]['gui'][0].redvypr = self.redvypr
+        if (len(self.redvypr.devices[ind_devices]['guiqueues']) > 0):
+            if self.redvypr.devices[ind_devices]['guiqueues'][0][1] is not None:
+                self.redvypr.devices[ind_devices]['guiqueues'][0][1].redvyprdevicelistentry = self.redvypr.devices[ind_devices]
+                self.redvypr.devices[ind_devices]['guiqueues'][0][1].redvypr = self.redvypr
 
         # Get an icon for the device
         try:
@@ -890,6 +919,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         devcurAction.setStatusTip('Go to the home tab')
         devcurAction.triggered.connect(self.goto_home_tab)
 
+        # TODO rename to subscribe
         conAction = QtWidgets.QAction("&Connect devices", self)
         conAction.setShortcut("Ctrl+C")
         conAction.setStatusTip('Connect the input/output datastreams of the devices')

@@ -69,7 +69,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def cleartext(self):
         self.text.clear()        
 
-    def update(self,data):
+    def update_data(self,data):
         #cursor = QtGui.QTextCursor(self.text.document())
         prev_cursor = self.text.textCursor()
         pos = self.text.verticalScrollBar().value()

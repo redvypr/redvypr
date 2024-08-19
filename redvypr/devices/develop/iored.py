@@ -2318,7 +2318,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.devicetree.expandAll()
         self.devicetree.resizeColumnToContents(0)
 
-    def update(self, data):
+    def update_data(self, data):
         """
 
         Args:

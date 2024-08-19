@@ -1321,8 +1321,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
 
 
-    def update(self, data):
-        funcname = __name__ + '.update():'
+    def update_data(self, data):
+        funcname = __name__ + '.update_data():'
         print(funcname)
         #return
         print(funcname + '  got data',data)

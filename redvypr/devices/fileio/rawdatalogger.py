@@ -656,7 +656,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.filetable)
         #self.text.insertPlainText("hallo!")        
 
-    def update(self,data):
+    def update_data(self,data):
         funcname = __name__ + '.update()'
         #print('data',data)
         try:

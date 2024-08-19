@@ -437,7 +437,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.statustimer.timeout.connect(self.update)
         self.statustimer.start(500)
 
-    def update(self):
+    def update_data(self):
         statusqueue = self.device.statusqueue
         while (statusqueue.empty() == False):
             try:

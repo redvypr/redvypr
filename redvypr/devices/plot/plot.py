@@ -267,8 +267,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def commit_plot_clicked(self):
         self.displaywidget.commit_clicked()
 
-    def update(self, data):
-        funcname = __name__ + '.update():'
+    def update_data(self, data):
+        funcname = __name__ + '.update_data():'
         logger.debug(funcname)
         tnow = time.time()
         self.databuf.append(data)

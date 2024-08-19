@@ -112,6 +112,14 @@ The result is a very similar datapacket, with a new entry called `localhost`::
    'uuid': '118902019882015-197'}, 'publisher': 'test_device_bare', 't': 1723435292.030152,
    'devicemodulename': 'redvypr.devices.test.test_device_bare', 'numpacket': 5},
    't': 1723435292.030152}
+Addressing the data within Python is easy if the data packet isfor example in the variable called `data`::
+
+   pi = data['data']
+But how to address a certain data packet from a certain redvypr? This is done with a RedvyprAddress::
+
+   from redvypr.redvypr_address import RedvyprAddress
+   raddr = RedvyprAddress('*')
+
 Misc notes
 ----------
 
