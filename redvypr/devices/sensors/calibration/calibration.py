@@ -7,15 +7,12 @@ import queue
 from PyQt5 import QtWidgets, QtCore, QtGui
 import time
 import numpy as np
-import matplotlib
-import serial
-import serial.tools.list_ports
 import logging
 import sys
 import pyqtgraph
 import yaml
 import uuid
-import threading
+import matplotlib
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import random
@@ -55,17 +52,39 @@ class AutoCalEntry(pydantic.BaseModel):
     """
     An entry for the autocalibration procedure
     """
+    autocalmode: typing.Literal['timer', 'response', 'threshold'] = pydantic.Field(default='timer',
+                                                                                   description='The mode, i.e. the way autocal shall behave after the value is set.')
     parameter: RedvyprAddress = pydantic.Field(default=RedvyprAddress(),
                                                        description='The parameter to be changed')
     parameter_set: float = pydantic.Field(default=0.0, description='The value the parameter shall be changed to')
+    parameter_reached: RedvyprAddress = pydantic.Field(default=RedvyprAddress(),
+                                               description='The parameter giving the signal if the desired value has been reached')
+    parameter_reached_true: typing.Any = pydantic.Field(default=1, description='The value that is sent by parameter_reached when the value has been reached')
+    parameter_reached_false: typing.Any = pydantic.Field(default=0,
+                                                   description='The value that is sent by parameter_reached when the value has not been reached yet')
     command: str = pydantic.Field(default='', description='The command to be sent')
-    autocalmode: typing.Literal['timer','response','threshold'] = pydantic.Field(default='timer', description='The mode, i.e. the way autocal shall behave after the value is set.')
-    timer_wait: float = pydantic.Field(default=3.5, description='Seconds to wait')
+    timer_wait: float = pydantic.Field(default=30.5, description='Seconds to wait')
     samplemode: str = pydantic.Field(default='', description='The sample mode after the value has been reached (based on autocalmode)')
 
 
-class AutoCalConfig(pydantic.BaseModel):
+class AutoCalConfig(AutoCalEntry):
+    entries: typing.Optional[typing.List[AutoCalEntry]] = pydantic.Field(default=[], editable=True)
+    start_index: int = pydantic.Field(default=0, description='The index of the entries to start with')
+    parameter_delta: float = pydantic.Field(default=1.0,
+                                            description='The delta between the next entry if a new is added',
+                                            editable=True)
+    parameter_start: float = pydantic.Field(default=0, description='The start value of the parameter',
+                                            editable=True)
+    autocalmode: typing.Literal['timer', 'response', 'threshold'] = pydantic.Field(default='timer',
+                                                                                   description='The mode, i.e. the way autocal shall behave after the value is set.')
+
+class AutoCalConfig_legacy(pydantic.BaseModel):
     parameter: RedvyprAddress = pydantic.Field(default=RedvyprAddress(), description='The parameter to be changed')
+    parameter_reached: RedvyprAddress = pydantic.Field(default=RedvyprAddress(),
+                                               description='The parameter giving the signal if the desired value has been reached')
+    parameter_reached_true: typing.Any = pydantic.Field(default=1, description='The value that is sent by parameter_reached when the value has been reached')
+    parameter_reached_false: typing.Any = pydantic.Field(default=0,
+                                                   description='The value that is sent by parameter_reached when the value has not been reached yet')
     entries: typing.Optional[typing.List[AutoCalEntry]] = pydantic.Field(default=[], editable=True)
     start_index: int = pydantic.Field(default=0, description='The index of the entries to start with')
     parameter_delta: float = pydantic.Field(default=1.0, description='The delta between the next entry if a new is added', editable=True)
@@ -1545,78 +1564,6 @@ def calc_NTC(calibration, R):
     T = 1/T_1 - Toff
     return T
 
-def calc_ntc_coeffs_legacy(calibrationdata, Ntest = 100):
-    funcname = __name__ + '.calc_ntc_coeffs():'
-    logger.debug(funcname)
-    refname = calibrationdata['name_ref_sensor']
-    print('refname',refname)
-    try:
-        refdata = calibrationdata['manualsensordata'][refname]
-    except:
-        refdata = calibrationdata['sensordata'][refname]
-
-    refdata = np.asarray(refdata)
-    coeffs = {}
-    for senname in calibrationdata['sensordata'].keys():
-        if senname is not refname:
-            print('Senname', senname)
-            R = np.asarray(calibrationdata['sensordata'][senname])
-            T = refdata
-            print('R', R)
-            print('T', T)
-            TOFF = 273.15
-            fitdata = fit_ntc(T, R, TOFF)
-            P_R = fitdata['P_R']
-            T_test = calc_ntc(R, P_R, TOFF)
-            # Calculate Ntest values between min and max
-            Rtest = np.linspace(min(R), max(R), Ntest)
-            T_Ntest = calc_ntc(Rtest, P_R, TOFF)
-            coeffs[senname] = {}
-            coeffs[senname]['parameter'] = 'NTC'
-            coeffs[senname]['coeff'] = P_R.tolist()
-            coeffs[senname]['Toff'] = TOFF
-            coeffs[senname]['unit'] = 'degC'
-            coeffs[senname]['data'] = {}
-            coeffs[senname]['data']['refdata']  = refdata.tolist()
-            coeffs[senname]['data']['rawdata']  = R.tolist()
-            coeffs[senname]['data']['calcdata'] = T_test.tolist()
-            coeffs[senname]['data']['rawdata_Ntest'] = Rtest.tolist()
-            coeffs[senname]['data']['calcdata_Ntest'] = T_Ntest.tolist()
-
-    for senname in calibrationdata['manualsensordata'].keys():
-        if senname is not refname:
-            print('Manual senname',senname)
-            R = np.asarray(calibrationdata['manualsensordata'][senname])
-            T = refdata
-            print('R', R)
-            print('T', T)
-            TOFF = 273.15
-            fitdata = fit_ntc(T,R,TOFF)
-            P_R = fitdata['P_R']
-            T_test = calc_ntc(R, P_R, TOFF)
-            # Calculate Ntest values between min and max
-            Rtest = np.linspace(min(R),max(R),Ntest)
-            T_Ntest = calc_ntc(Rtest, P_R, TOFF)
-            coeffs[senname] = {}
-            coeffs[senname]['parameter'] = 'NTC'
-            coeffs[senname]['coeff'] = P_R.tolist()
-            coeffs[senname]['Toff'] = TOFF
-            coeffs[senname]['unit'] = 'degC'
-            coeffs[senname]['data']['refdata']  = refdata.tolist()
-            coeffs[senname]['data']['rawdata']  = R.tolist()
-            coeffs[senname]['data']['calcdata'] = T_test.tolist()
-            coeffs[senname]['data']['rawdata_Ntest'] = Rtest.tolist()
-            coeffs[senname]['data']['calcdata_Ntest'] = T_Ntest.tolist()
-
-
-    return coeffs
-
-
-
-
-
-
-
 class autocalWidget(QtWidgets.QWidget):
     def __init__(self, device=None):
         """
@@ -1635,6 +1582,11 @@ class autocalWidget(QtWidgets.QWidget):
         self.parameterinput = QtWidgets.QPushButton('Parameter')
         self.parameterinput.clicked.connect(self.parameterClicked)
         self.parameterinput_edit = QtWidgets.QLineEdit()
+        self.parameterinput_edit.setText(self.config.parameter.get_str())
+
+        self.parameter_reached_edit = QtWidgets.QLineEdit()
+        self.parameter_reached_edit.setText(self.config.parameter_reached.get_str())
+        self.parameter_reached_button = QtWidgets.QPushButton('Parameter reached')
 
         self.parameter_start = QtWidgets.QDoubleSpinBox()
         self.parameter_start.setValue(self.config.parameter_start)
@@ -1652,23 +1604,53 @@ class autocalWidget(QtWidgets.QWidget):
         self.start_index = QtWidgets.QSpinBox()
         self.start_index.setValue(self.config.start_index)
         self.start_index.valueChanged.connect(self.start_index_changed)
+        #timer_wait
+        self.parameter_reached_true = QtWidgets.QLineEdit()
+        self.parameter_reached_true.setText(str(self.config.parameter_reached_true))
+        self.parameter_reached_false = QtWidgets.QLineEdit()
+        self.parameter_reached_false.setText(str(self.config.parameter_reached_false))
+        self.timer_wait = QtWidgets.QDoubleSpinBox()
+        self.timer_wait.setValue(self.config.timer_wait)
+        self.parameter_threshold = QtWidgets.QDoubleSpinBox()
+        self.modecombo = QtWidgets.QComboBox()
+        modes = typing.get_args(typing.get_type_hints(AutoCalConfig())['autocalmode'])
+        for m in modes:
+            self.modecombo.addItem(str(m))
 
-        self.layout.addWidget(self.parameterinput_edit, 0, 0)
-        self.layout.addWidget(self.parameterinput, 0, 1)
-        self.layout.addWidget(QtWidgets.QLabel('Parameter start'), 0, 2)
-        self.layout.addWidget(self.parameter_start, 0, 3)
-        self.layout.addWidget(QtWidgets.QLabel('Parameter delta'), 0, 4)
-        self.layout.addWidget(self.parameter_delta, 0, 5)
+        self.layout_config0 = QtWidgets.QHBoxLayout()
+        self.layout_config0.addWidget(self.parameterinput)
+        self.layout_config0.addWidget(self.parameterinput_edit)
+        self.layout_config0.addWidget(QtWidgets.QLabel('Parameter start'))
+        self.layout_config0.addWidget(self.parameter_start)
+        self.layout_config0.addWidget(QtWidgets.QLabel('Parameter delta'))
+        self.layout_config0.addWidget(self.parameter_delta)
+        self.layout.addLayout(self.layout_config0, 0, 0,1,-1)
+        self.layout_config1 = QtWidgets.QHBoxLayout()
+        self.layout_config1.addWidget(QtWidgets.QLabel('Mode'))
+        self.layout_config1.addWidget(self.modecombo)
+        self.layout_config1.addWidget(self.parameter_reached_button)
+        self.layout_config1.addWidget(self.parameter_reached_edit,3)
+        self.layout_config1.addWidget(QtWidgets.QLabel('Parameter reached true'))
+        self.layout_config1.addWidget(self.parameter_reached_true,1)
+        self.layout_config1.addWidget(QtWidgets.QLabel('Parameter reached false'))
+        self.layout_config1.addWidget(self.parameter_reached_false,1)
+        self.layout_config1.addWidget(QtWidgets.QLabel('Timer wait'))
+        self.layout_config1.addWidget(self.timer_wait)
+        self.layout_config1.addWidget(QtWidgets.QLabel('Threshold'))
+        self.layout_config1.addWidget(self.parameter_threshold)
+        self.layout.addLayout(self.layout_config1, 1, 0, 1,-1)
 
-        self.layout.addWidget(self.addentry, 1, 0,1,-1)
-        self.layout.addWidget(self.calentrytable, 2, 0, 1, -1)
-        self.layout.addWidget(self.rementry, 3, 1,1,-1)
-        self.layout.addWidget(self.start, 4, 0, 1, -1)
-        self.layout.addWidget(QtWidgets.QLabel('Start index'), 4, 2)
-        self.layout.addWidget(self.start_index, 4, 3)
-        self.layout.addWidget(self.start, 4, 0, 1, 2)
+        irow = 1
+        self.layout.addWidget(self.addentry, 1+irow, 0,1,-1)
+        self.layout.addWidget(self.calentrytable, 2+irow, 0, 1, -1)
+        self.layout.addWidget(self.rementry, 3+irow, 1,1,-1)
+        self.layout.addWidget(self.start, 4+irow, 0, 1, -1)
+        self.layout.addWidget(QtWidgets.QLabel('Start index'), 4+irow, 2)
+        self.layout.addWidget(self.start_index, 4+irow, 3)
+        self.layout.addWidget(self.start, 4+irow, 0, 1, 2)
 
         self.col_status = 0
+        self.col_value = 6
         self.update_entrytable()
         # Adding myself to the guiqueue to get the data for autocalibration
         self.device.add_guiqueue(widget=self)
@@ -1689,9 +1671,11 @@ class autocalWidget(QtWidgets.QWidget):
             self.autcal_run_timer = QtCore.QTimer()
             self.autcal_run_timer.timeout.connect(self.autocal_run)
             self.autcal_run_timer.start(1000)
+            self.start_index.setEnabled(False)
             self.autocal_run()
         else:
             logger.debug('Stopping')
+            self.start_index.setEnabled(True)
             self.autcal_run_timer.stop()
 
     def autocal_run(self):
@@ -1703,7 +1687,10 @@ class autocalWidget(QtWidgets.QWidget):
             logger.debug(funcname + 'Could not get entry, stopping')
             self.autcal_run_timer.stop()
             self.start.setChecked(False)
+            self.start_index.setEnabled(True)
             return
+
+        self.start_index.setEnabled(False)
         print('Processing entry',self._autocal_entry_index)
         # Check if an entry is processed
         print('fds',self._autocal_entry_running)
@@ -1714,16 +1701,18 @@ class autocalWidget(QtWidgets.QWidget):
 
         if self._autocal_entry_running:
             print('Running, doing nothing, could update status here')
+
             col_status = 0
             item_status = self.calentrytable.item(self.config.start_index, self.col_status)
             trun = time.time() - self._autocal_entry_tstart
             item_status.setText('Running {:.1f}'.format(trun))
         else:
             # Find the device
-            devices = self.device.redvypr.get_devices()
+            devices = self.device.redvypr.get_device_objects()
             flag_device_found = False
             self._autocal_entry_device = None
             for d in devices:
+                print('d',d)
                 if d.name == parameter.devicename:
                     logger.debug(funcname + 'Found a device')
                     flag_device_found = True
@@ -1731,11 +1720,12 @@ class autocalWidget(QtWidgets.QWidget):
 
             if self._autocal_entry_device is not None:
                 logger.debug(funcname + 'Sending command')
-                comdata = {'temp':100}
+                comdata = {'temp':self._autocal_entry_run.parameter_set}
                 self._autocal_entry_device.thread_command(command='set', data=comdata)
 
             if self._autocal_entry_run.autocalmode == 'timer':
                 logger.debug(funcname + 'Processing entry with timer mode')
+                self.device.subscribe_address(self._autocal_entry_run.parameter)
                 self._autocal_entry_running = True
                 self._autocal_entry_tstart = time.time()
                 dt_wait = self._autocal_entry_run.timer_wait
@@ -1762,15 +1752,19 @@ class autocalWidget(QtWidgets.QWidget):
         start_index = self.config.start_index
         logger.debug('Index {}'.format(start_index))
         self._autocal_entry_index = start_index
+        self.start_index.setValue(self.config.start_index)
         self._autocal_entry_running = False
+        # Sampling
+        logger.debug(funcname + 'Sampling')
+        self.device.devicedisplaywidget.get_intervalldata()
         self.autocal_run() # Start a new round
 
     def update_entrytable(self):
         self.calentrytable.clear()
-        self.calentrytable.setColumnCount(6)
+        self.calentrytable.setColumnCount(7)
         nrows = len(self.config.entries)
         self.calentrytable.setRowCount(nrows)
-        colheader = ['Status','Address','Parameter set','Mode','Timer wait','Samplemode']
+        colheader = ['Status','Address','Parameter set','Mode','Timer wait','Samplemode','Value']
         col_status = 0
         col_addr = 1
         col_parameter_set = 2
@@ -1782,27 +1776,37 @@ class autocalWidget(QtWidgets.QWidget):
             print('Entry',entry)
 
             item_status = QtWidgets.QTableWidgetItem('Idle')
+            item_status.setFlags(item_status.flags() ^ QtCore.Qt.ItemIsEditable)
             self.calentrytable.setItem(irow, col_status, item_status)
 
             addr = entry.parameter.get_str('/d/k')
             item_addr = QtWidgets.QTableWidgetItem(addr)
+            item_addr.setFlags(item_addr.flags() ^ QtCore.Qt.ItemIsEditable)
             self.calentrytable.setItem(irow, col_addr, item_addr)
 
             parameter_set = str(entry.parameter_set)
             item_set = QtWidgets.QTableWidgetItem(parameter_set)
+            item_set.setFlags(item_set.flags() ^ QtCore.Qt.ItemIsEditable)
             self.calentrytable.setItem(irow,col_parameter_set,item_set)
 
             autocalmode = str(entry.autocalmode)
             item_mode = QtWidgets.QTableWidgetItem(autocalmode)
+            item_mode.setFlags(item_mode.flags() ^ QtCore.Qt.ItemIsEditable)
             self.calentrytable.setItem(irow, col_mode, item_mode)
 
             timer_wait = str(entry.timer_wait)
             item_wait = QtWidgets.QTableWidgetItem(timer_wait)
+            item_wait.setFlags(item_wait.flags() ^ QtCore.Qt.ItemIsEditable)
             self.calentrytable.setItem(irow, col_timer_wait, item_wait)
 
             samplemode = str(entry.samplemode)
             item_samplemode = QtWidgets.QTableWidgetItem(samplemode)
+            item_samplemode.setFlags(item_samplemode.flags() ^ QtCore.Qt.ItemIsEditable)
             self.calentrytable.setItem(irow, col_samplemode, item_samplemode)
+
+            item_value = QtWidgets.QTableWidgetItem('NA')
+            item_value.setFlags(item_value.flags() ^ QtCore.Qt.ItemIsEditable)
+            self.calentrytable.setItem(irow, self.col_value, item_value)
 
     def additem_clicked(self):
         funcname = __name__ + '.additem_clicked()'
@@ -1810,7 +1814,7 @@ class autocalWidget(QtWidgets.QWidget):
         parameter_start = self.parameter_start.value()
         parameter_delta = self.parameter_delta.value()
         self.parameter_start.setValue(parameter_start + parameter_delta)
-        entry = AutoCalEntry(parameter_set=parameter_start)
+        entry = AutoCalEntry(parameter_set=parameter_start, parameter=self.config.parameter)
         self.config.entries.append(entry)
         self.update_entrytable()
 
@@ -1850,7 +1854,12 @@ class autocalWidget(QtWidgets.QWidget):
         funcname = __name__ + '.update_data():'
         logger.debug(funcname)
         if data in self._autocal_entry_run.parameter:
-            print('Data for autocalibration',data)
+            #print('Data for autocalibration',data)
+            item_value = self.calentrytable.item(self.config.start_index, self.col_value)
+            rdata = redvypr.data_packets.Datapacket(data)
+            valuedata = rdata[self._autocal_entry_run.parameter]
+            valuedatastr = str(valuedata)
+            item_value.setText(valuedatastr)
 
 
 
@@ -2858,7 +2867,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
         # self.datatable.setHorizontalHeaderLabels(self.datacolumns)
         col = 0
-        print('fdsfd', self.device.custom_config)
+        #print('fdsfd', self.device.custom_config)
 
         for idata in range(ndatarows):
             itemdata = self.device.custom_config.calibrationdata_time[idata]
@@ -3048,15 +3057,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.plot_coeff_widget = PlotWidgetNTC(self.device.custom_config, coeffs)
         self.plot_coeff_widget.show()
 
-
-
-
-
     def update_data(self, data):
         funcname = __name__ + '.update():'
         logger.debug(funcname)
         try:
-            print('Data',data)
+            #print('Data',data)
             for i, plot_widget in enumerate(self.plot_widgets):
                 #print('p',i,p.datastream,p.subscription_redvypr)
                 if plot_widget.datastream is None: # No datastream assigned yet, check if the data packet is worth subscription

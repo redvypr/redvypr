@@ -53,10 +53,16 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 temp_set = data['temp']
 
         dT = temp - temp_set
-        temp = temp + dT * dt_wait/t_lowpass
+        temp = temp - dT * dt_wait/t_lowpass
+        print('Temp',temp,'dT',dT,dT * dt_wait/t_lowpass)
         data = {}#redvypr.data_packets.create_datadict(device = device_info['device'])
         data['temp'] = temp
         data['temp_set'] = temp_set
+        if abs(temp - temp_set)<0.001:
+            data['temp_reached'] = 1
+        else:
+            data['temp_reached'] = 0
+
         dataqueue.put(data)
         time.sleep(dt_wait)
 

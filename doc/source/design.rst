@@ -120,6 +120,9 @@ But how to address a certain data packet from a certain redvypr? This is done wi
    from redvypr.redvypr_address import RedvyprAddress
    raddr = RedvyprAddress('*')
 
+RedvyprAddress
+--------------
+- Address entries
 Misc notes
 ----------
 
