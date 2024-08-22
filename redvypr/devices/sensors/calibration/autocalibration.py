@@ -51,6 +51,7 @@ class AutoCalEntry(pydantic.BaseModel):
     command: str = pydantic.Field(default='', description='The command to be sent')
     timer_wait: float = pydantic.Field(default=30.5, description='Seconds to wait')
     sample_delay: float = pydantic.Field(default=2.0, description='The delay [s] after which the paremeters are sampled')
+    entry_min_runtime: float = pydantic.Field(default=5.0, description='The mininum time[s] an entry should run before analysis is performed')
 
 
 class AutoCalConfig(AutoCalEntry):
@@ -394,13 +395,16 @@ class autocalWidget(QtWidgets.QWidget):
 
         if self._autocal_entry_run.autocalmode == 'response':
             if data in self._autocal_entry_run.parameter_steady:
+                trun = time.time() - self._autocal_entry_tstart
                 print('Found steady paramter')
                 steady_true = self._autocal_entry_run.parameter_steady_true
                 steady_false = self._autocal_entry_run.parameter_steady_false
                 rdata = redvypr.data_packets.Datapacket(data)
                 steadydata = rdata[self._autocal_entry_run.parameter_steady]
                 print('Steadydata',steadydata)
-                if steadydata == steady_true:
+                # Check if steady and at least next_entry_min_time seconds
+
+                if steadydata == steady_true and (trun > self._autocal_entry_run.entry_min_runtime):
                     print('Parameter steady ...')
                     self._autocal_entry_running = False
                     self.autocal_run_next_entry()
