@@ -607,6 +607,11 @@ class RedvyprDevice(QtCore.QObject):
         """
         pass
 
+
+    def isRunning(self):
+        info_dict = self.get_thread_status()
+        return info_dict['thread_running']
+
     def get_thread_status(self):
         """
 
@@ -743,7 +748,7 @@ class RedvyprDevice(QtCore.QObject):
 
 
         """
-        funcname = __name__ + '.start_thread():'
+        funcname = __name__ + '.thread_start():'
 
         #logger.debug(funcname + 'Starting device: ' + str(device.name))
         self.logger.debug(funcname + 'Starting device: ' + str(self.name))

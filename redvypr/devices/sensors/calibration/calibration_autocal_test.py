@@ -33,7 +33,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     print('Config',config)
     temp_set = 20.0
     temp = 10.0
-    t_lowpass = 10
+    t_lowpass = 5
     dt_wait = 0.5
     i = 0
     counter = 0
@@ -59,10 +59,11 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         data['temp'] = temp
         data['temp_set'] = temp_set
         if abs(temp - temp_set)<0.001:
-            data['temp_reached'] = 1
+            data['temp_steady'] = 1
         else:
-            data['temp_reached'] = 0
+            data['temp_steady'] = 0
 
+        print('Data',data)
         dataqueue.put(data)
         time.sleep(dt_wait)
 

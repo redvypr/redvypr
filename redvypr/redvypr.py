@@ -423,21 +423,25 @@ class Redvypr(QtCore.QObject):
         """
         devicemodulename = None
         funcname = __name__ + '.get_devicemodulename_from_str():'
+        logger.debug(funcname)
+        #print('Devicename',devicename)
         # Make an exact test first
         for smod in self.redvypr_device_scan.redvypr_devices_flat:
-            # print('device:',smod['name'],device['devicemodulename'])
+            #print('device:',smod['name'],devicename)
             # The smod['name'] looks like 'redvypr.devices.network.zeromq_device'
             # Check first if devicemodulename has a '.', if not, use split smod['name'] and use the last one
             FLAG_DEVICEMODULENAME_EXACT = False
             if '.' in devicename:
                 if (devicename == smod['name']):
+                    logger.debug(funcname + ' Found exact fit {}'.format(devicename))
                     FLAG_DEVICEMODULENAME_EXACT = True
+                    devicemodulename = smod['name']
                     break
             else:
                 smodname = smod['name'].split('.')[-1]
                 # print('smodname',smodname)
                 if (devicename == smodname):
-                    logger.debug(funcname + ' Found exact fit {}'.format(devicename))
+                    logger.debug(funcname + ' Found exact fit of last entry {}'.format(devicename))
                     FLAG_DEVICEMODULENAME_EXACT = True
                     # device.devicemodulename_orig = device.devicemodulename
                     devicemodulename = smod['name']
@@ -489,6 +493,7 @@ class Redvypr(QtCore.QObject):
             if (hasdevices):
                 for device in config.devices:
                     logger.debug(funcname + 'Adding device {}'.format(device))
+                    print('Devicemodulename:',device.devicemodulename)
                     devicename = device.devicemodulename
                     devicemodulename = self.get_devicemodulename_from_str(devicename)
                     if devicemodulename is not None:
@@ -501,6 +506,9 @@ class Redvypr(QtCore.QObject):
                         dev_added = self.add_device(devicemodulename=device.devicemodulename,
                                                     custom_config=device.custom_config,
                                                     base_config=device.base_config, subscriptions=subscriptions)
+
+                    else:
+                        logger.warning(funcname + ' Could not find devicemodulename {}'.format(devicemodulename))
 
         # Emit a signal that the configuration has been changed
         self.hostconfig_changed_signal.emit()
