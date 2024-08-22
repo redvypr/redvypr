@@ -205,30 +205,30 @@ class autocalWidget(QtWidgets.QWidget):
             return
 
         self.start_index.setEnabled(False)
-        print('Processing entry',self._autocal_entry_index)
+        #print('Processing entry',self._autocal_entry_index)
         # Check if an entry is processed
-        print('fds',self._autocal_entry_running)
         parameter = self._autocal_entry_run.parameter
-        print('Device',parameter.devicename)
-        print('Datakey', parameter.datakey)
+        #print('Device',parameter.devicename)
+        #print('Datakey', parameter.datakey)
 
 
         if self._autocal_entry_running:
-            print('Running, doing nothing, could update status here')
+            #print('Running, doing nothing, could update status here')
 
             col_status = 0
             item_status = self.calentrytable.item(self.config.start_index, self.col_status)
             trun = time.time() - self._autocal_entry_tstart
             item_status.setText('Running {:.1f}'.format(trun))
             if self._autocal_entry_run.autocalmode == 'response':
-                print('Response')
+                pass
+                #print('Response')
         else:
             # Find the device
             devices = self.device.redvypr.get_device_objects()
             flag_device_found = False
             self._autocal_entry_device = None
             for d in devices:
-                print('d',d)
+                #print('d',d)
                 if d.name == parameter.devicename:
                     logger.debug(funcname + 'Found a device')
                     flag_device_found = True
@@ -295,7 +295,7 @@ class autocalWidget(QtWidgets.QWidget):
 
         self.calentrytable.setHorizontalHeaderLabels(self.colheader)
         for irow,entry in enumerate(self.config.entries):
-            print('Entry',entry)
+            #print('Entry',entry)
             item_status = QtWidgets.QTableWidgetItem('Idle')
             item_status.setFlags(item_status.flags() ^ QtCore.Qt.ItemIsEditable)
             self.calentrytable.setItem(irow, self.col_status, item_status)
@@ -363,7 +363,7 @@ class autocalWidget(QtWidgets.QWidget):
         funcname = __name__ + '.send_commnd_to_device()'
         logger.debug(funcname)
         devicename = calentry.parameter.devicename
-        print('Devicename',devicename)
+        #print('Devicename',devicename)
 
     def parameterClicked(self):
         self.pydantic_config = datastreamWidget(redvypr=self.device.redvypr)
@@ -396,15 +396,15 @@ class autocalWidget(QtWidgets.QWidget):
         if self._autocal_entry_run.autocalmode == 'response':
             if data in self._autocal_entry_run.parameter_steady:
                 trun = time.time() - self._autocal_entry_tstart
-                print('Found steady paramter')
+                #print('Found steady paramter')
                 steady_true = self._autocal_entry_run.parameter_steady_true
                 steady_false = self._autocal_entry_run.parameter_steady_false
                 rdata = redvypr.data_packets.Datapacket(data)
                 steadydata = rdata[self._autocal_entry_run.parameter_steady]
-                print('Steadydata',steadydata)
+                #print('Steadydata',steadydata)
                 # Check if steady and at least next_entry_min_time seconds
 
                 if steadydata == steady_true and (trun > self._autocal_entry_run.entry_min_runtime):
-                    print('Parameter steady ...')
+                    #print('Parameter steady ...')
                     self._autocal_entry_running = False
                     self.autocal_run_next_entry()

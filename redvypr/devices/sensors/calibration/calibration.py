@@ -2026,7 +2026,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def showAutocalWidget(self, checked):
         tabwidget = self.tabwidget
-        print('Autocal checked',checked)
+        logger.debug('Autocal checked')
         if checked:
             logger.debug('Adding autocalibration')
             self.autocalwidget = autocalWidget(device=self.device)
@@ -2056,7 +2056,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             try:
                 w.deleteLater()
             except Exception as e:
-                print('Hallo delete',e)
+                pass
 
         layout = self.layout
         while layout.count():
@@ -2180,9 +2180,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
         print(funcname)
         self.device.custom_config.calibration_comment = self.datainput_configwidgets['lco'].text()
         self.device.custom_config.calibration_id = self.datainput_configwidgets['lID'].text()
-        print('Config')
-        print(self.device.custom_config)
-        print('Done')
+        #print('Config')
+        #print(self.device.custom_config)
+        #print('Done')
 
     def remCalibrationData(self):
         """
@@ -2204,7 +2204,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         if len(rows) > 0:
             for row in rows:
                 rowdata = row - self.irowdatastart
-                print('row',rowdata)
+                #print('row',rowdata)
                 self.device.rem_data(rowdata)
 
             self.update_datatable()
@@ -2227,17 +2227,17 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def order_tabs(self):
         funcname = '.order_tabs():'
-        print(funcname)
+        #print(funcname)
         old_position = self.tabwidget.indexOf(self)
-        print(funcname,old_position,'self')
+        #print(funcname,old_position,'self')
         self.tabwidget.tabBar().moveTab(old_position, 1)
 
         old_position = self.tabwidget.indexOf(self.tablewidget)
-        print(funcname, old_position, 'datatable')
+        #print(funcname, old_position, 'datatable')
         self.tabwidget.tabBar().moveTab(old_position, 2)
 
         old_position = self.tabwidget.indexOf(self.calibration_widget)
-        print(funcname, old_position, 'calibration')
+        #print(funcname, old_position, 'calibration')
         self.tabwidget.tabBar().moveTab(old_position, 3)
 
     def create_calibration_widget(self):
@@ -2306,7 +2306,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.device.custom_config.name_ref_sensor = self.allsensornames[self.device.custom_config.ind_ref_sensor.data]
         # Update calibration table
         #self.update_coefftable_ntc()
-        print('Config', self.device.custom_config)
+        #print('Config', self.device.custom_config)
 
 
     def add_plots(self):
@@ -2424,14 +2424,14 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
         for i, plot_widget in enumerate(self.plot_widgets):
             sensor_data_tmp = self.device.custom_config.calibrationdata[plot_widget.sensorindex]
-            print('a',sensor_data_tmp)
-            print('b',sensor_data_tmp.realtimeplot)
+            #print('a',sensor_data_tmp)
+            #print('b',sensor_data_tmp.realtimeplot)
             if True:
                 if t_intervall is not None:
                     data = plot_widget.get_data(t_intervall)
                     if isinstance(plot_widget,XYplotWidget.XYplot):
                         data = data[0]
-                    print('Got data from widget', data)
+                    #print('Got data from widget', data)
                     col = plot_widget.datatablecolumn
                     if len(data['y']) > 0:
                         rawdata_all = data['y'] #.tolist()
@@ -2445,7 +2445,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                         tdatetime = datetime.datetime.utcfromtimestamp(tdata)
                         tdatas = tdatetime.strftime('%d-%m-%Y %H:%M:%S.%f')
                         # Add the data to the dictionary
-                        print('Averaged data',ydata)
+                        #print('Averaged data',ydata)
                         #def add_data(self, time, sensorindex, sentype, data, time_data, rawdata, time_rawdata):
                         self.device.add_data(tget,plot_widget.sensorindex,ydata,tdata,rawdata_all,timedata_all)
 
@@ -2457,7 +2457,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def __datatable_item_changed__(self,item):
         funcname = __name__ + '__datatable_item_changed__():'
         logger.debug(funcname)
-        print(item)
+        #print(item)
         #item = QtWidgets.QTableWidgetItem(sdata.sn)
         #self.datatable.setItem(self.irowmac_sn, col, item)
         #item = QtWidgets.QTableWidgetItem(sdata.sensor_model)
@@ -2533,7 +2533,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.datatable.setItem(self.irowdatastart + idata, 0, item)
 
 
-        print('config', self.device.custom_config)
+        #print('config', self.device.custom_config)
         if True:
             for isensor,sdata in enumerate(self.device.custom_config.calibrationdata):
                 col += 1
@@ -2646,7 +2646,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def anyMouseClicked(self, evt):
         sender = self.sender()
-        print('Clicked: ' + str(evt.scenePos()))
+        #print('Clicked: ' + str(evt.scenePos()))
         color = QtGui.QColor(100,100,100)
         for p in self.plot_widgets:
             mousePoint = p.vb.mapSceneToView(evt.scenePos())
@@ -2670,7 +2670,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.set_datastream():'
         logger.debug(funcname)
-        print('i',i,'d',d,'sn',sn,'unit',unit,'sensortype',sensortype)
+        #print('i',i,'d',d,'sn',sn,'unit',unit,'sensortype',sensortype)
         p = self.plot_widgets[i]
         if True:
             self.device.custom_config.calibrationdata[i].datastream = d
@@ -2682,15 +2682,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
             p.datastream = d
         if isinstance(p,XYplotWidget.XYplot):
             p.config.lines[0].y_addr = d
-            print('line', p.config.lines[0])
-            print('line', p.config.lines[0])
-            print('line', p.config.lines[0])
+            #print('line', p.config.lines[0])
             p.set_title(d)
             p.apply_config()
         if True:
             p.sn = sn
             p.unit = unit
-            print('p.unit', p.unit)
+            #print('p.unit', p.unit)
             p.sensortype = sensortype
             # Add devicename to the column
             daddr = redvypr.RedvyprAddress(d)
@@ -2721,7 +2719,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             for i, plot_widget in enumerate(self.plot_widgets):
                 #print('p',i,p.datastream,p.subscription_redvypr)
                 if plot_widget.datastream is None: # No datastream assigned yet, check if the data packet is worth subscription
-                    print('subscribing ...')
+                    #print('subscribing ...')
                     rdata = redvypr.data_packets.Datapacket(data)
                     # Try if we get data with the address
                     try:
@@ -2796,7 +2794,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                             elif (type(datastreamdata) == int) or (type(datastreamdata) == float): # Check for valid datatype
                                 valid_datatype = True
 
-                            print('valid datatype',valid_datatype)
+                            #print('valid datatype',valid_datatype)
                             if valid_datatype:
                                 ind = None
                                 # Check if the datastream is already used
@@ -2806,13 +2804,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
                                         ind = indcaldata
                                         break
 
-                                print('index',ind,len(self.plot_widgets))
+                                #print('index',ind,len(self.plot_widgets))
                                 if ind is None: # Great, we can subscribe
                                     logger.info('Subscribe plot {:d} to {:s}'.format(i,d))
                                     #daddr = redvypr.data_packets.redvypr_address(d)
                                     # Add metainformation
                                     keyinfo = self.device.get_metadata_datakey(d)
-                                    print('Datakeyinfo', keyinfo)
+                                    #print('Datakeyinfo', keyinfo)
                                     try:
                                         parameter = daddr.datakey
                                     except:
@@ -2833,7 +2831,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                                     except:
                                         sensortype = ''
 
-                                    print('Setting datastream', d, sn)
+                                    #print('Setting datastream', d, sn)
                                     self.set_datastream(i, d, sn = sn, unit=unit, sensortype=sensortype, parameter=parameter)
                                     self.device.deviceinitwidget.datastream_subscribed(i,d)
                                     plot_widget.update_plot(data)
