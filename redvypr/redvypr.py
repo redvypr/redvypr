@@ -726,9 +726,11 @@ class Redvypr(QtCore.QObject):
                 #print('devicemodulename', devicemodulename)
                 #print('devicename 0',device_parameter.name,len(device_parameter.name))
                 devicename_tmp = device_parameter.name
+                print('Devicename_tmp', devicename_tmp)
                 if len(device_parameter.name) == 0:
+                    logger.debug(funcname + 'using standard name')
                     devicename_tmp = devicemodulename.split('.')[-1]# + '_' + str(self.numdevice)
-                    #print('Devicename_tmp',devicename_tmp)
+                    print('Devicename_tmp',devicename_tmp)
 
                 if devicename_tmp in devicenames:
                     logger.warning(funcname + ' Devicename {:s} exists already, will add {:d} to the name.'.format(devicename_tmp,self.numdevice))

@@ -331,11 +331,23 @@ class redvyprWidget(QtWidgets.QWidget):
 
         # Call the deviceinitwidget with extra arguments
         initargs = inspect.signature(deviceinitwidget_bare.__init__)
+        initargs_parameters = dict(initargs.parameters)
+        logger.debug(funcname + 'Initargs for initwidget {}'.format( initargs_parameters))
+        # Check if the parent is a deviceinitwidget
+        print('fdsfsd',deviceinitwidget_bare.__mro__)
+        if redvypr_deviceInitWidget in deviceinitwidget_bare.__mro__:
+            logger.debug(funcname + ' Child of deviceinitwidet')
+            initargs2 = inspect.signature(redvypr_deviceInitWidget.__init__)
+            logger.debug(funcname + 'adding arguments {}'.format(dict(initargs2.parameters)))
+            initargs_parameters.update(dict(initargs2.parameters))
+        else:
+            initargs_parameters = dict(initargs.parameters)
+
         initdict = {}
-        if ('device' in initargs.parameters.keys()):
+        if ('device' in initargs_parameters.keys()):
             initdict['device'] = device
 
-        if ('tabwidget' in initargs.parameters.keys()):
+        if ('tabwidget' in initargs_parameters.keys()):
             initdict['tabwidget'] = devicetab
 
         # https://stackoverflow.com/questions/334655/passing-a-dictionary-to-a-function-as-keyword-parameters

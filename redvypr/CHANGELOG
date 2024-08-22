@@ -1,5 +1,6 @@
-    -0.9.?  - autostart bug
+    -0.9.0  - autostart bug
             - autocalibration in calibration device
+            - initdevicewidget parameter bug fixed
     -0.8.9  - renamed devicedisplaywidget.update in .update_data
             - redvypr: devicedict cleaned, removed 'dataout', refactored 'gui' and 'guiqueue' into 'guiqueues'
     -0.8.8  - datastreamsWidget implemented
