@@ -15,7 +15,7 @@ from redvypr.redvypr_address import RedvyprAddress
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('pydanticConfigWidget')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 class pydanticDeviceConfigWidget(QtWidgets.QWidget):

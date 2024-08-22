@@ -99,7 +99,7 @@ class XYplot(QtWidgets.QFrame):
 
     """
 
-    def __init__(self, config=None, redvypr_device=None, add_line=True, loglevel=logging.DEBUG):
+    def __init__(self, config=None, redvypr_device=None, add_line=True, loglevel=logging.INFO):
         """
 
         """
@@ -397,7 +397,7 @@ class XYplot(QtWidgets.QFrame):
             self.logger.debug(funcname + ': Updating line {:d}'.format(iline))
             # Creating the correct addresses first
             try:
-                print('Line',line,iline)
+                self.logger.debug('Line {},{}'.format(line,iline))
                 x_addr = line.x_addr
                 y_addr = line.y_addr
                 if len(y_addr) >= 0:
@@ -421,7 +421,7 @@ class XYplot(QtWidgets.QFrame):
                 # Error address
                 error_addr = None
                 if line.error_mode != 'off':
-                    print('Error mode 1')
+                    self.logger.debug('Error mode 1')
                     error_raddr = redvypr.RedvyprAddress(line.error_addr)
                     line._error_raddr = error_raddr
                     errorplot = pyqtgraph.ErrorBarItem(name=line._name_applied,pen=pen)
@@ -429,7 +429,7 @@ class XYplot(QtWidgets.QFrame):
                     errorplot._line_config = line
                     plot.addItem(errorplot)
                 else:
-                    print('Error mode 2')
+                    self.logger.debug('Error mode 2')
                     line._error_raddr = redvypr.RedvyprAddress('')
                     line._errorplot = None
                     # print('Set pen 1')
@@ -742,7 +742,7 @@ class XYplot(QtWidgets.QFrame):
 
                     # Show the unit in the legend, if wished by the user, and we have access to the device that can give us the metainformation
                     if (self.config.show_units) and (self.device is not None):
-                        self.logger.debug(funcname + 'Getting metadata for {}'.format(line._y_raddr))
+                        #self.logger.debug(funcname + 'Getting metadata for {}'.format(line._y_raddr))
                         try:
                             line._metadata  # metadata found, doing nothing
                         except:
@@ -791,7 +791,6 @@ class XYplot(QtWidgets.QFrame):
                 pass
                 #print('DONE DONE DONE')
         except:
-            self.logger.info('Could not update data', exc_info=True)
-            pass
+            self.logger.debug('Could not update data', exc_info=True)
 
 

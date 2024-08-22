@@ -58,7 +58,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
     for sensor in config.sensors:
         logger.debug('Creating metadata packet for sensor {}'.format(sensor.name))
         metadata_datapacket = sensor.create_metadata_datapacket()
-        print('Metadata datapacket',metadata_datapacket)
+        #print('Metadata datapacket',metadata_datapacket)
         if metadata_datapacket is not None:
             dataqueue.put(metadata_datapacket)
 
@@ -74,12 +74,12 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                 break
 
             for sensor in config.sensors:
-                print('Sensor',sensor)
-                print('Type sensor', type(sensor))
+                #print('Sensor',sensor)
+                #print('Type sensor', type(sensor))
                 sensordata = sensor.datapacket_process(data)
                 if type(sensordata) is list: # List means that there was a valid packet
                     for data_packet in sensordata:
-                        print('Publishing data_packet',data_packet)
+                        #print('Publishing data_packet',data_packet)
                         dataqueue.put(data_packet)
 
 
@@ -422,7 +422,7 @@ class SensorWidget(QtWidgets.QWidget):
         self.packets_for_me_old = 0
         self.sensor = sensor
         self.device = redvypr_device
-        print('Sensor',self.sensor)
+        #print('Sensor',self.sensor)
         super().__init__(*args, **kwargs)
         self.layout = QtWidgets.QGridLayout(self)
         self.label = QtWidgets.QLabel(self.sensor.name)
@@ -477,7 +477,7 @@ class SensorWidget(QtWidgets.QWidget):
                         logger.debug(funcname + 'Trying to get metadata for address')
                         raddr_tmp = RedvyprAddress(data,datakey=k)
                         metadata = self.device.get_metadata_datakey(raddr_tmp)
-                        print('MetaDATA', metadata)
+                        #print('MetaDATA', metadata)
                         try:
                             self.datakey_units[k] = metadata['unit']
                         except:

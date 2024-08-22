@@ -38,7 +38,8 @@ class Sensor(pydantic.BaseModel):
         :param data:
         :return:
         """
-        print('Hallo data for sensor', data)
+        pass
+        #print('Hallo data for sensor', data)
 
 
 class BinarySensor(Sensor):
@@ -67,7 +68,7 @@ class BinarySensor(Sensor):
         # Add functions for datatypes
         for key in self.str_format:
             vartype = self.str_format[key]
-            print('key', key, 'vartype', vartype)
+            #print('key', key, 'vartype', vartype)
             if vartype.lower() == 'float':
                 self._str_functions[key] = float
                 self._str_functions_invalid_data[key] = None
@@ -104,7 +105,7 @@ class BinarySensor(Sensor):
             if (key_result is not None) and (unit is not None):
                 data_packet = add_metadata2datapacket(data_packet, key_result, metadata=unit)
 
-        print('keyinfo_datapacket',data_packet)
+        #print('keyinfo_datapacket',data_packet)
         if flag_metadata:
             return data_packet
         else:
@@ -115,13 +116,10 @@ class BinarySensor(Sensor):
         :param data:
         :return:
         """
-        print('Hallo data', data)
-        sensors = []
-
+        #print('Hallo data', data)
         if data in self.__rdatastream__:
-            binary_data = None
             binary_data = self.__rdatastream__.get_data(data)
-            print('Binary data', binary_data)
+            #print('Binary data', binary_data)
             data_packets = self.binary_process(binary_data)
             for data_packet in data_packets:
                 if 't' not in data_packet.keys():
@@ -140,14 +138,14 @@ class BinarySensor(Sensor):
         for rematch in rematches:
             data_packet = redvypr_create_datadict(device=self.name)
             flag_data = False
-            print('Processing match', rematch)
-            print('Variables found', rematch.groupdict())
+            #print('Processing match', rematch)
+            #print('Variables found', rematch.groupdict())
             redict = rematch.groupdict()
             if self._flag_binary_keys:
                 for keyname in redict:
                     if keyname in self.binary_format.keys():
                         binary_format = self.binary_format[keyname]
-                        print('Found binary key with format', keyname, binary_format)
+                        #print('Found binary key with format', keyname, binary_format)
                         # convert the data
                         data = struct.unpack(binary_format, redict[keyname])
                         if len(data) == 1:
@@ -159,33 +157,33 @@ class BinarySensor(Sensor):
             if self._flag_str_format_keys:
                 for keyname in redict:
                     if keyname in self.str_format.keys():
-                        print('Found str key', keyname)
+                        #print('Found str key', keyname)
                         # get the right function
                         convfunction = self._str_functions[keyname]
                         # convert the data, if this fails, take invalid data value
                         try:
                             data = convfunction(redict[keyname])
                         except:
-                            print('Data',redict[keyname])
+                            #print('Data',redict[keyname])
                             logger.debug('Could not decode data',exc_info=True)
                             data = self._str_functions_invalid_data[keyname]
 
                         data_packet[keyname] = data
                         flag_data = True
-                        print('Converted data to', data)
+                        #print('Converted data to', data)
 
             if self.calibration_python_str is not None:
-                print('Found a python calibration eval str, applying')
+                #print('Found a python calibration eval str, applying')
                 for keyname_eval in self.calibration_python_str:
                     evalcommand = self.calibration_python_str[keyname_eval]
                     evalcommand = evalcommand.split('\n')[0]
                     evalstr_full = 'data_packet[keyname_eval]=' + evalcommand
-                    print('Evalstr full',evalstr_full)
+                    #print('Evalstr full',evalstr_full)
                     try:
                         exec(evalstr_full)
                     except:
                         logger.info('Could evaluate command',exc_info=True)
-                    print('Data packet',data_packet)
+                    #print('Data packet',data_packet)
 
 
             # Check for calibrations
@@ -194,7 +192,7 @@ class BinarySensor(Sensor):
                 # Check if there is a calibration
                 if keyname in self.calibrations_raw.keys():
                     data = data_packet[keyname]
-                    print('Found a calibration to convert raw data for {}'.format(keyname))
+                    #print('Found a calibration to convert raw data for {}'.format(keyname))
                     calibration = self.calibrations_raw[keyname]
                     try:
                         keyname_cal = calibration.parameter_result
@@ -204,7 +202,7 @@ class BinarySensor(Sensor):
                         keyname_cal = keyname + '_cal'
 
                     data_cal = calibration.raw2data(data)
-                    print('Data cal',data_cal)
+                    #print('Data cal',data_cal)
                     data_packet[keyname_cal] = data_cal
 
             # Check for packetid
@@ -230,11 +228,11 @@ class BinarySensor(Sensor):
 
         regex = self.regex_split
         matches = []
-        print('Regex', regex, binary_stream)
+        #print('Regex', regex, binary_stream)
         # rematch = re.search(regex, binary_stream)
         rematchiter = re.finditer(regex, binary_stream)
         rematch = [r for r in rematchiter]
-        print('rematch', rematch)
+        #print('rematch', rematch)
         return rematch
 
 

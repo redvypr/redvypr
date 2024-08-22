@@ -707,7 +707,14 @@ class datastreamsWidget(datastreamWidget):
     def apply_clicked_datastreams(self):
         funcname = __name__ + '.apply_clicked_datastreams()'
         logger.debug(funcname)
-        signal_dict = {'addresses':self.addresses_choosen}
+        addresses_choosen = []
+        for irow, raddr in enumerate(self.addresses_choosen):
+            addrtype = self.addrtype_combo.currentText()
+            addrstr = raddr.get_str(addrtype)  # Here a format would be nice
+            addresses_choosen.append(RedvyprAddress(addrstr))
+
+        signal_dict = {'addresses':addresses_choosen}
+        print('Signal dict',signal_dict)
         self.apply.emit(signal_dict)
         if self.closeAfterApply:
             self.close()

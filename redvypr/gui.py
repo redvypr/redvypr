@@ -307,8 +307,8 @@ def get_QColor(data):
     funcname = __name__ + '.get_QColor():'
     logger.debug(funcname)
     colordata = copy.deepcopy(data)
-    print('Colordata',colordata)
-    print('Type colordata', type(colordata))
+    #print('Colordata',colordata)
+    #print('Type colordata', type(colordata))
     if(type(colordata) == str):
         color = QtGui.QColor(colordata)
     elif (type(colordata) == tuple):
@@ -663,7 +663,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         # Filter the addresses
         device_filter_address = RedvyprAddress(uuid=self.device.address.uuid,publisher=self.device.address.publisher)
         filter_include = [device_filter_address]
-        print('Filter include',filter_include)
+        #print('Filter include',filter_include)
         self.data_device_widget = datastreamWidget(redvypr=self.device.redvypr,filter_include=filter_include)
         self.data_device_widget.setWindowTitle(self.device.name)
         self.data_device_widget.show()

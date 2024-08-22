@@ -49,7 +49,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
     gui_tablabel_display: str = 'Realtime data'
 
 # Dictionary for sensordata
-class sensor_data(pydantic.BaseModel):
+class SensorData(pydantic.BaseModel):
     sn: str = pydantic.Field(default='')
     parameter: str = pydantic.Field(default='')
     sensor_model: str = pydantic.Field(default='')
@@ -69,7 +69,7 @@ def get_uuid():
     return 'CAL_' + str(uuid.uuid4())
 
 class DeviceCustomConfig(pydantic.BaseModel):
-    calibrationdata: typing.Optional[typing.List[sensor_data]] = pydantic.Field(default=[])
+    calibrationdata: typing.Optional[typing.List[SensorData]] = pydantic.Field(default=[])
     calibrationdata_time: typing.Optional[typing.List] = pydantic.Field(default=[])
     #calibration_coeffs: typing.Optional[typing.List] = pydantic.Field(default=[])
     calibrationtype: typing.Literal['polynom','ntc'] = pydantic.Field(default='polynom')
@@ -141,13 +141,13 @@ class Device(RedvyprDevice):
         newsen = str(newsen)
         if sentype == 'datastream':
             logger.debug(funcname + ' Adding datastream')
-            sensor = sensor_data(subscribe=newsen, inputtype=sentype)
+            sensor = SensorData(subscribe=newsen, inputtype=sentype)
             self.custom_config.calibrationdata.append(sensor)
             index = len(self.custom_config.calibrationdata) - 1
         else:
             logger.debug(funcname + ' Adding manual sensor')
-            print('config',str(newsen))
-            sensor = sensor_data(mac=newsen, inputtype=sentype)
+            #print('config',str(newsen))
+            sensor = SensorData(mac=newsen, inputtype=sentype)
             self.custom_config.calibrationdata.append(sensor)
             index = len(self.custom_config.calibrationdata) - 1
 
@@ -231,7 +231,7 @@ class Device(RedvyprDevice):
                 lmax = max(len(sdata.data),lmax)
 
 
-        print('lmax',lmax)
+        #print('lmax',lmax)
         if True:
             for sdata in self.custom_config.calibrationdata:
                 while len(sdata.data) < lmax:
@@ -1772,20 +1772,20 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.device.custom_config.name_ref_sensor = self.device.custom_config.calibrationdata[index].sn
             # Update calibration table
             # self.update_coefftable_ntc()
-            print('Config', self.device.custom_config)
+            #print('Config', self.device.custom_config)
 
     def resubDatastream(self):
         funcname = __name__ + '.resubDatastream():'
         logger.debug(funcname)
         button = self.sender()
         index = button.listindex
-        print('Calibrationdata')
-        print('A', self.device.custom_config.calibrationdata[index])
-        print('Calibrationdata', self.device.custom_config.calibrationdata)
-        print('resub',index)
+        #print('Calibrationdata')
+        #print('A', self.device.custom_config.calibrationdata[index])
+        #print('Calibrationdata', self.device.custom_config.calibrationdata)
+        #print('resub',index)
         self.device.custom_config.calibrationdata[index].datastream = ''
-        print('B', self.device.custom_config.calibrationdata[index])
-        print('Calibrationdata ----------')
+        #print('B', self.device.custom_config.calibrationdata[index])
+        #print('Calibrationdata ----------')
 
         self.updateDisplayWidget()
         self.device.subscribe_to_sensors()
@@ -1806,12 +1806,12 @@ class initDeviceWidget(QtWidgets.QWidget):
     def datastreamChosen(self, datastream_dict):
         funcname = __name__ + '.datastreamChosen():'
         logger.debug(funcname)
-        print('Choosen',datastream_dict)
+        #print('Choosen',datastream_dict)
         #self.sender().lineEditSubed_addr.setText(datastream_dict['datastream_str'])
         self.sender().lineEditSub_addr.setText(datastream_dict['datastream_str'])
         index = self.sender().listindex
-        print('Index',index)
-        print('sensordata', self.device.custom_config.calibrationdata)
+        #print('Index',index)
+        #print('sensordata', self.device.custom_config.calibrationdata)
         self.device.custom_config.calibrationdata[index].subscribe = datastream_dict['datastream_str']
         #self.device.devicedisplaywidget.datastreams[index] = None
         try:
@@ -2686,6 +2686,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             p.set_title(d)
             p.apply_config()
         if True:
+            # I dont like this, should be replaced by the SensorData definitions
             p.sn = sn
             p.unit = unit
             #print('p.unit', p.unit)
@@ -2751,24 +2752,33 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     if flag_fit and valid_datatype:
                         datastream_fit_str = datastream_fit.get_str()
                         logger.debug('Subscribing to address {}'.format(datastream_fit))
-                        keyinfo = self.device.get_metadata_datakey(datastream_fit_str)
-                        #print('Datakeyinfo', keyinfo)
+                        keyinfo = self.device.get_metadata_datakey(datastream_fit_str, all_entries=False)
+                        print('Datakeyinfo', keyinfo)
                         try:
                             parameter = datastream_fit.datakey
                         except:
                             parameter = 'NA'
+
+                        # Try to get a serial number
                         try:
-                            sn = keyinfo[d]['sn']
+                            sn = keyinfo['sn']
                         except:
-                            sn = ''
+                            try:
+                                sn = datastream_fit.packetid
+                            except:
+                                sn = ''
                         try:
-                            unit = keyinfo[d]['unit']
+                            unit = keyinfo['unit']
                         except:
                             unit = 'NA'
                         try:
-                            sensortype = keyinfo[d]['sensortype']
+                            sensortype = keyinfo['sensortype']
                         except:
-                            sensortype = ''
+                            try:
+                                sensortype = datastream_fit.devicename
+                            except:
+                                sensortype = ''
+
                         self.set_datastream(i, datastream_fit_str, sn=sn, unit=unit, sensortype=sensortype, parameter=parameter)
                         self.device.deviceinitwidget.datastream_subscribed(i, datastream_fit_str)
                         plot_widget.update_plot(data)
@@ -2806,7 +2816,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
                                 #print('index',ind,len(self.plot_widgets))
                                 if ind is None: # Great, we can subscribe
-                                    logger.info('Subscribe plot {:d} to {:s}'.format(i,d))
+                                    logger.info('Subscribe sensor {:d} to {:s}'.format(i,d))
                                     #daddr = redvypr.data_packets.redvypr_address(d)
                                     # Add metainformation
                                     keyinfo = self.device.get_metadata_datakey(d)
@@ -2832,7 +2842,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                                         sensortype = ''
 
                                     #print('Setting datastream', d, sn)
-                                    self.set_datastream(i, d, sn = sn, unit=unit, sensortype=sensortype, parameter=parameter)
+                                    self.set_datastream(i, d, sn=sn, unit=unit, sensortype=sensortype, parameter=parameter)
                                     self.device.deviceinitwidget.datastream_subscribed(i,d)
                                     plot_widget.update_plot(data)
 

@@ -115,7 +115,7 @@ def device_start_standard(device_info, config=None, dataqueue=None, datainqueue=
                 logger.debug('Command is for me: {:s}'.format(str(command)))
                 break
 
-            print('data',data)
+            #print('data',data)
             dataqueue.put(data)
 
 
@@ -286,7 +286,7 @@ class redvypr_device_scan():
                 FLAG_POTENTIAL_MODULE = False
 
             if(FLAG_POTENTIAL_MODULE):
-                print('Found potential package',d.location, d.project_name, d.version, d.key)
+                #print('Found potential package',d.location, d.project_name, d.version, d.key)
                 libstr2 = d.key.replace('-','_')  # Need to replace - with _, because - is not allowed in python
                 try:
                     testmodule = importlib.import_module(libstr2)
@@ -1073,7 +1073,7 @@ class RedvyprDevice(QtCore.QObject):
                                 keyinfo = eval(evalstr,None)
                                 dstreamaddr_info = redvypr.RedvyprAddress(device, datakey=keyeval)
                                 #print('dstreamddr_info', dstreamaddr_info)
-                                print('Found something',keyinfo)
+                                #print('Found something',keyinfo)
                                 try:
                                     datakeyinfo[dstreamaddr_info.get_str()].update(keyinfo)
                                 except:
@@ -1093,8 +1093,8 @@ class RedvyprDevice(QtCore.QObject):
             else:
                 datakeyinfo = datakeyinfo[k[0]]
 
-            print('Returning for address', address)
-            print('Returning datakeyinfo',datakeyinfo)
+            #print('Returning for address', address)
+            #print('Returning datakeyinfo',datakeyinfo)
             return datakeyinfo
         else:
             return datakeyinfo

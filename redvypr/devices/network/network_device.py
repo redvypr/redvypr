@@ -1,23 +1,5 @@
 """
-
 network device
-
-Configuration options for a network device:
-
-.. code-block::
-
-- devicemodulename: network_device  
-  deviceconfig:
-    name: tcpserial1 # The name, must be unique
-    config:
-       address: <ip> # Address IP, localhost. <broadcast> for UDP broadcast in local network. <ip> for local ip
-       port: 10001 # Port
-       serialize: str # yaml,str default yaml
-       protocol: tcp # tcp, udp default tcp
-       direction: publish # publish, receive default receive
-       data: nmea # dictionary keys, default all
-       tcp_reconnect: True # Try to reconnect to host if connection was closed
-       tcp_numreconnect: 10 # The number of reconnection attempts
 """
 
 
@@ -45,30 +27,6 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('network_device')
 logger.setLevel(logging.DEBUG)
 
-#self.config['address'] = get_ip()
-#self.config['port'] = 18196
-#self.config['protocol'] = 'tcp' # TCP/UDP
-#self.config['direction'] = 'publish'  # publish/receive
-#self.config['data'] = 'data'  # datakey
-#self.config['serialize'] = 'raw'  # yaml/str/raw
-
-#description = "Send and receive data using standard network protocols as TCP or UDP"
-#config_template = {}
-#config_template['name']              = 'network_device'
-#config_template['address']           = {'type':'str','default':'<IP>','description':'The IP address, this can be also <IP> or <broadcast>'}
-##config_template['port']        = {'type':'int','default':18196,'description':'The network port used.'}
-#config_template['protocol']   = {'type':'str','default':'tcp','options':['tcp','udp'],'description':'The network protocol used.'}
-#config_template['direction']         = {'type':'str','default':'publish','options':['publish','receive'],'description':'Publishing or receiving data.'}
-#config_template['data']      = {'type':'str','default':'data','description':'Datakey to store data, this is used if serialize is raw or str'}
-#config_template['serialize'] = {'type':'str','default':'raw','options':['yaml','str','raw'],'description':'Method to serialize (convert) original data into binary data.'}
-#config_template['queuesize']        = {'type':'int','default':10000,'description':'Size of the queues for transfer between threads'}
-#config_template['dtstatus']     = {'type':'float','default':2.0,'description':'Send a status message every dtstatus seconds'}
-#config_template['tcp_reconnect']        = {'type':'bool','default':True,'description':'Reconnecting to TCP Port if connection was closed by host'}
-#config_template['tcp_numreconnect']       = {'type':'int','default':10,'description':'The number of reconnection attempts before giving up'}
-#config_template['redvypr_device']    = {}
-#config_template['redvypr_device']['publishes']   = True
-#config_template['redvypr_device']['subscribes']  = True
-#config_template['redvypr_device']['description'] = description
 redvypr_devicemodule = True
 
 class DeviceBaseConfig(pydantic.BaseModel):
@@ -245,8 +203,14 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
     server.listen(8)
     server.settimeout(0.05) # timeout for listening
     # Some variables for status
-    tstatus = time.time()
-    dt_status = 5 # Send a status message every dtstatus seconds
+    # Some variables for status
+    try:
+        dt_status = config['dt_status']
+    except:
+        dt_status = 2  # Send a status message every dtstatus seconds
+
+    # Adding dt_status to get first status asap
+    tstatus = time.time() - dt_status
     npackets = 0 # Number packets received via the datainqueue
     clients = []
     try:
@@ -343,12 +307,13 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
     client.settimeout(0.05) # timeout for listening
     
     # Some variables for status
-    tstatus = time.time()
     try:
         dt_status = config['dt_status']
     except:
         dt_status = 2 # Send a status message every dtstatus seconds
-        
+
+    # Adding dt_status to get first status asap
+    tstatus = time.time() - dt_status
     # Reconnecting to TCP Port if connection was closed by host
     try:
         config['tcp_reconnect']
@@ -698,11 +663,11 @@ class Device(RedvyprDevice):
             status = self.statusqueue.get_nowait()
         except:
             return
-        # print(statusstr)
-        if type(status) == str:
-            print('Status', status)
-        else:
-            print('Statusdict', status)
+
+        #if type(status) == str:
+        #    print('Status', status)
+        #else:
+        #    print('Statusdict', status)
 
         return status
 
@@ -715,11 +680,11 @@ class Device(RedvyprDevice):
             except:
                 return
 
-            print(type(status))
             if type(status) == str:
-                print('Status str',status)
+                #print('Status str',status)
+                pass
             else:
-                print('Statusdict',status)
+                #print('Statusdict',status)
                 self.network_status.update(status)
                 self.network_status_changed.emit()
 
