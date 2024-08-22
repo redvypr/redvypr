@@ -354,7 +354,8 @@ class datastreamWidget(QtWidgets.QWidget):
         self.layout_right.addWidget(self.addressline_manual)
         self.layout_right.addWidget(QtWidgets.QLabel('Address format'))
         self.layout_right.addWidget(self.addrtype_combo)
-        self.layout_right.addWidget(QtWidgets.QLabel('Address'))
+        self.addresslabel = QtWidgets.QLabel('Address')
+        self.layout_right.addWidget(self.addresslabel)
         self.layout_right.addWidget(self.addressline)
 
         self.layout.addLayout(self.layout_left,0,0)
@@ -679,9 +680,16 @@ class datastreamsWidget(datastreamWidget):
         self.layout.removeWidget(self.buttondone)
         self.buttondone.clicked.disconnect(self.done_clicked)
         self.buttondone.clicked.connect(self.apply_clicked_datastreams)
+
+        self.layout_right.removeWidget(self.addresslabel)
+        self.addresslabel.hide()
+        self.layout_right.removeWidget(self.addressline)
+        self.addressline.hide()
+        self.addrtype_combo.currentIndexChanged.disconnect(self.__addrtype_changed__)
+        self.addrtype_combo.currentIndexChanged.connect(self.update_datastreamtable)
+
         iconname='ei.remove'
         icon = qtawesome.icon(iconname)
-        print('Icon',icon)
         self.button_rem = QtWidgets.QPushButton('Remove')
         self.button_rem.setIcon(icon)
         self.button_rem.clicked.connect(self.rem_datastreams)
@@ -697,7 +705,8 @@ class datastreamsWidget(datastreamWidget):
         self.update_datastreamtable()
 
     def apply_clicked_datastreams(self):
-        print('Done')
+        funcname = __name__ + '.apply_clicked_datastreams()'
+        logger.debug(funcname)
         signal_dict = {'addresses':self.addresses_choosen}
         self.apply.emit(signal_dict)
         if self.closeAfterApply:
@@ -709,7 +718,8 @@ class datastreamsWidget(datastreamWidget):
         self.datastreamtable.setRowCount(nrows)
         self.datastreamtable.setColumnCount(1)
         for irow,raddr in enumerate(self.addresses_choosen):
-            addrstr = raddr.get_str() # Here a format would be nice
+            addrtype = self.addrtype_combo.currentText()
+            addrstr = raddr.get_str(addrtype) # Here a format would be nice
             item = QtWidgets.QTableWidgetItem(addrstr)
             item.datakey_address = raddr
             self.datastreamtable.setItem(irow,0, item)
@@ -723,6 +733,7 @@ class datastreamsWidget(datastreamWidget):
 
     def rem_datastreams(self):
         funcname = __name__ + '.rem_datastreams():'
+        logger.debug(funcname)
         for item in self.datastreamtable.selectedItems():
             print("selectedItem", item.text())
             self.addresses_choosen.remove(item.datakey_address)
@@ -734,7 +745,7 @@ class datastreamsWidget(datastreamWidget):
         logger.debug(funcname)
         items = self.devicelist.selectedItems()
         for i,item in enumerate(items):
-            print(i,item.text(0))
+            #print(i,item.text(0))
             if item.iskey:
                 print('Item {} is a valid address'.format(item.text(0)))
                 if item.datakey_address not in self.addresses_choosen:
@@ -746,7 +757,7 @@ class datastreamsWidget(datastreamWidget):
                 print('Item {} is not a datastream'.format(item.text(0)))
 
 
-        print('Addresses',self.addresses_choosen)
+        #print('Addresses',self.addresses_choosen)
         self.update_datastreamtable()
 
 
