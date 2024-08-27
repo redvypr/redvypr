@@ -45,13 +45,14 @@ def find_calibration_for_sensor(calibrations, sensor, data):
         # 2: Compare serial number with packetid
         # 3: save date
         caladdr = RedvyprAddress('/i:fdsf')
-
+        print('data',data)
         try:
             print('parameter calibrated', parameter_calibrated)
             caldata_raw = rdata[parameter_calibrated]
             print('Got caldata raw',caldata_raw)
             flag_parameter = True
         except:
+            logger.info('Could not get data',exc_info=True)
             flag_parameter = False
 
 

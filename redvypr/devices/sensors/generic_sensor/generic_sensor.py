@@ -57,9 +57,8 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
     funcname = __name__ + '.start():'
     logger.debug(funcname)
     print('Got config serialized', config)
-    print('Got config',config)
     config = DeviceCustomConfig.model_validate(config)
-
+    print('Got config', config)
     for sensor in config.sensors:
         logger.debug('Creating metadata packet for sensor {}'.format(sensor.name))
         metadata_datapacket = sensor.create_metadata_datapacket()
@@ -82,12 +81,13 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                 #print('Sensor',sensor)
                 #print('Type sensor', type(sensor))
                 # Checking for calibrations
-                print('Finding calibrations')
-                find_calibration_for_sensor(calibrations=config.calibrations, sensor=sensor, data=data)
-                print('Done')
+
                 sensordata = sensor.datapacket_process(data)
                 if type(sensordata) is list: # List means that there was a valid packet
                     for data_packet in sensordata:
+                        print('Finding calibrations')
+                        find_calibration_for_sensor(calibrations=config.calibrations, sensor=sensor, data=data_packet)
+                        print('Done')
                         #print('Publishing data_packet',data_packet)
                         dataqueue.put(data_packet)
 

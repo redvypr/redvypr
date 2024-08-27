@@ -3,6 +3,7 @@
             - implemented __setitem__ of Datapacket object
             - 'all' datakey bug in network_device when config is loaded
             - generic_sensor calibration
+            - RedvyprAddress accepts string and treats it as datakey entry: RedvyprAddress('hello') is equal to RedvyprAddress('/k:hello')
     -0.9.0  - autostart bug
             - autocalibration in calibration device
             - initdevicewidget parameter bug fixed

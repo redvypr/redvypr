@@ -122,7 +122,9 @@ class calibration_NTC(pydantic.BaseModel):
     """
     structure_version: str = '1.0'
     calibration_type: typing.Literal['ntc'] = 'ntc'
-    parameter: str = pydantic.Field(default = 'NTC_NUMXYZ',description='The calibrated parameter, this links the calibration to a specific sensor, i.e. NTC0 or NTC_A[10]')
+    #parameter: str = pydantic.Field(default = 'NTC_NUMXYZ',description='The calibrated parameter, this links the calibration to a specific sensor, i.e. NTC0 or NTC_A[10]')
+    parameter: RedvyprAddress = pydantic.Field(default=RedvyprAddress('NTC[10]'),
+                                    description='The calibrated parameter, this links the calibration to a specific sensor, i.e. NTC0 or NTC_A[10]')
     sn: str = '' # The serial number of the sensor
     sensor_model: str = ''  # The sensor model
     Toff: float = 273.15 # Offset between K and degC

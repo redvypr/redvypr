@@ -252,12 +252,16 @@ class RedvyprAddress():
         #print('Regex str',regex_str)
         addrsplit_re = re.compile(regex_str)
         addr_parts = addrsplit_re.split(addrstr)
-        #print('fsdf',addr_parts)
+        #print('addr_parts',addr_parts,len(addr_parts))
         for addr_part in addr_parts:
             #print('Part',addr_part)
             if len(addr_part) > 0:
                 addr_part_sp = addr_part.split(self.__delimiter_id)
-                if len(addr_part_sp) >= 2:
+                #print('addr_part_sp',addr_part_sp)
+                if len(addr_part_sp) == 1 and len(addr_parts) == 1: # Check if there is a single string, if so interprete as datakey entry
+                    #print('Single entry, interpreting as datakey')
+                    parsed_addrstr['datakey'] = addr_parts[0]
+                elif len(addr_part_sp) >= 2:
                     addr_part_id = addr_part_sp[0]
                     addr_part_content = addr_part_sp[1]
                     #print('part',addr_part_id,addr_part_content)
