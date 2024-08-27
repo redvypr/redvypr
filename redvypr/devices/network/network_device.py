@@ -852,7 +852,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 #print('break')
                 break
 
-        if(self.device.custom_config.serialize.lower() == 'all'):
+        if(self.device.custom_config.datakey.lower() == 'all'):
             self._data_pub_all.setChecked(True)
         else:
             self._data_pub_dict.setChecked(True)

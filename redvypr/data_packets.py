@@ -4,6 +4,8 @@ import logging
 import sys
 import re
 import numpy as np
+
+import redvypr
 import redvypr.redvypr_address as redvypr_address
 import collections
 
@@ -54,6 +56,25 @@ class Datapacket(dict):
         else:
             return super().__getitem__(key)
 
+    def __setitem__(self, key, value):
+        # Check if the key is a string but is an "eval" operator
+        if isinstance(key, str):
+            if key.startswith('[') and key.endswith(']'):
+                evalstr = 'self' + key + '=value'
+                # data = self
+                exec(evalstr, None)
+            else:
+                return super().__setitem__(key, value)
+        # Check if the key is a RedvyprAddress
+        elif isinstance(key, redvypr_address.RedvyprAddress):
+            datakey = key.datakey
+            if datakey.startswith('[') and datakey.endswith(']'):
+                evalstr = 'self' + datakey  + '=value'
+                exec(evalstr, None)
+            else:
+                return super().__setitem__(datakey, value)
+        else:
+            return super().__setitem__(key, value)
 
     def __expand_datakeys_recursive__(self, data, keys, level=0, parent_key='f', key_list = [], key_dict = {}, max_level=1000):
         for k in keys:
@@ -153,7 +174,7 @@ class Datapacket(dict):
 
 
 
-def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None, hostinfo=None):
+def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None, publisher=None, hostinfo=None):
     """ Creates a datadict dictionary used as internal datastructure in redvypr
     """
     if(tu == None):
@@ -167,12 +188,25 @@ def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None
         datadict['_redvypr']['device'] = device
         if (packetid is None):
             datadict['_redvypr']['packetid'] = device
+        else:
+            datadict['_redvypr']['packetid'] = ''
+    else:
+        datadict['_redvypr']['device'] = ''
 
     if (packetid is not None):
         datadict['_redvypr']['packetid'] = packetid
+    else:
+        datadict['_redvypr']['packetid'] = ''
+
+    if (publisher is not None):
+        datadict['_redvypr']['publisher'] = publisher
+    else:
+        datadict['_redvypr']['publisher'] = ''
 
     if (hostinfo is not None):
         datadict['_redvypr']['host'] = hostinfo
+    else:
+        datadict['_redvypr']['host'] = redvypr.hostinfo_blank
 
     if(data is not None):
         datadict[datakey] = data

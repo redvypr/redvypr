@@ -8,6 +8,8 @@ import logging
 import sys
 import typing
 import pydantic
+import json
+import yaml
 import re
 import struct
 import time
@@ -24,9 +26,10 @@ import redvypr.files as redvypr_files
 import redvypr.widgets.standard_device_widgets
 from redvypr.devices.plot.XYplotWidget import XYplot, configXYplot
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
-from redvypr.devices.sensors.calibration.calibration_models import calibration_HF, calibration_NTC, calibration_const, calibration_poly
+from redvypr.devices.sensors.calibration.calibration_models import calibration_models, calibration_NTC
 from redvypr.devices.sensors.csvsensors.sensorWidgets import sensorCoeffWidget, sensorConfigWidget
-from .sensor_definitions import Sensor, BinarySensor, predefined_sensors
+from .sensor_definitions import Sensor, BinarySensor, predefined_sensors, find_calibration_for_sensor
+from .calibrationWidget import sensorCalibrationsWidget
 
 _icon_file = redvypr_files.icon_file
 
@@ -44,6 +47,8 @@ class DeviceBaseConfig(pydantic.BaseModel):
 class DeviceCustomConfig(pydantic.BaseModel):
     sensors: typing.List[typing.Annotated[typing.Union[Sensor, BinarySensor], pydantic.Field(discriminator='sensortype')]]\
         = pydantic.Field(default=[], description = 'List of sensors')
+    #calibrations: list = pydantic.Field(default=[])
+    calibrations: typing.List[typing.Annotated[typing.Union[*calibration_models], pydantic.Field(discriminator='calibration_type')]] = pydantic.Field(default=[])
     calibration_files: list = pydantic.Field(default=[])
 
 
@@ -76,6 +81,10 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
             for sensor in config.sensors:
                 #print('Sensor',sensor)
                 #print('Type sensor', type(sensor))
+                # Checking for calibrations
+                print('Finding calibrations')
+                find_calibration_for_sensor(calibrations=config.calibrations, sensor=sensor, data=data)
+                print('Done')
                 sensordata = sensor.datapacket_process(data)
                 if type(sensordata) is list: # List means that there was a valid packet
                     for data_packet in sensordata:
@@ -87,11 +96,13 @@ class Device(RedvyprDevice):
     """
     generic_sensor device
     """
+    newcalibration_signal = QtCore.pyqtSignal()  # Signal for a new calibration
     def __init__(self, **kwargs):
         """
         """
         funcname = __name__ + '__init__()'
         super(Device, self).__init__(**kwargs)
+        self.calfiles_processed = []
 
 
     def update_subscriptions(self):
@@ -124,6 +135,161 @@ class Device(RedvyprDevice):
             self.update_subscriptions()
             self.config_changed_signal.emit()
 
+    def add_calibration(self, calibration):
+        """
+        Adds a calibration to the calibration list, checks before, if the calibration exists
+        calibration: calibration model
+        """
+        flag_new_calibration = True
+        calibration_json = json.dumps(calibration.model_dump_json())
+        for cal_old in self.custom_config.calibrations:
+            if calibration_json == json.dumps(cal_old.model_dump_json()):
+                flag_new_calibration = False
+                break
+
+        if flag_new_calibration:
+            print('Sending new calibration signal')
+            self.custom_config.calibrations.append(calibration)
+            self.newcalibration_signal.emit()
+            return True
+        else:
+            logger.warning('Calibration exists already')
+            return False
+
+    def read_calibration_file(self, fname):
+        """
+        Open and reads a calibration file, it will as well determine the type of calibration and call the proper function
+
+        """
+        funcname = __name__ + '.read_calibration_file():'
+        logger.debug(funcname + 'Opening file {:s}'.format(fname))
+        try:
+            f = open(fname)
+            data = yaml.safe_load(f)
+            # print('data',data)
+            if 'structure_version' in data.keys(): # Calibration model
+                logger.debug(funcname + ' Version {} pydantic calibration model dump'.format(data['structure_version']))
+                for calmodel in calibration_models: # Loop over all calibration models definded in sensor_calibrations.py
+                    try:
+                        calibration = calmodel.model_validate(data)
+                        print('Calibration', calibration)
+                        return calibration
+                    except:
+                        pass
+
+            elif 'sn' in data.keys():
+                calibration = {}
+                calibration['sn'] = {}
+                logger.debug(funcname + ' Version 2 file')
+                for sn in data['sn'].keys():  # Add the filename the data was loaded from
+                    try:
+                        calibration['sn'][sn]
+                    except:
+                        calibration['sn'][sn] = {}
+                        #calibration['sn'][sn]['coeff_files'] = []
+
+                    #calibration['sn'][sn]['coeff_files'].append(fname)
+                    calibration['sn'][sn].update(data['sn'][sn])
+                    calibration['sn'][sn]['original_file'] = fname
+                #    data['sn'][sn].filenames = []
+                #    data['sn'][sn].filenames.append(fname)
+                # self.calibration['sn'].update(data['sn'])
+                return calibration
+
+            elif 'calibration_HF_SI' in data.keys(): # Version 1 file
+                logger.debug(funcname + ' Version 1 file')
+
+                sn = data['manufacturer_sn']
+                if len(sn) ==0:
+                    logger.debug(funcname + ' No serial number')
+                else:
+                    calibration = calibration_HF(sn=sn,coeff=data['calibration_HF_SI'],date=data['calibration_date'],sensor_model = data['series'])
+                    #sn:
+                    #    "9299":
+                    #    model: F - 005 - 4
+                    #    coeffs:
+                    #        HF:
+                    #        coeff: 8.98
+                    #        parameter: HF
+                    #        unit: W m-2
+                    #        unitraw: mV
+                    #        date: 1970 - 01 - 01_00 - 00 - 00
+                    return calibration
+                    if False:
+                        calibration['sn'][sn] = {}
+                        calibration['sn'][sn]['model'] = data['series']
+                        calibration['sn'][sn]['original_file'] = fname
+                        calibration['sn'][sn]['sn'] = sn
+                        calibration['sn'][sn]['parameter'] = {}
+                        calibration['sn'][sn]['parameter']['HF'] = {}
+                        calibration['sn'][sn]['parameter']['HF']['coeff'] = data['calibration_HF_SI']
+                        calibration['sn'][sn]['parameter']['HF']['unit'] = 'W m-2'
+                        calibration['sn'][sn]['parameter']['HF']['unitraw'] = 'mW'
+                        calibration['sn'][sn]['parameter']['HF']['date'] = data['calibration_date']
+
+        except Exception as e:
+            logger.exception(e)
+            return None
+
+    def add_calibration_file(self, calfile, reload=True):
+        funcname = __name__ + 'add_calibration_file():'
+        logger.debug(funcname)
+        calfiles_tmp = list(self.custom_config.calibration_files)
+        if (calfile in calfiles_tmp) and reload:
+            #print('Removing file first')
+            self.rem_calibration_file(calfile)
+
+        calfiles_tmp = list(self.custom_config.calibration_files)
+        #print('Hallo',calfiles_tmp)
+        if calfile not in calfiles_tmp:
+            #print('Adding file 2',calfile)
+            self.custom_config.calibration_files.append(calfile)
+        else:
+            logger.debug(funcname + ' File is already listed')
+
+        self.process_calibrationfiles()
+
+    def rem_calibration_file(self, calfile):
+        funcname = __name__ + 'rem_calibration_file():'
+        logger.debug(funcname)
+        calfiles_tmp = list(self.custom_config.calibration_files)
+        if calfile in calfiles_tmp:
+            calibration = self.read_calibration_file(calfile)
+            calibration_json = json.dumps(calibration.model_dump_json())
+            for cal_old in self.custom_config.calibrations:
+                # Test if the calibration is existing
+                if calibration_json == json.dumps(cal_old.model_dump_json()):
+                    logger.debug(funcname + ' Removing calibration')
+                    self.custom_config.calibration_files.remove(calfile)
+                    self.custom_config.calibrations.remove(cal_old)
+                    self.calfiles_processed.remove(calfile)
+                    return True
+
+    def process_calibrationfiles(self):
+        funcname = __name__ + '.process_calibrationfiles()'
+        logger.debug(funcname)
+        fnames = []
+
+        for fname in self.custom_config.calibration_files:
+            fnames.append(str(fname))
+
+        self.coeff_filenames = fnames
+
+        for fname in fnames:
+            if fname not in self.calfiles_processed:
+                logger.debug(funcname + ' reading file {:s}'.format(fname))
+                calibration = self.read_calibration_file(fname)
+                if calibration is not None:
+                    flag_add = self.add_calibration(calibration)
+                    if flag_add:
+                        self.calfiles_processed.append(fname)
+            else:
+                logger.debug(funcname + ' file {:s} already processed'.format(fname))
+
+
+        #print(self.calibration['sn'].keys())
+        #self.logger_autocalibration()
+
 class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceInitWidget):
     def __init__(self, *args, **kwargs):
         funcname = __name__ + '__init__():'
@@ -141,6 +307,10 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
         self.sensorwidget_layout.addWidget(self.sensortable)
         self.sensorwidget_layout.addWidget(self.sensor_addbutton)
 
+        self.sensor_calibrations = QtWidgets.QPushButton('Calibrations')
+        self.sensor_calibrations.clicked.connect(self.calibrations_clicked)
+        self.sensorwidget_layout.addWidget(self.sensor_calibrations)
+
         self.layout.removeWidget(self.label)
         self.label.setParent(None)
 
@@ -149,6 +319,10 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
         # Add the widgets to the config widget, that enables/disables them when thread is running
         self.config_widgets.append(self.sensortable)
         self.config_widgets.append(self.sensor_addbutton)
+
+    def calibrations_clicked(self):
+        self.calibrationsWidget = sensorCalibrationsWidget(calibrations=self.device.custom_config.calibrations, redvypr_device = self.device)
+        self.calibrationsWidget.show()
 
     def update_sensortable(self):
         funcname = __name__ + '.update_sensortable():'
@@ -232,8 +406,9 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
             combo = self.sensor_standard_combo
         sensorname = combo.currentText()
         sensorindex = combo.currentIndex()
+        # Redefined sensor
         if combo == self.sensor_combo:
-            sensor = predefined_sensors[sensorindex]
+            sensor = predefined_sensors[sensorindex].model_copy()
         else:
             if sensorindex == 0:
                 sensor = Sensor()

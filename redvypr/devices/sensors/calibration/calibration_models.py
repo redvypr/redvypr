@@ -4,6 +4,7 @@ import numpy as np
 import datetime
 import dateutil
 import uuid
+from redvypr.redvypr_address import RedvyprAddress
 
 
 def get_date_from_calibration(calibration, parameter, return_str = False, strformat = '%Y-%m-%d %H:%M:%S'):
@@ -53,8 +54,10 @@ class calibration_const(pydantic.BaseModel):
     """
     structure_version: str = '1.0'
     calibration_type: typing.Literal['const'] = 'const'
-    parameter: str = pydantic.Field(default = 'XYZ',description='The calibrated parameter')
-    parameter_result: typing.Optional[str] = pydantic.Field(default = None,description='The keyname of the output parameter')
+    address_apply: typing.Optional[RedvyprAddress] = pydantic.Field(default=None,
+                                               escription='The address of the datakey in the datapacket data calibration shall be applied to')
+    datakey_result: typing.Optional[str] = pydantic.Field(default=None, description='The keyname of the output of the calibration. Note that this is the basekey of the datadictionary.')
+    parameter: RedvyprAddress = pydantic.Field(default = RedvyprAddress('/k:PARA_CONST'),description='The address of calibrated parameter in the datapacket', editable=False)
     sn: str = '' # The serial number of the sensor
     sensor_model: str = ''  # The sensor model
     coeff: float = pydantic.Field(default = 1.0)
@@ -132,3 +135,10 @@ class calibration_NTC(pydantic.BaseModel):
     calibration_uuid: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex,
                                          description='uuid of the calibration, can be choosen by the user')
     comment: typing.Optional[str] = None
+
+
+calibration_models = []
+calibration_models.append(calibration_const)
+calibration_models.append(calibration_poly)
+calibration_models.append(calibration_HF)
+calibration_models.append(calibration_NTC)

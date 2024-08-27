@@ -139,6 +139,7 @@ class RedvyprAddress():
 
         (parsed_addrstr,parsed_addrstr_expand) = self.parse_addrstr(self.address_str)
         self.parsed_addrstr = parsed_addrstr
+        self.parsed_addrstr_expand = parsed_addrstr_expand
 
         # Add the attributes to the object
         self.datakey = parsed_addrstr['datakey']
@@ -284,8 +285,17 @@ class RedvyprAddress():
 
         if parsed_addrstr['datakey'].startswith('[') and parsed_addrstr['datakey'].endswith(']'):
             parsed_addrstr_expand['datakeyeval'] = True
+            # Parse the entries
+            #https://stackoverflow.com/questions/2403122/regular-expression-to-extract-text-between-square-brackets
+            # and
+            # https://stackoverflow.com/questions/7317043/regex-not-operator#7317087
+            # TODO: regex string is not optimally working with quoted strings and square brackets ...
+            regex_str = r'(?<=\[).+?(?=\])'
+            print('Hallo',parsed_addrstr['datakey'])
+            parsed_addrstr_expand['datakeyentries'] = re.findall(regex_str,parsed_addrstr['datakey'])
         else:
             parsed_addrstr_expand['datakeyeval'] = False
+            parsed_addrstr_expand['datakeyentries'] = None
 
         #print(parsed_addrstr)
         return (parsed_addrstr,parsed_addrstr_expand)

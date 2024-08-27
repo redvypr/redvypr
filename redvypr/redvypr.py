@@ -93,6 +93,8 @@ def get_ip():
 # The hostinfo, to distinguish between different redvypr instances
 # redvyprid = str(uuid.uuid1()) # Old
 
+hostinfo_blank = {'hostname': '', 'tstart': 0, 'addr': '', 'uuid': ''}
+
 def create_hostinfo(hostname='redvypr'):
     funcname = __name__ + '.create_hostinfo()'
     logger.debug(funcname)

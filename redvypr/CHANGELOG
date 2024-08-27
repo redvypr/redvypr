@@ -1,5 +1,8 @@
     -0.9.?  - less verbose
             - RedvyprAddress is not expanding missing address entries with a '*'
+            - implemented __setitem__ of Datapacket object
+            - 'all' datakey bug in network_device when config is loaded
+            - generic_sensor calibration
     -0.9.0  - autostart bug
             - autocalibration in calibration device
             - initdevicewidget parameter bug fixed
