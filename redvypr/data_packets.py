@@ -33,6 +33,8 @@ class Datapacket(dict):
             dataself = create_datadict()
             self.update(dataself)
 
+        self.address = redvypr_address.RedvyprAddress(self)
+
     def __getitem__(self, key):
         # Check if the key is a string but is an "eval" operator
         if isinstance(key,str):
@@ -170,6 +172,9 @@ class Datapacket(dict):
             datastreams.append(redvypr_address.RedvyprAddress(self, datakey=k))
 
         return datastreams
+
+    def get_addressstr(self,addrformat='/i/k/'):
+        return self.address.get_str(addrformat)
 
 
 

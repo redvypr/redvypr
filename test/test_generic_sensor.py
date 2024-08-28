@@ -32,8 +32,10 @@ print('Calibration address',caladdr)
 cal_const = calibration_const(coeff=2.0,parameter=caladdr, address_apply=caladdr, datakey_result='foo')
 cal_const2 = calibration_const(coeff=3.0,parameter=caladdr2, address_apply=caladdr2)
 print('Calibration',cal_const)
-tar_sensor.calibrations[caladdr.address_str] = cal_const
-tar_sensor.calibrations[caladdr2.address_str] = cal_const2
+tar_sensor.add_calibration_for_datapacket(calibration=cal_const)
+tar_sensor.add_calibration_for_datapacket(calibration=cal_const2)
+#tar_sensor.calibrations[caladdr.address_str] = cal_const
+#tar_sensor.calibrations[caladdr2.address_str] = cal_const2
 print('Tar sensor',tar_sensor)
 
 data_packet_processed_with_calibration = tar_sensor.datapacket_process(datapacket)

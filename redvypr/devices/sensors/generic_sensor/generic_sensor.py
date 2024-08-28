@@ -63,6 +63,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
         logger.debug('Creating metadata packet for sensor {}'.format(sensor.name))
         metadata_datapacket = sensor.create_metadata_datapacket()
         #print('Metadata datapacket',metadata_datapacket)
+        sensor.add_all_calibrations(config.calibrations)
         if metadata_datapacket is not None:
             dataqueue.put(metadata_datapacket)
 
@@ -85,10 +86,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                 sensordata = sensor.datapacket_process(data)
                 if type(sensordata) is list: # List means that there was a valid packet
                     for data_packet in sensordata:
-                        print('Finding calibrations')
-                        find_calibration_for_sensor(calibrations=config.calibrations, sensor=sensor, data=data_packet)
-                        print('Done')
-                        #print('Publishing data_packet',data_packet)
+                        print('Publishing data_packet',data_packet)
                         dataqueue.put(data_packet)
 
 
@@ -493,7 +491,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.sensortable.setHorizontalHeaderLabels(colheaders)
 
         for irow, sensor in enumerate(self.device.custom_config.sensors):
-            # Create a sensorwidget, if not exsisting
+            # Create a sensorwidget, if not existing
             try:
                 sensor.__sensorwidget__
             except:
@@ -602,6 +600,10 @@ class SensorWidget(QtWidgets.QWidget):
         self.layout = QtWidgets.QGridLayout(self)
         self.label = QtWidgets.QLabel(self.sensor.name)
         self.sensor_address = RedvyprAddress('/d:{}'.format(sensor.name))
+        # Table showing the different packetids, which are used to distinguis different sensors
+        self.packetidtable = QtWidgets.QTableWidget()
+        self.packetidtable.setRowCount(0)
+        self.packetidtable.setColumnCount(1)
         self.datatable = QtWidgets.QTableWidget()
         self.datatable.setRowCount(2)
         self.datatable.setColumnCount(4)
@@ -610,27 +612,25 @@ class SensorWidget(QtWidgets.QWidget):
         self.datakey_items = {} # Dictionary with the tablewidgetitems
         self.datakey_units = {} # Dictionary with the units
         self.datakey_plot = {}# Dictionary with the plot widgets
+        self.packetids = []  # Dictionary with the plot widgets
         self.icol_key = 0
         self.icol_data = 1
         self.icol_unit = 2
         self.icol_plot = 3
-        item_tstr = QtWidgets.QTableWidgetItem('NA')
-        item_tustr = QtWidgets.QTableWidgetItem('NA')
-        self.datakey_items['t'] = [item_tustr, item_tstr]
         item_key_tstr = QtWidgets.QTableWidgetItem('Time')
         item_key_tustr = QtWidgets.QTableWidgetItem('Time (unix)')
-        self.datatable.setItem(0, self.icol_data, item_tustr)
-        self.datatable.setItem(1, self.icol_data, item_tstr)
+        #self.datatable.setItem(0, self.icol_data, item_tustr)
+        #self.datatable.setItem(1, self.icol_data, item_tstr)
         self.datatable.setItem(0, self.icol_key, item_key_tustr)
         self.datatable.setItem(1, self.icol_key, item_key_tstr)
 
         self.layout.addWidget(self.label)
+        self.layout.addWidget(self.packetidtable)
         self.layout.addWidget(self.datatable)
 
     def sensor_plot_clicked(self):
         print('Plot clicked')
         self.sender().__xyplot__.show()
-
 
     def update_data(self, data):
         funcname = __name__ + '.update_data():'
@@ -639,24 +639,40 @@ class SensorWidget(QtWidgets.QWidget):
         if data in self.sensor_address:
             #print(funcname + ' Datapacket fits, Processing data')
             rdata = redvypr.data_packets.Datapacket(data)
+            packetid = rdata.address.packetid
+            if packetid not in self.packetids:
+                self.packetids.append(packetid)
+                self.packetidtable.clear()
+                self.packetidtable.setRowCount(len(self.packetids))
+                for i,p in enumerate(self.packetids):
+                    packetiditem = QtWidgets.QTableWidgetItem(p)
+                    self.packetidtable.setItem(i,0,packetiditem)
+
+
+            print('Packetid',packetid)
+
             keys = rdata.datakeys(expand=True, return_type='list')
             # Updating the metadata
             if True: # TODO, this should be done based on a signal notifying that the metadata has changed
                 logger.debug('Updating keyinfo')
+                try:
+                    self.datakey_units[packetid]
+                except:
+                    self.datakey_units[packetid] = {}
                 # This should be done with device.get_metadata
                 #for k in data['_keyinfo'].keys():
                 for k in keys:
                     try:
-                        self.datakey_units[k]
+                        self.datakey_units[packetid][k]
                     except:
                         logger.debug(funcname + 'Trying to get metadata for address')
                         raddr_tmp = RedvyprAddress(data,datakey=k)
                         metadata = self.device.get_metadata_datakey(raddr_tmp)
                         #print('MetaDATA', metadata)
                         try:
-                            self.datakey_units[k] = metadata['unit']
+                            self.datakey_units[packetid][k] = metadata['unit']
                         except:
-                            self.datakey_units[k] = None
+                            self.datakey_units[packetid][k] = None
 
             if 't' in keys:
                 self.packets_for_me += 1
@@ -665,24 +681,44 @@ class SensorWidget(QtWidgets.QWidget):
                 tdata = datetime.datetime.utcfromtimestamp(data['t'])
                 tudatastr = str(data['t'])
                 tdatastr = tdata.strftime('%Y-%m-%d %H:%M:%S.%f')
-                item_tustr = self.datakey_items['t'][0]
-                item_tstr = self.datakey_items['t'][1]
-                #self.datatable.setItem(0, self.icol_data, item_tustr)
-                #self.datatable.setItem(1, self.icol_data, item_tstr)
-                item_tustr.setText(tudatastr)
-                item_tstr.setText(tdatastr)
+                try:
+                    self.datakey_items[packetid]['t'][0]
+                except:
+                    item_tstr = QtWidgets.QTableWidgetItem('NA')
+                    item_tustr = QtWidgets.QTableWidgetItem('NA')
+                    item_tustr.setText(tudatastr)
+                    item_tstr.setText(tdatastr)
+                    self.datakey_items[packetid] = {}
+                    self.datakey_items[packetid]['t'] = [item_tustr, item_tstr]
+                    self.datatable.setItem(0, self.icol_data, item_tustr)
+                    self.datatable.setItem(1, self.icol_data, item_tstr)
 
                 for k in keys:
                     if True:
                         datastr = str(rdata[k]) # This can be done more fancy
+                        try:
+                            self.datakey_units[packetid]
+                        except:
+                            self.datakey_units[packetid] = {}
+
                         # Check if the datakey is already
-                        if k not in self.datakey_items:
+                        try:
+                            self.datakey_items[packetid]
+                        except:
+                            self.datakey_items[packetid] = {}
+
+                        try:
+                            self.datakey_plot[packetid]
+                        except:
+                            self.datakey_plot[packetid] = {}
+
+                        if k not in self.datakey_items[packetid]:
                             nrows = self.datatable.rowCount()
                             #print(funcname + 'Creating new item {}'.format(nrows))
                             datakeyitem = QtWidgets.QTableWidgetItem(k)
                             dataitem = QtWidgets.QTableWidgetItem(datastr)
                             try:
-                                unit = self.datakey_units[k]
+                                unit = self.datakey_units[packetid][k]
                             except:
                                 unit = 'NA'
 
@@ -692,35 +728,35 @@ class SensorWidget(QtWidgets.QWidget):
                             self.datatable.setItem(nrows, self.icol_key, datakeyitem)
                             self.datatable.setItem(nrows, self.icol_data, dataitem)
                             self.datatable.setItem(nrows, self.icol_unit, dataunititem)
-                            self.datakey_items[k] = [dataitem,dataunititem]
+                            self.datakey_items[packetid][k] = [dataitem,dataunititem]
                             # Add a XY-Plot, if datatype fits
                             #if isinstance(data[k], numbers.Number):
                             if True:
                                 logger.debug(funcname + 'Adding XY-Plot')
                                 config_plot = configXYplot(automatic_subscription=False)
-                                self.datakey_plot[k] = XYplot(config=config_plot, add_line=False, redvypr_device=self.device)
+                                self.datakey_plot[packetid][k] = XYplot(config=config_plot, add_line=False, redvypr_device=self.device)
                                 yaddr = RedvyprAddress(self.sensor_address,datakey=k)
-                                self.datakey_plot[k].add_line(yaddr)
+                                self.datakey_plot[packetid][k].add_line(yaddr)
                                 plot_icon = qtawesome.icon('ph.chart-line-fill')
                                 item_plot = QtWidgets.QPushButton(plot_icon, 'Plot')
                                 item_plot.clicked.connect(self.sensor_plot_clicked)
-                                item_plot.__xyplot__ = self.datakey_plot[k]
+                                item_plot.__xyplot__ = self.datakey_plot[packetid][k]
                                 self.datatable.setCellWidget(nrows, self.icol_plot, item_plot)
 
                         else:
                             # Data
-                            dataitem = self.datakey_items[k][0]
+                            dataitem = self.datakey_items[packetid][k][0]
                             dataitem.setText(datastr)
                             # Unit
                             try:
-                                unit = self.datakey_units[k]
-                                dataunititem = self.datakey_items[k][1]
+                                unit = self.datakey_units[packetid][k]
+                                dataunititem = self.datakey_items[packetid][k][1]
                                 dataunititem.setText(unit)
                             except:
                                 pass
                                 #logger.debug('Could not update unit',exc_info=True)
                             try:
-                                self.datakey_plot[k].update_plot(data)
+                                self.datakey_plot[packetid][k].update_plot(data)
                                 #pass
                             except:
                                 pass

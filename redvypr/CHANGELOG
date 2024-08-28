@@ -4,6 +4,8 @@
             - 'all' datakey bug in network_device when config is loaded
             - generic_sensor calibration
             - RedvyprAddress accepts string and treats it as datakey entry: RedvyprAddress('hello') is equal to RedvyprAddress('/k:hello')
+            - Datapacket.address implemented, datapacket has now also its redvypr address
+            - RedvyprAddress is hashable, i.e. can be used as dictionary entries
     -0.9.0  - autostart bug
             - autocalibration in calibration device
             - initdevicewidget parameter bug fixed

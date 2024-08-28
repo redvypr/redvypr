@@ -210,7 +210,7 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
         dt_status = 2  # Send a status message every dtstatus seconds
 
     # Adding dt_status to get first status asap
-    tstatus = time.time() - dt_status
+    tstatus = time.time() - dt_status + 0.1
     npackets = 0 # Number packets received via the datainqueue
     clients = []
     try:
@@ -313,7 +313,7 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
         dt_status = 2 # Send a status message every dtstatus seconds
 
     # Adding dt_status to get first status asap
-    tstatus = time.time() - dt_status
+    tstatus = time.time() - dt_status + 0.1
     # Reconnecting to TCP Port if connection was closed by host
     try:
         config['tcp_reconnect']

@@ -122,6 +122,9 @@ class calibration_NTC(pydantic.BaseModel):
     """
     structure_version: str = '1.0'
     calibration_type: typing.Literal['ntc'] = 'ntc'
+    address_apply: typing.Optional[RedvyprAddress] = pydantic.Field(default=None,
+                                               escription='The address of the datakey in the datapacket data calibration shall be applied to')
+    datakey_result: typing.Optional[str] = pydantic.Field(default='{datakey}_cal_ntc', description='The keyname of the output of the calibration. Note that this is the basekey of the datadictionary.')
     #parameter: str = pydantic.Field(default = 'NTC_NUMXYZ',description='The calibrated parameter, this links the calibration to a specific sensor, i.e. NTC0 or NTC_A[10]')
     parameter: RedvyprAddress = pydantic.Field(default=RedvyprAddress('NTC[10]'),
                                     description='The calibrated parameter, this links the calibration to a specific sensor, i.e. NTC0 or NTC_A[10]')
@@ -130,13 +133,23 @@ class calibration_NTC(pydantic.BaseModel):
     Toff: float = 273.15 # Offset between K and degC
     coeff: list = pydantic.Field(default = [np.NaN, np.NaN, np.NaN, np.NaN])
     #coeff_std: typing.Optional[float] = None
-    unit: str = 'T'
-    unit_input: str = 'ohm'
+    unit: str = 'degC'
+    unit_input: str = 'Ohm'
     date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
     calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be choosen by the user')
     calibration_uuid: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex,
                                          description='uuid of the calibration, can be choosen by the user')
     comment: typing.Optional[str] = None
+
+    def raw2data(self,data):
+        """
+        Calculate the temperature based on the calibration and a resistance using a polynome
+        """
+        P_R = self.coeff
+        Toff = self.Toff
+        T_1 = np.polyval(P_R, np.log(data))
+        T = 1 / T_1 - Toff
+        return T
 
 
 calibration_models = []

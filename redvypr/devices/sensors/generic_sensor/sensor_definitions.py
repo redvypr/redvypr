@@ -66,6 +66,70 @@ class Sensor(pydantic.BaseModel):
     calibrations: typing.Dict[str, typing.Annotated[typing.Union[calibration_const, calibration_poly], pydantic.Field(
         discriminator='calibration_type')]] = pydantic.Field(default={})
 
+    def add_calibration_for_datapacket(self, packetaddress=RedvyprAddress('/i:*'), addrformat='/i',calibration=None):
+        """
+        Adds a calibration to the packetaddress. During process data it is checked if the provided datapacket fits with the packetaddress of the calibration and if so all calibrations found are applied.
+        :param packetaddress:
+        :param calibration:
+        :return:
+        """
+        if calibration is not None:
+            key = packetaddress.get_str(addrformat)
+            try:
+                self.calibrations[key]
+            except:
+                self.calibrations[key] = []
+
+            self.calibrations[key].append(calibration)
+
+    def add_all_calibrations(self, calibrations):
+        """
+        Adding a list of all calibrations to sensor. The calibrations are used for the automatic search for the correct calibrations for the processed sensor data
+        :param calibrations:
+        :return:
+        """
+        self.__all_calibrations = calibrations
+
+
+    def find_calibration_for_datapacket(self, rdata: Datapacket):
+        """
+        Tries to find the right calibration for the datapacket
+        :param rdata:
+        :return:
+        """
+        funcname = __name__ + '.find_calibration_for_datapacket():'
+        print(funcname)
+        try:
+            self.__datapackets_checked_for_calibrations
+        except:
+            self.__datapackets_checked_for_calibrations = {}
+
+        for calibration in self.__all_calibrations:
+            print('Checking calibration', calibration)
+            sn = calibration.sn
+            sensor_model = calibration.sensor_model
+            caldate = calibration.date
+            parameter_calibrated = calibration.parameter
+            # 1: Check if calibration.parameter is existing in the datapacket
+            # 2: Compare serial number with packetid (not done yet)
+            # 3: save date (not done yet)
+            try:
+                print('parameter calibrated', parameter_calibrated)
+                caldata_raw = rdata[parameter_calibrated]
+                print('Got caldata raw', caldata_raw)
+                flag_parameter = True
+            except:
+                logger.info('Could not get data', exc_info=True)
+                flag_parameter = False
+
+            if flag_parameter:
+                print('Adding calibration')
+                calibration_apply = calibration.model_copy()
+                calibration_apply.address_apply = calibration_apply.parameter
+                #calibration_apply.datakey_result = 'test1'
+                self.add_calibration_for_datapacket(rdata.address,calibration=calibration_apply)
+
+
     def datapacket_process(self, data):
         """
         Processes a redvypr datapacket.
@@ -73,48 +137,70 @@ class Sensor(pydantic.BaseModel):
         :return:
         """
         #print('Hallo self', self)
-        #print('Hallo data for sensor', data)
-        if data in self.datastream:
+        print('Hallo data for sensor', data, data in self.datastream)
+        #if data in self.datastream:
+        if True: # self.datastream does not work for binary sensors
             rdata = Datapacket(data)
-            for calibration_key in self.calibrations.keys():
-                calibration = self.calibrations[calibration_key]
-                #print('Processing calibration', calibration)
-                caldata_raw = rdata[calibration.address_apply]
-                #print(caldata_raw)
-                # And now the most important thing, applying the calibration
-                caldata_cal = calibration.raw2data(caldata_raw)
-                #print(caldata_raw,caldata_cal)
-                # Copy the data to the original location or make a copy
-                if calibration.datakey_result is None:
-                    #print('Applying to data')
-                    rdata[calibration.address_apply] = caldata_cal
-                else: # If the base datakey shall be changed, copy the data first
-                    if calibration.address_apply.parsed_addrstr_expand['datakeyeval']:
-                        datakey_orig = calibration.address_apply.parsed_addrstr_expand['datakeyentries'][0]
-                        datakey_new = calibration.address_apply.datakey.replace(datakey_orig,"'{}'".format(calibration.datakey_result))
-                        #print('Datakey_new',datakey_new)
-                        address_result = RedvyprAddress(calibration.address_apply, datakey=datakey_new)
-                    else:
-                        datakey_orig = calibration.address_apply.datakey
-                        # Create the new RedvyprAddress
-                        address_result = RedvyprAddress(calibration.address_apply, datakey=calibration.datakey_result)
+            rdata_addressstr = rdata.get_addressstr('/i')
+            # Check if autofindcalibration shall be done
+            if self.autofindcalibration:
+                print('Autocalibration')
+                found_calibration = False
+                for datapacket_calkey in self.calibrations.keys():
+                    datapacket_calkey_address = RedvyprAddress(datapacket_calkey)
+                    if rdata in datapacket_calkey_address:
+                        found_calibration = True
+                        break
 
-                    #print('Address result',address_result)
-                    # And finally copy the data into the new datakey
-                    try:
-                        rdata[calibration.datakey_result]
-                    except:
-                        evalstr = 'data[{}]'.format(datakey_orig)
-                        # print('Evalstr',evalstr)
-                        data_orig = eval(evalstr, None)
-                        rdata[calibration.datakey_result] = copy.deepcopy(data_orig)
+                if found_calibration == False:
+                    print('Finding calibrations')
+                    self.find_calibration_for_datapacket(rdata)
+                    print('Done')
+                else:
+                    print('Found calibration already')
 
-                    #print('Data orig',data_orig)
-                    #print('Hallo',calibration.address_apply.parsed_addrstr_expand['datakeyentries'])
-                    rdata[address_result] = caldata_cal
+            # Check if there is a calibration to be found for the datapacket
+            for datapacket_calkey in self.calibrations.keys():
+                datapacket_calkey_address = RedvyprAddress(datapacket_calkey)
+                if rdata in datapacket_calkey_address:
+                    calibrations_for_packet = self.calibrations[rdata_addressstr]
+                    # Loop over all calibrations for the datapacket
+                    for calibration in calibrations_for_packet:
+                        print('Processing calibration', calibration)
+                        caldata_raw = rdata[calibration.address_apply]
+                        #print(caldata_raw)
+                        # And now the most important thing, applying the calibration
+                        caldata_cal = calibration.raw2data(caldata_raw)
+                        #print(caldata_raw,caldata_cal)
+                        # Copy the data to the original location or make a copy
+                        if calibration.datakey_result is None:
+                            #print('Applying to data')
+                            rdata[calibration.address_apply] = caldata_cal
+                        else: # If the base datakey shall be changed, copy the data first
+                            if calibration.address_apply.parsed_addrstr_expand['datakeyeval']:
+                                datakey_orig = calibration.address_apply.parsed_addrstr_expand['datakeyentries'][0]
+                                datakey_new = calibration.datakey_result.format(datakey=datakey_orig)
+                                datakey_new_eval = calibration.address_apply.datakey.replace(datakey_orig,"{}".format(datakey_new))
+                                address_result = RedvyprAddress(calibration.address_apply, datakey=datakey_new_eval)
+                            else:
+                                datakey_orig = calibration.address_apply.datakey
+                                # Create the new RedvyprAddress
+                                datakey_new = calibration.datakey_result.format(datakey=datakey_orig)
+                                address_result = RedvyprAddress(calibration.address_apply, datakey=datakey_new)
 
-            #print('data done', rdata)
-            return dict(rdata)
+                            # And finally copy the data into the new datakey
+                            try:
+                                rdata[datakey_new]
+                            except:
+                                data_orig = data[datakey_orig]
+                                rdata[datakey_new] = copy.deepcopy(data_orig)
+
+                            #print('Data orig',data_orig)
+                            #print('Hallo',calibration.address_apply.parsed_addrstr_expand['datakeyentries'])
+                            rdata[address_result] = caldata_cal
+
+                    #print('data done', rdata)
+                    return dict(rdata)
 
 
 class BinarySensor(Sensor):
@@ -201,7 +287,7 @@ class BinarySensor(Sensor):
                     data_packet['t'] = data['t']
 
             # Check if calibrations exist, if yes, do the calibration procedure
-            if len(self.calibrations.keys()) > 0:
+            if (len(self.calibrations.keys()) > 0) or self.autofindcalibration:
                 data_packets_calibrated = []
                 for data_packet in data_packets:
                     #print('Found calibration for parameter')
