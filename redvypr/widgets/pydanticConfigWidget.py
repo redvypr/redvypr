@@ -1448,10 +1448,10 @@ class dictQTreeWidget(QtWidgets.QTreeWidget):
                 indexstr = index
             newparent = QtWidgets.QTreeWidgetItem([str(index), '',typestr])
             item = newparent
-            newparent.__data__         = datatmp
-            newparent.__dataindex__    = index
-            newparent.__datatypestr__  = typestr
-            newparent.__parent__       = parent
+            newparent.__data__ = datatmp
+            newparent.__dataindex__ = index
+            newparent.__datatypestr__ = typestr
+            newparent.__parent__ = parent
             try:
                 newparent.__dataparent__ = parent.__data__  # can be used to reference the data (and change it)
             except:

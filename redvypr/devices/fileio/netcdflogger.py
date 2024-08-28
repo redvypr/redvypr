@@ -167,17 +167,19 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     dataqueue.put(data_stat)
     count += 1
 
-    tfile           = time.time() # Save the time the file was created
-    tflush          = time.time() # Save the time the file was created
-    tupdate         = time.time() # Save the time for the update timing
+    tfile = time.time() # Save the time the file was created
+    tflush = time.time() # Save the time the file was created
+    tupdate = time.time() # Save the time for the update timing
     FLAG_RUN = True
     file_status = {}
-    file_status_reduced = {}
+    file_status_reduced = file_status
     while FLAG_RUN:
         tcheck      = time.time()
         # Flush file on regular basis
         if ((time.time() - tflush) > config['dt_sync']):
-            #print('Flushing, not implemented (yet)')
+            print(funcname + 'Syncing netCDF file {}'.format(filename))
+            nc.sync()
+            bytes_written = os.path.getsize(filename)
             #bytes_written = pympler.asizeof.asizeof(nc)
             #print('Bytes written',bytes_written)
             tflush = time.time()
@@ -223,7 +225,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
                 # Write data
                 if True:
-                    print(funcname + ' got data',data)
+                    #print(funcname + ' got data',data)
                     try:
                         data['t']
                     except:
@@ -236,6 +238,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     #datakeys.insert(0,'t')
                     # Write data in datakeys or create variable
                     # Write time
+                    packets_written += 1
                     for k in datakeys:
                         try:
                             var = nc_device.variables[k]
@@ -269,6 +272,10 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         if var is not None:
                             try:
                                 var[lent] = data[k]
+                                try:
+                                    file_status[k] += 1
+                                except:
+                                    file_status[k] = 1
                             except:
                                 logger.info('Could not write data',exc_info=True)
                         else:
@@ -777,9 +784,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         if self.update_auto.isChecked():
             devinfo = self.device.get_device_info(address=self.device.address_str)
-            # devinfo = self.device.get_device_info()
-            # print('Deviceinfo!!!!', devinfo)
-            # print('__________')
+
+            print('Deviceinfo!!!!', devinfo)
+            print('__________')
+            devinfo = self.device.get_device_info()
+            print('Deviceinfo 2!!!!', devinfo)
 
             filename = devinfo['_deviceinfo']['filename']
 
@@ -818,11 +827,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
             try:
                 self.update_qtreewidget()
             except:
-                logger.debug(exc_info=True)
+                logger.debug(funcname, exc_info=True)
 
-        except Exception as e:
-            #logger.debug(funcname, exc_info=True)
-            pass
+        except:
+            logger.info(funcname, exc_info=True)
+            #pass
 
         try:
             #print('data',data)
@@ -912,8 +921,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 self.filelab.setText("File: {:s}".format(data['_deviceinfo']['filename']))
                 self.byteslab.setText("Bytes written: {:d}".format(data['_deviceinfo']['bytes_written']))
                 self.packetslab.setText("Packets written: {:d}".format(data['_deviceinfo']['packets_written']))
-        except Exception as e:
-            logger.exception(e)
+        except:
+            logger.info(funcname, exc_info=True)
 
 
         #self.text.insertPlainText(str(data['_deviceinfo']['data']))
