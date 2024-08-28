@@ -122,7 +122,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             
         try:
             sizeneworig  = config['size_newfile']
-            sizeunit     = config['size_newfile_unit']
+            sizeunit = config['size_newfile_unit']
             if(sizeunit.lower() == 'kb'):
                 sizefac = 1000.0
             elif(sizeunit.lower() == 'mb'):            
@@ -177,9 +177,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
         tcheck      = time.time()
         # Flush file on regular basis
         if ((time.time() - tflush) > config['dt_sync']):
-            print('Flushing, not implemented (yet)')
-            bytes_written = pympler.asizeof.asizeof(nc)
-            print('Bytes written',bytes_written)
+            #print('Flushing, not implemented (yet)')
+            #bytes_written = pympler.asizeof.asizeof(nc)
+            #print('Bytes written',bytes_written)
             tflush = time.time()
 
         time.sleep(0.05)
@@ -323,19 +323,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     data_stat['_deviceinfo']['bytes_written'] = bytes_written
                     data_stat['_deviceinfo']['packets_written'] = packets_written
                     dataqueue.put(data_stat)
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 class Device(RedvyprDevice):
     """
@@ -818,19 +805,19 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def update_data(self,data):
         funcname = __name__ + '.update()'
+        print(funcname,data)
         try:
             data['_deviceinfo']
         except:
             return
 
         # Update qtree
-
         try:
             # Test if the file status has changed, if yes make an update
             file_status_tmp = data['_deviceinfo']['file_status']
             try:
                 self.update_qtreewidget()
-            except Exception as e:
+            except:
                 logger.debug(exc_info=True)
 
         except Exception as e:

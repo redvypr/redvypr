@@ -327,14 +327,17 @@ class Redvypr(QtCore.QObject):
 
     def __init__(self, config=None, hostname=None, nogui=False, loglevel=None):
         super(Redvypr, self).__init__()
+        if loglevel is not None:
+            logger.setLevel(loglevel)
+            logger.debug('Setting loglevel to global: "{}"'.format(loglevel))
         self.__platform__ = __platform__
         funcname = __name__ + '.__init__()'
         logger.debug(funcname)
 
         if config is None:
-            print('Creating config')
+            logger.debug(funcname + 'Creating config')
             config = RedvyprConfig(hostname=hostname)
-            print('Config',config)
+            logger.debug(funcname + 'Config {}'.format(config))
 
         # print(__platform__)
         # Overwrite hostname with argument
@@ -342,7 +345,7 @@ class Redvypr(QtCore.QObject):
             config.hostname = hostname
 
         # global loglevel
-        print('Loglevel',loglevel)
+        #print('Loglevel',loglevel)
         if loglevel is not None:
             logger.setLevel(loglevel)
             logger.debug('Setting loglevel to global: "{}"'.format(loglevel))
