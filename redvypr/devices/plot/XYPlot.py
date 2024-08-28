@@ -29,7 +29,7 @@ redvypr_devicemodule = True
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('xyplot')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 class DeviceBaseConfig(pydantic.BaseModel):

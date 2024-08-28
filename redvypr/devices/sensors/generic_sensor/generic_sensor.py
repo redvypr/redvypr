@@ -28,7 +28,7 @@ from redvypr.devices.plot.XYplotWidget import XYplot, configXYplot
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from redvypr.devices.sensors.calibration.calibration_models import calibration_models, calibration_NTC
 from redvypr.devices.sensors.csvsensors.sensorWidgets import sensorCoeffWidget, sensorConfigWidget
-from .sensor_definitions import Sensor, BinarySensor, predefined_sensors, find_calibration_for_sensor
+from .sensor_definitions import Sensor, BinarySensor, predefined_sensors
 from .calibrationWidget import sensorCalibrationsWidget
 
 _icon_file = redvypr_files.icon_file
@@ -56,9 +56,9 @@ class DeviceCustomConfig(pydantic.BaseModel):
 def start(device_info, config = None, dataqueue = None, datainqueue = None, statusqueue = None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
-    print('Got config serialized', config)
+    #print('Got config serialized', config)
     config = DeviceCustomConfig.model_validate(config)
-    print('Got config', config)
+    #print('Got config', config)
     for sensor in config.sensors:
         logger.debug('Creating metadata packet for sensor {}'.format(sensor.name))
         metadata_datapacket = sensor.create_metadata_datapacket()
@@ -86,7 +86,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                 sensordata = sensor.datapacket_process(data)
                 if type(sensordata) is list: # List means that there was a valid packet
                     for data_packet in sensordata:
-                        print('Publishing data_packet',data_packet)
+                        #print('Publishing data_packet',data_packet)
                         dataqueue.put(data_packet)
 
 
@@ -597,8 +597,8 @@ class SensorWidget(QtWidgets.QWidget):
         self.device = redvypr_device
         #print('Sensor',self.sensor)
         super().__init__(*args, **kwargs)
-        self.layout = QtWidgets.QGridLayout(self)
-        self.label = QtWidgets.QLabel(self.sensor.name)
+        self.layout = QtWidgets.QVBoxLayout(self)
+        #self.label = QtWidgets.QLabel(self.sensor.name)
         self.sensor_address = RedvyprAddress('/d:{}'.format(sensor.name))
         # Table showing the different packetids, which are used to distinguis different sensors
         self.packetidtable = QtWidgets.QTableWidget()
@@ -624,9 +624,10 @@ class SensorWidget(QtWidgets.QWidget):
         self.datatable.setItem(0, self.icol_key, item_key_tustr)
         self.datatable.setItem(1, self.icol_key, item_key_tstr)
 
-        self.layout.addWidget(self.label)
-        self.layout.addWidget(self.packetidtable)
-        self.layout.addWidget(self.datatable)
+        #self.layout.addWidget(self.label,1)
+        self.layout.addWidget(self.packetidtable,1)
+
+        self.layout.addWidget(self.datatable,4)
 
     def sensor_plot_clicked(self):
         print('Plot clicked')
@@ -640,16 +641,19 @@ class SensorWidget(QtWidgets.QWidget):
             #print(funcname + ' Datapacket fits, Processing data')
             rdata = redvypr.data_packets.Datapacket(data)
             packetid = rdata.address.packetid
-            if packetid not in self.packetids:
+            if packetid not in self.packetids and len(packetid) > 0:
                 self.packetids.append(packetid)
                 self.packetidtable.clear()
                 self.packetidtable.setRowCount(len(self.packetids))
+                self.packetidtable.setHorizontalHeaderLabels(['Packetids for sensor {}'.format(self.sensor.name)])
                 for i,p in enumerate(self.packetids):
                     packetiditem = QtWidgets.QTableWidgetItem(p)
                     self.packetidtable.setItem(i,0,packetiditem)
 
+                self.packetidtable.resizeColumnsToContents()
 
-            print('Packetid',packetid)
+
+            print('Packetid',packetid,self.packetids)
 
             keys = rdata.datakeys(expand=True, return_type='list')
             # Updating the metadata

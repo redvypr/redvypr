@@ -27,37 +27,6 @@ def array(byte_string):
 
 
 
-def find_calibration_for_sensor(calibrations, sensor, data):
-    """
-    Searches in the calibrations list for a calibration that fits with the sensor and the data in the datapacket
-    :param calibrations:
-    :param sensor:
-    :return:
-    """
-    rdata = Datapacket(data)
-    for calibration in calibrations:
-        print('Checking calibration',calibration)
-        sn = calibration.sn
-        sensor_model = calibration.sensor_model
-        caldate = calibration.date
-        parameter_calibrated = calibration.parameter
-        # 1: Check if calibration.parameter is existing in the datapacket
-        # 2: Compare serial number with packetid
-        # 3: save date
-        caladdr = RedvyprAddress('/i:fdsf')
-        print('data',data)
-        try:
-            print('parameter calibrated', parameter_calibrated)
-            caldata_raw = rdata[parameter_calibrated]
-            print('Got caldata raw',caldata_raw)
-            flag_parameter = True
-        except:
-            logger.info('Could not get data',exc_info=True)
-            flag_parameter = False
-
-
-
-
 class Sensor(pydantic.BaseModel):
     name: str = pydantic.Field(default='sensor')
     sensortype: typing.Literal['sensor'] = pydantic.Field(default='sensor')
@@ -98,14 +67,14 @@ class Sensor(pydantic.BaseModel):
         :return:
         """
         funcname = __name__ + '.find_calibration_for_datapacket():'
-        print(funcname)
+        logger.debug(funcname)
         try:
             self.__datapackets_checked_for_calibrations
         except:
             self.__datapackets_checked_for_calibrations = {}
 
         for calibration in self.__all_calibrations:
-            print('Checking calibration', calibration)
+            logger.debug(funcname + 'Checking calibration {}'.format(calibration))
             sn = calibration.sn
             sensor_model = calibration.sensor_model
             caldate = calibration.date
@@ -114,16 +83,16 @@ class Sensor(pydantic.BaseModel):
             # 2: Compare serial number with packetid (not done yet)
             # 3: save date (not done yet)
             try:
-                print('parameter calibrated', parameter_calibrated)
+                #print('parameter calibrated', parameter_calibrated)
                 caldata_raw = rdata[parameter_calibrated]
-                print('Got caldata raw', caldata_raw)
+                #print('Got caldata raw', caldata_raw)
                 flag_parameter = True
             except:
-                logger.info('Could not get data', exc_info=True)
+                logger.debug(funcname + 'Could not get data', exc_info=True)
                 flag_parameter = False
 
             if flag_parameter:
-                print('Adding calibration')
+                logger.debug(funcname+ 'Adding calibration')
                 calibration_apply = calibration.model_copy()
                 calibration_apply.address_apply = calibration_apply.parameter
                 #calibration_apply.datakey_result = 'test1'
@@ -136,15 +105,14 @@ class Sensor(pydantic.BaseModel):
         :param data:
         :return:
         """
-        #print('Hallo self', self)
-        print('Hallo data for sensor', data, data in self.datastream)
+        #print('Hallo data for sensor', data, data in self.datastream)
         #if data in self.datastream:
         if True: # self.datastream does not work for binary sensors
             rdata = Datapacket(data)
             rdata_addressstr = rdata.get_addressstr('/i')
             # Check if autofindcalibration shall be done
             if self.autofindcalibration:
-                print('Autocalibration')
+                #print('Autocalibration')
                 found_calibration = False
                 for datapacket_calkey in self.calibrations.keys():
                     datapacket_calkey_address = RedvyprAddress(datapacket_calkey)
@@ -153,11 +121,10 @@ class Sensor(pydantic.BaseModel):
                         break
 
                 if found_calibration == False:
-                    print('Finding calibrations')
                     self.find_calibration_for_datapacket(rdata)
-                    print('Done')
                 else:
-                    print('Found calibration already')
+                    pass
+                    #print('Found calibration already')
 
             # Check if there is a calibration to be found for the datapacket
             for datapacket_calkey in self.calibrations.keys():
@@ -166,7 +133,7 @@ class Sensor(pydantic.BaseModel):
                     calibrations_for_packet = self.calibrations[rdata_addressstr]
                     # Loop over all calibrations for the datapacket
                     for calibration in calibrations_for_packet:
-                        print('Processing calibration', calibration)
+                        #print('Processing calibration', calibration)
                         caldata_raw = rdata[calibration.address_apply]
                         #print(caldata_raw)
                         # And now the most important thing, applying the calibration

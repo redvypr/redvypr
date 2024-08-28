@@ -20,7 +20,7 @@ _icon_file = files.icon_file
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('gui')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 

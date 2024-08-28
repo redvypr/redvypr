@@ -180,9 +180,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
         # Flush file on regular basis
         if ((time.time() - tflush) > config['dt_sync']):
-            print('Flushing, not implemented (yet)')
+            #print('Flushing, not implemented (yet)')
             bytes_written = pympler.asizeof.asizeof(workbook)
-            print('Bytes written',bytes_written)
+            #print('Bytes written',bytes_written)
             tflush = time.time()
 
         time.sleep(0.05)
@@ -257,8 +257,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         data['t'] = data['_redvypr']['t']
 
                     datapacket = data_packets.Datapacket(data)
-                    datakeys = datapacket.datakeys(expand=config['datakey_expansionlevel'])
-                    print('datakeys')
+                    datakeys = datapacket.datakeys(expand=config['datakey_expansionlevel'],return_type='list')
+                    #print('datakeys',datakeys)
                     datakeys.remove('t')
                     datakeys.insert(0,'t')
                     # Write data in datakeys
@@ -278,7 +278,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
                         #print('Will write data from {} to column {} and line {}'.format(packet_address_str, colindex,lineindex))
                         datawrite = datapacket[k]
-                        if (type(datawrite) is not str) and (type(datawrite) is not int) and (type(datawrite) is not float):
+                        if not(isinstance(datawrite,str)) and not(isinstance(datawrite,int)) and not(isinstance(datawrite,float)):
                             #print('Datatype {} not supported, converting data to str'.format(str(type(datawrite))))
                             datawrite = str(datawrite)
 
@@ -318,7 +318,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
             if FLAG_TIME or FLAG_SIZE or (FLAG_RUN == False):
                 # Autofit
-                print('Autofit')
+                #print('Autofit')
                 worksheet_summary.autofit()
                 for w in device_worksheets:
                     device_worksheets[w].autofit()
@@ -613,9 +613,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         # columns = ['Columnnr.', 'Datakey', 'Device', 'Format', 'Full Address String']
         funcname = self.__class__.__name__ + '.update_datastream_table():'
-        print(funcname)
+        logger.debug(funcname)
         datastreams_subscribed = self.device.get_subscribed_datastreams()
-        print('datastreams subscribed',datastreams_subscribed)
+        logger.debug('datastreams subscribed {}'.format(datastreams_subscribed))
         self.datastreamtable.clear()
         self.datastreamtable.setRowCount(len(datastreams_subscribed))
         for i,d in enumerate(datastreams_subscribed):
@@ -647,7 +647,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
 
         config = self.device.custom_config
-        print('config',config)
+        #print('config',config)
         self.dt_newfile.setText(str(config.dt_newfile))
         for i in range(self.newfiletimecombo.count()):
             self.newfiletimecombo.setCurrentIndex(i)
@@ -719,7 +719,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         else:
             config.filecountformat = ''
 
-        print('Config',config)
+        #print('Config',config)
         return config
 
     def update_device_config(self):
@@ -837,17 +837,19 @@ class displayDeviceWidget(QtWidgets.QWidget):
             filename = devinfo['_deviceinfo']['filename']
 
             if self.update_show_red.isChecked():
-                print('Hallo show reduced is checked')
+                #print('Hallo show reduced is checked')
                 file_status = devinfo['_deviceinfo']['file_status_reduced']
             else:
-                print('Hallo show full is checked')
+                #print('Hallo show full is checked')
                 file_status = devinfo['_deviceinfo']['file_status']
 
             if self.update_show_cur_file.isChecked():
-                print('Hallo current file is checked')
+                #print('Hallo current file is checked')
                 file_status = file_status[filename]
             else:
-                print('Hallo is not checked')
+                #print('Hallo is not checked')
+                pass
+
 
             # Update the qtree
             # https://stackoverflow.com/questions/9364754/remembering-scroll-value-of-a-qtreewidget-in-pyqt?rq=3
