@@ -1377,6 +1377,10 @@ class dictQTreeWidget(QtWidgets.QTreeWidget):
         #self.itemCollapsed.connect(self.resize_view)
 
     def reload_data(self,data):
+        funcname = __name__ + '.reload_data():'
+        #print(funcname)
+        #print('data',data)
+        #print('------')
         self.data = data
         self.clear()
         self.create_qtree()

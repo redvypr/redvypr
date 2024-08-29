@@ -18,7 +18,6 @@ import copy
 import gzip
 import os
 import netCDF4
-import pympler.asizeof
 import pydantic
 import typing
 from redvypr.device import RedvyprDevice
@@ -787,28 +786,34 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
             print('Deviceinfo!!!!', devinfo)
             print('__________')
-            devinfo = self.device.get_device_info()
-            print('Deviceinfo 2!!!!', devinfo)
+            #devinfo = self.device.get_device_info()
+            #print('Deviceinfo 2!!!!', devinfo)
 
             filename = devinfo['_deviceinfo']['filename']
 
             if self.update_show_red.isChecked():
                 print('Hallo show reduced is checked')
                 file_status = devinfo['_deviceinfo']['file_status_reduced']
+                print('File status', file_status)
             else:
                 print('Hallo show full is checked')
                 file_status = devinfo['_deviceinfo']['file_status']
+                print('File status', file_status)
 
             if self.update_show_cur_file.isChecked():
                 print('Hallo current file is checked')
-                file_status = file_status[filename]
+                #file_status = file_status[filename]
+                print('File status', file_status)
             else:
                 print('Hallo is not checked')
+                print('File status', file_status)
 
+            print('hallo hallo',file_status)
             # Update the qtree
             # https://stackoverflow.com/questions/9364754/remembering-scroll-value-of-a-qtreewidget-in-pyqt?rq=3
             bar = self.deviceinfoQtree.verticalScrollBar()
             yScroll = bar.value()
+            print('File status',file_status)
             self.deviceinfoQtree.reload_data(file_status)
             self.deviceinfoQtree.verticalScrollBar().setSliderPosition(yScroll)
 
