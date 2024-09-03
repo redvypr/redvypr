@@ -5,7 +5,7 @@ Design
 Dataflow and addressing
 -----------------------
 
-Each redvypr instance has a hostinfo dictionary the is created with `create_hostinfo(hostname=...)`::
+Each redvypr instance has a hostinfo dictionary the is created with ``create_hostinfo(hostname=...)``::
 
     import redvypr
     hostinfo = redvypr.create_hostinfo(hostname='someredvypr')
@@ -115,14 +115,44 @@ The result is a very similar datapacket, with a new entry called `localhost`::
 Addressing the data within Python is easy if the data packet isfor example in the variable called `data`::
 
    pi = data['data']
+RedvyprAddress
+--------------
 But how to address a certain data packet from a certain redvypr? This is done with a RedvyprAddress::
 
    from redvypr.redvypr_address import RedvyprAddress
    raddr = RedvyprAddress('*')
 
-RedvyprAddress
---------------
-- Address entries
+
+They allow to filter datapackets based on for example the redvypr host, the sending device, available datakeys or the packetid.
+The `address entries` for filtering datapackets are formatted by a slash ``/`` the entryname a ``:`` and the value, for example
+for the hostname::
+
+  raddr1 = RedvyprAddress('/h:someredvypr')
+  raddr2 = RedvyprAddress('/h:someotherredvypr')
+Now a datapacket can be checked using the ``in`` keyword::
+
+  print('data in raddr1',data in raddr1)
+  print('data in raddr2',data in raddr2)
+
+gives::
+
+  data in raddr1 True
+  data in raddr2 False
+
+
+.. table:: Truth table for "not"
+   :widths: auto
+
+   ===================  =============  =======
+   Address entry short  Address entry  Example
+   ===================  =============  =======
+   k                    datakey        /k:data
+   h                    hostname       /h:redvypr
+   i                    packetid       /i:GPS_01
+   a                    address        /a:192.168.178.1
+   d                    device         /d:serial
+   p                    publisher      /d:network_device
+   ===================  =============  =======
 Misc notes
 ----------
 

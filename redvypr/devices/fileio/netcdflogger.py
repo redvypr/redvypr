@@ -6,8 +6,6 @@ Logger that writes xlsx files
 
 import datetime
 import logging
-import queue
-
 import numpy
 from PyQt5 import QtWidgets, QtCore, QtGui
 import time
@@ -146,7 +144,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
     flag_zlib = config['zlib']
     #flag_zlib = False
-
     bytes_written = 0
     packets_written = 0
     bytes_written_total = 0

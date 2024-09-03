@@ -14,6 +14,7 @@ Welcome to redvypr's documentation!
    device.rst
    design.rst
    api.rst
+   changelog.rst
 ..   examples.rst      
 ..   installation.rst   
 
