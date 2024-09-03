@@ -1,7 +1,7 @@
 - 0.9.?:
         - less verbose
         - RedvyprAddress is not expanding missing address entries with a '*'
-        - implemented __setitem__ of Datapacket object
+        - implemented ``__setitem__`` of Datapacket object
         - 'all' datakey bug in network_device when config is loaded
         - generic_sensor calibration
         - RedvyprAddress accepts string and treats it as datakey entry: RedvyprAddress('hello') is equal to RedvyprAddress('/k:hello')
@@ -13,20 +13,20 @@
         - autocalibration in calibration device
         - initdevicewidget parameter bug fixed
 - 0.8.9:
-        - renamed devicedisplaywidget.update in .update_data
+        - renamed ``devicedisplaywidget.update`` in ``.update_data``
         - redvypr: devicedict cleaned, removed 'dataout', refactored 'gui' and 'guiqueue' into 'guiqueues'
 - 0.8.8:
         - datastreamsWidget implemented
         - bugs in RedvyprAddress with packetid defined or an update of datakey
         - added polynomial fit to calibration.py and improved several small things
-        - improved Device.get_metadata_datakey, it can now handle "eval" RedvyprAddresses
+        - improved ``Device.get_metadata_datakey``, it can now handle "eval" RedvyprAddresses
         - cleanup of XYPlotWidget
 - 0.8.7:
         - introduced packetid in datapackets
-        - Datapackets work now with Datapacket[RedvyprAddress]
+        - Datapackets work now with ``Datapacket[RedvyprAddress]``
         - bug fixes in serial device
 - 0.8.6:
-        - generic_sensor and sensor definitions strongly improved.
+        - generic_sensor and sensor definitions strongly improved
         - RedvyprAddress is working as a pydantic datatype
 - 0.8.5:
         - bug fixes in serial
@@ -38,7 +38,7 @@
 - 0.8.3:
         - XYPlot working
         - configwidget editable bug removed
-        - XYPlot with feature of plot last_N_points-
+        - XYPlot with feature of plot last_N_points
         - redvypr device save config bug fixed (custom_config instead of config)
         - several small bugs
 - 0.8.2:
@@ -92,7 +92,7 @@
         - rawdatareplay works now with indices
 - 0.6.4:
         - rawdatareplay packetreader improved for potential thread based file inspection and user choice of packets to be read
-        - added last publishing device (lpd) to treat_datatict(). This allows to have the future feature of subscribing to a local publishing device
+        - added last publishing device (lpd) to ``treat_datatict()``. This allows to have the future feature of subscribing to a local publishing device
 - 0.6.3:
         - major cleanup of config utilities and rawdatareplay
 - 0.6.2:
@@ -105,9 +105,9 @@
         - test_device has sine_rand datakey
 - 0.5.3:
         - changed utils.py into configdata.py, added folder utils and utils/csv2dict
-        - redvypr.rem_device() added and cleaned redvyprWidget.closeTab()
+        - ``redvypr.rem_device()`` added and cleaned ``redvyprWidget.closeTab()``
         - distribute_data has now connection to main thread via redvypr.redvyprqueue to check for updates done by main thread
-        - maximum device threshold added: config_template['redvypr_device']['max_devices']  = 1
+        - maximum device threshold added: ``config_template['redvypr_device']['max_devices'] = 1``
         - Added regular check if the distribute_data thread is still running, if not print a warning.
         - changed device.publish/subscribe flags to devices.publishes/subscribes
         - cleanup of api
@@ -128,7 +128,7 @@
         - removed config folder
         - created example folder with configuration, needs to be cleaned
         - config module to harmonize configuration
-        - added Internet of Redvype (iored) device
+        - added Internet of Redvypr (iored) device
         - introduction of configuration class for device configuration
         - "s" for autostart and "p" or process in the -a option. Standard case is starting a device as a thread.
 - 0.4.10:

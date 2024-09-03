@@ -960,7 +960,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         self.save_widget = QtWidgets.QWidget()
         self.save_widget_layout = QtWidgets.QFormLayout(self.save_widget)
         self.save_widget_dict = {}
-        folderpath_init = '.' + os.sep + '{SN}'
+        folderpath_init = '.' + os.sep + '{SN}' + os.sep + '{CALDATE}'
         self.save_widget_dict['le'] = QtWidgets.QLineEdit(folderpath_init)
         self.save_widget_dict['le'].editingFinished.connect(self.__populate__calibrationfilelist__)
         calfolder = QtWidgets.QPushButton('Choose Calibration Folder')
