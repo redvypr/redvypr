@@ -23,7 +23,7 @@ redvypr_data_keys = ['_redvypr','_redvypr_command','_deviceinfo','_keyinfo']
 class Datapacket(dict):
     def __init__(self, *args, **kwargs):
         if len(args)>0:
-            if type(args[0]) == dict:
+            if isinstance(args[0],dict):
                 dict.__init__(self, *args,**kwargs)
 
         else:
