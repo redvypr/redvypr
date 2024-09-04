@@ -2754,21 +2754,20 @@ class displayDeviceWidget(QtWidgets.QWidget):
                         logger.debug(funcname + 'Subscription failed',exc_info=True)
                         flag_fit = False
 
-
+                    datastream_fit_str = datastream_fit.get_str()
                     if flag_fit:
                         for indcaldata, caldata in enumerate(self.device.custom_config.calibrationdata):
                             datastream = caldata.datastream
-                            if datastream_fit == datastream:  # already subscribed
+                            if datastream_fit.get_str == datastream:  # already subscribed
                                 ind = indcaldata
                                 flag_fit = False
                                 logger.debug(funcname + 'Already subscribed')
                                 break
 
                     if flag_fit and valid_datatype:
-                        datastream_fit_str = datastream_fit.get_str()
                         logger.debug('Subscribing to address {}'.format(datastream_fit))
                         keyinfo = self.device.get_metadata_datakey(datastream_fit_str, all_entries=False)
-                        print('Datakeyinfo', keyinfo)
+                        logger.debug(funcname + 'Datakeyinfo {}'.format(keyinfo))
                         try:
                             parameter = datastream_fit.datakey
                         except:
