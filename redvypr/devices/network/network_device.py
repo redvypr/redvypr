@@ -369,7 +369,7 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
             bytes_read += len(datab)
             # Check what data we are expecting and convert it accordingly
             datab_all += datab
-            tmp = raw_to_packet(datab_all, config)
+            tmp = raw_to_packet(datab_all, config, safe_load=False)
             packets = tmp['packets']
             datab_all = tmp['datab_rest']
             for p in packets:
@@ -527,7 +527,7 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
             bytes_read += len(datab)
             t = time.time()
             # Check what data we are expecting and convert it accordingly
-            packets = raw_to_packet(datab, config)
+            packets = raw_to_packet(datab, config, safe_load=False)
             for p in packets:
                 dataqueue.put(p)
                 npackets += 1

@@ -92,9 +92,13 @@ class autocalWidget(QtWidgets.QWidget):
         self.parameter_steady_button.clicked.connect(self.parameterClicked)
 
         self.parameter_start = QtWidgets.QDoubleSpinBox()
+        self.parameter_start.setMinimum(-1e10)
+        self.parameter_start.setMaximum(1e10)
         self.parameter_start.setValue(self.config.parameter_start)
 
         self.parameter_delta = QtWidgets.QDoubleSpinBox()
+        self.parameter_delta.setMinimum(-1e10)
+        self.parameter_delta.setMaximum(1e10)
         self.parameter_delta.setValue(self.config.parameter_delta)
 
         self.addentry = QtWidgets.QPushButton('Add entry')

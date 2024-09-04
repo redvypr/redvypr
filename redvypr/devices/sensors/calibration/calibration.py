@@ -879,7 +879,13 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
                     parameter = coeff.parameter
                     #if cindex is not None:
                     #    parameter += '[{}]'.format(cindex)
-                    item = QtWidgets.QTableWidgetItem(parameter)
+                    try:
+                        parameter_str = parameter.address_str
+                    except:
+                        parameter_str = str(parameter)
+                    print('Parameter',parameter,str(parameter),type(parameter))
+                    item = QtWidgets.QTableWidgetItem(parameter_str)
+                    item.__parameter__ = parameter
                     self.calibration_ntc['coefftable'].setItem(irow,0,item)
                     item = QtWidgets.QTableWidgetItem(coeff.sn)
                     self.calibration_ntc['coefftable'].setItem(irow,1,item)
@@ -2670,7 +2676,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.set_datastream():'
         logger.debug(funcname)
-        #print('i',i,'d',d,'sn',sn,'unit',unit,'sensortype',sensortype)
+        print('Set datastream!!')
+        print('i',i,'d',d,'sn',sn,'unit',unit,'sensortype',sensortype)
+        print('--------Set datastream!!---------')
         p = self.plot_widgets[i]
         if True:
             self.device.custom_config.calibrationdata[i].datastream = d
@@ -2717,10 +2725,15 @@ class displayDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         try:
             #print('Data',data)
+            found_subscription = False
             for i, plot_widget in enumerate(self.plot_widgets):
                 #print('p',i,p.datastream,p.subscription_redvypr)
-                if plot_widget.datastream is None: # No datastream assigned yet, check if the data packet is worth subscription
-                    #print('subscribing ...')
+                # No datastream assigned yet, check if the data packet is worth subscription
+                if (plot_widget.datastream is None) and (found_subscription == False):
+                    if data in plot_widget.subscription_redvypr:
+                        print(funcname + 'subscribing to {}...'.format(i))
+                    else:
+                        continue
                     rdata = redvypr.data_packets.Datapacket(data)
                     # Try if we get data with the address
                     try:
@@ -2732,7 +2745,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
                             logger.debug(funcname + 'Invalid data type: {}'.format(type(datatest)))
                             valid_datatype = False
                         # create an address
-                        datastream_fit = redvypr.RedvyprAddress(data, datakey=plot_widget.subscription_redvypr.datakey)
+                        # TODO: Add the moment only datakey and packetid are updated, this should be done more general
+                        # by checking which of the parts are specific
+                        datastream_fit = redvypr.RedvyprAddress(data, packetid=plot_widget.subscription_redvypr.packetid, datakey=plot_widget.subscription_redvypr.datakey)
                         flag_fit = True
                         logger.debug(funcname + 'Subscription fits')
                     except:
@@ -2782,75 +2797,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                         self.set_datastream(i, datastream_fit_str, sn=sn, unit=unit, sensortype=sensortype, parameter=parameter)
                         self.device.deviceinitwidget.datastream_subscribed(i, datastream_fit_str)
                         plot_widget.update_plot(data)
-
-                    datakeys = redvypr.data_packets.Datapacket(data).datakeys()
-                    datakeys = []
-                    for k in datakeys:
-                        daddr = redvypr.RedvyprAddress(data, datakey=k)
-                        d = daddr.get_str()
-                        #print('k', k)
-                        #print('d', d)
-                        if d in plot_widget.subscription_redvypr:
-                            logger.debug('Could subscribe to {:s}'.format(d))
-                            datastreamdata = data[k]
-                            #print('Datastream',self.datastreams)
-                            valid_datatype = False
-                            if (type(datastreamdata) == list):
-                                valid_datatype = True
-                                for dstream in datastreamdata:
-                                    if not((type(dstream) == int) or type(dstream) == float):  # Check if not int or float
-                                        valid_datatype = False
-                                        break
-                            elif (type(datastreamdata) == int) or (type(datastreamdata) == float): # Check for valid datatype
-                                valid_datatype = True
-
-                            #print('valid datatype',valid_datatype)
-                            if valid_datatype:
-                                ind = None
-                                # Check if the datastream is already used
-                                for indcaldata,caldata in enumerate(self.device.custom_config.calibrationdata):
-                                    datastream = caldata.datastream
-                                    if d == datastream: # already subscribed
-                                        ind = indcaldata
-                                        break
-
-                                #print('index',ind,len(self.plot_widgets))
-                                if ind is None: # Great, we can subscribe
-                                    logger.info('Subscribe sensor {:d} to {:s}'.format(i,d))
-                                    #daddr = redvypr.data_packets.redvypr_address(d)
-                                    # Add metainformation
-                                    keyinfo = self.device.get_metadata_datakey(d)
-                                    #print('Datakeyinfo', keyinfo)
-                                    try:
-                                        parameter = daddr.datakey
-                                    except:
-                                        parameter = 'NA'
-
-                                    try:
-                                        sn = keyinfo[d]['sn']
-                                    except:
-                                        sn = ''
-
-                                    try:
-                                        unit = keyinfo[d]['unit']
-                                    except:
-                                        unit = 'NA'
-
-                                    try:
-                                        sensortype = keyinfo[d]['sensortype']
-                                    except:
-                                        sensortype = ''
-
-                                    #print('Setting datastream', d, sn)
-                                    self.set_datastream(i, d, sn=sn, unit=unit, sensortype=sensortype, parameter=parameter)
-                                    self.device.deviceinitwidget.datastream_subscribed(i,d)
-                                    plot_widget.update_plot(data)
-
-                                else:
-                                    if ind is not i: # If datastream is subscribed, but not to me
-                                        continue
-                            else:
-                                logger.debug('Will not Datastream {:s} has invalid type {:s}'.format(d,type(datastreamdata).__name__))
+                        found_subscription = True
                 else:
                     #logger.debug('Updating plot {:d} with data {}'.format(i,data))
                     plot_widget.update_plot(data)
