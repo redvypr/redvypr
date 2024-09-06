@@ -20,6 +20,7 @@ print('Datapacket', datapacket)
 
 print('Redvypr address test')
 rc0 = RedvyprAddress(datakey='t1')
+# Comparisons
 rc1 = RedvyprAddress(compare='["t1"]>=3')
 rc2 = RedvyprAddress(compare='["t2"]>=3')
 rc3 = RedvyprAddress(compare='["somelist"][2]<=1000')
