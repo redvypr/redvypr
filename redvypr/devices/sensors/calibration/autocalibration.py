@@ -355,9 +355,12 @@ class autocalWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         parameter_start = self.parameter_start.value()
         parameter_delta = self.parameter_delta.value()
+        timer_wait = self.timer_wait.value()
         autocalmode = self.modecombo.currentText()
         self.parameter_start.setValue(parameter_start + parameter_delta)
-        entry = AutoCalEntry(parameter_set=parameter_start, parameter=self.config.parameter,autocalmode=autocalmode, parameter_steady=self.config.parameter_steady)
+        entry = AutoCalEntry(parameter_set=parameter_start, parameter=self.config.parameter,autocalmode=autocalmode,
+                             parameter_steady=self.config.parameter_steady,
+                             timer_wait=timer_wait)
         self.config.entries.append(entry)
         self.update_entrytable()
 
