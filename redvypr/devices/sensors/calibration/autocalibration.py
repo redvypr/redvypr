@@ -117,6 +117,8 @@ class autocalWidget(QtWidgets.QWidget):
         self.parameter_steady_false = QtWidgets.QLineEdit()
         self.parameter_steady_false.setText(str(self.config.parameter_steady_false))
         self.timer_wait = QtWidgets.QDoubleSpinBox()
+        self.timer_wait.setMinimum(0.0)
+        self.timer_wait.setMaximum(10000auto.0)
         self.timer_wait.setValue(self.config.timer_wait)
         self.parameter_threshold = QtWidgets.QDoubleSpinBox()
         self.modecombo = QtWidgets.QComboBox()
