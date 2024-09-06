@@ -117,7 +117,7 @@ Addressing the data within Python is easy if the data packet isfor example in th
    pi = data['data']
 RedvyprAddress
 --------------
-But how to address a certain data packet from a certain redvypr? This is done with a RedvyprAddress::
+But how to address a certain data packet from a certain redvypr instance? This is done with a RedvyprAddress::
 
    from redvypr.redvypr_address import RedvyprAddress
    raddr = RedvyprAddress('*')
@@ -140,6 +140,8 @@ gives::
   data in raddr2 False
 
 
+Below a table of all address entries.
+
 .. table:: Truth table for "not"
    :widths: auto
 
@@ -151,8 +153,33 @@ gives::
    i                    packetid       /i:GPS_01
    a                    address        /a:192.168.178.1
    d                    device         /d:serial
-   p                    publisher      /d:network_device
+   p                    publisher      /p:network_device
    ===================  =============  =======
+
+Address entries can be combined. If an entry is not specified it is implicitly assumed that anything is allowed.
+This can also be specified with the wildcard (\*) symbol. A good example is a RedvyprAddress that has not all entries defined,
+for example the datakey only::
+
+   r = RedvyprAddress('/k:data')
+   rstr_full = r.get_str()
+   print(rstr_full)
+
+gives::
+
+   '/u:*/a:*/h:*/d:*/p:*/i:*/k:data/'
+
+Here all missing address entries are replaced by the wildcard symbol.
+
+Regular Expressions
+___________________
+Sometimes the filtering of datapackets is based on a pattern and not on a specific expression.
+For example the packetids of datapackets could be ``GPS_device1``, ``GPS_device2`` and ``GPS_device10``.
+To address all GPS devices RedvyprAddresses supports `regular expressions <https://docs.python.org/3/library/re.html#module-re>`_.
+
+
+Redvypr datapackets
+-------------------
+
 Misc notes
 ----------
 

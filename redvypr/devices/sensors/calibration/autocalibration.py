@@ -38,7 +38,7 @@ class AutoCalEntry(pydantic.BaseModel):
     """
     An entry for the autocalibration procedure
     """
-    autocalmode: typing.Literal['timer', 'response', 'threshold'] = pydantic.Field(default='timer',
+    autocalmode: typing.Literal['timer', 'response', 'threshold'] = pydantic.Field(default='response',
                                                                                    description='The mode, i.e. the way autocal shall behave after the value is set.')
     parameter: RedvyprAddress = pydantic.Field(default=RedvyprAddress(),
                                                        description='The parameter to be changed')
@@ -49,7 +49,7 @@ class AutoCalEntry(pydantic.BaseModel):
     parameter_steady_false: typing.Any = pydantic.Field(default=0,
                                                    description='The value that is sent by parameter_steady when the value ist not yet steady')
     command: str = pydantic.Field(default='', description='The command to be sent')
-    timer_wait: float = pydantic.Field(default=30.5, description='Seconds to wait')
+    timer_wait: float = pydantic.Field(default=120, description='Seconds to wait')
     sample_delay: float = pydantic.Field(default=2.0, description='The delay [s] after which the paremeters are sampled')
     entry_min_runtime: float = pydantic.Field(default=5.0, description='The mininum time[s] an entry should run before analysis is performed')
 
@@ -124,6 +124,7 @@ class autocalWidget(QtWidgets.QWidget):
         for m in modes:
             self.modecombo.addItem(str(m))
 
+        self.modecombo.setCurrentIndex(1)
         self.layout_config0 = QtWidgets.QHBoxLayout()
         self.layout_config0.addWidget(self.parameterinput)
         self.layout_config0.addWidget(self.parameterinput_edit)
@@ -150,7 +151,7 @@ class autocalWidget(QtWidgets.QWidget):
         irow = 1
         self.layout.addWidget(self.addentry, 1+irow, 0,1,-1)
         self.layout.addWidget(self.calentrytable, 2+irow, 0, 1, -1)
-        self.layout.addWidget(self.rementry, 3+irow, 1,1,-1)
+        self.layout.addWidget(self.rementry, 3+irow, 0,1,-1)
         self.layout.addWidget(self.start, 4+irow, 0, 1, -1)
         self.layout.addWidget(QtWidgets.QLabel('Start index'), 4+irow, 2)
         self.layout.addWidget(self.start_index, 4+irow, 3)
@@ -191,10 +192,12 @@ class autocalWidget(QtWidgets.QWidget):
             self.autcal_run_timer.start(1000)
             self.start_index.setEnabled(False)
             self.autocal_run()
+            self.start.setText('Stop autocalibration')
         else:
             logger.debug('Stopping')
             self.start_index.setEnabled(True)
             self.autcal_run_timer.stop()
+            self.start.setText('Start autocalibration')
 
     def autocal_run(self):
         funcname = __name__ + '.autocal_run():'
@@ -206,6 +209,12 @@ class autocalWidget(QtWidgets.QWidget):
             self.autcal_run_timer.stop()
             self.start.setChecked(False)
             self.start_index.setEnabled(True)
+            self.start.setText('Start autocalibration')
+            for irow, entry in enumerate(self.config.entries):
+                item_status = QtWidgets.QTableWidgetItem('Idle')
+                item_status.setFlags(item_status.flags() ^ QtCore.Qt.ItemIsEditable)
+                self.calentrytable.setItem(irow, self.col_status, item_status)
+
             return
 
         self.start_index.setEnabled(False)
@@ -247,6 +256,7 @@ class autocalWidget(QtWidgets.QWidget):
                 logger.debug(funcname + 'Processing entry with response mode')
                 self.device.subscribe_address(self._autocal_entry_run.parameter)
                 self.device.subscribe_address(self._autocal_entry_run.parameter_steady)
+                self._autocal_response_steady = False
                 self._autocal_entry_running = True
                 self._autocal_entry_tstart = time.time()
             elif self._autocal_entry_run.autocalmode == 'timer':
@@ -298,7 +308,7 @@ class autocalWidget(QtWidgets.QWidget):
         self.calentrytable.setRowCount(nrows)
 
         self.calentrytable.setHorizontalHeaderLabels(self.colheader)
-        for irow,entry in enumerate(self.config.entries):
+        for irow, entry in enumerate(self.config.entries):
             #print('Entry',entry)
             item_status = QtWidgets.QTableWidgetItem('Idle')
             item_status.setFlags(item_status.flags() ^ QtCore.Qt.ItemIsEditable)
@@ -409,6 +419,33 @@ class autocalWidget(QtWidgets.QWidget):
                 # Check if steady and at least next_entry_min_time seconds
 
                 if steadydata == steady_true and (trun > self._autocal_entry_run.entry_min_runtime):
-                    #print('Parameter steady ...')
-                    self._autocal_entry_running = False
-                    self.autocal_run_next_entry()
+                    if self._autocal_response_steady == False:
+                        print('Parameter steady ...')
+                        self._autocal_response_steady = True
+                        self._autocal_response_steady_time = time.time()
+                        #dtwaititem = self.calentrytable.item(self.config.start_index, self.col_timer_wait)
+                        #dt_wait = float(dtwaititem.text())
+                        #dtwaititem.dt_wait = dt_wait
+                    else:
+                        pass
+
+                if self._autocal_response_steady:
+                    print('Steady')
+                    try:
+                        dt = time.time() - self._autocal_response_steady_time
+                        dtwaititem = self.calentrytable.item(self.config.start_index, self.col_timer_wait)
+                        #dt_wait = int(dtwaititem.text())
+                        dt_wait = self.config.entries[self.config.start_index].timer_wait
+                        #dt_wait = dtwaititem.dt_wait
+                        dt_left = dt_wait - dt
+                        dtwaititem.setText('{:.2f}'.format(dt_left))
+                        print('dt', dt, 'dt_wait', dt_wait)
+                        if dt_left > 0:
+                            print('Still waiting')
+                            pass
+                        else:
+                            print('New round')
+                            self._autocal_entry_running = False
+                            self.autocal_run_next_entry()
+                    except:
+                        logger.warning('Could not process',exc_info=True)
