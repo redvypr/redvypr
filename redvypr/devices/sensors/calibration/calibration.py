@@ -1011,12 +1011,16 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         for fname_full,fname_cal_full,c,cal in fnames_full:
             dirname = os.path.dirname(fname_full)
             if os.path.isdir(dirname):
-                print('Path exists')
+                logger.info('Folder exists:{}'.format(dirname))
+            elif c.comment == 'reference sensor':
+                logger.info('Reference sensor, ignoring')
             elif create_path:
-                print('Creating directory')
-                os.mkdir(dirname)
+                logger.info('Creating folder:{}'.format(dirname))
+                #os.mkdir(dirname)
+                os.makedirs(dirname)
             else:
-                print('Directory does not exist, will not write file')
+
+                logger.info('Folder {} does not exist, will not write file'.format(dirname))
                 continue
             if os.path.isfile(fname_full):
                 logger.warning('File is already existing {:s}'.format(fname_full))
@@ -1058,21 +1062,26 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
                     print('Saving coeff', c)
                     date = datetime.datetime.strptime(c.date, "%Y-%m-%d %H:%M:%S.%f")
                     dstr = date.strftime('%Y-%m-%d_%H-%M-%S')
-                    fname = '{:s}_{:s}_{:s}.yaml'.format(c.sn, c.parameter, dstr)
+                    # Distinguish between RedvyprAddress and str
+                    try:
+                        parameter_str = c.parameter.address_str
+                    except:
+                        parameter_str = c.parameter
+                    fname = '{:s}_{:s}_{:s}.yaml'.format(c.sn, parameter_str, dstr)
                     calfile_structure = self.save_widget_dict['le_calfile'].text()
                     try:
-                        fname = calfile_structure.format(SN=c.sn, CALDATE=dstr, PARAMETER=c.parameter)
+                        fname = calfile_structure.format(SN=c.sn, CALDATE=dstr, PARAMETER=parameter_str)
                     except:
                         fname = calfile_structure
 
                     fname_full = folderpath + '/' + fname
                     # Add the placeholders
                     try:
-                        fname_full = fname_full.format(SN=c.sn, CALDATE=dstr, PARAMETER=c.parameter)
+                        fname_full = fname_full.format(SN=c.sn, CALDATE=dstr, PARAMETER=parameter_str)
                     except:
                         pass
 
-                    fname_cal = '{:s}_{:s}_{:s}_calibrationdata.yaml'.format(c.sn, c.parameter, dstr)
+                    fname_cal = '{:s}_{:s}_{:s}_calibrationdata.yaml'.format(c.sn, parameter_str, dstr)
                     fname_cal_full = folderpath + '/' + fname_cal
                     fnames_full.append([fname_full,fname_cal_full, c,cal])
 

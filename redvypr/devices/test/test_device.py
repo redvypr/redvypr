@@ -75,7 +75,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         time.sleep(config['delay_s'])
         #print('Hallo')
         # Add complex data
-        data = redvypr.data_packets.create_datadict(device='test_complex_data')
+        data = redvypr.data_packets.create_datadict(device='test_complex_data', packetid='complex_data')
         if counter == 0:
             # Add metadata
             metadata = {'description': 'Counter and polynomial functions of counter', 'unit': 'grigra'}
@@ -86,6 +86,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
             data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_dict_list',
                                                                 metadict=metadata)
         data['data_list'] = [counter,data_sine,data_rand]
+        data['data_list_list'] = [[counter, data_sine, data_rand],[counter, data_sine]]
         data['data_list_poly'] = [counter, counter + data_rand, 2 * counter + data_rand, -10 * counter + data_rand+ 3, 0.1 * counter**2 + 2 * counter + data_rand+ 3]
         data['data_dict_list'] = {'temp':[data_rand, 2*data_rand-10],'pressure':10+data_rand}
         data['data_ndarray_1d'] = np.zeros((5,)) + counter

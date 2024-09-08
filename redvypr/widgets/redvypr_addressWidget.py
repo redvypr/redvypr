@@ -72,7 +72,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
         :return: RedvyprAddress or None
         """
         addr_str = self.__configwidget_input.text()
-        print('Addr str',addr_str)
+        #print('Addr str',addr_str)
         try:
             self.redvypr_address = RedvyprAddress(addr_str)
             self.__configwidget_apply.setEnabled(True)
@@ -81,7 +81,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
             self.redvypr_address = None
             self.__configwidget_apply.setEnabled(False)
 
-        print('Redvypr address',self.redvypr_address)
+        #print('Redvypr address',self.redvypr_address)
         return self.redvypr_address
 
 
@@ -154,11 +154,12 @@ class address_filterWidget(QtWidgets.QWidget):
         #self.btn_showfilter.setChecked(True)
         self.btn_showfilter.clicked.connect(self._showfilter_btn_)
 
-
         self.filter_widget = QtWidgets.QWidget()
         self.filter_layout = QtWidgets.QFormLayout(self.filter_widget)
         self.btn_datakeyfilter = QtWidgets.QPushButton('Datakey')
         self.line_datakeyfilter = QtWidgets.QLineEdit(self.filter_address.datakey)
+        self.btn_packetidfilter = QtWidgets.QPushButton('Packet Id')
+        self.line_packetidfilter = QtWidgets.QLineEdit(self.filter_address.packetid)
         self.btn_devicefilter = QtWidgets.QPushButton('Device')
         self.line_devicefilter = QtWidgets.QLineEdit(self.filter_address.devicename)
         self.btn_publishingdevicefilter = QtWidgets.QPushButton('Publishing device')
@@ -166,20 +167,25 @@ class address_filterWidget(QtWidgets.QWidget):
         self.btn_hostfilter = QtWidgets.QPushButton('Redvypr host')
         self.line_hostfilter = QtWidgets.QLineEdit(self.filter_address.hostname)
 
-        buttons = [self.btn_datakeyfilter, self.btn_devicefilter, self.btn_publishingdevicefilter,
-                     self.btn_hostfilter]
+        buttons = [self.btn_datakeyfilter, self.btn_packetidfilter,
+                   self.btn_devicefilter, self.btn_publishingdevicefilter,
+                   self.btn_hostfilter]
         for b in buttons:
             b.clicked.connect(self.__open_filterChoiceWidget)
             if redvypr is None:
                 b.setEnabled(False)
 
-        lineedits = [self.line_datakeyfilter, self.line_devicefilter, self.line_publishingdevicefilter,self.line_hostfilter]
+        lineedits = [self.line_datakeyfilter, self.line_packetidfilter,
+                     self.line_devicefilter, self.line_publishingdevicefilter,
+                     self.line_hostfilter]
+
         for l in lineedits:
             l.editingFinished.connect(self.__update_address_from_lineedits)
 
         self.line_filterstr = QtWidgets.QLineEdit(self.filter_address.get_str())
 
         self.filter_layout.addRow(self.btn_datakeyfilter,self.line_datakeyfilter)
+        self.filter_layout.addRow(self.btn_packetidfilter, self.line_packetidfilter)
         self.filter_layout.addRow(self.btn_devicefilter,self.line_devicefilter)
         self.filter_layout.addRow(self.btn_publishingdevicefilter, self.line_publishingdevicefilter)
         self.filter_layout.addRow(self.btn_hostfilter, self.line_hostfilter)
@@ -205,6 +211,9 @@ class address_filterWidget(QtWidgets.QWidget):
         if self.sender() == self.btn_datakeyfilter:
             options = self.redvypr.get_datakeys()
             self.__filterChoiceList.lineedit = self.line_datakeyfilter
+        elif self.sender() == self.btn_packetidfilter:
+            options = self.redvypr.get_packetids()
+            self.__filterChoiceList.lineedit = self.line_packetidfilter
         elif self.sender() == self.btn_devicefilter:
             options = self.redvypr.get_devices(local_object=False)
             self.__filterChoiceList.lineedit = self.line_devicefilter
@@ -223,12 +232,24 @@ class address_filterWidget(QtWidgets.QWidget):
         self.__filterChoiceLayout.addWidget(self.__filterChoiceList)
         self.__filterChoiceLayout.addWidget(self.__filterChoiceApply)
         self.__filterChoiceLayout.addWidget(self.__filterChoiceCancel)
+        self.__filterChoiceList.setSelectionMode(QtWidgets.QListWidget.MultiSelection)
         self.__filterChoice.show()
 
     def __filterChoiceApplyClicked(self):
-        option = self.__filterChoiceList.currentItem()
-        optionstr = str(option.text())
-        print('Apply',optionstr)
+        options = self.__filterChoiceList.selectedItems()
+        if len(options) == 1:
+            option = self.__filterChoiceList.currentItem()
+            optionstr = str(option.text())
+        elif len(options) > 1:
+            optionstr ='{'
+            for o in options:
+                optionstr += o.text() + '|'
+
+            optionstr = optionstr[:-1] + '}'
+        else:
+            return
+
+        logger.debug('Apply {}'.format(optionstr))
         self.__filterChoiceList.lineedit.setText(optionstr)
         self.__update_address_from_lineedits()
         self.__filterChoice.close()
@@ -236,20 +257,25 @@ class address_filterWidget(QtWidgets.QWidget):
     def __update_address_from_lineedits(self):
         host = self.line_hostfilter.text()
         datakey = self.line_datakeyfilter.text()
+        packetid = self.line_packetidfilter.text()
         devicename = self.line_devicefilter.text()
         publisher = self.line_publishingdevicefilter.text()
-        self.filter_address = RedvyprAddress(datakey=datakey, hostname=host, devicename=devicename, publisher=publisher)
+        self.filter_address = RedvyprAddress(datakey=datakey,
+                                             packetid=packetid,
+                                             hostname=host,
+                                             devicename=devicename,
+                                             publisher=publisher)
         #print('Update filteraddress',self.filter_address.get_str())
         self.line_filterstr.setText(self.filter_address.get_str())
         self.filterChanged.emit()
 
     def _onfilter_btn_(self):
         if self.btn_nofilter.isChecked():
-            print('Will filter')
+            logger.debug('Will filter')
             self.btn_nofilter.setText('Filter on')
             self.filter_on = True
         else:
-            print('Will NOT filter')
+            logger.debug('Will NOT filter')
             self.btn_nofilter.setText('Filter off')
             self.filter_on = False
 
@@ -257,7 +283,7 @@ class address_filterWidget(QtWidgets.QWidget):
 
 
     def _showfilter_btn_(self):
-        print('Show filter button')
+        logger.debug('Show filter button')
         button = self.sender()
         if button.isChecked():
             self.filter_widget.show()
@@ -291,6 +317,8 @@ class datastreamWidget(QtWidgets.QWidget):
         """
 
         super(QtWidgets.QWidget, self).__init__()
+        logger.setLevel(logging.DEBUG)
+        logger.debug('HALLLOHALLO')
         self.setWindowIcon(QtGui.QIcon(_icon_file))
         self.closeAfterApply = closeAfterApply
         self.redvypr = redvypr
@@ -331,7 +359,6 @@ class datastreamWidget(QtWidgets.QWidget):
 
         self.addressline = QtWidgets.QLineEdit()
         self.addressline.setReadOnly(True)
-
 
         # A combobox to choose between different styles of the address
         self.addrtype_combo = QtWidgets.QComboBox()  # Combo for the different combination types
@@ -437,20 +464,25 @@ class datastreamWidget(QtWidgets.QWidget):
                     if dev == self.device:
                         continue
 
-                    print('Address', dev.address)
+                    logger.debug('Address {}'.format(dev.address))
                     # Check for external filter
                     flag_external_filter = True
                     for addr_include in self.external_filter_include:
-                        if dev.address not in addr_include:
-                            print('No filter match for external filter', dev.address)
+                        filter_test = dev.address not in addr_include
+                        logger.debug('Testing filter {} with {}'.format(dev.address,addr_include))
+                        if filter_test:
+                            logger.debug('No filter match for external filter {}'.format(dev.address))
                             flag_external_filter = False
 
                     if flag_external_filter == False:
                         continue
                     # Check for filter from filter widget
                     if self.filterWidget.filter_on:
-                        if dev.address not in self.filterWidget.filter_address:
-                            print('No filter match for ',dev.address)
+                        filter_test = dev.address not in self.filterWidget.filter_address
+                        logger.debug(
+                            'Testing filter for {} in {}: {}'.format(dev.address, self.filterWidget.filter_address,filter_test))
+                        if filter_test:
+                            logger.debug('No filter match for {} in {}'.format(dev.address, self.filterWidget.filter_address))
                             continue
 
 
@@ -471,8 +503,15 @@ class datastreamWidget(QtWidgets.QWidget):
                             if len(datakeys) > 0:
                                 flag_datastreams = True
                                 devaddress_redvypr = RedvyprAddress(devaddress)
+                                print('Test1',self.filterWidget.filter_on)
                                 if self.filterWidget.filter_on:
-                                    if devaddress_redvypr not in self.filterWidget.filter_address:
+                                    filter_test = devaddress_redvypr not in self.filterWidget.filter_address
+                                    logger.info(
+                                        'Testing filter for forwarded {} in {}: {}'.format(devaddress_redvypr,
+                                                                                 self.filterWidget.filter_address,
+                                                                                 filter_test))
+
+                                    if filter_test:
                                         print('No filter match for ', devaddress_redvypr)
                                         continue
                                 addrtype = '/d/'
@@ -510,8 +549,12 @@ class datastreamWidget(QtWidgets.QWidget):
             self.devicelist.resizeColumnToContents(0)
 
     def __update_devicetree_expanded(self):
+        funcname = __name__ + '.__update_devicetree_expanded():'
+        logger.debug(funcname)
         colgrey = QtGui.QColor(220, 220, 220)
         def update_recursive(data_new_key, data_new, parent_item):
+            funcname = __name__ + '.__update_recursive():'
+            logger.debug(funcname)
             print('Hallo',data_new_key, data_new,type(data_new))
             # Check if we are at an item
             if isinstance(data_new, tuple):
@@ -528,7 +571,11 @@ class datastreamWidget(QtWidgets.QWidget):
                 print('Address',itmk.datakey_address)
                 print('Address parsed', itmk.datakey_address.parsed_addrstr)
                 if self.filterWidget.filter_on:
-                    if itmk.datakey_address not in self.filterWidget.filter_address:
+                    test_filter = itmk.datakey_address not in self.filterWidget.filter_address
+                    logger.debug('Testing (@tuple): {} not in {}: {}'.format(itmk.datakey_address,
+                                                                             self.filterWidget.filter_address,
+                                                                             test_filter))
+                    if test_filter:
                         print('No filter match for ', itmk.datakey_address)
                     else:
                         parent_item.addChild(itmk)
@@ -536,7 +583,7 @@ class datastreamWidget(QtWidgets.QWidget):
                     parent_item.addChild(itmk)
 
             elif isinstance(data_new, list):
-                itmk = QtWidgets.QTreeWidgetItem([data_new_key])
+                itmk = QtWidgets.QTreeWidgetItem([str(data_new_key)])
                 itmk.setBackground(0, colgrey)
                 parent_item.addChild(itmk)
                 for data_new_index, data_new_item in enumerate(data_new):
@@ -559,18 +606,21 @@ class datastreamWidget(QtWidgets.QWidget):
             font0 = QtGui.QFont('Arial')
 
             # Fill the qtreewidget
-            # print('data provider',data_provider_all)
+            print('data provider',data_provider_all)
             if (data_provider_all is not None):
                 for dev in data_provider_all:
                     flag_datastreams = False
                     if dev == self.device:
                         continue
 
+                    print('Device {}'.format(dev.name))
                     print('Address', dev.address)
                     # Check for external filter
                     flag_external_filter = True
                     for addr_include in self.external_filter_include:
-                        if dev.address not in addr_include:
+                        test_include = dev.address not in addr_include
+                        logger.debug('Testing {} not in {}: {}'.format(dev.address, addr_include, test_include))
+                        if test_include:
                             print('No filter match for external filter', dev.address)
                             flag_external_filter = False
 
@@ -578,7 +628,22 @@ class datastreamWidget(QtWidgets.QWidget):
                         continue
                     # Check for filter from filter widget
                     if self.filterWidget.filter_on:
-                        if dev.address not in self.filterWidget.filter_address:
+                        test_filter = dev.address not in self.filterWidget.filter_address
+                        test_filter_sub = True
+                        if test_filter == True:
+                            # Test all devices of publisher in brute force and check if one of them fits
+                            devs_forwarded = dev.get_device_info()
+                            for devaddress in devs_forwarded:
+                                datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
+                                print('Datakeys', datakey_dict)
+                                devaddress_redvypr = RedvyprAddress(devaddress)
+                                if devaddress_redvypr in self.filterWidget.filter_address:
+                                    test_filter_sub = False
+                                    print('Filter match for ', devaddress_redvypr)
+                                    continue
+
+                        logger.debug('Testing {} not in {}: {}'.format(dev.address, self.filterWidget.filter_address, test_filter))
+                        if test_filter and test_filter_sub:
                             print('No filter match for ', dev.address)
                             continue
 

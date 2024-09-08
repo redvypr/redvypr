@@ -167,6 +167,12 @@ class RedvyprAddress():
 
         self.publisher = parsed_addrstr['publisher']
 
+    def get_datakeyentries(self):
+        if self.parsed_addrstr_expand['datakeyentries'] is None:
+            return [self.datakey]
+        else:
+            return self.parsed_addrstr_expand['datakeyentries']
+
     def get_common_address_formats(self):
         return self._common_address_formats
     def create_addrstr(self, datakey=None, packetid=None, devicename=None, hostname=None, addr=None, uuid=None, publisher=None, local_hostinfo=None, compare=None):

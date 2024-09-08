@@ -467,8 +467,23 @@ HF = BinarySensor(name='HF', regex_split=HF_split,
                        datastream=str(RedvyprAddress('/k:data')))
 
 
+# HFS (Heatflow)
+HFS_test1 = b'$FC0FE7FFFE153BDC,HFS,00182595.0000,45649,2.151728,29.609,29.561,29.631\n'
+HFS_test2 = b'$FC0FE7FFFE153BDC,HFS,00182635.0000,45659,2.152100,29.609,29.560,29.631\n'
+HFS_split = b'\$(?P<MAC>.+),HFS,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<HF_Wm2>[-,\+]*[0-9.]+),(?P<T_degC>.*)\n'
+HFS_str_format = {'MAC':'str','counter':'float','np':'int','HF_Wm2':'float','T_degC':'array'}
+HFS_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'HF_Wm2':{'unit':'W m-2'},'T_degC':{'unit':'degC'}}
+HFS_packetid_format = 'HFS_{MAC}'
+HFS = BinarySensor(name='HFS', regex_split=HFS_split,
+                       str_format=HFS_str_format,
+                       datakey_metadata=HFS_datakey_metadata,
+                       packetid_format=HFS_packetid_format,
+                       datastream=str(RedvyprAddress('/k:data')))
+
+
 predefined_sensors = []
 predefined_sensors.append(HF)
+predefined_sensors.append(HFS)
 predefined_sensors.append(S4LB)
 predefined_sensors.append(NMEARMC)
 predefined_sensors.append(tar_b2)

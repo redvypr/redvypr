@@ -206,9 +206,10 @@ class redvypr_device_scan():
     def scan_module_recursive(self,testmodule, module_dict):
         funcname = 'scan_module_recursive():'
         #self.logger.debug(funcname + ' Scanning {:s}'.format(str(testmodule)))
-        # print(funcname,testmodule)
+        print(funcname,testmodule)
         # Check if the device is valid
         valid_module = self.valid_device(testmodule)
+        print('Valid dictionary',valid_module)
         if (valid_module['valid']):  # If the module is valid add it to devices
             # print('Members',inspect.getmembers(testmodule, inspect.ismodule))
             devdict = {'module': testmodule, 'name': testmodule.__name__, 'file': testmodule.__file__,'type':'module'}
@@ -903,6 +904,23 @@ class RedvyprDevice(QtCore.QObject):
 
 
         return datastreams
+
+    def get_packetids(self):
+        """
+        Returns a list of all packetids this device has seen
+        Returns:
+            List of packetids (str)
+        """
+        devaddrs = self.get_deviceaddresses()
+        packetids = []
+        for devaddr in devaddrs:
+            if len(devaddr.packetid)>0:
+                packetids.append(devaddr.packetid)
+
+        # Sort the datakeys and make them unique
+        packetids = list(set(packetids))
+        packetids.sort()
+        return packetids
 
     def get_device_info(self, address=None):
         """

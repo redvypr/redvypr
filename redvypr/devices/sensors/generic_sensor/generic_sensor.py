@@ -167,7 +167,13 @@ class Device(RedvyprDevice):
         logger.debug(funcname + 'Opening file {:s}'.format(fname))
         try:
             f = open(fname)
-            data = yaml.safe_load(f)
+            safe_load = False
+            if safe_load:
+                loader = yaml.SafeLoader
+            else:
+                loader = yaml.CLoader
+
+            data = yaml.load(f,Loader=loader)
             # print('data',data)
             if 'structure_version' in data.keys(): # Calibration model
                 logger.debug(funcname + ' Version {} pydantic calibration model dump'.format(data['structure_version']))

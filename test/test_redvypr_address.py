@@ -26,6 +26,7 @@ rc2 = RedvyprAddress(compare='["t2"]>=3')
 rc3 = RedvyprAddress(compare='["somelist"][2]<=1000')
 print(rc1)
 
+print('Testing comparisons')
 print('Testing rc0',rc0)
 test0 = datapacket in rc0
 print('Test0',test0)
@@ -42,4 +43,18 @@ print('Testing rc3',rc3)
 test3 = datapacket in rc3
 print('Test3',test3)
 print('-----------------')
+
+print('Testing regular expressions')
+# Regular expressions
+re1 = RedvyprAddress(compare='/d:{.*}')
+re2 = RedvyprAddress(compare='/d:{some.*}')
+re3 = RedvyprAddress(compare='/d:{other.*}')
+reall = [re1,re2,re3]
+
+for retest in reall:
+    print('-----------------')
+    print('Testing',retest)
+    test = datapacket in retest
+    print('Datapacket in test',test)
+    print('-----------------')
 

@@ -1111,6 +1111,21 @@ class Redvypr(QtCore.QObject):
 
         return datastreams
 
+    def get_packetids(self):
+        """
+        Returns a list of all packetids this host has been seen
+        Returns:
+            List of packetids (str)
+        """
+        packetids = []
+        for dev in self.devices:
+            dkeys = dev['device'].get_packetids()
+            packetids.extend(dkeys)
+
+        packetids = list(set(packetids))
+        packetids.sort()
+        return packetids
+
 
     def get_known_devices(self):
         """ List all known devices that can be loaded by redvypr

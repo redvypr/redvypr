@@ -35,7 +35,11 @@ release = redvypr_version
 # ones.
 # Peter: from here https://pypi.org/project/sphinx-autopackagesummary/
 #extensions = ['sphinx.ext.napoleon','sphinx.ext.autosectionlabel','sphinx.ext.autosummary', 'sphinx_autopackagesummary','sphinx.ext.autodoc',]
-extensions = ['sphinx.ext.napoleon','sphinx.ext.autosectionlabel','sphinx.ext.autosummary', 'sphinx.ext.autodoc',]
+extensions = ['sphinx.ext.napoleon',
+              'sphinx.ext.autosectionlabel',
+              'sphinx.ext.autosummary',
+              'sphinx.ext.viewcode',
+              'sphinx.ext.autodoc',]
 
 
 autosummary_generate = True

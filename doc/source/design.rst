@@ -117,6 +117,7 @@ Addressing the data within Python is easy if the data packet isfor example in th
    pi = data['data']
 RedvyprAddress
 --------------
+
 But how to address a certain data packet from a certain redvypr instance? This is done with a RedvyprAddress::
 
    from redvypr.redvypr_address import RedvyprAddress
@@ -175,6 +176,12 @@ ___________________
 Sometimes the filtering of datapackets is based on a pattern and not on a specific expression.
 For example the packetids of datapackets could be ``GPS_device1``, ``GPS_device2`` and ``GPS_device10``.
 To address all GPS devices RedvyprAddresses supports `regular expressions <https://docs.python.org/3/library/re.html#module-re>`_.
+Regular expressions have to within curly brackets ``{REGULAR EXPRESSION}``, for example::
+``raddr = RedvyprAddress('/d:{.*}')`` is equivalent to the wildcard version ``raddr = RedvyprAddress('/d:*')``. Using
+regular expressions it is easy to filter all GPS devices::
+
+   rGPS = RedvyprAddress('/k:{GPS_.*}')
+
 
 
 Redvypr datapackets
@@ -333,18 +340,6 @@ to define a nomenclature to uniquely the device and datakey to be processed.
 
 :py:mod:`redvypr.data_packets`
 
-Datastream
-^^^^^^^^^^
-The data a device sends continously with the same datakey over time is called a **datastream**.
-To define a datastream the redvypr hostname/IP/UUID + the devicename + the key need to be specified. 
-The key is separated by a "/" from the device. The device by a ":" from the hostname or by a "::"
-from the UUID. The "@" is used to separate the IP. Some examples:
 
-- lon/gps
-- t/randdata:redvypr@192.168.155.1
-- data/randdata:redvypr@192.168.155.1
-- data/randdata:*
-- data/randata::65d7a34e-aaba-11ec-9324-135f333bc2f6
-- data/randdata:redvypr@192.168.155.1::65d7a34e-aaba-11ec-9324-135f333bc2f6
 
 

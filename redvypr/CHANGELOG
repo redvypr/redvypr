@@ -1,4 +1,4 @@
-- 0.9.?:
+- 0.9.1:
         - less verbose
         - RedvyprAddress is not expanding missing address entries with a '*'
         - implemented ``__setitem__`` of Datapacket object
@@ -10,6 +10,8 @@
         - manual_input device added
         - Datapacket accepts datapacket is input
         - generic_sensor update
+        - redvypr.get_packetids() and RedvyprDevice.get_packetids() implemented
+        - several bug fixes in redvypr_addressWidget.py, it accepts now packetid and can treat several items using regular expressions.
 - 0.9.0:
         - autostart bug
         - autocalibration in calibration device

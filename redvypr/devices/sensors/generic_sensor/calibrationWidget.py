@@ -489,7 +489,13 @@ class sensorCalibrationsWidget(QtWidgets.QWidget):
             self.sensorCoeffWidget_list.setItem(i, icol_caltype, item)
             # Parameter
             icol_caltype = colheaders.index('Calibration type')
-            item = QtWidgets.QTableWidgetItem(cal.parameter)
+            # Distinguish between RedvyprAddress and str
+            try:
+                parameter_str = cal.parameter.address_str
+            except:
+                parameter_str = cal.parameter
+
+            item = QtWidgets.QTableWidgetItem(parameter_str)
             item.setData(role, cal)
             self.sensorCoeffWidget_list.setItem(i, icol_para, item)
             # Caldate
