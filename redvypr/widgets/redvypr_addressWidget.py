@@ -119,7 +119,7 @@ class RedvyprAddressWidgetSimple(QtWidgets.QWidget):
         :return: RedvyprAddress or None
         """
         addr_str = self.__configwidget_input.text()
-        print('Addr str',addr_str)
+        #print('Addr str',addr_str)
         try:
             self.redvypr_address = RedvyprAddress(addr_str)
             self.__configwidget_apply.setEnabled(True)
@@ -128,7 +128,7 @@ class RedvyprAddressWidgetSimple(QtWidgets.QWidget):
             self.redvypr_address = None
             self.__configwidget_apply.setEnabled(False)
 
-        print('Redvypr address',self.redvypr_address)
+        #print('Redvypr address',self.redvypr_address)
         return self.redvypr_address
 
 
@@ -226,6 +226,9 @@ class address_filterWidget(QtWidgets.QWidget):
         else:
             options = []
 
+        # Append the wildcard
+        options.append('*')
+
         for o in options:
             self.__filterChoiceList.addItem(str(o))
 
@@ -237,15 +240,23 @@ class address_filterWidget(QtWidgets.QWidget):
 
     def __filterChoiceApplyClicked(self):
         options = self.__filterChoiceList.selectedItems()
+
+
         if len(options) == 1:
             option = self.__filterChoiceList.currentItem()
             optionstr = str(option.text())
         elif len(options) > 1:
-            optionstr ='{'
+            optionslist = []
             for o in options:
-                optionstr += o.text() + '|'
+                optionslist.append(o.text())
+            if '*' in optionslist:
+                optionstr = '*'
+            else:
+                optionstr ='{'
+                for o in optionslist:
+                    optionstr += o + '|'
 
-            optionstr = optionstr[:-1] + '}'
+                optionstr = optionstr[:-1] + '}'
         else:
             return
 
@@ -432,14 +443,14 @@ class datastreamWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '__device_clicked()'
         logger.debug(funcname)
-        print('Item',item.iskey)
+        #print('Item',item.iskey)
         if(item.iskey): # If this is a datakey item
             addrtype = self.addrtype_combo.currentText()
             addrstring = item.datakey_address.get_str(addrtype)
-            print('Addresstype', addrtype)
-            print('Address',item.datakey_address)
-            print('Addrstring',addrstring)
-            print('Devstring', item.devaddress)
+            #print('Addresstype', addrtype)
+            #print('Address',item.datakey_address)
+            #print('Addrstring',addrstring)
+            #print('Devstring', item.devaddress)
             self.addressline.setText(addrstring)
             self.addressline.datakey_address = item.datakey_address
             self.addressline.device = item.device
@@ -503,7 +514,6 @@ class datastreamWidget(QtWidgets.QWidget):
                             if len(datakeys) > 0:
                                 flag_datastreams = True
                                 devaddress_redvypr = RedvyprAddress(devaddress)
-                                print('Test1',self.filterWidget.filter_on)
                                 if self.filterWidget.filter_on:
                                     filter_test = devaddress_redvypr not in self.filterWidget.filter_address
                                     logger.info(
@@ -512,10 +522,9 @@ class datastreamWidget(QtWidgets.QWidget):
                                                                                  filter_test))
 
                                     if filter_test:
-                                        print('No filter match for ', devaddress_redvypr)
+                                        logger.debug('No filter match for {}'.format(devaddress_redvypr))
                                         continue
                                 addrtype = '/d/'
-                                print('Hallo',devaddress_redvypr,devaddress_redvypr.get_str())
                                 devicename = devaddress_redvypr.devicename
                                 itmf = QtWidgets.QTreeWidgetItem([devicename])
                                 itmf.setBackground(0, col)
@@ -536,7 +545,7 @@ class datastreamWidget(QtWidgets.QWidget):
                                     itmk.datakey_address = RedvyprAddress(devaddress, datakey=dkey)
                                     if self.filterWidget.filter_on:
                                         if itmk.datakey_address not in self.filterWidget.filter_address:
-                                            print('No filter match for ', itmk.datakey_address)
+                                            logger.debug('No filter match for {}'.format(itmk.datakey_address))
                                             continue
                                     itmf.addChild(itmk)
 
@@ -555,28 +564,28 @@ class datastreamWidget(QtWidgets.QWidget):
         def update_recursive(data_new_key, data_new, parent_item):
             funcname = __name__ + '.__update_recursive():'
             logger.debug(funcname)
-            print('Hallo',data_new_key, data_new,type(data_new))
+            #print('Hallo',data_new_key, data_new,type(data_new))
             # Check if we are at an item
             if isinstance(data_new, tuple):
-                print('Set')
+                #print('Set')
                 addrstr = data_new[0] # Index 0 of set is the address, index 1 the datatype
                 itmk = QtWidgets.QTreeWidgetItem([addrstr])
                 itmk.iskey = True
                 itmk.device = dev
                 itmk.devaddress = devaddress
-                print('Creating address with devaddress',devaddress)
+                #print('Creating address with devaddress',devaddress)
                 #print('Creating address with devaddress parsed', devaddress.parsed_addrstr)
-                print('Creating address with datakey', addrstr)
+                #print('Creating address with datakey', addrstr)
                 itmk.datakey_address = RedvyprAddress(devaddress, datakey=addrstr)
-                print('Address',itmk.datakey_address)
-                print('Address parsed', itmk.datakey_address.parsed_addrstr)
+                #print('Address',itmk.datakey_address)
+                #print('Address parsed', itmk.datakey_address.parsed_addrstr)
                 if self.filterWidget.filter_on:
                     test_filter = itmk.datakey_address not in self.filterWidget.filter_address
                     logger.debug('Testing (@tuple): {} not in {}: {}'.format(itmk.datakey_address,
                                                                              self.filterWidget.filter_address,
                                                                              test_filter))
                     if test_filter:
-                        print('No filter match for ', itmk.datakey_address)
+                        logger.debug('No filter match for {}'.format(itmk.datakey_address))
                     else:
                         parent_item.addChild(itmk)
                 else:
@@ -606,22 +615,22 @@ class datastreamWidget(QtWidgets.QWidget):
             font0 = QtGui.QFont('Arial')
 
             # Fill the qtreewidget
-            print('data provider',data_provider_all)
+            #print('data provider',data_provider_all)
             if (data_provider_all is not None):
                 for dev in data_provider_all:
                     flag_datastreams = False
                     if dev == self.device:
                         continue
 
-                    print('Device {}'.format(dev.name))
-                    print('Address', dev.address)
+                    #print('Device {}'.format(dev.name))
+                    #print('Address', dev.address)
                     # Check for external filter
                     flag_external_filter = True
                     for addr_include in self.external_filter_include:
                         test_include = dev.address not in addr_include
                         logger.debug('Testing {} not in {}: {}'.format(dev.address, addr_include, test_include))
                         if test_include:
-                            print('No filter match for external filter', dev.address)
+                            #print('No filter match for external filter', dev.address)
                             flag_external_filter = False
 
                     if flag_external_filter == False:
@@ -635,16 +644,16 @@ class datastreamWidget(QtWidgets.QWidget):
                             devs_forwarded = dev.get_device_info()
                             for devaddress in devs_forwarded:
                                 datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
-                                print('Datakeys', datakey_dict)
+                                #print('Datakeys', datakey_dict)
                                 devaddress_redvypr = RedvyprAddress(devaddress)
                                 if devaddress_redvypr in self.filterWidget.filter_address:
                                     test_filter_sub = False
-                                    print('Filter match for ', devaddress_redvypr)
+                                    #print('Filter match for ', devaddress_redvypr)
                                     continue
 
                         logger.debug('Testing {} not in {}: {}'.format(dev.address, self.filterWidget.filter_address, test_filter))
                         if test_filter and test_filter_sub:
-                            print('No filter match for ', dev.address)
+                            #print('No filter match for ', dev.address)
                             continue
 
                     itm = QtWidgets.QTreeWidgetItem([dev.name])
@@ -661,17 +670,17 @@ class datastreamWidget(QtWidgets.QWidget):
                         devkeys.sort()
                         for devaddress in devkeys:
                             datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
-                            print('Datakeys',datakey_dict)
+                            #print('Datakeys',datakey_dict)
 
                             #fdsfdsf
                             flag_datastreams = True
                             devaddress_redvypr = RedvyprAddress(devaddress)
                             if self.filterWidget.filter_on:
                                 if devaddress_redvypr not in self.filterWidget.filter_address:
-                                    print('No filter match for ', devaddress_redvypr)
+                                    #print('No filter match for ', devaddress_redvypr)
                                     continue
                             addrtype = '/d/i/'
-                            print('Hallo', devaddress_redvypr, devaddress_redvypr.get_str())
+                            #print('Hallo', devaddress_redvypr, devaddress_redvypr.get_str())
                             devicestr = devaddress_redvypr.devicename
                             # TODO, this should be defined in the configuration of the widget
                             #devicestr = devaddress_redvypr.get_str(addrtype)
