@@ -1188,6 +1188,7 @@ class RedvyprDevice(QtCore.QObject):
         try:
             custom_config_dict = self.custom_config.model_dump()
         except:
+            self.logger.debug(funcname + 'Could not create a dump of custom config', exc_info=True)
             custom_config_dict = None
         config = RedvyprDeviceConfig(base_config=base_config, custom_config=custom_config_dict,
                                      devicemodulename=self.devicemodulename, subscriptions=subscriptions)

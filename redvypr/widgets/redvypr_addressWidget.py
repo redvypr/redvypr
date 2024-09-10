@@ -64,7 +64,9 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
         self.layout.addRow(self.__configwidget_apply)
 
     def applyClicked(self):
+        funcname = __name__ + '.applyClicked():'
         self._test_input()
+        logger.debug(funcname + 'Address: {} ({})'.format(self.redvypr_address,type(self.redvypr_address)))
         self.address_finished.emit(str(self.redvypr_address))
     def _test_input(self):
         """
@@ -240,8 +242,6 @@ class address_filterWidget(QtWidgets.QWidget):
 
     def __filterChoiceApplyClicked(self):
         options = self.__filterChoiceList.selectedItems()
-
-
         if len(options) == 1:
             option = self.__filterChoiceList.currentItem()
             optionstr = str(option.text())
@@ -329,7 +329,7 @@ class datastreamWidget(QtWidgets.QWidget):
 
         super(QtWidgets.QWidget, self).__init__()
         logger.setLevel(logging.DEBUG)
-        logger.debug('HALLLOHALLO')
+        #logger.debug('HALLLOHALLO')
         self.setWindowIcon(QtGui.QIcon(_icon_file))
         self.closeAfterApply = closeAfterApply
         self.redvypr = redvypr
@@ -722,6 +722,7 @@ class datastreamWidget(QtWidgets.QWidget):
         self.addressline.setText(addrstring)
 
     def done_clicked(self):
+        funcname = __name__ + '.done_clicked():'
         try:
             datastream_address = self.addressline.datakey_address
         except Exception as e:
@@ -735,7 +736,7 @@ class datastreamWidget(QtWidgets.QWidget):
 
         signal_dict = {'device': device, 'device_address':device_address,'datastream_str': datastream_str,'datastream_address':datastream_address,'address_format':addrtype}
         signal_dict['addrformat'] = self.addressline.datakey_address
-        #print('Signal dict',signal_dict)
+        print(funcname + 'Signal dict {}'.format(signal_dict))
         self.apply.emit(signal_dict)
         if self.closeAfterApply:
             self.close()

@@ -15,7 +15,7 @@ from redvypr.redvypr_address import RedvyprAddress
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('pydanticConfigWidget')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 class pydanticDeviceConfigWidget(QtWidgets.QWidget):
@@ -837,7 +837,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
 
 
     def applyGuiInput(self):
-        funcname = __name__ + '.applyGuiInput()'
+        funcname = __name__ + '.applyGuiInput():'
         logger.debug(funcname)
         item = self.sender().item
         print('Some info')
@@ -848,9 +848,9 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         # The flag to add a new item
         flag_add = item.__flag_add__
 
-        #print('datatypestr',item.__datatypestr__)
+        print('datatypestr',item.__datatypestr__)
         #print(item.__parent__)
-        #print('Some info done')
+        print('Some info done')
         data_set = False
         if self.sender().__configType == 'configNumber':
             #print(funcname + ' ' + self.sender().__configType)
@@ -914,10 +914,12 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             return
 
         elif self.sender().__configType == 'configLiteral':
+            logger.debug(funcname + 'Processing configLiteral')
             data = self.__configwidget_input.currentText()  # ComboBox
             data_set = True
 
         elif self.sender().__configType == 'configColor':
+            logger.debug(funcname + 'Processing configColor')
             #print(funcname + ' Color')
             color = self.__configwidget_input.currentColor()  # ComboBox
             #color1 = color.getRgbF()
@@ -931,10 +933,12 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             data_set = True
 
         elif self.sender().__configType == 'configStr':
+            logger.debug(funcname + 'Processing configStr')
             data = self.__configwidget_input.text()  # Textbox
             data_set = True
 
         elif self.sender().__configType == 'configBytes':
+            logger.debug(funcname + 'Processing configBytes')
             data = self.__configwidget_input.text()  # Textbox
             print('data',data)
             if data.startswith("b'") and data.endswith("'"):
@@ -944,23 +948,28 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             data_set = True
 
         elif self.sender().__configType == 'configRedvyprAddressStr':
+            logger.debug(funcname + 'Processing configRedvyprAddressStr')
             #data = self.__configwidget_input.text()  # Textbox
             data = RedvyprAddress(self.__configwidget_input.text())  # Textbox
             data_set = True
 
         elif self.sender().__configType == 'configDateTime':
+            logger.debug(funcname + 'Processing configDateTime')
             #print('Datetime')
             datetmp = self.__configwidget_input.dateTime()
             data = datetmp.toPyDateTime()
             data_set = True
 
         elif self.sender().__configType == 'configBool':
+            logger.debug(funcname + 'Processing configBool')
             data = self.__configwidget_input.currentText() == 'True' # Combobox
             data_set = True
 
         elif self.sender().__configType == 'configRedvyprAddress':
+            logger.debug(funcname + 'Processing configRedvyprAddress')
             addr = self.sender().redvypr_address
-            data = str(addr)
+            #data = str(addr)
+            data = addr
             data_set = True
         else:
             logger.warning('Unknown config type {}'.format(self.sender().__configType))
@@ -970,7 +979,8 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 #print('Type',type(item.__dataparent__))
                 # Dictionaries?!
                 if pydantic.BaseModel in item.__dataparent__.__class__.__mro__:
-                    logger.debug('Adding to pydantic basemodel')
+                    logger.debug('Adding data to attribute "{}" of pydantic basemodel '.format(item.__dataparent__))
+                    print('Data',data,type(data))
                     setattr(item.__dataparent__,item.__dataindex__, data)
                 elif isinstance(item.__dataparent__, list):
                     logger.debug('Changing data at index {}'.format(item.__dataindex__))

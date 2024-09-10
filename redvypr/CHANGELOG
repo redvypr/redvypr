@@ -12,6 +12,7 @@
         - generic_sensor update
         - redvypr.get_packetids() and RedvyprDevice.get_packetids() implemented
         - several bug fixes in redvypr_addressWidget.py, it accepts now packetid and can treat several items using regular expressions.
+        - __configType == 'configRedvyprAddress' data type changed to RedvyprAddress instead of str
 - 0.9.0:
         - autostart bug
         - autocalibration in calibration device

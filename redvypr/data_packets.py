@@ -101,8 +101,16 @@ class Datapacket(dict):
                     key_dict[k] = {}
                     self.__expand_datakeys_recursive__(data_k, data_k_keys, level=level + 1, parent_key=parent_key_new, key_list=key_list, key_dict = key_dict[k], max_level=max_level)
                 elif isinstance(data_k, np.ndarray):
-                    logger.warning('Found an numpy array, this is not implemented yet')
-                    pass
+                    #logger.warning('Found an numpy array, this is not implemented yet')
+                    # Add index type of address if necessary only
+                    if level > 0:
+                        expanded_key = parent_key + strformat
+                        key_list.append(expanded_key)
+                        key_dict[k] = (expanded_key, type(data[k]))
+                    else:
+                        key_list.append(k)
+                        key_dict[k] = (k, type(data[k]))
+
                 else: # This is not an iterative element anymore, lets use it
                     # Add index type of address if necessary only
                     if level > 0:
