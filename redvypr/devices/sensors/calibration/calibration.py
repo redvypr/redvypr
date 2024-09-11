@@ -735,7 +735,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         self.update_coefftable_ntc()
 
     def calc_ntc_coeff(self, parameter, sdata, tdatetime, caldata, refdata):
-        cal_NTC = calibration_NTC(parameter = parameter, sn = sdata.sn, sensor_model = sdata.sensor_model)
+        cal_NTC = calibration_NTC(parameter = parameter, sn = sdata.sn, sensor_model = sdata.sensor_model, calibration_uuid=self.device.custom_config.calibration_uuid)
         #cal_NTC.parameter = sdata.parameter
         #cal_NTC.sn = sdata.sn
         #cal_NTC.sensor_model = sdata.sensor_model
@@ -1832,12 +1832,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.updateDisplayWidget()
         self.device.subscribe_to_sensors()
 
-    def datastream_subscribed(self, index, datastream_str):
-        funcname = __name__ + '.datastream_subscribed():'
-        logger.debug(funcname)
-        self.sensors[index]['sensorSubed'].setText(datastream_str)
-
-
     def caltype_combobox_changed(self, value):
         logger.debug("combobox changed {}".format(value))
         self.device.custom_config.calibrationtype = value.lower()
@@ -2674,7 +2668,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def set_datastream(self,i, d, sn='', unit='', sensortype='', parameter=''):
         """
-        Set the datastream for sensor i, function is called when a subscription fits with a datastream.
+        Set the datastream for sensor i
         """
         funcname = __name__ + '.set_datastream():'
         logger.debug(funcname)
@@ -2730,17 +2724,23 @@ class displayDeviceWidget(QtWidgets.QWidget):
             found_subscription = False
             for i, caldata in enumerate(self.device.custom_config.calibrationdata):
                 plot_widget = caldata.__plot_widget
+
                 print('Checking widget',i,plot_widget.datastream)
                 if data in plot_widget.datastream:
                     logger.debug('Updating plot {:d}')
                     plot_widget.update_plot(data)
-                if False:
-                    if flag_fit and valid_datatype:
-                        logger.debug('Subscribing to address {}'.format(datastream_fit))
-                        keyinfo = self.device.get_metadata_datakey(datastream_fit_str, all_entries=False)
+                    try:
+                        update_datainfo = caldata.__update_with_datapacket
+                    except:
+                        update_datainfo = True
+
+                    if update_datainfo:
+                        datastream = caldata.datastream
+                        logger.debug('Updating datastreams {}'.format(datastream))
+                        keyinfo = self.device.get_metadata_datakey(datastream, all_entries=False)
                         logger.debug(funcname + 'Datakeyinfo {}'.format(keyinfo))
                         try:
-                            parameter = datastream_fit.datakey
+                            parameter = datastream.datakey
                         except:
                             parameter = 'NA'
 
@@ -2749,7 +2749,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                             sn = keyinfo['sn']
                         except:
                             try:
-                                sn = datastream_fit.packetid
+                                sn = datastream.packetid
                             except:
                                 sn = ''
                         try:
@@ -2760,22 +2760,33 @@ class displayDeviceWidget(QtWidgets.QWidget):
                             sensortype = keyinfo['sensortype']
                         except:
                             try:
-                                sensortype = datastream_fit.devicename
+                                sensortype = datastream.devicename
                             except:
                                 sensortype = ''
 
-                        self.set_datastream(i, datastream_fit_str, sn=sn, unit=unit, sensortype=sensortype, parameter=parameter)
-                        self.device.deviceinitwidget.datastream_subscribed(i, datastream_fit_str)
-                        plot_widget.update_plot(data)
-                        found_subscription = True
-                else:
-                    pass
-                    #logger.debug('Updating plot {:d} with data {}'.format(i,data))
+                        p = plot_widget
+                        caldata.sn = sn
+                        caldata.unit = unit
+                        caldata.sensor_model = sensortype
+                        caldata.parameter = parameter
+                        self.allsensornames[i] = datastream
+                        p.sn = sn
+                        p.unit = unit
+                        # print('p.unit', p.unit)
+                        p.sensortype = sensortype
+                        # Add devicename to the column
+                        senstr = datastream.get_str('/d/k/')
+                        col = p.datatablecolumn
+                        tmp = self.allsensornames[i]
+                        self.sensorcols[i] = senstr
+                        p.sensname_header = datastream.datakey
+                        self.update_datatable()
+                        caldata.__update_with_datapacket = False
 
+                    plot_widget.update_plot(data)
 
-
-        except Exception as e:
-            logger.exception(e)
+        except Exception:
+            logger.warning('Could not update with data',exc_info=True)
 
 
         #print('Hallo',self.datastreams)
