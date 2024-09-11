@@ -47,14 +47,22 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
     """ A widget that allows to enter an address
     """
     address_finished = QtCore.pyqtSignal(str)  # Signal notifying that the configuration has changed
-    def __init__(self, redvypr_address_str='/d:*', redvypr=None):
+    def __init__(self, redvypr_address_str=None, redvypr=None):
         """
         """
         super(QtWidgets.QWidget, self).__init__()
         self.layout = QtWidgets.QFormLayout(self)
         self.__configwidget = QtWidgets.QWidget()
         self.redvypr_address = None
-        self.__datastreamwidget = datastreamWidget(redvypr=redvypr, showapplybutton=False)
+        if redvypr_address_str is None:
+            manual_address = None
+        elif isinstance(redvypr_address_str,RedvyprAddress):
+            manual_address = redvypr_address_str.address_str
+        elif isinstance(redvypr_address_str, str):
+            manual_address = RedvyprAddress(redvypr_address_str).address_str
+        else:
+            manual_address = None
+        self.__datastreamwidget = datastreamWidget(redvypr=redvypr, showapplybutton=False,manual_address=manual_address)
         self.__configwidget_input = self.__datastreamwidget.addressline
         self.layout.addRow(self.__datastreamwidget)
         # Buttons
@@ -314,7 +322,7 @@ class datastreamWidget(QtWidgets.QWidget):
 
     def __init__(self, redvypr, device=None, devicename_highlight=None, datakey=None, deviceonly=False,
                  devicelock=False, subscribed_only=True, showapplybutton=True,datastreamstring='',closeAfterApply=True,
-                 filter_include=[], datakeys_expanded=True):
+                 filter_include=[], datakeys_expanded=True,manual_address=None):
         """
         Args:
             redvypr:
@@ -325,6 +333,7 @@ class datastreamWidget(QtWidgets.QWidget):
             devicelock:
             filter_include: List of RedvyprAdresses the will be checked
             subscribed_only: Show the subscribed devices only
+            manual_address: String for the manual address
         """
 
         super(QtWidgets.QWidget, self).__init__()
@@ -366,6 +375,8 @@ class datastreamWidget(QtWidgets.QWidget):
 
         self.addressline_manual = QtWidgets.QLineEdit()
         self.addressline_manual.setReadOnly(False)
+        if manual_address is not None:
+            self.addressline_manual.setText(manual_address)
         self.addressline_manual.textChanged.connect(self.__addrManualChanged)
 
         self.addressline = QtWidgets.QLineEdit()

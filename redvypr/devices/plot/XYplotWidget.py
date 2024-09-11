@@ -98,6 +98,7 @@ class XYplot(QtWidgets.QFrame):
     """ Widget is plotting realtimedata using the pyqtgraph functionality
 
     """
+    closing = QtCore.pyqtSignal()  # Signal notifying that a subscription changed
 
     def __init__(self, config=None, redvypr_device=None, add_line=True, loglevel=logging.INFO):
         """
@@ -639,6 +640,10 @@ class XYplot(QtWidgets.QFrame):
         err = errtmp[-line.numplot_max:]
         # pw.setXRange(min(x[:ind]),max(x[:ind]))
         return [x,y,err]
+
+    def closeEvent(self, event):
+        print('Close event')
+        self.closing.emit()
 
     def update_plot(self, data):
         """ Updates the plot based on the given data

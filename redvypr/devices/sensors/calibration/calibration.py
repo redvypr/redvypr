@@ -55,8 +55,7 @@ class SensorData(pydantic.BaseModel):
     sensor_model: str = pydantic.Field(default='')
     unit: str = pydantic.Field(default='')
     sensortype: str = pydantic.Field(default='')
-    subscribe: str = pydantic.Field(default='')
-    datastream: str = pydantic.Field(default='')
+    datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
     inputtype: str = pydantic.Field(default='')
     comment: str = pydantic.Field(default='')
     data: list = pydantic.Field(default=[])
@@ -138,10 +137,11 @@ class Device(RedvyprDevice):
         funcname = __name__ + '.add_sensor()'
         logger.debug(funcname + ' Adding new sensor with name: "{:s}"'.format(str(newsen)))
         sentype = str(sentype)
-        newsen = str(newsen)
+
+        #newsen = str(newsen)
         if sentype == 'datastream':
             logger.debug(funcname + ' Adding datastream')
-            sensor = SensorData(subscribe=newsen, inputtype=sentype)
+            sensor = SensorData(datastream=newsen, parameter=newsen.datakey, inputtype=sentype)
             self.custom_config.calibrationdata.append(sensor)
             index = len(self.custom_config.calibrationdata) - 1
         else:
@@ -170,9 +170,9 @@ class Device(RedvyprDevice):
         self.unsubscribe_all()
         for i,sdata in enumerate(self.custom_config.calibrationdata):
             if sdata.inputtype == 'datastream':
-                datastream = sdata.subscribe
+                datastream = sdata.datastream
                 if len(datastream) > 0:
-                    logger.debug(funcname + 'subscribing to {:s}'.format(datastream))
+                    logger.debug(funcname + 'subscribing to {}'.format(datastream))
                     self.subscribe_address(datastream)
 
     def rem_data(self, index):
@@ -1683,21 +1683,18 @@ class initDeviceWidget(QtWidgets.QWidget):
         for i,sdata in enumerate(self.device.custom_config.calibrationdata):
             if sdata.inputtype == 'datastream':
                 sensorNum = QtWidgets.QLabel(str(nsensors))
-                sensorSub = QtWidgets.QLineEdit(sdata.subscribe) # The subscribeable datastream
-                sensorSub.setReadOnly(True)
-                dstr = sdata.datastream
-                sensorSubed = QtWidgets.QLineEdit(dstr) # The subscribed datastream
-                sensorSubed.setReadOnly(True)
+                dstr = sdata.datastream.address_str
+                sensorDatastream = QtWidgets.QLineEdit(dstr) # The subscribed datastream
+                sensorDatastream.setReadOnly(True)
+                sensorDatastream.datastream = sdata.datastream
                 sensorChoose = QtWidgets.QPushButton('Choose')  # Choose a datastream
                 sensorChoose.clicked.connect(self.chooseDatastream)
-                sensorChoose.lineEditSubed_addr = sensorSubed
-                sensorChoose.lineEditSub_addr = sensorSub
+                sensorChoose.lineEditSubed_addr = sensorDatastream
                 sensorChoose.listindex = i
                 sensorResub = QtWidgets.QPushButton('Resub')  # Resubscribe a datastream
                 sensorResub.clicked.connect(self.resubDatastream)
                 #sensorResub.clicked.connect(self.clearInputWidgets)
-                sensorResub.lineEditSubed_addr = sensorSubed
-                sensorResub.lineEditSub_addr = sensorSub
+                sensorResub.lineEditDatastream_addr = sensorDatastream
                 sensorResub.listindex = i
                 sensorRem = QtWidgets.QPushButton('Remove')  # Choose a datastream
                 sensorRem.clicked.connect(self.sensorRemClicked)
@@ -1715,21 +1712,19 @@ class initDeviceWidget(QtWidgets.QWidget):
                 else:
                     sensorPlotType.setCurrentIndex(0)  # Table
                 sensorPlotType.currentIndexChanged.connect(self.__realtimePlotChanged__)
-
                 refbutton = QtWidgets.QRadioButton("Reference")
                 refbutton.refindex = i
                 refbutton.toggled.connect(self.refsensor_changed)
                 buttons.append(refbutton)
                 ref_group.addButton(refbutton,id=nsensors)
-                sensors.append({'sensorSub':sensorSub,'sensorSubed':sensorSubed})
+                sensors.append({'sensorDatastream':sensorDatastream})
                 self.sensorsConfig_datastream_layout.addWidget(sensorNum, nsensors, 0)
-                self.sensorsConfig_datastream_layout.addWidget(sensorSub, nsensors, 1)
-                self.sensorsConfig_datastream_layout.addWidget(sensorSubed, nsensors, 2)
-                self.sensorsConfig_datastream_layout.addWidget(sensorResub, nsensors, 3)
-                self.sensorsConfig_datastream_layout.addWidget(sensorChoose, nsensors, 4)
-                self.sensorsConfig_datastream_layout.addWidget(sensorRem, nsensors, 5)
-                self.sensorsConfig_datastream_layout.addWidget(sensorPlotType, nsensors, 6)
-                self.sensorsConfig_datastream_layout.addWidget(refbutton, nsensors, 7)
+                self.sensorsConfig_datastream_layout.addWidget(sensorDatastream, nsensors, 1)
+                self.sensorsConfig_datastream_layout.addWidget(sensorResub, nsensors, 2)
+                self.sensorsConfig_datastream_layout.addWidget(sensorChoose, nsensors, 3)
+                self.sensorsConfig_datastream_layout.addWidget(sensorRem, nsensors, 4)
+                self.sensorsConfig_datastream_layout.addWidget(sensorPlotType, nsensors, 5)
+                self.sensorsConfig_datastream_layout.addWidget(refbutton, nsensors, 6)
                 nsensors += 1
                 if i == int(self.device.custom_config.ind_ref_sensor):
                     refbutton.setChecked(True)
@@ -1872,8 +1867,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         # Adding all addresses
         for addr in datastreamdict['addresses']:
-            newsen = addr.address_str
-            print('Adding',newsen)
+            newsen = addr
+            logger.debug(funcname + 'Adding {}'.format(newsen))
             self.device.add_sensor(newsen, 'datastream')
 
         if len(datastreamdict['addresses'])>0:
@@ -1891,32 +1886,27 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.sensorAddClicked():'
         logger.debug(funcname)
 
-        print('fsfs', self.device.custom_config)
+        logger.debug(funcname + 'config {}'.format(self.device.custom_config))
 
         newsen = ''
         if self.sender() == self.sensoradd:
-            print('datastream sensor')
+            logger.debug('datastream sensor')
             self.device.add_sensor(newsen,'datastream')
         if self.sender() == self.sensorsadd:
             logger.debug(funcname + ' multiple datastream sensors')
             self.device.add_sensor(newsen, 'datastream')
         else:
-            print('Manual sensor')
+            logger.debug('Manual sensor')
             self.device.add_sensor(newsen, 'manual')
 
-        #print('fsfs 2', self.device.custom_config)
         layout = self.sensorsConfig_layout
         while layout.count():
             item = layout.takeAt(0)
-            #item.close()
             widget = item.widget()
             widget.deleteLater()
 
-        #self.sensorsConfig_datastream.close()
-        #self.sensorsConfig_manual.close()
         self.populateSensorInputWidgets()
         self.updateDisplayWidget()
-        #self.update_datatable()
 
 
     def sensorRemClicked(self):
@@ -2117,7 +2107,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.clearbuffer_button = QtWidgets.QPushButton('Clear buffer')
         self.clearbuffer_button.clicked.connect(self.clear_buffer)
 
-        self.layout.addWidget(self.plot_widgets_parent_scroll,0,0,1,2)
+        self.layout.addWidget(self.plot_widgets_parent_scroll,0,0,1,-1)
         self.layout.addWidget(self.addintervall_time, 1, 0)
         self.layout.addWidget(self.addintervall_combo, 1, 1)
         self.layout.addWidget(self.addintervall_button, 1, 2,1,2)
@@ -2332,8 +2322,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.add_plots():'
         logger.debug(funcname)
         # Clear "old" plots
-        for p in self.plot_widgets:
-            p.close()
+        #for p in self.plot_widgets:
+        #    p.close()
 
         #try:
         #    self.plot_widgets_parent_layout.removeItem(self.realtimedata_vertical_spacer)
@@ -2341,7 +2331,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         #    pass
 
         # Re-Initialize plot_widgets
-        self.plot_widgets = []
+        #self.plot_widgets = []
         #self.datastreams = []  # List of all datastreams
         self.sensorcols = []
         self.sensorcolsindex = []
@@ -2355,40 +2345,39 @@ class displayDeviceWidget(QtWidgets.QWidget):
         for i, sdata in enumerate(self.device.custom_config.calibrationdata):
             # Realtimedata
             if sdata.inputtype == 'datastream':
-                #config = {}
-                #config['title'] = sdata.sn
-                #self.datastreams.append(None)
-                #plot_widget = plot_widgets.redvypr_graph_widget(config=config)
-                if 'XY' in sdata.realtimeplot:
-                    config = XYplotWidget.configXYplot(interactive='mouse')
-                    plot_widget = XYplotWidget.XYplot(config=config, redvypr_device=self.device)
-                    plot_widget.plotWidget.scene().sigMouseMoved.connect(self.anyMouseMoved)
-                    plot_widget.plotWidget.scene().sigMouseClicked.connect(self.anyMouseClicked)
-                    plot_widget.vlines = []  # List of vertical lines
-                    plot_widget.vlines_xpos = []  # List of vertical lines
-                elif 'able' in sdata.realtimeplot:
-                    plot_widget = QTableCalibrationWidget()
+                try:
+                    sdata.__plot_widget
+                    logger.debug('Plotwidget is existing')
+                    flag_new_plot_widget = False
+                except:
+                    logger.debug(funcname + 'creating plotwidget')
+                    flag_new_plot_widget = True
+
+                if flag_new_plot_widget:
+                    #config = {}
+                    #config['title'] = sdata.sn
+                    #self.datastreams.append(None)
+                    #plot_widget = plot_widgets.redvypr_graph_widget(config=config)
+                    if 'XY' in sdata.realtimeplot:
+                        config = XYplotWidget.configXYplot(interactive='mouse')
+                        plot_widget = XYplotWidget.XYplot(config=config, redvypr_device=self.device)
+                        plot_widget.plotWidget.scene().sigMouseMoved.connect(self.anyMouseMoved)
+                        plot_widget.plotWidget.scene().sigMouseClicked.connect(self.anyMouseClicked)
+                        plot_widget.vlines = []  # List of vertical lines
+                        plot_widget.vlines_xpos = []  # List of vertical lines
+                    elif 'able' in sdata.realtimeplot:
+                        plot_widget = QTableCalibrationWidget()
 
                 plot_widget.datatablecolumn = i + ioff  # The column the data is saved
                 plot_widget.sensorindex = i
                 plot_widget.sensortype = 'datastream'
-                self.plot_widgets.append(plot_widget)
+                #self.plot_widgets.append(plot_widget)
                 self.sensorcolsindex.append(plot_widget.datatablecolumn)
-                self.sensorcols.append(str(sdata.subscribe))
-                self.allsensornames.append(str(sdata.subscribe))
-
-                # Remember the original subscription and the (potentially) first match
-                plot_widget.subscription = sdata.subscribe  # Original subscription
-                plot_widget.subscription_redvypr = redvypr.RedvyprAddress(
-                    str(sdata.subscribe))  # Original subscription
-
+                self.sensorcols.append(str(sdata.datastream))
+                self.allsensornames.append(str(sdata.datastream))
                 # Check if there is already a subscription
-                if len(sdata.datastream) > 0:
-                    plot_widget.datastream = sdata.datastream  # Datastream to be plotted
-                    self.set_datastream(i, sdata.datastream, sn=sdata.sn, unit=sdata.unit, sensortype=sdata.sensor_model, parameter=sdata.parameter)
-                else:
-                    plot_widget.datastream = None  # Datastream to be plotted
-
+                plot_widget.datastream = sdata.datastream  # Datastream to be plotted
+                #self.set_datastream(i, sdata.datastream, sn=sdata.sn, unit=sdata.unit, sensortype=sdata.sensor_model, parameter=sdata.parameter)
                 # Add the widget to the parent widget
                 self.plot_widgets_parent_layout.addWidget(plot_widget, nrow, ncol)
                 ncol += 1
@@ -2396,6 +2385,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     ncol = 0
                     nrow += 1
                 nwidgets += 1
+
+                sdata.__plot_widget = plot_widget
             # Manualdata
             else:
                 if len(self.sensorcolsindex)>0:
@@ -2437,8 +2428,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     print('Getting data', plot_widget.vlines_xpos)
                     t_intervall = [min(plot_widget.vlines_xpos), max(plot_widget.vlines_xpos)]
 
-        for i, plot_widget in enumerate(self.plot_widgets):
-            sensor_data_tmp = self.device.custom_config.calibrationdata[plot_widget.sensorindex]
+        # for i, plot_widget in enumerate(self.plot_widgets):
+        for i, caldata in enumerate(self.device.custom_config.calibrationdata):
+            plot_widget = caldata.__plot_widget
+            #sensor_data_tmp = self.device.custom_config.calibrationdata[plot_widget.sensorindex]
             #print('a',sensor_data_tmp)
             #print('b',sensor_data_tmp.realtimeplot)
             if True:
@@ -2735,44 +2728,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
         try:
             #print('Data',data)
             found_subscription = False
-            for i, plot_widget in enumerate(self.plot_widgets):
-                #print('p',i,p.datastream,p.subscription_redvypr)
-                # No datastream assigned yet, check if the data packet is worth subscription
-                if (plot_widget.datastream is None) and (found_subscription == False):
-                    if data in plot_widget.subscription_redvypr:
-                        print(funcname + 'subscribing to {}...'.format(i))
-                    else:
-                        continue
-                    rdata = redvypr.data_packets.Datapacket(data)
-                    # Try if we get data with the address
-                    try:
-                        datatest = rdata[plot_widget.subscription_redvypr]
-                        if isinstance(datatest, int) or isinstance(datatest, float):  # Check for valid datatype
-                            logger.debug(funcname + 'Valid data type ')
-                            valid_datatype = True
-                        else:
-                            logger.debug(funcname + 'Invalid data type: {}'.format(type(datatest)))
-                            valid_datatype = False
-                        # create an address
-                        # TODO: Add the moment only datakey and packetid are updated, this should be done more general
-                        # by checking which of the parts are specific
-                        datastream_fit = redvypr.RedvyprAddress(data, packetid=plot_widget.subscription_redvypr.packetid, datakey=plot_widget.subscription_redvypr.datakey)
-                        flag_fit = True
-                        logger.debug(funcname + 'Subscription fits')
-                    except:
-                        logger.debug(funcname + 'Subscription failed',exc_info=True)
-                        flag_fit = False
-
-                    datastream_fit_str = datastream_fit.get_str()
-                    if flag_fit:
-                        for indcaldata, caldata in enumerate(self.device.custom_config.calibrationdata):
-                            datastream = caldata.datastream
-                            if datastream_fit.get_str == datastream:  # already subscribed
-                                ind = indcaldata
-                                flag_fit = False
-                                logger.debug(funcname + 'Already subscribed')
-                                break
-
+            for i, caldata in enumerate(self.device.custom_config.calibrationdata):
+                plot_widget = caldata.__plot_widget
+                print('Checking widget',i,plot_widget.datastream)
+                if data in plot_widget.datastream:
+                    logger.debug('Updating plot {:d}')
+                    plot_widget.update_plot(data)
+                if False:
                     if flag_fit and valid_datatype:
                         logger.debug('Subscribing to address {}'.format(datastream_fit))
                         keyinfo = self.device.get_metadata_datakey(datastream_fit_str, all_entries=False)
@@ -2807,8 +2769,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
                         plot_widget.update_plot(data)
                         found_subscription = True
                 else:
+                    pass
                     #logger.debug('Updating plot {:d} with data {}'.format(i,data))
-                    plot_widget.update_plot(data)
+
 
 
         except Exception as e:

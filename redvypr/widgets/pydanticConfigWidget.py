@@ -724,6 +724,8 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             parent = item.__parent__
             data = item.__data__
             data = str(data)
+            print('Data data',data,type(data))
+            print('Data data', item.text(1))
             parentparent = parent.__parent__
             self.__configwidget = QtWidgets.QWidget()
             self.__layoutwidget = QtWidgets.QFormLayout(self.__configwidget)
