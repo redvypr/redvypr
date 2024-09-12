@@ -151,7 +151,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     [nc,filename] = create_logfile(config,count)
     print('Adding main group',device_info)
     hostname = device_info['hostinfo']['hostname']
-    nchost = nc.createGroup(hostname)
     redvypr_version_str = 'redvypr {}'.format(redvypr.version)
     nc.redvypr_version = redvypr_version_str
     data_stat = {'_deviceinfo': {}}
@@ -202,6 +201,13 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 # This is the group structure
                 # Data is written to the group found in
                 # ncgroup = groups[hostname][publisher][devicename]
+
+                try:
+                    nc[hostname]
+                except:
+                    print('Creating base group {}'.format(hostname))
+                    nchost = nc.createGroup(hostname)
+
                 try:
                     nc[hostname][publisher]
                 except:

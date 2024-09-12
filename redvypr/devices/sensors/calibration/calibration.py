@@ -1689,13 +1689,8 @@ class initDeviceWidget(QtWidgets.QWidget):
                 sensorDatastream.datastream = sdata.datastream
                 sensorChoose = QtWidgets.QPushButton('Choose')  # Choose a datastream
                 sensorChoose.clicked.connect(self.chooseDatastream)
-                sensorChoose.lineEditSubed_addr = sensorDatastream
+                sensorChoose.lineEditDatastream_addr = sensorDatastream
                 sensorChoose.listindex = i
-                sensorResub = QtWidgets.QPushButton('Resub')  # Resubscribe a datastream
-                sensorResub.clicked.connect(self.resubDatastream)
-                #sensorResub.clicked.connect(self.clearInputWidgets)
-                sensorResub.lineEditDatastream_addr = sensorDatastream
-                sensorResub.listindex = i
                 sensorRem = QtWidgets.QPushButton('Remove')  # Choose a datastream
                 sensorRem.clicked.connect(self.sensorRemClicked)
                 sensorRem.listindex = i
@@ -1720,7 +1715,6 @@ class initDeviceWidget(QtWidgets.QWidget):
                 sensors.append({'sensorDatastream':sensorDatastream})
                 self.sensorsConfig_datastream_layout.addWidget(sensorNum, nsensors, 0)
                 self.sensorsConfig_datastream_layout.addWidget(sensorDatastream, nsensors, 1)
-                self.sensorsConfig_datastream_layout.addWidget(sensorResub, nsensors, 2)
                 self.sensorsConfig_datastream_layout.addWidget(sensorChoose, nsensors, 3)
                 self.sensorsConfig_datastream_layout.addWidget(sensorRem, nsensors, 4)
                 self.sensorsConfig_datastream_layout.addWidget(sensorPlotType, nsensors, 5)
@@ -1784,32 +1778,13 @@ class initDeviceWidget(QtWidgets.QWidget):
             # self.update_coefftable_ntc()
             #print('Config', self.device.custom_config)
 
-    def resubDatastream(self):
-        funcname = __name__ + '.resubDatastream():'
-        logger.debug(funcname)
-        button = self.sender()
-        index = button.listindex
-        #print('Calibrationdata')
-        #print('A', self.device.custom_config.calibrationdata[index])
-        #print('Calibrationdata', self.device.custom_config.calibrationdata)
-        #print('resub',index)
-        self.device.custom_config.calibrationdata[index].datastream = ''
-        #print('B', self.device.custom_config.calibrationdata[index])
-        #print('Calibrationdata ----------')
-
-        self.updateDisplayWidget()
-        self.device.subscribe_to_sensors()
-
-
-
     def chooseDatastream(self):
         funcname = __name__ + '.chooseDatastream():'
         logger.debug(funcname)
         button = self.sender()
         self.dstreamwidget = redvypr.gui.datastreamWidget(self.device.redvypr)
         self.dstreamwidget.apply.connect(self.datastreamChosen)
-        self.dstreamwidget.lineEditSubed_addr = button.lineEditSubed_addr
-        self.dstreamwidget.lineEditSub_addr = button.lineEditSub_addr
+        self.dstreamwidget.lineEditDatastream_addr = button.lineEditDatastream_addr
         self.dstreamwidget.listindex = button.listindex
         self.dstreamwidget.show()
 
@@ -2340,7 +2315,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             # Realtimedata
             if sdata.inputtype == 'datastream':
                 try:
-                    sdata.__plot_widget
+                    plot_widget = sdata.__plot_widget
                     logger.debug('Plotwidget is existing')
                     flag_new_plot_widget = False
                 except:
