@@ -304,10 +304,12 @@ class RedvyprAddress():
             #print('Hallo',parsed_addrstr['datakey'])
             datakeyentries_str = re.findall(regex_str, parsed_addrstr['datakey'])
             datakeyentries = [eval(x,None) for x in datakeyentries_str]
+            parsed_addrstr_expand['datakeyentries_str'] = datakeyentries_str # The str values can be used to reconstruct the original str
             parsed_addrstr_expand['datakeyentries'] = datakeyentries
         else:
             parsed_addrstr_expand['datakeyeval'] = False
             parsed_addrstr_expand['datakeyentries'] = None
+            parsed_addrstr_expand['datakeyentries_str'] = None
 
         #print(parsed_addrstr)
         return (parsed_addrstr,parsed_addrstr_expand)

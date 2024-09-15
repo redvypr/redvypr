@@ -1,3 +1,5 @@
+import json
+
 from PyQt5 import QtWidgets, QtCore, QtGui
 import logging
 import sys
@@ -62,7 +64,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
             manual_address = RedvyprAddress(redvypr_address_str).address_str
         else:
             manual_address = None
-        self.__datastreamwidget = datastreamWidget(redvypr=redvypr, showapplybutton=False,manual_address=manual_address)
+        self.__datastreamwidget = datastreamWidget(redvypr=redvypr, showapplybutton=False, manual_address=manual_address, datakeys_expanded=True)
         self.__configwidget_input = self.__datastreamwidget.addressline
         self.layout.addRow(self.__datastreamwidget)
         # Buttons
@@ -322,7 +324,7 @@ class datastreamWidget(QtWidgets.QWidget):
 
     def __init__(self, redvypr, device=None, devicename_highlight=None, datakey=None, deviceonly=False,
                  devicelock=False, subscribed_only=True, showapplybutton=True,datastreamstring='',closeAfterApply=True,
-                 filter_include=[], datakeys_expanded=True,manual_address=None):
+                 filter_include=[], datakeys_expanded=True, manual_address=None):
         """
         Args:
             redvypr:
@@ -343,6 +345,7 @@ class datastreamWidget(QtWidgets.QWidget):
         self.closeAfterApply = closeAfterApply
         self.redvypr = redvypr
         self.datakeys_expanded = datakeys_expanded
+        self.expandlevel = 3
         self.external_filter_include = filter_include
         self.datastreamstring_orig = datastreamstring
         self.datastreamstring  = datastreamstring
@@ -392,9 +395,18 @@ class datastreamWidget(QtWidgets.QWidget):
         self.addrtype_combo.currentIndexChanged.connect(self.__addrtype_changed__)
         self.filterWidget = address_filterWidget(redvypr = redvypr)
 
+        # Expansion level
+        expandlayout = QtWidgets.QHBoxLayout()
+        self.expandlevel_spin = QtWidgets.QSpinBox()
+        self.expandlevel_spin.setValue(self.expandlevel)
+        self.expandlevel_spin.valueChanged.connect(self.__expandlevelChanged)
+        expandlayout.addWidget(QtWidgets.QLabel('Expansion level'))
+        expandlayout.addWidget(self.expandlevel_spin)
+
         # Add widgets to layout
         self.layout_left = QtWidgets.QVBoxLayout()
         self.layout_right = QtWidgets.QVBoxLayout()
+        self.layout_right.addLayout(expandlayout)
         self.layout_right.addWidget(self.filterWidget)
         self.layout_left.addWidget(self.deviceavaillabel)
         self.layout_left.addWidget(self.devicelist)
@@ -434,6 +446,11 @@ class datastreamWidget(QtWidgets.QWidget):
             self.__update_devicetree()
             self.filterWidget.filterChanged.connect(self.__update_devicetree)
 
+    def __expandlevelChanged(self):
+        funcname = __name__ + '.____expandlevelChanged():'
+        logger.debug(funcname)
+        self.expandlevel = self.expandlevel_spin.value()
+        self.__update_devicetree_expanded()
     def __addrManualChanged(self,addrstr):
         funcname = __name__ + '.__addrManualChanged():'
         logger.debug(funcname + " manual address: {}".format(addrstr))
@@ -572,22 +589,48 @@ class datastreamWidget(QtWidgets.QWidget):
         funcname = __name__ + '.__update_devicetree_expanded():'
         logger.debug(funcname)
         colgrey = QtGui.QColor(220, 220, 220)
-        def update_recursive(data_new_key, data_new, parent_item):
+        def update_recursive(data_new_key, data_new, parent_item, datakey_construct, expandlevel):
             funcname = __name__ + '.__update_recursive():'
             logger.debug(funcname)
+            if self.expandlevel == 0:
+                datakey_construct_new = data_new_key
+            else:
+                datakey_construct_new = datakey_construct + '[' + json.dumps(data_new_key) + ']'
+
             #print('Hallo',data_new_key, data_new,type(data_new))
-            # Check if we are at an item
-            if isinstance(data_new, tuple):
-                #print('Set')
-                addrstr = data_new[0] # Index 0 of set is the address, index 1 the datatype
-                itmk = QtWidgets.QTreeWidgetItem([addrstr])
+            #print('Datakey construct new',datakey_construct_new)
+            # Check if we are at an item level that is a datakey to be used as a datastream
+            if isinstance(data_new, tuple) or (expandlevel >= self.expandlevel):
+                #print('Set',data_new,self.expandlevel)
+                if expandlevel >= self.expandlevel:
+                    #print('Level reached')
+                    addrstr_expanded = datakey_construct_new
+                else:
+                    addrstr = data_new[0]  # Index 0 of set is the address, index 1 the datatype
+                    datakeyaddr = RedvyprAddress(addrstr)
+                    # Construct a datakey based on the expansion level
+                    dkeys_expanded = datakeyaddr.parsed_addrstr_expand['datakeyentries_str']
+                    #print('Datakeyaddr', datakeyaddr)
+                    #print('expanded datakeys', datakeyaddr.parsed_addrstr_expand['datakeyentries_str'])
+                    if datakeyaddr.parsed_addrstr_expand['datakeyeval']:
+                        addrstr_expanded = ''
+                        for iexpand in range(len(dkeys_expanded)):
+                            if iexpand < self.expandlevel:
+                                addrstr_expanded += '[' + dkeys_expanded[iexpand] + ']'
+
+                        #print('Addresstr expanded',addrstr_expanded)
+                    else:
+                        addrstr_expanded = addrstr
+
+                #print('Addresstr expanded',addrstr_expanded)
+                itmk = QtWidgets.QTreeWidgetItem([addrstr_expanded])
                 itmk.iskey = True
                 itmk.device = dev
                 itmk.devaddress = devaddress
                 #print('Creating address with devaddress',devaddress)
                 #print('Creating address with devaddress parsed', devaddress.parsed_addrstr)
                 #print('Creating address with datakey', addrstr)
-                itmk.datakey_address = RedvyprAddress(devaddress, datakey=addrstr)
+                itmk.datakey_address = RedvyprAddress(devaddress, datakey=addrstr_expanded)
                 #print('Address',itmk.datakey_address)
                 #print('Address parsed', itmk.datakey_address.parsed_addrstr)
                 if self.filterWidget.filter_on:
@@ -607,14 +650,14 @@ class datastreamWidget(QtWidgets.QWidget):
                 itmk.setBackground(0, colgrey)
                 parent_item.addChild(itmk)
                 for data_new_index, data_new_item in enumerate(data_new):
-                    update_recursive(data_new_index, data_new_item, parent_item=itmk)
+                    update_recursive(data_new_index, data_new_item, parent_item=itmk, datakey_construct=datakey_construct_new, expandlevel=expandlevel+1)
 
             elif isinstance(data_new, dict):
                 itmk = QtWidgets.QTreeWidgetItem([data_new_key])
                 itmk.setBackground(0, colgrey)
                 parent_item.addChild(itmk)
                 for data_new_key in data_new.keys():
-                    update_recursive(data_new_key, data_new[data_new_key], parent_item=itmk)
+                    update_recursive(data_new_key, data_new[data_new_key], parent_item=itmk, datakey_construct=datakey_construct_new, expandlevel=expandlevel+1)
 
         if True:
             self.devicelist.clear()
@@ -706,16 +749,14 @@ class datastreamWidget(QtWidgets.QWidget):
 
                             for key in datakey_dict.keys():
                                 data_new = datakey_dict[key]
-                                update_recursive(key, data_new, parent_item=itmf)
-
-
+                                datakey_construct_new = ''
+                                update_recursive(key, data_new, parent_item=itmf, datakey_construct=datakey_construct_new, expandlevel=0)
 
                     if flag_datastreams:  # If we have datastreams found, add the itm
                         root.addChild(itm)
 
             self.devicelist.expandAll()
             self.devicelist.resizeColumnToContents(0)
-
 
     def __addrtype_changed__(self):
         """ Update the datakeylist whenever the device was changed

@@ -34,8 +34,8 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
             redvypr = None
         self.exclude = exclude
         self.layout = QtWidgets.QGridLayout(self)
-        self.label = QtWidgets.QLabel('Configuration of\n{:s}'.format(self.device.name))
-        self.layout.addWidget(self.label)
+        #self.label = QtWidgets.QLabel('Configuration of\n{:s}'.format(self.device.name))
+        #self.layout.addWidget(self.label)
         dataname = self.device.name + '.config'
         config = self.device.custom_config
         if config is None:
@@ -76,6 +76,11 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         self.exclude = exclude
         self.layout = QtWidgets.QGridLayout(self)
         self.config_location = config_location
+        if self.config_location == 'bottom':
+            sdir = QtCore.Qt.Vertical
+        else:
+            sdir = QtCore.Qt.Horizontal
+        self.splitter = QtWidgets.QSplitter(sdir)
         self.close_after_editing = close_after_editing
         #self.label = QtWidgets.QLabel('Configuration of\n{:s}'.format(self.device.name))
         #self.layout.addWidget(self.label)
@@ -95,10 +100,10 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             # Add a blank widget for editing
             self.__configwidget = QtWidgets.QWidget()
             self.configGui_layout.addWidget(self.__configwidget)
-            if self.config_location == 'bottom':
-                self.layout.addWidget(self.configGui, 1, 0)
-            else:
-                self.layout.addWidget(self.configGui, 0, 1)
+            #if self.config_location == 'bottom':
+            #    self.layout.addWidget(self.configGui, 1, 0)
+            #else:
+            #    self.layout.addWidget(self.configGui, 0, 1)
 
 
         self.closeButton = QtWidgets.QPushButton('Apply')
@@ -107,7 +112,10 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         self.cancelButton = QtWidgets.QPushButton('Cancel')
         self.cancelButton.clicked.connect(self.cancelClicked)
 
-        self.layout.addWidget(self.configWidget, 0, 0)
+        #self.layout.addWidget(self.configWidget, 0, 0)
+        self.splitter.addWidget(self.configWidget)
+        self.splitter.addWidget(self.configGui)
+        self.layout.addWidget(self.splitter, 0, 0)
         self.layout.addWidget(self.closeButton, 2, 0, 1, 1)
         self.layout.addWidget(self.cancelButton, 2, 1, 1, 1)
 

@@ -1,3 +1,6 @@
+- 0.9.2:
+        - implemented expansion level in redvypr_addressWidget
+        - first draft of PcolorPlot
 - 0.9.1:
         - less verbose
         - RedvyprAddress is not expanding missing address entries with a '*'

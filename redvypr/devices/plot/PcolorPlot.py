@@ -53,7 +53,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
 class DeviceCustomConfig(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
     type: str = 'PcolorPlot'
-    dt_update: float = pydantic.Field(default=0.25,description='Update time of the plot [s]')
+    dt_update: float = pydantic.Field(default=0.25, description='Update time of the plot [s]')
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
 
 # Use the standard start function as the start function
@@ -80,7 +80,7 @@ class PcolorPlot(QtWidgets.QWidget):
         self.logger = logging.getLogger('XYplot')
         self.logger.setLevel(loglevel)
         self.description = 'Pcolor plot'
-        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout = QtWidgets.QGridLayout(self)
         self.data_z = []
         self.data_x = []
         self.data_y = []
@@ -89,15 +89,20 @@ class PcolorPlot(QtWidgets.QWidget):
 
     def create_widgets(self):
 
-        self.plotwidget = pyqtgraph.PlotWidget()
-        self.layout.addWidget(self.plotwidget)
-        #win.show()  ## show widget alone in its own window
-        #z = numpy.random.rand(10,10)
+        self.graphiclayout = pyqtgraph.GraphicsLayoutWidget()
+        self.plotwidget = self.graphiclayout.addPlot()
+        z = numpy.random.rand(10,10)
         pcmi = pyqtgraph.PColorMeshItem()
+        pcmi.setData(z)
+        colbar = pyqtgraph.ColorBarItem()
+        colbar.setImageItem(pcmi)
         self.mesh = pcmi
         self.plotwidget.addItem(pcmi)
+        self.graphiclayout.addItem(colbar)
         axis = pyqtgraph.DateAxisItem(orientation='bottom', utcOffset=0)
         self.plotwidget.setAxisItems({"bottom": axis})
+        self.layout.addWidget(self.graphiclayout, 0, 0, 1, 2)
+
 
     def update_data(self,rdata):
         funcname = __name__ + '.update_data():'
