@@ -4,13 +4,14 @@ import copy
 from .redvypr_address import RedvyprAddress
 import redvypr.data_packets as data_packets
 import time
+import json
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr_packet_statistics')
 logger.setLevel(logging.DEBUG)
 
 # A dictionary for the device_redvypr entry in the statistics
-device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], 'datakeys_expanded': {}, '_deviceinfo': {},'_keyinfo': {},'packets_received':0,'packets_published':0,'packets_droped':0}
+device_redvypr_statdict = {'_redvypr': {},'datakeys':[],'datakeys_expanded': {},'packets_received':0,'packets_published':0,'packets_droped':0,'_metadata':{},'_deviceinfo':{},'_keyinfo':{}}
 
 
 
@@ -77,6 +78,7 @@ def create_data_statistic_dict():
     statdict['datastream_redvypr'] = {}
     statdict['device_redvypr'] = {}
     statdict['host_redvypr'] = {}
+    statdict['metadata'] = {}
     statdict['packets'] = {}  # Packets from subscribed devices
     return statdict
 
@@ -115,7 +117,7 @@ def do_data_statistics(data, statdict, address_data = None):
         raddr = address_data
 
     uuid = raddr.uuid
-    devicename_stat = raddr.address_str
+    address_str = raddr.address_str
 
     # Create a hostinfo information
     try:
@@ -125,9 +127,9 @@ def do_data_statistics(data, statdict, address_data = None):
 
     # Create device_redvypr, dictionary with all devices as keys
     try:
-        statdict['device_redvypr'][devicename_stat]['packets_published'] += 1
+        statdict['device_redvypr'][address_str]['packets_published'] += 1
     except:  # Does not exist yet, create the entry
-        statdict['device_redvypr'][devicename_stat] = copy.deepcopy(device_redvypr_statdict)
+        statdict['device_redvypr'][address_str] = copy.deepcopy(device_redvypr_statdict)
 
     # Get datakeys from datapacket
     datakeys = get_keys_from_data(data)
@@ -138,30 +140,43 @@ def do_data_statistics(data, statdict, address_data = None):
         datakeys_info = []
 
     try:
-        datakeys_new = list(set(statdict['device_redvypr'][devicename_stat]['datakeys'] + datakeys + datakeys_info))
+        datakeys_new = list(set(statdict['device_redvypr'][address_str]['datakeys'] + datakeys + datakeys_info))
     except Exception as e:
         logger.exception(e)
         datakeys_new = datakeys
 
-    statdict['device_redvypr'][devicename_stat]['_redvypr'].update(data['_redvypr'])
-    statdict['device_redvypr'][devicename_stat]['datakeys'] = datakeys_new
+    statdict['device_redvypr'][address_str]['_redvypr'].update(data['_redvypr'])
+    statdict['device_redvypr'][address_str]['datakeys'] = datakeys_new
 
+    # Metadata of the datapacket
     try:
-        statdict['device_redvypr'][devicename_stat]['_deviceinfo'].update(data['_deviceinfo'])
+        for address_str_metadata in data['_metadata'].keys():
+            metadata = data['_metadata'][address_str_metadata]
+            try:
+                statdict['metadata'][address_str_metadata]
+            except:
+                statdict['metadata'][address_str_metadata] = {}
+            statdict['metadata'][address_str_metadata].update(metadata)
     except:
         pass
 
+    # TODO (0.9.2++): On the long term it shall be replaced by _metadata
     try:
-        statdict['device_redvypr'][devicename_stat]['_keyinfo'].update(data['_keyinfo'])
+        statdict['device_redvypr'][address_str]['_deviceinfo'].update(data['_deviceinfo'])
     except:
         pass
 
+    # TODO (0.9.2++): On the long term it shall be replaced by _metadata
+    try:
+        statdict['device_redvypr'][address_str]['_keyinfo'].update(data['_keyinfo'])
+    except:
+        pass
 
     # Deeper check, data types and expanded data types
     rdata = data_packets.Datapacket(data)
     datakeys_expanded = rdata.datakeys(expand=True)
     #print('Datakeys expanded',datakeys_expanded)
-    statdict['device_redvypr'][devicename_stat]['datakeys_expanded'].update(datakeys_expanded)
+    statdict['device_redvypr'][address_str]['datakeys_expanded'].update(datakeys_expanded)
 
     return statdict
 
@@ -191,6 +206,91 @@ def get_keys_from_data(data):
     return keys
 
 
+def get_metadata(statistics, address, mode='merge'):
+    """
+    Gets the metadata of the redvypr address
+    :param statistics:
+    :param address:
+    :param mode: merge or list
+    :return:
+    """
+
+    funcname = __name__ + '.get_metadata():'
+    logger.debug(funcname)
+    if mode == 'merge':
+        metadata_return = {}
+    else:
+        metadata_return = []
+    raddress = RedvyprAddress(address)
+
+    # Sort the datakeys by the number of the datakey indices.
+    # This allows to have the longest entries latest such that the most
+    # specific one is overwriting a less specific one
+    #https://docs.python.org/3/howto/sorting.html Decorate-Sort-Undecorate
+    decorated = [(len(RedvyprAddress(astr).get_datakeyentries()),astr) for astr in statistics['metadata'].keys()]
+    decorated.sort()
+    metadata_keys_sorted = [astr for nentries,astr in decorated]
+    #print('Metadaty_keys_sorted',metadata_keys_sorted)
+    #for astr in statistics['metadata'].keys():
+    for astr in metadata_keys_sorted:
+        raddr = RedvyprAddress(astr)
+        if raddress.datakeyeval == False:
+            if raddr in raddress:
+                metadata = statistics['metadata'][astr]
+                print('Metadata', metadata)
+                if mode == 'merge':
+                    metadata_return.update(metadata)
+                else:
+                    metadata_return.append({astr:metadata})
+        # loop over all datakeys and check for a hit
+        else:
+            dkeys1 = raddr.get_datakeyentries()
+            dkeys2 = raddress.get_datakeyentries()
+            dkeys2_fit = dkeys2[:len(dkeys1)]
+            datakey_construct_new = ''
+            for dentry in dkeys2_fit:
+                datakey_construct_new = datakey_construct_new + '[' + json.dumps(dentry) + ']'
+
+            raddress_construct = RedvyprAddress(address, datakey=datakey_construct_new)
+            print('Constructed address {}'.format(raddress_construct))
+            if raddr in raddress_construct:
+                metadata = statistics['metadata'][astr]
+                print('Metadata', metadata)
+                if mode == 'merge':
+                    metadata_return.update(metadata)
+                else:
+                    metadata_return.append({astr: metadata})
+
+
+    return metadata_return
+
+    #for astr in statistics['device_redvypr'].keys():
+    #    raddr = RedvyprAddress(astr)
+    #    if '_metadata' in statistics['device_redvypr'][astr].keys():
+    #        for astr2 in statistics['device_redvypr'][astr]['_metadata'].keys():
+    #            raddr2 = RedvyprAddress(astr2)
+    #            # Check if a eval address is present (or not), if yes, check for all components
+    #            if raddress.parsed_addrstr_expand['datakeyeval'] == False:
+    #                if raddr2 in raddress:
+    #                    metadata.update(statistics['device_redvypr'][astr]['_metadata'][astr2])
+    #            else:
+    #                print('Datakeyeval')
+    #                #if self.expandlevel == 0:
+    #                #    datakey_construct_new = data_new_key
+    #                #else:
+    #                #    datakey_construct_new = datakey_construct + '[' + json.dumps(data_new_key) + ']'
+    #                datakey_construct_new = '['
+    #                for dentry in raddress.parsed_addrstr_expand['datakeyentries_str']:
+    #                    datakey_construct_new = datakey_construct_new + '[' + json.dumps(dentry) + ']'
+    #                    raddr_construct = RedvyprAddress(address, datakey=datakey_construct_new)
+    #                    print('hallo',raddr_construct)
+    #                    pass
+
+
+
+    return metadata
+
+# Legacy
 def get_devicename_from_data(data, uuid=False):
     """ Returns a redvypr devicename string including the hostname, ip with the optional uuid.
 
@@ -209,7 +309,7 @@ def get_devicename_from_data(data, uuid=False):
                      data['_redvypr']['host']['addr']
     return devicename
 
-
+# legacy
 def get_datastream_from_data(data, datakey, uuid=False):
     """ Returns a redvypr datastream string including the hostname, ip with the optional uuid.
 
@@ -234,7 +334,7 @@ def get_datastream_from_data(data, datakey, uuid=False):
         else:
             return None
 
-
+# legacy
 def get_datastreams_from_data(data, uuid=False, add_dict=False):
     """ Returns all datastreams of the datapacket
 

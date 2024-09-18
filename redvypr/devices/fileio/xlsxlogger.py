@@ -176,8 +176,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     file_status_reduced = {}
     while FLAG_RUN:
         tcheck      = time.time()
-
-
         # Flush file on regular basis
         if ((time.time() - tflush) > config['dt_sync']):
             #print('Flushing, not implemented (yet)')
@@ -247,7 +245,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     data_stat['_deviceinfo']['file_status'] = file_status
                     data_stat['_deviceinfo']['file_status_reduced'] = file_status_reduced
                     dataqueue.put(data_stat)
-
 
                 # Write data
                 if True:

@@ -381,6 +381,7 @@ class RedvyprDevice(QtCore.QObject):
         self.comqueue = comqueue
         self.statusqueue = statusqueue
         self.custom_config = custom_config
+        self.distribute_data_replyqueue = queue.Queue(maxsize=500)
         self.redvypr = redvypr
         self.name = device_parameter.name
         self.devicemodulename = device_parameter.devicemodulename
@@ -1211,6 +1212,47 @@ class RedvyprDevice(QtCore.QObject):
         info_dict['name'] = self.name
 
         return info_dict
+
+    def get_metadata(self, address):
+        """
+        Gets the metadata of the redvypr address
+        :param address:
+        :return:
+        """
+        funcname = __name__ + '.get_metadata():'
+        self.logger.debug(funcname)
+        metadata = redvypr.packet_statistic.get_metadata(self.statistics,address)
+        return metadata
+
+    def set_metadata(self, address, metadata):
+        """
+        Sets the metadata of address.
+        :param address:
+        :param metadata:
+        :return:
+        """
+        funcname = __name__ + '.set_metadata():'
+        self.logger.debug(funcname)
+        address_str = RedvyprAddress(address).address_str
+        datapacket = redvypr.data_packets.commandpacket(command='reply')
+        datapacket['_metadata'] = {}
+        datapacket['_metadata'][address_str] = metadata
+        self.dataqueue.put(datapacket)
+        data = self.distribute_data_replyqueue.get()
+
+    def set_metadata_entry(self, address, metadata_key='unit', metadata_entry=None):
+        """
+        Convenience function to set one entry of the metadata of a redvypr address
+        :param address:
+        :param metadata_key:
+        :param metadata_entry:
+        :return:
+        """
+        funcname = __name__ + '.set_metadata_entry():'
+        self.logger.debug(funcname)
+        metadata = {}
+        metadata[metadata_key:metadata_entry]
+        self.set_metadata(address,metadata)
 
     def print_info(self):
         """ Displays information about the device

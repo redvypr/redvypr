@@ -18,7 +18,7 @@ regex_symbol_end = '}'
 
 #device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {},'packets_received':0,'packets_published':0,'packets_droped':0}
 
-redvypr_data_keys = ['_redvypr','_redvypr_command','_deviceinfo','_keyinfo']
+redvypr_data_keys = ['_redvypr','_redvypr_command','_deviceinfo','_keyinfo','_metadata']
 
 class Datapacket(dict):
     def __init__(self, *args, **kwargs):
@@ -192,9 +192,37 @@ def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None
     """
     if(tu == None):
         tu = time.time()
-    if(datakey == None):
-        datakey = 'data'
-        
+
+    datadict = {'_redvypr':{'t':tu}}
+    datadict['_redvypr']['device'] = device
+    if (packetid is None):
+            datadict['_redvypr']['packetid'] = device
+
+    datadict['_redvypr']['packetid'] = packetid
+    datadict['_redvypr']['publisher'] = publisher
+    if (hostinfo is not None):
+        if hostinfo == 'random':
+            redvypr.create_hostinfo('random')
+        else:
+            datadict['_redvypr']['host'] = hostinfo
+    else:
+        datadict['_redvypr']['host'] = redvypr.hostinfo_blank
+
+    if(data is not None):
+        if (datakey == None):
+            datakey = 'data'
+        datadict[datakey] = data
+
+    return datadict
+
+
+
+def legacy_create_datadict_legacy(data=None, datakey=None, packetid=None, tu=None, device=None, publisher=None, hostinfo=None):
+    """ Creates a datadict dictionary used as internal datastructure in redvypr
+    """
+    if(tu == None):
+        tu = time.time()
+
     datadict = {'_redvypr':{'t':tu}}
 
     if (device is not None):
@@ -202,26 +230,33 @@ def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None
         if (packetid is None):
             datadict['_redvypr']['packetid'] = device
         else:
-            datadict['_redvypr']['packetid'] = ''
+            datadict['_redvypr']['packetid'] = '*'
     else:
-        datadict['_redvypr']['device'] = ''
+        datadict['_redvypr']['device'] = '*'
 
     if (packetid is not None):
         datadict['_redvypr']['packetid'] = packetid
     else:
-        datadict['_redvypr']['packetid'] = ''
+        datadict['_redvypr']['packetid'] = '*'
 
     if (publisher is not None):
         datadict['_redvypr']['publisher'] = publisher
     else:
-        datadict['_redvypr']['publisher'] = ''
+        datadict['_redvypr']['publisher'] = '*'
+
 
     if (hostinfo is not None):
-        datadict['_redvypr']['host'] = hostinfo
+        if hostinfo == 'random':
+            redvypr.create_hostinfo('random')
+        else:
+            datadict['_redvypr']['host'] = hostinfo
     else:
-        datadict['_redvypr']['host'] = redvypr.hostinfo_blank
+        pass
+        #datadict['_redvypr']['host'] = redvypr.hostinfo_blank
 
     if(data is not None):
+        if (datakey == None):
+            datakey = 'data'
         datadict[datakey] = data
 
     return datadict
@@ -229,7 +264,7 @@ def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None
 def add_metadata2datapacket(datapacket, datakey, metakey='unit', metadata=None, metadict=None):
     """
 
-    Args:
+    Args:add_metad
         datapacket:
         datakey:
         metakey:
@@ -238,23 +273,52 @@ def add_metadata2datapacket(datapacket, datakey, metakey='unit', metadata=None, 
     Returns:
 
     """
-    try:
-        datapacket['_keyinfo']
-    except:
-        datapacket['_keyinfo'] = {}
+    if False: # TODO: (0.9.2): legacy, will be removed soon
+        try:
+            datapacket['_keyinfo']
+        except:
+            datapacket['_keyinfo'] = {}
 
-    try:
-        datapacket['_keyinfo'][datakey]
-    except:
-        datapacket['_keyinfo'][datakey] = {}
+        try:
+            datapacket['_keyinfo'][datakey]
+        except:
+            datapacket['_keyinfo'][datakey] = {}
 
-    if(metadata is not None):
-        datapacket['_keyinfo'][datakey][metakey] = metadata
+        if(metadata is not None):
+            datapacket['_keyinfo'][datakey][metakey] = metadata
 
-    # If a dictionary with metakeys is given
-    if (metadict is not None):
-        datapacket['_keyinfo'][datakey].update(metadict)
+        # If a dictionary with metakeys is given
+        if (metadict is not None):
+            datapacket['_keyinfo'][datakey].update(metadict)
 
+    if True:
+        #print('Datapacket',datapacket)
+        try: # Try first to create a RedvyprAddress from the datapacket itself
+            raddress = redvypr_address.RedvyprAddress(datapacket, datakey=datakey)
+        except:
+            logger.info('Could not create address',exc_info=True)
+            raddress = redvypr_address.RedvyprAddress(datakey=datakey)
+
+        address_str = raddress.address_str
+        try:
+            datapacket['_metadata']
+        except:
+            datapacket['_metadata'] = {}
+
+        try:
+            datapacket['_metadata'][address_str]
+        except:
+            datapacket['_metadata'][address_str] = {}
+
+        if (metadata is not None):
+            datapacket['_metadata'][address_str] = metadata
+
+        # If a dictionary with metakeys is given
+        if (metadict is not None):
+            datapacket['_metadata'][address_str].update(metadict)
+
+    #print('Metadata datapacket',datapacket)
+    #print('---done----')
     return datapacket
 
 

@@ -1,6 +1,10 @@
 - 0.9.2:
         - implemented expansion level in redvypr_addressWidget
         - first draft of PcolorPlot
+        - Added new empty string feature in RedvyprAddress('/k:'). Empty string means that the entry is explicitly not checked.
+        - added distribute_data_replyqueue, that allows to send datapackets to the distribute thread and wait for the answer. Used to update statistics in a centralized way with set_metadata
+        - improved datakey comparison
+        - metadata design changed
 - 0.9.1:
         - less verbose
         - RedvyprAddress is not expanding missing address entries with a '*'

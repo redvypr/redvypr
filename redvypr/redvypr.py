@@ -93,7 +93,7 @@ def get_ip():
 # The hostinfo, to distinguish between different redvypr instances
 # redvyprid = str(uuid.uuid1()) # Old
 
-hostinfo_blank = {'hostname': '', 'tstart': 0, 'addr': '', 'uuid': ''}
+hostinfo_blank = {'hostname':None, 'tstart': 0,'addr':None, 'uuid':None}
 
 def create_hostinfo(hostname='redvypr'):
     funcname = __name__ + '.create_hostinfo()'
@@ -195,7 +195,9 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     numtag = data['_redvypr']['tag'][hostinfo['uuid']]
                     if numtag < 2:  # Check if data packet fits with addr and its not recirculated again
                         [command, comdata] = data_packets.check_for_command(data, add_data=True)
-                        if (command == 'device_status'):  # status update
+                        if (command == 'reply'):  # status update
+                            device.distribute_data_replyqueue.put_nowait(data)
+                        elif (command == 'device_status'):  # status update
                             #print('device status command',device.name)
                             #print('comdata',comdata)
                             #print('data', data)
@@ -242,6 +244,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                                             'devices_removed': devices_removed, 'change': 'datastreams changed','device_changed':device.name}
                             infoqueue.put_nowait(devinfo_send)
 
+                    #print('Data ready to send',data)
                     #
                     # And finally: Distribute the data
                     #
@@ -1126,6 +1129,14 @@ class Redvypr(QtCore.QObject):
         packetids.sort()
         return packetids
 
+    def get_metadata(self, address):
+        funcname = __name__ + 'get_metadata():'
+        metadata = {}
+        for dev in self.devices:
+            mdata = dev['device'].get_metadata(address)
+            metadata.update(mdata)
+
+        return metadata
 
     def get_known_devices(self):
         """ List all known devices that can be loaded by redvypr

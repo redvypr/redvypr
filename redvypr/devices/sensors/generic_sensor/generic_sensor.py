@@ -482,7 +482,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.device.config_changed_signal.connect(self.update_sensortable)
         #self.sensortable.setRowCount(1)
 
-        layout.addWidget(self.sensortable, 0, 0)
+        sdir = QtCore.Qt.Vertical
+        self.splitter = QtWidgets.QSplitter(sdir)
+        layout.addWidget(self.splitter,0,0)
+        self.splitter.addWidget(self.sensortable)
         # The table columns
         self.icol_name = 0
         self.icol_packet_proc = 1
@@ -541,17 +544,23 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
 
     def sensor_show_clicked(self):
-        try:
-            self.layout.removeWidget(self.sensorwidget)
-            self.sensorwidget.hide()
-        except:
-            logger.debug('Could not remove widget',exc_info=True)
-
+        funcname = __name__ + '.sensor_show_clicked():'
+        logger.debug(funcname)
         sensor = self.sender().__sensor__
         self.sensorwidget = sensor.__sensorwidget__
-        self.layout.addWidget(self.sensorwidget, 0,1)
+        try:
+            #self.layout.removeWidget(self.sensorwidget)
+            sensorwidget_old = self.splitter.replaceWidget(1,self.sensorwidget)
+            sensorwidget_old.hide()
+        except:
+            logger.debug('Could not remove widget',exc_info=True)
+            self.splitter.addWidget(self.sensorwidget)
+
+
+        #self.splitter.addWidget(self.sensorwidget)
+        #self.layout.addWidget(self.sensorwidget, 1,0)
         self.sensorwidget.show()
-        print('Show')
+        #print('Show')
 
     def sensor_plot_clicked(self):
         print('Plot')
@@ -608,7 +617,7 @@ class SensorWidget(QtWidgets.QWidget):
         self.device = redvypr_device
         #print('Sensor',self.sensor)
         super().__init__(*args, **kwargs)
-        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout = QtWidgets.QHBoxLayout(self)
         #self.label = QtWidgets.QLabel(self.sensor.name)
         self.sensor_address = RedvyprAddress('/d:{}'.format(sensor.name))
         # Table showing the different packetids, which are used to distinguis different sensors

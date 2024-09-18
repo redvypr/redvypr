@@ -45,7 +45,6 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     metadata = {'description':'sinus with random data', 'mac':'ABCDEF1234'}
     datapacket_info = redvypr.data_packets.add_metadata2datapacket(datapacket_info, datakey='sine_rand', metadict=metadata)
     dataqueue.put(datapacket_info)
-
     i = 0
     counter = 0
     while True:
@@ -78,12 +77,25 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         data = redvypr.data_packets.create_datadict(device='test_complex_data', packetid='complex_data')
         if counter == 0:
             # Add metadata
+
+            metadata = {'unit': 'baseunit'}
+            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_list_list',
+                                                                metadict=metadata)
+
+            metadata = {'unit': 'otherunit of entry 0'}
+            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='["data_list_list"][0]',
+                                                                metadict=metadata)
+
             metadata = {'description': 'Counter and polynomial functions of counter', 'unit': 'grigra'}
             data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_list_poly',
                                                                            metadict=metadata)
 
-            metadata = {'temp':{'description': 'Temperature', 'unit': 'degC'},'pressure':{'unit':'Pa'}}
-            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_dict_list',
+            metadata = {'description': 'Temperature', 'unit': 'degC'}
+            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='["data_dict_list"]["temp"]',
+                                                                metadict=metadata)
+
+            metadata = {'unit': 'Pa'}
+            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='["data_dict_list"]["pressure"]',
                                                                 metadict=metadata)
         data['data_list'] = [counter,data_sine,data_rand]
         data['data_list_list'] = [[counter, data_sine, data_rand],[counter, data_sine]]

@@ -46,9 +46,9 @@ print('-----------------')
 
 print('Testing regular expressions')
 # Regular expressions
-re1 = RedvyprAddress(compare='/d:{.*}')
-re2 = RedvyprAddress(compare='/d:{some.*}')
-re3 = RedvyprAddress(compare='/d:{other.*}')
+re1 = RedvyprAddress('/d:{.*}')
+re2 = RedvyprAddress('/d:{some.*}')
+re3 = RedvyprAddress('/d:{other.*}')
 reall = [re1,re2,re3]
 
 for retest in reall:
@@ -57,4 +57,24 @@ for retest in reall:
     test = datapacket in retest
     print('Datapacket in test',test)
     print('-----------------')
+
+
+
+print('Testing datakey comparisons of eval strings that are formatted differently')
+rev0 = RedvyprAddress('/k:a')
+rev1 = RedvyprAddress('/k:["a"][0]["somedata"]')
+reeval_test = []
+reeval_test.append(RedvyprAddress('/k:["a"]'))
+reeval_test.append(RedvyprAddress('''/k:['a']'''))
+reeval_test.append(RedvyprAddress("/k:['''a''']"))
+reeval_test.append(RedvyprAddress('/k:{[a]}'))
+reeval_test.append(RedvyprAddress("/k:['''a'''][0]['somedata']"))
+reeval_test.append(RedvyprAddress("/k:['''a'''][1]['somedata']"))
+
+print('----- test 1 -----')
+for rev_test in reeval_test:
+    print('{} in {}: {}'.format(rev_test,rev0,rev_test in rev0))
+print('----- test 2 -----')
+for rev_test in reeval_test:
+    print('{} in {}: {}'.format(rev_test,rev1,rev_test in rev1))
 
