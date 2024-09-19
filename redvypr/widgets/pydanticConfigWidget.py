@@ -42,8 +42,8 @@ class pydanticDeviceConfigWidget(QtWidgets.QWidget):
             logger.warning('No config existing')
             self.configWidget = QtWidgets.QLabel('No config existing!')
         else:
-            print('Config to edit',self.device.custom_config)
-            print('tpye',type(self.device.custom_config))
+            #print('Config to edit',self.device.custom_config)
+            #print('tpye',type(self.device.custom_config))
             self.configWidget = pydanticConfigWidget(self.device.custom_config, configname=dataname, exclude=self.exclude, config_location=config_location, show_datatype=show_datatype, redvypr=redvypr)
             self.configWidget.config_changed_flag.connect(self.config_changed)
             self.configWidget.config_editing_done.connect(self.closeClicked)

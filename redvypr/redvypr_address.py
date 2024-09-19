@@ -331,7 +331,8 @@ class RedvyprAddress():
             if len(a_id)>0:
                 addr_id = self.__add_entries_short[a_id]
                 addr_id_data = self.parsed_addrstr[addr_id]
-                address_str += a_id + self.__delimiter_id + addr_id_data + self.__delimiter_parts
+                if addr_id_data is not None:
+                    address_str += a_id + self.__delimiter_id + addr_id_data + self.__delimiter_parts
 
         return address_str
 

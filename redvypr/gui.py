@@ -8,9 +8,10 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.widgets.redvyprSubscribeWidget import redvyprSubscribeWidget
 #from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget,
-from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget, dictQTreeWidget
+from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, dictQTreeWidget
 from redvypr.widgets.redvypr_addressWidget import datastreamWidget, datastreamsWidget
 from redvypr.redvypr_address import RedvyprAddress
+from redvypr.data_packets import RedvyprMetadata, RedvyprDeviceMetadata
 import redvypr.files as files
 import redvypr.device as device
 
@@ -605,7 +606,6 @@ class redvypr_deviceStatisticWidget(QtWidgets.QWidget):
         if True:
             self.infowidget.verticalScrollBar().setValue(pos)
 
-
 class redvypr_deviceInfoWidget(QtWidgets.QWidget):
     """
     Information widget of a device
@@ -627,10 +627,12 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         self.publist = QtWidgets.QListWidget()
         self.sublist_label = QtWidgets.QLabel('Subscribed devices')
         self.sublist = QtWidgets.QListWidget()
-        self.subBtn = QtWidgets.QPushButton('Subscribe')
-        self.subBtn.clicked.connect(self.connect_clicked)
+        #self.subBtn = QtWidgets.QPushButton('Subscribe')
+        #self.subBtn.clicked.connect(self.connect_clicked)
+        self.metadataBtn = QtWidgets.QPushButton('Edit Metadata')
+        self.metadataBtn.clicked.connect(self.metadata_clicked)
         if self.device.publishes:
-            self.ddBtn = QtWidgets.QPushButton('Data devices publishing')
+            self.ddBtn = QtWidgets.QPushButton('Show datastreams')
             self.ddBtn.clicked.connect(self.data_devices_clicked)
         self.confBtn = QtWidgets.QPushButton('Configure')
         self.confBtn.clicked.connect(self.config_clicked)
@@ -647,7 +649,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         if self.device.publishes:
             self.layout.addWidget(self.ddBtn)
         self.layout.addWidget(self.confBtn)
-        self.layout.addWidget(self.subBtn)
+        self.layout.addWidget(self.metadataBtn)
 
         self.updatetimer = QtCore.QTimer()
         self.updatetimer.timeout.connect(self.__update_info)
@@ -675,18 +677,36 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         #targetWidget.showFullScreen()
         self.config_widget.showMaximized()
 
+    def metadata_clicked(self):
+        funcname = __name__ + '.metadata_clicked():'
+        logger.debug(funcname)
+        metadata = copy.deepcopy(self.device.statistics['metadata'])
+        metadata = RedvyprDeviceMetadata()
+        print('Metadata',metadata)
+        self.__metadata_edit = metadata
+        self.metadata_config = pydanticConfigWidget(metadata)
+        self.metadata_config.config_editing_done.connect(self.metadata_config_apply)
+        self.metadata_config.show()
+
+    def metadata_config_apply(self):
+        funcname = __name__ + '.metadata_config_apply():'
+        logger.debug(funcname)
+        deviceAddress = RedvyprAddress(devicename=self.device.name)
+        print('Metadata new',self.__metadata_edit)
+        metadata = self.__metadata_edit.model_dump()
+        self.device.set_metadata(deviceAddress,metadata)
+
     def statistics_clicked(self):
         funcname = __name__ + '.statistics_clicked():'
         logger.debug(funcname)
         self.statistics_widget = redvypr_deviceStatisticWidget(device=self.device)
         self.statistics_widget.show()
 
-    def connect_clicked(self):
-        funcname = __name__ + '.connect_clicked():'
+    def subscribe_clicked(self):
+        funcname = __name__ + '.subscribe_clicked():'
         logger.debug(funcname)
         button = self.sender()
-        self.__subscribeWidget = redvyprSubscribeWidget.redvyprSubscribeWidget(redvypr=self.redvypr,
-                                                                                               device=self.device)
+        self.__subscribeWidget = redvyprSubscribeWidget(redvypr=self.redvypr, device=self.device)
         self.__subscribeWidget.show()
         #self.connect.emit(self.device)
 

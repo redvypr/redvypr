@@ -4,10 +4,11 @@ import logging
 import sys
 import re
 import numpy as np
-
 import redvypr
 import redvypr.redvypr_address as redvypr_address
 import collections
+import pydantic
+import typing
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('data_packets')
@@ -17,8 +18,14 @@ regex_symbol_start = '{'
 regex_symbol_end = '}'
 
 #device_redvypr_statdict = {'_redvypr': {}, 'datakeys': [], '_deviceinfo': {},'_keyinfo': {},'packets_received':0,'packets_published':0,'packets_droped':0}
-
 redvypr_data_keys = ['_redvypr','_redvypr_command','_deviceinfo','_keyinfo','_metadata']
+
+# Defintions for common metadata types
+class RedvyprMetadata(pydantic.BaseModel):
+    address: typing.Dict[redvypr_address.RedvyprAddress, typing.Any] = {}
+class RedvyprDeviceMetadata(pydantic.BaseModel):
+    location: str = ''
+    comment: str = ''
 
 class Datapacket(dict):
     def __init__(self, *args, **kwargs):
