@@ -45,7 +45,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     datapacket_info_device = redvypr.data_packets.add_metadata2datapacket(datapacket={}, address=address_str, metadict=device_metadata)
     dataqueue.put(datapacket_info_device)
     # Send a datapacket with information once (that will be put into the statistics)
-    datapacket_info = redvypr.data_packets.add_metadata2datapacket(datapacket={}, datakey='sine_rand', metadata={'unit':'random unit'})
+    datapacket_info = redvypr.data_packets.add_metadata2datapacket(datapacket={}, datakey='sine_rand', metakey='unit',metadata='random unit')
     # Metadata can also be given as a dict
     metadata = {'description':'sinus with random data', 'mac':'ABCDEF1234'}
     datapacket_info = redvypr.data_packets.add_metadata2datapacket(datapacket_info, datakey='sine_rand', metadict=metadata)

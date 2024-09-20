@@ -211,7 +211,7 @@ def get_metadata(statistics, address, mode='merge'):
     Gets the metadata of the redvypr address
     :param statistics:
     :param address:
-    :param mode: merge or list
+    :param mode: merge or dict
     :return:
     """
 
@@ -220,7 +220,7 @@ def get_metadata(statistics, address, mode='merge'):
     if mode == 'merge':
         metadata_return = {}
     else:
-        metadata_return = []
+        metadata_return = {}
     raddress = RedvyprAddress(address)
 
     # Sort the datakeys by the number of the datakey indices.
@@ -241,7 +241,7 @@ def get_metadata(statistics, address, mode='merge'):
                 if mode == 'merge':
                     metadata_return.update(metadata)
                 else:
-                    metadata_return.append({astr:metadata})
+                    metadata_return[astr] = metadata
         # loop over all datakeys and check for a hit
         else:
             dkeys1 = raddr.get_datakeyentries()
@@ -259,7 +259,7 @@ def get_metadata(statistics, address, mode='merge'):
                 if mode == 'merge':
                     metadata_return.update(metadata)
                 else:
-                    metadata_return.append({astr: metadata})
+                    metadata_return[astr] = metadata
 
     return metadata_return
 

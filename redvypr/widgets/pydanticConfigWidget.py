@@ -8,9 +8,10 @@ import pydantic
 from pydantic.color import Color as pydColor
 import typing
 from redvypr.device import RedvyprDevice
-from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidgetSimple, RedvyprAddressWidget
+from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidgetSimple, RedvyprAddressWidget, datastreamQTreeWidget
 import redvypr.files as files
 from redvypr.redvypr_address import RedvyprAddress
+from redvypr.data_packets import RedvyprMetadata, RedvyprMetadataGeneral
 
 
 logging.basicConfig(stream=sys.stderr)
@@ -674,7 +675,8 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         self.__keylabel = keylabel
         self.__configwidget_input = QtWidgets.QLineEdit('newkey')
         #self.__configwidget_input.setText(str(data))
-        self.__layoutwidget.addRow(QtWidgets.QLabel('Add a new entry for {:s}'.format(str(index))))
+        #self.__layoutwidget.addRow(QtWidgets.QLabel('Add a new entry for {:s}'.format(str(index))))
+        self.__layoutwidget.addRow(QtWidgets.QLabel('Add a new entry'))
         self.__layoutwidget.addRow(keylabel, self.__configwidget_input)
         self.__layoutwidget.addRow(QtWidgets.QLabel('Datatype'), addCombo)
         # Buttons
@@ -1541,4 +1543,127 @@ class dictQTreeWidget(QtWidgets.QTreeWidget):
     def resize_view(self):
         pass
         #self.resizeColumnToContents(0)
+
+
+
+class datastreamMetadataWidget(datastreamQTreeWidget):
+    def __init__(self, *args, metadata=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.metadata = metadata
+        self.devicelist.itemClicked.connect(self.__item_clicked)
+
+        # Create a splitter
+        #if self.config_location == 'bottom':
+        #    sdir = QtCore.Qt.Vertical
+        #else:
+        #    sdir = QtCore.Qt.Horizontal
+        self.metadata_configWidget = QtWidgets.QWidget()
+        self.metadata_configWidget_layout =  QtWidgets.QVBoxLayout(self.metadata_configWidget)
+        self.radioMerged = QtWidgets.QRadioButton("Merged")
+        self.radioMerged.toggled.connect(self.__metadata_mode_changed)
+        self.radioExpanded = QtWidgets.QRadioButton("Expanded")
+        self.radioLayout = QtWidgets.QHBoxLayout()
+        self.radioLayout.addWidget(self.radioMerged)
+        self.radioLayout.addWidget(self.radioExpanded)
+        self.metadata_configWidget_layout.addLayout(self.radioLayout)
+        self.radioMerged.setChecked(True)
+
+        sdir = QtCore.Qt.Horizontal
+        self.splitterMetadata = QtWidgets.QSplitter(sdir)
+        self.layout.removeWidget(self.splitter)
+        self.splitterMetadata.addWidget(self.splitter)
+        self.splitterMetadata.addWidget(self.metadata_configWidget)
+        #self.layout.removeWidget(self.deviceWidget)
+        self.layout.addWidget(self.splitterMetadata,0,0)
+        # Lets click an item
+        item_select = self.devicelist.topLevelItem(self.devicelist.topLevelItemCount() - 1)
+        item_select.setSelected(True)
+        self.__item_clicked(item_select, 0)
+
+
+
+    def __metadata_mode_changed(self):
+        funcname = __name__ + '.__metadata_mode_changed():'
+        logger.debug(funcname)
+        try:
+            item = self.__item_selected
+        except:
+            item = self.devicelist.topLevelItem(self.devicelist.topLevelItemCount() - 1)
+
+        self.__item_clicked(item, 0)
+    def __item_clicked(self,item,col):
+        """
+        Called when an item in the qtree is clicked
+        """
+        self.__item_selected = item
+        if self.radioMerged.isChecked():
+            metadata_mode = 'merge'
+        else:
+            metadata_mode = 'dict'
+        funcname = __name__ + '__item_clicked()'
+        logger.debug(funcname)
+        print('Item',item)
+        try:
+            print('Address1',item.raddress)
+        except:
+            logger.info('Could not get address',exc_info=True)
+            pass
+
+        raddress = item.raddress
+        address_format = '/h/d/i/k'
+        # This needs to be considered, what we actually want to get ...
+        fstr1 = raddress.get_expand_explicit_str(address_format=address_format)
+        raddress_metadata = RedvyprAddress(fstr1)
+        print('Raddress_metadata',raddress_metadata)
+        metadata = self.device.get_metadata(raddress_metadata,mode=metadata_mode)
+        print('Got metadata',metadata)
+
+        metadata_work = copy.deepcopy(metadata)
+        if metadata_mode == 'dict':
+            try:
+                metadata_work[raddress.get_str(address_format)]
+            except:
+                metadata_work[raddress.get_str(address_format)] = {}
+        else:
+            metadata_work = {raddress.get_str(address_format):metadata_work}
+
+        metadata_pydantic = RedvyprMetadataGeneral(address=metadata_work)
+        #print('Metadata', metadata_pydantic)
+        #print('Got metadata (keys)', metadata.keys())
+        self.create_metadata_widget(metadata_pydantic,raddress)
+
+    def create_metadata_widget(self,metadata, raddress):
+        funcname = __name__ + '.create_metadata_widget():'
+        logger.debug(funcname)
+        #metadata_pydantic = RedvyprDeviceMetadata(**metadata)
+        print('Metadata edit widget', metadata)
+        self.__metadata_edit = metadata
+        self.__metadata_address = raddress
+        try:
+            self.metadata_configWidget_layout.removeWidget(self.metadata_config)
+        except:
+            pass
+        self.metadata_config = pydanticConfigWidget(metadata, configname='Metadata', close_after_editing=False)
+        self.metadata_configWidget_layout.addWidget(self.metadata_config)
+        self.metadata_config.config_editing_done.connect(self.metadata_config_apply)
+        #self.metadata_config.show()
+
+
+    def metadata_config_apply(self):
+        funcname = __name__ + '.metadata_config_apply():'
+        try:
+            print('Apply')
+            metadata = self.__metadata_edit
+            print('Hallo',metadata)
+            for address in metadata.address.keys():
+                print('Updating metadata data',metadata.address[address])
+                print('Updating metadata', address)
+                if len(metadata.address[address].keys()) > 0:
+                    self.device.set_metadata(address, metadata.address[address])
+                else:
+                    logger.debug('Not enough datakey so send')
+
+        except:
+            logger.info(funcname + 'Could not update metadata',exc_info=True)
+
 

@@ -8,8 +8,8 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.widgets.redvyprSubscribeWidget import redvyprSubscribeWidget
 #from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget,
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, dictQTreeWidget
-from redvypr.widgets.redvyprAddressWidget import datastreamWidget, datastreamsWidget, datastreamMetadataWidget
+from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, dictQTreeWidget, datastreamMetadataWidget
+from redvypr.widgets.redvyprAddressWidget import datastreamWidget, datastreamsWidget
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import RedvyprMetadata, RedvyprDeviceMetadata
 import redvypr.files as files

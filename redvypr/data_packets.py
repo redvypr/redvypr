@@ -33,6 +33,9 @@ class RedvyprDatastreamMetadata(pydantic.BaseModel):
     unit: str = ''
     comment: str = ''
 
+class RedvyprMetadataGeneral(pydantic.BaseModel):
+    address: typing.Dict[str, typing.Any] = {}
+
 class Datapacket(dict):
     def __init__(self, *args, **kwargs):
         if len(args)>0:
@@ -229,7 +232,7 @@ def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None
     return datadict
 
 
-def add_metadata2datapacket(datapacket, address=None, datakey=None, metakey='unit', metadata=None, metadict=None):
+def add_metadata2datapacket(datapacket, address=None, datakey=None, metakey=None, metadata=None, metadict=None):
     """
 
     Args:add_metad

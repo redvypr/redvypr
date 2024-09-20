@@ -893,7 +893,7 @@ class datastreamsWidget(datastreamWidget):
 class datastreamQTreeWidget(QtWidgets.QWidget):
     """ Widget shows all datastreams in a QTree style
     """
-    def __init__(self, redvypr, device=None, filter_include=[]):
+    def __init__(self, redvypr, device=None, filter_include=[], headerlabel=''):
         super(QtWidgets.QWidget, self).__init__()
         logger.setLevel(logging.DEBUG)
         self.setWindowIcon(QtGui.QIcon(_icon_file))
@@ -908,15 +908,20 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
         except:
             self.devicename = device
         if (device is not None):
-            self.devicenamelabel = QtWidgets.QLabel('Device: ' + self.devicename)
-            self.layout.addWidget(self.devicenamelabel)
+            pass
+            #self.devicenamelabel = QtWidgets.QLabel('Device: ' + self.devicename)
+            #self.layout.addWidget(self.devicenamelabel)
         else:
             self.devicename = ''
 
         self.deviceavaillabel = QtWidgets.QLabel('Available devices')
         self.devicelist = QtWidgets.QTreeWidget()  # List of available devices
-        self.devicelist.setHeaderLabels(['Datastreams'])
         self.devicelist.setColumnCount(1)
+        self.devicelist.setHeaderLabels([headerlabel])
+        self.devicelist.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.devicelist.header().setStretchLastSection(False)
+        #self.devicelist.setAutoScroll(True)
+
 
         self.filterWidget = address_filterWidget(redvypr = redvypr)
         # Expansion level
@@ -928,18 +933,30 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
         expandlayout.addWidget(self.expandlevel_spin)
 
         # Add widgets to layout
-        self.layout_left = QtWidgets.QVBoxLayout()
-        self.layout_right = QtWidgets.QVBoxLayout()
+        self.deviceWidget = QtWidgets.QWidget()
+        self.layout_left = QtWidgets.QVBoxLayout(self.deviceWidget)
+        self.settingsWidget = QtWidgets.QWidget()
+        self.layout_right = QtWidgets.QVBoxLayout(self.settingsWidget)
         self.layout_right.addLayout(expandlayout)
         self.layout_right.addWidget(self.filterWidget)
         self.layout_left.addWidget(self.deviceavaillabel)
         self.layout_left.addWidget(self.devicelist)
 
-        self.layout.addLayout(self.layout_left,0,0)
-        self.layout.addLayout(self.layout_right,1,0)
+        # Create a splitter
+        # if self.config_location == 'bottom':
+        #    sdir = QtCore.Qt.Vertical
+        # else:
+        #    sdir = QtCore.Qt.Horizontal
 
-        # Add a stretch
-        self.layout_right.addStretch()
+        sdir = QtCore.Qt.Vertical
+        self.splitter = QtWidgets.QSplitter(sdir)
+        self.splitter.addWidget(self.deviceWidget)
+        self.splitter.addWidget(self.settingsWidget)
+
+        self.layout.addWidget(self.splitter,0,0)
+
+        ## Add a stretch
+        #self.layout_right.addStretch()
         if self.datakeys_expanded:
             self.__update_devicetree_expanded()
             self.filterWidget.filterChanged.connect(self.__update_devicetree_expanded)
@@ -1131,35 +1148,11 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
                         root.addChild(itm)
 
             self.devicelist.expandAll()
+            #self.devicelist.header().setStretchLastSection(True)
             self.devicelist.resizeColumnToContents(0)
 
 
 
-class datastreamMetadataWidget(datastreamQTreeWidget):
-    def __init__(self, *args, metadata=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.metadata = metadata
-        self.devicelist.itemClicked.connect(self.__item_clicked)
 
-    def __item_clicked(self,item,col):
-        """
-        Called when an item in the qtree is clicked
-        """
-        print('fsdfsd')
-        funcname = __name__ + '__item_clicked()'
-        logger.debug(funcname)
-        print('Item',item)
-        try:
-            print('Address1',item.raddress)
-        except:
-            logger.info('Could not get address',exc_info=True)
-            pass
 
-        raddress = item.raddress
-        fstr1 = raddress.get_expand_explicit_str(address_format='/p/d/k')
-        raddress_metadata = RedvyprAddress(fstr1)
-        print('Raddress_metadata',raddress_metadata)
-        metadata = self.device.get_metadata(raddress_metadata,mode='list')
-        print('Got metadata',metadata)
-        #print('Got metadata (keys)', metadata.keys())
 
