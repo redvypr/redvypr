@@ -9,7 +9,7 @@ from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.widgets.redvyprSubscribeWidget import redvyprSubscribeWidget
 #from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget,
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, dictQTreeWidget
-from redvypr.widgets.redvypr_addressWidget import datastreamWidget, datastreamsWidget
+from redvypr.widgets.redvyprAddressWidget import datastreamWidget, datastreamsWidget, datastreamMetadataWidget
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import RedvyprMetadata, RedvyprDeviceMetadata
 import redvypr.files as files
@@ -629,10 +629,10 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         self.sublist = QtWidgets.QListWidget()
         #self.subBtn = QtWidgets.QPushButton('Subscribe')
         #self.subBtn.clicked.connect(self.connect_clicked)
-        self.metadataBtn = QtWidgets.QPushButton('Edit Metadata')
+        self.metadataBtn = QtWidgets.QPushButton('Edit Device Metadata')
         self.metadataBtn.clicked.connect(self.metadata_clicked)
         if self.device.publishes:
-            self.ddBtn = QtWidgets.QPushButton('Show datastreams')
+            self.ddBtn = QtWidgets.QPushButton('Edit Datastream Metadata')
             self.ddBtn.clicked.connect(self.data_devices_clicked)
         self.confBtn = QtWidgets.QPushButton('Configure')
         self.confBtn.clicked.connect(self.config_clicked)
@@ -666,7 +666,8 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         device_filter_address = RedvyprAddress(uuid=self.device.address.uuid,publisher=self.device.address.publisher)
         filter_include = [device_filter_address]
         #print('Filter include',filter_include)
-        self.data_device_widget = datastreamWidget(redvypr=self.device.redvypr,filter_include=filter_include)
+        #self.data_device_widget = datastreamWidget(redvypr=self.device.redvypr,filter_include=filter_include)
+        self.data_device_widget = datastreamMetadataWidget(redvypr=self.device.redvypr, device=self.device, filter_include=filter_include)
         self.data_device_widget.setWindowTitle(self.device.name)
         self.data_device_widget.show()
 
@@ -680,21 +681,29 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
     def metadata_clicked(self):
         funcname = __name__ + '.metadata_clicked():'
         logger.debug(funcname)
-        metadata = copy.deepcopy(self.device.statistics['metadata'])
-        metadata = RedvyprDeviceMetadata()
+        metadata_device = copy.deepcopy(self.device.statistics['metadata'])
+        deviceAddress = RedvyprAddress(devicename=self.device.name)
+        try:
+            metadata_raw = metadata_device[deviceAddress.address_str]
+        except:
+            logger.info('Could not load metadata', exc_info=True)
+            metadata_raw = {}
+
+        metadata = RedvyprDeviceMetadata(**metadata_raw)
         print('Metadata',metadata)
         self.__metadata_edit = metadata
-        self.metadata_config = pydanticConfigWidget(metadata)
+        self.__metadata_address = deviceAddress
+        self.metadata_config = pydanticConfigWidget(metadata, configname=deviceAddress.address_str)
         self.metadata_config.config_editing_done.connect(self.metadata_config_apply)
         self.metadata_config.show()
 
     def metadata_config_apply(self):
         funcname = __name__ + '.metadata_config_apply():'
         logger.debug(funcname)
-        deviceAddress = RedvyprAddress(devicename=self.device.name)
+
         print('Metadata new',self.__metadata_edit)
         metadata = self.__metadata_edit.model_dump()
-        self.device.set_metadata(deviceAddress,metadata)
+        self.device.set_metadata(self.__metadata_address, metadata)
 
     def statistics_clicked(self):
         funcname = __name__ + '.statistics_clicked():'

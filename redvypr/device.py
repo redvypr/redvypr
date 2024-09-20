@@ -1213,7 +1213,7 @@ class RedvyprDevice(QtCore.QObject):
 
         return info_dict
 
-    def get_metadata(self, address):
+    def get_metadata(self, address,mode='merge'):
         """
         Gets the metadata of the redvypr address
         :param address:
@@ -1221,7 +1221,7 @@ class RedvyprDevice(QtCore.QObject):
         """
         funcname = __name__ + '.get_metadata():'
         self.logger.debug(funcname)
-        metadata = redvypr.packet_statistic.get_metadata(self.statistics,address)
+        metadata = redvypr.packet_statistic.get_metadata(self.statistics,address,mode=mode)
         return metadata
 
     def set_metadata(self, address, metadata):

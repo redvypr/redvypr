@@ -1015,8 +1015,10 @@ Opens an "about" widget showing basic information.
         self._about_widget.show()
 
     def show_deviceselect(self):
-        #self.__deviceselect__ = redvypr.widgets.redvypr_addressWidget.datastreamsWidget(redvypr=self.redvypr_widget.redvypr)
-        self.__deviceselect__ = redvypr.widgets.redvypr_addressWidget.datastreamWidget(
+        #self.__deviceselect__ = redvypr.widgets.redvyprAddressWidget.datastreamWidget(
+        #    redvypr=self.redvypr_widget.redvypr)
+
+        self.__deviceselect__ = redvypr.widgets.redvyprAddressWidget.datastreamQTreeWidget(
             redvypr=self.redvypr_widget.redvypr)
         self.__deviceselect__.show()
 

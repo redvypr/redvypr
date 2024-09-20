@@ -237,7 +237,7 @@ def get_metadata(statistics, address, mode='merge'):
         if raddress.datakeyeval == False:
             if raddr in raddress:
                 metadata = statistics['metadata'][astr]
-                print('Metadata', metadata)
+                #print('Metadata', metadata)
                 if mode == 'merge':
                     metadata_return.update(metadata)
                 else:
@@ -252,15 +252,14 @@ def get_metadata(statistics, address, mode='merge'):
                 datakey_construct_new = datakey_construct_new + '[' + json.dumps(dentry) + ']'
 
             raddress_construct = RedvyprAddress(address, datakey=datakey_construct_new)
-            print('Constructed address {}'.format(raddress_construct))
+            #print('Constructed address {}'.format(raddress_construct))
             if raddr in raddress_construct:
                 metadata = statistics['metadata'][astr]
-                print('Metadata', metadata)
+                #print('Metadata', metadata)
                 if mode == 'merge':
                     metadata_return.update(metadata)
                 else:
                     metadata_return.append({astr: metadata})
-
 
     return metadata_return
 

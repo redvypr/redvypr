@@ -314,6 +314,40 @@ class RedvyprAddress():
         #print(parsed_addrstr)
         return parsed_addrstr,parsed_addrstr_expand
 
+    def get_fullstr(self):
+        address_format = '/u/a/h/d/p/i/k/'
+        self.get_str(address_format)
+
+    def get_expand_explicit_str(self, address_format = '/u/a/h/d/p/i/k/'):
+        """
+        Returns a string that searches explicitly for the expandsymbol.
+        This is useful to match with addresses with the expandsymbel defined but
+        not with addresses that have a real value in the address entry::
+
+            r1 = RedvyprAddress('/d:test/k:*')
+            r2 = RedvyprAddress('/d:test/k:somekey')
+            r1.get_expand_explicit_str('/d/k') # yields '/d:test/k:{\\*}/'
+            r1_exp = RedvyprAddress(r1.get_expand_explicit_str('/d/k'))
+            print("r1: {}".format(r1)) # r1: RedvyprAddress('''/d:test/k:*''')
+            print("r1_exp: {}".format(r1_exp)) # r1_exp: RedvyprAddress('''/d:test/k:{\*}/''')
+            print("r2: {}".format(r2)) # r2: RedvyprAddress('''/d:test/k:somekey''')
+            print("r2 in r1: {}".format(r2 in r1)) # r2 in r1: True
+            print("r2 in r1_exp: {}".format(r2 in r1_exp)) # r2 in r1_exp: False
+
+        :return:
+        """
+        address_str = self.__delimiter_parts
+        addr_ids = address_format.split(self.__delimiter_parts)
+        for a_id in addr_ids:
+            if len(a_id) > 0:
+                addr_id = self.__add_entries_short[a_id]
+                addr_id_data = self.parsed_addrstr[addr_id]
+                if (addr_id_data is None) or (addr_id_data == '*'):
+                    addr_id_data = '{\*}'
+                address_str += a_id + self.__delimiter_id + addr_id_data + self.__delimiter_parts
+
+        return address_str
+
 
     def get_str(self, address_format = '/u/a/h/d/p/i/k/'):
         """

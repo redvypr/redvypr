@@ -8,7 +8,7 @@ import pydantic
 from pydantic.color import Color as pydColor
 import typing
 from redvypr.device import RedvyprDevice
-from redvypr.widgets.redvypr_addressWidget import RedvyprAddressWidgetSimple, RedvyprAddressWidget
+from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidgetSimple, RedvyprAddressWidget
 import redvypr.files as files
 from redvypr.redvypr_address import RedvyprAddress
 
