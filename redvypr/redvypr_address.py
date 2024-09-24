@@ -371,11 +371,15 @@ class RedvyprAddress():
         return address_str
 
     def compare_address_substrings(self, str1, str2):
-        if str1 == '' and str2 == '':
-            return True
-        elif str1 == '' or str2 == '':
-            return False
-        elif str1 == '*' or str2 == '*':
+        #if str1 == '' and str2 == '':
+        #    return True
+        #elif str1 == '' or str2 == '':
+        #    return False
+        if str1 is None:
+            str1 = ''
+        if str2 is None:
+            str2 = ''
+        if str1 == '*' or str2 == '*':
             return True
         elif str1.startswith(self.__regex_symbol_start) and str1.endswith(self.__regex_symbol_end) and len(str1) > 1:
             if str2.startswith(self.__regex_symbol_start) and str2.endswith(self.__regex_symbol_end):

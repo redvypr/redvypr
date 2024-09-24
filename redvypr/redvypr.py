@@ -37,6 +37,9 @@ import redvypr.devices as redvyprdevices
 import faulthandler
 faulthandler.enable()
 
+# Collect all logger
+logger_all = [data_packets.logger, redvypr_address.logger, redvypr_packet_statistic.logger]
+
 # Platform information str
 __platform__ = "redvypr (REaltime Data Vi(Y)ewer and PRocessor (in Python))\n"
 __platform__ += "\n\n"
@@ -104,9 +107,6 @@ def create_hostinfo(hostname='redvypr'):
     hostinfo = {'hostname': hostname, 'tstart': time.time(), 'addr': get_ip(), 'uuid': redvyprid}
     return hostinfo
 
-
-
-
 def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, dt=0.01):
     """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
     """
@@ -167,6 +167,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         break
                 # Process read packets
                 for data_list in data_all:
+                    data_packets_fan_out = []
                     data = data_list[0]
                     numpacket = data_list[1]
 
@@ -177,7 +178,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     redvypr_packet_statistic.treat_datadict(data, device.name, hostinfo, numpacket, tread,devicedict['devicemodulename'])
                     # Get the devicename using an address
                     raddr = redvypr_address.RedvyprAddress(data)
-                    #print('data',data)
+                    print('distribute data',data)
                     #print('Raddr',raddr)
                     #print('Raddr str', raddr.address_str)
                     devicename_stat = raddr.address_str
@@ -185,7 +186,8 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     #
                     # Do statistics
                     try:
-                        devicedict['statistics'] = redvypr_packet_statistic.do_data_statistics(data, devicedict['statistics'], address_data=raddr)
+                        devicedict['statistics'], status_statistics = redvypr_packet_statistic.do_data_statistics(data, devicedict['statistics'], address_data=raddr)
+                        print('Statistic status',status_statistics)
                     except Exception as e:
                         logger.debug(funcname + ':Statistics:',exc_info=True)
 
@@ -223,13 +225,28 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                             infoqueue.put_nowait(devinfo_send)
 
                     #
-                    # Create a dictionary of all devices
+                    # Collect the individual dictionaries into one global deviceinfo
                     #
                     try:
-                        deviceinfo_all[device.name].update(devicedict['statistics']['device_redvypr'])
+                        deviceinfo_all['device_redvypr'][device.name].update(devicedict['statistics']['device_redvypr'])
                     except:
-                        deviceinfo_all[device.name] = devicedict['statistics']['device_redvypr']
+                        deviceinfo_all['device_redvypr'][device.name] = devicedict['statistics']['device_redvypr']
 
+                    # Update metadata
+                    if status_statistics['metadata_changed']:
+                        try:
+                            deviceinfo_all['metadata'][device.name].update(
+                                devicedict['statistics']['metadata'])
+                        except:
+                            deviceinfo_all['metadata'][device.name] = devicedict['statistics']['metadata']
+
+                        # Send a deviceinfo update with the changed metadata
+                        compacket = data_packets.commandpacket('info',host=hostinfo,devicename='',packetid='metadata',publisher='')
+                        compacket['deviceinfo_all'] = copy.deepcopy(deviceinfo_all)
+                        redvypr_packet_statistic.treat_datadict(compacket, '', hostinfo, 0, tread,
+                                                                'distribute_data')
+                        data_packets_fan_out.append(compacket)
+                        print('Sending metadata update with compacket',redvypr_address.RedvyprAddress(compacket))
                     #
                     # Compare if datastreams changed
                     #
@@ -254,31 +271,36 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         if(devicesub == device): # Not to itself
                             continue
 
+                        data_packets_fan_out.append(data)
                         for addr in devicesub.subscribed_addresses: # Loop over all subscribed redvypr_addresses
                             # This is the main functionality for distribution, comparing a datapacket with a
                             # redvypr_address using "in"
                             #print('DAta',data)
                             #print('Addr', addr)
                             #print('DAta in add', data in addr)
-                            if (data in addr) and (numtag < 2): # Check if data packet fits with addr and if its not recirculated again
-                                try:
-                                    #print(funcname + 'data to be sent',data)
-                                    devicesub.datainqueue.put_nowait(data) # These are the datainqueues of the subscribing devices
-                                    devicedict_sub['statistics']['packets_received'] += 1
-                                    #print(devicedict_sub['statistics']['packets_received'])
+
+                            for data_packet in data_packets_fan_out:
+                                numtag_packet = data['_redvypr']['tag'][hostinfo['uuid']]
+                                print('Testing packet',redvypr_address.RedvyprAddress(data_packet),numtag_packet,(data_packet in addr))
+                                if (data_packet in addr) and (numtag_packet < 2): # Check if data packet fits with addr and if its not recirculated again
                                     try:
-                                        devicedict_sub['statistics']['packets'][devicename_stat]
-                                    except:
-                                        devicedict_sub['statistics']['packets'][devicename_stat] = {'received':0,'published':0}
-                                    devicedict_sub['statistics']['packets'][devicename_stat]['received'] += 1
-                                    #print('Sent data to',devicename_stat,devicedict_sub['packets_received'])
-                                    break
-                                except Exception as e:
-                                    #logger.exception(e)
-                                    thread_status = devicesub.get_thread_status()
-                                    if thread_status['thread_running']:
-                                        devicedict['statistics']['packets_dropped'] += 1
-                                    logger.debug(funcname + ':dataout of :' + devicedict_sub['device'].name + ' full: ' + str(e), exc_info=True)
+                                        #print(funcname + 'data to be sent',data)
+                                        devicesub.datainqueue.put_nowait(data_packet) # These are the datainqueues of the subscribing devices
+                                        devicedict_sub['statistics']['packets_received'] += 1
+                                        #print(devicedict_sub['statistics']['packets_received'])
+                                        try:
+                                            devicedict_sub['statistics']['packets'][devicename_stat]
+                                        except:
+                                            devicedict_sub['statistics']['packets'][devicename_stat] = {'received':0,'published':0}
+                                        devicedict_sub['statistics']['packets'][devicename_stat]['received'] += 1
+                                        #print('Sent data to',devicename_stat,devicedict_sub['packets_received'])
+                                        break
+                                    except Exception as e:
+                                        #logger.exception(e)
+                                        thread_status = devicesub.get_thread_status()
+                                        if thread_status['thread_running']:
+                                            devicedict['statistics']['packets_dropped'] += 1
+                                        logger.debug(funcname + ':dataout of :' + devicedict_sub['device'].name + ' full: ' + str(e), exc_info=True)
 
                     # Fan out the datapacket into the guiqueues of the device
                     for (guiqueue,widget) in devicedict['guiqueues']:  # Put data into the guiqueue, this queue does always exist
@@ -367,7 +389,7 @@ class Redvypr(QtCore.QObject):
         self.devices = []  # List containing dictionaries with information about all attached devices
         self.device_paths = []  # A list of pathes to be searched for devices
         self.datastreams_dict = {} # Information about all datastreams, this is updated by distribute data
-        self.deviceinfo_all = {} # Information about all devices, this is updated by distribute data
+        self.deviceinfo_all = {'device_redvypr':{},'metadata':{}} # Information about all devices, this is updated by distribute data
 
         self.packets_counter = 0 # Counter for the total number of packets processed
         self.dt_datadist = 0.01  # The time interval of datadistribution
@@ -724,7 +746,7 @@ class Redvypr(QtCore.QObject):
                             ndevices += 1
 
                     if ndevices >= device_parameter.maxdevices:
-                        logger.warning(funcname + ' Could not add {:s}, maximum number of {:d} devices reached'.format(devicemodulename,maxdevices))
+                        logger.warning(funcname + ' Could not add {:s}, maximum number of {:d} devices reached'.format(devicemodulename,device_parameter.maxdevices))
                         return
 
                 # If the device does not have a name, add a standard but unique one
@@ -823,6 +845,9 @@ class Redvypr(QtCore.QObject):
                                     statusqueue=statusqueue, guiqueues=guiqueues,
                                     statistics=statistics, startfunction=startfunction)
 
+                    # Subscribe to info packets from redvypr itself
+                    a = '/d:/p:/i:metadata/k:_redvypr_command'
+                    device.subscribe_address(a)
                     device.subscription_changed_signal.connect(self.process_subscription_changed)
                     self.numdevice += 1
                     # If the device has a logger
@@ -1129,12 +1154,15 @@ class Redvypr(QtCore.QObject):
         packetids.sort()
         return packetids
 
-    def get_metadata(self, address):
+    def get_metadata(self, address, publisher_strict=False, mode='merge'):
         funcname = __name__ + 'get_metadata():'
-        metadata = {}
-        for dev in self.devices:
-            mdata = dev['device'].get_metadata(address)
-            metadata.update(mdata)
+        logger.debug(funcname)
+        deviceinfo_all = self.get_deviceinfo()
+        metadata = redvypr_packet_statistic.get_metadata_deviceinfo_all(deviceinfo_all, address=address, publisher_strict=publisher_strict, mode=mode)
+        #metadata = {}
+        #for dev in self.devices:
+        #    mdata = dev['device'].get_metadata(address)
+        #    metadata.update(mdata)
 
         return metadata
 

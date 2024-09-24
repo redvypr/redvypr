@@ -5,6 +5,7 @@ from .redvypr_address import RedvyprAddress
 import redvypr.data_packets as data_packets
 import time
 import json
+import deepdiff
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr_packet_statistics')
@@ -107,10 +108,12 @@ def rem_device_from_statistics(deviceaddress, statdict):
 def do_data_statistics(data, statdict, address_data = None):
     """
     Fills in the statistics dictionary with the data packet information
-    Args:
-        data:
-        statdict:
+    :param data:
+    :param statdict:
+    :param address_data:
+    :return: statdict, status
     """
+    status = {'metadata_changed':False}
     if address_data is None:
         raddr = RedvyprAddress(data)
     else:
@@ -152,11 +155,22 @@ def do_data_statistics(data, statdict, address_data = None):
     try:
         for address_str_metadata in data['_metadata'].keys():
             metadata = data['_metadata'][address_str_metadata]
+            deephash = deepdiff.DeepHash(metadata)[metadata]
             try:
-                statdict['metadata'][address_str_metadata]
+                metadata_orig = statdict['metadata'][address_str_metadata]
             except:
                 statdict['metadata'][address_str_metadata] = {}
-            statdict['metadata'][address_str_metadata].update(metadata)
+                metadata_orig = statdict['metadata'][address_str_metadata]
+
+            deephash_orig = deepdiff.DeepHash(metadata_orig)[metadata_orig]
+            # Check if there is a difference, if yes, update
+            if deephash != deephash_orig:
+                #print('Updating metadata')
+                statdict['metadata'][address_str_metadata].update(metadata)
+                status['metadata_changed'] = True
+            else:
+                #print('Same metadata, doing nothing')
+                pass
     except:
         pass
 
@@ -178,7 +192,7 @@ def do_data_statistics(data, statdict, address_data = None):
     #print('Datakeys expanded',datakeys_expanded)
     statdict['device_redvypr'][address_str]['datakeys_expanded'].update(datakeys_expanded)
 
-    return statdict
+    return statdict, status
 
 
 
@@ -205,6 +219,39 @@ def get_keys_from_data(data):
 
     return keys
 
+def get_metadata_deviceinfo_all(statistics, address, publisher_strict=True,  mode='merge'):
+    """
+    Gets the metadata from a deviceinfo_all dict retreived with
+    redvypr.get_deviceinfo()
+
+    :param statistics:
+    :param address:
+    :param publisher_strict:
+    :param mode:
+    :return:
+    """
+    funcname = __name__ + '.get_metadata_deviceinfo_all():'
+    logger.debug(funcname + '{}'.format(address))
+    metadata = {}
+    raddress = RedvyprAddress(address)
+    if publisher_strict:
+        publisher_key = raddress.publisher
+        print('Publisher key',publisher_key)
+        try:
+            #mdata_device = statistics['metadata'][publisher_key]
+            mdata_device = {'metadata': statistics['metadata'][publisher_key]}
+            mdata = get_metadata(mdata_device, address, mode)
+            metadata.update(mdata)
+        except:
+            logger.debug('Could not find publisher for address {}'.format(raddress),exc_info=True)
+    else:
+        print('Statistics keys',statistics.keys())
+        for dev in statistics['metadata'].keys():
+            mdata_device = {'metadata': statistics['metadata'][dev]}
+            mdata = get_metadata(mdata_device, address, mode)
+            metadata.update(mdata)
+
+    return metadata
 
 def get_metadata(statistics, address, mode='merge'):
     """

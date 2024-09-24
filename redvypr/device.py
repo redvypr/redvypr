@@ -1239,6 +1239,7 @@ class RedvyprDevice(QtCore.QObject):
         datapacket['_metadata'][address_str] = metadata
         self.dataqueue.put(datapacket)
         data = self.distribute_data_replyqueue.get()
+        self.logger.debug(funcname + 'Metadata sent')
 
     def set_metadata_entry(self, address, metadata_key='unit', metadata_entry=None):
         """

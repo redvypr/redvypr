@@ -279,7 +279,7 @@ def add_metadata2datapacket(datapacket, address=None, datakey=None, metakey=None
 
 
 
-def commandpacket(command='stop',device_uuid='',thread_uuid='',devicename = None, host = None, comdata=None,devicemodulename=None):
+def commandpacket(command='stop',device_uuid='',thread_uuid='',packetid=None,devicename=None,publisher=None,host=None,comdata=None,devicemodulename=None):
     """
 
     Args:
@@ -292,8 +292,12 @@ def commandpacket(command='stop',device_uuid='',thread_uuid='',devicename = None
          compacket: A redvypr dictionary with the command
     """
     compacket = create_datadict({'command':command}, datakey='_redvypr_command') # The command
+    if packetid is not None:
+        compacket['_redvypr']['packetid'] = packetid  # The device the command was sent from
     if devicename is not None:
         compacket['_redvypr']['device'] = devicename  # The device the command was sent from
+    if publisher is not None:
+        compacket['_redvypr']['publisher'] = publisher
     if host is not None:
         compacket['_redvypr']['host'] = host
     if devicemodulename is not None:
@@ -343,6 +347,7 @@ def check_for_command(datapacket=None,uuid=None,thread_uuid=None,add_data=False)
     Returns:
         command: content of the field 'redvypr_device_command', typically a string
     """
+    flags = {}
     if '_redvypr_command' not in datapacket.keys():
         if(add_data):
             return [None,None]
@@ -353,7 +358,9 @@ def check_for_command(datapacket=None,uuid=None,thread_uuid=None,add_data=False)
         FLAG_COM2 = 'device_uuid' in datapacket['_redvypr_command'].keys()
         FLAG_COM3 = 'thread_uuid' in datapacket['_redvypr_command'].keys()
         command = None
-        if (FLAG_COM1 and FLAG_COM2):
+        flags['com'] = FLAG_COM1
+        if FLAG_COM1:
+
             if(uuid is not None):
                 FLAG_UUID = datapacket['_redvypr_command']['device_uuid'] == uuid
             else:
@@ -364,14 +371,14 @@ def check_for_command(datapacket=None,uuid=None,thread_uuid=None,add_data=False)
             else:
                 FLAG_TUUID = True
 
-            if(FLAG_UUID and FLAG_TUUID):
-                command = datapacket['_redvypr_command']['command']
+            flags['device_uuid'] = FLAG_UUID
+            flags['thread_uuid'] = FLAG_TUUID
+            command = datapacket['_redvypr_command']['command']
 
         if(add_data):
-            return [command,datapacket['_redvypr_command']]
+            return [command,{'command_data':datapacket['_redvypr_command'],'flags':flags}]
         else:
             return command
-
 
 
 #__rdvpraddr__ = redvypr_address('tmp')

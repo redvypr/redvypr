@@ -187,14 +187,24 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
         while(datainqueue.empty() == False):
             try:
                 data = datainqueue.get(block=False)
+                print('xlsxlogger: Got data',data)
                 if (data is not None):
                     [command,comdata] = data_packets.check_for_command(data, thread_uuid=device_info['thread_uuid'], add_data=True)
-                    #logger.debug('Got a command: {:s}'.format(str(data)))
+                    logger.debug('Got a command: {:s}'.format(str(data)))
+                    logger.debug('Command: {:s}'.format(str(command)))
+                    print('Command', command)
                     if (command is not None):
                         if(command == 'stop'):
                             logger.debug('Stop command')
                             FLAG_RUN = False
                             break
+
+                        if (command == 'info'):
+                            logger.warning('Metadata command')
+                            print('xlsxlogger METADATA')
+                            FLAG_RUN = False
+                            return
+                            #break
 
                 #statistics = data_packets.do_data_statistics(data,statistics)
                 packet_address = redvypr.RedvyprAddress(data)
