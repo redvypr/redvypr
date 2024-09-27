@@ -22,11 +22,14 @@ import typing
 from redvypr.device import RedvyprDevice
 import redvypr.data_packets as data_packets
 import redvypr.redvypr_address as redvypr_address
+import redvypr.packet_statistic as packet_statistics
 import redvypr.gui
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('xlsxlogger')
 logger.setLevel(logging.DEBUG)
+
+time_format = 'yyyy-mm-dd HH:MM:SS.000'
 
 redvypr_devicemodule = True
 class DeviceBaseConfig(pydantic.BaseModel):
@@ -53,7 +56,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
     filedateformat:str= pydantic.Field(default='%Y-%m-%d_%H%M%S',description='Dateformat used in the filename, must be understood by datetime.strftime')
     filecountformat:str= pydantic.Field(default='04',description='Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}')
 
-def create_logfile(config,count=0):
+def create_logfile(config,count=0,all_worksheets={}):
     funcname = __name__ + '.create_logfile():'
     logger.debug(funcname)
 
@@ -86,10 +89,72 @@ def create_logfile(config,count=0):
 
     # Create a workbook and add a worksheet.
     workbook = xlsxwriter.Workbook(filename)
-    date_format = workbook.add_format({'num_format': 'yyyy-mm-dd HH:MM:SS.000'})
+    date_format = workbook.add_format({'num_format': time_format})
     formats = {}
     formats['date'] = date_format
+
+    worksheet_summary = workbook.add_worksheet('summary')
+    redvypr_version_str = 'redvypr {}'.format(redvypr.version)
+    worksheet_summary.write(0, 0, redvypr_version_str)
+    all_worksheets['summary'] = worksheet_summary
+    all_worksheets['metadata'] = workbook.add_worksheet('metadata')
+    all_worksheets['metadata_indices'] = {'rows': ['unit'], 'columns': []}
+    # Add unit in the metadata as the first entry
+    rowind_write = 2
+    colind_datakey = 0
+    # Write the metakey in the correct row
+    all_worksheets['metadata'].write(0, 0, 'Metadata key')
+    all_worksheets['metadata'].write(rowind_write, colind_datakey, 'unit')
+
     return [workbook,filename,formats]
+
+def write_metadata(workbook, all_worksheets, datakey, data, deviceinfo_all, device_info, config):
+    funcname = 'write_metadata():'
+    raddress_tmp = redvypr_address.RedvyprAddress(data, datakey=datakey)
+    raddress_tmp_str = raddress_tmp.get_str('/h/d/i/k')
+    raddress_tmp_str_full = raddress_tmp.get_fullstr()
+    metadata_tmp = packet_statistics.get_metadata_deviceinfo_all(deviceinfo_all, raddress_tmp)
+    #print('Metadata tmp', raddress_tmp, metadata_tmp)
+    #device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
+    if len(metadata_tmp.keys())>0: # Check if something was found
+        #print('Found metadata')
+        #print('All worksheets', all_worksheets)
+        try:
+            datakey_unit =metadata_tmp['unit']
+        except:
+            datakey_unit = None
+        for metakey in metadata_tmp.keys():
+            # Got the rows and columns
+            try:
+                rowind = all_worksheets['metadata_indices']['rows'].index(metakey)
+                rowind_write = rowind + 2
+            except:
+                all_worksheets['metadata_indices']['rows'].append(metakey)
+                rowind = all_worksheets['metadata_indices']['rows'].index(metakey)
+                rowind_write = rowind + 2
+                colind_datakey = 0
+                # Write the metakey in the correct row
+                all_worksheets['metadata'].write(0, 0, 'Metadata key')
+                all_worksheets['metadata'].write(rowind_write, colind_datakey, metakey)
+
+            try:
+                colind = all_worksheets['metadata_indices']['columns'].index(raddress_tmp_str)
+                colind_write = colind + 1
+            except:
+                all_worksheets['metadata_indices']['columns'].append(raddress_tmp_str)
+                colind = all_worksheets['metadata_indices']['columns'].index(raddress_tmp_str)
+                colind_write = colind + 1
+                rowind_write_col = 0
+                all_worksheets['metadata'].write(rowind_write_col, colind_write, raddress_tmp_str)
+                all_worksheets['metadata'].write(rowind_write_col+1, colind_write, raddress_tmp_str_full)
+
+            #print('Writing metadata for address')
+            datawrite = metadata_tmp[metakey]
+
+            all_worksheets['metadata'].write(rowind_write, colind_write, datawrite)
+
+        all_worksheets['metadata'].autofit()
+        return datakey_unit
 
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
@@ -104,6 +169,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
     data_write_to_file = [] # List of columns to be written to file
     count = 0
+    all_worksheets = {}
+    deviceinfo_all = None
     if True:
         try:
             dtneworig  = config['dt_newfile']
@@ -117,7 +184,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             else:
                 dtfac = 0
                 
-            dtnews     = dtneworig * dtfac
+            dtnews = dtneworig * dtfac
             logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
         except Exception as e:
             logger.exception(e)
@@ -155,10 +222,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     device_worksheets_reduced = {} # The worksheets for the devices
     device_worksheets_indices = {}
     numworksheet = 0
-    [workbook,filename,formats] = create_logfile(config,count)
-    worksheet_summary = workbook.add_worksheet('summary')
-    redvypr_version_str = 'redvypr {}'.format(redvypr.version)
-    worksheet_summary.write(0,0,redvypr_version_str)
+    [workbook,filename,formats] = create_logfile(config,count,all_worksheets)
+    worksheet_summary = all_worksheets['summary']
+
     data_stat = {'_deviceinfo': {}}
     data_stat['_deviceinfo']['filename'] = filename
     data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
@@ -187,13 +253,15 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
         while(datainqueue.empty() == False):
             try:
                 data = datainqueue.get(block=False)
+                packet_address = redvypr.RedvyprAddress(data)
                 print('xlsxlogger: Got data',data)
+
                 if (data is not None):
                     [command,comdata] = data_packets.check_for_command(data, thread_uuid=device_info['thread_uuid'], add_data=True)
-                    logger.debug('Got a command: {:s}'.format(str(data)))
-                    logger.debug('Command: {:s}'.format(str(command)))
-                    print('Command', command)
                     if (command is not None):
+                        logger.debug('Got a command: {:s}'.format(str(data)))
+                        logger.debug('Command: {:s}'.format(str(command)))
+                        print('Command', command)
                         if(command == 'stop'):
                             logger.debug('Stop command')
                             FLAG_RUN = False
@@ -202,18 +270,30 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         if (command == 'info'):
                             logger.warning('Metadata command')
                             print('xlsxlogger METADATA')
-                            FLAG_RUN = False
-                            return
+                            if packet_address.packetid == 'metadata':
+                                deviceinfo_all = data['deviceinfo_all']
+                                print('Got new metadata',deviceinfo_all)
+
+                            #FLAG_RUN = False
+                            #return
                             #break
 
                 #statistics = data_packets.do_data_statistics(data,statistics)
-                packet_address = redvypr.RedvyprAddress(data)
                 address_format = '/h/p/d/'
                 packet_address_str = packet_address.get_str(address_format)
+
                 #print('Address',packet_address)
                 row_datakey = 1
+                row_dataunit = 2
                 row_firstdata = 3
-                coloffset = 1
+                colindex_time = 1
+                colindex_numpacket = 0
+                coloffset = colindex_time + 1
+                # Ignore some packages
+                if data in redvypr_address.RedvyprAddress(redvypr.metadata_address):
+                    logger.debug('Ignoring metadata packet')
+                    continue
+
                 try:
                     device_worksheets[packet_address_str]
                 except:
@@ -233,7 +313,10 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     device_worksheets_indices[packet_address_str] = {'datakeys':[],'numline':0,'colindex':{}}
                     device_worksheets_indices[packet_address_str]['worksheet'] = packet_address_str_xlsx
                     device_worksheets_reduced[packet_address_str] = "worksheet: {}, #written: {}".format(packet_address_str_xlsx,0)
-                    device_worksheets[packet_address_str].write(row_datakey, 0, 'Excel time')
+                    device_worksheets[packet_address_str].write(row_datakey, colindex_time, 'Excel time')
+                    device_worksheets[packet_address_str].write(row_dataunit, colindex_time, time_format)
+                    device_worksheets[packet_address_str].write(row_datakey, colindex_numpacket, 'Numpacket')
+                    device_worksheets[packet_address_str].write(row_dataunit, colindex_numpacket, '#')
                     status = {'some cool status':4}
                     #statuspacket = redvypr.data_packets.statuspacket(device_info['address_str'],status)
                     #print('STATUSPACKET!!!')
@@ -263,28 +346,47 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     except:
                         data['t'] = data['_redvypr']['t']
 
+                    try:
+                        numpacket = data['_redvypr']['numpacket']
+                    except:
+                        numpacket = -1
+
                     datapacket = data_packets.Datapacket(data)
                     datakeys = datapacket.datakeys(expand=config['datakey_expansionlevel'],return_type='list')
                     #print('datakeys',datakeys)
+                    lineindex = row_firstdata + device_worksheets_indices[packet_address_str]['numline']
+                    # Write numpacket
+                    device_worksheets[packet_address_str].write(lineindex, colindex_numpacket, numpacket)
+                    # Write time
                     datakeys.remove('t')
                     datakeys.insert(0,'t')
-                    # Write data in datakeys
-                    # Write time
-                    colindex_time = 0
-                    lineindex = row_firstdata + device_worksheets_indices[packet_address_str]['numline']
                     datatime = datetime.datetime.fromtimestamp(data['t'])
                     device_worksheets[packet_address_str].write_datetime(lineindex, colindex_time, datatime,formats['date'])
-                    for k in datakeys:
-                        try:
-                            colindex = device_worksheets_indices[packet_address_str]['colindex'][k]
-                        except:
-                            device_worksheets_indices[packet_address_str]['datakeys'].append(k)
-                            colindex = len(device_worksheets_indices[packet_address_str]['datakeys']) - 1 + coloffset
-                            device_worksheets_indices[packet_address_str]['colindex'][k] = colindex
-                            device_worksheets[packet_address_str].write(row_datakey,colindex,k)
+                    # Write data in datakeys
+                    for datakey in datakeys:
 
+                        # Get metadata
+                        if deviceinfo_all is not None:
+                            datakey_unit = write_metadata(workbook, all_worksheets, datakey, data, deviceinfo_all, device_info, config)
+                        else:
+                            #print('No metadata to check for')
+                            datakey_unit = None
+
+                        if (datakey == 't') and (datakey_unit is None):
+                            datakey_unit = 'unix time'
+
+                        try:
+                            colindex = device_worksheets_indices[packet_address_str]['colindex'][datakey]
+                        except:
+                            device_worksheets_indices[packet_address_str]['datakeys'].append(datakey)
+                            colindex = len(device_worksheets_indices[packet_address_str]['datakeys']) - 1 + coloffset
+                            device_worksheets_indices[packet_address_str]['colindex'][datakey] = colindex
+                            device_worksheets[packet_address_str].write(row_datakey,colindex,datakey)
+
+                        if datakey_unit is not None:
+                            device_worksheets[packet_address_str].write(row_dataunit, colindex, datakey_unit)
                         #print('Will write data from {} to column {} and line {}'.format(packet_address_str, colindex,lineindex))
-                        datawrite = datapacket[k]
+                        datawrite = datapacket[datakey]
                         if not(isinstance(datawrite,str)) and not(isinstance(datawrite,int)) and not(isinstance(datawrite,float)):
                             #print('Datatype {} not supported, converting data to str'.format(str(type(datawrite))))
                             datawrite = str(datawrite)
@@ -314,9 +416,10 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     data_stat['_deviceinfo']['file_status_reduced'] = file_status_reduced
                     dataqueue.put(data_stat)
 
-            except Exception as e:
-                logger.exception(e)
-                logger.debug(funcname + ':Exception:' + str(e))
+            except:
+                logger.debug('Could not write data',exc_info=True)
+                #logger.exception(e)
+                #logger.debug(funcname + ':Exception:' + str(e))
                 # print(data)
 
         if True: # Check if a new file should be created, close the old one and write the header
@@ -329,7 +432,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 worksheet_summary.autofit()
                 for w in device_worksheets:
                     device_worksheets[w].autofit()
-                    device_worksheets[w].set_column(0, 0, 25)
+                    # Make the excel time column wider, autofit does not work properly here
+                    #device_worksheets[w].set_column(colindex_time, colindex_time, 25)
                 workbook.close()
                 data_stat = {'_deviceinfo': {}}
                 data_stat['_deviceinfo']['filename'] = filename
@@ -360,9 +464,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     device_worksheets_indices = {}
                     numworksheet = 0
                     [workbook, filename, formats] = create_logfile(config, count)
-                    worksheet_summary = workbook.add_worksheet('summary')
-                    redvypr_version_str = 'redvypr {}'.format(redvypr.version)
-                    worksheet_summary.write(0, 0, redvypr_version_str)
+                    worksheet_summary = all_worksheets['summary']
                     data_stat = {'_deviceinfo': {}}
                     data_stat['_deviceinfo']['filename'] = filename
                     data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
@@ -370,16 +472,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     data_stat['_deviceinfo']['bytes_written'] = bytes_written
                     data_stat['_deviceinfo']['packets_written'] = packets_written
                     dataqueue.put(data_stat)
-
-
-
-
-
-
-
-
-
-
 
 
 

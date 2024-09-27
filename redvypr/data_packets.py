@@ -178,8 +178,17 @@ class Datapacket(dict):
             else:
                 return (keys_expand, keys_dict_expand)
 
+    def datastreams(self, expand=True):
+        datakeys = self.datakeys(expand=expand,return_type='list')
+        daddresses = []
+        for d in datakeys:
+            daddr = redvypr_address.RedvyprAddress(self.address,datakey=d)
+            daddresses.append(daddr)
 
-    def datastreams(self):
+        return daddresses
+
+
+    def legacy_datastreams_legacy(self):
         """
         Returns the datastreams of the redvypr dictionary
         """

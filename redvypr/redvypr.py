@@ -57,7 +57,7 @@ logger = logging.getLogger('redvypr')
 logger.setLevel(logging.INFO)
 
 
-
+metadata_address = '/d:/p:/i:metadata/k:_redvypr_command'
 
 # Pydantic
 
@@ -136,9 +136,10 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
             except Exception as e:
                 redvyprdata = None
             # Process data from the main thread
+            # TODO, send notice to all devices
             if(redvyprdata is not None):
                 if(redvyprdata['type'] == 'device_removed'):
-                    print('Device removed',redvyprdata)
+                    logger.debug('Device removed {}'.format(redvyprdata))
                     FLAG_device_status_changed = True
                     devices_removed.append(redvyprdata['device'])
                     devinfo_rem = deviceinfo_all.pop(redvyprdata['device'])
@@ -146,7 +147,6 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     devinfo_send = {'type':'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all), 'devices_changed': list(set(devices_changed)),
                     'devices_removed': devices_removed,'change':'devrem','device_changed':redvyprdata['device']}
                     infoqueue.put_nowait(devinfo_send)
-
 
             for devicedict in devices:
                 device = devicedict['device']
@@ -170,24 +170,15 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     data_packets_fan_out = []
                     data = data_list[0]
                     numpacket = data_list[1]
-
-                    #rdata = data_packets.redvypr_datapacket(data)
-                    #print(rdata.datakeys())
-
                     # Add additional information, if not present yet
                     redvypr_packet_statistic.treat_datadict(data, device.name, hostinfo, numpacket, tread,devicedict['devicemodulename'])
-                    # Get the devicename using an address
+                    # Get the devicename
                     raddr = redvypr_address.RedvyprAddress(data)
-                    print('distribute data',data)
-                    #print('Raddr',raddr)
-                    #print('Raddr str', raddr.address_str)
                     devicename_stat = raddr.address_str
-                    #devicename_stat = data_packets.get_devicename_from_data(data, uuid=True)
-                    #
                     # Do statistics
                     try:
                         devicedict['statistics'], status_statistics = redvypr_packet_statistic.do_data_statistics(data, devicedict['statistics'], address_data=raddr)
-                        print('Statistic status',status_statistics)
+                        #print('Statistic status',status_statistics)
                     except Exception as e:
                         logger.debug(funcname + ':Statistics:',exc_info=True)
 
@@ -200,11 +191,8 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         if (command == 'reply'):  # status update
                             device.distribute_data_replyqueue.put_nowait(data)
                         elif (command == 'device_status'):  # status update
-                            #print('device status command',device.name)
-                            #print('comdata',comdata)
-                            #print('data', data)
                             try:
-                                devaddr   = comdata['data']['deviceaddr']
+                                devaddr = comdata['data']['deviceaddr']
                                 devstatus = comdata['data']['devicestatus']
                             except:
                                 devaddr = None
@@ -246,7 +234,6 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         redvypr_packet_statistic.treat_datadict(compacket, '', hostinfo, 0, tread,
                                                                 'distribute_data')
                         data_packets_fan_out.append(compacket)
-                        print('Sending metadata update with compacket',redvypr_address.RedvyprAddress(compacket))
                     #
                     # Compare if datastreams changed
                     #
@@ -275,13 +262,9 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         for addr in devicesub.subscribed_addresses: # Loop over all subscribed redvypr_addresses
                             # This is the main functionality for distribution, comparing a datapacket with a
                             # redvypr_address using "in"
-                            #print('DAta',data)
-                            #print('Addr', addr)
-                            #print('DAta in add', data in addr)
-
                             for data_packet in data_packets_fan_out:
                                 numtag_packet = data['_redvypr']['tag'][hostinfo['uuid']]
-                                print('Testing packet',redvypr_address.RedvyprAddress(data_packet),numtag_packet,(data_packet in addr))
+                                #print('Testing packet',redvypr_address.RedvyprAddress(data_packet),numtag_packet,(data_packet in addr))
                                 if (data_packet in addr) and (numtag_packet < 2): # Check if data packet fits with addr and if its not recirculated again
                                     try:
                                         #print(funcname + 'data to be sent',data)
@@ -846,8 +829,7 @@ class Redvypr(QtCore.QObject):
                                     statistics=statistics, startfunction=startfunction)
 
                     # Subscribe to info packets from redvypr itself
-                    a = '/d:/p:/i:metadata/k:_redvypr_command'
-                    device.subscribe_address(a)
+                    device.subscribe_address(metadata_address)
                     device.subscription_changed_signal.connect(self.process_subscription_changed)
                     self.numdevice += 1
                     # If the device has a logger

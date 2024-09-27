@@ -316,7 +316,8 @@ class RedvyprAddress():
 
     def get_fullstr(self):
         address_format = '/u/a/h/d/p/i/k/'
-        self.get_str(address_format)
+        return self.get_str(address_format)
+
 
     def get_expand_explicit_str(self, address_format = '/u/a/h/d/p/i/k/'):
         """

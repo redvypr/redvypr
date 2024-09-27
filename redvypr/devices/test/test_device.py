@@ -109,6 +109,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         data['data_ndarray_1d'] = np.zeros((5,)) + counter
         data['data_ndarray_2d'] = np.zeros((6,7)) + counter
         data['data_ndarray_2d_int'] = np.zeros((3,2),dtype=int) + int(counter)
+        #print('datastreams',redvypr.data_packets.Datapacket(data).datastreams(expand=True))
         dataqueue.put(data)
         # Put some pathological data into the queue
         dataqueue.put(None)
