@@ -21,10 +21,11 @@ import typing
 from redvypr.device import RedvyprDevice
 import redvypr.data_packets as data_packets
 import redvypr.redvypr_address as redvypr_address
+import redvypr.packet_statistic as packet_statistics
 import redvypr.gui
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('netcdflogger')
+logger = logging.getLogger('netcdfwriter')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
@@ -86,8 +87,10 @@ def create_logfile(config,count=0):
     return [nc,filename]
 
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
+    logger_start = logging.getLogger('netcdfwriter/thread')
+    logger_start.setLevel(logging.DEBUG)
     funcname = __name__ + '.start()'
-    logger.debug(funcname + ':Opening writing:')
+    logger_start.debug(funcname + ':Opening writing:')
     #print('Config',config)
     if config['clearqueue']:
         while (datainqueue.empty() == False):
@@ -112,7 +115,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 dtfac = 0
                 
             dtnews     = dtneworig * dtfac
-            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
+            logger_start.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
         except Exception as e:
             logger.exception(e)
             dtnews = 0
@@ -130,7 +133,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 sizefac = 0
                 
             sizenewb     = sizeneworig * sizefac # Size in bytes
-            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
+            logger_start.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
         except Exception as e:
             logger.exception(e)
             sizenewb = 0  # Size in bytes
@@ -149,7 +152,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     bytes_written_total = 0
     packets_written_total = 0
     [nc,filename] = create_logfile(config,count)
-    print('Adding main group',device_info)
+    logger_start.debug('Adding main group {}'.format(device_info))
     hostname = device_info['hostinfo']['hostname']
     redvypr_version_str = 'redvypr {}'.format(redvypr.version)
     nc.redvypr_version = redvypr_version_str
@@ -168,11 +171,13 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     FLAG_RUN = True
     file_status = {}
     file_status_reduced = file_status
+    deviceinfo_all = None
+    metadata_update = False
     while FLAG_RUN:
         tcheck      = time.time()
         # Flush file on regular basis
         if ((time.time() - tflush) > config['dt_sync']):
-            print(funcname + 'Syncing netCDF file {}'.format(filename))
+            logger_start.info(funcname + 'Syncing netCDF file {}'.format(filename))
             nc.sync()
             bytes_written = os.path.getsize(filename)
             #bytes_written = pympler.asizeof.asizeof(nc)
@@ -183,15 +188,27 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
         while(datainqueue.empty() == False):
             try:
                 data = datainqueue.get(block=False)
+                packet_address = redvypr.RedvyprAddress(data)
                 if (data is not None):
                     [command,comdata] = data_packets.check_for_command(data, thread_uuid=device_info['thread_uuid'], add_data=True)
                     #logger.debug('Got a command: {:s}'.format(str(data)))
                     if (command is not None):
                         if(command == 'stop'):
-                            logger.debug('Stop command')
+                            logger_start.debug('Stop command')
                             FLAG_RUN = False
                             break
 
+                        if (command == 'info'):
+                            logger_start.debug('Metadata command')
+                            if packet_address.packetid == 'metadata':
+                                deviceinfo_all = data['deviceinfo_all']
+                                metadata_update = True
+                                vars_updated = []
+
+                    # Ignore some packages
+                    if data in redvypr_address.RedvyprAddress(redvypr.metadata_address):
+                        logger_start.debug('Ignoring metadata packet')
+                        continue
                 #statistics = data_packets.do_data_statistics(data,statistics)
                 packet_address = redvypr.RedvyprAddress(data)
                 address_format = '/h/p/d/'
@@ -205,23 +222,23 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 try:
                     nc[hostname]
                 except:
-                    print('Creating base group {}'.format(hostname))
+                    logger_start.debug('Creating base group {}'.format(hostname))
                     nchost = nc.createGroup(hostname)
 
                 try:
                     nc[hostname][publisher]
                 except:
-                    print('Creating publishing device',publisher)
+                    logger_start.debug('Creating publishing device {}'.format(publisher))
                     ncgroup_pub = nc[hostname].createGroup(publisher)
 
                 # The device
                 try:
                     nc_device = nc[hostname][publisher][devicename]
                 except:
-                    print('Creating device',devicename)
+                    logger_start.debug('Creating device {}'.format(devicename))
                     nc_device = nc[hostname][publisher].createGroup(devicename)
                     # Add time variable
-                    print('Creating time dimension')
+                    logger.debug('Creating time dimension')
                     nc_device.createDimension('time',None)
                     nc_device.createVariable('time', float,('time'))
 
@@ -242,32 +259,41 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     # Write time
                     packets_written += 1
                     for k in datakeys:
+                        print('-----')
+                        print('Datakeys', datakeys)
+                        print('Datakey',k)
                         try:
                             var = nc_device.variables[k]
                         except: # Create variable
                             typedata = type(data[k])
-                            print('typedata',typedata)
+                            #print('typedata',typedata)
                             if (typedata is list) or (typedata is numpy.ndarray):
-                                print('Creating variable for list/ndarray type {}'.format(typedata))
-                                dwrite = numpy.asarray(data[k])
-                                datatype_array = dwrite.dtype
-                                dwrite_shape = numpy.shape(dwrite)
-                                dimnames = ['time']
-                                for id,nd in enumerate(numpy.shape(dwrite)):
-                                    dimname = k + '_n_{}'.format(id)
-                                    dimnames.append(dimname)
-                                    nc_device.createDimension(dimname, None)
+                                try:
+                                    logger_start.info('Creating variable for list/ndarray type {}'.format(typedata))
+                                    dwrite = numpy.asarray(data[k])
+                                    datatype_array = dwrite.dtype
+                                    dwrite_shape = numpy.shape(dwrite)
+                                    dimnames = ['time']
+                                    for id,nd in enumerate(numpy.shape(dwrite)):
+                                        dimname = k + '_n_{}'.format(id)
+                                        dimnames.append(dimname)
+                                        nc_device.createDimension(dimname, None)
 
-                                print('Creating variable',k,'Dimnames',dimnames,'datatype',datatype_array)
-                                var = nc_device.createVariable(k, datatype_array, dimnames, zlib=flag_zlib)
+                                    logger_start.debug('Creating variable {}. Dimnames {}. Datatype {}.'.format(k,dimnames,datatype_array))
+                                    var = nc_device.createVariable(k, datatype_array, dimnames, zlib=flag_zlib)
+                                    setattr(var, 'redvypr_address', packet_address.get_fullstr())
+                                except:
+                                    logger_start.warning('Could not create variable for {}'.format(k),exc_info=True)
                             elif (typedata is str):
-                                print('Creating string variable')
+                                logger_start.info('Creating string variable')
                                 # For some reason zlib does not work with str
                                 var = nc_device.createVariable(k, str, ('time'), zlib=False)
+                                setattr(var, 'redvypr_address', packet_address.get_fullstr())
                             else:
                                 try:
-                                    print('Creating variable with type {}'.format(typedata))
+                                    logger_start.info('Creating variable with type {}'.format(typedata))
                                     var = nc_device.createVariable(k, typedata, ('time'), zlib=flag_zlib)
+                                    setattr(var, 'redvypr_address', packet_address.get_fullstr())
                                 except:
                                     var = None
 
@@ -279,10 +305,27 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                                 except:
                                     file_status[k] = 1
                             except:
-                                logger.info('Could not write data',exc_info=True)
+                                logger_start.warning('Could not write data',exc_info=True)
                         else:
                             pass
 
+
+                        # Write metadata
+                        try:
+                            if deviceinfo_all is not None and not(var in vars_updated):
+                                raddress_tmp = redvypr_address.RedvyprAddress(data, datakey=k)
+                                raddress_tmp_str = raddress_tmp.get_str('/h/d/i/k')
+                                raddress_tmp_str_full = raddress_tmp.get_fullstr()
+                                metadata_tmp = packet_statistics.get_metadata_deviceinfo_all(deviceinfo_all, raddress_tmp)
+                                # print('Metadata tmp', raddress_tmp, metadata_tmp)
+                                # device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
+                                if len(metadata_tmp.keys()) > 0:  # Check if something was found
+                                    for metakey in metadata_tmp.keys():
+                                        setattr(var,metakey,metadata_tmp[metakey])
+
+                                vars_updated.append(var)
+                        except:
+                            logger_start.debug('Could not set metadata',exc_info=True)
 
 
                 # Send statistics
@@ -835,11 +878,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
             try:
                 self.update_qtreewidget()
             except:
-                logger.debug(funcname, exc_info=True)
+                pass
+                #logger.debug(funcname, exc_info=True)
 
         except:
-            logger.info(funcname, exc_info=True)
-            #pass
+            pass
+            #logger.info(funcname, exc_info=True)
+
 
         try:
             #print('data',data)
