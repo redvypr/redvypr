@@ -32,6 +32,9 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket, devicemodulen
         data['_redvypr']['packetid'] = str(devicename)
     if ('host' not in data['_redvypr'].keys()):
         data['_redvypr']['host'] = hostinfo
+    elif (data['_redvypr']['host']['hostname'] is None) or (data['_redvypr']['host']['uuid'] is None):
+        # Invalid host, replacing with local host
+        data['_redvypr']['host'] = hostinfo
 
     # Tag the datapacket and add the local publishing device
     try:

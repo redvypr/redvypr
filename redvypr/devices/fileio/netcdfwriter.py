@@ -209,8 +209,24 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     if data in redvypr_address.RedvyprAddress(redvypr.metadata_address):
                         logger_start.debug('Ignoring metadata packet')
                         continue
+
+
                 #statistics = data_packets.do_data_statistics(data,statistics)
-                packet_address = redvypr.RedvyprAddress(data)
+                #packet_address = redvypr.RedvyprAddress(data)
+                # Check if host uuid is the same as local uuid
+                if packet_address.uuid == device_info['hostinfo']['uuid']:
+                    print('Local')
+                    print('Local')
+                    print('Local')
+                else:
+                    print('Packet data', data)
+                    print('Packet address', packet_address.get_fullstr())
+                    print('Packet address hostname',packet_address.hostname)
+                    hostname = packet_address.hostname + '__UUID__' + packet_address.uuid
+                    print('Hostname',hostname)
+                    print('Remote')
+                    print('Remote')
+                    print('Remote')
                 address_format = '/h/p/d/'
                 packet_address_str = packet_address.get_str(address_format)
                 publisher = packet_address.publisher
@@ -237,10 +253,31 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 except:
                     logger_start.debug('Creating device {}'.format(devicename))
                     nc_device = nc[hostname][publisher].createGroup(devicename)
+                    nc_device.redvypr_address = redvypr_address.RedvyprAddress(data).get_fullstr()
                     # Add time variable
                     logger.debug('Creating time dimension')
                     nc_device.createDimension('time',None)
                     nc_device.createVariable('time', float,('time'))
+
+                # Write metadata of roogroup and devices
+                if deviceinfo_all is not None and not(nc in vars_updated):
+                    # Write metadata
+                    try:
+                        if deviceinfo_all is not None and not (var in vars_updated):
+                            raddress_tmp = redvypr_address.RedvyprAddress(data)
+                            raddress_tmp_str = raddress_tmp.get_str('/h/d/i')
+                            raddress_tmp_str_full = raddress_tmp.get_fullstr()
+                            metadata_tmp = packet_statistics.get_metadata_deviceinfo_all(deviceinfo_all, raddress_tmp)
+                            # print('Metadata tmp', raddress_tmp, metadata_tmp)
+                            # device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
+                            if len(metadata_tmp.keys()) > 0:  # Check if something was found
+                                for metakey in metadata_tmp.keys():
+                                    setattr(nc_device, metakey, metadata_tmp[metakey])
+
+                            vars_updated.append(var)
+                    except:
+                        logger_start.debug('Could not set metadata', exc_info=True)
+
 
                 # Write data
                 if True:

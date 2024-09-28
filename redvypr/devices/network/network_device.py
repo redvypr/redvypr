@@ -230,25 +230,28 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
             threadqueues.append({'thread':tcp_thread,'queue': threadqueue,'address':address,'bytes_sent':0,'packets_published':0,'taccept':taccept})
         except socket.timeout:
             pass
-        except Exception as e:
-            logger.info(funcname + ':thread start: ' + str(e))
+        except:
+            logger.info(funcname + ':thread start: ',exc_info=True)
         
         while(datainqueue.empty() == False):
             try:
                 data_dict = datainqueue.get(block=False)
-                command = check_for_command(data_dict, thread_uuid=device_info['thread_uuid'])
+                [command, comdata] = check_for_command(data_dict, thread_uuid=device_info['thread_uuid'],
+                                                                    add_data=True)
                 if (command is not None):
                     logger.debug('Command is for me: {:s}'.format(str(command)))
-                    for client in clients:
-                        client.close()
-                    server.close()
-                    logger.info(funcname + 'received command:' + str(data_dict) + ' stopping now')
-                    FLAG_RUN = False
-                    break
+                    if(command == 'stop'):
+                        logger.info(funcname + 'received command:' + str(data_dict) + ' stopping now')
+                        logger.debug('Stop command')
+                        for client in clients:
+                            client.close()
+                        server.close()
+                        FLAG_RUN = False
+                        break
 
                 npackets += 1
                 # Call the send_data function to create a binary sendable datastream
-                datab      = packet_to_raw(data_dict,config)
+                datab = packet_to_raw(data_dict,config)
                 #print('sending data',datab)
                 for q in threadqueues:
                     q['queue'].put(datab)
@@ -332,13 +335,15 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
     while True:
         try:
             com = datainqueue.get(block=False)
-            command = check_for_command(com, thread_uuid=device_info['thread_uuid'])
-            print(funcname + ': Got command',com)
+            [command, comdata] = check_for_command(com, thread_uuid=device_info['thread_uuid'],
+                                                   add_data=True)
             if (command is not None):
-                logger.debug('Command is for me: {:s}'.format(str(command)))
-                client.close()
-                logger.info(funcname + 'received command:' + str(com) + ' stopping now')
-                break
+                logger.debug(funcname + 'Command is for me: {:s}'.format(str(command)))
+                if (command == 'stop'):
+                    logger.info(funcname + 'received command:' + str(command) + ' stopping now')
+                    client.close()
+                    #FLAG_RUN = False
+                    break
         except:
             pass
 
