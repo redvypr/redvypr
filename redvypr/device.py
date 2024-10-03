@@ -424,6 +424,10 @@ class RedvyprDevice(QtCore.QObject):
         
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(device_parameter.loglevel)
+        # Some placeholder attribute, that will be filled by redvypr_main_widget, if the gui is used
+        self.deviceinitwidget = None
+        self.devicedisplaywidget = None
+        self.redvyprdevicewidget = None
         # Timer to ping the status of thread
         self.__stoptimer__ = QtCore.QTimer()
         self.__stoptimer__.timeout.connect(self.__check_thread_status)  # Add to the timer another update
@@ -1219,7 +1223,7 @@ class RedvyprDevice(QtCore.QObject):
         :param address:
         :return:
         """
-        funcname = __name__ + '.get_metadata():'
+        funcname = __name__ + '.get_metadata({},{}):'.format(str(address),str(mode))
         self.logger.debug(funcname)
         metadata = redvypr.packet_statistic.get_metadata(self.statistics,address,mode=mode)
         return metadata

@@ -14,9 +14,12 @@ import pydantic
 import typing
 import re
 from redvypr.data_packets import check_for_command, create_datadict
+from redvypr.redvypr_address import RedvyprAddress
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
+from redvypr.data_packets import RedvyprMetadata, RedvyprDeviceMetadata
 import redvypr.devices.plot.plot_widgets as redvypr_plot_widgets
+from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, dictQTreeWidget, datastreamMetadataWidget
 
 _logo_file = redvypr_files.logo_file
 _icon_file = redvypr_files.icon_file
@@ -31,6 +34,11 @@ logger.setLevel(logging.DEBUG)
 packet_start = ['<None>','$','custom']
 packet_delimiter = ['None','CR/LF','LF','custom']
 redvypr_devicemodule = True
+
+class RedvyprSerialDeviceMetadata(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="allow")
+    comment: str = ''
+
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = True
@@ -64,6 +72,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
     """
     funcname = __name__ + '.read_serial()'
     logger.debug(funcname + ':Starting reading serial data')
+    devicename_redvypr = device_info['device']
     chunksize = config['chunksize']  # The maximum amount of bytes read with one chunk
     serial_name = config['device']
     baud = config['baud']
@@ -101,7 +110,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
         try:
             serial_device = serial.Serial(serial_name, baud, parity=parity, stopbits=stopbits, bytesize=bytesize,
                                           timeout=0)
-            data = create_datadict(packetid=devicename)
+            data = create_datadict(device= devicename_redvypr,packetid=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['status'] = 'reading'
@@ -158,7 +167,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
                 #print('rawdata_all',rawdata_all)
                 FLAG_CHUNK = (len(rawdata_all)) > chunksize and (chunksize > 0)
                 if (FLAG_CHUNK):
-                    data = create_datadict(packetid=devicename)
+                    data = create_datadict(device=devicename_redvypr,packetid=devicename)
                     data['t'] =  time.time()
                     data['data'] = rawdata_all
                     data['comport'] = serial_device.name
@@ -181,7 +190,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
                                     sentences_read += 1
                                     raw = rawdata_split[ind] + newpacket  # reconstruct the data
                                     # print('raw', raw)
-                                    data = create_datadict(packetid=devicename)
+                                    data = create_datadict(device=devicename_redvypr,packetid=devicename)
                                     data['t' ] = tnewpacket
                                     data['data'] = raw
                                     data['comport'] = serial_device.name
@@ -194,7 +203,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
 
         if ((time.time() - tnewpacket) > dt_maxwait) and (dt_maxwait > 0):
             logger.warning('Did not find valid packet on serial device {:s}'.format(serial_name))
-            data = create_datadict(packetid=devicename)
+            data = create_datadict(device=devicename_redvypr,packetid=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['status'] = 'timout (dt_maxwait)'
@@ -385,8 +394,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         #layout_all.addWidget(QtWidgets.QLabel('Packet start'), 0, 6)
         layout_all.addWidget(QtWidgets.QLabel('Packet delimiter'), 0, 7)
         layout_all.addWidget(QtWidgets.QLabel('Packet size'), 0, 8)
-        #layout_all.addWidget(QtWidgets.QLabel('Config'), 0, 9)
-        layout_all.addWidget(QtWidgets.QLabel('Use port'), 0, 9)
+        layout_all.addWidget(QtWidgets.QLabel('Metadata'), 0, 9)
+        layout_all.addWidget(QtWidgets.QLabel('Use port'), 0, 10)
         lwidth = 80 # width of the qlineedits
 
         for irow,serial_device in enumerate(self.device.custom_config.serial_devices):
@@ -448,7 +457,9 @@ class initDeviceWidget(QtWidgets.QWidget):
             serialwidgetdict['button_serial_openclose'].setChecked(serial_device.use_device)
             serialwidgetdict['button_serial_openclose'].clicked.connect(self.use_device_clicked)
 
-            #serialwidgetdict['button_config'] = QtWidgets.QPushButton('Config')
+            serialwidgetdict['button_metadata'] = QtWidgets.QPushButton('Metadata')
+            serialwidgetdict['button_metadata'].clicked.connect(self.__metadata_clicked)
+            serialwidgetdict['button_metadata'].__index_serial = irow
 
             # Define packet delimiter
             packet_del = serial_device.packetdelimiter
@@ -518,14 +529,49 @@ class initDeviceWidget(QtWidgets.QWidget):
             #layout_all.addWidget(serialwidgetdict['packet_start'], irow + 1, 6)
             layout_all.addWidget(serialwidgetdict['packet_ident'], irow + 1, 7)
             layout_all.addWidget(serialwidgetdict['packet_size'], irow + 1, 8)
-            #layout_all.addWidget(serialwidgetdict['button_config'], irow+1, 9)
-            layout_all.addWidget(serialwidgetdict['button_serial_openclose'], irow+1, 9)
+            layout_all.addWidget(serialwidgetdict['button_metadata'], irow+1, 9)
+            layout_all.addWidget(serialwidgetdict['button_serial_openclose'], irow+1, 10)
 
             #self.statustimer = QtCore.QTimer()
             #self.statustimer.timeout.connect(self.update_buttons)
             #self.statustimer.start(500)
 
         layout_all.setRowStretch(layout_all.rowCount(), 1)
+
+    def __metadata_clicked(self):
+        funcname = __name__ + '.__metadata_clicked():'
+        logger.debug(funcname)
+        self.widgets_to_config()
+        irow = self.sender().__index_serial
+        serial_device = self.device.custom_config.serial_devices[irow]
+        devicename = serial_device.devicename
+        devicename_redvypr = self.device.name
+
+        metadata_device = copy.deepcopy(self.device.statistics['metadata'])
+        deviceAddress = RedvyprAddress(devicename=self.device.name,packetid=devicename)
+        try:
+            metadata_raw = metadata_device[deviceAddress.address_str]
+        except:
+            logger.info('Could not load metadata', exc_info=True)
+            metadata_raw = {}
+
+        metadata = RedvyprSerialDeviceMetadata(**metadata_raw)
+        print('Metadata', metadata)
+
+        self.__metadata_edit = metadata
+        self.__metadata_address = deviceAddress
+        self.metadata_config = pydanticConfigWidget(metadata, configname=deviceAddress.address_str)
+        self.metadata_config.config_editing_done.connect(self.__metadata_config_apply)
+        self.metadata_config.setWindowTitle('redvypr, Metadata for {}'.format(devicename))
+        self.metadata_config.show()
+
+    def __metadata_config_apply(self):
+        funcname = __name__ + '__metadata_config_apply():'
+        logger.debug(funcname)
+
+        #print('Metadata new', self.__metadata_edit)
+        metadata = self.__metadata_edit.model_dump()
+        self.device.set_metadata(self.__metadata_address, metadata)
 
     def handle_delimiter_text_edited(self, text):
 

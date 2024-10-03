@@ -233,7 +233,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             dataqueue.put(data_stat)
                             return
 
-                statistics = do_data_statistics(data,statistics)
+                statistics, status = do_data_statistics(data,statistics)
                 yamlstr = yaml.dump(data,explicit_end=True,explicit_start=True)
                 bytes_written         += len(yamlstr)
                 packets_written       += 1

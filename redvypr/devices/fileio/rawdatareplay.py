@@ -567,17 +567,19 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             if (command is not None):
                 sstr = funcname + ': Command is for me: {:s}'.format(str(command))
                 logger.debug(sstr)
-                try:
-                    statusqueue.put_nowait(sstr)
-                except:
-                    pass
+                if command == 'stop':
+                    logger.debug('Stopping')
+                    try:
+                        statusqueue.put_nowait(sstr)
+                    except:
+                        pass
 
-                try:
-                    read_commandqueue.put('stop')
-                    logger.debug('stopping read thread')
-                except:
-                    logger.debug('stopping read thread failed:',exc_info=True)
-                break
+                    try:
+                        read_commandqueue.put('stop')
+                        logger.debug('stopping read thread')
+                    except:
+                        logger.debug('stopping read thread failed:',exc_info=True)
+                    break
 
         if (FLAG_NEW_FILE):
             if (nfile >= len(files)):

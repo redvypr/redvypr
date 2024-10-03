@@ -20,6 +20,8 @@ import pydantic
 import typing
 from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
+import redvypr.redvypr_address as redvypr_address
+import redvypr.packet_statistic as packet_statistic
 from redvypr.widgets.pydanticConfigWidget import dictQTreeWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard
 
@@ -40,7 +42,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
     port: int = pydantic.Field(default=18196, description='The network port used')
     protocol: typing.Literal['tcp', 'udp'] = pydantic.Field(default='tcp', description= 'The network protocol used.')
     direction: typing.Literal['publish', 'receive'] = pydantic.Field(default='tcp', description='Publishing or receiving data.')
-    datakey: str = pydantic.Field(default='data', description='Datakey to store data, this is used if serialize is raw or str')
+    datakey: str = pydantic.Field(default='all', description='Datakey to store data, this is used if serialize is raw or str')
     serialize: typing.Literal['yaml','str','raw'] = pydantic.Field(default='raw',description='Method to serialize (convert) original data into binary data.')
     queuesize: int = pydantic.Field(default=10000, description= 'Size of the queues for transfer between threads')
     dt_status: float = pydantic.Field(default=4.0,description= 'Send a status message every dt_status seconds')
@@ -73,6 +75,7 @@ def raw_to_packet(datab, config, safe_load=True):
     Args:
         datab:
         config:
+        safe_load:
 
     Returns:
         packets: A list of datapackets to be sent via the dataqueue
@@ -91,7 +94,7 @@ def raw_to_packet(datab, config, safe_load=True):
     if(config['serialize'] == 'yaml'):
         i0 = datab.find(b'---\n')
         i1 = datab.rfind(b'...\n')+4
-        # Here check if we got data
+        # Check here if we got some data
         datab_valid = datab[i0:i1]
         datab_rest = datab[i1:]
         for databs in datab_valid.split(b'...\n'): # Split the text into single subpackets
@@ -196,6 +199,8 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
     logger.debug(funcname + ':Starting network thread')        
     npackets     = 0 # Number of packets
     bytes_read   = 0
+    metadata_packet = None
+    metadata_update = False
     threadqueues = []
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     logger.debug(funcname + ' Binding to {:s}:{:d}'.format(config['address'],config['port']))
@@ -227,7 +232,25 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
             tcp_thread = threading.Thread(target=handle_tcp_client_send, args=([client,address],threadqueue,statusqueue,config), daemon=True)
             tcp_thread.start()
             clients.append(client)
-            threadqueues.append({'thread':tcp_thread,'queue': threadqueue,'address':address,'bytes_sent':0,'packets_published':0,'taccept':taccept})
+            thread_queue_dict = {'thread': tcp_thread, 'queue': threadqueue, 'address': address, 'bytes_sent': 0, 'packets_published': 0,
+             'taccept': taccept}
+            threadqueues.append(thread_queue_dict)
+            if metadata_packet is not None:
+                metadata_send = copy.deepcopy(metadata_packet)
+                devinfo_all = metadata_send.pop('deviceinfo_all')
+                metadata_tmp = devinfo_all['metadata']
+                metadata_send['_metadata'] = {}
+                raddr_tmp = redvypr_address.RedvyprAddress(metadata_packet,datakey='')
+                raddr_tmp_str = raddr_tmp.get_fullstr()
+                raddr_tmp_str = 'REMOTE__' + raddr_tmp_str
+                metadata_send['_metadata'][raddr_tmp_str] = metadata_tmp
+                datab = packet_to_raw(metadata_send, config)
+                q = thread_queue_dict
+                q['queue'].put(datab)
+                q['bytes_sent'] += len(datab)
+                q['packets_published'] += 1
+
+
         except socket.timeout:
             pass
         except:
@@ -238,6 +261,7 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
                 data_dict = datainqueue.get(block=False)
                 [command, comdata] = check_for_command(data_dict, thread_uuid=device_info['thread_uuid'],
                                                                     add_data=True)
+                packet_address = redvypr_address.RedvyprAddress(data_dict)
                 if (command is not None):
                     logger.debug('Command is for me: {:s}'.format(str(command)))
                     if(command == 'stop'):
@@ -248,6 +272,12 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
                         server.close()
                         FLAG_RUN = False
                         break
+
+                    if (command == 'info'):
+                        logger.debug('Metadata command')
+                        if packet_address.packetid == 'metadata':
+                            metadata_packet = data_dict
+                            metadata_update = True
 
                 npackets += 1
                 # Call the send_data function to create a binary sendable datastream
@@ -292,7 +322,7 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
 def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info=None):
     """ TCP receiving
     """
-    funcname = __name__ + '.start_tcp_recv()'
+    funcname = __name__ + '.start_tcp_recv():'
     logger.debug(funcname + ':Starting network thread')        
     sentences = 0
     bytes_read = 0
@@ -378,12 +408,20 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
             packets = tmp['packets']
             datab_all = tmp['datab_rest']
             for p in packets:
+                ## Check if there is a deviceinfo command
+                #command = check_for_command(p)
+                #p_address=redvypr_address.RedvyprAddress(p)
+                #if (command == 'info'):
+                #    logger.debug('Metadata command')
+                #    if p_address.packetid == 'metadata':
+
+                print(funcname + ' publishing packet',p)
                 dataqueue.put(p)
                 npackets += 1
 
         except socket.timeout as e:
             pass
-        except Exception as e:
+        except:
             logger.info(funcname + ':',exc_info=True)
             return
 
@@ -618,6 +656,42 @@ class Device(RedvyprDevice):
         self.statustimer.timeout.connect(self.get_status)  # Add to the timer another update
         self.statustimer.start(1000)
 
+    def get_metadata(self, address, mode='merge'):
+        """
+        Gets the metadata of the redvypr address
+        :param address:
+        :return:
+        """
+        funcname = __name__ + '.get_metadata({},{}):'.format(str(address), str(mode))
+        self.logger.debug(funcname)
+        # Split the metadata into a remote and a local part
+        metadata_local = {'metadata':copy.deepcopy(self.statistics['metadata'])}
+        metadata_remote = {}
+        metadata_remote_query = {}
+        # Loop over all keys, check for REMOTE__ and loop over entries
+        for metadatakey in self.statistics['metadata']:
+            if metadatakey.startswith('REMOTE__'):
+                mtmp = metadata_local['metadata'].pop(metadatakey)
+                #print('Mtmp',mtmp)
+                #print('Mtmp keys', mtmp.keys())
+                #print('Mtmp metadatakey', metadatakey)
+                raddr_tmp_str = metadatakey.split('REMOTE__')[1]
+                raddr_tmp = redvypr_address.RedvyprAddress(raddr_tmp_str)
+                remote_address_str = raddr_tmp.get_fullstr()
+                metadata_remote[remote_address_str] = {}
+                metadata_remote[remote_address_str]['metadata'] = mtmp
+                self.logger.debug(funcname + 'Remote query ...')
+                metadata_remote_query_tmp = packet_statistic.get_metadata_deviceinfo_all(metadata_remote[remote_address_str], address, mode=mode, publisher_strict=False)
+                #print('Remote query',metadata_remote_query)
+                metadata_remote_query.update(metadata_remote_query_tmp)
+
+        metadata = packet_statistic.get_metadata(metadata_local, address, mode=mode)
+        #print('Metadata (local)', metadata)
+        if len(metadata.keys()) > 0:
+            metadata_remote_query.update(metadata)
+
+        return metadata_remote_query
+
     def check_and_fill_config(self):
         """ Fills a config, if essential entries are missing
         """
@@ -749,7 +823,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         # Create an array of radio buttons
         self._data_pub_all  = QtWidgets.QRadioButton("Redvypr YAML datapacket")
         self._data_pub_all.setStatusTip('Sends/Expects the whole datapacket as a YAML string')
-        self._data_pub_all.setChecked(True)
+
 
         self._data_pub_dict = QtWidgets.QRadioButton("Dictionary entries")
         self._data_pub_dict.setStatusTip('Sends entries and serialize them as choosen by the serialization box')
@@ -757,6 +831,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         self._data_pub_group = QtWidgets.QButtonGroup()
         self._data_pub_group.addButton(self._data_pub_all)
         self._data_pub_group.addButton(self._data_pub_dict)
+
+        self._data_pub_dict.setChecked(False)
+        self._data_pub_all.setChecked(True)
         
         # Serialize
         self._combo_ser = QtWidgets.QComboBox()

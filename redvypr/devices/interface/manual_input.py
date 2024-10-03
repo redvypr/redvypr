@@ -36,10 +36,10 @@ class DeviceBaseConfig(pydantic.BaseModel):
     gui_icon: str = 'mdi.serial-port'
 
 
-def start(**kwargs):
-    pass
+def start(*args,**kwargs):
+    return
 
-class initDeviceWidget(QtWidgets.QWidget):
+class RedvyprDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout = QtWidgets.QGridLayout(self)

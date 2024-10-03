@@ -28,6 +28,7 @@ from redvypr.devices.plot.XYplotWidget import XYplot, configXYplot
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from redvypr.devices.sensors.calibration.calibration_models import calibration_models, calibration_NTC
 from redvypr.devices.sensors.csvsensors.sensorWidgets import sensorCoeffWidget, sensorConfigWidget
+from redvypr.gui import iconnames
 from .sensor_definitions import Sensor, BinarySensor, predefined_sensors
 from .calibrationWidget import sensorCalibrationsWidget
 
@@ -298,6 +299,62 @@ class Device(RedvyprDevice):
         #print(self.calibration['sn'].keys())
         #self.logger_autocalibration()
 
+
+class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.RedvyprDeviceWidget_startonly):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args, **kwargs)
+        self.devicedisplaywidget = displayDeviceWidget(device=self.device)
+        icon = qtawesome.icon(iconnames['settings'])
+        self.sensorshow_combo = QtWidgets.QComboBox()
+        self.settings_button = QtWidgets.QPushButton('Settings')
+        self.settings_button.setIcon(icon)
+        self.settings_button.clicked.connect(self.settings_clicked)
+        self.layout.removeWidget(self.buttons_widget)
+        self.layout.removeWidget(self.killbutton)
+        self.killbutton.hide()
+        self.layout.addWidget(self.devicedisplaywidget,0,0)
+        self.layout.addWidget(self.buttons_widget,1,0)
+        self.layout_buttons.addWidget(self.sensorshow_combo, 0, 4)
+        self.layout_buttons.addWidget(self.settings_button,0,5)
+
+        self.device.config_changed_signal.connect(self.update_sensorcombo)
+        self.update_sensorcombo()
+        self.sensorshow_combo.currentIndexChanged.connect(self.sensorshow_changed)
+
+    def settings_clicked(self):
+        self.settings_widget = QtWidgets.QWidget()
+        self.sensortable_status = sensorTableWidget(device=self.device)
+        self.settings_widget_layout = QtWidgets.QVBoxLayout(self.settings_widget)
+        self.initdevicewidget = initDeviceWidget(device=self.device, redvypr=self.redvypr)
+        self.settings_widget_layout.addWidget(self.sensortable_status)
+        self.settings_widget_layout.addWidget(self.initdevicewidget)
+        self.settings_widget.show()
+
+    def sensorshow_changed(self):
+        funcname = __name__ + '.sensorshow_changed():'
+        logger.debug(funcname)
+        sensorname = self.sensorshow_combo.currentText()
+        print('Sensorname', sensorname)
+        for irow, sensor in enumerate(self.device.custom_config.sensors):
+            if sensorname == sensor.name:
+                sensorwidget = sensor.__sensorwidget__
+                self.devicedisplaywidget.sensor_show(sensorwidget)
+
+    def update_sensorcombo(self):
+        funcname = __name__ + '.update_sensorcombo():'
+        logger.debug(funcname)
+        print('Updating...')
+        self.sensorshow_combo.clear()
+        for irow,sensor in enumerate(self.device.custom_config.sensors):
+            name = sensor.name
+            self.sensorshow_combo.addItem(name)
+
+
+    def update_data(self, data):
+        self.devicedisplaywidget.update_data(data)
+
+
+
 class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceInitWidget):
     def __init__(self, *args, **kwargs):
         funcname = __name__ + '__init__():'
@@ -467,43 +524,22 @@ class displayDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.__init__()'
         super(QtWidgets.QWidget, self).__init__()
-        layout = QtWidgets.QGridLayout(self)
+        layout = QtWidgets.QVBoxLayout(self)
         self.layout = layout
         self.tabwidget = tabwidget
         self.device = device
         self.sensorwidget = None # The widget showing the sensor data
-        # A timer that is regularly calling the device.status function
-        self.statustimer = QtCore.QTimer()
-        self.statustimer.timeout.connect(self.update_status)
-        self.dt_update = 2
-        self.statustimer.start(self.dt_update * 1000)
+        self.device.config_changed_signal.connect(self.update_sensorwidgets)
+        self.update_sensorwidgets()
+        try:
+            sensorwidget = self.device.custom_config.sensors[0].__sensorwidget__
+            self.sensor_show(sensorwidget)
+        except:
+            logger.info('Could not show widget',exc_info=True)
 
-        self.sensortable = QtWidgets.QTableWidget()
-        self.device.config_changed_signal.connect(self.update_sensortable)
-        #self.sensortable.setRowCount(1)
-
-        sdir = QtCore.Qt.Vertical
-        self.splitter = QtWidgets.QSplitter(sdir)
-        layout.addWidget(self.splitter,0,0)
-        self.splitter.addWidget(self.sensortable)
-        # The table columns
-        self.icol_name = 0
-        self.icol_packet_proc = 1
-        self.icol_packet_proc__s = 2
-        self.icol_show = 3
-        self.icol_plot = 4
-        self.update_sensortable()
-
-
-    def update_sensortable(self):
-        funcname = __name__ + '.update_sensortable():'
+    def update_sensorwidgets(self):
+        funcname = __name__ + '.update_sensorwidgets():'
         nsensors = len(self.device.custom_config.sensors)
-        self.sensortable.clear()
-        self.sensortable.setRowCount(nsensors)
-        colheaders = ['Name', 'Packets processed', 'Packets/s', 'Show', 'Plot']
-        self.sensortable.setColumnCount(4)
-        self.sensortable.setHorizontalHeaderLabels(colheaders)
-
         for irow, sensor in enumerate(self.device.custom_config.sensors):
             # Create a sensorwidget, if not existing
             try:
@@ -511,56 +547,25 @@ class displayDeviceWidget(QtWidgets.QWidget):
             except:
                 sensor.__sensorwidget__ = SensorWidget(sensor=sensor, redvypr_device=self.device)
 
-            name = sensor.name
-            item_name = QtWidgets.QTableWidgetItem(name)
-            self.sensortable.setItem(irow, self.icol_name, item_name)
-
-            show_icon = qtawesome.icon('ei.list')
-            item_show = QtWidgets.QPushButton(show_icon, 'Show')
-            item_show.__sensor__ = sensor
-            item_show.clicked.connect(self.sensor_show_clicked)
-            self.sensortable.setCellWidget(irow, self.icol_show, item_show)
-
-            #plot_icon = qtawesome.icon('ph.chart-line-fill')
-            #item_plot = QtWidgets.QPushButton(plot_icon, 'Plot')
-            #item_plot.__sensor__ = sensor
-            #item_plot.clicked.connect(self.sensor_plot_clicked)
-            #self.sensortable.setCellWidget(irow, self.icol_plot, item_plot)
-
-            npackets = sensor.__sensorwidget__.packets_for_me
-            item_packet = QtWidgets.QTableWidgetItem(str(npackets))
-            self.sensortable.setItem(irow, self.icol_packet_proc, item_packet)
-
-            item_packet__s = QtWidgets.QTableWidgetItem(str(0))
-            self.sensortable.setItem(irow, self.icol_packet_proc__s, item_packet__s)
-
-        self.sensortable.resizeColumnsToContents()
-
-        # If there are sensors already, click the last one to show the sensorwidget
-        if self.sensorwidget is None:
-            nrows = self.sensortable.rowCount()
-            if nrows > 0:
-                item_show.clicked.emit()
-
-
     def sensor_show_clicked(self):
         funcname = __name__ + '.sensor_show_clicked():'
         logger.debug(funcname)
         sensor = self.sender().__sensor__
-        self.sensorwidget = sensor.__sensorwidget__
+        self.sensor_show(sensor.__sensorwidget__)
+
+    def sensor_show(self,sensorwidget):
         try:
-            #self.layout.removeWidget(self.sensorwidget)
-            sensorwidget_old = self.splitter.replaceWidget(1,self.sensorwidget)
-            sensorwidget_old.hide()
+            self.layout.removeWidget(self.sensorwidget)
+            self.sensorwidget.hide()
+            # sensorwidget_old = self.splitter.replaceWidget(1,self.sensorwidget)
+            # sensorwidget_old.hide()
         except:
-            logger.debug('Could not remove widget',exc_info=True)
-            self.splitter.addWidget(self.sensorwidget)
+            logger.debug('Could not remove widget', exc_info=True)
+            # self.splitter.addWidget(self.sensorwidget)
 
-
-        #self.splitter.addWidget(self.sensorwidget)
-        #self.layout.addWidget(self.sensorwidget, 1,0)
+        self.sensorwidget = sensorwidget
+        self.layout.addWidget(self.sensorwidget)
         self.sensorwidget.show()
-        #print('Show')
 
     def sensor_plot_clicked(self):
         print('Plot')
@@ -570,28 +575,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         pass
         # self.update_buttons(status['threadalive'])
 
-    def update_status(self):
-        """
-        """
-        funcname = __name__ + 'update_status():'
-        try:
-            statusdata = self.device.get_status()
-            # print(funcname + str(statusdata))
-        except:
-            logger.debug(funcname,exc_info=True)
 
-        # update the
-        for isensor, sensor in enumerate(self.device.custom_config.sensors):
-            npackets_old = sensor.__sensorwidget__.packets_for_me_old
-            npackets = sensor.__sensorwidget__.packets_for_me
-            npackets__s = (npackets - npackets_old)/self.dt_update
-            sensor.__sensorwidget__.packets_for_me_old = npackets
-
-            item = self.sensortable.item(isensor, self.icol_packet_proc)
-            item.setText(str(npackets))
-
-            item = self.sensortable.item(isensor, self.icol_packet_proc__s)
-            item.setText(str(npackets__s))
 
     def update_data(self, data):
         """
@@ -694,6 +678,8 @@ class SensorWidget(QtWidgets.QWidget):
             self.sender().__xyplot__ = self.datakey_plot[packetid][k]
             self.datakey_plot[packetid][k].__item_plot__ = self.sender()
             self.datakey_plot[packetid][k].closing.connect(self.__xyplot_closed__)
+            windowtitle = 'Plot {} {}'.format(packetid, k)
+            self.sender().__xyplot__.setWindowTitle(windowtitle)
 
 
         self.sender().__xyplot__.show()
@@ -724,7 +710,7 @@ class SensorWidget(QtWidgets.QWidget):
             #print('Got data',rdata)
             #print('Packetid',packetid)
             # Check if the packetid has been seen before
-            if packetid not in self.packetids and len(packetid) > 0:
+            if packetid not in self.packetids and len(packetid) > 0 and (rdata.address.packetidexpand == False):
                 self.packetids.append(packetid)
                 self.packetidtable.clear()
                 self.packetidtable.setRowCount(len(self.packetids))
@@ -755,10 +741,10 @@ class SensorWidget(QtWidgets.QWidget):
                     try:
                         self.datakey_units[k]
                     except:
-                        logger.debug(funcname + 'Trying to get metadata for address')
                         raddr_tmp = RedvyprAddress(data,datakey=k)
-                        metadata = self.device.get_metadata_datakey(raddr_tmp, all_entries = False)
-                        #print('MetaDATA', metadata)
+                        logger.debug(funcname + 'Trying to get metadata for address {}'.format(raddr_tmp))
+                        metadata = self.device.get_metadata(raddr_tmp)
+                        print(funcname + ' Got Metadata ...', metadata)
                         try:
                             self.datakey_units[k] = metadata['unit']
                         except:
@@ -766,6 +752,7 @@ class SensorWidget(QtWidgets.QWidget):
 
                     # Update the plot first or create new plot widget
                     if 't' in keys and k is not 't':
+                        print('Packetid',packetid,k)
                         # Try to update plots
                         try:
                             self.datakey_plot[packetid]
@@ -829,7 +816,8 @@ class SensorWidget(QtWidgets.QWidget):
                             try:
                                 xyplot = self.datakey_plot[packetid][k]
                                 plot_icon = qtawesome.icon('ph.chart-line-fill')
-                                item_plot = QtWidgets.QPushButton(plot_icon, 'Plot {} {}'.format(packetid, k))
+                                #item_plot = QtWidgets.QPushButton(plot_icon, 'Plot {} {}'.format(packetid, k))
+                                item_plot = QtWidgets.QPushButton(plot_icon, 'Plot')
                                 item_plot.__xyplot__ = self.datakey_plot[packetid][k]
                                 item_plot.__packetid__ = packetid
                                 item_plot.__k__ = k
@@ -866,5 +854,90 @@ class SensorWidget(QtWidgets.QWidget):
                 self.datatable.resizeColumnsToContents()
 
 
+
+class sensorTableWidget(QtWidgets.QWidget):
+    """ Widget is displaying all defined sensors
+    """
+
+    def __init__(self, device=None):
+        funcname = __name__ + '.__init__()'
+        super(QtWidgets.QWidget, self).__init__()
+        layout = QtWidgets.QVBoxLayout(self)
+        self.layout = layout
+        self.device = device
+        # A timer that is regularly calling the device.status function
+        self.statustimer = QtCore.QTimer()
+        self.statustimer.timeout.connect(self.update_status)
+        self.dt_update = 1
+        self.sensortable = QtWidgets.QTableWidget()
+        self.layout.addWidget(self.sensortable)
+        self.device.config_changed_signal.connect(self.update_sensortable)
+        # The table columns
+        self.icol_name = 0
+        self.icol_packet_proc = 1
+        self.icol_packet_proc__s = 2
+        self.icol_show = 3
+        self.icol_plot = 4
+        self.update_sensortable()
+        self.statustimer.start(self.dt_update * 1000)
+
+    def update_sensortable(self):
+        funcname = __name__ + '.update_sensortable():'
+        nsensors = len(self.device.custom_config.sensors)
+        self.sensortable.clear()
+        self.sensortable.setRowCount(nsensors)
+        colheaders = ['Name', 'Packets processed', 'Packets/s']
+        self.sensortable.setColumnCount(3)
+        self.sensortable.setHorizontalHeaderLabels(colheaders)
+
+        for irow, sensor in enumerate(self.device.custom_config.sensors):
+            # Create a sensorwidget, if not existing
+            try:
+                sensor.__sensorwidget__
+            except:
+                logger.warning('Could not find widget for sensor')
+                continue
+
+            name = sensor.name
+            item_name = QtWidgets.QTableWidgetItem(name)
+            self.sensortable.setItem(irow, self.icol_name, item_name)
+
+            #show_icon = qtawesome.icon('ei.list')
+            #item_show = QtWidgets.QPushButton(show_icon, 'Show')
+            #item_show.__sensor__ = sensor
+            #item_show.clicked.connect(self.sensor_show_clicked)
+            #self.sensortable.setCellWidget(irow, self.icol_show, item_show)
+
+            npackets = sensor.__sensorwidget__.packets_for_me
+            item_packet = QtWidgets.QTableWidgetItem(str(npackets))
+            self.sensortable.setItem(irow, self.icol_packet_proc, item_packet)
+
+            item_packet__s = QtWidgets.QTableWidgetItem(str(0))
+            self.sensortable.setItem(irow, self.icol_packet_proc__s, item_packet__s)
+
+        self.sensortable.resizeColumnsToContents()
+
+    def update_status(self):
+        """
+        """
+        funcname = __name__ + 'update_status():'
+        try:
+            statusdata = self.device.get_status()
+            # print(funcname + str(statusdata))
+        except:
+            logger.debug(funcname,exc_info=True)
+
+        # update the
+        for isensor, sensor in enumerate(self.device.custom_config.sensors):
+            npackets_old = sensor.__sensorwidget__.packets_for_me_old
+            npackets = sensor.__sensorwidget__.packets_for_me
+            npackets__s = (npackets - npackets_old)/self.dt_update
+            sensor.__sensorwidget__.packets_for_me_old = npackets
+
+            item = self.sensortable.item(isensor, self.icol_packet_proc)
+            item.setText(str(npackets))
+
+            item = self.sensortable.item(isensor, self.icol_packet_proc__s)
+            item.setText(str(npackets__s))
 
 

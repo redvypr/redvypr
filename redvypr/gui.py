@@ -3,6 +3,7 @@ import logging
 import sys
 import yaml
 import datetime
+import qtawesome
 from pydantic.color import Color as pydColor
 from PyQt5 import QtWidgets, QtCore, QtGui
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
@@ -23,6 +24,8 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('gui')
 logger.setLevel(logging.INFO)
 
+# Some standard iconnames
+iconnames = {'settings':'ri.settings-5-line'}
 
 
 class deviceTableWidget(QtWidgets.QTableWidget):

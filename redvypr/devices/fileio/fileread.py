@@ -95,11 +95,13 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             if (command is not None):
                 sstr = funcname + ': Command is for me: {:s}'.format(str(command))
                 logger.debug(sstr)
-                try:
-                    statusqueue.put_nowait(sstr)
-                except:
-                    pass
-                break
+                if command == 'stop':
+                    logger.debug('Stopping')
+                    try:
+                        statusqueue.put_nowait(sstr)
+                    except:
+                        pass
+                    break
 
         packets = get_packets(f)
         if(packets is None):

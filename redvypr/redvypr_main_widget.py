@@ -17,7 +17,7 @@ from pyqtconsole.highlighter import format
 
 import redvypr.widgets.redvyprSubscribeWidget
 # Import redvypr specific stuff
-from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget
+from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget, RedvyprDeviceWidget_simple, RedvyprDeviceWidget_startonly
 #from redvypr.gui import datastreamWidget # Do we need this?
 import redvypr.gui as gui
 from redvypr.version import version
@@ -313,122 +313,156 @@ class redvyprWidget(QtWidgets.QWidget):
         devicewidget = QtWidgets.QWidget()
         devicewidget.device = device  # Add the device to the devicewidget
         devicelayout = QtWidgets.QVBoxLayout(devicewidget)
-        # The tab for the init and device tab, TODO: This could be done more generic, if tabs are not wanted
-        devicetab = QtWidgets.QTabWidget()
-        devicetab.setMovable(True)
-        devicelayout.addWidget(devicetab)
-        #
-        # Now add all the widgets to the device
-        #
-        # Create the init widget
+
+        # Search first for a redvyprdevicewidget, if one is found, take it, otherwise use a init/display widget pair
         try:
-            deviceinitwidget_bare = devicemodule.initDeviceWidget
-        except Exception as e:
-            logger.debug(funcname + 'Widget does not have a deviceinitwidget using standard one:' + str(e))
-            # logger.exception(e)
-            deviceinitwidget_bare = redvypr_deviceInitWidget  # Use a standard widget
+            redvyprdevicewidget = devicemodule.RedvyprDeviceWidget
+        except:
+            logger.debug(funcname + 'Widget does not have a RedvyprDeviceWidget using init/display combination')
+            redvyprdevicewidget = None
 
-
-        # Call the deviceinitwidget with extra arguments
-        initargs = inspect.signature(deviceinitwidget_bare.__init__)
-        initargs_parameters = dict(initargs.parameters)
-        logger.debug(funcname + 'Initargs for initwidget {}'.format( initargs_parameters))
-        # Check if the parent is a deviceinitwidget
-        print('fdsfsd',deviceinitwidget_bare.__mro__)
-        if redvypr_deviceInitWidget in deviceinitwidget_bare.__mro__:
-            logger.debug(funcname + ' Child of deviceinitwidet')
-            initargs2 = inspect.signature(redvypr_deviceInitWidget.__init__)
+        if redvyprdevicewidget is not None:
+            initargs = inspect.signature(redvyprdevicewidget.__init__)
+            initargs_parameters = dict(initargs.parameters)
+            initargs2 = {}
+            if (RedvyprDeviceWidget_startonly in redvyprdevicewidget.__mro__):
+                initargs2 = inspect.signature(redvypr_deviceInitWidget.__init__)
+            if (RedvyprDeviceWidget_simple in redvyprdevicewidget.__mro__):
+                initargs2 = inspect.signature(redvypr_deviceInitWidget.__init__)
             logger.debug(funcname + 'adding arguments {}'.format(dict(initargs2.parameters)))
             initargs_parameters.update(dict(initargs2.parameters))
-        else:
-            initargs_parameters = dict(initargs.parameters)
 
-        initdict = {}
-        if ('device' in initargs_parameters.keys()):
-            initdict['device'] = device
-
-        if ('tabwidget' in initargs_parameters.keys()):
-            initdict['tabwidget'] = devicetab
-
-        # https://stackoverflow.com/questions/334655/passing-a-dictionary-to-a-function-as-keyword-parameters
-        try:
-            deviceinitwidget = deviceinitwidget_bare(**initdict)
-        except Exception as e:
-            logger.warning(funcname + 'Could not add deviceinitwidget because of:')
-            logger.exception(e)
-            deviceinitwidget = QtWidgets.QWidget()  # Use a standard widget
-
-        # Connect the connect signal with connect_device()
-        try:
-            logger.debug(funcname + 'Connect signal connected')
-            deviceinitwidget.connect.connect(self.connect_device)
-        except Exception as e:
-            logger.debug(funcname + 'Widget does not have connect signal:' + str(e))
-
-        device.deviceinitwidget = deviceinitwidget
-        #
-        # Check if we have a widget to display the data
-        # Create the displaywidget
-        #
-        try:
-            devicedisplaywidget = devicemodule.displayDeviceWidget
-        except Exception as e:
-            logger.debug(funcname + 'No displaywidget found for {:s}'.format(str(devicemodule)))
-            ## Using the standard display widget
-            # devicedisplaywidget = displayDeviceWidget_standard
-            devicedisplaywidget = None
-
-        # Add init widget
-        try:
-            tablabelinit = str(device.device_parameter.gui_tablabel_init)
-        except:
-            tablabelinit = 'Init'
-        # print('Device hallo hallo',device.config)
-        # device.config['redvypr_device']['gui_tablabel_status']
-
-        devicetab.addTab(deviceinitwidget, tablabelinit)
-
-        # Devices can have their specific display objects, if one is
-        # found, initialize it, otherwise just the init Widget
-        if (devicedisplaywidget is not None):
-            initargs = inspect.signature(devicedisplaywidget.__init__)
             initdict = {}
-            if ('device' in initargs.parameters.keys()):
+            if ('device' in initargs_parameters.keys()):
+                initdict['device'] = device
+            if ('redvypr' in initargs_parameters.keys()):
+                initdict['redvypr'] = self.redvypr
+
+            device.redvyprdevicewidget = redvyprdevicewidget(**initdict)
+            devicelayout.addWidget(device.redvyprdevicewidget)
+            self.redvypr.devices[ind_devices]['guiqueues'][0][1] = device.redvyprdevicewidget
+            self.redvypr.devices[ind_devices]['displaywidget'] = device.redvyprdevicewidget
+            self.redvypr.devices[ind_devices]['initwidget'] = device.redvyprdevicewidget
+        else: # Use the init/displaywidget, using tabs
+            # The tab for the init and device tab
+            devicetab = QtWidgets.QTabWidget()
+            devicetab.setMovable(True)
+            devicelayout.addWidget(devicetab)
+            # Now add all the widgets to the device
+            #
+            # Create the init widget
+            try:
+                deviceinitwidget_bare = devicemodule.initDeviceWidget
+            except:
+                logger.debug(funcname + 'Widget does not have a deviceinitwidget using standard one:' + str(e))
+                # logger.exception(e)
+                deviceinitwidget_bare = redvypr_deviceInitWidget  # Use a standard widget
+
+
+            # Call the deviceinitwidget with extra arguments
+            initargs = inspect.signature(deviceinitwidget_bare.__init__)
+            initargs_parameters = dict(initargs.parameters)
+            logger.debug(funcname + 'Initargs for initwidget {}'.format( initargs_parameters))
+            # Check if the parent is a deviceinitwidget
+            #print('fdsfsd',deviceinitwidget_bare.__mro__)
+            if redvypr_deviceInitWidget in deviceinitwidget_bare.__mro__:
+                logger.debug(funcname + ' Child of deviceinitwidet')
+                initargs2 = inspect.signature(redvypr_deviceInitWidget.__init__)
+                logger.debug(funcname + 'adding arguments {}'.format(dict(initargs2.parameters)))
+                initargs_parameters.update(dict(initargs2.parameters))
+            else:
+                initargs_parameters = dict(initargs.parameters)
+
+            initdict = {}
+            if ('device' in initargs_parameters.keys()):
                 initdict['device'] = device
 
-            if ('tabwidget' in initargs.parameters.keys()):
+            if ('redvypr' in initargs_parameters.keys()):
+                initdict['redvypr'] = self.redvypr
+
+            if ('tabwidget' in initargs_parameters.keys()):
                 initdict['tabwidget'] = devicetab
 
-            if ('deviceinitwidget' in initargs.parameters.keys()):
-                initdict['deviceinitwidget'] = deviceinitwidget
-
             # https://stackoverflow.com/questions/334655/passing-a-dictionary-to-a-function-as-keyword-parameters
-            devicedisplaywidget_called = devicedisplaywidget(**initdict)
-            # Add the widget to the device
-            device.devicedisplaywidget = devicedisplaywidget_called
-            # Test if the widget has a tabname
             try:
-                tablabeldisplay = devicedisplaywidget_called.tabname
+                deviceinitwidget = deviceinitwidget_bare(**initdict)
+            except Exception as e:
+                logger.warning(funcname + 'Could not add deviceinitwidget because of:')
+                logger.exception(e)
+                deviceinitwidget = QtWidgets.QWidget()  # Use a standard widget
+
+            # Connect the connect signal with connect_device()
+            try:
+                logger.debug(funcname + 'Connect signal connected')
+                deviceinitwidget.connect.connect(self.connect_device)
+            except Exception as e:
+                logger.debug(funcname + 'Widget does not have connect signal:' + str(e))
+
+            device.deviceinitwidget = deviceinitwidget
+            #
+            # Check if we have a widget to display the data
+            # Create the displaywidget
+            #
+            try:
+                devicedisplaywidget = devicemodule.displayDeviceWidget
+            except Exception as e:
+                logger.debug(funcname + 'No displaywidget found for {:s}'.format(str(devicemodule)))
+                ## Using the standard display widget
+                # devicedisplaywidget = displayDeviceWidget_standard
+                devicedisplaywidget = None
+
+            # Add init widget
+            try:
+                tablabelinit = str(device.device_parameter.gui_tablabel_init)
             except:
+                tablabelinit = 'Init'
+            # print('Device hallo hallo',device.config)
+            # device.config['redvypr_device']['gui_tablabel_status']
+
+            devicetab.addTab(deviceinitwidget, tablabelinit)
+
+            # Devices can have their specific display objects, if one is
+            # found, initialize it, otherwise just the init Widget
+            if (devicedisplaywidget is not None):
+                initargs = inspect.signature(devicedisplaywidget.__init__)
+                initdict = {}
+                if ('device' in initargs.parameters.keys()):
+                    initdict['device'] = device
+
+                if ('tabwidget' in initargs.parameters.keys()):
+                    initdict['tabwidget'] = devicetab
+
+                if ('deviceinitwidget' in initargs.parameters.keys()):
+                    initdict['deviceinitwidget'] = deviceinitwidget
+
+                # https://stackoverflow.com/questions/334655/passing-a-dictionary-to-a-function-as-keyword-parameters
+                devicedisplaywidget_called = devicedisplaywidget(**initdict)
+                # Add the widget to the device
+                device.devicedisplaywidget = devicedisplaywidget_called
+                # Test if the widget has a tabname
                 try:
-                    tablabeldisplay = str(device.device_parameter.gui_tablabel_display)
+                    tablabeldisplay = devicedisplaywidget_called.tabname
                 except:
-                    tablabeldisplay = 'Display'
+                    try:
+                        tablabeldisplay = str(device.device_parameter.gui_tablabel_display)
+                    except:
+                        tablabeldisplay = 'Display'
 
-            # Check if the widget has included itself, otherwise add the displaytab
-            # This is useful to have the displaywidget add several tabs
-            # by using the tabwidget argument of the initdict
-            if (devicetab.indexOf(devicedisplaywidget_called)) < 0:
-                devicetab.addTab(devicedisplaywidget_called, tablabeldisplay)
-                # Append the widget to the processing queue
+                # Check if the widget has included itself, otherwise add the displaytab
+                # This is useful to have the displaywidget add several tabs
+                # by using the tabwidget argument of the initdict
+                if (devicetab.indexOf(devicedisplaywidget_called)) < 0:
+                    devicetab.addTab(devicedisplaywidget_called, tablabeldisplay)
+                    # Append the widget to the processing queue
 
-            # Update the first entry of the guiqueue list with the displaywidget
-            self.redvypr.devices[ind_devices]['guiqueues'][0][1] = devicedisplaywidget_called
-            self.redvypr.devices[ind_devices]['displaywidget'] = devicedisplaywidget_called
-            self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
-        else:
-            self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
-            self.redvypr.devices[ind_devices]['displaywidget'] = None
+                # Update the first entry of the guiqueue list with the displaywidget
+                self.redvypr.devices[ind_devices]['guiqueues'][0][1] = devicedisplaywidget_called
+                self.redvypr.devices[ind_devices]['displaywidget'] = devicedisplaywidget_called
+                self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
+            else:
+                self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
+                self.redvypr.devices[ind_devices]['displaywidget'] = None
+
 
         self.redvypr.devices[ind_devices]['widget'] = devicewidget  # This is the displaywidget
         #
