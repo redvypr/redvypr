@@ -320,7 +320,7 @@ class RedvyprAddress():
 
 
     def get_expand_explicit_str(self, address_format = '/u/a/h/d/p/i/k/'):
-        """
+        r"""
         Returns a string that searches explicitly for the expandsymbol.
         This is useful to match with addresses with the expandsymbel defined but
         not with addresses that have a real value in the address entry::
@@ -344,7 +344,7 @@ class RedvyprAddress():
                 addr_id = self.__add_entries_short[a_id]
                 addr_id_data = self.parsed_addrstr[addr_id]
                 if (addr_id_data is None) or (addr_id_data == '*'):
-                    addr_id_data = '{\*}'
+                    addr_id_data = r'{\*}'
                 address_str += a_id + self.__delimiter_id + addr_id_data + self.__delimiter_parts
 
         return address_str
@@ -380,7 +380,16 @@ class RedvyprAddress():
             str1 = ''
         if str2 is None:
             str2 = ''
-        if str1 == '*' or str2 == '*':
+        ## Check if a direct comparison is wished
+        flag_compare = False
+        if str1.startswith('=='):
+            str1 = str1[2:]
+            flag_compare = True
+        if str2.startswith('=='):
+            str2 = str2[2:]
+            flag_compare = True
+
+        if (str1 == '*' or str2 == '*') and flag_compare == False:
             return True
         elif str1.startswith(self.__regex_symbol_start) and str1.endswith(self.__regex_symbol_end) and len(str1) > 1:
             if str2.startswith(self.__regex_symbol_start) and str2.endswith(self.__regex_symbol_end):
@@ -495,6 +504,7 @@ class RedvyprAddress():
         elif(type(data) == RedvyprAddress):
             addr = data
             # If there is et least one eval address, compare the datakeyentries one by one
+            # This is resulting in two list, that are compared element by element
             if self.datakeyeval or addr.datakeyeval:
                 datakeyflag = self.get_datakeyentries() == addr.get_datakeyentries()
             else:

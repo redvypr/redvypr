@@ -525,7 +525,7 @@ class XYplot(QtWidgets.QFrame):
         try:
             line._metadata  # metadata found, doing nothing
         except:
-            line._metadata = self.device.get_metadata_datakey(line._y_raddr, all_entries=False)
+            line._metadata = self.device.get_metadata(line._y_raddr)
             self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._metadata)))
             try:
                 unit = line._metadata['unit']
@@ -751,7 +751,7 @@ class XYplot(QtWidgets.QFrame):
                         try:
                             line._metadata  # metadata found, doing nothing
                         except:
-                            line._metadata = self.device.get_metadata_datakey(line._y_raddr, all_entries=False)
+                            line._metadata = self.device.get_metadata(line._y_raddr)
                             self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._datakeys)))
                             try:
                                 unit = line._metadata['unit']

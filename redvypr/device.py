@@ -807,18 +807,22 @@ class RedvyprDevice(QtCore.QObject):
                             pass
 
                         self.thread_uuid = thread_uuid
+                        # Sending metadata
+                        compacket = self.redvypr.get_metadata_commandpacket()
+                        for addr in self.subscribed_addresses:
+                            if compacket in addr:
+                                self.datainqueue.put(compacket)
 
-                        info_dict                  = {}
-                        info_dict['uuid']          = self.uuid
-                        info_dict['thread_uuid']   = thread_uuid
+                        info_dict = {}
+                        info_dict['uuid'] = self.uuid
+                        info_dict['thread_uuid'] = thread_uuid
                         info_dict['thread_running'] = running2
                         self.thread_started.emit(info_dict)  # Notify about the started thread
 
                         return self.thread
 
-                    except Exception as e:
-                        self.logger.exception(e)
-                        self.logger.warning(funcname + 'Could not start thread.')
+                    except Exception:
+                        self.logger.warning(funcname + 'Could not start thread.',exc_info=True)
 
                         return None
 

@@ -215,7 +215,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
             dbytes = bytes_read - bytes_read_old
             bytes_read_old = bytes_read
             bps = dbytes / dt_update  # bytes per second
-            data = create_datadict(packetid=devicename)
+            data = create_datadict(device=devicename_redvypr,packetid=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['bps'] = bps

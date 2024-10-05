@@ -971,13 +971,39 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
         self.__update_devicetree_expanded()
 
 
+    def apply_address_filter(self,device, filter_address):#
+        funcname = __name__ + '.apply_address_filter():'
+        logger.debug(funcname + 'Testing {} in {} (with subsearch)'.format(device.address, filter_address))
+        test_filter = device.address in filter_address
+        test_filter_sub = False
+        if test_filter == False: # Check if subdevices have a match
+            # Test all devices of publisher in brute force and check if one of them fits
+            devs_forwarded = device.get_device_info()
+            for devaddress in devs_forwarded:
+                datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
+                # print('Datakeys', datakey_dict)
+                devaddress_redvypr = RedvyprAddress(devaddress)
+                if devaddress_redvypr in filter_address:
+                    test_filter_sub = True
+                    print('Filter match for subsearch:', devaddress_redvypr)
+                    break
+
+
+        if test_filter or test_filter_sub:
+            print('Filter match for ', device.address)
+            return True
+        else:
+            print('No filter match for ', device.address)
+            return False
+
+
     def __update_devicetree_expanded(self):
         funcname = __name__ + '.__update_devicetree_expanded():'
         logger.debug(funcname)
         colgrey = QtGui.QColor(220, 220, 220)
         def update_recursive(data_new_key, data_new, parent_item, datakey_construct, expandlevel):
             funcname = __name__ + '.__update_recursive():'
-            logger.debug(funcname)
+            #logger.debug(funcname)
             if self.expandlevel == 0:
                 datakey_construct_new = data_new_key
             else:
@@ -1023,6 +1049,7 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
                 #print('Address parsed', itmk.datakey_address.parsed_addrstr)
                 if self.filterWidget.filter_on:
                     test_filter = itmk.datakey_address not in self.filterWidget.filter_address
+                    # TODO: Here also the external filter should be checked
                     logger.debug('Testing (@tuple): {} not in {}: {}'.format(itmk.datakey_address,
                                                                              self.filterWidget.filter_address,
                                                                              test_filter))
@@ -1071,12 +1098,7 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
                     # Check for external filter
                     flag_external_filter = True
                     for addr_include in self.external_filter_include:
-                        test_include = dev.address not in addr_include
-                        logger.debug('Testing {} not in {}: {}'.format(dev.address, addr_include, test_include))
-                        if test_include:
-                            #print('No filter match for external filter', dev.address)
-                            flag_external_filter = False
-
+                        flag_external_filter = self.apply_address_filter(dev,addr_include)
                     if flag_external_filter == False:
                         continue
                     # Check for filter from filter widget
@@ -1088,8 +1110,9 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
                             devs_forwarded = dev.get_device_info()
                             for devaddress in devs_forwarded:
                                 datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
-                                #print('Datakeys', datakey_dict)
+                                print('Datakeys', datakey_dict)
                                 devaddress_redvypr = RedvyprAddress(devaddress)
+                                print('a',devaddress_redvypr,self.filterWidget.filter_address)
                                 if devaddress_redvypr in self.filterWidget.filter_address:
                                     test_filter_sub = False
                                     #print('Filter match for ', devaddress_redvypr)
@@ -1120,6 +1143,16 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
                             #fdsfdsf
                             flag_datastreams = True
                             devaddress_redvypr = RedvyprAddress(devaddress)
+                            # Filter the addresses
+                            flag_external_filter_match = False
+                            for addr_include in self.external_filter_include:
+                                if devaddress_redvypr in addr_include:
+                                    flag_external_filter_match = True
+                                    break
+
+                            # No external filter match, ignore device
+                            if not(flag_external_filter_match):
+                                continue
                             if self.filterWidget.filter_on:
                                 if devaddress_redvypr not in self.filterWidget.filter_address:
                                     #print('No filter match for ', devaddress_redvypr)

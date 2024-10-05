@@ -238,24 +238,37 @@ class BinarySensor(Sensor):
         :return:
         """
         data_packet = redvypr_create_datadict(device=self.name)
+
         flag_metadata = False
         for key_input in self.datakey_metadata.keys():
             flag_metadata = True
             metadata = self.datakey_metadata[key_input]
-            data_packet = add_metadata2datapacket(data_packet, key_input, metadict=metadata)
+            metadata_address = RedvyprAddress(devicename=self.name,datakey=key_input)
+            #data_packet = add_metadata2datapacket(data_packet, key_input, metadict=metadata)
+            data_packet = add_metadata2datapacket(data_packet, address=metadata_address, metadict=metadata)
 
         for key_input in self.calibrations_raw.keys():
             flag_metadata = True
+
             calibration = self.calibrations_raw[key_input]
             unit = calibration.unit
             unit_input = calibration.unit_input
             key_result = calibration.parameter_result
             if (key_input is not None) and (unit_input is not None):
-                data_packet = add_metadata2datapacket(data_packet, key_input, metadata=unit_input)
+                metadata_address = RedvyprAddress(devicename=self.name, datakey=key_input)
+                data_packet = add_metadata2datapacket(data_packet, address=metadata_address, metadata=unit_input)
+                #data_packet = add_metadata2datapacket(data_packet, key_input, metadata=unit_input)
             if (key_result is not None) and (unit is not None):
-                data_packet = add_metadata2datapacket(data_packet, key_result, metadata=unit)
+                metadata_address = RedvyprAddress(devicename=self.name, datakey=key_result)
+                data_packet = add_metadata2datapacket(data_packet, address=metadata_address, metadata=unit)
+                #data_packet = add_metadata2datapacket(data_packet, key_result, metadata=unit)
 
-        #print('keyinfo_datapacket',data_packet)
+        print('-----------')
+        print('metadata datapacket',data_packet)
+        print('-----------')
+        print('-----------')
+        print('-----------')
+
         if flag_metadata:
             return data_packet
         else:

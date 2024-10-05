@@ -31,6 +31,16 @@ logger.setLevel(logging.DEBUG)
 
 time_format = 'yyyy-mm-dd HH:MM:SS.000'
 
+row_address = 0
+row_host = 1
+row_uuid = 2
+row_device = 3
+row_publisher = 4
+row_packetid = 5
+row_datakey = 6
+row_dataunit = 7
+row_firstdata = row_dataunit + 1
+
 redvypr_devicemodule = True
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = False
@@ -106,59 +116,73 @@ def create_logfile(config,count=0,all_worksheets={}):
     worksheet_summary.write(1, 1, redvypr_version_str)
     all_worksheets['summary'] = worksheet_summary
     all_worksheets['metadata'] = workbook.add_worksheet('metadata')
-    all_worksheets['metadata_indices'] = {'rows': ['unit'], 'columns': []}
-    # Add unit in the metadata as the first entry
-    rowind_write = 2
-    colind_datakey = 0
-    # Write the metakey in the correct row
-    all_worksheets['metadata'].write(2, 0, 'Metadata key')
-    all_worksheets['metadata'].write(rowind_write, colind_datakey, 'unit')
-
+    all_worksheets['metadata_indices'] = {'rows': [], 'columns': []}
     return [workbook,filename,formats]
 
 def write_metadata(workbook, all_worksheets, datakey, data, deviceinfo_all, device_info, config):
     funcname = 'write_metadata():'
+    logger.debug(funcname)
     raddress_tmp = redvypr_address.RedvyprAddress(data, datakey=datakey)
     raddress_tmp_str = raddress_tmp.get_str('/h/d/i/k')
     raddress_tmp_str_full = raddress_tmp.get_fullstr()
     metadata_tmp = packet_statistics.get_metadata_deviceinfo_all(deviceinfo_all, raddress_tmp)
-    #print('Metadata tmp', raddress_tmp, metadata_tmp)
+    header_rows = [(row_host, raddress_tmp.hostname, 'hostname')]
+    header_rows.append((row_uuid, raddress_tmp.uuid, 'uuid'))
+    header_rows.append((row_device, raddress_tmp.devicename, 'devicename'))
+    header_rows.append((row_publisher, raddress_tmp.publisher, 'publisher'))
+    header_rows.append((row_packetid, raddress_tmp.packetid, 'packetid'))
+    header_rows.append((row_datakey, datakey, 'datakey'))
+    for header_row in header_rows:
+        colindex = 0
+        all_worksheets['metadata'].write(header_row[0], colindex, header_row[1],
+                                                    all_worksheets['header_format'])
+        all_worksheets['metadata'].write(header_row[0], 0, header_row[2], all_worksheets['header_format'])
     #device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
     if len(metadata_tmp.keys())>0: # Check if something was found
-        #print('Found metadata')
-        #print('All worksheets', all_worksheets)
+        mkeys = list(metadata_tmp.keys())
         try:
-            datakey_unit =metadata_tmp['unit']
+            datakey_unit = metadata_tmp['unit']
+            mkeys.remove('unit')
+            mkeys.insert(0,'unit')
         except:
             datakey_unit = None
-        for metakey in metadata_tmp.keys():
-            # Got the rows and columns
+
+        for metakey in mkeys:
+            # Get the rows and columns
             try:
                 rowind = all_worksheets['metadata_indices']['rows'].index(metakey)
-                rowind_write = rowind + 2
+                rowind_write = rowind + row_firstdata
             except:
                 all_worksheets['metadata_indices']['rows'].append(metakey)
                 rowind = all_worksheets['metadata_indices']['rows'].index(metakey)
-                rowind_write = rowind + 2
+                rowind_write = rowind + row_firstdata
                 colind_datakey = 0
                 # Write the metakey in the correct row
-                all_worksheets['metadata'].write(2, 0, 'Metadata key')
-                all_worksheets['metadata'].write(rowind_write, colind_datakey, metakey)
+                #all_worksheets['metadata'].write(row_firstdata, 0, 'Metadata key')
+                all_worksheets['metadata'].write(rowind_write, colind_datakey, metakey, all_worksheets['header_format'])
 
+            # And finally write the metadata
             try:
                 colind = all_worksheets['metadata_indices']['columns'].index(raddress_tmp_str)
                 colind_write = colind + 1
             except:
-                all_worksheets['metadata_indices']['columns'].append(raddress_tmp_str)
-                colind = all_worksheets['metadata_indices']['columns'].index(raddress_tmp_str)
-                colind_write = colind + 1
-                rowind_write_col = 0
-                all_worksheets['metadata'].write(rowind_write_col, colind_write, raddress_tmp_str,all_worksheets['header_format'])
-                all_worksheets['metadata'].write(rowind_write_col+1, colind_write, raddress_tmp_str_full,all_worksheets['header_format'])
+                try:
+                    all_worksheets['metadata_indices']['columns'].append(raddress_tmp_str)
+                    colind = all_worksheets['metadata_indices']['columns'].index(raddress_tmp_str)
+                    colind_write = colind + 1
+                    rowind_write_col = 0
+                    #all_worksheets['metadata'].write(rowind_write_col, colind_write, raddress_tmp_str,all_worksheets['header_format'])
+                    #all_worksheets['metadata'].write(rowind_write_col+1, colind_write, raddress_tmp_str_full,all_worksheets['header_format'])
+                    for header_row in header_rows:
+                        all_worksheets['metadata'].write(header_row[0], colind_write, header_row[1],
+                                                         all_worksheets['header_format'])
+
+                except:
+                    logger.info('Error',exc_info=True)
+
 
             #print('Writing metadata for address')
             datawrite = metadata_tmp[metakey]
-
             all_worksheets['metadata'].write(rowind_write, colind_write, datawrite)
 
         all_worksheets['metadata'].autofit()
@@ -194,8 +218,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 
             dtnews = dtneworig * dtfac
             logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
-        except Exception as e:
-            logger.exception(e)
+        except:
+            logger.warning(funcname + 'Could not start',exc_info=True)
             dtnews = 0
             
         try:
@@ -281,11 +305,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 #statistics = data_packets.do_data_statistics(data,statistics)
                 address_format = '/h/p/d/'
                 packet_address_str = packet_address.get_str(address_format)
-                row_address = 0
-                row_datakey = 1
-                row_dataaddress = 2
-                row_dataunit = 3
-                row_firstdata = 3
                 colindex_time = 1
                 colindex_numpacket = 0
                 coloffset = colindex_time + 1
@@ -313,8 +332,10 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     device_worksheets_indices[packet_address_str] = {'datakeys':[],'numline':0,'colindex':{}}
                     device_worksheets_indices[packet_address_str]['worksheet'] = packet_address_str_xlsx
                     device_worksheets_reduced[packet_address_str] = "worksheet: {}, #written: {}".format(packet_address_str_xlsx,0)
+                    #
                     device_worksheets[packet_address_str].write(row_address, 0, 'Address')
                     device_worksheets[packet_address_str].write(row_address, 1, packet_address_str)
+                    #
                     device_worksheets[packet_address_str].write(row_datakey, colindex_time, 'Excel time',all_worksheets['header_format'])
                     device_worksheets[packet_address_str].write(row_dataunit, colindex_time, time_format)
                     device_worksheets[packet_address_str].write(row_datakey, colindex_numpacket, 'Numpacket',all_worksheets['header_format'])
@@ -383,12 +404,24 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             device_worksheets_indices[packet_address_str]['datakeys'].append(datakey)
                             colindex = len(device_worksheets_indices[packet_address_str]['datakeys']) - 1 + coloffset
                             device_worksheets_indices[packet_address_str]['colindex'][datakey] = colindex
-                            device_worksheets[packet_address_str].write(row_datakey,colindex,datakey,all_worksheets['header_format'])
-                            device_worksheets[packet_address_str].write(row_dataaddress, colindex,
-                                                                    raddress_datakey.get_fullstr())
+                            header_rows = [(row_host,raddress_datakey.hostname,'hostname')]
+                            header_rows.append((row_uuid, raddress_datakey.uuid,'uuid'))
+                            header_rows.append((row_device, raddress_datakey.devicename,'devicename'))
+                            header_rows.append((row_publisher, raddress_datakey.publisher,'publisher'))
+                            header_rows.append((row_packetid, raddress_datakey.packetid,'packetid'))
+                            header_rows.append((row_datakey, datakey,'datakey'))
+                            for header_row in header_rows:
+                                device_worksheets[packet_address_str].write(header_row[0],colindex,header_row[1],
+                                                                            all_worksheets['header_format'])
+                                device_worksheets[packet_address_str].write(header_row[0], 0, header_row[2],
+                                                                            all_worksheets['header_format'])
+
+
+                            #device_worksheets[packet_address_str].write(row_datakey,colindex,datakey,all_worksheets['header_format'])
+
 
                         if datakey_unit is not None:
-                            device_worksheets[packet_address_str].write(row_dataunit, colindex, datakey_unit)
+                            device_worksheets[packet_address_str].write(row_dataunit, colindex, datakey_unit,all_worksheets['header_format'])
                         #print('Will write data from {} to column {} and line {}'.format(packet_address_str, colindex,lineindex))
                         datawrite = datapacket[datakey]
                         if not(isinstance(datawrite,str)) and not(isinstance(datawrite,int)) and not(isinstance(datawrite,float)):
@@ -928,11 +961,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
         layout.addLayout(updatelayout)
         #self.text.insertPlainText("hallo!")
 
-    def update_qtreewidget(self):
+    def update_qtreewidget(self, data):
         funcname = __name__ + '.update_qtreewidget()'
         logger.debug(funcname)
         if self.update_auto.isChecked():
-            devinfo = self.device.get_device_info(address=self.device.address_str)
+            devinfo = data
+            #devinfo = self.device.get_device_info(address=self.device.address_str)
             # devinfo = self.device.get_device_info()
             # print('Deviceinfo!!!!', devinfo)
             # print('__________')
@@ -969,14 +1003,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
             return
 
         # Update qtree
-
         try:
             # Test if the file status has changed, if yes make an update
             file_status_tmp = data['_deviceinfo']['file_status']
             try:
-                self.update_qtreewidget()
-            except Exception as e:
-                logger.debug(exc_info=True)
+                self.update_qtreewidget(data)
+            except:
+                logger.debug(funcname+ 'Qtreeupdate',exc_info=True)
 
         except Exception as e:
             #logger.debug(funcname, exc_info=True)

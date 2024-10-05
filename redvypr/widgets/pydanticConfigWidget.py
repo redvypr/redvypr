@@ -1577,8 +1577,11 @@ class datastreamMetadataWidget(datastreamQTreeWidget):
         self.layout.addWidget(self.splitterMetadata,0,0)
         # Lets click an item
         item_select = self.devicelist.topLevelItem(self.devicelist.topLevelItemCount() - 1)
-        item_select.setSelected(True)
-        self.__item_clicked(item_select, 0)
+        if item_select is None:
+            pass
+        else:
+            item_select.setSelected(True)
+            self.__item_clicked(item_select, 0)
 
 
 
@@ -1595,42 +1598,48 @@ class datastreamMetadataWidget(datastreamQTreeWidget):
         """
         Called when an item in the qtree is clicked
         """
-        self.__item_selected = item
-        if self.radioMerged.isChecked():
-            metadata_mode = 'merge'
-        else:
-            metadata_mode = 'dict'
-        funcname = __name__ + '__item_clicked()'
+        funcname = __name__ + '__item_clicked():'
         logger.debug(funcname)
-        print('Item',item)
-        try:
-            print('Address1',item.raddress)
-        except:
-            logger.info('Could not get address',exc_info=True)
-            pass
-
-        raddress = item.raddress
-        address_format = '/h/d/i/k'
-        # This needs to be considered, what we actually want to get ...
-        fstr1 = raddress.get_expand_explicit_str(address_format=address_format)
-        raddress_metadata = RedvyprAddress(fstr1)
-        print('Raddress_metadata',raddress_metadata)
-        metadata = self.device.get_metadata(raddress_metadata,mode=metadata_mode)
-        print('Got metadata',metadata)
-
-        metadata_work = copy.deepcopy(metadata)
-        if metadata_mode == 'dict':
-            try:
-                metadata_work[raddress.get_str(address_format)]
-            except:
-                metadata_work[raddress.get_str(address_format)] = {}
+        self.__item_selected = item
+        if item is None:
+            logger.warning('Item is None, doing nothing')
         else:
-            metadata_work = {raddress.get_str(address_format):metadata_work}
 
-        metadata_pydantic = RedvyprMetadataGeneral(address=metadata_work)
-        #print('Metadata', metadata_pydantic)
-        #print('Got metadata (keys)', metadata.keys())
-        self.create_metadata_widget(metadata_pydantic,raddress)
+            if self.radioMerged.isChecked():
+                metadata_mode = 'merge'
+            else:
+                metadata_mode = 'dict'
+            funcname = __name__ + '__item_clicked()'
+            logger.debug(funcname)
+            print('Item',item)
+            try:
+                print('Address1',item.raddress)
+            except:
+                logger.info('Could not get address',exc_info=True)
+                pass
+
+            raddress = item.raddress
+            address_format = '/h/d/i/k'
+            # This needs to be considered, what we actually want to get ...
+            fstr1 = raddress.get_expand_explicit_str(address_format=address_format)
+            raddress_metadata = RedvyprAddress(fstr1)
+            print('Raddress_metadata',raddress_metadata)
+            metadata = self.device.get_metadata(raddress_metadata,mode=metadata_mode)
+            print('Got metadata',metadata)
+
+            metadata_work = copy.deepcopy(metadata)
+            if metadata_mode == 'dict':
+                try:
+                    metadata_work[raddress.get_str(address_format)]
+                except:
+                    metadata_work[raddress.get_str(address_format)] = {}
+            else:
+                metadata_work = {raddress.get_str(address_format):metadata_work}
+
+            metadata_pydantic = RedvyprMetadataGeneral(address=metadata_work)
+            #print('Metadata', metadata_pydantic)
+            #print('Got metadata (keys)', metadata.keys())
+            self.create_metadata_widget(metadata_pydantic,raddress)
 
     def create_metadata_widget(self,metadata, raddress):
         funcname = __name__ + '.create_metadata_widget():'

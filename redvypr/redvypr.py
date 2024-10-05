@@ -1141,12 +1141,18 @@ class Redvypr(QtCore.QObject):
         logger.debug(funcname)
         deviceinfo_all = self.get_deviceinfo()
         metadata = redvypr_packet_statistic.get_metadata_deviceinfo_all(deviceinfo_all, address=address, publisher_strict=publisher_strict, mode=mode)
-        #metadata = {}
-        #for dev in self.devices:
-        #    mdata = dev['device'].get_metadata(address)
-        #    metadata.update(mdata)
-
         return metadata
+
+    def get_metadata_commandpacket(self):
+        funcname = __name__ + 'get_metadata_commandpacket():'
+        logger.debug(funcname)
+        deviceinfo_all = self.get_deviceinfo()
+        compacket = data_packets.commandpacket('info', host=self.hostinfo, devicename='', packetid='metadata', publisher='')
+        compacket['deviceinfo_all'] = copy.deepcopy(deviceinfo_all)
+        tread = time.time()
+        redvypr_packet_statistic.treat_datadict(compacket, '', self.hostinfo, 0, tread,
+                                                'distribute_data')
+        return compacket
 
     def get_known_devices(self):
         """ List all known devices that can be loaded by redvypr

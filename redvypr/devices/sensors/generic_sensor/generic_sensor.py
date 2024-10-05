@@ -25,7 +25,7 @@ from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 import redvypr.widgets.standard_device_widgets
 from redvypr.devices.plot.XYplotWidget import XYplot, configXYplot
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
+from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, datastreamMetadataWidget
 from redvypr.devices.sensors.calibration.calibration_models import calibration_models, calibration_NTC
 from redvypr.devices.sensors.csvsensors.sensorWidgets import sensorCoeffWidget, sensorConfigWidget
 from redvypr.gui import iconnames
@@ -607,7 +607,7 @@ class SensorWidget(QtWidgets.QWidget):
         # Table showing the different packetids, which are used to distinguis different sensors
         self.packetidtable = QtWidgets.QTableWidget()
         self.packetidtable.setRowCount(0)
-        self.packetidtable.setColumnCount(1)
+        self.packetidtable.setColumnCount(2)
         self.packetidtable.cellClicked.connect(self.packetid_changed)
         self.datatable = QtWidgets.QTableWidget()
         self.datatable.setRowCount(2)
@@ -639,13 +639,13 @@ class SensorWidget(QtWidgets.QWidget):
     def packetid_changed(self,row,column):
         funcname = __name__ + '.packetid_changed():'
         logger.debug(funcname)
-        print('Packetid changed')
+        #print('Packetid changed')
         try:
             packetid = self.packetidtable.item(row,column).text()
             self.__packetid_selected = packetid
             data = self.last_packet[packetid]
-            print('Updating with',packetid)
-            print('Data',data)
+            #print('Updating with',packetid)
+            #print('Data',data)
             self.datakey_items = {}  # Dictionary with the tablewidgetitems
             self.datakey_units = {}  # Dictionary with the units
             self.__packetid_selected = packetid
@@ -697,6 +697,26 @@ class SensorWidget(QtWidgets.QWidget):
         xyplot.setParent(None)
         logger.debug(funcname + 'Closed')
 
+    def __metadata_clicked(self):
+        print('Metadata')
+        print('Metadata')
+        print('Metadata')
+        button = self.sender()
+        print('Address',button.__metadata_raddress__)
+        filter_address = RedvyprAddress(packetid='==' + button.__metadata_raddress__.packetid)
+
+        packetid = button.__packetid__
+        print('Filter address',filter_address)
+        self.__metawidget = datastreamMetadataWidget(redvypr=self.device.redvypr, device=self.device,
+                                                     filter_include=[filter_address])
+        #self.__metawidget = datastreamMetadataWidget(redvypr=self.device.redvypr, device=self.device,
+        #                                             filter_include=[])
+        self.__metawidget.show()
+        print('Metadata')
+        print('Metadata')
+        print('Metadata')
+
+
 
     def update_data(self, data):
         funcname = __name__ + '.update_data():'
@@ -714,11 +734,18 @@ class SensorWidget(QtWidgets.QWidget):
                 self.packetids.append(packetid)
                 self.packetidtable.clear()
                 self.packetidtable.setRowCount(len(self.packetids))
-                self.packetidtable.setHorizontalHeaderLabels(['Packetids for sensor {}'.format(self.sensor.name)])
+                self.packetidtable.setHorizontalHeaderLabels(['Packetids for sensor {}'.format(self.sensor.name),'Metadata'])
                 for i,p in enumerate(self.packetids):
                     packetiditem = QtWidgets.QTableWidgetItem(p)
                     packetiditem.setFlags(packetiditem.flags() & ~QtCore.Qt.ItemIsEditable)
                     self.packetidtable.setItem(i,0,packetiditem)
+                    item_metadata = QtWidgets.QPushButton('Metadata')
+                    item_metadata.__packetid__ = packetid
+                    item_metadata.__metadata_raddress__ = RedvyprAddress(rdata.address)
+                    item_metadata.clicked.connect(self.__metadata_clicked)
+                    # self.datakey_plot[packetid][k].__item_plot__ = item_plot
+                    icol_metadata = 1
+                    self.packetidtable.setCellWidget(i, icol_metadata, item_metadata)
                     if p == self.__packetid_selected:
                         self.packetidtable.setCurrentCell(i, 0)
 
