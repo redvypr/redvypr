@@ -7,6 +7,7 @@
         - improved datakey comparison
         - metadata design changed
         - Added infrastructure to send command packets to all devices. All devices are subscribed now to '/d:/p:/i:metadata/k:_redvypr_command'
+        - Added '==' to redvypr addresses for direct comparison (ignoring *)
 - 0.9.1:
         - less verbose
         - RedvyprAddress is not expanding missing address entries with a '*'

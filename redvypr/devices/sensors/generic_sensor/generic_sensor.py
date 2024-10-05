@@ -698,25 +698,13 @@ class SensorWidget(QtWidgets.QWidget):
         logger.debug(funcname + 'Closed')
 
     def __metadata_clicked(self):
-        print('Metadata')
-        print('Metadata')
-        print('Metadata')
         button = self.sender()
-        print('Address',button.__metadata_raddress__)
         filter_address = RedvyprAddress(packetid='==' + button.__metadata_raddress__.packetid)
 
         packetid = button.__packetid__
-        print('Filter address',filter_address)
         self.__metawidget = datastreamMetadataWidget(redvypr=self.device.redvypr, device=self.device,
                                                      filter_include=[filter_address])
-        #self.__metawidget = datastreamMetadataWidget(redvypr=self.device.redvypr, device=self.device,
-        #                                             filter_include=[])
         self.__metawidget.show()
-        print('Metadata')
-        print('Metadata')
-        print('Metadata')
-
-
 
     def update_data(self, data):
         funcname = __name__ + '.update_data():'
