@@ -775,13 +775,13 @@ class datastreamWidget(QtWidgets.QWidget):
 
     def done_clicked(self):
         funcname = __name__ + '.done_clicked():'
-
-        addrtype = self.addrtype_combo.currentText()
-        datastream_str = datastream_address.get_str(addrtype)
+        addrformat = self.addrtype_combo.currentText()
         device = self.addressline.device
         device_address = self.addressline.devaddress
+        datastream_address = self.addressline.datakey_address
+        datastream_str = datastream_address.get_str(addrformat)
 
-        signal_dict = {'device': device, 'device_address':device_address,'datastream_str': datastream_str,'datastream_address':datastream_address,'address_format':addrtype}
+        signal_dict = {'device': device, 'device_address':device_address,'datastream_str': datastream_str,'datastream_address':datastream_address,'address_format':addrformat}
         signal_dict['addrformat'] = self.addressline.datakey_address
         print(funcname + 'Signal dict {}'.format(signal_dict))
         self.apply.emit(signal_dict)
@@ -1110,9 +1110,9 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
                             devs_forwarded = dev.get_device_info()
                             for devaddress in devs_forwarded:
                                 datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
-                                print('Datakeys', datakey_dict)
+                                #print('Datakeys', datakey_dict)
                                 devaddress_redvypr = RedvyprAddress(devaddress)
-                                print('a',devaddress_redvypr,self.filterWidget.filter_address)
+                                #print('a',devaddress_redvypr,self.filterWidget.filter_address)
                                 if devaddress_redvypr in self.filterWidget.filter_address:
                                     test_filter_sub = False
                                     #print('Filter match for ', devaddress_redvypr)

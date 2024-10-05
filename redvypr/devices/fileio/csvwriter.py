@@ -28,7 +28,7 @@ import redvypr.redvypr_address as redvypr_address
 import redvypr.gui
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('csvlogger')
+logger = logging.getLogger('csvwrtier')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
@@ -214,15 +214,12 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     if(f == None):
        return None
     
-
-    
     tfile           = time.time() # Save the time the file was created
     tflush          = time.time() # Save the time the file was created
     tupdate         = time.time() # Save the time for the update timing
     FLAG_RUN = True
     while FLAG_RUN:
         tcheck      = time.time()
-
 
         # Flush file on regular basis
         if ((time.time() - tflush) > config['dt_sync']):
@@ -348,7 +345,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             streamdata = ''
 
                         typestr = type(streamdata).__name__ + '_type'
-                        print('Index', typestr, index, streamdata)
+                        #print('Index', typestr, index, streamdata)
                         try:
                             strformat = config['datastreams'][index]['strformat'][typestr]
                         except:
@@ -744,9 +741,16 @@ class initDeviceWidget(QtWidgets.QWidget):
     def __datastream_choosen__(self,datastreamdict):
         funcname = __name__ + '.__datastream_choosen__():'
         logger.debug(funcname)
-        #addr = datastreamdict['datastream_address']
+        datastream_addr = datastreamdict['datastream_address']
         datastream_str = datastreamdict['datastream_str']
-        newdatastream = csv_datastream_config(address=datastream_str)
+        metadata = self.device.redvypr.get_metadata(datastream_addr)
+        print('Metadata',metadata)
+        print('-------')
+        try:
+            unit = metadata['unit']
+        except:
+            unit = ''
+        newdatastream = csv_datastream_config(address=datastream_str,unit=unit)
         #print('Hallo datastream choosen',datastream_str)
         #print('Hallo bewdatastream', newdatastream)
         # Get the column number
@@ -774,13 +778,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         if row == self.row_field_comment:
             indexdatastream = col - self.ncols_add
             comment = str(item.text())
-            print('Indexdatastream',indexdatastream,comment)
+            logger.debug(funcname + ' Comment changed to {}'.format(comment))
             self.device.custom_config.datastreams[indexdatastream].comment = comment
             self.populate_csvformattable()
         elif row == self.row_field_unit:
             indexdatastream = col - self.ncols_add
             unit = str(item.text())
-            print('Indexdatastream', indexdatastream, unit)
+            logger.debug(funcname + ' Unit changed to {}'.format(unit))
             self.device.custom_config.datastreams[indexdatastream].unit = unit
             self.populate_csvformattable()
         else:
