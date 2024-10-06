@@ -1,0 +1,53 @@
+[project]
+name = "redvypr"
+dynamic = ["version"]
+description = "redvypr: REaltime Data Viewer and PRocessor (in PYthon)"
+#long_description= "redvypr: REaltime Data Viewer and PRocessor (in PYthon). Python based software to read, process, fuse, distribute, save and visualize data from various sensors."
+#long_description_content_type="text/x-rst"
+#url="https://github.com/redvypr/redvypr"
+authors = [
+    {name = "Peter Holtermann", email = "peter.holtermann@io-warnemuende.de"},
+]
+license = {text = "GPLv03"}
+dependencies = ['pyaml',
+	     'pyqtgraph',
+	     'netCDF4',
+	     'pyqtconsole',
+	     'pyserial',
+	     'qtawesome',
+	     'pynmea2',
+	     'pydantic>2.0',
+	     'xlsxwriter',
+	     'pympler',
+	     'matplotlib',
+	     'python-dateutil',
+	     'pympler',
+	     'deepdiff',
+	     ]
+requires-python = ">=3.5"
+readme = "README.md"
+classifiers=[
+	'Development Status :: 4 - Beta',
+        'Topic :: Scientific/Engineering',          
+        'Intended Audience :: Science/Research',
+        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',  
+        'Operating System :: OS Independent',
+        'Programming Language :: Python :: 3 :: Only',
+]
+
+[project.scripts]
+redvypr="redvypr.redvypr_main:redvypr_main"
+
+
+[build-system]
+requires = [
+    "setuptools",
+]
+build-backend = "setuptools.build_meta"
+
+
+[tool.setuptools.packages]
+find = {}
+
+[tool.setuptools.package-data]
+"*" = ["VERSION","icon/*","utils/csv2dict/*.yaml"]
