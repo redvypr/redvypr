@@ -10,6 +10,10 @@ if(os.path.exists(_version_file)):
     pass
 else:
     _version_file = 'VERSION'
+    if (os.path.exists(_version_file)):
+        pass
+    else: # pyinstaller windows10
+        _version_file = '_internal/VERSION'
 with open(_version_file) as _version_f:
    version = _version_f.read().strip()
 
