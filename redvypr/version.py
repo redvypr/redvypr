@@ -22,7 +22,7 @@ def resource_path(relative_path):
 
 # Get the version of redvypr
 _version_file = pkg_resources.resource_filename('redvypr','VERSION')
-print('Version file',_version_file)
+
 # This is a workaround to read the VERSION file in a pyinstaller environment in linux (redvypr exectuable and redvypr directory cannot life together)
 if(os.path.exists(_version_file)):
     pass
@@ -31,11 +31,9 @@ else:
     if (os.path.exists(_version_file)):
         pass
     else: # pyinstaller windows10
-        logger.warning('Could not load version file')
+        logger.warning('Could not load version file {}'.format(_version_file))
 
-print(resource_path('VERSION'),os.path.exists(_version_file))
-print(_version_file,os.path.exists(_version_file))
-logger.info('Opening version file {}'.format(_version_file))
+logger.debug('Opening version file {}'.format(_version_file))
 with open(_version_file) as _version_f:
    version = _version_f.read().strip()
 
