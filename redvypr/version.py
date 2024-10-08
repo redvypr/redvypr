@@ -31,6 +31,9 @@ else:
         pass
     else: # pyinstaller windows10
         logger.warning('Could not load version file')
+
+print(resource_path('VERSION'),os.path.exists(_version_file))
+logger.info('Opening version file {}'.format(_version_file))
 with open(_version_file) as _version_f:
    version = _version_f.read().strip()
 
