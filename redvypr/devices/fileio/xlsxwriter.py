@@ -62,7 +62,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
     datafolder:str = pydantic.Field(default='./',description='Folder the data is saved to')
     fileextension:str= pydantic.Field(default='xlsx',description='File extension, if empty not used')
     fileprefix:str= pydantic.Field(default='redvypr',description='If empty not used')
-    filepostfix:str= pydantic.Field(default='xlsxlogger',description='If empty not used')
+    filepostfix:str= pydantic.Field(default='xlsxwriter',description='If empty not used')
     filedateformat:str= pydantic.Field(default='%Y-%m-%d_%H%M%S',description='Dateformat used in the filename, must be understood by datetime.strftime')
     filecountformat:str= pydantic.Field(default='04',description='Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}')
 

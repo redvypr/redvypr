@@ -1024,7 +1024,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
 
     def about(self):
         """
-Opens an "about" widget showing basic information.
+        Opens an "about" widget showing basic information.
         """
         self._about_widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(self._about_widget)

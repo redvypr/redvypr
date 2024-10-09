@@ -813,7 +813,7 @@ class HFVWidget(QtWidgets.QWidget):
             # Create plots
             plot_widgets.logger.setLevel(logging.INFO)
             config = XYplotWidget.configXYplot(title='Voltage CH{:d}'.format(i))
-            plot_widget_HFV = XYplotWidget.XYplot(config=config, redvypr_device=self.device.redvypr)
+            plot_widget_HFV = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device.redvypr)
             # Subscribe to channel
             plot_widget_HFV.set_line(0, 'C{:d}'.format(i) + '/{HFV_raw_.*}', name='HFV C{:d}'.format(i), color='red', linewidth=2)
             self.plot_widgets_HFV.append(plot_widget_HFV)
@@ -821,7 +821,7 @@ class HFVWidget(QtWidgets.QWidget):
             rawlayout.setRowStretch(row+1, 3)
 
             config = XYplotWidget.configXYplot(title='Heat flow CH{:d}'.format(i))
-            plot_widget_HFVSI = XYplotWidget.XYplot(config=config, redvypr_device=self.device.redvypr)
+            plot_widget_HFVSI = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device.redvypr)
             # Subscribe to channel
             plot_widget_HFVSI.set_line(0, 'C{:d}'.format(i) + '/{HFV_SI_.*}', name='HFVSI C{:d}'.format(i), color='red',
                                      linewidth=2)
@@ -1000,7 +1000,7 @@ class DHFSWidget(QtWidgets.QWidget):
             subtmp_raw = '/d:{{DHF_raw_{}}}/k:{}/'.format(self.sn, p)
             self.device_subscriptions_raw.append(subtmp_raw)
             config = XYplotWidget.configXYplot(title='{} {}'.format(self.sn, p))
-            self.plot_widget_HF_raw = XYplotWidget.XYplot(config=config, redvypr_device=self.device)
+            self.plot_widget_HF_raw = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
             self.plot_widget_HF_raw.set_line(0, subtmp_raw, name=p, color='red', linewidth=2)
             # Create the button to plot the widget
             but = QtWidgets.QPushButton('Plot')
@@ -1011,7 +1011,7 @@ class DHFSWidget(QtWidgets.QWidget):
             subtmp_si = '/d:{{DHF_SI_{}}}/k:{}/'.format(self.sn, p)
             self.device_subscriptions_si.append(subtmp_si)
             config = XYplotWidget.configXYplot(title='{} (converted)'.format(p))
-            self.plot_widget_HF_SI = XYplotWidget.XYplot(config=config, redvypr_device=self.device)
+            self.plot_widget_HF_SI = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
             self.plot_widget_HF_SI.set_line(0, subtmp_si, name=p, color='red', linewidth=2)
             # Create the button to plot the widget
             but = QtWidgets.QPushButton('Plot')
@@ -1029,7 +1029,7 @@ class DHFSWidget(QtWidgets.QWidget):
                 self.rawconvtabs.addTab(self.avgWidget, 'Average')
 
                 config = XYplotWidget.configXYplot(title='Heat flow average')
-                self.plot_widget_HF_SI_AVG = XYplotWidget.XYplot(config=config, redvypr_device=redvypr_device, add_line=False)
+                self.plot_widget_HF_SI_AVG = XYplotWidget.XYPlotWidget(config=config, redvypr_device=redvypr_device, add_line=False)
                 for i,avg_s in enumerate(self.configuration.avg_data):
                     avg_str = str(avg_s) + 's'
                     avg_datakey = 'HF_avg_{}'.format(avg_str)
@@ -1047,8 +1047,8 @@ class DHFSWidget(QtWidgets.QWidget):
                 # Add the three temperature sensors as well
                 for NNTC in range(0,3):
                     config = XYplotWidget.configXYplot(title='Temperature (average)')
-                    plot_widget_NTC_SI_AVG = XYplotWidget.XYplot(config=config, redvypr_device=redvypr_device,
-                                                                     add_line=False)
+                    plot_widget_NTC_SI_AVG = XYplotWidget.XYPlotWidget(config=config, redvypr_device=redvypr_device,
+                                                                       add_line=False)
                     for i, avg_s in enumerate(self.configuration.avg_data):
                         avg_str = str(avg_s) + 's'
                         avg_datakey = 'NTC{}_avg_{}'.format(NNTC,avg_str)

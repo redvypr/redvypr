@@ -24,7 +24,7 @@ from redvypr.redvypr_address import RedvyprAddress, RedvyprAddressStr
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 import redvypr.widgets.standard_device_widgets
-from redvypr.devices.plot.XYplotWidget import XYplot, configXYplot
+from redvypr.devices.plot.XYplotWidget import XYPlotWidget, configXYplot
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, datastreamMetadataWidget
 from redvypr.devices.sensors.calibration.calibration_models import calibration_models, calibration_NTC
 from redvypr.devices.sensors.csvsensors.sensorWidgets import sensorCoeffWidget, sensorConfigWidget
@@ -617,6 +617,8 @@ class SensorWidget(QtWidgets.QWidget):
         self.datakey_items = {} # Dictionary with the tablewidgetitems
         self.datakey_units = {} # Dictionary with the units
         self.datakey_plot = {}# Dictionary with the plot widgets
+        self.datakey_plot_data = {}  # Dictionary with the data for the plots
+        self.bufferlen = 1000
         self.last_packet = {}  # Dictionary with the plot widgets
         self.packetids = []  # Dictionary with the plot widgets
         self.icol_key = 0
@@ -669,8 +671,8 @@ class SensorWidget(QtWidgets.QWidget):
             logger.debug(funcname + 'Plot clicked, creating XY-Plotwidget')
             logger.debug(funcname + 'sensor address: {} packetid: {}, k: {}'.format(self.sensor_address,packetid,k))
             config_plot = configXYplot(automatic_subscription=False)
-            self.datakey_plot[packetid][k] = XYplot(config=config_plot, add_line=False,
-                                                    redvypr_device=self.device)
+            self.datakey_plot[packetid][k] = XYPlotWidget(config=config_plot, add_line=False,
+                                                          redvypr_device=self.device)
             yaddr = RedvyprAddress(self.sensor_address, datakey=k, packetid=packetid)
 
             logger.debug(funcname + 'yaddr: {}'.format(yaddr))
@@ -680,6 +682,11 @@ class SensorWidget(QtWidgets.QWidget):
             self.datakey_plot[packetid][k].closing.connect(self.__xyplot_closed__)
             windowtitle = 'Plot {} {}'.format(packetid, k)
             self.sender().__xyplot__.setWindowTitle(windowtitle)
+            # Adding the buffer data
+            buffer_tmp = self.datakey_plot_data[packetid]
+            logger.debug(funcname + 'Updating plot with buffer data')
+            for data_tmp in buffer_tmp:
+                self.datakey_plot[packetid][k].update_plot(data_tmp)
 
 
         self.sender().__xyplot__.show()
@@ -717,6 +724,16 @@ class SensorWidget(QtWidgets.QWidget):
             packetid = rdata.address.packetid
             #print('Got data',rdata)
             #print('Packetid',packetid)
+
+            # Try to update plotdata
+            try:
+                self.datakey_plot_data[packetid]
+            except:
+                self.datakey_plot_data[packetid] = []
+
+            self.datakey_plot_data[packetid].append(data)
+            if len(self.datakey_plot_data[packetid]) > self.bufferlen:
+                self.datakey_plot_data[packetid].pop(0)
             # Check if the packetid has been seen before
             if packetid not in self.packetids and len(packetid) > 0 and (rdata.address.packetidexpand == False):
                 self.packetids.append(packetid)
@@ -759,7 +776,7 @@ class SensorWidget(QtWidgets.QWidget):
                         raddr_tmp = RedvyprAddress(data,datakey=k)
                         logger.debug(funcname + 'Trying to get metadata for address {}'.format(raddr_tmp))
                         metadata = self.device.get_metadata(raddr_tmp)
-                        print(funcname + ' Got Metadata ...', metadata)
+                        #print(funcname + ' Got Metadata ...', metadata)
                         try:
                             self.datakey_units[k] = metadata['unit']
                         except:
@@ -767,7 +784,13 @@ class SensorWidget(QtWidgets.QWidget):
 
                     # Update the plot first or create new plot widget
                     if 't' in keys and k is not 't':
-                        print('Packetid',packetid,k)
+                        #print('Packetid',packetid,k)
+                        try:
+                            self.datakey_plot_data[packetid][k]
+                        except:
+                            self.datakey_plot_data[packetid][k] = []
+
+                        self.datakey_plot_data[packetid][k].append()
                         # Try to update plots
                         try:
                             self.datakey_plot[packetid]

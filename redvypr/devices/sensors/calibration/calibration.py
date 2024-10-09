@@ -2329,7 +2329,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     #plot_widget = plot_widgets.redvypr_graph_widget(config=config)
                     if 'XY' in sdata.realtimeplot:
                         config = XYplotWidget.configXYplot(interactive='mouse')
-                        plot_widget = XYplotWidget.XYplot(config=config, redvypr_device=self.device)
+                        plot_widget = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
                         plot_widget.plotWidget.scene().sigMouseMoved.connect(self.anyMouseMoved)
                         plot_widget.plotWidget.scene().sigMouseClicked.connect(self.anyMouseClicked)
                         plot_widget.vlines = []  # List of vertical lines
@@ -2406,7 +2406,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             if True:
                 if t_intervall is not None:
                     data = plot_widget.get_data(t_intervall)
-                    if isinstance(plot_widget,XYplotWidget.XYplot):
+                    if isinstance(plot_widget, XYplotWidget.XYPlotWidget):
                         data = data[0]
                     #print('Got data from widget', data)
                     col = plot_widget.datatablecolumn
@@ -2659,7 +2659,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.device.custom_config.calibrationdata[i].parameter = parameter
             self.allsensornames[i] = d
             p.datastream = d
-        if isinstance(p,XYplotWidget.XYplot):
+        if isinstance(p, XYplotWidget.XYPlotWidget):
             p.config.lines[0].y_addr = d
             #print('line', p.config.lines[0])
             p.set_title(d)

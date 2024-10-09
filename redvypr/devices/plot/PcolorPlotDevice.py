@@ -58,12 +58,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
 
 # Use the standard start function as the start function
 
-
-
-
-
-
-class PcolorPlot(QtWidgets.QWidget):
+class PcolorPlotWidget(QtWidgets.QWidget):
     def __init__(self, config=None, redvypr_device=None, loglevel=logging.DEBUG):
         funcname = __name__ + '.init():'
         super(QtWidgets.QWidget, self).__init__()
@@ -141,7 +136,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         self.device = device
         self.layout = QtWidgets.QGridLayout(self)
-        self.pcolorplot = PcolorPlot(redvypr_device=device, config=self.device.custom_config)
+        self.pcolorplot = PcolorPlotWidget(redvypr_device=device, config=self.device.custom_config)
         self.layout.addWidget(self.pcolorplot)
         self.device.config_changed_signal.connect(self.config_changed)
 

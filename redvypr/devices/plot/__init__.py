@@ -1,7 +1,7 @@
 from . import plot
 from . import plot_widgets
 from . import XYplotWidget
-from . import XYPlot
+from . import XYPlotDevice
 from . import rawdatadisp
-from . import PcolorPlot
+from . import PcolorPlotDevice
 redvypr_devicemodule = True

@@ -94,7 +94,7 @@ class configXYplot(pydantic.BaseModel):
 
 
 # config_template_graph['description'] = description_graph
-class XYplot(QtWidgets.QFrame):
+class XYPlotWidget(QtWidgets.QFrame):
     """ Widget is plotting realtimedata using the pyqtgraph functionality
 
     """

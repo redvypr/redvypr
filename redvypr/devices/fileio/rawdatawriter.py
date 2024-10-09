@@ -17,7 +17,7 @@ from redvypr.data_packets import check_for_command
 from redvypr.packet_statistic import do_data_statistics, create_data_statistic_dict
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('rawdatalogger')
+logger = logging.getLogger('rawdatawriter')
 logger.setLevel(logging.DEBUG)
 redvypr_devicemodule = True
 
@@ -275,7 +275,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout        = QtWidgets.QGridLayout(self)
         self.device   = device
         self.redvypr  = device.redvypr
-        self.label    = QtWidgets.QLabel("rawdatalogger setup")
+        self.label    = QtWidgets.QLabel("rawdatawriter setup")
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         self.label.setStyleSheet(''' font-size: 24px; font: bold''')
         self.config_widgets= [] # A list of all widgets that can only be used of the device is not started yet
