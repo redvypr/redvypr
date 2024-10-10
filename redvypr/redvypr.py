@@ -970,7 +970,7 @@ class Redvypr(QtCore.QObject):
 
         """
         devsender = self.sender()
-        print('Subscribtion changed',devsender.name)
+        logger.debug('Subscribtion changed {}'.format(devsender.name))
         for d in self.devices:
             dev = d['device']
             if dev == devsender:

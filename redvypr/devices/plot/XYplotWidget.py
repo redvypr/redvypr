@@ -89,6 +89,11 @@ class configXYplot(pydantic.BaseModel):
     xlabel: str = pydantic.Field(default='', description='')
     ylabel: str = pydantic.Field(default='', description='')
     lines: typing.Optional[typing.List[configLine]] = pydantic.Field(default=[configLine()], editable=True)
+    plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_unit'] = pydantic.Field(default='all', description='')
+    last_N_s: float = pydantic.Field(default=10,
+                                     description='Plots the last seconds, if plot_mode_x is set to last_N_s')
+    last_N_points: int = pydantic.Field(default=1000,
+                                        description='Plots the last points, if plot_mode_x is set to last_N_points')
     automatic_subscription: bool = pydantic.Field(default=True,
                                                   description='subscribes automatically the adresses of the lines at the host device')
 
@@ -115,7 +120,8 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.logger.setLevel(loglevel)
         self.description = 'XY plot'
 
-
+        self.x_min = 0
+        self.x_max = 0
         if (config == None):  # Create a config from the template
             self.config = configXYplot()
         else:
@@ -137,6 +143,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.layout = QtWidgets.QVBoxLayout(self)
         self.create_widgets()
         self.apply_config()
+        self.xAxisLimitsChanged()
 
     def create_widgets(self):
 
@@ -168,6 +175,35 @@ class XYPlotWidget(QtWidgets.QFrame):
             # General config
             configAction = plot.plotItem.vb.menu.addAction('General config')
             configAction.triggered.connect(self.pyqtgraphConfigAction)
+            # X-Axis
+            xMenu = plot.plotItem.vb.menu.addMenu('X-Axis')
+            xAction = QtWidgets.QWidgetAction(self)
+            # Create X-Menu
+            xMenuWidget = QtWidgets.QWidget()
+            xMenuWidget_layout = QtWidgets.QVBoxLayout(xMenuWidget)
+            self._xaxis_radio_auto = QtWidgets.QRadioButton('Autoscale')
+            self._xaxis_radio_lasts = QtWidgets.QRadioButton('Last N-Seconds')
+
+            if self.config.plot_mode_x == 'all':
+                self._xaxis_radio_auto.setChecked(True)
+            else:
+                self._xaxis_radio_lasts.setChecked(True)
+
+            self._xaxis_radio_auto.toggled.connect(self.xAxisLimitsChanged)
+            self._xaxis_spin_lasts = QtWidgets.QDoubleSpinBox()
+            self._xaxis_spin_lasts.setValue(self.config.last_N_s)
+            self._xaxis_spin_lasts.setMinimum(0)
+            self._xaxis_spin_lasts.setMaximum(1e12)
+            self._xaxis_spin_lasts.valueChanged.connect(self.xAxisLimitsChanged)
+            xMenuWidget_layout.addWidget(self._xaxis_radio_auto)
+            xMenuWidget_layout.addWidget(self._xaxis_radio_lasts)
+            xMenuWidget_layout.addWidget(self._xaxis_spin_lasts)
+            xAction.setDefaultWidget(xMenuWidget)
+            xMenu.addAction(xAction)
+            #xMenu.triggered.connect(self.pyqtgraphXMenuAction)
+            # Y-Axis
+            yMenu = plot.plotItem.vb.menu.addMenu('Y-Axis')
+            #yMenu.triggered.connect(self.pyqtgraphYMenuAction)
             # Line config menu
             menu = plot.plotItem.vb.menu.addMenu('Line config')
             self.lineMenu = menu
@@ -202,6 +238,46 @@ class XYPlotWidget(QtWidgets.QFrame):
             self.plotWidget = plot
             self.legendWidget = legend
             # plot_dict = {'widget': plot, 'lines': []}
+
+    def xAxisLimitsChanged(self):
+        funcname = __name__ + '.xAxisLimitsChanged():'
+        logger.debug(funcname)
+        self.config.last_N_s = self._xaxis_spin_lasts.value()
+        if self._xaxis_radio_auto.isChecked():
+            logger.debug(funcname + 'Enabling auto scaling')
+            self.config.plot_mode_x = 'all'
+        if self._xaxis_radio_lasts.isChecked():
+            logger.debug(funcname + 'Enabling last s range')
+            self.config.plot_mode_x = 'last_N_s'
+
+        # Update if it is existing already ...
+        try:
+            self.plotWidget
+            self.applyPlotRanges()
+        except:
+            pass
+
+    def applyPlotRanges(self):
+        funcname = __name__ + '.applyPlotRanges():'
+        logger.debug(funcname)
+        if self.config.plot_mode_x == 'all':
+            self.plotWidget.enableAutoRange(axis='x')
+            self.plotWidget.setAutoVisible(x=True)
+        elif self.config.plot_mode_x == 'last_N_s':
+            xmin = self.x_max - self.config.last_N_s
+            xmax = self.x_max
+            self.plotWidget.setXRange(xmin, xmax)
+
+        self.plotWidget.enableAutoRange(axis='y')
+        self.plotWidget.setAutoVisible(y=True)
+
+    def pyqtgraphXMenuAction(self):
+        funcname = __name__ + '.pyqtgraphXMenuAction()'
+        logger.debug(funcname)
+
+    def pyqtgraphYMenuAction(self):
+        funcname = __name__ + '.pyqtgraphYMenuAction()'
+        logger.debug(funcname)
 
     def pyqtgraphConfigAction(self):
         funcname = __name__ + '.pyqtgraphConfigAction()'
@@ -765,6 +841,7 @@ class XYPlotWidget(QtWidgets.QFrame):
                                 self.apply_config()
 
             # Update the lines plot
+            something_updated = False
             for iline, line in enumerate(self.config.lines):
                 tlastupdate = line._tlastupdate  # The time the plot was last updated
                 # Check if an update of the plot shall be done, or if only the buffer is updated
@@ -783,6 +860,9 @@ class XYPlotWidget(QtWidgets.QFrame):
                         [x,y,err]= self.__get_data_for_line(line)
                         #print('x',x,'err',err)
                         line._lineplot.setData(x=x, y=y)
+                        self.x_min = min(self.x_min,min(x))
+                        self.x_max = max(self.x_max, max(x))
+                        something_updated = True
                         if line._errorplot is not None:
                             beamwidth = None
                             line._errorplot.setData(x=np.asarray(x), y=np.asarray(y), top=np.asarray(err) * 1,
@@ -791,6 +871,17 @@ class XYPlotWidget(QtWidgets.QFrame):
                     except:
                         self.logger.info('Could not update line',exc_info=True)
 
+
+
+            if something_updated:
+                try:
+                    # Check if ranges need to be changed
+                    if self.config.plot_mode_x == 'last_N_s':
+                        xmin = self.x_max - self.config.last_N_s
+                        xmax = self.x_max
+                        self.plotWidget.setXRange(xmin,xmax)
+                except:
+                    logger.info(funcname,exc_info=True)
 
             if len(self.config.lines) > 1:
                 pass
