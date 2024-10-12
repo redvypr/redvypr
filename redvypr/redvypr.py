@@ -324,14 +324,14 @@ class Redvypr(QtCore.QObject):
     are started and data is interchanged
 
     """
-    device_path_changed          = QtCore.pyqtSignal()  # Signal notifying if the device path was changed
-    device_added                 = QtCore.pyqtSignal(list)  # Signal notifying that a device was added
-    device_removed               = QtCore.pyqtSignal()  # Signal notifying that a device was removed
-    devices_connected            = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
-    devices_disconnected         = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
-    status_update_signal         = QtCore.pyqtSignal()  # Signal notifying if the status of redvypr has been changed
+    device_path_changed = QtCore.pyqtSignal()  # Signal notifying if the device path was changed
+    device_added = QtCore.pyqtSignal(list)  # Signal notifying that a device was added
+    device_removed = QtCore.pyqtSignal()  # Signal notifying that a device was removed
+    devices_connected = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
+    devices_disconnected = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
+    status_update_signal = QtCore.pyqtSignal()  # Signal notifying if the status of redvypr has been changed
     device_status_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
-    hostconfig_changed_signal    = QtCore.pyqtSignal()  # Signal notifying if the configuration of the host changed (hostname, hostinfo_opt)
+    hostconfig_changed_signal = QtCore.pyqtSignal()  # Signal notifying if the configuration of the host changed (hostname, hostinfo_opt)
 
     def __init__(self, config=None, hostname=None, nogui=False, loglevel=None):
         super(Redvypr, self).__init__()
@@ -640,8 +640,8 @@ class Redvypr(QtCore.QObject):
         """
         funcname = self.__class__.__name__ + '.add_device():'
         logger.debug(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(custom_config))
-        print('add_device custom_config:',custom_config)
-        print('add_device base_config:', base_config)
+        #print('add_device custom_config:',custom_config)
+        #print('add_device base_config:', base_config)
         devicelist = []
         device_found = False
         # Loop over all modules and check of we find the name
@@ -657,28 +657,28 @@ class Redvypr(QtCore.QObject):
                     FLAG_HAS_PYDANTICBASE = True
                     FLAG_PYDANTIC = True
                     # Create or use a given device parameter object
-                    print('type base config',type(base_config))
+                    #print('type base config',type(base_config))
                     if isinstance(base_config, RedvyprDeviceParameter):
-                        print('Got a device parameter config')
+                        #print('Got a device parameter config')
                         device_parameter = base_config
                     elif isinstance(base_config, RedvyprDeviceBaseConfig):
-                        print('Got a base config',base_config)
+                        #print('Got a base config',base_config)
                         device_parameter = RedvyprDeviceParameter(**base_config.model_dump())
-                        print('parameter',device_parameter)
+                        #print('parameter',device_parameter)
                     elif isinstance(base_config, dict):
-                        print('Will update from config dictionary')
+                        #print('Will update from config dictionary')
                         device_parameter_tmp = RedvyprDeviceParameter()
                         device_parameter = device_parameter_tmp.model_copy(update=base_config)
                     else:
-                        print('Standard base_config')
+                        #print('Standard base_config')
                         device_parameter = RedvyprDeviceParameter()
 
                     device_parameter.devicemodulename = devicemodulename
                     device_parameter.numdevice = self.numdevice
-                    print('Device parameter',device_parameter)
+                    #print('Device parameter',device_parameter)
                     # Update the device parameter with the parameters of the device
                     device_parameter = device_parameter.model_copy(update=pydantic_base_config.model_dump())
-                    print('Device parameter 2', device_parameter)
+                    #print('Device parameter 2', device_parameter)
 
                 except Exception as e:
                     logger.debug(
@@ -688,7 +688,7 @@ class Redvypr(QtCore.QObject):
                         device_parameter = RedvyprDeviceParameter(**base_config.model_dump())
                         device_parameter.devicemodulename=devicemodulename
                         device_parameter.numdevice=self.numdevice
-                        print('Device parameter ...',device_parameter)
+                        #print('Device parameter ...',device_parameter)
                     #logger.exception(e)
                     FLAG_HAS_PYDANTICBASE = False
                     FLAG_PYDANTIC = False
@@ -696,13 +696,13 @@ class Redvypr(QtCore.QObject):
                 # Try to get a pydantic device specific configuration (the configuration only for the device)
                 try:
                     pydantic_device_config = devicemodule.DeviceCustomConfig()
-                    print('Device config of module',pydantic_device_config,type(pydantic_device_config))
-                    print('deviceconfig', custom_config, type(custom_config))
+                    #print('Device config of module',pydantic_device_config,type(pydantic_device_config))
+                    #print('deviceconfig', custom_config, type(custom_config))
 
                     try:
-                        print('Custom_Config',custom_config)
+                        #print('Custom_Config',custom_config)
                         if custom_config is not None:
-                            print('Dump',custom_config.model_dump())
+                            #print('Dump',custom_config.model_dump())
                             pydantic_custom_config = devicemodule.DeviceCustomConfig.model_validate(custom_config.model_dump())
                         else:
                             pydantic_custom_config = devicemodule.DeviceCustomConfig()
@@ -739,11 +739,11 @@ class Redvypr(QtCore.QObject):
                 #print('devicemodulename', devicemodulename)
                 #print('devicename 0',device_parameter.name,len(device_parameter.name))
                 devicename_tmp = device_parameter.name
-                print('Devicename_tmp', devicename_tmp)
+                #print('Devicename_tmp', devicename_tmp)
                 if len(device_parameter.name) == 0:
                     logger.debug(funcname + 'using standard name')
                     devicename_tmp = devicemodulename.split('.')[-1]# + '_' + str(self.numdevice)
-                    print('Devicename_tmp',devicename_tmp)
+                    #print('Devicename_tmp',devicename_tmp)
 
                 if devicename_tmp in devicenames:
                     logger.warning(funcname + ' Devicename {:s} exists already, will add {:d} to the name.'.format(devicename_tmp,self.numdevice))

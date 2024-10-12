@@ -17,15 +17,9 @@ from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 import redvypr.devices.plot.plot_widgets as redvypr_plot_widgets
 
-_logo_file = redvypr_files.logo_file
-_icon_file = redvypr_files.icon_file
-description = 'Sending manually data'
-
-
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('manual')
 logger.setLevel(logging.DEBUG)
-
 
 redvypr_devicemodule = True
 

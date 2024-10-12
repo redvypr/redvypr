@@ -324,13 +324,14 @@ class redvyprWidget(QtWidgets.QWidget):
         if redvyprdevicewidget is not None:
             initargs = inspect.signature(redvyprdevicewidget.__init__)
             initargs_parameters = dict(initargs.parameters)
-            initargs2 = {}
+            initargs2 = None
             if (RedvyprDeviceWidget_startonly in redvyprdevicewidget.__mro__):
                 initargs2 = inspect.signature(redvypr_deviceInitWidget.__init__)
             if (RedvyprDeviceWidget_simple in redvyprdevicewidget.__mro__):
                 initargs2 = inspect.signature(redvypr_deviceInitWidget.__init__)
-            logger.debug(funcname + 'adding arguments {}'.format(dict(initargs2.parameters)))
-            initargs_parameters.update(dict(initargs2.parameters))
+            if initargs2 is not None:
+                logger.debug(funcname + 'adding arguments {}'.format(dict(initargs2.parameters)))
+                initargs_parameters.update(dict(initargs2.parameters))
 
             initdict = {}
             if ('device' in initargs_parameters.keys()):
