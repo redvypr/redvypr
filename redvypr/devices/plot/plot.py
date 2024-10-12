@@ -49,11 +49,11 @@ class PlotDock(pyqtgraph.dockarea.Dock):
     def __labelClicked(self):
         self.labelClicked.emit()
     def mousePressEvent(self, ev):
-        print('Hallo')
+        #print('Hallo')
         super().mousePressEvent(ev)
 
     def mouseDoubleClickEvent(self, ev):
-        print('Double')
+        #print('Double')
         super().mouseDoubleClickEvent(ev)
 
 class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.RedvyprDeviceWidget_startonly):
@@ -132,13 +132,13 @@ class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.RedvyprDeviceW
 
     def __dockclosed(self):
         dock = self.sender()
-        print('Dock closed',dock)
+        #print('Dock closed',dock)
         for w in dock.widgets:
             self.plot_widgets.remove(w)
             w.close()
 
     def update_data(self, data):
-        print('Update data')
+        #print('Update data')
         for w in self.plot_widgets:
             w.update_plot(data)
 
