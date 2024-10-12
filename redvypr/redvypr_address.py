@@ -150,7 +150,9 @@ class RedvyprAddress():
         self.parsed_addrstr = parsed_addrstr
         self.parsed_addrstr_expand = parsed_addrstr_expand
 
-        # Add the attributes to the object
+        # Add the attributes to the object and an explicit address string
+
+        self.explicit_format = '/'
         for addr_id in self.__addr_entries:
             addr_entry = parsed_addrstr[addr_id]
             if addr_entry is None:
@@ -158,7 +160,11 @@ class RedvyprAddress():
             setattr(self,addr_id,addr_entry)
             expand_attribute = addr_id + 'expand'
             setattr(self, expand_attribute, parsed_addrstr_expand[addr_id])
+            if addr_entry is not '*':
+                addr_id_short = self.__addr_entries_short_r[addr_id]
+                self.explicit_format += addr_id_short + '/'
 
+        self.address_str_explicit = self.get_str(self.explicit_format)
         self.datakeyeval = parsed_addrstr_expand['datakeyeval']
         # Check if address has a regular expression
         self.datakeyregex = False
@@ -322,7 +328,7 @@ class RedvyprAddress():
     def get_expand_explicit_str(self, address_format = '/u/a/h/d/p/i/k/'):
         r"""
         Returns a string that searches explicitly for the expandsymbol.
-        This is useful to match with addresses with the expandsymbel defined but
+        This is useful to match with addresses with the expandsymbol defined but
         not with addresses that have a real value in the address entry::
 
             r1 = RedvyprAddress('/d:test/k:*')

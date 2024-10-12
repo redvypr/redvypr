@@ -9,6 +9,7 @@ import yaml
 import copy
 import pydantic
 from pydantic.color import Color as pydColor
+#from pydantic_extra_types import Color as pydColor
 import typing
 import pyqtgraph
 import redvypr.data_packets
@@ -49,7 +50,7 @@ class dataBufferLine(pydantic.BaseModel):
             return {'tdata': self.tdata, 'xdata': self.xdata, 'ydata': self.ydata, 'errordata': self.errordata,
                     'skip_bufferdata_when_serialized': self.skip_bufferdata_when_serialized}
 
-class configLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
+class configLine(pydantic.BaseModel,extra='allow'):
     buffersize: int = pydantic.Field(default=20000,description='The size of the buffer holding the data of the line')
     numplot_max: int = pydantic.Field(default=2000, description='The number of data points to be plotted maximally')
     name: str = pydantic.Field(default='Line', description='The name of the line, this is shown in the legend, $y to use the redvypr address')
@@ -64,6 +65,7 @@ class configLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
     error_constant: float = pydantic.Field(default=.01, description='')
     color: pydColor = pydantic.Field(default=pydColor('red'), description='The color of the line')
     linewidth: float = pydantic.Field(default=2.0, description='The linewidth')
+    linestyle: typing.Literal['SolidLine','DashLine','DotLine','DashDotLine','DashDotDotLine'] = pydantic.Field(default='SolidLine', description='The linestyle, see also https://doc.qt.io/qt-6/qt.html#PenStyle-enum')
     databuffer: dataBufferLine = pydantic.Field(default=dataBufferLine(), description='The databuffer', editable=False)
     plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_points'] = pydantic.Field(default='all', description='')
     last_N_s: float = pydantic.Field(default=60,
@@ -71,7 +73,6 @@ class configLine(pydantic.BaseModel,extra=pydantic.Extra.allow):
     last_N_points: int = pydantic.Field(default=1000,
                                         description='Plots the last points, if plot_mode_x is set to last_N_points')
     plot_every_Nth: int = pydantic.Field(default=1, description='Uses every Nth datapoint for plotting')
-
 
 class configXYplot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
@@ -96,7 +97,6 @@ class configXYplot(pydantic.BaseModel):
                                         description='Plots the last points, if plot_mode_x is set to last_N_points')
     automatic_subscription: bool = pydantic.Field(default=True,
                                                   description='subscribes automatically the adresses of the lines at the host device')
-
 
 # config_template_graph['description'] = description_graph
 class XYPlotWidget(QtWidgets.QFrame):
@@ -284,7 +284,6 @@ class XYPlotWidget(QtWidgets.QFrame):
         logger.debug(funcname)
         self.ConfigWidget = pydanticConfigWidget(self.config, configname='new line',exclude=['lines'], redvypr=self.redvypr)
         self.ConfigWidget.config_changed_flag.connect(self.apply_config)
-
         self.ConfigWidget.show()
 
     def pyqtgraphRemLineAction(self):
@@ -294,9 +293,6 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.config.lines.pop(index_remove)
         self.sender()._line._lineplot.clear()
         self.apply_config()
-        #linename = self.sender()._linename
-
-        #lineConfig = self.sender()._line
 
     def pyqtgraphAddLineAction(self):
         funcname = __name__ + '.pyqtgraphAddLineAction()'
@@ -311,20 +307,42 @@ class XYPlotWidget(QtWidgets.QFrame):
     def pyqtgraphAddLineDone(self):
         if self.__newline is not None:
             self.config.lines.append(self.__newline)
-
         self.apply_config()
+
     def pyqtgraphLineAction(self):
         """ Function is called whenever a line is configured
 
         """
         funcname = __name__ + '.pyqtgraphLineAction()'
         self.logger.debug(funcname)
-        linename = self.sender()._linename
-        lineConfig = self.sender()._line
-        self.lineConfigWidget = pydanticConfigWidget(lineConfig, configname=linename, redvypr=self.device.redvypr)
-        self.lineConfigWidget.setWindowTitle('Config {}'.format(linename))
-        self.lineConfigWidget.config_editing_done.connect(self.apply_config)
-        self.lineConfigWidget.show()
+        config_mode = self.sender().text()
+        if 'address' in config_mode.lower():
+            #print('Address')
+            linename = self.sender()._linename
+            lineConfig = self.sender()._line
+            self.lineConfigWidget = redvypr.widgets.redvyprAddressWidget.datastreamWidget(redvypr=self.redvypr, device=self.device)
+            self.lineConfigWidget.setWindowTitle('Y-Address for {}'.format(linename))
+            self.lineConfigWidget.apply.connect(self.apply_config_address)
+            self.lineConfigWidget._line = self.sender()._line
+            self.lineConfigWidget.show()
+
+        elif 'color' in config_mode.lower():
+            #print('Color')
+            linename = self.sender()._linename
+            lineConfig = self.sender()._line
+            self.lineConfigWidget = QtWidgets.QColorDialog()
+            self.lineConfigWidget._line = lineConfig
+            #self.lineConfigWidget.currentColorChanged.connect(self.apply_config_color)
+            self.lineConfigWidget.accepted.connect(self.apply_config_color)
+            self.lineConfigWidget.show()
+
+        elif 'settings' in config_mode.lower():
+            linename = self.sender()._linename
+            lineConfig = self.sender()._line
+            self.lineConfigWidget = pydanticConfigWidget(lineConfig, configname=linename, redvypr=self.device.redvypr)
+            self.lineConfigWidget.setWindowTitle('Config {}'.format(linename))
+            self.lineConfigWidget.config_editing_done.connect(self.apply_config)
+            self.lineConfigWidget.show()
 
     def pyqtgraphBufferAction(self):
         """ Function is called whenever a clear buffer action is called
@@ -364,7 +382,6 @@ class XYPlotWidget(QtWidgets.QFrame):
         """
         Sets the line at index to the parameters
         """
-
         self.add_line(y_addr=y_addr, name=name, x_addr=x_addr, color=color, linewidth=linewidth, bufsize=bufsize, index=index)
 
     def add_line(self, y_addr, x_addr='$t(y)', name='$y', error_addr='', color=None, linewidth=1, bufsize=20000, numplot=2000, index=None):
@@ -408,15 +425,51 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.config.lines[index].databuffer.xdata_addr = x_addr
         self.apply_config()
 
-    def construct_labelname(self, line):
+    def construct_labelname(self, line, labelformat=None):
         name = line.name
         unit = line.unit
-        x_addr = line.x_addr
-        y_addr = line.y_addr
-        labelname = line.label_format
-        labelname = labelname.format(NAME=name,UNIT=unit,X_ADDR=x_addr,Y_ADDR=y_addr)
+        x_addr = RedvyprAddress(line.x_addr).address_str_explicit
+        y_addr = RedvyprAddress(line.y_addr).address_str_explicit
+        if labelformat == None:
+            labelname = line.label_format
+            labelname = labelname.format(NAME=name,UNIT=unit,X_ADDR=x_addr,Y_ADDR=y_addr)
         self.logger.debug('Labelname {}'.format(labelname))
         return labelname
+
+    def apply_config_address(self,address_dict):
+        funcname = __name__ + '.apply_config_address():'
+        self.logger.debug(funcname)
+        line = self.sender()._line
+        #print('Line',line,line.y_addr)
+        line.y_addr = address_dict['datastream_str']
+        #print('Line config',line.confg)
+        self.apply_config()
+
+    def apply_config_color(self):
+        funcname = __name__ + 'apply_config_color():'
+        logger.debug(funcname)
+        try:
+            color = self.sender().currentColor()  # ComboBox
+            color1 = color.getRgb()
+            color_tmp = (color1[0], color1[1], color1[2])
+            rint = int(color1[0] * 255)
+            gint = int(color1[1] * 255)
+            bint = int(color1[2] * 255)
+            data = pydColor(color_tmp)
+            self.sender()._line.color = data
+            self.apply_config()
+        except:
+            logger.info('Could not set color',exc_info=True)
+
+    def apply_config_linewidth(self):
+        spinbox = self.sender()
+        spinbox._line.linewidth = spinbox.value()
+        self.apply_config()
+
+    def apply_config_linestyle(self):
+        combobox = self.sender()
+        combobox._line.linestyle = combobox.currentText()
+        self.apply_config()
 
     def apply_config(self):
         """
@@ -520,6 +573,7 @@ class XYPlotWidget(QtWidgets.QFrame):
             labelname = self.construct_labelname(line)
             line.label = labelname
             linename = "Line {}: {}".format(iline, labelname)
+            linename_menu = "Line {}".format(iline)
 
             # check if we have already a lineplot, if yes, dont bother
             try:
@@ -543,10 +597,12 @@ class XYPlotWidget(QtWidgets.QFrame):
                 color = redvypr.gui.get_QColor(self.config.lines[iline].color)
                 # print('Set pen 2')
                 linewidth = self.config.lines[iline].linewidth
+                linestyle = self.config.lines[iline].linestyle
+                style=eval('QtCore.Qt.' + linestyle)
                 # print('Set pen 3')
                 #color = QtGui.QColor(200, 100, 100)
                 #print('COLOR!!!!', color, type(color), linewidth)
-                pen = pyqtgraph.mkPen(color, width=float(linewidth))
+                pen = pyqtgraph.mkPen(color, width=float(linewidth),style=style)
                 line._lineplot.setPen(pen)
                 # Check if the addresses changed and clear the buffer if necessary
                 if line.databuffer.xdata_addr == line.x_addr:
@@ -574,15 +630,62 @@ class XYPlotWidget(QtWidgets.QFrame):
                         self.logger.debug(funcname + 'Subscribing to error address {}'.format(error_raddr))
                         self.device.subscribe_address(error_raddr)
 
-
-                lineAction = self.lineMenu.addAction(linename)
+                # Create the menu to config the line
+                #lineMenuline = QtWidgets.QMenu(linename_menu,self)
+                lineMenuline = QtWidgets.QMenu(linename_menu, self.lineMenu)
+                lineAction = lineMenuline.addAction('Y-Address')
                 lineAction._line = line
                 lineAction._iline = iline
                 lineAction._linename = linename
                 lineAction.triggered.connect(self.pyqtgraphLineAction)
+
+                # Create a widget for the linewidth
+                linewidthAction = QtWidgets.QWidgetAction(lineMenuline)
+                # Create add XYPlot-Menu
+                linewidthWidget = QtWidgets.QWidget()
+                linewidthWidget_layout = QtWidgets.QVBoxLayout(linewidthWidget)
+                linewidthSpinBox = QtWidgets.QDoubleSpinBox()
+                linewidthSpinBox.setValue(line.linewidth)
+                linewidthSpinBox._line = line
+                linewidthSpinBox.valueChanged.connect(self.apply_config_linewidth)
+                # Add a widget for the linestyle
+                linewidthWidget_layout.addWidget(QtWidgets.QLabel('Linewidth'))
+                linewidthWidget_layout.addWidget(linewidthSpinBox)
+                linewidthWidget_layout.addWidget(QtWidgets.QLabel('Linestyle'))
+                linestyleComboBox = QtWidgets.QComboBox()
+                linestyleComboBox._line = line
+                linewidthWidget_layout.addWidget(linestyleComboBox)
+
+                styles_tmp = typing.get_type_hints(line, include_extras=True)['linestyle']
+                styles_tmp = typing.get_args(styles_tmp)
+                i_style_set = 0
+                for i_s,s in enumerate(styles_tmp):
+                    linestyleComboBox.addItem(s)
+                    if s == line.linestyle:
+                        i_style_set = i_s
+
+                linestyleComboBox.setCurrentIndex(i_style_set)
+                linestyleComboBox.currentTextChanged.connect(self.apply_config_linestyle)
+                #print('Styles',styles_tmp)
+
+                linewidthAction.setDefaultWidget(linewidthWidget)
+                lineMenuline.addAction(linewidthAction)
+
+                colorAction = lineMenuline.addAction('Linecolor')
+                colorAction._line = line
+                colorAction._iline = iline
+                colorAction._linename = linename
+                colorAction.triggered.connect(self.pyqtgraphLineAction)
+
+                lineAction = lineMenuline.addAction('All settings')
+                lineAction._line = line
+                lineAction._iline = iline
+                lineAction._linename = linename
+                lineAction.triggered.connect(self.pyqtgraphLineAction)
+                self.lineMenu.addMenu(lineMenuline)
                 # remove line menu
                 # Remove line
-                lineAction = self.removeMenu.addAction(linename)
+                lineAction = self.removeMenu.addAction(linename_menu)
                 lineAction._line = line
                 lineAction._iline = iline
                 lineAction._linename = linename
@@ -718,7 +821,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         return [x,y,err]
 
     def closeEvent(self, event):
-        print('Close event')
+        #print('Close event')
         self.closing.emit()
 
     def update_plot(self, data):
@@ -871,8 +974,6 @@ class XYPlotWidget(QtWidgets.QFrame):
                     except:
                         self.logger.info('Could not update line',exc_info=True)
 
-
-
             if something_updated:
                 try:
                     # Check if ranges need to be changed
@@ -888,5 +989,3 @@ class XYPlotWidget(QtWidgets.QFrame):
                 #print('DONE DONE DONE')
         except:
             self.logger.debug('Could not update data', exc_info=True)
-
-
