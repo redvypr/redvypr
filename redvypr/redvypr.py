@@ -136,17 +136,23 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
             except Exception as e:
                 redvyprdata = None
             # Process data from the main thread
-            # TODO, send notice to all devices
             if(redvyprdata is not None):
                 if(redvyprdata['type'] == 'device_removed'):
-                    logger.debug('Device removed {}'.format(redvyprdata))
+                    logger.debug(funcname + 'Device removed {}'.format(redvyprdata))
                     FLAG_device_status_changed = True
                     devices_removed.append(redvyprdata['device'])
-                    devinfo_rem = deviceinfo_all.pop(redvyprdata['device'])
-                    #print('Devices len distribute data', len(devices))
+                    devinfo_rem = deviceinfo_all['device_redvypr'].pop(redvyprdata['device'])
                     devinfo_send = {'type':'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all), 'devices_changed': list(set(devices_changed)),
                     'devices_removed': devices_removed,'change':'devrem','device_changed':redvyprdata['device']}
                     infoqueue.put_nowait(devinfo_send)
+                    # Send a deviceinfo update with the changed metadata
+                    compacket = data_packets.commandpacket('info', host=hostinfo, devicename='', packetid='device_removed',
+                                                           publisher='')
+                    compacket['deviceinfo_all'] = copy.deepcopy(deviceinfo_all)
+                    compacket['devices_removed'] = devices_removed
+                    redvypr_packet_statistic.treat_datadict(compacket, '', hostinfo, 0, tread,
+                                                            'distribute_data')
+                    data_packets_fan_out.append(compacket)
 
             for devicedict in devices:
                 device = devicedict['device']
@@ -234,19 +240,6 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         redvypr_packet_statistic.treat_datadict(compacket, '', hostinfo, 0, tread,
                                                                 'distribute_data')
                         data_packets_fan_out.append(compacket)
-                    #
-                    # Compare if datastreams changed
-                    #
-                    if False: # To be removed soon
-                        if (list(datastreams_all.keys()) != list(datastreams_all_old.keys())):
-                            #print('Datastreams changed', len(datastreams_all.keys()))
-                            datastreams_all_old.update(datastreams_all)
-                            devices_changed.append(device.name)
-                            # Send an information about the change, that will trigger a pyqt signal in the main thread
-                            devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
-                                            'devices_changed': list(set(devices_changed)),
-                                            'devices_removed': devices_removed, 'change': 'datastreams changed','device_changed':device.name}
-                            infoqueue.put_nowait(devinfo_send)
 
                     #print('Data ready to send',data)
                     #
@@ -292,12 +285,6 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         except Exception as e:
                             pass
                             # logger.debug(funcname + ':guiqueue of :' + devicedict['device'].name + ' full')
-
-            #if FLAG_device_status_changed:
-                #infoqueue.put_nowait(copy.copy(datastreams_all))
-                #devinfo_send = {'type':'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all), 'devices_changed': list(set(devices_changed)),
-                # 'devices_removed': devices_removed,''}
-                #infoqueue.put_nowait(devinfo_send)
 
             # Calculate the sleeping time
             tstop = time.time()
@@ -1180,11 +1167,12 @@ class Redvypr(QtCore.QObject):
 
         """
         funcname = self.__class__.__name__ + '.rem_device():'
-        logger.debug(funcname)
+        logger.debug(funcname +'Removing device:{}'.format(device.name))
         FLAG_REMOVED = False
+        # Search for the device in sendict
         for sendict in self.devices:
             if(sendict['device'] == device):
-                print('Sendict',sendict)
+                #print('Sendict',sendict)
                 if (sendict['device'].thread == None):
                     logger.debug(funcname + 'Thread is not running, doing nothing')
                     pass
