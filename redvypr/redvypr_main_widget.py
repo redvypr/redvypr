@@ -269,7 +269,7 @@ class redvyprWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         config = self.redvypr.get_config()
         data_save = config.model_dump()
-        print('Data save',data_save)
+        #print('Data save',data_save)
         if True:
             tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
             fname_suggestion = 'config_' + self.redvypr.hostinfo['hostname'] + '_' + tstr + '.yaml'
@@ -277,7 +277,7 @@ class redvyprWidget(QtWidgets.QWidget):
             fname_full, _ = QtWidgets.QFileDialog.getSaveFileName(self, "QFileDialog.getSaveFileName()",
                                                                   fname_suggestion,
                                                                   "Yaml Files (*.yaml);;All Files (*)")
-            print('fname',fname_full)
+            #print('fname',fname_full)
             if fname_full:
                 logger.debug('Saving to file {:s}'.format(fname_full))
                 with open(fname_full, 'w') as fyaml:
