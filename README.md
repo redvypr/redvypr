@@ -32,7 +32,7 @@ Digital sensors have an non overseeable amount of interfaces like
 UART, SPI, I2C, ethernet, CAN, to name a few, and their own data
 format. Each sensor is typically shipped with its own software for
 sampling.
-The complexity starts if a user wants to fuse data from several sensors during sampling. An often used approach is to merge the data after the measurement. The users needs to read each dataset of each sensor, with the data containing most likely different data formats like time stamps, binary data or ASCII text. It is left to the user to synchronize the data and create a usable dataset.
+The complexity starts if a user wants to fuse data from several sensors during sampling. An often used approach is to merge the data after the measurement. The user needs to read each dataset of each sensor, with the data containing most likely different data formats like time stamps, binary data or ASCII text. It is left to the user to synchronize the data and create a usable dataset.
 
 
 Redvypr is a tool to help to work with digital sensors by providing a
