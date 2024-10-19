@@ -11,6 +11,8 @@ authors = [
 license = {text = "GPLv03"}
 dependencies = ['pyaml',
 	     'pyqtgraph',
+	     'PyQt5',
+	     'setuptools',
 	     'netCDF4',
 	     'pyqtconsole',
 	     'pyserial',
@@ -24,7 +26,7 @@ dependencies = ['pyaml',
 	     'pympler',
 	     'deepdiff',
 	     ]
-requires-python = ">=3.5"
+requires-python = ">=3.7"
 readme = "README.md"
 classifiers=[
 	'Development Status :: 4 - Beta',

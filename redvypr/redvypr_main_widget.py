@@ -33,16 +33,10 @@ logger.setLevel(logging.INFO)
 _logo_file = files.logo_file
 _icon_file = files.icon_file
 
-#
-#
-# ########################
-# Here the gui part starts
-# ########################
-#
-#
-#
 
-
+class TabGroupButton(QtWidgets.QPushButton):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
 #
 #
 #
@@ -90,6 +84,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.devicetabs.setMovable(True)
         self.devicetabs.setTabsClosable(True)
         self.devicetabs.tabCloseRequested.connect(self.closeTab)
+
 
         # Create home tab
         self.createHomeWidget()
@@ -147,10 +142,33 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__deviceAddButton = QtWidgets.QPushButton('Add device')
         self.__deviceAddButton.clicked.connect(self.open_add_device_widget)
         self.__deviceAddButton.setFont(font)
+        #self.__groupAddButton = QtWidgets.QPushButton('Add group')
+        #self.__groupAddButton.clicked.connect(self.__add_group_clicked)
+        #self.__groupAddButton.setFont(font)
         self.__homeWidget_layout.addWidget(self.__deviceAddButton)
+        #self.__homeWidget_layout.addWidget(self.__groupAddButton)
         self.__homeWidget_layout.addWidget(self.__deviceTableWidget)
         ## Configure button
         #self.__homeWidget_layout.addWidget(self.__host_config_btn)
+
+    def __add_group_clicked(self):
+        funcname = __name__ + '.__add_group_clicked():'
+        logger.debug(funcname)
+        # Create a test group tab
+        tab_index = self.devicetabs.addTab(QtWidgets.QWidget(), '')
+        tabbar = self.devicetabs.tabBar()
+        ind_tab = self.devicetabs.count()
+        button = QtWidgets.QPushButton("G G G")
+        button.setFixedSize(100, 30)  #
+        menu = QtWidgets.QMenu()
+        action1 = QtWidgets.QAction("Option 1", self)
+        action2 = QtWidgets.QAction("Option 2", self)
+        menu.addAction(action1)
+        menu.addAction(action2)
+        button.setMenu(menu)
+        print('Ind tab', ind_tab)
+        tabbar.setTabButton(ind_tab - 1, QtWidgets.QTabBar.RightSide, button)
+        self.bbbbb = button
 
     def open_ipwidget(self):
         pass

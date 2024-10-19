@@ -105,7 +105,7 @@ class calibration_HF(pydantic.BaseModel):
     parameter: str = 'HF'
     sn: str = '' # The serial number of the sensor
     sensor_model: str = ''  # The sensor model
-    coeff: float = np.NaN
+    coeff: float = np.nan
     coeff_std: typing.Optional[float] = None
     unit:  str = 'W m-2 mV-1'
     unit_input: str = 'mV'
@@ -131,7 +131,7 @@ class calibration_NTC(pydantic.BaseModel):
     sn: str = '' # The serial number of the sensor
     sensor_model: str = ''  # The sensor model
     Toff: float = 273.15 # Offset between K and degC
-    coeff: list = pydantic.Field(default = [np.NaN, np.NaN, np.NaN, np.NaN])
+    coeff: list = pydantic.Field(default = [np.nan, np.nan, np.nan, np.nan])
     #coeff_std: typing.Optional[float] = None
     unit: str = 'degC'
     unit_input: str = 'Ohm'
