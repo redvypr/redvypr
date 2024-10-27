@@ -1,3 +1,6 @@
+- 0.9.5:
+        - redvypr_device_scan option added to redvypr and gui widgets allowing to fine tune available devices
+        - cleanup of debugging statements
 - 0.9.4:
         - Implemented explicit_format and address_str_explicit to RedvyprAddress()
         - Improved requirements

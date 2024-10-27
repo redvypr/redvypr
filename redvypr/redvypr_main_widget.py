@@ -50,7 +50,7 @@ class redvyprWidget(QtWidgets.QWidget):
 
     """
 
-    def __init__(self, width=None, height=None, config=None, hostname='redvypr', loglevel=None):
+    def __init__(self, width=None, height=None, config=None, hostname='redvypr', loglevel=None, redvypr_device_scan=None):
         """ Args:
             width:
             height:
@@ -76,7 +76,10 @@ class redvyprWidget(QtWidgets.QWidget):
             config_tmp_obj = config
 
         # Configuration comes later after all widgets are initialized
-        self.redvypr = redvypr.Redvypr(hostname=hostname, config=config_tmp_obj, loglevel=loglevel)
+        self.redvypr = redvypr.Redvypr(hostname=hostname,
+                                       config=config_tmp_obj,
+                                       redvypr_device_scan=redvypr_device_scan,
+                                       loglevel=loglevel)
         self.redvypr.device_path_changed.connect(self.__populate_devicepathlistWidget)
         self.redvypr.device_added.connect(self._add_device_gui)
         # Fill the layout
@@ -943,7 +946,7 @@ class redvyprWidget(QtWidgets.QWidget):
 #
 #
 class redvyprMainWidget(QtWidgets.QMainWindow):
-    def __init__(self, width=None, height=None, config=None, hostname=None, loglevel=None):
+    def __init__(self, width=None,height=None,config=None,hostname=None,loglevel=None,redvypr_device_scan=None):
         super(redvyprMainWidget, self).__init__()
         # self.setGeometry(0, 0, width, height)
 
@@ -952,7 +955,10 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         # Add the icon
         # self.setWindowIcon(QtGui.QIcon(_icon_file))
 
-        self.redvypr_widget = redvyprWidget(config=config, hostname=hostname, loglevel=loglevel)
+        self.redvypr_widget = redvyprWidget(config=config,
+                                            hostname=hostname,
+                                            redvypr_device_scan=redvypr_device_scan,
+                                            loglevel=loglevel)
         self.setCentralWidget(self.redvypr_widget)
         quitAction = QtWidgets.QAction("&Quit", self)
         quitAction.setShortcut("Ctrl+Q")

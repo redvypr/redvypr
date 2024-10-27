@@ -32,7 +32,7 @@ import redvypr.redvypr_address as redvypr_address
 import redvypr.packet_statistic as redvypr_packet_statistic
 from redvypr.version import version
 import redvypr.files as files
-from redvypr.device import RedvyprDeviceConfig, RedvyprDeviceBaseConfig, RedvyprDevice, redvypr_device_scan, RedvyprDeviceParameter, queuesize
+from redvypr.device import RedvyprDeviceConfig, RedvyprDeviceBaseConfig, RedvyprDevice, RedvyprDeviceScan, RedvyprDeviceParameter, queuesize
 import redvypr.devices as redvyprdevices
 import faulthandler
 faulthandler.enable()
@@ -320,7 +320,22 @@ class Redvypr(QtCore.QObject):
     device_status_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
     hostconfig_changed_signal = QtCore.pyqtSignal()  # Signal notifying if the configuration of the host changed (hostname, hostinfo_opt)
 
-    def __init__(self, config=None, hostname=None, nogui=False, loglevel=None):
+    def __init__(self,config=None,hostname=None,nogui=False,loglevel=None,redvypr_device_scan=None):
+        """
+
+        Parameters
+        ----------
+        config:
+            Configuration
+        hostname: str
+            The hostname of the redvypr instance
+        nogui: bool
+            No gui if True
+        loglevel: logging.loglevel
+            The loglevel
+        redvypr_device_scan: RedvyprDeviceScan
+            External RedvyprDeviceScan object to allow fine grained devices
+        """
         super(Redvypr, self).__init__()
         if loglevel is not None:
             logger.setLevel(loglevel)
@@ -371,13 +386,17 @@ class Redvypr(QtCore.QObject):
         self.devices, self.hostinfo, self.deviceinfo_all, self.datadistinfoqueue, self.redvyprqueue, self.dt_datadist), daemon=True)
         self.t_thread_start = time.time()
         self.datadistthread.start()
-        logger.info(funcname + ':Searching for devices')
-        loglevel_device_scan = logger.getEffectiveLevel()
-        print('Loglevel device scan',loglevel_device_scan,logging.getLevelName(loglevel_device_scan))
-        self.redvypr_device_scan = redvypr_device_scan(device_path = self.device_paths, redvypr_devices=redvyprdevices, loglevel=loglevel_device_scan)
-        logger.info(funcname + ':Done searching for devices')
+
+        if redvypr_device_scan is None:
+            logger.debug(funcname + ':Searching for devices')
+            loglevel_device_scan = logger.getEffectiveLevel()
+            #print('Loglevel device scan',loglevel_device_scan,logging.getLevelName(loglevel_device_scan))
+            self.redvypr_device_scan = RedvyprDeviceScan(device_path = self.device_paths, redvypr_devices=redvyprdevices, loglevel=loglevel_device_scan)
+        else:
+            self.redvypr_device_scan = redvypr_device_scan
+
+        logger.debug(funcname + ':Done searching for devices')
         # And now add the devices
-        #print('Config a',self.config)
         self.add_devices_from_config(config=self.config)
         # A timer to check the status of all threads
         self.devicethreadtimer = QtCore.QTimer()

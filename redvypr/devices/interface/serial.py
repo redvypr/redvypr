@@ -1,3 +1,6 @@
+"""
+The serial device reads data from the serial interface and publishes them.
+"""
 import copy
 import datetime
 import logging
@@ -40,6 +43,11 @@ class RedvyprSerialDeviceMetadata(pydantic.BaseModel):
     comment: str = ''
 
 class DeviceBaseConfig(pydantic.BaseModel):
+    """
+    BaseConfig
+    Attributes:
+        publishes: True
+    """
     publishes: bool = True
     subscribes: bool = True
     description: str = 'Reads to and writes from a serial devices'

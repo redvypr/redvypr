@@ -346,7 +346,7 @@ class redvyprAddDeviceWidget(QtWidgets.QWidget):
         elif (redvypr_device_scan is not None):
             self.redvypr_device_scan = redvypr_device_scan
         else:
-            self.redvypr_device_scan = device.redvypr_device_scan()
+            self.redvypr_device_scan = device.RedvyprDeviceScan()
 
         # Update the devicetree
         self.create_tree_widget()

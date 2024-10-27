@@ -123,20 +123,39 @@ def device_start_standard(device_info, config=None, dataqueue=None, datainqueue=
 logging.basicConfig(stream=sys.stderr)
 
 
-class redvypr_device_scan():
+class RedvyprDeviceScan():
     """
     Searches for redvypr devices
     """
-    def __init__(self, device_path = [], scan=True, redvypr_devices = None, loglevel = logging.INFO):
+    def __init__(self, device_path = [],
+                 scan=True,
+                 scan_redvypr=True,
+                 scan_modules=True,
+                 scan_devicepath=True,
+                 redvypr_devices=None,
+                 loglevel = logging.INFO):
         """
 
-        Args:
-            device_path:
-            scan: Flag if a scanning shall be performed at initialization
+        Parameters
+        ----------
+        device_path
+        scan: bool
+            Does a scan after initialization.
+        scan_redvypr: bool
+            Scans redvypr_devices (if scan is set)
+        scan_modules: bool
+            Scans modules (if scan is set)
+        scan_devicepath: bool
+            Scans possible devices in devicepaths (if scan is set)
+        redvypr_devices: python redvypr modules
+            Scans modules for redvypr compatible devices
+        loglevel: logging.loglevel
+            The loglevel
         """
         self.logger = logging.getLogger('redvypr_device_scan')
         self.logger.setLevel(loglevel)
         self.device_paths = device_path
+        self.redvypr_devices = redvypr_devices
         #self.redvypr = redvypr
         self.device_modules_path = []
         self.device_modules = []
@@ -147,10 +166,18 @@ class redvypr_device_scan():
 
         # Start scanning
         if(scan):
-            if redvypr_devices is not None:
-                self.scan_redvypr(redvypr_devices)
-            self.scan_modules()
-            self.scan_devicepath()
+            if scan_redvypr:
+                if redvypr_devices is not None:
+                    if isinstance(redvypr_devices,list):
+                        for redvypr_device in redvypr_devices:
+                            self.scan_redvypr(redvypr_device)
+                    else:
+                        self.scan_redvypr(redvypr_devices)
+
+            if scan_modules:
+                self.scan_modules()
+            if scan_devicepath:
+                self.scan_devicepath()
 
 
     def print_modules(self):
@@ -205,11 +232,11 @@ class redvypr_device_scan():
 
     def scan_module_recursive(self,testmodule, module_dict):
         funcname = 'scan_module_recursive():'
-        #self.logger.debug(funcname + ' Scanning {:s}'.format(str(testmodule)))
-        print(funcname,testmodule)
+        self.logger.debug(funcname + ' Scanning: {}'.format(testmodule))
+        #print(funcname,testmodule)
         # Check if the device is valid
         valid_module = self.valid_device(testmodule)
-        print('Valid dictionary',valid_module)
+        #print('Valid dictionary',valid_module)
         if (valid_module['valid']):  # If the module is valid add it to devices
             # print('Members',inspect.getmembers(testmodule, inspect.ismodule))
             devdict = {'module': testmodule, 'name': testmodule.__name__, 'file': testmodule.__file__,'type':'module'}
