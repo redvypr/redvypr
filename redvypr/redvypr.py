@@ -308,7 +308,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
 
 class Redvypr(QtCore.QObject):
     """This is the redvypr heart. Here devices are added/threads
-    are started and data is interchanged
+    are started and data is interchanged.
 
     """
     device_path_changed = QtCore.pyqtSignal()  # Signal notifying if the device path was changed
