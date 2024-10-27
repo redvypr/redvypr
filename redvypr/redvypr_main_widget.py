@@ -576,7 +576,7 @@ class redvyprWidget(QtWidgets.QWidget):
 
         """
         funcname = __name__ + '.__update_hostinfo_widget__()'
-        print(funcname)
+        pass
 
     def __update_status_widget__(self):
         """

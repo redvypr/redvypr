@@ -31,7 +31,7 @@ description = 'Reading data from a serial device'
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('serial')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 packet_start = ['<None>','$','custom']

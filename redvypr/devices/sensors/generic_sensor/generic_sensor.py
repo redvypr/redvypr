@@ -38,7 +38,7 @@ redvypr_devicemodule = True
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('generic_sensor')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
@@ -151,7 +151,7 @@ class Device(RedvyprDevice):
                 break
 
         if flag_new_calibration:
-            print('Sending new calibration signal')
+            logger.debug('Sending new calibration signal')
             self.custom_config.calibrations.append(calibration)
             self.newcalibration_signal.emit()
             return True
@@ -181,7 +181,6 @@ class Device(RedvyprDevice):
                 for calmodel in calibration_models: # Loop over all calibration models definded in sensor_calibrations.py
                     try:
                         calibration = calmodel.model_validate(data)
-                        print('Calibration', calibration)
                         return calibration
                     except:
                         pass
@@ -334,7 +333,7 @@ class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.RedvyprDeviceW
         funcname = __name__ + '.sensorshow_changed():'
         logger.debug(funcname)
         sensorname = self.sensorshow_combo.currentText()
-        print('Sensorname', sensorname)
+        #print('Sensorname', sensorname)
         for irow, sensor in enumerate(self.device.custom_config.sensors):
             if sensorname == sensor.name:
                 sensorwidget = sensor.__sensorwidget__
@@ -343,7 +342,7 @@ class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.RedvyprDeviceW
     def update_sensorcombo(self):
         funcname = __name__ + '.update_sensorcombo():'
         logger.debug(funcname)
-        print('Updating...')
+        #print('Updating...')
         self.sensorshow_combo.clear()
         for irow,sensor in enumerate(self.device.custom_config.sensors):
             name = sensor.name
@@ -568,7 +567,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.sensorwidget.show()
 
     def sensor_plot_clicked(self):
-        print('Plot')
+        pass
+        #print('Plot')
     def thread_status(self, status):
         """ This function is regularly called by redvypr whenever the thread is started/stopped
         """
@@ -784,13 +784,6 @@ class SensorWidget(QtWidgets.QWidget):
 
                     # Update the plot first or create new plot widget
                     if 't' in keys and k is not 't':
-                        #print('Packetid',packetid,k)
-                        try:
-                            self.datakey_plot_data[packetid][k]
-                        except:
-                            self.datakey_plot_data[packetid][k] = []
-
-                        self.datakey_plot_data[packetid][k].append()
                         # Try to update plots
                         try:
                             self.datakey_plot[packetid]
@@ -801,7 +794,7 @@ class SensorWidget(QtWidgets.QWidget):
                             if xyplot is not None:
                                 self.datakey_plot[packetid][k].update_plot(data)
                         except:
-                            logger.info('Could not update plot', exc_info=True)
+                            logger.debug('Could not update plot', exc_info=True)
                             logger.debug(funcname + 'Adding XY-Plot (None)')
                             self.datakey_plot[packetid][k] = None
 

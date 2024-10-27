@@ -666,7 +666,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         #print('Devices',devicestr_provider,devicestr_receiver)
         raddresses = self.device.get_subscribed_deviceaddresses()
-        print('Deviceaddresses',raddresses)
+        #print('Deviceaddresses',raddresses)
         self.inlist.clear()
         for raddr in raddresses:
             self.inlist.addItem(raddr.address_str)

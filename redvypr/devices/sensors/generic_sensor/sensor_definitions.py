@@ -263,11 +263,11 @@ class BinarySensor(Sensor):
                 data_packet = add_metadata2datapacket(data_packet, address=metadata_address, metadata=unit)
                 #data_packet = add_metadata2datapacket(data_packet, key_result, metadata=unit)
 
-        print('-----------')
-        print('metadata datapacket',data_packet)
-        print('-----------')
-        print('-----------')
-        print('-----------')
+        #print('-----------')
+        #print('metadata datapacket',data_packet)
+        #print('-----------')
+        #print('-----------')
+        #print('-----------')
 
         if flag_metadata:
             return data_packet

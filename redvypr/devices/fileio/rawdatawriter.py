@@ -18,7 +18,7 @@ from redvypr.packet_statistic import do_data_statistics, create_data_statistic_d
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('rawdatawriter')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 redvypr_devicemodule = True
 
 

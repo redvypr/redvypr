@@ -482,8 +482,8 @@ class Redvypr(QtCore.QObject):
         logger.debug(funcname)
         # Apply the configuration
         if config is not None:
-            print('Config parameter', config, type(config))
-            print('Devicepaths', type(config), type(config.hostname), config.devicepaths)
+            #print('Config parameter', config, type(config))
+            #print('Devicepaths', type(config), type(config.hostname), config.devicepaths)
             # Add device path if found
             devpath = config.devicepaths
             if (type(devpath) == str):
@@ -512,15 +512,15 @@ class Redvypr(QtCore.QObject):
             if (hasdevices):
                 for device in config.devices:
                     logger.debug(funcname + 'Adding device {}'.format(device))
-                    print('Devicemodulename:',device.devicemodulename)
+                    #print('Devicemodulename:',device.devicemodulename)
                     devicename = device.devicemodulename
                     devicemodulename = self.get_devicemodulename_from_str(devicename)
                     if devicemodulename is not None:
                         device.devicemodulename = devicemodulename
                         logger.info(funcname + 'Adding device {}'.format(device.devicemodulename))
-                        print('-------')
-                        print('Device',device)
-                        print('-------')
+                        #print('-------')
+                        #print('Device',device)
+                        #print('-------')
                         subscriptions = device.subscriptions
                         dev_added = self.add_device(devicemodulename=device.devicemodulename,
                                                     custom_config=device.custom_config,
@@ -827,7 +827,7 @@ class Redvypr(QtCore.QObject):
                     logger.debug(funcname + 'Setting the loglevel to {}'.format(levelname))
                     device_parameter.loglevel = levelname
                     # Creating the device
-                    print('Deviceparameter',device_parameter)
+                    #print('Deviceparameter',device_parameter)
                     device = Device(device_parameter=device_parameter, custom_config=pydantic_custom_config,
                                     redvypr=self, dataqueue=dataqueue,
                                     comqueue=comqueue, datainqueue=datainqueue,
@@ -873,7 +873,7 @@ class Redvypr(QtCore.QObject):
                 # Send a device_status packet to notify that a new device was added (deviceinfo_all) is updated
                 datapacket = data_packets.commandpacket(command='device_status')
                 device.dataqueue.put(datapacket)
-                print('Autostart autostart',autostart)
+                #print('Autostart autostart',autostart)
                 if (autostart):
                     logger.info(funcname + ': Starting device')
                     self.start_device_thread(device)
