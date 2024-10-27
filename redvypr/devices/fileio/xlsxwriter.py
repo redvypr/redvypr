@@ -98,7 +98,7 @@ def create_logfile(config,count=0,all_worksheets={}):
     logger.info(funcname + ' Will create a new file: {:s}'.format(filename))
 
     # Create a workbook and add a worksheet.
-    workbook = xlsxwriter.Workbook(filename)
+    workbook = xlsxwriter.Workbook(filename,{'in_memory': True})
     date_format = workbook.add_format({'num_format': time_format})
     header_format = workbook.add_format({'bold': True,'bg_color':'#F0F0F0'})
     text_wrap_format = workbook.add_format({'text_wrap': True})
@@ -266,9 +266,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     dataqueue.put(data_stat)
     count += 1
 
-    tfile           = time.time() # Save the time the file was created
-    tflush          = time.time() # Save the time the file was created
-    tupdate         = time.time() # Save the time for the update timing
+    tfile = time.time() # Save the time the file was created
+    tflush = time.time() # Save the time the file was created
+    tupdate = time.time() # Save the time for the update timing
     FLAG_RUN = True
     file_status = {}
     file_status_reduced = {}
@@ -466,10 +466,16 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             if FLAG_TIME or FLAG_SIZE or (FLAG_RUN == False):
                 # Autofit
                 #print('Autofit')
-                worksheet_summary.autofit()
+                try:
+                    worksheet_summary.autofit()
+                except:
+                    logger.info(funcname + 'Could not autofit summary',exc_info=True)
                 for w in device_worksheets:
-                    device_worksheets[w].autofit()
-                # Make the excel time column wider, autofit does not work properly here
+                    try:
+                        device_worksheets[w].autofit()
+                    except:
+                        logger.info(funcname + 'Could not autofit {}'.format(w), exc_info=True)
+                # Make the Excel time column wider, autofit does not work properly here
                 #device_worksheets[w].set_column(colindex_time, colindex_time, 25)
                 workbook.close()
                 data_stat = {'_deviceinfo': {}}
