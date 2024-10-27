@@ -1,3 +1,6 @@
+- 0.9.7:
+        - fixes in xlsxwriter
+        - added clear_datainqueue_before_start flag in device base config
 - 0.9.6:
         - bug in generic_sensor
         - removed debug print statements

@@ -46,6 +46,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = False
     subscribes: bool = True
     description: str = "Saves subscribed devices in a xlsx file"
+    clear_datainqueue_before_thread_starts: bool = True
     gui_tablabel_display: str = 'xlsx logging status'
     gui_icon: str = 'fa5s.file-excel'
 
@@ -55,8 +56,6 @@ class DeviceCustomConfig(pydantic.BaseModel):
     dt_newfile_unit: typing.Literal['none','seconds','hours','days'] = pydantic.Field(default='seconds')
     dt_update: int = pydantic.Field(default=2,description='Time after which an upate is sent to the gui')
     datakey_expansionlevel: int = pydantic.Field(default=3, description='Level of the datakey expansionlevel')
-    clearqueue: bool = pydantic.Field(default=True,
-                                      description='Flag if the buffer of the subscribed queue should be emptied before start')
     size_newfile:int = pydantic.Field(default=500,description='Size of object in RAM after which a new file is created')
     size_newfile_unit: typing.Literal['none','bytes','kB','MB'] = pydantic.Field(default='MB')
     datafolder:str = pydantic.Field(default='./',description='Folder the data is saved to')
@@ -140,6 +139,8 @@ def write_metadata(workbook, all_worksheets, datakey, data, deviceinfo_all, devi
     #device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
     if len(metadata_tmp.keys())>0: # Check if something was found
         mkeys = list(metadata_tmp.keys())
+        print('-----')
+        print('Got metadata keys',metadata_tmp)
         try:
             datakey_unit = metadata_tmp['unit']
             mkeys.remove('unit')
@@ -192,12 +193,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
     #print('Config',config)
-    if config['clearqueue']:
-        while (datainqueue.empty() == False):
-            try:
-                data = datainqueue.get(block=False)
-            except:
-                break
+
 
     data_write_to_file = [] # List of columns to be written to file
     count = 0
@@ -205,8 +201,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     deviceinfo_all = None
     if True:
         try:
-            dtneworig  = config['dt_newfile']
-            dtunit     = config['dt_newfile_unit']
+            dtneworig = config['dt_newfile']
+            dtunit = config['dt_newfile_unit']
             if(dtunit.lower() == 'seconds'):
                 dtfac = 1.0
             elif(dtunit.lower() == 'hours'):
@@ -234,7 +230,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             else:
                 sizefac = 0
                 
-            sizenewb     = sizeneworig * sizefac # Size in bytes
+            sizenewb = sizeneworig * sizefac # Size in bytes
             logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
         except Exception as e:
             logger.exception(e)
@@ -333,19 +329,16 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     device_worksheets_indices[packet_address_str]['worksheet'] = packet_address_str_xlsx
                     device_worksheets_reduced[packet_address_str] = "worksheet: {}, #written: {}".format(packet_address_str_xlsx,0)
                     #
-                    device_worksheets[packet_address_str].write(row_address, 0, 'Address')
-                    device_worksheets[packet_address_str].write(row_address, 1, packet_address_str)
+                    device_worksheets[packet_address_str].write(row_address,0,'Address',all_worksheets['header_format'])
+                    device_worksheets[packet_address_str].write(row_address,1,packet_address_str,all_worksheets['header_format'])
                     #
                     device_worksheets[packet_address_str].write(row_datakey, colindex_time, 'Excel time',all_worksheets['header_format'])
-                    device_worksheets[packet_address_str].write(row_dataunit, colindex_time, time_format)
+                    for row in range(row_host,row_datakey):
+                        device_worksheets[packet_address_str].write(row, colindex_time, '',
+                                                                    all_worksheets['header_format'])
+                    device_worksheets[packet_address_str].write(row_dataunit, colindex_time, time_format,all_worksheets['header_format'])
                     device_worksheets[packet_address_str].write(row_datakey, colindex_numpacket, 'Numpacket',all_worksheets['header_format'])
-                    device_worksheets[packet_address_str].write(row_dataunit, colindex_numpacket, '#')
-                    status = {'some cool status':4}
-                    #statuspacket = redvypr.data_packets.statuspacket(device_info['address_str'],status)
-                    #print('STATUSPACKET!!!')
-                    #print('STATUSPACKET!!!',statuspacket)
-                    #print('STATUSPACKET!!!')
-                    #dataqueue.put(statuspacket)
+                    device_worksheets[packet_address_str].write(row_dataunit, colindex_numpacket, '#',all_worksheets['header_format'])
                     try:
                         file_status[filename]['worksheets']
                     except:
@@ -422,6 +415,10 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
                         if datakey_unit is not None:
                             device_worksheets[packet_address_str].write(row_dataunit, colindex, datakey_unit,all_worksheets['header_format'])
+                        else:
+                            datakey_unit_tmp = ''
+                            device_worksheets[packet_address_str].write(row_dataunit, colindex, datakey_unit_tmp,
+                                                                        all_worksheets['header_format'])
                         #print('Will write data from {} to column {} and line {}'.format(packet_address_str, colindex,lineindex))
                         datawrite = datapacket[datakey]
                         if not(isinstance(datawrite,str)) and not(isinstance(datawrite,int)) and not(isinstance(datawrite,float)):
@@ -529,6 +526,26 @@ class Device(RedvyprDevice):
         """
         funcname = __name__ + '__init__()'
         super(Device, self).__init__(**kwargs)
+
+    def thread_start(self, *args,**kwargs):
+        """
+        Custom thread start that clear the queue if config wants to and send a deviceinfo into the datainqueue
+
+        Parameters
+        ----------
+        args
+        kwargs
+
+        Returns
+        -------
+
+        """
+        funcname = __name__ + '.thread_start():'
+        self.logger.debug(funcname)
+        compacket = self.redvypr.get_metadata_commandpacket()
+        # Let the thread start, it will clear the queue
+        super().thread_start(*args,**kwargs)
+        self.datainqueue.put(compacket)
 
 
 #

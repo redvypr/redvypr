@@ -57,6 +57,7 @@ class RedvyprDeviceBaseConfig(pydantic.BaseModel):
     multiprocess: str = pydantic.Field(default='qthread')
     loglevel: str = pydantic.Field(default='')
     autostart: bool = False
+    clear_datainqueue_before_thread_starts: bool = pydantic.Field(default=False, description='Clears the datainqueue before the thread is started.')
     devicemodulename: str = pydantic.Field(default='')
     description: str = ''
     gui_tablabel_init: str = 'Init'
@@ -808,6 +809,12 @@ class RedvyprDevice(QtCore.QObject):
                         else:
                             self.logger.debug('Using external configuration')
 
+                        if self.device_parameter.clear_datainqueue_before_thread_starts:
+                            while self.datainqueue.empty() == False:
+                                try:
+                                    data = self.datainqueue.get(block=False)
+                                except:
+                                    break
                         args = (device_info, config, self.dataqueue, self.datainqueue, self.statusqueue)
                         if True:
                             self.thread = deviceQThread(startfunction=self.start,start_arguments=args)
