@@ -139,8 +139,8 @@ def write_metadata(workbook, all_worksheets, datakey, data, deviceinfo_all, devi
     #device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
     if len(metadata_tmp.keys())>0: # Check if something was found
         mkeys = list(metadata_tmp.keys())
-        print('-----')
-        print('Got metadata keys',metadata_tmp)
+        #print('-----')
+        #print('Got metadata keys',metadata_tmp)
         try:
             datakey_unit = metadata_tmp['unit']
             mkeys.remove('unit')
@@ -193,8 +193,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening writing:')
     #print('Config',config)
-
-
     data_write_to_file = [] # List of columns to be written to file
     count = 0
     all_worksheets = {}
@@ -219,8 +217,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             dtnews = 0
             
         try:
-            sizeneworig  = config['size_newfile']
-            sizeunit     = config['size_newfile_unit']
+            sizeneworig = config['size_newfile']
+            sizeunit = config['size_newfile_unit']
             if(sizeunit.lower() == 'kb'):
                 sizefac = 1000.0
             elif(sizeunit.lower() == 'mb'):            
@@ -235,7 +233,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
         except Exception as e:
             logger.exception(e)
             sizenewb = 0  # Size in bytes
-            
             
     try:
         config['dt_sync']
@@ -269,7 +266,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     file_status = {}
     file_status_reduced = {}
     while FLAG_RUN:
-        tcheck      = time.time()
+        tcheck = time.time()
         # Flush file on regular basis
         if ((time.time() - tflush) > config['dt_sync']):
             #print('Flushing, not implemented (yet)')
@@ -433,7 +430,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     worksheet_tmp = device_worksheets_indices[packet_address_str]['worksheet']
                     device_worksheets_reduced[packet_address_str] = "worksheet: {}, numkeys: {}, numlines: {}".format(
                         worksheet_tmp, numkeys, numline)
-                    size = sys.getsizeof(workbook)
+                    #size = sys.getsizeof(workbook)
                     packets_written += 1
                     #print('Size:',size)
 
@@ -463,15 +460,16 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             if FLAG_TIME or FLAG_SIZE or (FLAG_RUN == False):
                 # Autofit
                 #print('Autofit')
-                try:
-                    worksheet_summary.autofit()
-                except:
-                    logger.info(funcname + 'Could not autofit summary',exc_info=True)
-                for w in device_worksheets:
+                if True:
                     try:
-                        device_worksheets[w].autofit()
+                        worksheet_summary.autofit()
                     except:
-                        logger.info(funcname + 'Could not autofit {}'.format(w), exc_info=True)
+                        logger.info(funcname + 'Could not autofit summary',exc_info=True)
+                    for w in device_worksheets:
+                        try:
+                            device_worksheets[w].autofit()
+                        except:
+                            logger.info(funcname + 'Could not autofit {}'.format(w), exc_info=True)
                 # Make the Excel time column wider, autofit does not work properly here
                 #device_worksheets[w].set_column(colindex_time, colindex_time, 25)
                 workbook.close()
@@ -484,26 +482,15 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 dataqueue.put(data_stat)
                 if FLAG_RUN:
                     tfile = tcheck
-                    #[workbook, filename,formats] = create_logfile(config, count)
-                    #count += 1
-                    #bytes_written = 0
-                    #packets_written = 0
-                    #data_stat = {'_deviceinfo': {}}
-                    #data_stat['_deviceinfo']['filename'] = filename
-                    #data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
-                    #data_stat['_deviceinfo']['created'] = time.time()
-                    #data_stat['_deviceinfo']['bytes_written'] = bytes_written
-                    #data_stat['_deviceinfo']['packets_written'] = packets_written
-                    #dataqueue.put(data_stat)
                     bytes_written = 0
                     packets_written = 0
-                    bytes_written_total = 0
-                    packets_written_total = 0
+                    #bytes_written_total = 0
+                    #packets_written_total = 0
                     device_worksheets = {}  # The worksheets for the devices
                     device_worksheets_reduced = {}  # The worksheets for the devices
                     device_worksheets_indices = {}
                     numworksheet = 0
-                    [workbook, filename, formats] = create_logfile(config, count)
+                    [workbook, filename, formats] = create_logfile(config, count, all_worksheets)
                     worksheet_summary = all_worksheets['summary']
                     data_stat = {'_deviceinfo': {}}
                     data_stat['_deviceinfo']['filename'] = filename

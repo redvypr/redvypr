@@ -239,7 +239,7 @@ def get_metadata_deviceinfo_all(statistics, address, publisher_strict=True,  mod
     raddress = RedvyprAddress(address)
     if publisher_strict:
         publisher_key = raddress.publisher
-        print('Publisher key',publisher_key)
+        #print('Publisher key',publisher_key)
         try:
             #mdata_device = statistics['metadata'][publisher_key]
             mdata_device = {'metadata': statistics['metadata'][publisher_key]}
