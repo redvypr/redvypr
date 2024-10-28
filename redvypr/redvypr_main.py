@@ -20,6 +20,54 @@ logger = logging.getLogger('redvypr_main')
 logger.setLevel(logging.INFO)
 
 
+redvypr_icon_v02_ascii=r"""
+                                        .                       
+                                       ..                       
+        ..                            .,'                       
+         ''.                         .,,,.                      
+          ',,'.                     .,,,,.                      
+           .,,,,..    .'''..........,,,,,,                      
+            .,,,,,,..',,,,,,,,,,,,,,,,,,,,.                     
+             .,,,,,,,,,,,,,,,,,,,,,,,,,,,,'                     
+              ',,,,,,,,,,,,,,,,,,,,,,,,,,,,.  ..                
+              .,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'. dW0              
+               ',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,. :W.x:           
+               .,,,,,,,'....',,,,,,,,,,,,,,,,,,'.. KM:          
+               .,,,,,'. lkO;  .,,,,,,,,,,,,,,,,,,. lWX          
+               ',,,,,. xMMO.kO .,,,,,,,,,,,,,,,,,,'..;          
+               ,,,,,' ,MMk.0MMx ,,,,,,,,,,,,,,,,,,,,'..         
+              ',,,,,, :MK kMMMx ,,,,,,,,,,,,,,,,,,,,,,,'        
+             .,,,,,,,. kl MMMO .,,,,,,,,,,,,,,,,,,,,,,,,,.      
+             .,,,,,,,,.  .dx: .,,,'',,,,,,,,,,,,,,,,,,,,,,'     
+            .,,,,,,,,,,,'....',,,,. ,,,,,,,,,,,,,,,,,,,,,,,.    
+            ',,,,,,,,,,,,,,,,,,,,,. ,,,,,,,,,,,,,,,,,,,,,,,.    
+           .,,,,,,,,,,,,,,,,,,,,,,. .',,,,,,,,,,,,,,,,,,,,'     
+           ,,,,,,,,,,,,,,,,,,,,,,,,......',,,,,,,,,,,,,,'.      
+          ',,,,,,,,,,,,,,,,,,,,,,,,,,,'..  ...''',,,..          
+         ',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'..      ..,'.          
+        .,,,,,,,,,,,,,,,,,,,,,,,,,,,'..            .','.        
+       .,,,,,,,,,,,,,,,,,,,,,,,,'..                  .',.       
+      .,,,,,,,,,,,,,,,,,,,,,,,'.                       .,.      
+    .',,,,,,,,,,,,,,,,,,,,,,.                           ',      
+   ',,,,,,,,,,,,,,,,,,,,,,'                             .,'     
+ .,,,,,,,,,,,,,,,,,,,,,,,'                              .,''.   
+,,,,,,,,,,,,,,,,,,,,,,,,'                               ..   .  
+,,,,,,,,,,,,,,,,,,,,,,,,                                .       
+,,,,,,,,,,,,,,,,,,,,,,,.                                        
+,,,,,,,,,,,,,,,,,,,,,,'
+"""
+
+redvypr_figlet=r"""
+              _
+ _ __ ___  __| |_   ___   _ _ __  _ __
+| '__/ _ \/ _` \ \ / / | | | '_ \| '__|
+| | |  __/ (_| |\ V /| |_| | |_) | |
+|_|  \___|\__,_| \_/  \__, | .__/|_|
+                      |___/|_|
+                      
+"""
+
+
 # Windows icon fix
 # https://stackoverflow.com/questions/1551605/how-to-set-applications-taskbar-icon-in-windows-7/1552105#1552105
 import ctypes
@@ -125,6 +173,8 @@ def split_quotedstring(qstr, separator=','):
 #
 #
 def redvypr_main():
+    print(redvypr_icon_v02_ascii)
+    print(redvypr_figlet)
     redvypr_help = 'redvypr'
     config_help_verbose = 'verbosity, if argument is called at least once loglevel=DEBUG, otherwise loglevel=INFO'
     config_help = 'Using a yaml config file'
@@ -261,9 +311,9 @@ def redvypr_main():
             logger.info('Adding device {}'.format(d))
 
         config_devices = redvypr.RedvyprConfig(devices=devices_add)
-        print('Devices to add')
-        print('D',config_devices)
-        print('Done')
+        #print('Devices to add')
+        #print('D',config_devices)
+        #print('Done')
         config_all.append(config_devices)
 
     # Add hostname
