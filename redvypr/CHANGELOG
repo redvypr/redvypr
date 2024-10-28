@@ -1,5 +1,8 @@
 - 0.9.7:
         - fixes in xlsxwriter
+        - fixes in csvwriter
+        - improved datastreamsWidget
+        - bug in distribute_data (re-arranged for loops)
         - added clear_datainqueue_before_start flag in device base config
 - 0.9.6:
         - bug in generic_sensor

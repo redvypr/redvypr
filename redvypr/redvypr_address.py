@@ -241,7 +241,15 @@ class RedvyprAddress():
                     if self.compare_address_substrings(k,self.datakey):
                         return datapacket[k]
             else: # Just a datakey
-                return datapacket[self.datakey]
+                if self.datakey.startswith('[') and self.datakey.endswith(']'):
+                    evalstr = 'datapacket' + self.datakey
+                    # data = self
+                    data = eval(evalstr, None)
+                    return data
+                else:
+                    #print(datapacket)
+                    #print(self.datakey)
+                    return datapacket[self.datakey]
         else:
             return None
 

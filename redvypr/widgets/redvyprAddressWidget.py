@@ -773,6 +773,21 @@ class datastreamWidget(QtWidgets.QWidget):
 
         self.addressline.setText(addrstring)
 
+    def get_all_items(self):
+        tree_widget = self.devicelist
+        items = []
+
+        def traverse_items(item):
+            items.append(item)
+            for i in range(item.childCount()):
+                traverse_items(item.child(i))
+
+        # recursively get all items
+        for i in range(tree_widget.topLevelItemCount()):
+            traverse_items(tree_widget.topLevelItem(i))
+
+        return items
+
     def done_clicked(self):
         funcname = __name__ + '.done_clicked():'
         addrformat = self.addrtype_combo.currentText()
@@ -798,6 +813,7 @@ class datastreamsWidget(datastreamWidget):
         super().__init__(*args,**kwargs)
         self.devicelist.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
         self.datastreamtable = QtWidgets.QTableWidget()
+        #self.datastreamtable.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.layout.addWidget(self.datastreamtable,0,2)
         self.layout.removeWidget(self.buttondone)
         self.buttondone.clicked.disconnect(self.done_clicked)
@@ -815,14 +831,32 @@ class datastreamsWidget(datastreamWidget):
         self.button_rem = QtWidgets.QPushButton('Remove')
         self.button_rem.setIcon(icon)
         self.button_rem.clicked.connect(self.rem_datastreams)
+        icon = qtawesome.icon(iconname)
+        self.button_rem_all = QtWidgets.QPushButton('Remove all')
+        self.button_rem_all.setIcon(icon)
+        self.button_rem_all.clicked.connect(self.rem_datastreams)
         iconname='ei.caret-right'
         icon = qtawesome.icon(iconname)
         self.button_add = QtWidgets.QPushButton('Add')
         self.button_add.setIcon(icon)
         self.button_add.clicked.connect(self.add_datastreams)
-        self.layout_right.addWidget(self.button_rem)
-        self.layout_right.addWidget(self.button_add)
-        self.layout.addWidget(self.buttondone,1,0,1,3)
+        self.button_add_manual = QtWidgets.QPushButton('Add manual')
+        self.button_add_manual.setIcon(icon)
+        self.button_add_manual.clicked.connect(self.add_manual_datastream)
+        self.button_add_all = QtWidgets.QPushButton('Add all')
+        self.button_add_all.setIcon(icon)
+        self.button_add_all.clicked.connect(self.add_all_datastreams)
+
+        self.layout_right.addWidget(self.button_add_manual)
+        #self.layout_right.addWidget(self.button_rem)
+        #self.layout_right.addWidget(self.button_add)
+        #self.layout_right.addWidget(self.button_rem_all)
+        #self.layout_right.addWidget(self.button_add_all)
+        self.layout.addWidget(self.buttondone,3,0,1,3)
+        self.layout.addWidget(self.button_add, 1, 0)
+        self.layout.addWidget(self.button_add_all, 2, 0)
+        self.layout.addWidget(self.button_rem, 1, 2)
+        self.layout.addWidget(self.button_rem_all, 2, 2)
         self.addresses_choosen = []
         self.update_datastreamtable()
 
@@ -830,13 +864,17 @@ class datastreamsWidget(datastreamWidget):
         funcname = __name__ + '.apply_clicked_datastreams()'
         logger.debug(funcname)
         addresses_choosen = []
+        addresses_str_choosen = []
         for irow, raddr in enumerate(self.addresses_choosen):
             addrtype = self.addrtype_combo.currentText()
             addrstr = raddr.get_str(addrtype)  # Here a format would be nice
             addresses_choosen.append(RedvyprAddress(addrstr))
+            addresses_str_choosen.append(addrstr)
 
-        signal_dict = {'addresses':addresses_choosen}
-        print('Signal dict',signal_dict)
+        # Create a signal dict, with a format similar to the dict returned by the "apply" signal of the datastreamWidget
+        signal_dict = {'addresses':addresses_choosen,'datastreams_address':addresses_choosen,'datastreams_str':addresses_str_choosen}
+
+        #print('Signal dict',signal_dict)
         self.apply.emit(signal_dict)
         if self.closeAfterApply:
             self.close()
@@ -854,7 +892,11 @@ class datastreamsWidget(datastreamWidget):
             self.datastreamtable.setItem(irow,0, item)
 
         self.datastreamtable.setHorizontalHeaderLabels(['Address'])
-        self.datastreamtable.resizeColumnsToContents()
+        #self.datastreamtable.resizeColumnsToContents()
+        self.datastreamtable.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        #self.datastreamtable.resizeColumnToContent(0)
+        self.datastreamtable.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
+        self.datastreamtable.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
         if len(self.addresses_choosen)>0:
             self.buttondone.setEnabled(True)
         else:
@@ -863,19 +905,47 @@ class datastreamsWidget(datastreamWidget):
     def rem_datastreams(self):
         funcname = __name__ + '.rem_datastreams():'
         logger.debug(funcname)
-        for item in self.datastreamtable.selectedItems():
-            print("selectedItem", item.text())
+        if self.sender() == self.button_rem:
+            items = self.datastreamtable.selectedItems()
+        elif self.sender() == self.button_rem_all:
+            items = []
+            for row in range(self.datastreamtable.rowCount()):
+                item = self.datastreamtable.item(row, 0)
+                items.append(item)
+        else:
+            logger.warning('Error in removing')
+
+        for item in items:
+            #print("selectedItem", item.text())
             self.addresses_choosen.remove(item.datakey_address)
 
         self.update_datastreamtable()
 
-    def add_datastreams(self):
+    def add_manual_datastream(self):
+        funcname = __name__ + '.add_manual_datastream():'
+        logger.debug(funcname)
+        addressstr = self.addressline_manual.text()
+        datakey_address = RedvyprAddress(addressstr)
+        if datakey_address not in self.addresses_choosen:
+            self.addresses_choosen.append(datakey_address)
+
+        self.update_datastreamtable()
+    def add_all_datastreams(self):
+        items = self.get_all_items()
+        self.add_datastreams(items)
+
+    def add_datastreams(self, items=None):
         funcname = __name__ + '.add_datastreams():'
         logger.debug(funcname)
-        items = self.devicelist.selectedItems()
+        if items is None:
+            items = self.devicelist.selectedItems()
         for i,item in enumerate(items):
             #print(i,item.text(0))
-            if item.iskey:
+            try:
+                iskey = item.iskey
+            except:
+                iskey= False
+            if iskey:
                 print('Item {} is a valid address'.format(item.text(0)))
                 if item.datakey_address not in self.addresses_choosen:
                     self.addresses_choosen.append(item.datakey_address)

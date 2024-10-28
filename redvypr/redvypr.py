@@ -245,17 +245,17 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     #
                     # And finally: Distribute the data
                     #
+                    data_packets_fan_out.append(data)
                     # Loop over all devices and check if any subscription works
                     for devicedict_sub in devices:
                         devicesub = devicedict_sub['device']
                         if(devicesub == device): # Not to itself
                             continue
 
-                        data_packets_fan_out.append(data)
-                        for addr in devicesub.subscribed_addresses: # Loop over all subscribed redvypr_addresses
-                            # This is the main functionality for distribution, comparing a datapacket with a
-                            # redvypr_address using "in"
-                            for data_packet in data_packets_fan_out:
+                        for data_packet in data_packets_fan_out:
+                            for addr in devicesub.subscribed_addresses: # Loop over all subscribed redvypr_addresses
+                                # This is the main functionality for distribution, comparing a datapacket with a
+                                # redvypr_address using "in"
                                 numtag_packet = data['_redvypr']['tag'][hostinfo['uuid']]
                                 #print('Testing packet',redvypr_address.RedvyprAddress(data_packet),numtag_packet,(data_packet in addr))
                                 if (data_packet in addr) and (numtag_packet < 2): # Check if data packet fits with addr and if its not recirculated again
