@@ -202,6 +202,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     packets_written_total = 0
 
     [f,filename] = create_logfile(config,count)
+    flag_header_written = False
     data_stat = {'_deviceinfo': {}}
     data_stat['_deviceinfo']['filename'] = filename
     data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
@@ -305,8 +306,36 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
         # Write data to file if available
         if ((time.time() - tfile) > config['dt_waitbeforewrite'])  or (FLAG_RUN == False):
+            if flag_header_written == False:
+                # Create header
+                flag_header_written = True
+                header_lines = []
+                header_lines.append(['N-Data', 'Packetnum', 'Packettime unix', 'Packettime str'])
+                header_lines.append(['Address subscribe', '', '', ''])
+                header_lines.append(['Address found', '', '', ''])
+                header_lines.append(['Unit', '#', 'seconds since 1970-01-01 00:00:00', 'YYYY-MM-DD HH:MM:SS.000'])
+                header_lines.append(['Comment', '', '', ''])
+                hstr = 'Redvypr {} csvlogger'.format(redvypr.version)
+                hstr += '\n'
+                for ihline, hline in enumerate(header_lines):
+                    hstr += hline[0] + config['separator'] + hline[1] + config['separator']
+                    hstr += hline[2] + config['separator'] + hline[3] + config['separator']
+                    for i, d in enumerate(config['datastreams']):
+                        if ihline == 0:
+                            hstr += "Datastream_{:02d}".format(i) + config['separator']
+                        elif ihline == 1:
+                            hstr += d['address'] + config['separator']
+                        elif ihline == 2:
+                            hstr += d['address_found'] + config['separator']
+                        elif ihline == 3:
+                            hstr += d['unit'] + config['separator']
+                        elif ihline == 4:
+                            hstr += d['comment'] + config['separator']
+
+                    hstr = hstr[:-len(config['separator'])] + '\n'
+
             if len(data_write_to_file) > 0:
-                logger.debug('Writing {:d} lines to file now'.format(len(data_write_to_file)))
+                #logger.debug('Writing {:d} lines to file now'.format(len(data_write_to_file)))
                 for l in data_write_to_file:
                     numline += 1
                     data_time_unix = l[0]  # Time
@@ -327,7 +356,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         try:
                             strformat = config['datastreams'][index]['strformat'][typestr]
                         except:
-                            logger.debug('Could not get strformat for {}'.format(index), exc_info=False)
+                            #logger.debug('Could not get strformat for {}'.format(index), exc_info=False)
                             strformat = '{}'
 
                         if ":s" in strformat:  # Convert to str if str format is choosen, this is useful for datatypes different of str (i.e. bytes)
@@ -357,40 +386,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             FLAG_TIME = (dtnews > 0) and (file_age >= dtnews)
             FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
             if (FLAG_TIME or FLAG_SIZE) or (FLAG_RUN == False):
-                logger.debug(funcname + 'Writing header and closing file ...')
-                # Create header
-                header_lines = []
-                header_lines.append(['N-Data','Packetnum','Packettime unix','Packettime str'])
-                header_lines.append(['Address subscribe', '', '', ''])
-                header_lines.append(['Address found', '', '', ''])
-                header_lines.append(['Unit', '#','seconds since 1970-01-01 00:00:00','YYYY-MM-DD HH:MM:SS.000'])
-                header_lines.append(['Comment', '', '', ''])
-                hstr = 'Redvypr {} csvlogger'.format(redvypr.version)
-                hstr += '\n'
-                for ihline,hline in enumerate(header_lines):
-                    hstr += hline[0] + config['separator'] + hline[1] + config['separator']
-                    hstr += hline[2] + config['separator'] + hline[3] + config['separator']
-                    for i, d in enumerate(config['datastreams']):
-                        if ihline == 0:
-                            hstr += "Datastream_{:02d}".format(i) + config['separator']
-                        elif ihline == 1:
-                            hstr += d['address'] + config['separator']
-                        elif ihline == 2:
-                            hstr += d['address_found'] + config['separator']
-                        elif ihline == 3:
-                            hstr += d['unit'] + config['separator']
-                        elif ihline == 4:
-                            hstr += d['comment'] + config['separator']
-
-                    hstr = hstr[:-len(config['separator'])] + '\n'
-
-                #print('Writing hstr', hstr)
-                f.seek(0)
-                lines = f.read() # read old content
-                f.seek(0)
-                f.write(hstr)
-                ##print('Writing original data', lines)
-                f.write(lines)
+                logger.debug(funcname + 'Closing file ...')
                 f.close()
                 data_stat = {'_deviceinfo': {}}
                 data_stat['_deviceinfo']['filename'] = filename
@@ -401,6 +397,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 dataqueue.put(data_stat)
                 if FLAG_RUN:
                     [f, filename] = create_logfile(config, count)
+                    flag_header_written = False
                     count += 1
                     #statistics = data_packets.create_data_statistic_dict()
                     tfile = tcheck
@@ -780,7 +777,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.addDatastreamClicked():'
         logger.debug(funcname)
-        self.dstreamswidget = redvypr.gui.datastreamsWidget(self.device.redvypr, closeAfterApply=False)
+        self.dstreamswidget = redvypr.gui.datastreamsWidget(self.device.redvypr, closeAfterApply=True)
         self.dstreamswidget.apply.connect(self.__datastreams_choosen__)
         self.dstreamswidget.show()
 
