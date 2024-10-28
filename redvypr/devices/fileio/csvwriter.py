@@ -29,7 +29,7 @@ import redvypr.gui
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('csvwriter')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 redvypr_devicemodule = True
 class DeviceBaseConfig(pydantic.BaseModel):

@@ -26,7 +26,7 @@ import redvypr.packet_statistic as packet_statistics
 import redvypr.gui
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('xlsxlogger')
+logger = logging.getLogger('xlsxwriter')
 logger.setLevel(logging.INFO)
 
 time_format = 'yyyy-mm-dd HH:MM:SS.000'
@@ -505,7 +505,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
 class Device(RedvyprDevice):
     """
-    xlsxlogger device
+    xlsxwriter device
     """
 
     def __init__(self, **kwargs):
