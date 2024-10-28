@@ -173,8 +173,10 @@ def split_quotedstring(qstr, separator=','):
 #
 #
 def redvypr_main():
-    print(redvypr_icon_v02_ascii)
-    print(redvypr_figlet)
+    if True:
+        print(redvypr_icon_v02_ascii)
+        print(redvypr_figlet)
+
     redvypr_help = 'redvypr'
     config_help_verbose = 'verbosity, if argument is called at least once loglevel=DEBUG, otherwise loglevel=INFO'
     config_help = 'Using a yaml config file'
