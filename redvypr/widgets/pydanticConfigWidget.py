@@ -16,7 +16,7 @@ from redvypr.data_packets import RedvyprMetadata, RedvyprMetadataGeneral
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('pydanticConfigWidget')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 class pydanticDeviceConfigWidget(QtWidgets.QWidget):
@@ -153,12 +153,12 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         #dobject = typing.get_args(item.__type_hints__)[index]  # This is not working with unions, using interprete type_hints instead
         type_dict = self.interprete_type_hints(item.__type_hints__)
         dobject = type_dict['datatype_objects'][datatypestr]
-        print('type dict',type_dict)
-        print('Item', item)
-        print('Index',index)
-        print('Item type hints', item.__type_hints__)
-        print('Item datatypestr', datatypestr)
-        print('Dobject',dobject)
+        #print('type dict',type_dict)
+        #print('Item', item)
+        #print('Index',index)
+        #print('Item type hints', item.__type_hints__)
+        #print('Item datatypestr', datatypestr)
+        #print('Dobject',dobject)
         logger.debug(funcname + ' object : {}'.format(dobject))
         try:
             flag_add = item.__flag_add__
@@ -235,27 +235,30 @@ class pydanticConfigWidget(QtWidgets.QWidget):
 
     def interprete_type_hint_annotation(self, type_hint):
         funcname = __name__ + '.interprete_type_hint_annotation():'
+        logger.debug(funcname)
         isannotated = 'Annotated' in type_hint.__class__.__name__
-        print(funcname + 'type hint',type_hint)
+        logger.debug(funcname + 'type hint: {}'.format(type_hint))
         if isannotated:
             logger.debug(funcname + 'Disentangling the annotations')
             # If annotated data is available look search for known datatypes
             annotations = typing.get_args(type_hint)
-            print('Annotations ...', annotations)
+            logger.debug(funcname + 'Annotations: {}'.format( annotations))
             for annotation in annotations:
                 if annotation == 'RedvyprAddressStr':
                     #return [str, 'RedvyprAddressStr']
                     return [RedvyprAddress, 'RedvyprAddressStr']
 
             type_hint = typing.get_args(type_hint)[0]
-            print('type hint new', type_hint)
+            logger.debug(funcname + 'type hint updated: {}'.format(type_hint))
             return [type_hint, type_hint.__name__]
         else:
-            print('type hint new else', type_hint)
+            logger.debug(funcname + 'type hint new (else):{}'.format( type_hint))
             try:
                 type_str = type_hint.__name__
             except:
                 type_str = 'NA'
+
+            logger.debug(funcname + 'Type hint: {}, type str: {}'.format(type_hint, type_str))
             return [type_hint, type_str]
 
 
@@ -283,7 +286,9 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             [type_hints, tmp] = self.interprete_type_hint_annotation(type_hints)
             type_args = typing.get_args(type_hints)
             type_dict['type_root'] = None
-            if 'union' in type_hints.__name__.lower():
+            logger.debug(funcname + 'Type args'.format(type_args,len(type_args)))
+            logger.debug(funcname + 'Type hints'.format(type_hints.__name__.lower()))
+            if ('union' in type_hints.__name__.lower()) or ('optional' in type_hints.__name__.lower()):
                 logger.debug(funcname + ' Found Union of datatypes in type hints')
                 type_dict['type_root'] = 'union'
                 #type_dict['isannotated'] = False
@@ -297,19 +302,23 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                     logger.debug(funcname + 'Removing str/int entry for dict')
                     type_args = type_args[1]
                     [type_args, argstr] = self.interprete_type_hint_annotation(type_args)
-                    print('type args',type_args, 'argstr', argstr)
+                    #print(funcname + 'type args',type_args, 'argstr', argstr)
                     if 'union' in argstr.lower():
-                        print(funcname + 'Union')
+                        logger.debug(funcname + ' Adding type args for Union')
+                        type_args = typing.get_args(type_args)
+                    elif 'optional' in argstr.lower():
+                        logger.debug(funcname + ' Adding type args for Optional')
                         type_args = typing.get_args(type_args)
 
-                print('type args',type_args)
+                #print(funcname + 'type args expanded (union/optional)',type_args)
                 [type_args, tmp] = self.interprete_type_hint_annotation(type_args)
                 # loop over all type args, if there is a union within (i.e. a list with some datatypes), loop over the union
                 # for example typing.List[typing.Union[float, str]]
+                #print(funcname + 'Looping over type args',type_args,len(type_args))
                 for arg in type_args:
-                    logger.debug(funcname + 'arg {}'.format(arg))
                     [arg, argstr] = self.interprete_type_hint_annotation(arg)
-                    if 'union' in argstr.lower():
+                    logger.debug(funcname + 'arg {} argstr {}'.format(arg, argstr))
+                    if ('union' in argstr.lower()) or ('optional' in argstr.lower()):
                         logger.debug(funcname + ' Found Union of datatypes')
                         type_dict['type_root'] = 'union'
                         type_args_union = typing.get_args(arg)
@@ -323,7 +332,10 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                         type_dict['type_args'].append(argstr)
                         # Add the object as well
                         type_dict['datatype_objects'][argstr] = arg
+                        #print('Added to type dict', argstr, arg)
 
+
+        logger.debug('Finished type dict: {}'.format(type_dict))
         return type_dict
 
     def __populateConfigGui__(self):
@@ -392,8 +404,10 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                     item.__literal_options = type_dict['literal_options']
                 #elif type_dict['isannotated']:
                 #    pass
-                # This is a union of allowed types
-                elif (len(type_dict['type_args']))>0 and (type_hints.__name__.lower() == 'union'):
+                # This is a union/optional of allowed types
+                elif ((len(type_dict['type_args']))>0 and
+                      ((type_hints.__name__.lower() == 'union'))
+                      or (type_hints.__name__.lower() == 'optional')):
                     logger.debug(funcname + 'Type args')
                     self.__configCombo = QtWidgets.QComboBox()
                     has_combo = True
@@ -511,20 +525,23 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             logger.debug(funcname + 'Color datatype')
             self.createConfigWidgetColor(item)
         elif (item.__datatypestr__.lower() == 'literal'):
-            logger.debug('Literal datatype')
+            logger.debug(funcname + 'Literal datatype')
             self.createConfigWidgetLiteral(item)
         elif (item.__datatypestr__ == 'str'):
-            logger.debug('Str')
+            logger.debug(funcname + 'Str')
             self.createConfigWidgetStr(item)
+        elif (item.__datatypestr__.lower() == 'nonetype'):
+            logger.debug(funcname + 'None')
+            self.createConfigWidgetNone(item)
         elif (item.__datatypestr__ == 'datetime'):
             self.createConfigWidgetDateTime(item)
         elif (item.__datatypestr__ == 'bool'):
             self.createConfigWidgetBool(item)
         elif (item.__datatypestr__ == 'RedvyprAddress'):
-            logger.debug('RedvyprAddress')
+            logger.debug(funcname + 'RedvyprAddress')
             self.createConfigWidgetRedvyprAddressStr(item)
         elif (item.__datatypestr__ == 'RedvyprAddressStr'):
-            logger.debug('RedvyprAddressStr')
+            logger.debug(funcname + 'RedvyprAddressStr')
             self.createConfigWidgetRedvyprAddressStr(item)
         elif (item.__datatypestr__ == 'list'):
             self.createConfigWidgetList(item)
@@ -644,14 +661,14 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         except:
             type_hints = type_hints_standard
 
-        print('Type hints', type_hints)
+        #print('Type hints', type_hints)
         type_dict = self.interprete_type_hints(type_hints)
-        print('Type dict', type_dict)
+        #print('Type dict', type_dict)
         addCombo = QtWidgets.QComboBox()
         has_combo = True
         logger.debug(funcname + 'Filling combo box')
         for iarg, argstr in enumerate(type_dict['type_args']):
-            print('Argstr ...', argstr)
+            #print('Argstr ...', argstr)
             # If annotated data is available look search for known datatypes
             if argstr == 'Annotated':
                 # print('Annotated argument')
@@ -706,6 +723,22 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         self.__layoutwidget.addRow(self.__configwidget_apply)
         self.__layoutwidget.addRow(self.__configwidget_cancel)
 
+    def createConfigWidgetNone(self, item):
+        index = item.__dataindex__
+        parent = item.__parent__
+        data = item.__data__
+        parentparent = parent.__parent__
+        self.__configwidget = QtWidgets.QWidget()
+        self.__layoutwidget = QtWidgets.QFormLayout(self.__configwidget)
+        # Buttons
+        self.__configwidget_apply = QtWidgets.QPushButton('Apply')
+        self.__configwidget_apply.clicked.connect(self.applyGuiInput)
+        self.__configwidget_apply.__configType = 'configNone'
+        self.__configwidget_apply.item = item
+        self.__configwidget_cancel = QtWidgets.QPushButton('Cancel')
+        self.__layoutwidget.addRow(self.__configwidget_apply)
+        self.__layoutwidget.addRow(self.__configwidget_cancel)
+
     def createConfigWidgetBytes(self, item):
         index = item.__dataindex__
         parent = item.__parent__
@@ -734,8 +767,8 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             parent = item.__parent__
             data = item.__data__
             data = str(data)
-            print('Data data',data,type(data))
-            print('Data data', item.text(1))
+            #print('Data data',data,type(data))
+            #print('Data data', item.text(1))
             parentparent = parent.__parent__
             self.__configwidget = QtWidgets.QWidget()
             self.__layoutwidget = QtWidgets.QFormLayout(self.__configwidget)
@@ -852,17 +885,17 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         funcname = __name__ + '.applyGuiInput():'
         logger.debug(funcname)
         item = self.sender().item
-        print('Some info')
-        print('item_data',item.__data__)
-        print('item_parent',item.__dataparent__)
-        print('item_dataindex',item.__dataindex__)
+        logger.debug(funcname + 'Some info after apply')
+        logger.debug(funcname + 'item_data {}'.format(item.__data__))
+        #print('item_parent',item.__dataparent__)
+        #print('item_dataindex',item.__dataindex__)
         item_data = item.__data__
         # The flag to add a new item
         flag_add = item.__flag_add__
 
-        print('datatypestr',item.__datatypestr__)
+        #print('datatypestr',item.__datatypestr__)
         #print(item.__parent__)
-        print('Some info done')
+        logger.debug(funcname + 'Some info done')
         data_set = False
         if self.sender().__configType == 'configNumber':
             #print(funcname + ' ' + self.sender().__configType)
@@ -878,11 +911,11 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             data = item.__data__
             datakey = self.__configwidget_input.text()  # ComboBox
             index = self.__configwidget_combo.currentIndex()
-            print('Dict newkey', datakey, 'Index', index)
+            #print('Dict newkey', datakey, 'Index', index)
             user_role_config = 11
             role = QtCore.Qt.UserRole + user_role_config
             dobject = self.__configwidget_combo.itemData(index, role)
-            print('Dobject', dobject)
+            #print('Dobject', dobject)
             dobject_add = dobject()
             data.append(dobject_add)
             # Reload and redraw all data
@@ -895,11 +928,11 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             data = item.__data__
             datakey = self.__configwidget_input.text()  # ComboBox
             index = self.__configwidget_combo.currentIndex()
-            print('Dict newkey', datakey,'Index',index)
+            #print('Dict newkey', datakey,'Index',index)
             user_role_config = 11
             role = QtCore.Qt.UserRole + user_role_config
             dobject = self.__configwidget_combo.itemData(index, role)
-            print('Dobject',dobject)
+            #print('Dobject',dobject)
             dobject_add = dobject()
             #data[datakey] = dobject_add
             setattr(data, datakey, dobject_add)
@@ -913,11 +946,11 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             data = item.__data__
             datakey = self.__configwidget_input.text()  # ComboBox
             index = self.__configwidget_combo.currentIndex()
-            print('Dict newkey', datakey,'Index',index)
+            #print('Dict newkey', datakey,'Index',index)
             user_role_config = 11
             role = QtCore.Qt.UserRole + user_role_config
             dobject = self.__configwidget_combo.itemData(index, role)
-            print('Dobject',dobject)
+            #print('Dobject',dobject)
             dobject_add = dobject()
             data[datakey] = dobject_add
             # Reload and redraw all data
@@ -949,10 +982,15 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             data = self.__configwidget_input.text()  # Textbox
             data_set = True
 
+        elif self.sender().__configType == 'configNone':
+            logger.debug(funcname + 'Processing configNone')
+            data = None
+            data_set = True
+
         elif self.sender().__configType == 'configBytes':
             logger.debug(funcname + 'Processing configBytes')
             data = self.__configwidget_input.text()  # Textbox
-            print('data',data)
+            #print('data',data)
             if data.startswith("b'") and data.endswith("'"):
                 data = eval(data)
             else:
@@ -992,7 +1030,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 # Dictionaries?!
                 if pydantic.BaseModel in item.__dataparent__.__class__.__mro__:
                     logger.debug('Adding data to attribute "{}" of pydantic basemodel '.format(item.__dataparent__))
-                    print('Data',data,type(data))
+                    #print('Data',data,type(data))
                     setattr(item.__dataparent__,item.__dataindex__, data)
                 elif isinstance(item.__dataparent__, list):
                     logger.debug('Changing data at index {}'.format(item.__dataindex__))
@@ -1611,21 +1649,21 @@ class datastreamMetadataWidget(datastreamQTreeWidget):
                 metadata_mode = 'dict'
             funcname = __name__ + '__item_clicked()'
             logger.debug(funcname)
-            print('Item',item)
-            try:
-                print('Address1',item.raddress)
-            except:
-                logger.info('Could not get address',exc_info=True)
-                pass
+            #print('Item',item)
+            #try:
+            #    print('Address1',item.raddress)
+            #except:
+            #    logger.info('Could not get address',exc_info=True)
+            #    pass
 
             raddress = item.raddress
             address_format = '/h/d/i/k'
             # This needs to be considered, what we actually want to get ...
             fstr1 = raddress.get_expand_explicit_str(address_format=address_format)
             raddress_metadata = RedvyprAddress(fstr1)
-            print('Raddress_metadata',raddress_metadata)
+            logger.debug('Raddress_metadata {}'.format(raddress_metadata))
             metadata = self.device.get_metadata(raddress_metadata,mode=metadata_mode)
-            print('Got metadata',metadata)
+            logger.debug('Got metadata {}'.format(metadata))
 
             metadata_work = copy.deepcopy(metadata)
             if metadata_mode == 'dict':
@@ -1645,7 +1683,7 @@ class datastreamMetadataWidget(datastreamQTreeWidget):
         funcname = __name__ + '.create_metadata_widget():'
         logger.debug(funcname)
         #metadata_pydantic = RedvyprDeviceMetadata(**metadata)
-        print('Metadata edit widget', metadata)
+        #print('Metadata edit widget', metadata)
         self.__metadata_edit = metadata
         self.__metadata_address = raddress
         try:
@@ -1661,12 +1699,12 @@ class datastreamMetadataWidget(datastreamQTreeWidget):
     def metadata_config_apply(self):
         funcname = __name__ + '.metadata_config_apply():'
         try:
-            print('Apply')
+            logger.debug(funcname)
             metadata = self.__metadata_edit
-            print('Hallo',metadata)
+            #print('Hallo',metadata)
             for address in metadata.address.keys():
-                print('Updating metadata data',metadata.address[address])
-                print('Updating metadata', address)
+                #print('Updating metadata data',metadata.address[address])
+                #print('Updating metadata', address)
                 if len(metadata.address[address].keys()) > 0:
                     self.device.set_metadata(address, metadata.address[address])
                 else:

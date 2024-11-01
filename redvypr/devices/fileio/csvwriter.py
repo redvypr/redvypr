@@ -50,6 +50,7 @@ class csv_datastream_strformat(pydantic.BaseModel):
 class csv_datastream_config(pydantic.BaseModel):
     address: str = pydantic.Field(default='*', type='redvypr_address',description='The redvypr address string of the datastream')
     address_found: str = pydantic.Field(default='', description='The redvypr address string of the datastream that is found for the column')
+    mode_address_found: typing.Literal['copy','first fit exact','first fit address format'] = pydantic.Field(default='first fit exact')
     strformat: csv_datastream_strformat = pydantic.Field(default=csv_datastream_strformat())
     comment: str= pydantic.Field(default='', description='Comment')
     unit: str = pydantic.Field(default='', description='Unit of the data')
@@ -156,7 +157,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     if True:
         try:
             dtneworig  = config['dt_newfile']
-            dtunit     = config['dt_newfile_unit']
+            dtunit = config['dt_newfile_unit']
             if(dtunit.lower() == 'seconds'):
                 dtfac = 1.0
             elif(dtunit.lower() == 'hours'):
@@ -166,7 +167,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             else:
                 dtfac = 0
                 
-            dtnews     = dtneworig * dtfac
+            dtnews = dtneworig * dtfac
             logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
         except Exception as e:
             logger.exception(e)
@@ -269,7 +270,12 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                                 raddr = redvypr.RedvyprAddress(dstream['address'])
                                 if dstr in raddr: # Found something
                                     #print('Found ', dstr, 'in', raddr)
-                                    dstream['address_found'] = raddr.address_str
+                                    if dstream['mode_address_found'] == 'copy':
+                                        dstream['address_found'] = raddr.address_str
+                                    if dstream['mode_address_found'] == 'first fit exact':
+                                        dstream['address_found'] = dstr.address_str
+                                    else:
+                                        raise ValueError('Mode "{}" not implented yet'.format(dstream['mode_address_found']))
                                     #print('Got an address',dstream)
                                     streamdata = dstr.get_data(data)
                                     data_fill[ind_dstream] = streamdata
@@ -333,6 +339,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             hstr += d['comment'] + config['separator']
 
                     hstr = hstr[:-len(config['separator'])] + '\n'
+
+                f.write(hstr)
+                bytes_written += len(hstr)
 
             if len(data_write_to_file) > 0:
                 #logger.debug('Writing {:d} lines to file now'.format(len(data_write_to_file)))

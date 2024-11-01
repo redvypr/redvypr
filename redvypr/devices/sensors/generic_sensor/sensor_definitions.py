@@ -202,6 +202,8 @@ class BinarySensor(Sensor):
     binary_format: typing.Dict[str, str] = pydantic.Field(default={}, description='https://docs.python.org/3/library/struct.html, for example for 16bit signed data {"adc_data":"<h"}')
     str_format: typing.Dict[str, str] = pydantic.Field(default={})
     packetid_format: typing.Optional[str] = pydantic.Field(default=None,description='Format of the packetid of the datapacket')
+    #packetid_format: typing.Union[float,str, None] = pydantic.Field(default=3.0,
+    #                                                       description='Format of the packetid of the datapacket')
     datakey_metadata: typing.Dict[str, typing.Dict] = pydantic.Field(default={})
     calibrations_raw: typing.Dict[str, typing.Annotated[typing.Union[calibration_const, calibration_poly], pydantic.Field(
         discriminator='calibration_type')]] = pydantic.Field(default={})
@@ -281,10 +283,10 @@ class BinarySensor(Sensor):
         """
         #print('Hallo data', data)
         if data in self.__rdatastream__:
-            #print('Processing')
+            print('Processing data',data)
             binary_data = self.__rdatastream__.get_data(data)
             #print('Binary data', binary_data)
-            data_packets = self.binary_process(binary_data)
+            data_packets = self.binary_process(binary_data, datapacket_orig=data)
             #print('data packets',data_packets)
             for data_packet in data_packets:
                 if 't' not in data_packet.keys():
@@ -305,19 +307,18 @@ class BinarySensor(Sensor):
             else: # no calibration, just return the data packets
                 return data_packets
 
-    def binary_process(self, binary_stream):
+    def binary_process(self, binary_stream, datapacket_orig):
         """
 
-        :param binary_stream:
-        :return:
         """
         rematches = self.binary_split(binary_stream)
         data_packets = []
         #print('Rematches',rematches)
+        # Loop over all split raw string packages
         for rematch in rematches:
             data_packet = redvypr_create_datadict(device=self.name)
             flag_data = False
-            #print('Processing match', rematch)
+            print('Processing match', rematch)
             #print('Variables found', rematch.groupdict())
             redict = rematch.groupdict()
             if self._flag_binary_keys:
@@ -334,6 +335,7 @@ class BinarySensor(Sensor):
 
 
             if self._flag_str_format_keys:
+                print('Str format')
                 for keyname in redict:
                     if keyname in self.str_format.keys():
                         #print('Found str key', keyname)
@@ -349,20 +351,20 @@ class BinarySensor(Sensor):
 
                         data_packet[keyname] = data
                         flag_data = True
-                        #print('Converted data to', data)
+                        print('Converted data to', data, flag_data)
 
             if self.calibration_python_str is not None:
-                #print('Found a python calibration eval str, applying')
+                print('Found a python calibration eval str, applying')
                 for keyname_eval in self.calibration_python_str:
                     evalcommand = self.calibration_python_str[keyname_eval]
                     evalcommand = evalcommand.split('\n')[0]
                     evalstr_full = 'data_packet[keyname_eval]=' + evalcommand
-                    #print('Evalstr full',evalstr_full)
+                    print('Evalstr full',evalstr_full)
                     try:
                         exec(evalstr_full)
                     except:
-                        logger.info('Could evaluate command',exc_info=True)
-                    #print('Data packet',data_packet)
+                        logger.info('Could not evaluate command',exc_info=True)
+                    print('Data packet',data_packet)
 
 
             # Check for calibrations
@@ -386,15 +388,25 @@ class BinarySensor(Sensor):
 
             # Check for packetid
             if self.packetid_format is not None:
+                # Define variables that can be used for the packetid, see RMC as an example
+                datapacket_orig_dict = {}
+                datapacket_orig_dict['packetid_rawdata'] = datapacket_orig['_redvypr']['packetid']
+                datapacket_orig_dict['publisher_rawdata'] = datapacket_orig['_redvypr']['publisher']
+                datapacket_orig_dict['device_rawdata'] = datapacket_orig['_redvypr']['device']
                 try:
-                    packetidstr = self.packetid_format.format(**data_packet)
+                    packetidstr = self.packetid_format.format(**data_packet, **datapacket_orig_dict)
                     data_packet['_redvypr']['packetid'] = packetidstr
                 except:
                     logger.warning('Could not create an packetidstr:',exc_info=True)
+            else:
+                packetidstr = self.name
+                data_packet['_redvypr']['packetid'] = packetidstr
+
+            print('Test flag data',flag_data)
             if flag_data:
                 data_packets.append(data_packet)
 
-        #print('Data packets',data_packets)
+        print('Data packets',data_packets)
         return data_packets
 
     def binary_split(self, binary_stream):
@@ -441,6 +453,7 @@ nmea_datakey_metadata = {'time':{'unit':'HHMMSS','description':'GNSS in UTC'},'l
 nmea_rmc_test1 = b'$GPRMC,162614.22,A,5230.5900,N,01322.3900,E,10.0,90.0,131006,1.2,E,A*13\r\n'
 #nmea_rmc_test2 = b'$GPRMC,090413.788,V,,,,,,,310724,,,N*46\r\n'
 nmea_rmc_test2 = b'$GPRMC,090413,V,,,,,,,310724,,,N*46\r\n'
+nmea_rmc_packetid_format = 'RMC_{packetid_rawdata}_{publisher_rawdata}_{devid}'
 latevalstr = '(float(data_packet["latstr"][0:2])+float(data_packet["latstr"][2:])/60)*(float(data_packet["NS"]=="N")-float(data_packet["NS"]=="S"))'
 lonevalstr = '(float(data_packet["lonstr"][0:3])+float(data_packet["lonstr"][3:])/60)*(float(data_packet["EW"]=="W")-float(data_packet["EW"]=="E"))'
 timeevalstr = 'dateutil.parser.parse(data_packet["date"] + " " + data_packet["time"] + "UTC",yearfirst=False).timestamp()'
@@ -449,6 +462,7 @@ NMEARMC = BinarySensor(name='NMEA0183_RMC', regex_split=nmea_rmc_split,
                        str_format=nmea_rmc_str_format,
                        datastream=str(RedvyprAddress('/k:data')),
                        datakey_metadata=nmea_datakey_metadata,
+                       packetid_format=nmea_rmc_packetid_format,
                        calibration_python_str=nmea_calibration_python_str)
 
 

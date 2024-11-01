@@ -88,6 +88,7 @@ def start(device_info, config = None, dataqueue = None, datainqueue = None, stat
                     sensordata = sensor.datapacket_process(data)
                 except:
                     logger.info('Could not decode datapacket',exc_info=True)
+                    sensordata = []
                 #print('Sensordata',sensordata)
                 if type(sensordata) is list: # List means that there was a valid packet
                     for data_packet in sensordata:

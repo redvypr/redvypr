@@ -39,7 +39,8 @@ extensions = ['sphinx.ext.napoleon',
               'sphinx.ext.autosectionlabel',
               'sphinx.ext.autosummary',
               'sphinx.ext.viewcode',
-              'sphinx.ext.autodoc',]
+              'sphinx.ext.autodoc',
+              'sphinxcontrib.autodoc_pydantic',]
 
 
 autosummary_generate = True
