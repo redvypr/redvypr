@@ -405,6 +405,7 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
         for irow,sensor in enumerate(self.device.custom_config.sensors):
             name = sensor.name
             item_name = QtWidgets.QTableWidgetItem(name)
+            item_name.__sensor__ = sensor
             self.sensortable.setItem(irow,icol_name,item_name)
             datastream = str(sensor.datastream)
             item_datastream = QtWidgets.QTableWidgetItem(datastream)
@@ -439,61 +440,68 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
         self.add_sensor_widget = QtWidgets.QWidget()
         self.add_sensor_widget.setWindowTitle('Add sensor')
         self.add_sensor_widget_layout = QtWidgets.QGridLayout(self.add_sensor_widget)
-        # Standard sensors
-        self.sensor_standard_combo = QtWidgets.QComboBox()
-        self.sensor_standard_combo.addItem('Sensor')
-        self.sensor_standard_combo.addItem('BinarySensor')
-        self.sensor_standard_combo.setCurrentIndex(1)
-        #self.sensor_standard_combo.currentIndexChanged.connect(self.add_sensor_combo_changed)
-        self.sensor_standard_choose = QtWidgets.QPushButton('Choose sensor')
-        self.sensor_standard_choose.clicked.connect(self.add_sensor_combo_changed)
-        self.add_sensor_widget_layout.addWidget(self.sensor_standard_combo, 0, 0)
-        self.add_sensor_widget_layout.addWidget(self.sensor_standard_choose, 1, 0)
-        # Predefined sensors
-        self.sensor_combo = QtWidgets.QComboBox()
-        for sensor in predefined_sensors:
-            self.sensor_combo.addItem(sensor.name)
-        #self.sensor_combo.currentIndexChanged.connect(self.add_sensor_combo_changed)
-        self.sensor_predefined_choose = QtWidgets.QPushButton('Choose sensor')
-        self.sensor_predefined_choose.clicked.connect(self.add_sensor_combo_changed)
-        self.add_sensor_widget_layout.addWidget(self.sensor_combo,0,1)
-        self.add_sensor_widget_layout.addWidget(self.sensor_predefined_choose, 1, 1)
+        # Add table for available sensors
+        self.sensortable_choose = QtWidgets.QTableWidget()
+        nsensors = len(predefined_sensors) + 2
+        self.sensortable_choose.setRowCount(nsensors)
+        self.sensortable_choose.setColumnCount(2)
+        self.sensortable_choose.setHorizontalHeaderLabels(['Name','Description'])
+        for irow,sensor in enumerate(predefined_sensors):
+            item = QtWidgets.QTableWidgetItem(sensor.name)
+            item.__sensor__ = sensor
+            item_desc = QtWidgets.QTableWidgetItem(sensor.description)
+            self.sensortable_choose.setItem(irow,0,item)
+            self.sensortable_choose.setItem(irow, 1, item_desc)
 
-        #self.sensor_standard_combo.setCurrentIndex(0)
-        self.sensor_standard_choose.clicked.emit()
+        item = QtWidgets.QTableWidgetItem('Sensor')
+        item.__sensor__ = Sensor()
+        item_desc = QtWidgets.QTableWidgetItem('Blank Sensor')
+        self.sensortable_choose.setItem(nsensors - 2, 0, item)
+        self.sensortable_choose.setItem(nsensors - 2, 1, item_desc)
+
+        item = QtWidgets.QTableWidgetItem('BinarySensor')
+        item.__sensor__ = BinarySensor()
+        item_desc = QtWidgets.QTableWidgetItem('Blank BinarySensor')
+        self.sensortable_choose.setItem(nsensors - 1, 0, item)
+        self.sensortable_choose.setItem(nsensors - 1, 1, item_desc)
+        self.sensortable_choose.resizeColumnsToContents()
+
+        self.sensor_choose = QtWidgets.QPushButton('Choose')
+        self.sensor_choose.clicked.connect(self.choose_sensor_changed)
+        self.add_sensor_widget_layout.addWidget(self.sensortable_choose, 0, 0)
+        self.add_sensor_widget_layout.addWidget(self.sensor_choose, 1, 0)
+        # Call the function once to show the pydanticConfigWidget
+        self.sensor_choose.clicked.emit()
         self.add_sensor_widget.show()
 
-    def add_sensor_combo_changed(self):
+    def choose_sensor_changed(self):
+        funcname = __name__ + '.choose_sensor_changed():'
+        print(funcname)
         #combo = self.sender()
         button = self.sender()
-        if button == self.sensor_predefined_choose:
-            combo = self.sensor_combo
+        item = self.sensortable_choose.item(self.sensortable_choose.currentRow(),0)
+        if item is None:
+            sensor = Sensor()
         else:
-            combo = self.sensor_standard_combo
-        sensorname = combo.currentText()
-        sensorindex = combo.currentIndex()
-        # Redefined sensor
-        if combo == self.sensor_combo:
-            sensor = predefined_sensors[sensorindex].model_copy()
-        else:
-            if sensorindex == 0:
-                sensor = Sensor()
-            else:
-                sensor = BinarySensor()
+            sensor = item.__sensor__
+        if True:
+            #print(funcname,sensor)
+            try:
+                self.add_sensor_widget_layout.removeWidget(self.add_sensor_config_widget)
+                self.add_sensor_config_widget.setParent(None)
+            except:
+                pass
 
-        try:
-            self.add_sensor_widget_layout.removeWidget(self.add_sensor_config_widget)
-            self.add_sensor_config_widget.setParent(None)
-        except:
-            pass
-
-        self.__sensor_to_add__ = sensor
-        self.add_sensor_config_widget = pydanticConfigWidget(self.__sensor_to_add__, redvypr=self.device.redvypr, close_after_editing=False)
-        self.add_sensor_config_widget.config_editing_done.connect(self.add_sensor_applied)
-        self.add_sensor_widget_layout.addWidget(self.add_sensor_config_widget,2,0,1,2)
-        #self.config_widget.showMaximized()
-        #print('Sensorname',sensorname,'sensorindex',sensorindex)
-        #print('Sensor',sensor)
+            self.__sensor_to_add__ = sensor
+            self.add_sensor_config_widget = pydanticConfigWidget(self.__sensor_to_add__, redvypr=self.device.redvypr, close_after_editing=False)
+            self.add_sensor_config_widget.config_editing_done.connect(self.add_sensor_applied)
+            self.add_sensor_widget_layout.addWidget(self.add_sensor_config_widget,2,0,4,2)
+            self.add_sensor_widget_layout.setRowStretch(0, 1)  # 30% für das QTableWidget
+            self.add_sensor_widget_layout.setRowStretch(1, 1)  # 70% für das QTextEdit
+            self.add_sensor_widget_layout.setRowStretch(2, 5)  # 70% für das QTextEdit
+            #self.config_widget.showMaximized()
+            #print('Sensorname',sensorname,'sensorindex',sensorindex)
+            #print('Sensor',sensor)
 
     def add_sensor_applied(self):
         funcname = __name__ + '.add_sensor_applied():'

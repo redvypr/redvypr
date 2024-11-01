@@ -32,6 +32,7 @@ def array(byte_string):
 
 class Sensor(pydantic.BaseModel):
     name: str = pydantic.Field(default='sensor')
+    description: str = pydantic.Field(default='Sensor')
     sensortype: typing.Literal['sensor'] = pydantic.Field(default='sensor')
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress('*'))
     autofindcalibration: bool = pydantic.Field(default=True, description='Tries to find automatically calibrations for the sensor')
@@ -446,6 +447,7 @@ S4LB = BinarySensor(name='S4LB', regex_split=s4l_split, binary_format=s4l_binary
 
 # NMEA RMC
 #https://de.wikipedia.org/wiki/NMEA_0183#Recommended_Minimum_Sentence_C_(RMC)
+nmea_rmc_description = 'NMEA Recommended Minimum Sentence'
 #nmea_rmc_split = b'\$[A-Z]+RMC,(?P<time>[0-9.]*),(?P<status>[A-Z]+),(?P<latdeg>[0-9]{2})(?P<latmin>[0-9.]+),(?P<NS>[NS]+),(?P<londeg>[0-9]{3})(?P<lonmin>[0-9.]+),(?P<EW>[EW]+),[0-9.]*,[0-9.]*,(?P<date>[0-9.]*),.*\n'
 nmea_rmc_split = b'\$(?P<devid>[A-Z]+)RMC,(?P<time>[0-9.]+),(?P<status>[A-Z]+),(?P<latstr>[0-9.]*),(?P<NS>[NS]*),(?P<lonstr>[0-9.]*),(?P<EW>[EW]*),(?P<speed>[0-9.]*),(?P<course>[0-9.]*),(?P<date>[0-9.]+),(?P<magdev>[0-9.]*),(?P<magdevdir>[EW]*),(?P<crc>.*)\n'
 nmea_rmc_str_format = {'devid':'str','time':'str','date':'str','latstr':'str','lonstr':'str','NS':'str','EW':'str','speed':'float','course':'float'}
@@ -460,6 +462,7 @@ timeevalstr = 'dateutil.parser.parse(data_packet["date"] + " " + data_packet["ti
 nmea_calibration_python_str = {'lat':latevalstr,'lon':lonevalstr,'t':timeevalstr}
 NMEARMC = BinarySensor(name='NMEA0183_RMC', regex_split=nmea_rmc_split,
                        str_format=nmea_rmc_str_format,
+                       description=nmea_rmc_description,
                        datastream=str(RedvyprAddress('/k:data')),
                        datakey_metadata=nmea_datakey_metadata,
                        packetid_format=nmea_rmc_packetid_format,

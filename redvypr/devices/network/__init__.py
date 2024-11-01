@@ -1,3 +1,3 @@
-from . import network_device
+from . import network
 
 redvypr_devicemodule = True
