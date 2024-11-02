@@ -452,10 +452,6 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
         for irow,sensor in enumerate(predefined_sensors):
             #sensor_copy = copy.deepcopy(sensor.model_dump())
             sensor_copy = sensor.model_validate(sensor.model_dump())
-            print('Hallo0 Sensor copy:\n', sensor)
-            print('---------')
-            print('Hallo1 Sensor copy:\n',sensor_copy)
-            print('---------')
             item = QtWidgets.QTableWidgetItem(sensor_copy.name)
             item.__sensor__ = sensor_copy
             item_desc = QtWidgets.QTableWidgetItem(sensor_copy.description)
