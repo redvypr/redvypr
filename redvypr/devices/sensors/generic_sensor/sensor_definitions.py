@@ -33,6 +33,7 @@ def array(byte_string):
 class Sensor(pydantic.BaseModel):
     name: str = pydantic.Field(default='sensor')
     description: str = pydantic.Field(default='Sensor')
+    example_data: typing.Union[None,bytes, str] = pydantic.Field(default=None)
     sensortype: typing.Literal['sensor'] = pydantic.Field(default='sensor')
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress('*'))
     autofindcalibration: bool = pydantic.Field(default=True, description='Tries to find automatically calibrations for the sensor')
@@ -441,13 +442,13 @@ calibration_counter32 = calibration_const(parameter_result='counter(s)',coeff=co
                                       unit='s',unit_input='counts')
 calibrations_raw = {'adc16':calibration_adc16,'counter32':calibration_counter32}
 S4LB = BinarySensor(name='S4LB', regex_split=s4l_split, binary_format=s4l_binary_format,
-                    datastream=str(RedvyprAddress('/k:data')),
+                    datastream=RedvyprAddress('/k:data'),
                     calibrations_raw=calibrations_raw)
 
 
 # NMEA RMC
 #https://de.wikipedia.org/wiki/NMEA_0183#Recommended_Minimum_Sentence_C_(RMC)
-nmea_rmc_description = 'NMEA Recommended Minimum Sentence'
+nmea_rmc_description = 'NMEA Recommended Minimum Sentence\nhttps://de.wikipedia.org/wiki/NMEA_0183#Recommended_Minimum_Sentence_C_(RMC)'
 #nmea_rmc_split = b'\$[A-Z]+RMC,(?P<time>[0-9.]*),(?P<status>[A-Z]+),(?P<latdeg>[0-9]{2})(?P<latmin>[0-9.]+),(?P<NS>[NS]+),(?P<londeg>[0-9]{3})(?P<lonmin>[0-9.]+),(?P<EW>[EW]+),[0-9.]*,[0-9.]*,(?P<date>[0-9.]*),.*\n'
 nmea_rmc_split = b'\$(?P<devid>[A-Z]+)RMC,(?P<time>[0-9.]+),(?P<status>[A-Z]+),(?P<latstr>[0-9.]*),(?P<NS>[NS]*),(?P<lonstr>[0-9.]*),(?P<EW>[EW]*),(?P<speed>[0-9.]*),(?P<course>[0-9.]*),(?P<date>[0-9.]+),(?P<magdev>[0-9.]*),(?P<magdevdir>[EW]*),(?P<crc>.*)\n'
 nmea_rmc_str_format = {'devid':'str','time':'str','date':'str','latstr':'str','lonstr':'str','NS':'str','EW':'str','speed':'float','course':'float'}
@@ -463,7 +464,8 @@ nmea_calibration_python_str = {'lat':latevalstr,'lon':lonevalstr,'t':timeevalstr
 NMEARMC = BinarySensor(name='NMEA0183_RMC', regex_split=nmea_rmc_split,
                        str_format=nmea_rmc_str_format,
                        description=nmea_rmc_description,
-                       datastream=str(RedvyprAddress('/k:data')),
+                       example_data=nmea_rmc_test1,
+                       datastream=RedvyprAddress('/k:data'),
                        datakey_metadata=nmea_datakey_metadata,
                        packetid_format=nmea_rmc_packetid_format,
                        calibration_python_str=nmea_calibration_python_str)
@@ -476,11 +478,13 @@ tar_b2_split = b'\$(?P<MAC>.+),TAR,B2,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<TA
 tar_b2_str_format = {'MAC':'str','counter':'float','np':'int','TAR':'array'}
 tar_b2_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'TAR':{'unit':'Ohm'}}
 tar_b2_packetid_format = 'TAR_B2_{MAC}'
+tar_b2_description = 'Temperature array'
 tar_b2 = BinarySensor(name='tar_b2', regex_split=tar_b2_split,
                        str_format=tar_b2_str_format,
+                       description=tar_b2_description,
                        datakey_metadata=tar_b2_datakey_metadata,
                        packetid_format=tar_b2_packetid_format,
-                       datastream=str(RedvyprAddress('/k:data')))
+                       datastream=RedvyprAddress('/k:data'))
 
 
 # HF (Heatflow)
@@ -494,7 +498,7 @@ HF = BinarySensor(name='HF', regex_split=HF_split,
                        str_format=HF_str_format,
                        datakey_metadata=HF_datakey_metadata,
                        packetid_format=HF_packetid_format,
-                       datastream=str(RedvyprAddress('/k:data')))
+                       datastream=RedvyprAddress('/k:data'))
 
 
 # HFS (Heatflow)
@@ -508,7 +512,7 @@ HFS = BinarySensor(name='HFS', regex_split=HFS_split,
                        str_format=HFS_str_format,
                        datakey_metadata=HFS_datakey_metadata,
                        packetid_format=HFS_packetid_format,
-                       datastream=str(RedvyprAddress('/k:data')))
+                       datastream=RedvyprAddress('/k:data'))
 
 
 predefined_sensors = []

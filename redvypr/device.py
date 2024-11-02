@@ -804,8 +804,7 @@ class RedvyprDevice(QtCore.QObject):
                             try:
                                 config = self.custom_config.model_dump()
                             except:
-                                self.logger.debug('None')
-                                pass
+                                raise ValueError('Could not dump custom model config')
                         else:
                             self.logger.debug('Using external configuration')
 

@@ -4,6 +4,7 @@ function binary2raw -> dict with datakey (parameter)
 generic_sensor (with optional calibrations)
 
 """
+import copy
 import logging
 import sys
 import typing
@@ -57,7 +58,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
 def start(device_info, config = None, dataqueue = None, datainqueue = None, statusqueue = None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
-    #print('Got config serialized', config)
+    print('Got config serialized', config)
     config = DeviceCustomConfig.model_validate(config)
     #print('Got config', config)
     for sensor in config.sensors:
@@ -121,6 +122,8 @@ class Device(RedvyprDevice):
         for sen in self.custom_config.sensors:
             if sen.name == sensor.name:
                 flag_name_new = False
+                print('Found same sensor 1',sen)
+                print('Found same sensor 2', sensor)
                 break
 
         if flag_name_new:
@@ -444,14 +447,23 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
         self.sensortable_choose = QtWidgets.QTableWidget()
         nsensors = len(predefined_sensors) + 2
         self.sensortable_choose.setRowCount(nsensors)
-        self.sensortable_choose.setColumnCount(2)
+        self.sensortable_choose.setColumnCount(3)
         self.sensortable_choose.setHorizontalHeaderLabels(['Name','Description'])
         for irow,sensor in enumerate(predefined_sensors):
-            item = QtWidgets.QTableWidgetItem(sensor.name)
-            item.__sensor__ = sensor
-            item_desc = QtWidgets.QTableWidgetItem(sensor.description)
+            #sensor_copy = copy.deepcopy(sensor.model_dump())
+            sensor_copy = sensor.model_validate(sensor.model_dump())
+            print('Hallo0 Sensor copy:\n', sensor)
+            print('---------')
+            print('Hallo1 Sensor copy:\n',sensor_copy)
+            print('---------')
+            item = QtWidgets.QTableWidgetItem(sensor_copy.name)
+            item.__sensor__ = sensor_copy
+            item_desc = QtWidgets.QTableWidgetItem(sensor_copy.description)
+            exdata = str(sensor_copy.example_data)
+            item_example = QtWidgets.QTableWidgetItem(exdata)
             self.sensortable_choose.setItem(irow,0,item)
             self.sensortable_choose.setItem(irow, 1, item_desc)
+            self.sensortable_choose.setItem(irow, 2, item_example)
 
         item = QtWidgets.QTableWidgetItem('Sensor')
         item.__sensor__ = Sensor()
@@ -465,13 +477,11 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
         self.sensortable_choose.setItem(nsensors - 1, 0, item)
         self.sensortable_choose.setItem(nsensors - 1, 1, item_desc)
         self.sensortable_choose.resizeColumnsToContents()
-
-        self.sensor_choose = QtWidgets.QPushButton('Choose')
-        self.sensor_choose.clicked.connect(self.choose_sensor_changed)
+        self.sensortable_choose.currentItemChanged.connect(self.choose_sensor_changed)
         self.add_sensor_widget_layout.addWidget(self.sensortable_choose, 0, 0)
-        self.add_sensor_widget_layout.addWidget(self.sensor_choose, 1, 0)
         # Call the function once to show the pydanticConfigWidget
-        self.sensor_choose.clicked.emit()
+        #self.sensor_choose.clicked.emit()
+        self.choose_sensor_changed()
         self.add_sensor_widget.show()
 
     def choose_sensor_changed(self):
@@ -495,10 +505,9 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
             self.__sensor_to_add__ = sensor
             self.add_sensor_config_widget = pydanticConfigWidget(self.__sensor_to_add__, redvypr=self.device.redvypr, close_after_editing=False)
             self.add_sensor_config_widget.config_editing_done.connect(self.add_sensor_applied)
-            self.add_sensor_widget_layout.addWidget(self.add_sensor_config_widget,2,0,4,2)
+            self.add_sensor_widget_layout.addWidget(self.add_sensor_config_widget,1,0,4,2)
             self.add_sensor_widget_layout.setRowStretch(0, 1)  # 30% für das QTableWidget
-            self.add_sensor_widget_layout.setRowStretch(1, 1)  # 70% für das QTextEdit
-            self.add_sensor_widget_layout.setRowStretch(2, 5)  # 70% für das QTextEdit
+            self.add_sensor_widget_layout.setRowStretch(1, 3)  # 70% für das QTextEdit
             #self.config_widget.showMaximized()
             #print('Sensorname',sensorname,'sensorindex',sensorindex)
             #print('Sensor',sensor)
@@ -507,6 +516,7 @@ class initDeviceWidget(redvypr.widgets.standard_device_widgets.redvypr_deviceIni
         funcname = __name__ + '.add_sensor_applied():'
         logger.debug(funcname)
         try:
+            print('Sensor to add',self.__sensor_to_add__)
             self.device.add_sensor(self.__sensor_to_add__)
             self.add_sensor_widget.close()
             self.update_sensortable()
