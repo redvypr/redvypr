@@ -265,13 +265,7 @@ class BinarySensor(Sensor):
             if (key_result is not None) and (unit is not None):
                 metadata_address = RedvyprAddress(devicename=self.name, datakey=key_result)
                 data_packet = add_metadata2datapacket(data_packet, address=metadata_address, metadata=unit)
-                #data_packet = add_metadata2datapacket(data_packet, key_result, metadata=unit)
 
-        #print('-----------')
-        #print('metadata datapacket',data_packet)
-        #print('-----------')
-        #print('-----------')
-        #print('-----------')
 
         if flag_metadata:
             return data_packet
@@ -320,7 +314,7 @@ class BinarySensor(Sensor):
         for rematch in rematches:
             data_packet = redvypr_create_datadict(device=self.name)
             flag_data = False
-            print('Processing match', rematch)
+            #print('Processing match', rematch)
             #print('Variables found', rematch.groupdict())
             redict = rematch.groupdict()
             if self._flag_binary_keys:
@@ -478,10 +472,11 @@ tar_b2_split = b'\$(?P<MAC>.+),TAR,B2,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<TA
 tar_b2_str_format = {'MAC':'str','counter':'float','np':'int','TAR':'array'}
 tar_b2_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'TAR':{'unit':'Ohm'}}
 tar_b2_packetid_format = 'TAR_B2_{MAC}'
-tar_b2_description = 'Temperature array'
+tar_b2_description = 'Temperature array NMEA like text format'
 tar_b2 = BinarySensor(name='tar_b2', regex_split=tar_b2_split,
                        str_format=tar_b2_str_format,
                        description=tar_b2_description,
+                       example_data=tar_b2_test1,
                        datakey_metadata=tar_b2_datakey_metadata,
                        packetid_format=tar_b2_packetid_format,
                        datastream=RedvyprAddress('/k:data'))
@@ -494,8 +489,11 @@ HF_split = b'\$(?P<MAC>.+),HF,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<HF_V>[-,\+
 HF_str_format = {'MAC':'str','counter':'float','np':'int','HF_V':'float','NTC_R':'array'}
 HF_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'HF_V':{'unit':'Volt'},'NTC_R':{'unit':'Ohm'}}
 HF_packetid_format = 'HF_{MAC}'
+HF_description = 'Heatflow sensor raw data (units are Volt and Ohm)'
 HF = BinarySensor(name='HF', regex_split=HF_split,
                        str_format=HF_str_format,
+                       description=HF_description,
+                       example_data=HF_test1,
                        datakey_metadata=HF_datakey_metadata,
                        packetid_format=HF_packetid_format,
                        datastream=RedvyprAddress('/k:data'))
@@ -508,8 +506,11 @@ HFS_split = b'\$(?P<MAC>.+),HFS,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<HF_Wm2>[
 HFS_str_format = {'MAC':'str','counter':'float','np':'int','HF_Wm2':'float','T_degC':'array'}
 HFS_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'HF_Wm2':{'unit':'W m-2'},'T_degC':{'unit':'degC'}}
 HFS_packetid_format = 'HFS_{MAC}'
+HFS_description = 'Heatflow sensor data in SI units'
 HFS = BinarySensor(name='HFS', regex_split=HFS_split,
                        str_format=HFS_str_format,
+                       description=HFS_description,
+                       example_data=HFS_test1,
                        datakey_metadata=HFS_datakey_metadata,
                        packetid_format=HFS_packetid_format,
                        datastream=RedvyprAddress('/k:data'))
