@@ -285,7 +285,7 @@ class BinarySensor(Sensor):
         """
         #print('Hallo data', data)
         if data in self.__rdatastream__:
-            print('Processing data',data)
+            #print('Processing data',data)
             binary_data = self.__rdatastream__.get_data(data)
             #print('Binary data', binary_data)
             data_packets = self.binary_process(binary_data, datapacket_orig=data)
@@ -337,7 +337,7 @@ class BinarySensor(Sensor):
 
 
             if self._flag_str_format_keys:
-                print('Str format')
+                #print('Str format')
                 for keyname in redict:
                     if keyname in self.str_format.keys():
                         #print('Found str key', keyname)
@@ -353,20 +353,20 @@ class BinarySensor(Sensor):
 
                         data_packet[keyname] = data
                         flag_data = True
-                        print('Converted data to', data, flag_data)
+                        #print('Converted data to', data, flag_data)
 
             if self.calibration_python_str is not None:
-                print('Found a python calibration eval str, applying')
+                #print('Found a python calibration eval str, applying')
                 for keyname_eval in self.calibration_python_str:
                     evalcommand = self.calibration_python_str[keyname_eval]
                     evalcommand = evalcommand.split('\n')[0]
                     evalstr_full = 'data_packet[keyname_eval]=' + evalcommand
-                    print('Evalstr full',evalstr_full)
+                    #print('Evalstr full',evalstr_full)
                     try:
                         exec(evalstr_full)
                     except:
                         logger.info('Could not evaluate command',exc_info=True)
-                    print('Data packet',data_packet)
+                    #print('Data packet',data_packet)
 
 
             # Check for calibrations
@@ -404,11 +404,11 @@ class BinarySensor(Sensor):
                 packetidstr = self.name
                 data_packet['_redvypr']['packetid'] = packetidstr
 
-            print('Test flag data',flag_data)
+            #print('Test flag data',flag_data)
             if flag_data:
                 data_packets.append(data_packet)
 
-        print('Data packets',data_packets)
+        #print('Data packets',data_packets)
         return data_packets
 
     def binary_split(self, binary_stream):
