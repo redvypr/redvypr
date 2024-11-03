@@ -1012,15 +1012,15 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
 
         # Help and About menu
         toolMenu = mainMenu.addMenu('&Tools')
-        toolAction = QtWidgets.QAction("&Choose Datastreams ", self)
-        toolAction.setStatusTip('Opens a window to choose datastreams from the available devices')
-        toolAction.triggered.connect(self.show_deviceselect)
+        #toolAction = QtWidgets.QAction("&Choose Datastreams ", self)
+        #toolAction.setStatusTip('Opens a window to choose datastreams from the available devices')
+        #toolAction.triggered.connect(self.show_deviceselect)
         consoleAction = QtWidgets.QAction("&Open console", self)
         consoleAction.triggered.connect(self.open_console)
         consoleAction.setShortcut("Ctrl+N")
         #IPAction = QtWidgets.QAction("&Network interfaces", self)
         #IPAction.triggered.connect(self.open_ipwidget)
-        toolMenu.addAction(toolAction)
+        #toolMenu.addAction(toolAction)
         #toolMenu.addAction(IPAction)
         toolMenu.addAction(consoleAction)
 
