@@ -27,19 +27,19 @@ logo_file = pkg_resources.resource_filename('redvypr','icon/logo_v03.1.svg')
 if(os.path.exists(logo_file)):
     pass
 else:
-    logo_file = resource_path('redvypr_logo_v02.svg')
+    logo_file = resource_path('logo_v03.1.svg')
     if (os.path.exists(logo_file)):
         pass
     else:  # pyinstaller windows10
         logger.warning('Could not load logo file {}'.format(logo_file))
     
 # Desert Horned Viper
-icon_file = pkg_resources.resource_filename('redvypr','icon/icon_v03.1.svg')
+icon_file = pkg_resources.resource_filename('redvypr','icon/icon_v03.3.svg')
 # This is a workaround to read the VERSION file in a pyinstaller environment in linux (redvypr exectuable and redvypr directory cannot life together)
 if(os.path.exists(icon_file)):
     pass
 else:
-    icon_file = resource_path('icon_v03.1.svg')
+    icon_file = resource_path('icon_v03.3.svg')
     if (os.path.exists(icon_file)):
         pass
     else:  # pyinstaller windows10
