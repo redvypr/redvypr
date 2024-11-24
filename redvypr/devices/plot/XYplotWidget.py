@@ -24,7 +24,7 @@ pyqtgraph.setConfigOption('background', 'w')
 pyqtgraph.setConfigOption('foreground', 'k')
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('plot_widgets')
+logger = logging.getLogger('XYplotWidget(base)')
 #logger.setLevel(logging.DEBUG)
 logger.setLevel(logging.INFO)
 
@@ -78,7 +78,7 @@ class configXYplot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
     type: str = 'XYplot'
     dt_update: float = pydantic.Field(default=0.25,description='Update time of the plot [s]')
-    interactive: typing.Literal['standard', 'mouse'] = pydantic.Field(default='standard',description='Interactive modes')
+    interactive: typing.Literal['standard', 'mouse', 'rectangle'] = pydantic.Field(default='rectangle',description='Interactive modes')
     backgroundcolor: pydColor = pydantic.Field(default=pydColor('lightgray'),description='Backgroundcolor')
     bordercolor: pydColor = pydantic.Field(default=pydColor('lightgray'), description='Bordercolor')
     show_legend: bool = pydantic.Field(default=True, description='Show legend (True) or hide (False)')
@@ -221,23 +221,34 @@ class XYPlotWidget(QtWidgets.QFrame):
             plot.register(name=name)
             # Add a legend
             legend = plot.addLegend()
-            if config.interactive.lower() == 'mouse':
-                self.logger.debug('Adding interactive mouse (vertical line)')
-                plot.scene().sigMouseMoved.connect(self.mouseMoved)
-                plot.scene().sigMouseClicked.connect(self.mouseClicked)
-                self.vb = plot.plotItem.vb
-                # Add a vertical line
-                color = QtGui.QColor(200, 100, 100)
-                linewidth = 2.0
-                pen = pyqtgraph.mkPen(color, width=linewidth)
-                self.vLineMouse = pyqtgraph.InfiniteLine(angle=90, movable=False, pen=pen)
-                # print('Set pen 3')
-                plot.addItem(self.vLineMouse, ignoreBounds=True)
-
             self.layout.addWidget(plot)
             self.plotWidget = plot
             self.legendWidget = legend
             # plot_dict = {'widget': plot, 'lines': []}
+
+    def enable_interactive_rectangle(self):
+        """
+        Enables the rectangle mode
+        Returns
+        -------
+
+        """
+        plot = self.plotWidget
+        self.interactive_rectangle = {}
+        self.interactive_rectangle['points'] = []
+        self.interactive_rectangle['rect'] = None
+        if True:
+            self.logger.debug('Adding interactive mouse (vertical line)')
+            plot.scene().sigMouseClicked.connect(self.mouse_clicked)
+            plot.scene().sigMouseMoved.connect(self.mouse_moved)
+            #self.vb = plot.plotItem.vb
+            ## Add a vertical line
+            #color = QtGui.QColor(200, 100, 100)
+            #linewidth = 2.0
+            #pen = pyqtgraph.mkPen(color, width=linewidth)
+            ##self.vLineMouse = pyqtgraph.InfiniteLine(angle=90, movable=False, pen=pen)
+            ## print('Set pen 3')
+            ##plot.addItem(self.vLineMouse, ignoreBounds=True)
 
     def xAxisLimitsChanged(self):
         funcname = __name__ + '.xAxisLimitsChanged():'
@@ -352,22 +363,71 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.logger.debug(funcname)
         self.clear_buffer()
 
-    def mouseMoved(self, evt):
+    def mouse_moved(self, evt):
         """Function if mouse has been moved
         """
         pos = (evt.x(), evt.y())
-        mousePoint = self.vb.mapSceneToView(evt)
-        # print('mouse moved',mousePoint.x())
-        self.vLineMouse.setPos(mousePoint.x())
-        # for vline in self.vlines:
-        #    vline.setPos(mousePoint.x())
+        mousePoint = self.plotWidget.plotItem.vb.mapSceneToView(evt)
+        print('Move')
+        if self.config.interactive == 'mouse':
+            # print('mouse moved',mousePoint.x())
+            self.vLineMouse.setPos(mousePoint.x())
+            # for vline in self.vlines:
+            #    vline.setPos(mousePoint.x())
+        elif self.config.interactive == 'rectangle':
+            points = self.interactive_rectangle['points']
+            print('Hallo',len(points))
+            if len(points) == 1:
+                x0 = self.interactive_rectangle['points'][0]['pos'][0]
+                y0 = self.interactive_rectangle['points'][0]['pos'][1]
+                dx = mousePoint.x() - x0
+                dy = mousePoint.y() - y0
+                print('Rectangle', dx, dy)
+                if self.interactive_rectangle['rect'] is None:
+                    self.interactive_rectangle['rect'] = pyqtgraph.RectROI([x0, y0], [dx, dy],
+                                                                           pen='r')  # Position [2, 2], Größe [3, 2]
+                    self.plotWidget.addItem(self.interactive_rectangle['rect'])
+                else:
+                    self.interactive_rectangle['rect'].setSize([dx,dy])
 
-    def mouseClicked(self, evt):
-        # col =
-        # col = pg.mkPen(0.5,width=3)
-        # colsymbol = pg.mkPen(color=QtGui.QColor(150,150,150),width=4)
-        # print('Clicked: ' + str(evt.scenePos()))
-        pass
+
+
+
+    def mouse_clicked(self, event):
+        print('Click!')
+        print('Clicked: ' + str(event.scenePos()))
+        if self.config.interactive == 'rectangle':
+            if event.button() == QtCore.Qt.MouseButton.LeftButton:
+                vb = self.plotWidget.plotItem.vb
+                #vb = self.plotWidget.vb
+                mouse_point = vb.mapSceneToView(event.scenePos())
+                x, y = mouse_point.x(), mouse_point.y()
+                points = self.interactive_rectangle['points']
+                points.append({'pos': (x, y), 'size': 10, 'pen': {'color': 'b', 'width': 2}, 'brush': 'r'})
+                print('Points',points,len(points))
+                try:
+                    logger.info('Set data')
+                    self.interactive_rectangle['scatter'].setData(points)
+                except:
+                    logger.info('fds', exc_info=True)
+
+                if len(points) == 1:
+                    print('Adding items')
+                    self.interactive_rectangle['scatter'] = pyqtgraph.ScatterPlotItem()
+                    self.plotWidget.addItem(self.interactive_rectangle['scatter'])
+                    self.interactive_rectangle['scatter'].setData(points)
+
+
+                elif len(points) == 2:
+                    print('Removing items')
+                    self.plotWidget.removeItem(self.interactive_rectangle['rect'])
+                    self.interactive_rectangle['rect'] = None
+                    self.plotWidget.removeItem(self.interactive_rectangle['scatter'])
+                    self.interactive_rectangle['points'] = []
+
+
+
+
 
     def set_title(self, title):
         """
@@ -441,7 +501,8 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.logger.debug(funcname)
         line = self.sender()._line
         #print('Line',line,line.y_addr)
-        line.y_addr = address_dict['datastream_str']
+        #line.y_addr = address_dict['datastream_str']
+        line.y_addr = address_dict['datastream_address']
         #print('Line config',line.confg)
         self.apply_config()
 
@@ -693,6 +754,34 @@ class XYPlotWidget(QtWidgets.QFrame):
             except Exception as e:
                 self.logger.debug('Exception config lines: {:s}'.format(str(e)),exc_info=True)
                 raise ValueError('')
+
+        # Enable/disable interactive modes
+        try:
+            plot.scene().sigMouseMoved.disconnect(self.mouse_moved)
+        except:
+            pass
+        try:
+            plot.scene().sigMouseClicked.disconnect(self.mouse_clicked)
+        except:
+            pass
+
+        if self.config.interactive.lower() == 'rectangle':
+            self.logger.debug(funcname + 'Interactive rectangle mode')
+            self.enable_interactive_rectangle()
+
+        elif self.config.interactive.lower() == 'mouse':
+            self.logger.debug('Adding interactive mouse (vertical line)')
+
+            plot.scene().sigMouseMoved.connect(self.mouse_moved)
+            plot.scene().sigMouseClicked.connect(self.mouse_clicked)
+            self.vb = plot.plotItem.vb
+            # Add a vertical line
+            color = QtGui.QColor(200, 100, 100)
+            linewidth = 2.0
+            pen = pyqtgraph.mkPen(color, width=linewidth)
+            self.vLineMouse = pyqtgraph.InfiniteLine(angle=90, movable=False, pen=pen)
+            # print('Set pen 3')
+            plot.addItem(self.vLineMouse, ignoreBounds=True)
 
         self.logger.debug(funcname + ' done.')
 

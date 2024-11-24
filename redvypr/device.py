@@ -791,7 +791,7 @@ class RedvyprDevice(QtCore.QObject):
         if True:
             if True:
                 running = self.thread_running()
-                if(running):
+                if running:
                     self.logger.warning(funcname + ':thread/process is already running, doing nothing')
                 else:
                     try:
@@ -804,6 +804,7 @@ class RedvyprDevice(QtCore.QObject):
                             try:
                                 config = self.custom_config.model_dump()
                             except:
+                                self.logger.debug(funcname + 'Could not dump model: {}'.format(self.custom_config), exc_info=True)
                                 raise ValueError('Could not dump custom model config')
                         else:
                             self.logger.debug('Using external configuration')
