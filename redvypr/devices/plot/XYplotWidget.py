@@ -78,7 +78,7 @@ class configXYplot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
     type: str = 'XYplot'
     dt_update: float = pydantic.Field(default=0.25,description='Update time of the plot [s]')
-    interactive: typing.Literal['standard', 'mouse', 'rectangle'] = pydantic.Field(default='rectangle',description='Interactive modes')
+    interactive: typing.Literal['standard', 'rectangle','xlim','ylim'] = pydantic.Field(default='rectangle',description='Interactive modes')
     backgroundcolor: pydColor = pydantic.Field(default=pydColor('lightgray'),description='Backgroundcolor')
     bordercolor: pydColor = pydantic.Field(default=pydColor('lightgray'), description='Bordercolor')
     show_legend: bool = pydantic.Field(default=True, description='Show legend (True) or hide (False)')
@@ -119,7 +119,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.logger = logging.getLogger('XYplot')
         self.logger.setLevel(loglevel)
         self.description = 'XY plot'
-
+        self._interactive_mode = None
         self.x_min = 0
         self.x_max = 0
         if (config == None):  # Create a config from the template
@@ -175,6 +175,34 @@ class XYPlotWidget(QtWidgets.QFrame):
             # General config
             configAction = plot.plotItem.vb.menu.addAction('General config')
             configAction.triggered.connect(self.pyqtgraphConfigAction)
+            # Data selection
+            dataSelectionMenu = plot.plotItem.vb.menu.addMenu('Data selection')
+            dataSelectionAction = QtWidgets.QWidgetAction(self)
+            # Create Dataselection-Widget to choose from the different options
+            dataSelectionMenuWidget = QtWidgets.QWidget()
+            dataSelectionMenuWidget_layout = QtWidgets.QVBoxLayout(dataSelectionMenuWidget)
+            self._dataSelection_radio_standard = QtWidgets.QRadioButton('Standard')
+            self._dataSelection_radio_rectangle = QtWidgets.QRadioButton('Rectangle')
+            self._dataSelection_radio_xlim = QtWidgets.QRadioButton('X-Range')
+            self._dataSelection_radio_ylim = QtWidgets.QRadioButton('Y-Range')
+            if self.config.interactive == 'standard':
+                self._dataSelection_radio_standard.setChecked(True)
+            elif self.config.interactive == 'rectangle':
+                self._dataSelection_radio_rectangle.setChecked(True)
+            elif self.config.interactive == 'xlim':
+                self._dataSelection_radio_xlim.setChecked(True)
+            elif self.config.interactive == 'ylim':
+                self._dataSelection_radio_ylim.setChecked(True)
+            self._dataSelection_radio_standard.toggled.connect(self.pyqtgraphdataSelectionAction)
+            self._dataSelection_radio_rectangle.toggled.connect(self.pyqtgraphdataSelectionAction)
+            self._dataSelection_radio_xlim.toggled.connect(self.pyqtgraphdataSelectionAction)
+            self._dataSelection_radio_ylim.toggled.connect(self.pyqtgraphdataSelectionAction)
+            dataSelectionMenuWidget_layout.addWidget(self._dataSelection_radio_standard)
+            dataSelectionMenuWidget_layout.addWidget(self._dataSelection_radio_rectangle)
+            dataSelectionMenuWidget_layout.addWidget(self._dataSelection_radio_xlim)
+            dataSelectionMenuWidget_layout.addWidget(self._dataSelection_radio_ylim)
+            dataSelectionAction.setDefaultWidget(dataSelectionMenuWidget)
+            dataSelectionMenu.addAction(dataSelectionAction)
             # X-Axis
             xMenu = plot.plotItem.vb.menu.addMenu('X-Axis')
             xAction = QtWidgets.QWidgetAction(self)
@@ -226,6 +254,65 @@ class XYPlotWidget(QtWidgets.QFrame):
             self.legendWidget = legend
             # plot_dict = {'widget': plot, 'lines': []}
 
+    def clean_all_interactive_items(self):
+        """
+        Cleans all potential old interactive items
+        Returns
+        -------
+
+        """
+        funcname = __name__ + '.clean_all_interactive_items():'
+        self.logger.debug(funcname)
+
+        plot = self.plotWidget
+        # Items from xlim mode
+        try:
+            plot.removeItem(self.vLineMouse)
+        except:
+            pass
+
+        # Items from rectangle mode
+        try:
+            self.plotWidget.removeItem(self.interactive_rectangle['rect'])
+            self.interactive_rectangle['rect'] = None
+        except:
+            pass
+
+        try:
+            self.plotWidget.removeItem(self.interactive_rectangle['scatter'])
+            self.interactive_rectangle['points'] = []
+        except:
+            pass
+
+
+
+    def enable_interactive_xlim(self):
+        """
+        Enables the interactive xlim mode for data selection
+        Returns
+        -------
+
+        """
+        funcname = __name__ + '.enable_interactive_xlim():'
+        if self._interactive_mode == 'xlim':
+            self.logger.debug(funcname + ' xlim mode already enabled')
+        else:
+            self.logger.debug(funcname + ' Enabling xlim mode')
+            self.clean_all_interactive_items()
+            plot = self.plotWidget
+            self.logger.debug('Adding interactive mouse (vertical line)')
+            #plot.scene().sigMouseMoved.connect(self.mouse_moved)
+            #plot.scene().sigMouseClicked.connect(self.mouse_clicked)
+            self.vb = plot.plotItem.vb
+            # Add a vertical line
+            color = QtGui.QColor(200, 100, 100)
+            linewidth = 2.0
+            pen = pyqtgraph.mkPen(color, width=linewidth)
+            self.vLineMouse = pyqtgraph.InfiniteLine(angle=90, movable=False, pen=pen)
+            # print('Set pen 3')
+            plot.addItem(self.vLineMouse, ignoreBounds=True)
+            self._interactive_mode = 'xlim'
+
     def enable_interactive_rectangle(self):
         """
         Enables the rectangle mode
@@ -233,22 +320,17 @@ class XYPlotWidget(QtWidgets.QFrame):
         -------
 
         """
-        plot = self.plotWidget
-        self.interactive_rectangle = {}
-        self.interactive_rectangle['points'] = []
-        self.interactive_rectangle['rect'] = None
-        if True:
-            self.logger.debug('Adding interactive mouse (vertical line)')
-            plot.scene().sigMouseClicked.connect(self.mouse_clicked)
-            plot.scene().sigMouseMoved.connect(self.mouse_moved)
-            #self.vb = plot.plotItem.vb
-            ## Add a vertical line
-            #color = QtGui.QColor(200, 100, 100)
-            #linewidth = 2.0
-            #pen = pyqtgraph.mkPen(color, width=linewidth)
-            ##self.vLineMouse = pyqtgraph.InfiniteLine(angle=90, movable=False, pen=pen)
-            ## print('Set pen 3')
-            ##plot.addItem(self.vLineMouse, ignoreBounds=True)
+        funcname = __name__ + '.enable_interactive_rectangle():'
+        if self._interactive_mode == 'rectangle':
+            self.logger.debug(funcname + ' Rectangle mode already enabled')
+        else:
+            self.logger.debug(funcname + ' Enabling rectangle mode')
+            self.clean_all_interactive_items()
+            plot = self.plotWidget
+            self.interactive_rectangle = {}
+            self.interactive_rectangle['points'] = []
+            self.interactive_rectangle['rect'] = None
+            self._interactive_mode = 'rectangle'
 
     def xAxisLimitsChanged(self):
         funcname = __name__ + '.xAxisLimitsChanged():'
@@ -282,9 +364,23 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.plotWidget.enableAutoRange(axis='y')
         self.plotWidget.setAutoVisible(y=True)
 
+    def pyqtgraphdataSelectionAction(self):
+        funcname = __name__ + '.pyqtgraphdataSelectionAction():'
+        if self._dataSelection_radio_standard.isChecked():
+            self.config.interactive = 'standard'
+        elif self._dataSelection_radio_rectangle.isChecked():
+            self.config.interactive = 'rectangle'
+        elif self._dataSelection_radio_xlim.isChecked():
+            self.config.interactive = 'xlim'
+        elif self._dataSelection_radio_ylim.isChecked():
+            self.config.interactive = 'ylim'
+
+        self.logger.debug(funcname + ' Dataselction:{}'.format(self.config.interactive))
+        self.apply_config()
+
     def pyqtgraphXMenuAction(self):
         funcname = __name__ + '.pyqtgraphXMenuAction()'
-        logger.debug(funcname)
+        self.logger.debug(funcname)
 
     def pyqtgraphYMenuAction(self):
         funcname = __name__ + '.pyqtgraphYMenuAction()'
@@ -367,16 +463,16 @@ class XYPlotWidget(QtWidgets.QFrame):
         """Function if mouse has been moved
         """
         pos = (evt.x(), evt.y())
-        mousePoint = self.plotWidget.plotItem.vb.mapSceneToView(evt)
-        print('Move')
-        if self.config.interactive == 'mouse':
+        if self.config.interactive == 'xlim':
+            mousePoint = self.plotWidget.plotItem.vb.mapSceneToView(evt)
             # print('mouse moved',mousePoint.x())
             self.vLineMouse.setPos(mousePoint.x())
             # for vline in self.vlines:
             #    vline.setPos(mousePoint.x())
         elif self.config.interactive == 'rectangle':
+            mousePoint = self.plotWidget.plotItem.vb.mapSceneToView(evt)
             points = self.interactive_rectangle['points']
-            print('Hallo',len(points))
+            #print('Hallo',len(points))
             if len(points) == 1:
                 x0 = self.interactive_rectangle['points'][0]['pos'][0]
                 y0 = self.interactive_rectangle['points'][0]['pos'][1]
@@ -389,9 +485,6 @@ class XYPlotWidget(QtWidgets.QFrame):
                     self.plotWidget.addItem(self.interactive_rectangle['rect'])
                 else:
                     self.interactive_rectangle['rect'].setSize([dx,dy])
-
-
-
 
     def mouse_clicked(self, event):
         print('Click!')
@@ -416,14 +509,22 @@ class XYPlotWidget(QtWidgets.QFrame):
                     self.interactive_rectangle['scatter'] = pyqtgraph.ScatterPlotItem()
                     self.plotWidget.addItem(self.interactive_rectangle['scatter'])
                     self.interactive_rectangle['scatter'].setData(points)
-
-
+                    self.plotWidget.scene().sigMouseMoved.connect(self.mouse_moved)
                 elif len(points) == 2:
-                    print('Removing items')
+                    print('Two points, getting data')
+                    xlim = [min(self.interactive_rectangle['points'][0]['pos']), max(self.interactive_rectangle['points'][1]['pos'])]
+                    ylim = [min(self.interactive_rectangle['points'][0]['pos']), max(self.interactive_rectangle['points'][1]['pos'])]
+                    data = self.get_data(xlim,ylim)
+                    print('Got data',data)
+                    # Remove all items
                     self.plotWidget.removeItem(self.interactive_rectangle['rect'])
                     self.interactive_rectangle['rect'] = None
                     self.plotWidget.removeItem(self.interactive_rectangle['scatter'])
                     self.interactive_rectangle['points'] = []
+                    #try:
+                    #    self.plotWidget.scene().sigMouseMoved.disconnect(self.mouse_moved)
+                    #except:
+                    #    pass
 
 
 
@@ -755,7 +856,7 @@ class XYPlotWidget(QtWidgets.QFrame):
                 self.logger.debug('Exception config lines: {:s}'.format(str(e)),exc_info=True)
                 raise ValueError('')
 
-        # Enable/disable interactive modes
+        # Enable/disable interactive modes, connect only once
         try:
             plot.scene().sigMouseMoved.disconnect(self.mouse_moved)
         except:
@@ -765,23 +866,14 @@ class XYPlotWidget(QtWidgets.QFrame):
         except:
             pass
 
+        plot.scene().sigMouseMoved.connect(self.mouse_moved)
+        plot.scene().sigMouseClicked.connect(self.mouse_clicked)
         if self.config.interactive.lower() == 'rectangle':
             self.logger.debug(funcname + 'Interactive rectangle mode')
             self.enable_interactive_rectangle()
 
-        elif self.config.interactive.lower() == 'mouse':
-            self.logger.debug('Adding interactive mouse (vertical line)')
-
-            plot.scene().sigMouseMoved.connect(self.mouse_moved)
-            plot.scene().sigMouseClicked.connect(self.mouse_clicked)
-            self.vb = plot.plotItem.vb
-            # Add a vertical line
-            color = QtGui.QColor(200, 100, 100)
-            linewidth = 2.0
-            pen = pyqtgraph.mkPen(color, width=linewidth)
-            self.vLineMouse = pyqtgraph.InfiniteLine(angle=90, movable=False, pen=pen)
-            # print('Set pen 3')
-            plot.addItem(self.vLineMouse, ignoreBounds=True)
+        elif self.config.interactive.lower() == 'xlim':
+            self.enable_interactive_xlim()
 
         self.logger.debug(funcname + ' done.')
 
@@ -821,9 +913,9 @@ class XYPlotWidget(QtWidgets.QFrame):
             # Set the data
             line_tmp._lineplot.setData(x=line_tmp.databuffer.xdata, y=line_tmp.databuffer.ydata)
 
-    def get_data(self, xlim):
+    def get_data(self, xlim=None, ylim=None):
         """
-        Gets the data of the buffer in the limits of xlim
+        Gets the data of the buffer in the limits of xlim and/or ylim
         """
         funcname = __name__ + '.get_data():'
         data = []
@@ -840,7 +932,15 @@ class XYPlotWidget(QtWidgets.QFrame):
             x = np.asarray(line.databuffer.xdata)  # The line to plot
             y = np.asarray(line.databuffer.ydata)  # The line to plot
             err = np.asarray(line.databuffer.errordata)  # The line to plot
-            ind = (x > xlim[0]) & (x < xlim[1])
+            ind_x = np.ones(x.shape, dtype=bool)
+            ind_y = np.ones(y.shape, dtype=bool)
+            if xlim is not None:
+                ind_x = (x > xlim[0]) & (x < xlim[1])
+
+            if ylim is not None:
+                ind_y = (y > ylim[0]) & (y < ylim[1])
+
+            ind = ind_x & ind_y
             tdata_tmp = t[ind]
             xdata_tmp = x[ind]
             ydata_tmp = y[ind]
