@@ -284,17 +284,38 @@ class XYPlotWidget(QtWidgets.QFrame):
         except:
             pass
 
+        try:
+            for line in self.interactive_xylim['lines']:
+                self.plotWidget.removeItem(line)
 
+            self.interactive_xylim['lines'] = []
+        except:
+            pass
 
-    def enable_interactive_xlim(self):
+    def enable_interactive_standard(self,):
         """
-        Enables the interactive xlim mode for data selection
+        Enables the interactive xlim or ylim mode for data selection
         Returns
         -------
 
         """
-        funcname = __name__ + '.enable_interactive_xlim():'
-        if self._interactive_mode == 'xlim':
+        funcname = __name__ + '.enable_interactive_standard():'
+        if 'standard' in self._interactive_mode:
+            self.logger.debug(funcname + ' standard mode already enabled')
+        else:
+            self.logger.debug(funcname + ' Enabling standard mode')
+            self.clean_all_interactive_items()
+            self._interactive_mode = 'standard'
+
+    def enable_interactive_xylim(self,mode='xlim'):
+        """
+        Enables the interactive xlim or ylim mode for data selection
+        Returns
+        -------
+
+        """
+        funcname = __name__ + '.enable_interactive_xylim():'
+        if 'lim' in self._interactive_mode :
             self.logger.debug(funcname + ' xlim mode already enabled')
         else:
             self.logger.debug(funcname + ' Enabling xlim mode')
@@ -303,15 +324,21 @@ class XYPlotWidget(QtWidgets.QFrame):
             self.logger.debug('Adding interactive mouse (vertical line)')
             #plot.scene().sigMouseMoved.connect(self.mouse_moved)
             #plot.scene().sigMouseClicked.connect(self.mouse_clicked)
-            self.vb = plot.plotItem.vb
+            self.interactive_xylim = {}
+            self.interactive_xylim['lines'] = []
+            if self.config.interactive.lower() == 'xlim':
+                self.interactive_xylim['angle'] = 90
+            else:
+                self.interactive_xylim['angle'] = 0
+            #self.vb = plot.plotItem.vb
             # Add a vertical line
             color = QtGui.QColor(200, 100, 100)
             linewidth = 2.0
             pen = pyqtgraph.mkPen(color, width=linewidth)
-            self.vLineMouse = pyqtgraph.InfiniteLine(angle=90, movable=False, pen=pen)
+            self.vLineMouse = pyqtgraph.InfiniteLine(angle=self.interactive_xylim['angle'], movable=False, pen=pen)
             # print('Set pen 3')
             plot.addItem(self.vLineMouse, ignoreBounds=True)
-            self._interactive_mode = 'xlim'
+            self._interactive_mode = self.config.interactive
 
     def enable_interactive_rectangle(self):
         """
@@ -465,10 +492,10 @@ class XYPlotWidget(QtWidgets.QFrame):
         pos = (evt.x(), evt.y())
         if self.config.interactive == 'xlim':
             mousePoint = self.plotWidget.plotItem.vb.mapSceneToView(evt)
-            # print('mouse moved',mousePoint.x())
             self.vLineMouse.setPos(mousePoint.x())
-            # for vline in self.vlines:
-            #    vline.setPos(mousePoint.x())
+        elif self.config.interactive == 'ylim':
+            mousePoint = self.plotWidget.plotItem.vb.mapSceneToView(evt)
+            self.vLineMouse.setPos(mousePoint.y())
         elif self.config.interactive == 'rectangle':
             mousePoint = self.plotWidget.plotItem.vb.mapSceneToView(evt)
             points = self.interactive_rectangle['points']
@@ -489,7 +516,43 @@ class XYPlotWidget(QtWidgets.QFrame):
     def mouse_clicked(self, event):
         print('Click!')
         print('Clicked: ' + str(event.scenePos()))
-        if self.config.interactive == 'rectangle':
+        if 'lim' in self.config.interactive:
+            if event.button() == QtCore.Qt.MouseButton.LeftButton:
+                vb = self.plotWidget.plotItem.vb
+                # vb = self.plotWidget.vb
+                mouse_point = vb.mapSceneToView(event.scenePos())
+                x, y = mouse_point.x(), mouse_point.y()
+                lines = self.interactive_xylim['lines']
+                angle = self.interactive_xylim['angle']
+                if len(lines) < 2:
+                    color = QtGui.QColor(200, 100, 100)
+                    linewidth = 2.0
+                    pen = pyqtgraph.mkPen(color, width=linewidth)
+                    line = pyqtgraph.InfiniteLine(angle=angle, movable=False, pen=pen)
+                    if self.config.interactive == 'xlim':
+                        line.setPos(x)
+                    else:
+                        line.setPos(y)
+                    self.plotWidget.addItem(line, ignoreBounds=True)
+                    lines.append(line)
+                if len(lines) == 2:
+                    xlim_tmp = [lines[0].getXPos(),lines[1].getXPos()]
+                    xlim = [min(xlim_tmp),max(xlim_tmp)]
+                    ylim_tmp = [lines[0].getYPos(), lines[1].getYPos()]
+                    ylim = [min(ylim_tmp), max(ylim_tmp)]
+                    if self.config.interactive == 'xlim':
+                        data_user = self.get_data(xlim=xlim)
+                    else:
+                        data_user = self.get_data(ylim=ylim)
+
+                    print('Data user',data_user)
+                    self.plotWidget.removeItem(lines[0])
+                    self.plotWidget.removeItem(lines[1])
+                    self.interactive_xylim['lines'] = []
+
+
+
+        elif self.config.interactive == 'rectangle':
             if event.button() == QtCore.Qt.MouseButton.LeftButton:
                 vb = self.plotWidget.plotItem.vb
                 #vb = self.plotWidget.vb
@@ -871,12 +934,12 @@ class XYPlotWidget(QtWidgets.QFrame):
         if self.config.interactive.lower() == 'rectangle':
             self.logger.debug(funcname + 'Interactive rectangle mode')
             self.enable_interactive_rectangle()
-
-        elif self.config.interactive.lower() == 'xlim':
-            self.enable_interactive_xlim()
+        elif 'lim' in self.config.interactive.lower():
+            self.enable_interactive_xylim()
+        elif 'standard' in self.config.interactive.lower():
+            self.enable_interactive_standard()
 
         self.logger.debug(funcname + ' done.')
-
 
     def get_metadata_for_line(self, line):
         funcname = __name__ + '.get_metadata_for_line():'
