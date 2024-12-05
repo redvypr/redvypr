@@ -434,9 +434,10 @@ class RedvyprDevice(QtCore.QObject):
         # self.address
         self.__update_address__()
 
-        # Add myself to the statistics
+        # Add myself a-priori to the statistics
         datapacket = create_datadict(device=self.name,
-                                     packetid=self.name,
+                                     #packetid=self.name,
+                                     publisher=self.name,
                                      hostinfo=self.host)
         datapacket['_redvypr']['devicemodulename'] = self.devicemodulename
         do_data_statistics(datapacket, self.statistics)

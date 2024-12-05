@@ -33,12 +33,10 @@ logger.setLevel(logging.INFO)
 
 
 class DeviceBaseConfig(pydantic.BaseModel):
-    publishes: bool = False
+    publishes: bool = True
     subscribes: bool = True
     description: str = 'Device to plot XY-Data'
     gui_icon: str = 'ph.chart-line-fill'
-
-
 
 
 class DeviceCustomConfig(XYplotWidget.configXYplot):
@@ -55,7 +53,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         self.device = device
         self.layout = QtWidgets.QGridLayout(self)
-        self.xyplot = XYplotWidget.XYPlotWidget(redvypr_device=device, config=self.device.custom_config)
+        self.xyplot = XYplotWidget.XYPlotWidget(redvypr_device=device, config=self.device.custom_config, loglevel=self.device.loglevel)
         self.layout.addWidget(self.xyplot)
         self.device.config_changed_signal.connect(self.config_changed)
 

@@ -378,10 +378,15 @@ class RedvyprAddress():
         addr_ids = address_format.split(self.__delimiter_parts)
         for a_id in addr_ids:
             if len(a_id)>0:
+                if ':==' in a_id:
+                    addr_id_addon = '=='
+                    a_id = a_id.replace(':==','')
+                else:
+                    addr_id_addon = ''
                 addr_id = self.__add_entries_short[a_id]
                 addr_id_data = self.parsed_addrstr[addr_id]
                 if addr_id_data is not None:
-                    address_str += a_id + self.__delimiter_id + addr_id_data + self.__delimiter_parts
+                    address_str += a_id + self.__delimiter_id + addr_id_addon + addr_id_data + self.__delimiter_parts
 
         return address_str
 

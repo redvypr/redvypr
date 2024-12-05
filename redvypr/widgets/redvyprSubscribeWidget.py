@@ -143,7 +143,14 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
         self.update_list(self.device)
 
     def __subscribe_editChanged__(self):
-        addr_format = self.__formatCombo.currentText()
+        # Check if the format shall be used or the publisher part
+        if self.__formatCombo.isEnabled():
+            addr_format = self.__formatCombo.currentText()
+        else:
+            addr_format = '/p:=='
+
+        print('addr_format',addr_format)
+        print('address',self.subscribe_edit.redvypr_address)
         devstr = self.subscribe_edit.redvypr_address.get_str(addr_format)
         self.subscribe_edit.setText(devstr)
 
@@ -170,20 +177,17 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
             self.__commitbtn.setEnabled(True)
             #self.__commitbtn.redvypr_addr_remove = devstr
             self.subscribe_edit.redvypr_address = newitem.redvypr_address#.RedvyprAddress
-            self.__subscribe_editChanged__()
+            try:
+                publisher = newitem.publisher
+            except:
+                publisher = False
 
-            #if(subscribed):
-            #    self.__commitbtn.setText('Unsubscribe')
-            #    self.__commitbtn.__status__ = 'remove'
-            #    self.__commitbtn.setEnabled(True)
-            #    self.__commitbtn.redvypr_addr_remove = devstr
-            #else:
-            #    self.subscribe_edit.setText(devstr)
-            #    #print(devstr)
-            #    #print('Item',newitem.text(0))
-            #    self.__commitbtn.setText('Subscribe')
-            #    self.__commitbtn.__status__ = 'add'
-            #    self.__commitbtn.setEnabled(True)
+            if publisher: # Treat a publishing device differently
+                self.__formatCombo.setEnabled(False)
+            else:
+                self.__formatCombo.setEnabled(True)
+
+            self.__subscribe_editChanged__()
         else:
             self.__commitbtn.setEnabled(False)
 
@@ -228,6 +232,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
                     itm = QtWidgets.QTreeWidgetItem([dev.name, ''])
                     itm.device = dev
                     itm.redvypr_address = dev.address
+                    itm.publisher = True # Flag to set that the device is a publisher
                     if subscribed:
                         status = 'subscribed'
                         itm.setFont(0, font1)
@@ -246,6 +251,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
                             for a in self.device.subscribed_addresses:
                                 subscribed = a in devaddress_redvypr
                                 if subscribed:
+                                    print('Subscribed',a,devaddress_redvypr)
                                     break
 
                             devaddress_str = devaddress_redvypr.get_str('/a/h/p/i/d/')
@@ -262,6 +268,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
                                 itmf.subscribed = False
 
                             itm.addChild(itmf)
+                            subscribed = False
 
             self.devices_listPublisher.expandAll()
             self.devices_listPublisher.resizeColumnToContents(0)

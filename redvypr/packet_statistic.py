@@ -124,7 +124,6 @@ def do_data_statistics(data, statdict, address_data = None):
 
     uuid = raddr.uuid
     address_str = raddr.address_str
-
     # Create a hostinfo information
     try:
         statdict['host_redvypr'][uuid].update(data['_redvypr']['host'])

@@ -42,6 +42,30 @@ class dataBufferLine(pydantic.BaseModel):
     ydata_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
     errordata_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
 
+
+    def get_data(self, xlim=None, ylim=None):
+        funcname = __name__ + '.get_data():'
+        t = np.asarray(self.tdata)  # The line to plot
+        x = np.asarray(self.xdata)  # The line to plot
+        y = np.asarray(self.ydata)  # The line to plot
+        err = np.asarray(self.errordata)  # The line to plot
+        ind_x = np.ones(x.shape, dtype=bool)
+        ind_y = np.ones(y.shape, dtype=bool)
+        print(funcname + 'xlim', xlim, 'ylim', ylim)
+        if xlim is not None:
+            ind_x = (x > xlim[0]) & (x < xlim[1])
+
+        if ylim is not None:
+            ind_y = (y > ylim[0]) & (y < ylim[1])
+
+        print('ind', ind_x, ind_y)
+        ind = ind_x & ind_y
+        tdata_tmp = t[ind]
+        xdata_tmp = x[ind]
+        ydata_tmp = y[ind]
+        err_tmp = y[ind]
+        return {'x':xdata_tmp,'y':ydata_tmp,'t':tdata_tmp,'err':err_tmp}
+
     @pydantic.model_serializer
     def ser_model(self) -> typing.Dict[str, typing.Any]:
         if self.skip_bufferdata_when_serialized:
@@ -54,10 +78,11 @@ class configLine(pydantic.BaseModel,extra='allow'):
     buffersize: int = pydantic.Field(default=20000,description='The size of the buffer holding the data of the line')
     numplot_max: int = pydantic.Field(default=2000, description='The number of data points to be plotted maximally')
     name: str = pydantic.Field(default='Line', description='The name of the line, this is shown in the legend, $y to use the redvypr address')
-    unit: str = pydantic.Field(default='', description='The unit of the line')
+    unit_x: str = pydantic.Field(default='', description='The unit of the line')
+    unit_y: str = pydantic.Field(default='', description='The unit of the line')
     label: str = pydantic.Field(default='', description='The of the line')
     label_format: str = pydantic.Field(default='{NAME} {Y_ADDR} [{UNIT}]', description='The name of the line, this is shown in the legend, $y to use the redvypr address')
-    x_addr: typing.Union[typing.Literal['$t(y)'],RedvyprAddress] = pydantic.Field(default='$t(y)', description='The realtimedata address of the x-axis, use $t(y) to automatically choose the time corresponding to the y-data')
+    x_addr: RedvyprAddress = pydantic.Field(default='t', description='The realtimedata address of the x-axis')
     y_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress('/d:somedevice/k:data'), description='The realtimedata address of the x-axis')
     error_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''), description='The realtimedata address for an optional error band around the line')
     error_mode: typing.Literal['off', 'standard', 'factor', 'constant'] = pydantic.Field(default='off', description='')
@@ -97,6 +122,128 @@ class configXYplot(pydantic.BaseModel):
                                         description='Plots the last points, if plot_mode_x is set to last_N_points')
     automatic_subscription: bool = pydantic.Field(default=True,
                                                   description='subscribes automatically the adresses of the lines at the host device')
+
+
+class XYDataViewer(QtWidgets.QWidget):
+    def __init__(self, data, device = None, xyplotwidget=None):
+        """
+
+        """
+        funcname = __name__ + '.init():'
+        super().__init__()
+        self.layout = QtWidgets.QGridLayout(self)
+        self.tabs = QtWidgets.QTabWidget()
+        self.xyplotwidget = xyplotwidget
+
+        self.data = data
+        self.device = device
+        self.setWindowTitle('redvypr data selection')
+        for i,d in enumerate(self.data['lines']):
+            table = XYDataTable(d)
+            tabname = 'Line {}'.format(i)
+            #tabname = d['name']
+            self.tabs.addTab(table,tabname)
+
+        self.comment_widget = QtWidgets.QTabWidget()
+        self.tabs.addTab(self.comment_widget, 'Comment')
+
+        self.apply_button = QtWidgets.QPushButton('Send')
+        self.cancel_button = QtWidgets.QPushButton('Cancel')
+        self.apply_button.clicked.connect(self.send_clicked)
+        self.cancel_button.clicked.connect(self.close)
+
+        self.layout.addWidget(self.tabs, 0, 0,1,-1)
+        self.layout.addWidget(self.apply_button, 1, 0)
+        self.layout.addWidget(self.cancel_button, 1, 1)
+
+    def send_clicked(self):
+        print('Send clicked ...')
+        if self.xyplotwidget is not None:
+            self.xyplotwidget.publish_data(self.data)
+
+
+class XYDataTable(QtWidgets.QTableWidget):
+    def __init__(self, data):
+        """
+
+        """
+        funcname = __name__ + '.init():'
+        super().__init__()
+        self.data = data
+        self.setColumnCount(3)
+        t = self.data['t']
+        x = self.data['x']
+        y = self.data['y']
+        rowoff = 2
+        self.setRowCount(len(x) + rowoff)
+        self.col_t = 0
+        self.col_x = 1
+        self.col_y = 2
+        try:
+            xaddrstr = self.data['x_addr'].get_str()
+        except:
+            xaddrstr = str(self.data['x_addr'])
+        try:
+            yaddrstr = self.data['y_addr'].get_str()
+        except:
+            yaddrstr = str(self.data['y_addr'])
+        item = QtWidgets.QTableWidgetItem('Time')
+        self.setItem(0, self.col_t, item)
+        item = QtWidgets.QTableWidgetItem(xaddrstr)
+        self.setItem(0, self.col_x, item)
+        item = QtWidgets.QTableWidgetItem(yaddrstr)
+        self.setItem(0, self.col_y, item)
+        item = QtWidgets.QTableWidgetItem(str(self.data['unit_x']))
+        self.setItem(1, self.col_x, item)
+        item = QtWidgets.QTableWidgetItem(str(self.data['unit_y']))
+        self.setItem(1, self.col_y, item)
+
+        for irow, t_data in enumerate(t):
+            t_str = datetime.datetime.utcfromtimestamp(t_data).strftime('%Y-%m-%d %H:%M:%S.%f')
+            item = QtWidgets.QTableWidgetItem(t_str)
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.setItem(irow + rowoff, self.col_t, item)
+
+        for irow,x_data in enumerate(x):
+            x_str = str(x_data)
+            item = QtWidgets.QTableWidgetItem(x_str)
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.setItem(irow+rowoff,self.col_x,item)
+
+        for irow, y_data in enumerate(y):
+            y_str = str(y_data)
+            item = QtWidgets.QTableWidgetItem(y_str)
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.setItem(irow+rowoff, self.col_y, item)
+
+        self.resizeColumnsToContents()
+
+    def keyPressEvent(self, event):
+        # Prüfen, ob Strg+C gedrückt wurde
+        if event.key() == QtCore.Qt.Key_C and (event.modifiers() & QtCore.Qt.ControlModifier):
+            self.handle_copy_event()
+        else:
+            # Standardverhalten für andere Tasten
+            super().keyPressEvent(event)
+
+    def handle_copy_event(self):
+        #
+        selected_items = self.selectedItems()
+        copied_text = ''
+        if selected_items:
+            if len(selected_items) == 1:
+                QtWidgets.QApplication.clipboard().setText(selected_items[0].text())
+            else:
+                for row in range(self.rowCount()):
+                    for column in range(self.columnCount()):
+                        for item in selected_items:
+                            if (item.row() == row) and (item.column() == column):
+                                copied_text += item.text()
+
+                        copied_text += '\t'
+                    copied_text += '\n'
+                QtWidgets.QApplication.clipboard().setText(copied_text)
+
 
 # config_template_graph['description'] = description_graph
 class XYPlotWidget(QtWidgets.QFrame):
@@ -514,8 +661,9 @@ class XYPlotWidget(QtWidgets.QFrame):
                     self.interactive_rectangle['rect'].setSize([dx,dy])
 
     def mouse_clicked(self, event):
-        print('Click!')
-        print('Clicked: ' + str(event.scenePos()))
+        #print('Click!')
+        #print('Clicked: ' + str(event.scenePos()))
+        data_user = None
         if 'lim' in self.config.interactive:
             if event.button() == QtCore.Qt.MouseButton.LeftButton:
                 vb = self.plotWidget.plotItem.vb
@@ -545,7 +693,7 @@ class XYPlotWidget(QtWidgets.QFrame):
                     else:
                         data_user = self.get_data(ylim=ylim)
 
-                    print('Data user',data_user)
+                    #print('Data user',data_user)
                     self.plotWidget.removeItem(lines[0])
                     self.plotWidget.removeItem(lines[1])
                     self.interactive_xylim['lines'] = []
@@ -560,25 +708,29 @@ class XYPlotWidget(QtWidgets.QFrame):
                 x, y = mouse_point.x(), mouse_point.y()
                 points = self.interactive_rectangle['points']
                 points.append({'pos': (x, y), 'size': 10, 'pen': {'color': 'b', 'width': 2}, 'brush': 'r'})
-                print('Points',points,len(points))
+                #print('Points',points,len(points))
                 try:
                     logger.info('Set data')
-                    self.interactive_rectangle['scatter'].setData(points)
+                    #self.interactive_rectangle['scatter'].setData(points)
                 except:
-                    logger.info('fds', exc_info=True)
+                    logger.info('Could not set data', exc_info=True)
 
                 if len(points) == 1:
-                    print('Adding items')
+                    #print('Adding items')
                     self.interactive_rectangle['scatter'] = pyqtgraph.ScatterPlotItem()
                     self.plotWidget.addItem(self.interactive_rectangle['scatter'])
-                    self.interactive_rectangle['scatter'].setData(points)
+                    #self.interactive_rectangle['scatter'].setData(points)
                     self.plotWidget.scene().sigMouseMoved.connect(self.mouse_moved)
                 elif len(points) == 2:
-                    print('Two points, getting data')
-                    xlim = [min(self.interactive_rectangle['points'][0]['pos']), max(self.interactive_rectangle['points'][1]['pos'])]
-                    ylim = [min(self.interactive_rectangle['points'][0]['pos']), max(self.interactive_rectangle['points'][1]['pos'])]
-                    data = self.get_data(xlim,ylim)
-                    print('Got data',data)
+                    #print('Two points, getting data')
+                    xlim = np.sort([self.interactive_rectangle['points'][0]['pos'][0],
+                                    self.interactive_rectangle['points'][1]['pos'][0]])
+                    ylim = np.sort([self.interactive_rectangle['points'][0]['pos'][1],
+                                    self.interactive_rectangle['points'][1]['pos'][1]])
+                    #xlim = [min(), max(self.interactive_rectangle['points'][1]['pos'])]
+                    #ylim = [min(self.interactive_rectangle['points'][0]['pos']), max(self.interactive_rectangle['points'][1]['pos'])]
+                    data_user = self.get_data(xlim,ylim)
+                    #print('Got data',data_user)
                     # Remove all items
                     self.plotWidget.removeItem(self.interactive_rectangle['rect'])
                     self.interactive_rectangle['rect'] = None
@@ -589,8 +741,11 @@ class XYPlotWidget(QtWidgets.QFrame):
                     #except:
                     #    pass
 
-
-
+        # Show the data, if available
+        if data_user is not None:
+            # Here it could be decided what to do with the data
+            self._data_table = XYDataViewer(data_user, device=self.device, xyplotwidget=self)
+            self._data_table.show()
 
 
     def set_title(self, title):
@@ -602,27 +757,27 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.config.title = title
         self.plotWidget.setTitle(title)
 
-    def set_line(self, index, y_addr, name='$y', x_addr='$t(y)', color=[255, 0, 0], linewidth=1, bufsize=2000):
+    def set_line(self, index, y_addr, name='$y', x_addr='t', color=[255, 0, 0], linewidth=1, bufsize=2000):
         """
         Sets the line at index to the parameters
         """
         self.add_line(y_addr=y_addr, name=name, x_addr=x_addr, color=color, linewidth=linewidth, bufsize=bufsize, index=index)
 
-    def add_line(self, y_addr, x_addr='$t(y)', name='$y', error_addr='', color=None, linewidth=1, bufsize=20000, numplot=2000, index=None):
+    def add_line(self, y_addr, x_addr='t', name='$y', error_addr='', color=None, linewidth=1, bufsize=20000, numplot=2000, index=None):
         """
         Adds a line to the plot
         """
         funcname = __name__ + '.add_line()'
         self.logger.debug(funcname)
-        if isinstance(y_addr, redvypr.RedvyprAddress):
+        if not(isinstance(y_addr, redvypr.RedvyprAddress)):
             self.logger.debug('Redvypr y-address')
-            y_addr = y_addr.address_str
-        if isinstance(x_addr, redvypr.RedvyprAddress):
+            y_addr = redvypr.RedvyprAddress(y_addr)
+        if not(isinstance(x_addr, redvypr.RedvyprAddress)):
             self.logger.debug('Redvypr x-address')
-            x_addr = x_addr.address_str
-        if isinstance(error_addr, redvypr.RedvyprAddress):
+            x_addr = redvypr.RedvyprAddress(x_addr)
+        if not(isinstance(error_addr, redvypr.RedvyprAddress)):
             self.logger.debug('Redvypr error-address')
-            error_addr = error_addr.address_str
+            error_addr = redvypr.RedvyprAddress(error_addr)
         #print('add line',y_addr,color)
         if color is None: # No color defined, take color from the colors list
             nlines = len(self.config.lines) - 1
@@ -647,11 +802,13 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.config.lines[index].name = name
         # Add the address as well to the data
         self.config.lines[index].databuffer.xdata_addr = x_addr
+        self.config.lines[index].databuffer.ydata_addr = y_addr
+        self.config.lines[index].databuffer.errordata_addr = error_addr
         self.apply_config()
 
     def construct_labelname(self, line, labelformat=None):
         name = line.name
-        unit = line.unit
+        unit = line.unit_y
         x_addr = RedvyprAddress(line.x_addr).address_str_explicit
         y_addr = RedvyprAddress(line.y_addr).address_str_explicit
         if labelformat == None:
@@ -666,6 +823,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         line = self.sender()._line
         #print('Line',line,line.y_addr)
         #line.y_addr = address_dict['datastream_str']
+        print('Address dict',address_dict)
         line.y_addr = address_dict['datastream_address']
         #print('Line config',line.confg)
         self.apply_config()
@@ -753,39 +911,16 @@ class XYPlotWidget(QtWidgets.QFrame):
             # Creating the correct addresses first
             try:
                 self.logger.debug('Line {},{}'.format(line,iline))
-                x_addr = line.x_addr
-                y_addr = line.y_addr
-                if len(y_addr) >= 0:
-                    y_raddr = redvypr.RedvyprAddress(y_addr)
-                    #print('x_addr', x_addr)
-                    #print('y_addr', y_addr)
-                    if (x_addr == '$t(y)'):
-                        self.logger.debug(funcname + ' Using time variable of y')
-                        #xtmp = redvypr.data_packets.modify_addrstr(y_raddr.address_str, datakey='t')
-                        ## print('xtmp',xtmp)
-                        #x_raddr = redvypr.redvypr_address(xtmp)
-                        x_raddr = redvypr.RedvyprAddress(y_addr, datakey='t')
-                    else:
-                        x_raddr = redvypr.RedvyprAddress(x_addr)
-
-                    #print('x_addrnew', x_addr,x_raddr)
-                    # These attributes are used in plot.Device.connect_devices to actually subscribe to the fitting devices
-                    line._x_raddr = x_raddr
-                    line._y_raddr = y_raddr
-
                 # Error address
                 error_addr = None
                 if line.error_mode != 'off':
                     self.logger.debug('Error mode 1')
-                    error_raddr = redvypr.RedvyprAddress(line.error_addr)
-                    line._error_raddr = error_raddr
                     errorplot = pyqtgraph.ErrorBarItem(name=line._name_applied,pen=pen)
                     line._errorplot = errorplot  # Add the line as an attribute to the configuration
                     errorplot._line_config = line
                     plot.addItem(errorplot)
                 else:
                     self.logger.debug('Error mode 2')
-                    line._error_raddr = redvypr.RedvyprAddress('')
                     line._errorplot = None
                     # print('Set pen 1')
             except:
@@ -847,13 +982,13 @@ class XYPlotWidget(QtWidgets.QFrame):
                 self.logger.debug('Setting the data')
                 line._lineplot.setData(name=line.label,x=[],y=[])
                 if self.config.automatic_subscription:
-                    self.logger.debug(funcname + 'Subscribing to x address {}'.format(x_raddr))
-                    self.device.subscribe_address(x_raddr)
-                    self.logger.debug(funcname + 'Subscribing to y address {}'.format(y_raddr))
-                    self.device.subscribe_address(y_raddr)
+                    self.logger.debug(funcname + 'Subscribing to x address {}'.format(line.x_addr))
+                    self.device.subscribe_address(line.x_addr)
+                    self.logger.debug(funcname + 'Subscribing to y address {}'.format(line.y_addr))
+                    self.device.subscribe_address(line.y_addr)
                     if line._errorplot is not None:
-                        self.logger.debug(funcname + 'Subscribing to error address {}'.format(error_raddr))
-                        self.device.subscribe_address(error_raddr)
+                        self.logger.debug(funcname + 'Subscribing to error address {}'.format(line.error_addr))
+                        self.device.subscribe_address(line.error_addr)
 
                 # Create the menu to config the line
                 #lineMenuline = QtWidgets.QMenu(linename_menu,self)
@@ -944,21 +1079,21 @@ class XYPlotWidget(QtWidgets.QFrame):
     def get_metadata_for_line(self, line):
         funcname = __name__ + '.get_metadata_for_line():'
         iline = self.config.lines.index(line)
-        self.logger.debug(funcname + 'Getting metadata for {}'.format(line._y_raddr))
+        self.logger.debug(funcname + 'Getting metadata for {}'.format(line.y_addr))
         try:
             line._metadata  # metadata found, doing nothing
         except:
-            line._metadata = self.device.get_metadata(line._y_raddr)
+            line._metadata = self.device.get_metadata(line.y_addr)
             self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._metadata)))
             try:
                 unit = line._metadata['unit']
-                self.logger.debug(funcname + 'Found a unit for {}'.format(line._y_raddr))
+                self.logger.debug(funcname + 'Found a unit for {}'.format(line.y_addr))
             except:
                 self.logger.debug(funcname + 'Did not find a unit', exc_info=True)
                 unit = None
 
             if unit is not None:
-                self.config.lines[iline].unit = unit
+                self.config.lines[iline].unit_y = unit
                 return True
 
         return None
@@ -976,6 +1111,29 @@ class XYPlotWidget(QtWidgets.QFrame):
             # Set the data
             line_tmp._lineplot.setData(x=line_tmp.databuffer.xdata, y=line_tmp.databuffer.ydata)
 
+    def publish_data(self, datapacket_publish):
+        """
+        Publishes the data via the dataqueue or by a signal.
+
+        Parameters
+        ----------
+        data
+
+        Returns
+        -------
+
+        """
+        funcname = __name__ + '.publish_data():'
+        try:
+            dataqueue = self.device.dataqueue
+        except:
+            dataqueue = None
+
+        if dataqueue is not None:
+            logger.debug(funcname + 'Sending datapacket')
+            dataqueue.put(datapacket_publish)
+            print('datapacket',datapacket_publish)
+
     def get_data(self, xlim=None, ylim=None):
         """
         Gets the data of the buffer in the limits of xlim and/or ylim
@@ -985,36 +1143,49 @@ class XYPlotWidget(QtWidgets.QFrame):
         tdata = []
         xdata = []
         ydata = []
+        datapacket = {}
         for iline, line in enumerate(self.config.lines):
             #print('Line', line)
             #print('Type Line', type(line))
             #line_dict = line.line_dict
             #line = line_dict['line']  # The line to plot
             #config = line_dict['config']  # The line to plot
-            t = np.asarray(line.databuffer.tdata)  # The line to plot
-            x = np.asarray(line.databuffer.xdata)  # The line to plot
-            y = np.asarray(line.databuffer.ydata)  # The line to plot
-            err = np.asarray(line.databuffer.errordata)  # The line to plot
-            ind_x = np.ones(x.shape, dtype=bool)
-            ind_y = np.ones(y.shape, dtype=bool)
-            if xlim is not None:
-                ind_x = (x > xlim[0]) & (x < xlim[1])
+            #t = np.asarray(line.databuffer.tdata)  # The line to plot
+            #x = np.asarray(line.databuffer.xdata)  # The line to plot
+            #y = np.asarray(line.databuffer.ydata)  # The line to plot
+            #err = np.asarray(line.databuffer.errordata)  # The line to plot
+            #ind_x = np.ones(x.shape, dtype=bool)
+            #ind_y = np.ones(y.shape, dtype=bool)
+            #print(funcname + 'xlim',xlim,'ylim',ylim)
+            #if xlim is not None:
+            #    ind_x = (x > xlim[0]) & (x < xlim[1])
+            #
+            #if ylim is not None:
+            #    ind_y = (y > ylim[0]) & (y < ylim[1])
 
-            if ylim is not None:
-                ind_y = (y > ylim[0]) & (y < ylim[1])
-
-            ind = ind_x & ind_y
-            tdata_tmp = t[ind]
-            xdata_tmp = x[ind]
-            ydata_tmp = y[ind]
-            data.append({'x': xdata_tmp, 'y': ydata_tmp, 't': tdata_tmp})
+            #print('ind',ind_x,ind_y)
+            #ind = ind_x & ind_y
+            data_tmp = line.databuffer.get_data(xlim,ylim)
+            tdata_tmp = data_tmp['t']
+            xdata_tmp = data_tmp['x']
+            ydata_tmp = data_tmp['y']
+            errdata_tmp = data_tmp['err']
+            data.append({'x': xdata_tmp, 'y': ydata_tmp, 't': tdata_tmp, 'err':errdata_tmp,
+                         'x_addr':line.x_addr, 'y_addr':line.y_addr,
+                         'unit_x': line.unit_x, 'unit_y': line.unit_y,
+                         'name':line.name})
             #tdata.append(tdata_tmp)
             #xdata.append(xdata_tmp)
             #ydata.append(ydata_tmp)
             self.logger.debug(funcname + ' Got data of length {:d}'.format(len(tdata_tmp)))
             # print('get_data',datetime.datetime.utcfromtimestamp(tdata_tmp[0]),datetime.datetime.utcfromtimestamp(xdata_tmp[0]))
+            try:
+                x_addrstr = line.x_addr.get_str()
+            except:
+                x_addrstr = str(line.x_addr)
 
-        return data
+        datapacket['lines'] = data
+        return datapacket
 
     def __get_data_for_line(self, line):
         """
@@ -1090,7 +1261,7 @@ class XYPlotWidget(QtWidgets.QFrame):
             # Loop over all lines
             for iline, line in enumerate(self.config.lines):
                 line.__newdata = False
-                error_raddr = line._error_raddr
+                error_raddr = line.error_addr
                 if len(self.config.lines)>1:
                     #print('device',data['_redvypr']['device'])
                     #print('data',data)
@@ -1103,7 +1274,8 @@ class XYPlotWidget(QtWidgets.QFrame):
                 #print('data',data)
                 #print('line._x_raddr',line._x_raddr,data in line._x_raddr)
                 #print('line._y_raddr', line._y_raddr, data in line._y_raddr)
-                if (data in line._x_raddr) and (data in line._y_raddr):
+                print('Line',line)
+                if (data in line.x_addr) and (data in line.y_addr):
                     pw = self.plotWidget  # The plot widget
                     #if len(self.config.lines) > 1:
                     #    print('Databuffer',line.databuffer)
@@ -1111,10 +1283,11 @@ class XYPlotWidget(QtWidgets.QFrame):
                     xdata = line.databuffer.xdata  # The line to plot
                     ydata = line.databuffer.ydata  # The line to plot
                     # data can be a single float or a list, if its a list add it item by item
-                    newt = rdata['_redvypr']['t']  # Add also the time of the packet
-                    newx = rdata[line._x_raddr.datakey]
-                    newy = rdata[line._y_raddr.datakey]
-
+                    newt = rdata['t']  # Add also the time of the packet
+                    #newx = rdata[line.x_addr.datakey]
+                    #newy = rdata[line.y_addr.datakey]
+                    newx = line.x_addr.get_data(rdata)
+                    newy = line.y_addr.get_data(rdata)
                     #if len(self.config.lines) > 0:
                     #    print('data xy plotwidget',rdata)
                     #    print('newx datakey', line._x_raddr.datakey)
@@ -1133,7 +1306,7 @@ class XYPlotWidget(QtWidgets.QFrame):
                         #print('errordata',error_raddr.datakey)
                         if len(line.error_addr) > 0 and line.error_mode == 'standard':
                             #logger.debug('Error standard')
-                            newerror = data[error_raddr.datakey]
+                            newerror = line.error_addr.get_data(data)
                             if (type(newerror) is not list):
                                 newerror = [newerror]
                             #print('newerror',newerror)
@@ -1166,16 +1339,6 @@ class XYPlotWidget(QtWidgets.QFrame):
 
                         line.__newdata = True
 
-                        #tdata = np.roll(tdata, -1)
-                        #xdata = np.roll(xdata, -1)
-                        #ydata = np.roll(ydata, -1)
-                        #tdata[-1] = float(newt)
-                        #xdata[-1] = float(newx[inew])
-                        #ydata[-1] = float(newy[inew])
-                        #line.databuffer.tdata = tdata
-                        #line.databuffer.xdata = xdata
-                        #line.databuffer.ydata = ydata
-
                     # Show the unit in the legend, if wished by the user, and we have access to the device that can give us the metainformation
                     if (self.config.show_units) and (self.device is not None):
                         #self.logger.debug(funcname + 'Getting metadata for {}'.format(line._y_raddr))
@@ -1192,7 +1355,7 @@ class XYPlotWidget(QtWidgets.QFrame):
                                 unit = None
 
                             if unit is not None:
-                                self.config.lines[iline].unit = unit
+                                self.config.lines[iline].unit_y = unit
                                 self.apply_config()
 
             # Update the lines plot
@@ -1240,4 +1403,5 @@ class XYPlotWidget(QtWidgets.QFrame):
                 pass
                 #print('DONE DONE DONE')
         except:
+            print('fsdfsd')
             self.logger.debug('Could not update data', exc_info=True)

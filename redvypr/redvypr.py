@@ -181,18 +181,19 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     # Get the devicename
                     raddr = redvypr_address.RedvyprAddress(data)
                     devicename_stat = raddr.address_str
-                    # Do statistics
-                    try:
-                        devicedict['statistics'], status_statistics = redvypr_packet_statistic.do_data_statistics(data, devicedict['statistics'], address_data=raddr)
-                        #print('Statistic status',status_statistics)
-                    except Exception as e:
-                        logger.debug(funcname + ':Statistics:',exc_info=True)
-
-                    #
-                    # Check for a command packet
-                    #
                     numtag = data['_redvypr']['tag'][hostinfo['uuid']]
                     if numtag < 2:  # Check if data packet fits with addr and its not recirculated again
+                        # Do statistics
+                        try:
+                            devicedict['statistics'], status_statistics = redvypr_packet_statistic.do_data_statistics(
+                                data, devicedict['statistics'], address_data=raddr)
+                            # print('Statistic status',status_statistics)
+                        except Exception as e:
+                            logger.debug(funcname + ':Statistics:', exc_info=True)
+
+                        #
+                        # Check for a command packet
+                        #
                         [command, comdata] = data_packets.check_for_command(data, add_data=True)
                         if (command == 'reply'):  # status update
                             device.distribute_data_replyqueue.put_nowait(data)

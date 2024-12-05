@@ -793,12 +793,13 @@ class datastreamWidget(QtWidgets.QWidget):
         addrformat = self.addrtype_combo.currentText()
         device = self.addressline.device
         device_address = self.addressline.devaddress
-        datastream_address = self.addressline.datakey_address
-        datastream_str = datastream_address.get_str(addrformat)
+        datastream_address_full = self.addressline.datakey_address
+        datastream_str = datastream_address_full.get_str(addrformat)
+        datastream_address = RedvyprAddress(datastream_str)
 
         signal_dict = {'device': device, 'device_address':device_address,'datastream_str': datastream_str,'datastream_address':datastream_address,'address_format':addrformat}
         signal_dict['addrformat'] = self.addressline.datakey_address
-        print(funcname + 'Signal dict {}'.format(signal_dict))
+        #print(funcname + 'Signal dict {}'.format(signal_dict))
         self.apply.emit(signal_dict)
         if self.closeAfterApply:
             self.close()
