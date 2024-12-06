@@ -1256,15 +1256,29 @@ class RedvyprDevice(QtCore.QObject):
 
         return info_dict
 
-    def get_metadata(self, address,mode='merge'):
+
+    def get_metadata(self, address, mode='merge', local_statistics_only=False):
         """
         Gets the metadata of the redvypr address
-        :param address:
-        :return:
+
+        Parameters
+        ----------
+        address: RedvyprAddress
+        mode:
+        local_statistics_only: If true use the local statistics of the datastreams only, otherwise ue the global statistics of redvypr
+
+        Returns
+        -------
+
         """
+
         funcname = __name__ + '.get_metadata({},{}):'.format(str(address),str(mode))
         self.logger.debug(funcname)
-        metadata = redvypr.packet_statistic.get_metadata(self.statistics,address,mode=mode)
+        if local_statistics_only:
+            metadata = redvypr.packet_statistic.get_metadata(self.statistics,address,mode=mode)
+        else:
+            self.redvypr.get_metadata(self.statistics,address,mode=mode)
+
         return metadata
 
     def set_metadata(self, address, metadata):

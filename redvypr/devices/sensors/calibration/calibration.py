@@ -62,7 +62,7 @@ class SensorData(pydantic.BaseModel):
     rawdata: list = pydantic.Field(default=[])
     time_data: list = pydantic.Field(default=[])
     time_rawdata: list = pydantic.Field(default=[])
-    realtimeplot: str = pydantic.Field(default='Table',description='Type of realtimedataplot')
+    realtimeplottype: typing.Literal['Table', 'XY-Plot'] = pydantic.Field(default='Table', description='Type of realtimedataplot')
 
 def get_uuid():
     return 'CAL_' + str(uuid.uuid4())
@@ -1400,11 +1400,22 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
 
 class QTableCalibrationWidget(QtWidgets.QTableWidget):
     def __init__(self, *args, **kwargs):
+        try:
+            sensorindex = kwargs.pop('sensorindex')
+        except:
+            sensorindex = -1
+
         QtWidgets.QTableWidget.__init__(self, *args, **kwargs)
         self.data_buffer = []
         self.data_buffer_t = []
         self.data_buffer_len = 2000
         self.headerlabel = None
+        self.sensorindex = sensorindex
+        self.setColumnCount(1)
+        hlabel = "{}:".format(sensorindex)
+        self.setHorizontalHeaderLabels([hlabel])
+        header = self.horizontalHeader()
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
 
     def get_data(self, t_intervall):
         # Relative data
@@ -1481,15 +1492,12 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
                     hlabel = "{}:".format(dindex) + daddr.get_str('/k')
                     self.setHorizontalHeaderLabels([hlabel])
                     self.setVerticalHeaderLabels([])
-                    #self.resizeColumnsToContents()
-                    #self.headerlabel = hlabel
-
-
+                    header = self.horizontalHeader()
+                    header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
 
 
 
 class PlotCanvas(FigureCanvas):
-
     def __init__(self, parent=None, width=5, height=4, dpi=100):
         fig = Figure(figsize=(width, height), dpi=dpi)
         self.fig = fig
@@ -1593,8 +1601,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
         #self.config_widget.config_changed_flag.connect(self.config_changed)
-
-
 
     def createSensorInputWidgets(self):
         """
@@ -1702,7 +1708,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 sensorPlotType.listindex = i
                 sensorPlotType.sensortype = 'datastream'
 
-                if 'XY' in sdata.realtimeplot:
+                if 'XY' in sdata.realtimeplottype:
                     sensorPlotType.setCurrentIndex(1)  # XY
                 else:
                     sensorPlotType.setCurrentIndex(0)  # Table
@@ -1760,9 +1766,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         print(funcname + ' {}'.format(index))
         sensorPlotType = self.sender()
         plottype = sensorPlotType.currentText()
-        print('Hallo',sensorPlotType.currentText)
+
         indexsensor = sensorPlotType.listindex
-        self.device.custom_config.calibrationdata[indexsensor].realtimeplot = plottype
+        print('Hallo', sensorPlotType.currentText())
+        self.device.custom_config.calibrationdata[indexsensor].realtimeplottype = plottype
         print('Sensor config', self.device.custom_config.calibrationdata[indexsensor])
         self.updateDisplayWidget()
 
@@ -1860,7 +1867,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         if self.sender() == self.sensoradd:
             logger.debug('datastream sensor')
             self.device.add_sensor(newsen,'datastream')
-        if self.sender() == self.sensorsadd:
+        elif self.sender() == self.sensorsadd:
             logger.debug(funcname + ' multiple datastream sensors')
             self.device.add_sensor(newsen, 'datastream')
         else:
@@ -2062,6 +2069,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.plot_widgets_parent_scroll = QtWidgets.QScrollArea()
         self.plot_widgets_parent_scroll.setWidget(self.plot_widgets_parent)
         self.plot_widgets_parent_scroll.setWidgetResizable(True)
+        # Add the realtime data
         self.add_plots()
 
         self.addintervall_time = QtWidgets.QDoubleSpinBox()
@@ -2314,6 +2322,14 @@ class displayDeviceWidget(QtWidgets.QWidget):
             # Realtimedata
             if sdata.inputtype == 'datastream':
                 try:
+                    realtimeplottype = sdata.__realtimeplottype
+                    same_plotwidgettype = realtimeplottype == sdata.realtimeplottype
+                except:
+                    logger.info('Could not get plottype',exc_info=True)
+                    realtimeplottype = 'unknown'
+                    same_plotwidgettype = False
+
+                try:
                     plot_widget = sdata.__plot_widget
                     logger.debug('Plotwidget is existing')
                     flag_new_plot_widget = False
@@ -2321,20 +2337,36 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     logger.debug(funcname + 'creating plotwidget')
                     flag_new_plot_widget = True
 
+                print('same_plotwidgettype',realtimeplottype, same_plotwidgettype,flag_new_plot_widget)
+                # Check if the plitwidgettype changed
+                if (same_plotwidgettype == False) and (flag_new_plot_widget == False):
+                    print('Changing plotwidget')
+                    try:
+                        sdata.__plot_widget.setParent(None)
+                    except:
+                        logger.info('Could not close widget',exc_info=True)
+
+                    flag_new_plot_widget = True
+
                 if flag_new_plot_widget:
+                    print('Adding new widget',sdata.realtimeplottype)
                     #config = {}
                     #config['title'] = sdata.sn
                     #self.datastreams.append(None)
                     #plot_widget = plot_widgets.redvypr_graph_widget(config=config)
-                    if 'XY' in sdata.realtimeplot:
-                        config = XYplotWidget.configXYplot(interactive='mouse')
+                    if 'XY' in sdata.realtimeplottype:
+                        print('Adding XYplotwidget')
+                        config = XYplotWidget.configXYplot()
                         plot_widget = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
-                        plot_widget.plotWidget.scene().sigMouseMoved.connect(self.anyMouseMoved)
-                        plot_widget.plotWidget.scene().sigMouseClicked.connect(self.anyMouseClicked)
+                        #plot_widget.plotWidget.scene().sigMouseMoved.connect(self.anyMouseMoved)
+                        #plot_widget.plotWidget.scene().sigMouseClicked.connect(self.anyMouseClicked)
                         plot_widget.vlines = []  # List of vertical lines
                         plot_widget.vlines_xpos = []  # List of vertical lines
-                    elif 'able' in sdata.realtimeplot:
-                        plot_widget = QTableCalibrationWidget()
+                        sdata.__realtimeplottype = sdata.realtimeplottype
+                        print('Done')
+                    elif 'able' in sdata.realtimeplottype:
+                        plot_widget = QTableCalibrationWidget(sensorindex=i)
+                        sdata.__realtimeplottype = sdata.realtimeplottype
 
                 plot_widget.datatablecolumn = i + ioff  # The column the data is saved
                 plot_widget.sensorindex = i
@@ -2355,6 +2387,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 nwidgets += 1
 
                 sdata.__plot_widget = plot_widget
+
             # Manualdata
             else:
                 if len(self.sensorcolsindex)>0:
@@ -2563,16 +2596,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
                         item.__parent__ = sdata.data
                         item.__dindex__  = idata
 
-
-
         self.datatable.resizeColumnsToContents()
         self.datatable.itemChanged.connect(self.__datatable_item_changed__)
         #self.datatable.setSizeAdjustPolicy(QtWidgets.QTableWidget.AdjustToContents)
         # self.datatable.resize(self.datatable.sizeHint())
-
-
-
-
 
     def update_datatable_metainformation(self,i):
         """
@@ -2598,16 +2625,11 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.datatable.setSizeAdjustPolicy(QtWidgets.QTableWidget.AdjustToContents)
         #self.datatable.resize(self.datatable.sizeHint())
 
-
-
-
     def clear_buffer(self):
         funcname = __name__ + '.clear_buffer():'
         logger.debug(funcname)
         for i, p in enumerate(self.plot_widgets):
             p.clear_buffer()
-
-
 
     def anyMouseMoved(self,evt):
         sender = self.sender()
@@ -2711,8 +2733,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     if update_datainfo:
                         datastream = caldata.datastream
                         logger.debug('Updating datastreams {}'.format(datastream))
-                        keyinfo = self.device.get_metadata_datakey(datastream, all_entries=False)
+                        keyinfo = self.device.redvypr.get_metadata(datastream)
+                        #keyinfo = self.device.get_metadata(datastream)
                         logger.debug(funcname + 'Datakeyinfo {}'.format(keyinfo))
+                        print('Keyinfo',keyinfo)
                         try:
                             parameter = datastream.datakey
                         except:

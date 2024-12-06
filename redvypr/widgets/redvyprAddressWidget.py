@@ -840,7 +840,7 @@ class datastreamsWidget(datastreamWidget):
         icon = qtawesome.icon(iconname)
         self.button_add = QtWidgets.QPushButton('Add')
         self.button_add.setIcon(icon)
-        self.button_add.clicked.connect(self.add_datastreams)
+        self.button_add.clicked.connect(self.add_datastreams_clicked)
         self.button_add_manual = QtWidgets.QPushButton('Add manual')
         self.button_add_manual.setIcon(icon)
         self.button_add_manual.clicked.connect(self.add_manual_datastream)
@@ -935,11 +935,16 @@ class datastreamsWidget(datastreamWidget):
         items = self.get_all_items()
         self.add_datastreams(items)
 
+    def add_datastreams_clicked(self):
+        items = self.devicelist.selectedItems()
+        self.add_datastreams(items)
+
     def add_datastreams(self, items=None):
         funcname = __name__ + '.add_datastreams():'
         logger.debug(funcname)
         if items is None:
-            items = self.devicelist.selectedItems()
+            raise ValueError('No datastreams given')
+
         for i,item in enumerate(items):
             #print(i,item.text(0))
             try:

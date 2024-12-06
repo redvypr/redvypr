@@ -1,3 +1,6 @@
+- 0.9.10:
+       - several small feature in XYPlotWidget
+       - bug fixes calibration to work again
 - 0.9.9:
        - cleanup of pydanticConfigWidget and implementation of "NoneType" and "Optional"
        - improved generic sensor to allow entries to packetid from rawdatapacket
