@@ -37,34 +37,11 @@ class dataBufferLine(pydantic.BaseModel):
     xdata: list = pydantic.Field(default=[])
     ydata: list = pydantic.Field(default=[])
     errordata: list = pydantic.Field(default=[])
-    tdata_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
-    xdata_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
-    ydata_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
-    errordata_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
-
-
-    def get_data(self, xlim=None, ylim=None):
-        funcname = __name__ + '.get_data():'
-        t = np.asarray(self.tdata)  # The line to plot
-        x = np.asarray(self.xdata)  # The line to plot
-        y = np.asarray(self.ydata)  # The line to plot
-        err = np.asarray(self.errordata)  # The line to plot
-        ind_x = np.ones(x.shape, dtype=bool)
-        ind_y = np.ones(y.shape, dtype=bool)
-        print(funcname + 'xlim', xlim, 'ylim', ylim)
-        if xlim is not None:
-            ind_x = (x > xlim[0]) & (x < xlim[1])
-
-        if ylim is not None:
-            ind_y = (y > ylim[0]) & (y < ylim[1])
-
-        print('ind', ind_x, ind_y)
-        ind = ind_x & ind_y
-        tdata_tmp = t[ind]
-        xdata_tmp = x[ind]
-        ydata_tmp = y[ind]
-        err_tmp = y[ind]
-        return {'x':xdata_tmp,'y':ydata_tmp,'t':tdata_tmp,'err':err_tmp}
+    def clear(self):
+        self.tdata = []
+        self.xdata = []
+        self.ydata = []
+        self.errordata = []
 
     @pydantic.model_serializer
     def ser_model(self) -> typing.Dict[str, typing.Any]:
@@ -82,7 +59,7 @@ class configLine(pydantic.BaseModel,extra='allow'):
     unit_y: str = pydantic.Field(default='', description='The unit of the line')
     label: str = pydantic.Field(default='', description='The of the line')
     label_format: str = pydantic.Field(default='{NAME} {Y_ADDR} [{UNIT}]', description='The name of the line, this is shown in the legend, $y to use the redvypr address')
-    x_addr: RedvyprAddress = pydantic.Field(default='t', description='The realtimedata address of the x-axis')
+    x_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress('t'), description='The realtimedata address of the x-axis')
     y_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress('/d:somedevice/k:data'), description='The realtimedata address of the x-axis')
     error_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''), description='The realtimedata address for an optional error band around the line')
     error_mode: typing.Literal['off', 'standard', 'factor', 'constant'] = pydantic.Field(default='off', description='')
@@ -98,6 +75,84 @@ class configLine(pydantic.BaseModel,extra='allow'):
     last_N_points: int = pydantic.Field(default=1000,
                                         description='Plots the last points, if plot_mode_x is set to last_N_points')
     plot_every_Nth: int = pydantic.Field(default=1, description='Uses every Nth datapoint for plotting')
+
+    def get_data(self, xlim=None, ylim=None):
+        funcname = __name__ + '.get_data():'
+        t = np.asarray(self.databuffer.tdata)  # The line to plot
+        x = np.asarray(self.databuffer.xdata)  # The line to plot
+        y = np.asarray(self.databuffer.ydata)  # The line to plot
+        err = np.asarray(self.databuffer.errordata)  # The line to plot
+        ind_x = np.ones(x.shape, dtype=bool)
+        ind_y = np.ones(y.shape, dtype=bool)
+        if xlim is not None:
+            ind_x = (x > xlim[0]) & (x < xlim[1])
+
+        if ylim is not None:
+            ind_y = (y > ylim[0]) & (y < ylim[1])
+
+        ind = ind_x & ind_y
+        tdata_tmp = t[ind]
+        xdata_tmp = x[ind]
+        ydata_tmp = y[ind]
+        err_tmp = y[ind]
+        return {'x': xdata_tmp, 'y': ydata_tmp, 't': tdata_tmp, 'err': err_tmp}
+
+    def append(self, data):
+        inx = (data in self.x_addr)
+        iny = (data in self.y_addr)
+        if inx and iny:
+            rdata = redvypr.data_packets.Datapacket(data)
+            # data can be a single float or a list, if its a list add it item by item
+            newt = data['t']  # Add also the time of the packet
+            newx = self.x_addr.get_data(rdata)
+            newy = self.y_addr.get_data(rdata)
+
+            if (type(newx) is not list):
+                newx = [newx]
+            if (type(newy) is not list):
+                newy = [newy]
+
+            if self.error_mode != 'off':
+                error_mode: typing.Literal['off', 'standard', 'factor', 'constant'] = pydantic.Field(
+                    default='standard', description='')
+                error_factor: float = pydantic.Field(default=1.1, description='')
+                error_constant: float = pydantic.Field(default=.01, description='')
+                # print('errordata',error_raddr.datakey)
+                if len(self.error_addr) > 0 and self.error_mode == 'standard':
+                    # logger.debug('Error standard')
+                    newerror = self.error_addr.get_data(rdata)
+                    if (type(newerror) is not list):
+                        newerror = [newerror]
+                    # print('newerror',newerror)
+                elif self.error_mode == 'factor':
+                    # print('Error factor')
+                    errdata = np.asarray(newy)
+                    errdata_factor = errdata * self.error_factor - errdata.mean()
+                    newerror = errdata_factor.tolist()
+                elif self.error_mode == 'constant':
+                    # print('Error constant')
+                    newerror = [self.error_constant] * len(newx)
+            else:
+                newerror = [0]
+
+            if (len(newx) != len(newy)):
+                self.logger.warning(
+                    'lengths of x and y data different (x:{:d}, y:{:d})'.format(len(newx), len(newy)))
+                return
+
+            for inew in range(len(newx)):  # TODO this can be optimized using indices instead of a loop
+                self.databuffer.tdata.append(float(newt))
+                self.databuffer.xdata.append(float(newx[inew]))
+                self.databuffer.ydata.append(float(newy[inew]))
+                self.databuffer.errordata.append(float(newerror[inew]))
+                while len(self.databuffer.tdata) > self.buffersize:
+                    self.databuffer.tdata.pop(0)
+                    self.databuffer.xdata.pop(0)
+                    self.databuffer.ydata.pop(0)
+                    self.databuffer.errordata.pop(0)
+
+        else:
+            raise ValueError('Datapacket does not contain data for address xaddr:{}:{}, yadd:{}:{}'.format(self.x_addr,inx,self.y_addr,iny))
 
 class configXYplot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
@@ -144,8 +199,13 @@ class XYDataViewer(QtWidgets.QWidget):
             #tabname = d['name']
             self.tabs.addTab(table,tabname)
 
-        self.comment_widget = QtWidgets.QTabWidget()
-        self.tabs.addTab(self.comment_widget, 'Comment')
+        self.extras_widget = QtWidgets.QWidget()
+        self.extras_widget_layout = QtWidgets.QFormLayout(self.extras_widget)
+        self._comment_widget = QtWidgets.QLineEdit()
+        self.extras_widget_layout.addRow('Comment',self._comment_widget)
+
+        self.tabs.addTab(self.extras_widget, 'Extra')
+
 
         self.apply_button = QtWidgets.QPushButton('Send')
         self.cancel_button = QtWidgets.QPushButton('Cancel')
@@ -158,7 +218,11 @@ class XYDataViewer(QtWidgets.QWidget):
 
     def send_clicked(self):
         print('Send clicked ...')
+        comment_str = self._comment_widget.text()
+        self.data['comment'] = comment_str
         if self.xyplotwidget is not None:
+            print('Data',self.data)
+
             self.xyplotwidget.publish_data(self.data)
 
 
@@ -800,10 +864,11 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.config.lines[index].y_addr = y_addr
         self.config.lines[index].error_addr = error_addr
         self.config.lines[index].name = name
+        self.config.lines[index]._xdata_addr_old = x_addr
         # Add the address as well to the data
-        self.config.lines[index].databuffer.xdata_addr = x_addr
-        self.config.lines[index].databuffer.ydata_addr = y_addr
-        self.config.lines[index].databuffer.errordata_addr = error_addr
+        #self.config.lines[index].databuffer.xdata_addr = x_addr
+        #self.config.lines[index].databuffer.ydata_addr = y_addr
+        #self.config.lines[index].databuffer.errordata_addr = error_addr
         self.apply_config()
 
     def construct_labelname(self, line, labelformat=None):
@@ -908,6 +973,15 @@ class XYPlotWidget(QtWidgets.QFrame):
         # Add lines with the actual data to the graph
         for iline, line in enumerate(self.config.lines):
             self.logger.debug(funcname + ': Updating line {:d}'.format(iline))
+
+            # Add the address as well to the data
+            #line.databuffer.xdata_addr = line.x_addr
+            #line.databuffer.ydata_addr = line.y_addr
+            #line.databuffer.errordata_addr = line.error_addr
+            #line.databuffer.error_mode = line.error_mode
+            #line.databuffer.error_factor = line.error_factor
+            #line.databuffer.error_constant = line.error_constant
+
             # Creating the correct addresses first
             try:
                 self.logger.debug('Line {},{}'.format(line,iline))
@@ -965,13 +1039,23 @@ class XYPlotWidget(QtWidgets.QFrame):
                 pen = pyqtgraph.mkPen(color, width=float(linewidth),style=style)
                 line._lineplot.setPen(pen)
                 # Check if the addresses changed and clear the buffer if necessary
-                if line.databuffer.xdata_addr == line.x_addr:
+                try:
+                    line._xdata_addr_old
+                except:
+                    line._xdata_addr_old = line.x_addr
+
+                if line._xdata_addr_old == line.x_addr:
                     self.logger.debug('Address did not change')
                 else:
-                    pass
+                    print('Address changed!')
+                    line._xdata_addr_old = line.x_addr
+                    line.databuffer.clear()
                     # TODO, here an unsubscribe and resubscribe would be better
                     #self.logger.debug('Address changed, clearing buffer')
                     #self.clear_buffer(line)
+
+                #
+
 
                 self.logger.debug(funcname + ' Setting the name')
                 try:
@@ -1165,7 +1249,7 @@ class XYPlotWidget(QtWidgets.QFrame):
 
             #print('ind',ind_x,ind_y)
             #ind = ind_x & ind_y
-            data_tmp = line.databuffer.get_data(xlim,ylim)
+            data_tmp = line.get_data(xlim,ylim)
             tdata_tmp = data_tmp['t']
             xdata_tmp = data_tmp['x']
             ydata_tmp = data_tmp['y']
@@ -1174,9 +1258,7 @@ class XYPlotWidget(QtWidgets.QFrame):
                          'x_addr':line.x_addr, 'y_addr':line.y_addr,
                          'unit_x': line.unit_x, 'unit_y': line.unit_y,
                          'name':line.name})
-            #tdata.append(tdata_tmp)
-            #xdata.append(xdata_tmp)
-            #ydata.append(ydata_tmp)
+
             self.logger.debug(funcname + ' Got data of length {:d}'.format(len(tdata_tmp)))
             # print('get_data',datetime.datetime.utcfromtimestamp(tdata_tmp[0]),datetime.datetime.utcfromtimestamp(xdata_tmp[0]))
             try:
@@ -1261,84 +1343,14 @@ class XYPlotWidget(QtWidgets.QFrame):
             # Loop over all lines
             for iline, line in enumerate(self.config.lines):
                 line.__newdata = False
-                error_raddr = line.error_addr
-                if len(self.config.lines)>1:
-                    #print('device',data['_redvypr']['device'])
-                    #print('data',data)
-                    #print('line',line)
-                    #print('line A', line._x_raddr, (data in line._x_raddr))
-                    #print('line B', line._y_raddr, (data in line._y_raddr))
-                    #print('fdsfsfsd',(data in line._x_raddr) and (data in line._y_raddr))
+                try:
+                    line.append(data)
+                    line.__newdata = True
+                except:
+                    # self.logger.info('Could not add data',exc_info=True)
                     pass
 
-                #print('data',data)
-                #print('line._x_raddr',line._x_raddr,data in line._x_raddr)
-                #print('line._y_raddr', line._y_raddr, data in line._y_raddr)
-                print('Line',line)
-                if (data in line.x_addr) and (data in line.y_addr):
-                    pw = self.plotWidget  # The plot widget
-                    #if len(self.config.lines) > 1:
-                    #    print('Databuffer',line.databuffer)
-                    tdata = line.databuffer.tdata  # The line to plot
-                    xdata = line.databuffer.xdata  # The line to plot
-                    ydata = line.databuffer.ydata  # The line to plot
-                    # data can be a single float or a list, if its a list add it item by item
-                    newt = rdata['t']  # Add also the time of the packet
-                    #newx = rdata[line.x_addr.datakey]
-                    #newy = rdata[line.y_addr.datakey]
-                    newx = line.x_addr.get_data(rdata)
-                    newy = line.y_addr.get_data(rdata)
-                    #if len(self.config.lines) > 0:
-                    #    print('data xy plotwidget',rdata)
-                    #    print('newx datakey', line._x_raddr.datakey)
-                    #    print('newx', newx)
-
-                    if (type(newx) is not list):
-                        newx = [newx]
-                    if (type(newy) is not list):
-                        newy = [newy]
-
-                    if  line.error_mode != 'off':
-                        error_mode: typing.Literal['off','standard', 'factor', 'constant'] = pydantic.Field(
-                            default='standard', description='')
-                        error_factor: float = pydantic.Field(default=1.1, description='')
-                        error_constant: float = pydantic.Field(default=.01, description='')
-                        #print('errordata',error_raddr.datakey)
-                        if len(line.error_addr) > 0 and line.error_mode == 'standard':
-                            #logger.debug('Error standard')
-                            newerror = line.error_addr.get_data(data)
-                            if (type(newerror) is not list):
-                                newerror = [newerror]
-                            #print('newerror',newerror)
-                        elif line.error_mode == 'factor':
-                            #print('Error factor')
-                            errdata = np.asarray(newy)
-                            errdata_factor = errdata * line.error_factor - errdata.mean()
-                            newerror = errdata_factor.tolist()
-                        elif line.error_mode == 'constant':
-                            #print('Error constant')
-                            newerror = [line.error_constant] * len(newx)
-                    else:
-                        newerror = [0]
-
-                    if (len(newx) != len(newy)):
-                        self.logger.warning(
-                            'lengths of x and y data different (x:{:d}, y:{:d})'.format(len(newx), len(newy)))
-                        return
-
-                    for inew in range(len(newx)):  # TODO this can be optimized using indices instead of a loop
-                        line.databuffer.tdata.append( float(newt) )
-                        line.databuffer.xdata.append( float(newx[inew]) )
-                        line.databuffer.ydata.append( float(newy[inew]) )
-                        line.databuffer.errordata.append(float(newerror[inew]) )
-                        while len(line.databuffer.tdata) > line.buffersize:
-                            line.databuffer.tdata.pop(0)
-                            line.databuffer.xdata.pop(0)
-                            line.databuffer.ydata.pop(0)
-                            line.databuffer.errordata.pop(0)
-
-                        line.__newdata = True
-
+                if True:
                     # Show the unit in the legend, if wished by the user, and we have access to the device that can give us the metainformation
                     if (self.config.show_units) and (self.device is not None):
                         #self.logger.debug(funcname + 'Getting metadata for {}'.format(line._y_raddr))
@@ -1403,5 +1415,4 @@ class XYPlotWidget(QtWidgets.QFrame):
                 pass
                 #print('DONE DONE DONE')
         except:
-            print('fsdfsd')
             self.logger.debug('Could not update data', exc_info=True)

@@ -140,7 +140,7 @@ class Device(RedvyprDevice):
 
         #newsen = str(newsen)
         if sentype == 'datastream':
-            logger.debug(funcname + ' Adding datastream')
+            logger.debug(funcname + ' Adding datastream of sensor {}'.format(newsen))
             sensor = SensorData(datastream=newsen, parameter=newsen.datakey, inputtype=sentype)
             self.custom_config.calibrationdata.append(sensor)
             index = len(self.custom_config.calibrationdata) - 1
@@ -1793,12 +1793,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         #print('Choosen',datastream_dict)
         #self.sender().lineEditSubed_addr.setText(datastream_dict['datastream_str'])
-        self.sender().lineEditSub_addr.setText(datastream_dict['datastream_str'])
+        #self.sender().lineEditSub_addr.setText(datastream_dict['datastream_str'])
         index = self.sender().listindex
         #print('Index',index)
         #print('sensordata', self.device.custom_config.calibrationdata)
-        self.device.custom_config.calibrationdata[index].subscribe = datastream_dict['datastream_str']
-        #self.device.devicedisplaywidget.datastreams[index] = None
+        print('datastream',datastream_dict)
+        self.device.custom_config.calibrationdata[index].datastream = datastream_dict['datastream_address']
         try:
             self.device.devicedisplaywidget.plot_widgets[index].datastream = None
         except:
@@ -1822,7 +1822,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.device.custom_config.calibrationdata[i].sn = sensorname
         #self.device.config['manualsensors']
         self.updateDisplayWidget()
-
 
     def sensorsAddClicked(self):
         funcname = __name__ + '.sensorsAddClicked():'
@@ -1857,7 +1856,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         logger.debug(funcname + 'config {}'.format(self.device.custom_config))
 
-        newsen = ''
+        newsen = RedvyprAddress('')
         if self.sender() == self.sensoradd:
             logger.debug('datastream sensor')
             self.device.add_sensor(newsen,'datastream')
