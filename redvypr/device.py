@@ -1277,7 +1277,7 @@ class RedvyprDevice(QtCore.QObject):
         if local_statistics_only:
             metadata = redvypr.packet_statistic.get_metadata(self.statistics,address,mode=mode)
         else:
-            self.redvypr.get_metadata(self.statistics,address,mode=mode)
+            metadata = self.redvypr.get_metadata(self.statistics,address,mode=mode)
 
         return metadata
 

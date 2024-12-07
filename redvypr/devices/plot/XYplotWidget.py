@@ -158,7 +158,8 @@ class configXYplot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
     type: str = 'XYplot'
     dt_update: float = pydantic.Field(default=0.25,description='Update time of the plot [s]')
-    interactive: typing.Literal['standard', 'rectangle','xlim','ylim'] = pydantic.Field(default='rectangle',description='Interactive modes')
+    interactive: typing.Literal['standard', 'rectangle','xlim','ylim','xlim_keep','ylim_keep'] = pydantic.Field(default='rectangle',description='Interactive modes')
+    data_dialog: typing.Literal['off', 'table'] = pydantic.Field(default='table', description='Option if a data dialog is shown when finished with the interactive mode')
     backgroundcolor: pydColor = pydantic.Field(default=pydColor('lightgray'),description='Backgroundcolor')
     bordercolor: pydColor = pydantic.Field(default=pydColor('lightgray'), description='Bordercolor')
     show_legend: bool = pydantic.Field(default=True, description='Show legend (True) or hide (False)')
@@ -315,7 +316,7 @@ class XYPlotWidget(QtWidgets.QFrame):
 
     """
     closing = QtCore.pyqtSignal()  # Signal notifying that a subscription changed
-
+    interactive_signal = QtCore.pyqtSignal(dict)  # Signal notifying that a subscription changed
     def __init__(self, config=None, redvypr_device=None, add_line=True, loglevel=logging.INFO):
         """
 
@@ -330,7 +331,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.logger = logging.getLogger('XYplot')
         self.logger.setLevel(loglevel)
         self.description = 'XY plot'
-        self._interactive_mode = None
+        self._interactive_mode = ''
         self.x_min = 0
         self.x_max = 0
         if (config == None):  # Create a config from the template
@@ -355,6 +356,14 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.create_widgets()
         self.apply_config()
         self.xAxisLimitsChanged()
+
+    def set_interactive_mode(self, mode):
+        modes = ['standard', 'rectangle', 'xlim', 'ylim', 'xlim_keep', 'ylim_keep']
+        if mode in modes:
+            self.config.interactive = mode
+            self.apply_config()
+        else:
+            raise ValueError('Unknown mode {}, choose between {}'.format(mode,modes))
 
     def create_widgets(self):
 
@@ -537,7 +546,7 @@ class XYPlotWidget(QtWidgets.QFrame):
             #plot.scene().sigMouseClicked.connect(self.mouse_clicked)
             self.interactive_xylim = {}
             self.interactive_xylim['lines'] = []
-            if self.config.interactive.lower() == 'xlim':
+            if 'xlim' in self.config.interactive.lower():
                 self.interactive_xylim['angle'] = 90
             else:
                 self.interactive_xylim['angle'] = 0
@@ -701,10 +710,10 @@ class XYPlotWidget(QtWidgets.QFrame):
         """Function if mouse has been moved
         """
         pos = (evt.x(), evt.y())
-        if self.config.interactive == 'xlim':
+        if 'xlim' in self.config.interactive:
             mousePoint = self.plotWidget.plotItem.vb.mapSceneToView(evt)
             self.vLineMouse.setPos(mousePoint.x())
-        elif self.config.interactive == 'ylim':
+        elif 'ylim' in self.config.interactive:
             mousePoint = self.plotWidget.plotItem.vb.mapSceneToView(evt)
             self.vLineMouse.setPos(mousePoint.y())
         elif self.config.interactive == 'rectangle':
@@ -729,40 +738,63 @@ class XYPlotWidget(QtWidgets.QFrame):
         #print('Clicked: ' + str(event.scenePos()))
         data_user = None
         if 'lim' in self.config.interactive:
+            color = QtGui.QColor(200, 100, 100)
+            linewidth = 2.0
+            pen = pyqtgraph.mkPen(color, width=linewidth)
             if event.button() == QtCore.Qt.MouseButton.LeftButton:
+                nlines = 2
                 vb = self.plotWidget.plotItem.vb
                 # vb = self.plotWidget.vb
                 mouse_point = vb.mapSceneToView(event.scenePos())
                 x, y = mouse_point.x(), mouse_point.y()
                 lines = self.interactive_xylim['lines']
                 angle = self.interactive_xylim['angle']
-                if len(lines) < 2:
-                    color = QtGui.QColor(200, 100, 100)
-                    linewidth = 2.0
-                    pen = pyqtgraph.mkPen(color, width=linewidth)
-                    line = pyqtgraph.InfiniteLine(angle=angle, movable=False, pen=pen)
-                    if self.config.interactive == 'xlim':
-                        line.setPos(x)
-                    else:
-                        line.setPos(y)
-                    self.plotWidget.addItem(line, ignoreBounds=True)
-                    lines.append(line)
-                if len(lines) == 2:
-                    xlim_tmp = [lines[0].getXPos(),lines[1].getXPos()]
+                line = pyqtgraph.InfiniteLine(angle=angle, movable=False, pen=pen)
+                if 'xlim' in self.config.interactive:
+                    line.setPos(x)
+                else:
+                    line.setPos(y)
+                self.plotWidget.addItem(line, ignoreBounds=True)
+                lines.append(line)
+                #if len(lines) < nlines:
+
+                if len(lines) == nlines:
+                    # This works at the moment only for nlines=2, but its a start
+                    xlim_tmp = [lines[0].getXPos(),lines[-1].getXPos()]
                     xlim = [min(xlim_tmp),max(xlim_tmp)]
-                    ylim_tmp = [lines[0].getYPos(), lines[1].getYPos()]
+                    ylim_tmp = [lines[0].getYPos(), lines[-1].getYPos()]
                     ylim = [min(ylim_tmp), max(ylim_tmp)]
-                    if self.config.interactive == 'xlim':
+                    if 'xlim' in self.config.interactive:
                         data_user = self.get_data(xlim=xlim)
                     else:
                         data_user = self.get_data(ylim=ylim)
 
+                    # Create data to be emitted
+                    data_emit = {'xlines': [], 'ylines': []}
+                    for l in lines:
+                        if 'xlim' in self.config.interactive:
+                            data_emit['xlines'].append(l.getXPos())
+                        else:
+                            data_emit['ylines'].append(l.getYPos())
+
+                    # Emit a signal, that all lines are set
+                    self.interactive_signal.emit(data_emit)
                     #print('Data user',data_user)
-                    self.plotWidget.removeItem(lines[0])
-                    self.plotWidget.removeItem(lines[1])
+                    if not('_keep' in self.config.interactive):
+                        for l in lines:
+                            self.plotWidget.removeItem(l)
+
+                        self.interactive_xylim['lines'] = []
+
+                if len(lines) > nlines:
+                    data_emit = {'xlines': [], 'ylines': []}
+                    # Emit a signal, that there are no lines anymore
+                    self.interactive_signal.emit(data_emit)
+                    # Remove all lines and start from scratch
+                    for l in lines:
+                        self.plotWidget.removeItem(l)
+
                     self.interactive_xylim['lines'] = []
-
-
 
         elif self.config.interactive == 'rectangle':
             if event.button() == QtCore.Qt.MouseButton.LeftButton:
@@ -807,9 +839,12 @@ class XYPlotWidget(QtWidgets.QFrame):
 
         # Show the data, if available
         if data_user is not None:
-            # Here it could be decided what to do with the data
-            self._data_table = XYDataViewer(data_user, device=self.device, xyplotwidget=self)
-            self._data_table.show()
+            if self.config.data_dialog == 'table':
+                # Here it could be decided what to do with the data
+                self._data_table = XYDataViewer(data_user, device=self.device, xyplotwidget=self)
+                self._data_table.show()
+            elif self.config.data_dialog == 'off':
+                self.publish_data(data_user)
 
 
     def set_title(self, title):
@@ -1055,8 +1090,6 @@ class XYPlotWidget(QtWidgets.QFrame):
                     #self.clear_buffer(line)
 
                 #
-
-
                 self.logger.debug(funcname + ' Setting the name')
                 try:
                     self.legendWidget.removeItem(line._lineplot)
@@ -1223,6 +1256,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         Gets the data of the buffer in the limits of xlim and/or ylim
         """
         funcname = __name__ + '.get_data():'
+        print(funcname + 'get data',xlim,ylim)
         data = []
         tdata = []
         xdata = []
@@ -1249,6 +1283,9 @@ class XYPlotWidget(QtWidgets.QFrame):
 
             #print('ind',ind_x,ind_y)
             #ind = ind_x & ind_y
+            # check for relative data
+
+
             data_tmp = line.get_data(xlim,ylim)
             tdata_tmp = data_tmp['t']
             xdata_tmp = data_tmp['x']

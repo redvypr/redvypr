@@ -1418,24 +1418,24 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
 
     def get_data(self, t_intervall):
-        # Relative data
-        if (t_intervall[0] <= 0) and (t_intervall[1] <= 0):
-            t_intervall[0] = t_intervall[0] + self.data_buffer_t[-1]
-            t_intervall[1] = t_intervall[1] + self.data_buffer_t[-1]
+        ## Relative data
+        #if (t_intervall[0] <= 0) and (t_intervall[1] <= 0):
+        #    t_intervall[0] = t_intervall[0] + self.data_buffer_t[-1]
+        #    t_intervall[1] = t_intervall[1] + self.data_buffer_t[-1]
 
         ttmp = np.asarray(self.data_buffer_t)
         ind = (ttmp >= min(t_intervall)) & (ttmp <= max(t_intervall))
-        print('ind', ind)
+        #print('ind', ind)
         data = {'t': [], 'x': [], 'y': []}
         if sum(ind) > 0:
             indi = np.where(ind)[0]
-            print('indi', indi)
+            #print('indi', indi)
             for i in indi:
                 data['t'].append(self.data_buffer_t[i])
                 data['x'].append(self.data_buffer_t[i])
                 data['y'].append(self.data_buffer[i])
 
-            print('Shape',np.shape(data['y']))
+            #print('Shape',np.shape(data['y']))
         else:
             pass
 
@@ -2071,12 +2071,15 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.plot_widgets_parent_scroll.setWidgetResizable(True)
         # Add the realtime data
         self.add_plots()
-
         self.addintervall_time = QtWidgets.QDoubleSpinBox()
         self.addintervall_time.setValue(30.0)
         self.addintervall_combo = QtWidgets.QComboBox()
         self.addintervall_combo.addItem('Last x seconds')
         self.addintervall_combo.addItem('Manually')
+        self.addintervall_combo.currentTextChanged.connect(self.get_intervalldatamode_changed)
+        # Set the mode of the XY-Plots correctly
+        self.get_intervalldatamode_changed()
+
         self.addintervall_button = QtWidgets.QPushButton('Add intervall')
         self.addintervall_button.clicked.connect(self.get_intervalldata)
 
@@ -2338,7 +2341,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     flag_new_plot_widget = True
 
                 print('same_plotwidgettype',realtimeplottype, same_plotwidgettype,flag_new_plot_widget)
-                # Check if the plitwidgettype changed
+                # Check if the plotwidgettype changed
                 if (same_plotwidgettype == False) and (flag_new_plot_widget == False):
                     print('Changing plotwidget')
                     try:
@@ -2355,10 +2358,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     #self.datastreams.append(None)
                     #plot_widget = plot_widgets.redvypr_graph_widget(config=config)
                     if 'XY' in sdata.realtimeplottype:
-                        print('Adding XYplotwidget')
-                        config = XYplotWidget.configXYplot()
+                        print('Adding XYplotwidget with address {}'.format(sdata.datastream))
+                        configLine = XYplotWidget.configLine(y_addr=sdata.datastream)
+                        config = XYplotWidget.configXYplot(interactive='xlim_keep',data_dialog='off',lines=[configLine])
                         plot_widget = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
-                        #plot_widget.plotWidget.scene().sigMouseMoved.connect(self.anyMouseMoved)
+                        plot_widget.plotWidget.scene().sigMouseMoved.connect(self.anyMouseMoved)
+                        plot_widget.interactive_signal.connect(self.xyplot_interactive_signal)
                         #plot_widget.plotWidget.scene().sigMouseClicked.connect(self.anyMouseClicked)
                         plot_widget.vlines = []  # List of vertical lines
                         plot_widget.vlines_xpos = []  # List of vertical lines
@@ -2405,6 +2410,64 @@ class displayDeviceWidget(QtWidgets.QWidget):
         except:
             self.device.custom_config.name_ref_sensor = ''
 
+        self.plot_widgets = []
+        layout = self.plot_widgets_parent_layout
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+
+            # Prüfen, ob das Item ein Widget ist
+            widget = item.widget()
+            if widget:
+                self.plot_widgets.append(widget)
+
+    def xyplot_interactive_signal(self, data_interactive):
+        funcname = __name__ + '.xyplot_interactive_signal():'
+        logger.debug(funcname)
+        sender = self.sender()
+        print('Got data',data_interactive)
+        xpos = data_interactive['xlines']
+        try:
+            self.__interactive_lines
+        except:
+            self.__interactive_lines = []
+
+        if len(xpos) == 0:  # Set the position everywhere
+            self.__t_intervall_interactive = None
+            print('Removing lines')
+            for l in self.__interactive_lines:
+                l['plotwidget'].plotWidget.removeItem(l['line'])
+
+            self.__interactive_lines = []
+        elif len(xpos) == 2: # Set the position everywhere
+            self.__t_intervall_interactive = xpos
+            for p in self.plot_widgets:
+                # print('Moveit',type(p),type(XYplotWidget),isinstance(p,type(XYplotWidget)))
+                if isinstance(p, XYplotWidget.XYPlotWidget):
+                    if sender == p.plotWidget.scene():
+                        pass
+                    else:
+                        print('Adding line')
+                        for i in range(2):
+                            # Add lines to the graphs
+                            angle = 90
+                            color = QtGui.QColor(200, 100, 100)
+                            linewidth = 2.0
+                            pen = pyqtgraph.mkPen(color, width=linewidth)
+                            line = pyqtgraph.InfiniteLine(angle=angle, movable=False, pen=pen)
+                            line.setPos(xpos[i])
+                            p.plotWidget.addItem(line, ignoreBounds=True)
+                            self.__interactive_lines.append({'plotwidget':p,'line':line})
+
+    def get_intervalldatamode_changed(self):
+        mode = self.addintervall_combo.currentText()
+        print('Mode',mode)
+        for p in self.plot_widgets:
+            # print('Moveit',type(p),type(XYplotWidget),isinstance(p,type(XYplotWidget)))
+            if isinstance(p, XYplotWidget.XYPlotWidget):
+                if 'manually' in mode.lower():
+                    p.set_interactive_mode('xlim_keep')
+                else:
+                    p.set_interactive_mode('standard')
     def get_intervalldata(self):
         """
         Gets data and updates the datatable
@@ -2414,49 +2477,47 @@ class displayDeviceWidget(QtWidgets.QWidget):
         tget = time.time() # The time the data was added
         timeintervaltype = self.addintervall_combo.currentText()
         if 'last' in timeintervaltype.lower():
-            #t1 = time.time()
-            #t0 = t1 - self.addintervall_time.value()
-            t1 = 0
+            t1 = time.time()
             t0 = t1 - self.addintervall_time.value()
-            dt = t1 - t0
+            #t1 = 0
+            #t0 = t1 - self.addintervall_time.value()
             t_intervall = [t0, t1]
+            dt = t1 - t0
             print('Getting time in interval {} {} {}'.format(t1,t0,dt))
         else:
-            print('Getting manual time interval')
-            t_intervall = None
-            for i, plot_widget in enumerate(self.plot_widgets):
-                if len(plot_widget.vlines) == 2:  # If we have two vertical linex, enough to define an interval
-                    print('Getting data', plot_widget.vlines_xpos)
-                    t_intervall = [min(plot_widget.vlines_xpos), max(plot_widget.vlines_xpos)]
+            try:
+                t_intervall = self.__t_intervall_interactive
+            except:
+                t_intervall = None
+            print('Getting manual time interval',t_intervall)
+        if t_intervall is not None:
+            for i, caldata in enumerate(self.device.custom_config.calibrationdata):
+                plot_widget = caldata.__plot_widget
+                #sensor_data_tmp = self.device.custom_config.calibrationdata[plot_widget.sensorindex]
+                #print('a',sensor_data_tmp)
+                #print('b',sensor_data_tmp.realtimeplot)
 
-        # for i, plot_widget in enumerate(self.plot_widgets):
-        for i, caldata in enumerate(self.device.custom_config.calibrationdata):
-            plot_widget = caldata.__plot_widget
-            #sensor_data_tmp = self.device.custom_config.calibrationdata[plot_widget.sensorindex]
-            #print('a',sensor_data_tmp)
-            #print('b',sensor_data_tmp.realtimeplot)
-            if True:
-                if t_intervall is not None:
-                    data = plot_widget.get_data(t_intervall)
-                    if isinstance(plot_widget, XYplotWidget.XYPlotWidget):
-                        data = data[0]
-                    #print('Got data from widget', data)
-                    col = plot_widget.datatablecolumn
-                    if len(data['y']) > 0:
-                        rawdata_all = data['y'] #.tolist()
-                        timedata_all = data['t']#.tolist()
-                        # Average the data and convert it to standard python types
-                        ydata = np.mean(rawdata_all,0).tolist() # Convert to list
-                        tdata = float(np.mean(data['t'], 0))
-                        #if len(ydata) == 1:
-                        #    ydata = float(ydata)
+                data = plot_widget.get_data(t_intervall)
+                print('Data',data)
+                if isinstance(plot_widget, XYplotWidget.XYPlotWidget):
+                    data = data['lines'][0]
+                #print('Got data from widget', data)
+                col = plot_widget.datatablecolumn
+                if len(data['y']) > 0:
+                    rawdata_all = data['y'] #.tolist()
+                    timedata_all = data['t']#.tolist()
+                    # Average the data and convert it to standard python types
+                    ydata = np.mean(rawdata_all,0).tolist() # Convert to list
+                    tdata = float(np.mean(data['t'], 0))
+                    #if len(ydata) == 1:
+                    #    ydata = float(ydata)
 
-                        tdatetime = datetime.datetime.utcfromtimestamp(tdata)
-                        tdatas = tdatetime.strftime('%d-%m-%Y %H:%M:%S.%f')
-                        # Add the data to the dictionary
-                        #print('Averaged data',ydata)
-                        #def add_data(self, time, sensorindex, sentype, data, time_data, rawdata, time_rawdata):
-                        self.device.add_data(tget,plot_widget.sensorindex,ydata,tdata,rawdata_all,timedata_all)
+                    tdatetime = datetime.datetime.utcfromtimestamp(tdata)
+                    tdatas = tdatetime.strftime('%d-%m-%Y %H:%M:%S.%f')
+                    # Add the data to the dictionary
+                    #print('Averaged data',ydata)
+                    #def add_data(self, time, sensorindex, sentype, data, time_data, rawdata, time_rawdata):
+                    self.device.add_data(tget,plot_widget.sensorindex,ydata,tdata,rawdata_all,timedata_all)
 
 
         print('get intervalldata time', self.device.custom_config.calibrationdata_time)
@@ -2636,10 +2697,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
         mousePoint = sender.parent().plotItem.vb.mapSceneToView(evt)
         #mousePoint = sender.plotItem.vb.mapSceneToView(evt)
         for p in self.plot_widgets:
-            if sender == p.plotWidget.scene():
-                pass
-            else:
-                p.vLineMouse.setPos(mousePoint.x())
+            #print('Moveit',type(p),type(XYplotWidget),isinstance(p,type(XYplotWidget)))
+            if isinstance(p,XYplotWidget.XYPlotWidget):
+                if sender == p.plotWidget.scene():
+                    pass
+                else:
+                    p.vLineMouse.setPos(mousePoint.x())
 
 
     def anyMouseClicked(self, evt):
