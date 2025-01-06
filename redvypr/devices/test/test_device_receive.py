@@ -8,7 +8,7 @@ The most simple test device
 import datetime
 import logging
 import queue
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 import time
 import numpy as np
 import logging

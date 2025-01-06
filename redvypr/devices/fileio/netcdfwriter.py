@@ -7,7 +7,7 @@ Logger that writes xlsx files
 import datetime
 import logging
 import numpy
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 import time
 import logging
 import sys

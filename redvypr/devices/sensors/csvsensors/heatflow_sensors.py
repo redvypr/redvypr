@@ -4,13 +4,13 @@ import numpy
 import logging
 import sys
 import zoneinfo
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 import pydantic
 import typing
 from redvypr.devices.plot import XYplotWidget
 from redvypr.devices.plot import plot_widgets
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.devices.sensors.calibration.calibration_models import calibration_HF, calibration_NTC
+from redvypr.devices.sensors.calibration.calibration_models import CalibrationHeatFlow, CalibrationNTC
 import redvypr.gui as gui
 from .sensorWidgets import sensorCoeffWidget, sensorConfigWidget
 
@@ -21,10 +21,10 @@ logger.setLevel(logging.DEBUG)
 
 
 class parameter_DHFS50(pydantic.BaseModel):
-    HF: calibration_HF = calibration_HF(parameter='HF')
-    NTC0: calibration_NTC = calibration_NTC(parameter='NTC0')
-    NTC1: calibration_NTC = calibration_NTC(parameter='NTC1')
-    NTC2: calibration_NTC = calibration_NTC(parameter='NTC2')
+    HF: CalibrationHeatFlow = CalibrationHeatFlow(parameter='HF')
+    NTC0: CalibrationNTC = CalibrationNTC(parameter='NTC0')
+    NTC1: CalibrationNTC = CalibrationNTC(parameter='NTC1')
+    NTC2: CalibrationNTC = CalibrationNTC(parameter='NTC2')
 
 class sensor_DHFS50(pydantic.BaseModel):
     description: str = 'Digital heat flow sensor DHFS50'
@@ -40,10 +40,10 @@ class sensor_DHFS50(pydantic.BaseModel):
     show_convdata: bool = pydantic.Field(default=True, description='Show the converted data in the gui')
 
 class channels_HFV4CH(pydantic.BaseModel):
-    C0: calibration_HF = calibration_HF(parameter='C0')
-    C1: calibration_HF = calibration_HF(parameter='C1')
-    C2: calibration_HF = calibration_HF(parameter='C2')
-    C3: calibration_HF = calibration_HF(parameter='C3')
+    C0: CalibrationHeatFlow = CalibrationHeatFlow(parameter='C0')
+    C1: CalibrationHeatFlow = CalibrationHeatFlow(parameter='C1')
+    C2: CalibrationHeatFlow = CalibrationHeatFlow(parameter='C2')
+    C3: CalibrationHeatFlow = CalibrationHeatFlow(parameter='C3')
 
 class logger_HFV4CH(pydantic.BaseModel):
     description: str = '4 Channel voltage logger'

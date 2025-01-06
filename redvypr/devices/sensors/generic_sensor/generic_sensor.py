@@ -16,7 +16,7 @@ import struct
 import time
 import datetime
 import numbers
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 import qtawesome
 from redvypr.data_packets import check_for_command
 from  redvypr.data_packets import create_datadict as redvypr_create_datadict
@@ -27,7 +27,7 @@ import redvypr.files as redvypr_files
 import redvypr.widgets.standard_device_widgets
 from redvypr.devices.plot.XYplotWidget import XYPlotWidget, configXYplot
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, datastreamMetadataWidget
-from redvypr.devices.sensors.calibration.calibration_models import calibration_models, calibration_NTC
+from redvypr.devices.sensors.calibration.calibration_models import calibration_models, CalibrationNTC
 from redvypr.devices.sensors.csvsensors.sensorWidgets import sensorCoeffWidget, sensorConfigWidget
 from redvypr.gui import iconnames
 from .sensor_definitions import Sensor, BinarySensor, predefined_sensors

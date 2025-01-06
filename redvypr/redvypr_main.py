@@ -3,7 +3,7 @@ import os
 import re
 import logging
 import sys
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 import multiprocessing
 import argparse
 import signal

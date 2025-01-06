@@ -8,7 +8,7 @@ import queue
 import sys
 import yaml
 import pkg_resources
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 import inspect
 import threading
 import multiprocessing

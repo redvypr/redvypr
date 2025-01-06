@@ -7,8 +7,8 @@ import pydantic
 import typing
 import sys
 import logging
-from PyQt5 import QtWidgets, QtCore, QtGui
-from redvypr.devices.sensors.calibration.calibration_models import calibration_NTC
+from PyQt6 import QtWidgets, QtCore, QtGui
+from redvypr.devices.sensors.calibration.calibration_models import CalibrationNTC
 from .average_data import average_data
 from .sensorWidgets import sensorCoeffWidget
 
@@ -20,7 +20,7 @@ avg_objs_TAR_raw = {}  # Average dataobjects
 
 
 class parameter_TAR(pydantic.BaseModel):
-    NTC_A: typing.Optional[typing.List[calibration_NTC]] = pydantic.Field(default=[])
+    NTC_A: typing.Optional[typing.List[CalibrationNTC]] = pydantic.Field(default=[])
     name: typing.Optional[typing.List[str]] = pydantic.Field(default=[],description='Name of the parameter')
     pos_x: typing.Optional[typing.List[float]] = pydantic.Field(default=[])
     pos_y: typing.Optional[typing.List[float]] = pydantic.Field(default=[])
@@ -64,7 +64,7 @@ class sensor_TAR(pydantic.BaseModel):
                 ntc_coeff = [1.9560290742146262e-07, -7.749325133113135e-08, 0.00025341112950681254,
                              0.0012350747622505245]
                 coeff_comment = 'Standard coefficients, not calibration'
-                NTCcal = calibration_NTC(parameter=parameter_name, coeff=ntc_coeff, comment=coeff_comment, sn=self.sn)
+                NTCcal = CalibrationNTC(parameter=parameter_name, coeff=ntc_coeff, comment=coeff_comment, sn=self.sn)
                 self.parameter.NTC_A.append(NTCcal)
                 self.parameter.pos_x.append(pos_x)
                 self.parameter.name.append(NTC_name)

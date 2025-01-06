@@ -1,4 +1,4 @@
-from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt6 import QtWidgets, QtGui, QtCore
 import logging
 import sys
 from redvypr.redvypr_address import RedvyprAddress

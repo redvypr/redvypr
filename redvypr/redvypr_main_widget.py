@@ -7,7 +7,7 @@ import logging
 import queue
 import sys
 import yaml
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 import qtawesome
 import inspect
 import uuid
@@ -32,6 +32,68 @@ logger.setLevel(logging.INFO)
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
+
+class RedvyprSaveFileDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None,default_file="",default_name_filters=("YAML Files (*.yaml)", "All Files (*)")):
+        super().__init__(parent)
+
+        self.setWindowTitle("Speichern unter")
+        self.resize(600, 400)
+
+        # Hauptlayout für den Dialog
+        main_layout = QtWidgets.QVBoxLayout(self)
+
+        # QFileDialog einbetten
+        self.file_dialog = QtWidgets.QFileDialog(self)
+        self.file_dialog.setAcceptMode(QtWidgets.QFileDialog.AcceptMode.AcceptSave)
+        self.file_dialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
+        self.file_dialog.selectFile(default_file)
+        self.file_dialog.setNameFilters(default_name_filters)
+        self.file_dialog.setDefaultSuffix("yaml")
+        # WICHTIG: Verhindere den nativen Dialog
+        self.file_dialog.setOption(QtWidgets.QFileDialog.Option.DontUseNativeDialog, True)
+
+        # Benutzerdefiniertes Widget hinzufügen
+        self.custom_widget = QtWidgets.QWidget(self)
+        custom_layout = QtWidgets.QGridLayout(self.custom_widget)
+
+        # Label, Textfeld und Checkbox
+        self.label = QtWidgets.QLabel("Device options", self)
+        self.custom_checkbox = QtWidgets.QCheckBox("Autostart", self)
+        self.loglevel_combobox = QtWidgets.QComboBox(self)
+        self.loglevel_combobox.addItem('INFO')
+        self.loglevel_combobox.addItem('DEBUG')
+        self.loglevel_combobox.addItem('WARNING')
+
+        custom_layout.addWidget(self.label,0,0)
+        custom_layout.addWidget(self.custom_checkbox,1,0)
+        custom_layout.addWidget(self.loglevel_combobox,1,1)
+        custom_layout.addWidget(QtWidgets.QLabel('Debug level'),1,2)
+
+        self.file_dialog.setWindowFlags(self.file_dialog.windowFlags() & ~QtCore.Qt.Dialog)
+        main_layout.addWidget(self.custom_widget)
+        main_layout.addWidget(self.file_dialog)
+
+        self.file_dialog.accepted.connect(self.on_save_clicked)
+        self.file_dialog.rejected.connect(self.on_cancel_clicked)
+
+    def on_save_clicked(self):
+        """Benutzer klickt auf 'Speichern'."""
+        print("Speichern-Button geklickt")
+        self.accept()
+
+    def on_cancel_clicked(self):
+        """Benutzer klickt auf 'Abbrechen'."""
+        print("Abbrechen-Button geklickt")
+        self.reject()
+
+    def selectedFiles(self):
+        """Rückgabe der vom Benutzer gewählten Datei."""
+        return self.file_dialog.selectedFiles()[0] if self.file_dialog.selectedFiles() else ""
+
+    def get_custom_option(self):
+        """Rückgabe der zusätzlichen Optionen."""
+        return {'autostart':self.custom_checkbox.isChecked(),'loglevel':self.loglevel_combobox.currentText()}
 
 
 class TabGroupButton(QtWidgets.QPushButton):
@@ -164,8 +226,8 @@ class redvyprWidget(QtWidgets.QWidget):
         button = QtWidgets.QPushButton("G G G")
         button.setFixedSize(100, 30)  #
         menu = QtWidgets.QMenu()
-        action1 = QtWidgets.QAction("Option 1", self)
-        action2 = QtWidgets.QAction("Option 2", self)
+        action1 = QtGui.QAction("Option 1", self)
+        action2 = QtGui.QAction("Option 2", self)
         menu.addAction(action1)
         menu.addAction(action2)
         button.setMenu(menu)
@@ -295,10 +357,18 @@ class redvyprWidget(QtWidgets.QWidget):
             tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
             fname_suggestion = 'config_' + self.redvypr.hostinfo['hostname'] + '_' + tstr + '.yaml'
 
-            fname_full, _ = QtWidgets.QFileDialog.getSaveFileName(self, "QFileDialog.getSaveFileName()",
-                                                                  fname_suggestion,
-                                                                  "Yaml Files (*.yaml);;All Files (*)")
-            #print('fname',fname_full)
+
+            dialog = RedvyprSaveFileDialog(self,default_file=fname_suggestion)
+            if dialog.exec():
+                fname_full = dialog.selectedFiles()
+                options = dialog.get_custom_option()
+                print('Options',options)
+                print('data save',data_save)
+                data_save['loglevel'] = options['loglevel']
+                for d in data_save['devices']:
+                    d['base_config']['autostart'] = options['autostart']
+                    d['base_config']['loglevel'] = options['loglevel']
+
             if fname_full:
                 logger.debug('Saving to file {:s}'.format(fname_full))
                 with open(fname_full, 'w') as fyaml:
@@ -960,38 +1030,38 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
                                             redvypr_device_scan=redvypr_device_scan,
                                             loglevel=loglevel)
         self.setCentralWidget(self.redvypr_widget)
-        quitAction = QtWidgets.QAction("&Quit", self)
+        quitAction = QtGui.QAction("&Quit", self)
         quitAction.setShortcut("Ctrl+Q")
         quitAction.setStatusTip('Close the program')
         quitAction.triggered.connect(self.close_application)
 
-        loadcfgAction = QtWidgets.QAction("&Load", self)
+        loadcfgAction = QtGui.QAction("&Load", self)
         loadcfgAction.setShortcut("Ctrl+O")
         loadcfgAction.setStatusTip('Load a configuration file')
         loadcfgAction.triggered.connect(self.load_config)
 
-        savecfgAction = QtWidgets.QAction("&Save", self)
+        savecfgAction = QtGui.QAction("&Save", self)
         savecfgAction.setShortcut("Ctrl+S")
         savecfgAction.setStatusTip('Saves a configuration file')
         savecfgAction.triggered.connect(self.save_config)
 
-        pathAction = QtWidgets.QAction("&Devicepath", self)
+        pathAction = QtGui.QAction("&Devicepath", self)
         pathAction.setShortcut("Ctrl+L")
         pathAction.setStatusTip('Edit the device path')
         pathAction.triggered.connect(self.redvypr_widget.show_devicepathwidget)
 
-        deviceAction = QtWidgets.QAction("&Add device", self)
+        deviceAction = QtGui.QAction("&Add device", self)
         deviceAction.setShortcut("Ctrl+A")
         deviceAction.setStatusTip('Add a device')
         deviceAction.triggered.connect(self.open_add_device_widget)
 
-        devcurAction = QtWidgets.QAction("&Go to home tab", self)
+        devcurAction = QtGui.QAction("&Go to home tab", self)
         devcurAction.setShortcut("Ctrl+H")
         devcurAction.setStatusTip('Go to the home tab')
         devcurAction.triggered.connect(self.goto_home_tab)
 
         # TODO rename to subscribe
-        conAction = QtWidgets.QAction("&Connect devices", self)
+        conAction = QtGui.QAction("&Connect devices", self)
         conAction.setShortcut("Ctrl+C")
         conAction.setStatusTip('Connect the input/output datastreams of the devices')
         conAction.triggered.connect(self.connect_device_gui)
@@ -1012,20 +1082,20 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
 
         # Help and About menu
         toolMenu = mainMenu.addMenu('&Tools')
-        #toolAction = QtWidgets.QAction("&Choose Datastreams ", self)
+        #toolAction = QtGui.QAction("&Choose Datastreams ", self)
         #toolAction.setStatusTip('Opens a window to choose datastreams from the available devices')
         #toolAction.triggered.connect(self.show_deviceselect)
-        consoleAction = QtWidgets.QAction("&Open console", self)
+        consoleAction = QtGui.QAction("&Open console", self)
         consoleAction.triggered.connect(self.open_console)
         consoleAction.setShortcut("Ctrl+N")
-        #IPAction = QtWidgets.QAction("&Network interfaces", self)
+        #IPAction = QtGui.QAction("&Network interfaces", self)
         #IPAction.triggered.connect(self.open_ipwidget)
         #toolMenu.addAction(toolAction)
         #toolMenu.addAction(IPAction)
         toolMenu.addAction(consoleAction)
 
         # Help and About menu
-        helpAction = QtWidgets.QAction("&About", self)
+        helpAction = QtGui.QAction("&About", self)
         helpAction.setStatusTip('Information about the software version')
         helpAction.triggered.connect(self.about)
 

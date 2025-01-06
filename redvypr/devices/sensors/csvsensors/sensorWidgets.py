@@ -11,7 +11,7 @@ import typing
 import pydantic
 import numpy
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 import redvypr.gui as gui
 from pathlib import Path
 

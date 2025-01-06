@@ -10,7 +10,7 @@ import typing
 import pyqtgraph
 import pydantic
 import numpy
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 
 import redvypr
 from redvypr.device import RedvyprDevice, device_start_standard

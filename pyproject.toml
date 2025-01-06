@@ -11,7 +11,7 @@ authors = [
 license = {text = "GPLv03"}
 dependencies = ['pyaml',
 	     'pyqtgraph',
-	     'PyQt5',
+	     'PyQt6',
 	     'setuptools',
 	     'netCDF4',
 	     'pyqtconsole',

@@ -4,7 +4,7 @@ import os.path
 import zoneinfo
 import logging
 import queue
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 import time
 import numpy as np
 import logging
@@ -28,7 +28,7 @@ from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from redvypr.gui import datastreamWidget
 from redvypr.devices.plot import XYplotWidget
 from redvypr.devices.plot import plot_widgets
-from .calibration_models import calibration_HF, calibration_NTC, calibration_poly
+from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('autocalibration')

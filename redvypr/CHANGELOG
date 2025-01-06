@@ -1,3 +1,5 @@
+- 0.9.11:
+       - moved to PyQt6
 - 0.9.10:
        - several small feature in XYPlotWidget
        - bug fixes calibration to work again

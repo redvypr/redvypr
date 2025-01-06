@@ -13,8 +13,8 @@ import copy
 import logging
 from redvypr.data_packets import create_datadict as redvypr_create_datadict, add_metadata2datapacket, Datapacket
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.devices.sensors.calibration.calibration_models import calibration_HF, calibration_NTC, calibration_const, \
-    calibration_poly
+from redvypr.devices.sensors.calibration.calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationLinearFactor, \
+    CalibrationPoly
 
 
 logging.basicConfig(stream=sys.stderr)
@@ -37,7 +37,7 @@ class Sensor(pydantic.BaseModel):
     sensortype: typing.Literal['sensor'] = pydantic.Field(default='sensor')
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress('*'))
     autofindcalibration: bool = pydantic.Field(default=True, description='Tries to find automatically calibrations for the sensor')
-    calibrations: typing.Dict[str, typing.Annotated[typing.Union[calibration_const, calibration_poly], pydantic.Field(
+    calibrations: typing.Dict[str, typing.Annotated[typing.Union[CalibrationLinearFactor, CalibrationPoly], pydantic.Field(
         discriminator='calibration_type')]] = pydantic.Field(default={})
 
     def add_calibration_for_datapacket(self, packetaddress=RedvyprAddress('/i:*'), addrformat='/i',calibration=None):
@@ -101,7 +101,7 @@ class Sensor(pydantic.BaseModel):
             if flag_parameter:
                 logger.debug(funcname+ 'Adding calibration')
                 calibration_apply = calibration.model_copy()
-                calibration_apply.address_apply = calibration_apply.parameter
+                calibration_apply.parameter_apply = calibration_apply.parameter
                 #calibration_apply.datakey_result = 'test1'
                 self.add_calibration_for_datapacket(rdata.address,calibration=calibration_apply)
 
@@ -207,7 +207,7 @@ class BinarySensor(Sensor):
     #packetid_format: typing.Union[float,str, None] = pydantic.Field(default=3.0,
     #                                                       description='Format of the packetid of the datapacket')
     datakey_metadata: typing.Dict[str, typing.Dict] = pydantic.Field(default={})
-    calibrations_raw: typing.Dict[str, typing.Annotated[typing.Union[calibration_const, calibration_poly], pydantic.Field(
+    calibrations_raw: typing.Dict[str, typing.Annotated[typing.Union[CalibrationLinearFactor, CalibrationPoly], pydantic.Field(
         discriminator='calibration_type')]] = pydantic.Field(default={})
 
     calibration_python_str: typing.Optional[dict] = pydantic.Field(default=None, description='A python str that is evaluated and processes the raw data')
@@ -430,10 +430,10 @@ s4l_binary_format = {'counter32': '<L','adc16':'<h'}
 Vref = 3.0 # Reference voltage in V
 coeff_fac = Vref/2**15
 coeff_fac_counter = 1/1024
-calibration_adc16 = calibration_const(parameter_result='adc(V)',coeff=coeff_fac,
-                                      unit='V',unit_input='counts')
-calibration_counter32 = calibration_const(parameter_result='counter(s)',coeff=coeff_fac_counter,
-                                      unit='s',unit_input='counts')
+calibration_adc16 = CalibrationLinearFactor(parameter_result='adc(V)', coeff=coeff_fac,
+                                            unit='V', unit_input='counts')
+calibration_counter32 = CalibrationLinearFactor(parameter_result='counter(s)', coeff=coeff_fac_counter,
+                                                unit='s', unit_input='counts')
 calibrations_raw = {'adc16':calibration_adc16,'counter32':calibration_counter32}
 S4LB = BinarySensor(name='S4LB', regex_split=s4l_split, binary_format=s4l_binary_format,
                     datastream=RedvyprAddress('/k:data'),

@@ -4,7 +4,7 @@ import os.path
 import zoneinfo
 import logging
 import queue
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 import time
 import numpy as np
 import logging
@@ -28,7 +28,7 @@ from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from redvypr.gui import datastreamWidget
 from redvypr.devices.plot import XYplotWidget
 from redvypr.devices.plot import plot_widgets
-from .calibration_models import calibration_HF, calibration_NTC, calibration_poly
+from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly
 from .autocalibration import  AutoCalEntry, AutoCalConfig, autocalWidget
 
 _logo_file = redvypr_files.logo_file
@@ -367,7 +367,7 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
     def calc_poly_coeff(self, parameter, sdata, tdatetime, caldata, refdata, degree):
         funcname = __name__ + '.calc_poly_coeff():'
         logger.debug(funcname)
-        cal_poly = calibration_poly(parameter = parameter, sn = sdata.sn, sensor_model = sdata.sensor_model)
+        cal_poly = CalibrationPoly(parameter = parameter, sn = sdata.sn, sensor_model = sdata.sensor_model)
         #cal_poly.parameter = sdata.parameter
         #cal_poly.sn = sdata.sn
         #cal_poly.sensor_model = sdata.sensor_model
@@ -415,7 +415,7 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
             degree = self.device.custom_config.calibrationtype_extra['poly_degree']
             for i, sdata in enumerate(self.device.custom_config.calibrationdata):
                 if i == refindex:
-                    cal_POLY = calibration_poly()
+                    cal_POLY = CalibrationPoly()
                     cal_POLY.parameter = sdata.parameter
                     cal_POLY.sn = sdata.sn
                     cal_POLY.date = tdatas
@@ -735,7 +735,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         self.update_coefftable_ntc()
 
     def calc_ntc_coeff(self, parameter, sdata, tdatetime, caldata, refdata):
-        cal_NTC = calibration_NTC(parameter = parameter, sn = sdata.sn, sensor_model = sdata.sensor_model, calibration_uuid=self.device.custom_config.calibration_uuid)
+        cal_NTC = CalibrationNTC(parameter = parameter, sn = sdata.sn, sensor_model = sdata.sensor_model, calibration_uuid=self.device.custom_config.calibration_uuid)
         #cal_NTC.parameter = sdata.parameter
         #cal_NTC.sn = sdata.sn
         #cal_NTC.sensor_model = sdata.sensor_model
@@ -787,7 +787,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
             calibrations = []
             for i, sdata in enumerate(self.device.custom_config.calibrationdata):
                 if i == refindex:
-                    cal_NTC = calibration_NTC()
+                    cal_NTC = CalibrationNTC()
                     cal_NTC.parameter = sdata.parameter
                     cal_NTC.sn = sdata.sn
                     cal_NTC.date = tdatas
@@ -1334,13 +1334,13 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
             calibrations = []
             for i,sdata in enumerate(self.device.custom_config.calibrationdata):
                 if i == refindex:
-                    cal_HF = calibration_HF(calibration_id=self.device.custom_config.calibration_id,calibration_comment=self.device.custom_config.calibration_comment, calibration_uuid=self.device.custom_config.calibration_uuid)
+                    cal_HF = CalibrationHeatFlow(calibration_id=self.device.custom_config.calibration_id, calibration_comment=self.device.custom_config.calibration_comment, calibration_uuid=self.device.custom_config.calibration_uuid)
                     cal_HF.sn = sdata.sn
                     cal_HF.date = tdatas
                     cal_HF.comment = 'reference sensor'
                     calibrations.append(cal_HF)
                 else:
-                    cal_HF = calibration_HF(calibration_id=self.device.custom_config.calibration_id,calibration_comment=self.device.custom_config.calibration_comment, calibration_uuid=self.device.custom_config.calibration_uuid)
+                    cal_HF = CalibrationHeatFlow(calibration_id=self.device.custom_config.calibration_id, calibration_comment=self.device.custom_config.calibration_comment, calibration_uuid=self.device.custom_config.calibration_uuid)
                     cal_HF.sn = sdata.sn
                     cal_HF.date = tdatas
                     cal_HF.sensor_model = sdata.sensor_model

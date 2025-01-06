@@ -3,7 +3,7 @@ import time
 import logging
 import sys
 import yaml
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 import pydantic
 from pydantic.color import Color as pydColor
 import typing

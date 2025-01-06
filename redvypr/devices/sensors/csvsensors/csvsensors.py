@@ -15,7 +15,7 @@ import yaml
 import json
 import typing
 import pydantic
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 #from redvypr.packet_statistics import get_keys_from_data
@@ -27,7 +27,7 @@ from redvypr.redvypr_address import RedvyprAddress
 from redvypr.devices.plot import plot_widgets
 from redvypr.devices.plot import XYplotWidget
 import redvypr.files as redvypr_files
-from redvypr.devices.sensors.calibration.calibration_models import calibration_HF, calibration_NTC, get_date_from_calibration
+from redvypr.devices.sensors.calibration.calibration_models import CalibrationHeatFlow, CalibrationNTC, get_date_from_calibration
 from .heatflow_sensors import parse_HFV_raw, process_IMU_packet, process_HFS_data, process_HF_data, DHFSWidget, HFVWidget, HFVWidget_config, sensor_DHFS50, logger_HFV4CH
 from .temperature_array_sensors import process_TAR_data, sensor_TAR, TARWidget, TARWidget_config
 from .sensorWidgets import sensorCoeffWidget, sensorConfigWidget
@@ -51,7 +51,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
 
 class DeviceCustomConfig(pydantic.BaseModel):
     sensorconfigurations: typing.Dict[str,typing.Annotated[typing.Union[sensor_DHFS50,logger_HFV4CH, sensor_TAR], pydantic.Field(discriminator='sensor_type')]] = pydantic.Field(default={},description='Configuration of sensors, keys are their serial numbers')
-    calibrations: typing.List[typing.Annotated[typing.Union[calibration_NTC, calibration_HF], pydantic.Field(discriminator='calibration_type')]] = pydantic.Field(default=[], description = 'List of sensor calibrations')
+    calibrations: typing.List[typing.Annotated[typing.Union[CalibrationNTC, CalibrationHeatFlow], pydantic.Field(discriminator='calibration_type')]] = pydantic.Field(default=[], description ='List of sensor calibrations')
     calibration_files: list = pydantic.Field(default=[])
     datakeys: list =  pydantic.Field(default = ['data'], description = 'The datakeys to be looked for csv data')
 
@@ -309,7 +309,7 @@ class Device(RedvyprDevice):
             self.custom_config.calibrations[0]
         except:
             logger.debug(funcname + ' Will add <no sensor>')
-            nosensor = calibration_HF()
+            nosensor = CalibrationHeatFlow()
             nosensor.sn = self.nosensorname
             #print('nosensorconfig',nosensorconfig)
             self.custom_config.calibrations.append(nosensor)
@@ -594,7 +594,7 @@ class Device(RedvyprDevice):
             # print('data',data)
             if 'structure_version' in data.keys(): # Calibration model
                 logger.debug(funcname + ' Version {} pydantic calibration model dump'.format(data['structure_version']))
-                calmodels = [calibration_HF, calibration_NTC]
+                calmodels = [CalibrationHeatFlow, CalibrationNTC]
                 for calmodel in calmodels:
                     try:
                         calibration = calmodel.model_validate(data)
@@ -629,7 +629,7 @@ class Device(RedvyprDevice):
                 if len(sn) ==0:
                     logger.debug(funcname + ' No serial number')
                 else:
-                    calibration = calibration_HF(sn=sn,coeff=data['calibration_HF_SI'],date=data['calibration_date'],sensor_model = data['series'])
+                    calibration = CalibrationHeatFlow(sn=sn, coeff=data['calibration_HF_SI'], date=data['calibration_date'], sensor_model = data['series'])
                     #sn:
                     #    "9299":
                     #    model: F - 005 - 4

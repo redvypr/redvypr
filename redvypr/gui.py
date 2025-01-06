@@ -5,7 +5,7 @@ import yaml
 import datetime
 import qtawesome
 from pydantic.color import Color as pydColor
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.widgets.redvyprSubscribeWidget import redvyprSubscribeWidget
 #from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget,
