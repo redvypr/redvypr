@@ -356,14 +356,10 @@ class redvyprWidget(QtWidgets.QWidget):
         if True:
             tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
             fname_suggestion = 'config_' + self.redvypr.hostinfo['hostname'] + '_' + tstr + '.yaml'
-
-
             dialog = RedvyprSaveFileDialog(self,default_file=fname_suggestion)
             if dialog.exec():
                 fname_full = dialog.selectedFiles()
                 options = dialog.get_custom_option()
-                print('Options',options)
-                print('data save',data_save)
                 data_save['loglevel'] = options['loglevel']
                 for d in data_save['devices']:
                     d['base_config']['autostart'] = options['autostart']
