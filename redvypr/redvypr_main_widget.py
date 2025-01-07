@@ -37,7 +37,7 @@ class RedvyprSaveFileDialog(QtWidgets.QDialog):
     def __init__(self, parent=None,default_file="",default_name_filters=("YAML Files (*.yaml)", "All Files (*)")):
         super().__init__(parent)
 
-        self.setWindowTitle("Speichern unter")
+        self.setWindowTitle("Save configuration")
         self.resize(600, 400)
 
         # Hauptlayout für den Dialog
