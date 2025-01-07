@@ -42,7 +42,6 @@ class RedvyprSaveFileDialog(QtWidgets.QDialog):
 
         # Hauptlayout für den Dialog
         main_layout = QtWidgets.QVBoxLayout(self)
-
         # QFileDialog einbetten
         self.file_dialog = QtWidgets.QFileDialog(self)
         self.file_dialog.setAcceptMode(QtWidgets.QFileDialog.AcceptMode.AcceptSave)
