@@ -385,6 +385,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.add_device_widget.resize(int(rect.width() * 0.75), int(rect.height() * 0.75))
         self.add_device_widget.show()
 
+
     def _add_device_gui(self, devicelist):
         """ Function is called via the redvypr.add_device signal and is adding
         all the gui functionality to the device
