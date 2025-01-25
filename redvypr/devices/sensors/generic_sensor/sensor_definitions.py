@@ -278,6 +278,7 @@ class BinarySensor(Sensor):
         :return:
         """
         #print('Hallo data', data)
+        #print('address',self.__rdatastream__)
         if data in self.__rdatastream__:
             #print('Processing data',data)
             binary_data = self.__rdatastream__.get_data(data)

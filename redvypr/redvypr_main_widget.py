@@ -176,8 +176,8 @@ class redvyprWidget(QtWidgets.QWidget):
         if ((width is not None) and (height is not None)):
             self.resize(int(width), int(height))
 
-        # TODO, configuration was done earlier, check if this is still ok
-        self.redvypr.add_devices_from_config(config)
+        # Add the devices
+        self.redvypr.add_devices_from_config(config, rename_if_exists=False)
         # Update hostinformation widgets
         self.__update_hostinfo_widget__()
         self.__populate_devicepathlistWidget()
@@ -343,7 +343,7 @@ class redvyprWidget(QtWidgets.QWidget):
         conffile, _ = QtWidgets.QFileDialog.getOpenFileName(self, "QFileDialog.getOpenFileName()", "",
                                                             "Yaml Files (*.yaml);;All Files (*)")
         if conffile:
-            self.redvypr.parse_configuration(conffile)
+            self.redvypr.apply_config(conffile)
 
     def save_config(self):
         """ Saves a configuration file

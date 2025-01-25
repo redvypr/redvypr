@@ -26,6 +26,8 @@ import typing
 from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
 import platform
+
+import redvypr
 # Import redvypr specific stuff
 import redvypr.data_packets as data_packets
 import redvypr.redvypr_address as redvypr_address
@@ -410,6 +412,17 @@ class Redvypr(QtCore.QObject):
             self.statustimer.timeout.connect(self.print_status)
             self.statustimer.start(5000)
 
+    def apply_config(self, config):
+        """
+        Applies a redvypr config from a filename
+        Returns
+        -------
+
+        """
+
+        redvypr_config = merge_configuration(config)
+        self.add_devices_from_config(redvypr_config, rename_if_exists=False)
+
     def get_config(self):
         """
         Creates a configuration dictionary out of the current state.
@@ -478,7 +491,7 @@ class Redvypr(QtCore.QObject):
 
         return devicemodulename
 
-    def add_devices_from_config(self, config):
+    def add_devices_from_config(self, config, rename_if_exists=True):
         funcname = "add_devices_from_config():"
         logger.debug(funcname)
         # Apply the configuration
@@ -523,9 +536,14 @@ class Redvypr(QtCore.QObject):
                         #print('Device',device)
                         #print('-------')
                         subscriptions = device.subscriptions
-                        dev_added = self.add_device(devicemodulename=device.devicemodulename,
-                                                    custom_config=device.custom_config,
-                                                    base_config=device.base_config, subscriptions=subscriptions)
+                        try:
+                            dev_added = self.add_device(devicemodulename=device.devicemodulename,
+                                                        custom_config=device.custom_config,
+                                                        base_config=device.base_config,
+                                                        subscriptions=subscriptions,
+                                                        rename_if_name_exists=rename_if_exists)
+                        except:
+                            logger.warning('Could not add device',exc_info=True)
 
                     else:
                         logger.warning(funcname + ' Could not find devicemodulename {}'.format(devicemodulename))
@@ -631,7 +649,8 @@ class Redvypr(QtCore.QObject):
 
         return loglevel
 
-    def add_device(self, devicemodulename=None, custom_config=None, base_config=None, subscriptions=[]):
+    def add_device(self, devicemodulename=None, custom_config=None, base_config=None, subscriptions=[],
+                   rename_if_name_exists=True):
         """
         Function adds a device to redvypr
 
@@ -752,9 +771,13 @@ class Redvypr(QtCore.QObject):
                     devicename_tmp = devicemodulename.split('.')[-1]# + '_' + str(self.numdevice)
                     #print('Devicename_tmp',devicename_tmp)
 
+                # Check if the devicename exists already
                 if devicename_tmp in devicenames:
-                    logger.warning(funcname + ' Devicename {:s} exists already, will add {:d} to the name.'.format(devicename_tmp,self.numdevice))
-                    devicename_tmp += '_' + str(self.numdevice)
+                    if rename_if_name_exists:
+                        logger.warning(funcname + ' Devicename {:s} exists already, will add {:d} to the name.'.format(devicename_tmp,self.numdevice))
+                        devicename_tmp += '_' + str(self.numdevice)
+                    else:
+                        raise ValueError('Device {} exists already'.format(devicename_tmp))
 
                 device_parameter.name = devicename_tmp
 
@@ -1210,15 +1233,66 @@ class Redvypr(QtCore.QObject):
         return FLAG_REMOVED
 
 
+def merge_configuration(redvypr_config=None):
+    """
+    Merges a list of configurations
+    :param redvypr_config:
+    :return:
+    """
+    funcname = "merge_configuration():"
+    parsed_devices = []
+    logger.debug(funcname)
 
+    if (redvypr_config is not None):
+        logger.debug(funcname + 'Configuration: ' + str(redvypr_config))
+        if (type(redvypr_config) == str):
+            redvypr_config = [redvypr_config]
+    else:
+        return False
 
+    config_tmp = redvypr.RedvyprConfig()
+    devices_all = []
+    devicepath_all = []
+    for iconf, configraw in enumerate(redvypr_config):
+        #print('Configraw',configraw)
+        #print('iconf', iconf,type(configraw))
+        if isinstance(configraw, redvypr.RedvyprConfig):
+            logger.info(funcname + ' Found redvypr config')
+            config_tmp = configraw
+        elif (type(configraw) == str):
+            logger.info(funcname + 'Opening yaml file: ' + str(configraw))
+            if (os.path.exists(configraw)):
+                fconfig = open(configraw)
+                try:
+                    config_tmp = yaml.load(fconfig, Loader=yaml.SafeLoader)
+                except:
+                    logger.warning(funcname + 'Could not load yaml file with safe loader')
+                    fconfig.close()
+                    fconfig = open(configraw)
+                    try:
+                        config_tmp = yaml.load(fconfig, Loader=yaml.CLoader)
+                        logger.debug('Config tmp {}'.format(config_tmp))
+                    except:
+                        logger.warning(funcname + ' Could not load yaml file with x loader')
+                        continue
 
+                config_tmp = redvypr.RedvyprConfig(**config_tmp)
+            else:
+                logger.warning(funcname + 'Yaml file: ' + str(configraw) + ' does not exist!')
+                continue
+        elif (type(configraw) == dict):
+            logger.debug(funcname + 'Opening dictionary')
+            config_tmp = redvypr.RedvyprConfig(**configraw)
+        else:
+            logger.warning(funcname + 'Unknown type of configuration {:s}'.format(type(configraw)))
+            continue
 
-
-
-
-
-
-
-
-
+        # Merge the configuration into one big dictionary
+        devices_all.extend(config_tmp.devices)
+        devicepath_all.extend(config_tmp.devicepaths)
+        #print('Config tmp', config_tmp)
+        # config = config.model_copy(update=config_tmp)
+    config_tmp2 = redvypr.RedvyprConfig(devices=devices_all, devicepaths=devicepath_all)
+    config = config_tmp2.model_copy(update=config_tmp.model_dump(exclude=['devices', 'devicepaths']))
+    #print('Config', config)
+    return config

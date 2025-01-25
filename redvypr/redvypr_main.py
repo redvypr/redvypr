@@ -7,10 +7,10 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 import multiprocessing
 import argparse
 import signal
-import yaml
 # Import redvypr specific stuff
 import redvypr
 import redvypr.files as files
+from redvypr import merge_configuration
 from redvypr.redvypr_main_widget import redvyprMainWidget
 import faulthandler
 faulthandler.enable()
@@ -80,70 +80,6 @@ except:
 _logo_file = files.logo_file
 _icon_file = files.icon_file
 
-
-def merge_configuration(redvypr_config=None):
-    """
-    Merges a list of configurations
-    :param redvypr_config:
-    :return:
-    """
-    funcname = "merge_configuration():"
-    parsed_devices = []
-    logger.debug(funcname)
-
-    if (redvypr_config is not None):
-        logger.debug(funcname + 'Configuration: ' + str(redvypr_config))
-        if (type(redvypr_config) == str):
-            redvypr_config = [redvypr_config]
-    else:
-        return False
-
-    config_tmp = redvypr.RedvyprConfig()
-    devices_all = []
-    devicepath_all = []
-    for iconf, configraw in enumerate(redvypr_config):
-        #print('Configraw',configraw)
-        #print('iconf', iconf,type(configraw))
-        if isinstance(configraw, redvypr.RedvyprConfig):
-            logger.info(funcname + ' Found redvypr config')
-            config_tmp = configraw
-        elif (type(configraw) == str):
-            logger.info(funcname + 'Opening yaml file: ' + str(configraw))
-            if (os.path.exists(configraw)):
-                fconfig = open(configraw)
-                try:
-                    config_tmp = yaml.load(fconfig, Loader=yaml.SafeLoader)
-                except:
-                    logger.warning(funcname + 'Could not load yaml file with safe loader')
-                    fconfig.close()
-                    fconfig = open(configraw)
-                    try:
-                        config_tmp = yaml.load(fconfig, Loader=yaml.CLoader)
-                        logger.debug('Config tmp {}'.format(config_tmp))
-                    except:
-                        logger.warning(funcname + ' Could not load yaml file with x loader')
-                        continue
-
-                config_tmp = redvypr.RedvyprConfig(**config_tmp)
-            else:
-                logger.warning(funcname + 'Yaml file: ' + str(configraw) + ' does not exist!')
-                continue
-        elif (type(configraw) == dict):
-            logger.debug(funcname + 'Opening dictionary')
-            config_tmp = redvypr.RedvyprConfig(**configraw)
-        else:
-            logger.warning(funcname + 'Unknown type of configuration {:s}'.format(type(configraw)))
-            continue
-
-        # Merge the configuration into one big dictionary
-        devices_all.extend(config_tmp.devices)
-        devicepath_all.extend(config_tmp.devicepaths)
-        #print('Config tmp', config_tmp)
-        # config = config.model_copy(update=config_tmp)
-    config_tmp2 = redvypr.RedvyprConfig(devices=devices_all, devicepaths=devicepath_all)
-    config = config_tmp2.model_copy(update=config_tmp.model_dump(exclude=['devices', 'devicepaths']))
-    #print('Config', config)
-    return config
 
 def split_quotedstring(qstr, separator=','):
     """ Splits a string

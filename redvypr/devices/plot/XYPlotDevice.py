@@ -47,7 +47,7 @@ class DeviceCustomConfig(XYplotWidget.configXYplot):
 start = device_start_standard
 
 class displayDeviceWidget(QtWidgets.QWidget):
-    def __init__(self,device=None,tabwidget=None):
+    def __init__(self,device=None, tabwidget=None):
         funcname = __name__ + '__init__():'
         logger.debug(funcname)
         super(QtWidgets.QWidget, self).__init__()
