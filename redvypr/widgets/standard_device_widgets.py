@@ -229,7 +229,7 @@ class RedvyprDeviceWidget_simple(QtWidgets.QWidget):
     subscribed = QtCore.pyqtSignal(
         RedvyprDevice)  # Signal displaying a subscription
 
-    def __init__(self,device=None):
+    def __init__(self, device=None, redvypr=None):
         """
         Simple devicewidget
 
@@ -239,11 +239,14 @@ class RedvyprDeviceWidget_simple(QtWidgets.QWidget):
         funcname = __name__ + '.__init__():'
         logger.debug(funcname)
         super().__init__()
-        self.layout = QtWidgets.QGridLayout(self)
+        self.layout_base = QtWidgets.QVBoxLayout(self)
+        self.widget = QtWidgets.QWidget()
+        self.layout = QtWidgets.QVBoxLayout(self.widget)
         self.buttons_widget = QtWidgets.QWidget()
         self.layout_buttons = QtWidgets.QGridLayout(self.buttons_widget)
         self.config_widgets = []
         self.device = device
+        #self.redvypr = redvypr
         # Start-button
         self.startbutton = QtWidgets.QPushButton('Start')
         self.startbutton.clicked.connect(self.start_clicked)
@@ -279,8 +282,8 @@ class RedvyprDeviceWidget_simple(QtWidgets.QWidget):
         else:
             self.layout_buttons.addWidget(self.startbutton, 4, 0, 1, 4)
 
-
-        self.layout.addWidget(self.buttons_widget)
+        self.layout_base.addWidget(self.widget)
+        self.layout_base.addWidget(self.buttons_widget)
         # If the config is changed, update the device widget
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_buttons)

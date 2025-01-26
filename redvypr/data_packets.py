@@ -37,8 +37,9 @@ class RedvyprMetadataGeneral(pydantic.BaseModel):
     address: typing.Dict[str, typing.Any] = {}
 
 class Datapacket(dict):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, device=None, packetid=None, **kwargs):
         if len(args)>0:
+            # Check if the datapacket is created from a dictionary, without kwargs
             if isinstance(args[0],dict):
                 dict.__init__(self, *args,**kwargs)
 
@@ -46,7 +47,8 @@ class Datapacket(dict):
             dict.__init__(self)
 
         if '_redvypr' not in self.keys():
-            dataself = create_datadict()
+            #create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None, publisher=None, hostinfo=None)
+            dataself = create_datadict(packetid=packetid, device=device)
             self.update(dataself)
 
         self.address = redvypr_address.RedvyprAddress(self)

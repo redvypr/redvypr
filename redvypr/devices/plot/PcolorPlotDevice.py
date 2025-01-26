@@ -101,9 +101,9 @@ class PcolorPlotWidget(QtWidgets.QWidget):
 
     def update_data(self,rdata):
         funcname = __name__ + '.update_data():'
-        self.logger.debug(funcname + 'Got data {}'.format(rdata))
+        self.logger.debug(funcname + 'Got data to plot {}'.format(rdata))
         data_plot = rdata[self.config.datastream]
-        print('Data plot', data_plot)
+        print('Data to plot', data_plot)
         self.data_z.append(data_plot)
         self.data_all.append(rdata)
         self.data_x.append(rdata['t'])

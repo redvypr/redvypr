@@ -2,6 +2,7 @@ from .redvypr import *
 from .redvypr_address import RedvyprAddress
 #from .devices import *
 from . import data_packets
+from .data_packets import Datapacket
 from . import gui
 from .widgets import *
 from . import files

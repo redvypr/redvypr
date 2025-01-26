@@ -1033,9 +1033,6 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.device.thread_stop()
             button.setText("Stopping")
 
-
-
-
 class displayDeviceWidget(QtWidgets.QWidget):
     def __init__(self, device=None, tabwidget=None):
         super().__init__()
