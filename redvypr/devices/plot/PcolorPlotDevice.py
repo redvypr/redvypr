@@ -39,6 +39,7 @@ start = device_start_standard
 class configPcolorPlot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
     type: str = 'PcolorPlot'
+    buffersize: int = pydantic.Field(default=100,description='Size of the buffer that is used to store the plot data')
     dt_update: float = pydantic.Field(default=0.25,description='Update time of the plot [s]')
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
 
@@ -53,6 +54,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
 class DeviceCustomConfig(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
     type: str = 'PcolorPlot'
+    buffersize: int = pydantic.Field(default=100, description='Size of the buffer that is used to store the plot data')
     dt_update: float = pydantic.Field(default=0.25, description='Update time of the plot [s]')
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
 
@@ -72,7 +74,7 @@ class PcolorPlotWidget(QtWidgets.QWidget):
             self.config = configPcolorPlot()
         else:
             self.config = config
-        self.logger = logging.getLogger('XYplot')
+        self.logger = logging.getLogger('PcolorPlot')
         self.logger.setLevel(loglevel)
         self.description = 'Pcolor plot'
         self.layout = QtWidgets.QGridLayout(self)
@@ -98,15 +100,23 @@ class PcolorPlotWidget(QtWidgets.QWidget):
         self.plotwidget.setAxisItems({"bottom": axis})
         self.layout.addWidget(self.graphiclayout, 0, 0, 1, 2)
 
-
     def update_data(self,rdata):
         funcname = __name__ + '.update_data():'
         self.logger.debug(funcname + 'Got data to plot {}'.format(rdata))
         data_plot = rdata[self.config.datastream]
         print('Data to plot', data_plot)
-        self.data_z.append(data_plot)
-        self.data_all.append(rdata)
-        self.data_x.append(rdata['t'])
+        try:
+            if len(self.data_x) > self.config.buffersize:
+                print('Bufferoverflow')
+                self.data_z.pop(0)
+                self.data_all.pop(0)
+                self.data_x.pop(0)
+
+            self.data_z.append(data_plot)
+            self.data_all.append(rdata)
+            self.data_x.append(rdata['t'])
+        except:
+            logger.warning('Could append update data', exc_info=True)
         if len(self.data_x) > 2:
             try:
                 z = numpy.asarray(self.data_z)

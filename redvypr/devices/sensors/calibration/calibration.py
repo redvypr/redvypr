@@ -504,7 +504,7 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
                     coeff_index = [None]
 
                 for cindex,coeff in zip(coeff_index,coeff_tmp):
-                    parameter = coeff.parameter
+                    parameter = str(coeff.parameter)
                     #if cindex is not None:
                     #    parameter += '[{}]'.format(cindex)
                     item = QtWidgets.QTableWidgetItem(parameter)
@@ -2492,32 +2492,37 @@ class displayDeviceWidget(QtWidgets.QWidget):
             print('Getting manual time interval',t_intervall)
         if t_intervall is not None:
             for i, caldata in enumerate(self.device.custom_config.calibrationdata):
-                plot_widget = caldata.__plot_widget
-                #sensor_data_tmp = self.device.custom_config.calibrationdata[plot_widget.sensorindex]
-                #print('a',sensor_data_tmp)
-                #print('b',sensor_data_tmp.realtimeplot)
+                print('Getting data from {}'.format(caldata))
+                if caldata.inputtype == 'datastream':
+                    logger.info(funcname + 'Datastream')
+                    plot_widget = caldata.__plot_widget
+                    #sensor_data_tmp = self.device.custom_config.calibrationdata[plot_widget.sensorindex]
+                    #print('a',sensor_data_tmp)
+                    #print('b',sensor_data_tmp.realtimeplot)
 
-                data = plot_widget.get_data(t_intervall)
-                print('Data',data)
-                if isinstance(plot_widget, XYplotWidget.XYPlotWidget):
-                    data = data['lines'][0]
-                #print('Got data from widget', data)
-                col = plot_widget.datatablecolumn
-                if len(data['y']) > 0:
-                    rawdata_all = data['y'] #.tolist()
-                    timedata_all = data['t']#.tolist()
-                    # Average the data and convert it to standard python types
-                    ydata = np.mean(rawdata_all,0).tolist() # Convert to list
-                    tdata = float(np.mean(data['t'], 0))
-                    #if len(ydata) == 1:
-                    #    ydata = float(ydata)
+                    data = plot_widget.get_data(t_intervall)
+                    print('Data',data)
+                    if isinstance(plot_widget, XYplotWidget.XYPlotWidget):
+                        data = data['lines'][0]
+                    #print('Got data from widget', data)
+                    col = plot_widget.datatablecolumn
+                    if len(data['y']) > 0:
+                        rawdata_all = data['y'] #.tolist()
+                        timedata_all = data['t']#.tolist()
+                        # Average the data and convert it to standard python types
+                        ydata = np.mean(rawdata_all,0).tolist() # Convert to list
+                        tdata = float(np.mean(data['t'], 0))
+                        #if len(ydata) == 1:
+                        #    ydata = float(ydata)
 
-                    tdatetime = datetime.datetime.utcfromtimestamp(tdata)
-                    tdatas = tdatetime.strftime('%d-%m-%Y %H:%M:%S.%f')
-                    # Add the data to the dictionary
-                    #print('Averaged data',ydata)
-                    #def add_data(self, time, sensorindex, sentype, data, time_data, rawdata, time_rawdata):
-                    self.device.add_data(tget,plot_widget.sensorindex,ydata,tdata,rawdata_all,timedata_all)
+                        tdatetime = datetime.datetime.utcfromtimestamp(tdata)
+                        tdatas = tdatetime.strftime('%d-%m-%Y %H:%M:%S.%f')
+                        # Add the data to the dictionary
+                        #print('Averaged data',ydata)
+                        #def add_data(self, time, sensorindex, sentype, data, time_data, rawdata, time_rawdata):
+                        self.device.add_data(tget,plot_widget.sensorindex,ydata,tdata,rawdata_all,timedata_all)
+                else:
+                    logger.info(funcname + ' Manual')
 
 
         print('get intervalldata time', self.device.custom_config.calibrationdata_time)
@@ -2782,69 +2787,69 @@ class displayDeviceWidget(QtWidgets.QWidget):
             #print('Data',data)
             found_subscription = False
             for i, caldata in enumerate(self.device.custom_config.calibrationdata):
-                plot_widget = caldata.__plot_widget
-
-                print('Checking widget',i,plot_widget.datastream)
-                if data in plot_widget.datastream:
-                    logger.debug('Updating plot {:d}')
-                    plot_widget.update_plot(data)
-                    try:
-                        update_datainfo = caldata.__update_with_datapacket
-                    except:
-                        update_datainfo = True
-
-                    if update_datainfo:
-                        datastream = caldata.datastream
-                        logger.debug('Updating datastreams {}'.format(datastream))
-                        keyinfo = self.device.redvypr.get_metadata(datastream)
-                        #keyinfo = self.device.get_metadata(datastream)
-                        logger.debug(funcname + 'Datakeyinfo {}'.format(keyinfo))
-                        print('Keyinfo',keyinfo)
+                if caldata.inputtype == 'datastream':
+                    plot_widget = caldata.__plot_widget
+                    print('Checking widget',i,plot_widget.datastream)
+                    if data in plot_widget.datastream:
+                        logger.debug('Updating plot {:d}')
+                        plot_widget.update_plot(data)
                         try:
-                            parameter = datastream.datakey
+                            update_datainfo = caldata.__update_with_datapacket
                         except:
-                            parameter = 'NA'
+                            update_datainfo = True
 
-                        # Try to get a serial number
-                        try:
-                            sn = keyinfo['sn']
-                        except:
+                        if update_datainfo:
+                            datastream = caldata.datastream
+                            logger.debug('Updating datastreams {}'.format(datastream))
+                            keyinfo = self.device.redvypr.get_metadata(datastream)
+                            #keyinfo = self.device.get_metadata(datastream)
+                            logger.debug(funcname + 'Datakeyinfo {}'.format(keyinfo))
+                            print('Keyinfo',keyinfo)
                             try:
-                                sn = datastream.packetid
+                                parameter = datastream.datakey
                             except:
-                                sn = ''
-                        try:
-                            unit = keyinfo['unit']
-                        except:
-                            unit = 'NA'
-                        try:
-                            sensortype = keyinfo['sensortype']
-                        except:
+                                parameter = 'NA'
+
+                            # Try to get a serial number
                             try:
-                                sensortype = datastream.devicename
+                                sn = keyinfo['sn']
                             except:
-                                sensortype = ''
+                                try:
+                                    sn = datastream.packetid
+                                except:
+                                    sn = ''
+                            try:
+                                unit = keyinfo['unit']
+                            except:
+                                unit = 'NA'
+                            try:
+                                sensortype = keyinfo['sensortype']
+                            except:
+                                try:
+                                    sensortype = datastream.devicename
+                                except:
+                                    sensortype = ''
 
-                        p = plot_widget
-                        caldata.sn = sn
-                        caldata.unit = unit
-                        caldata.sensor_model = sensortype
-                        caldata.parameter = parameter
-                        self.allsensornames[i] = datastream
-                        p.sn = sn
-                        p.unit = unit
-                        # print('p.unit', p.unit)
-                        p.sensortype = sensortype
-                        # Add devicename to the column
-                        senstr = datastream.get_str('/d/k/')
-                        col = p.datatablecolumn
-                        tmp = self.allsensornames[i]
-                        self.sensorcols[i] = senstr
-                        p.sensname_header = datastream.datakey
-                        self.update_datatable()
-                        caldata.__update_with_datapacket = False
+                            p = plot_widget
+                            caldata.sn = sn
+                            caldata.unit = unit
+                            caldata.sensor_model = sensortype
+                            caldata.parameter = parameter
+                            self.allsensornames[i] = datastream
+                            p.sn = sn
+                            p.unit = unit
+                            # print('p.unit', p.unit)
+                            p.sensortype = sensortype
+                            # Add devicename to the column
+                            senstr = datastream.get_str('/d/k/')
+                            col = p.datatablecolumn
+                            tmp = self.allsensornames[i]
+                            self.sensorcols[i] = senstr
+                            p.sensname_header = datastream.datakey
+                            self.update_datatable()
+                            caldata.__update_with_datapacket = False
 
-                    plot_widget.update_plot(data)
+                        plot_widget.update_plot(data)
 
         except Exception:
             logger.warning('Could not update with data',exc_info=True)

@@ -29,7 +29,7 @@ tarv2nmea_packetid_format = '{MAC},TAR'
 tarv2nmea_description = 'Temperature array NMEA like text format'
 
 
-tarv2nmea_sample_split = b'\$(?P<MAC>.+),TAR_S,(?P<parameterunit>[A-c])_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter_local>[0-9.]+),(?P<np_local>[0-9]+),(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<TAR>.*)\n'
+tarv2nmea_sample_split = b'\$(?P<MAC>.+),TAR_S;(?P<counter>[0-9.]+);(?P<np>[0-9]+),(?P<parameterunit>[A-c])_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter_local>[0-9.]+),(?P<np_local>[0-9]+),(?P<TAR>.*)\n'
 tarv2nmea_sample_str_format = {'MAC':'str','counter':'float','counter_local':'float','parameterunit':'str','ntctype':'str','ntcdist':'float','np':'int','np_local':'int','TAR':'array'}
 tarv2nmea_sample_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'TAR':{'unit':'Ohm'}}
 tarv2nmea_sample_packetid_format = '{MAC},TAR_S'
@@ -101,6 +101,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             np = data_packet_processed[0]['np']
             parameterunit = data_packet_processed[0]['parameterunit']
             npmax = max(packetbuffer.keys())
+            print('MAC',mac,counter,np)
             #if npmax < 0:  # The first measurement
             #    npmax = np
             # Check if a new packet arrived, if yes, process the old one first
@@ -109,10 +110,14 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                     npackets = len(packetbuffer[npmax][parameterunit_tmp].keys())
                     dmerge = [None] * npackets
                     datapacket_merged = {}
+                    print('Npackets',npackets)
                     for mac_tmp in packetbuffer[npmax][parameterunit_tmp].keys():
                         p = packetbuffer[npmax][parameterunit_tmp][mac_tmp]
                         # Count the ':' and put it at the list location
                         i = mac_tmp.count(':')
+                        if i >= npackets:
+                            print('Could not add {}'.format(mac_tmp))
+                            continue
                         if i == 0:
                             mac_final = mac_tmp
                             counter_final = counter
@@ -121,7 +126,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                             datapacket_merged.update(dp)
                             datapacket_merged['mac'] = mac_final
                             datapacket_merged['counter'] = counter_final
-                        #print('mac_tmp',mac_tmp,i)
+                        print('mac_tmp',mac_tmp,i)
                         dmerge[i] = p['TAR']
                     # Merge the packages into one large one
                     #print('dmerge', dmerge)
