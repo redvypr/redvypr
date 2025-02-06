@@ -13,6 +13,11 @@
 import os
 import sys
 sys.path.insert(0, os.path.abspath('.'))
+#sys.path.insert(0, os.path.abspath(".."))
+sys.path.insert(0, os.path.abspath("../.."))
+sys.path.append(os.path.abspath("../../redvypr/devices"))
+#sys.path.insert(0, os.path.abspath(os.path.join('..', 'redvypr')))
+print('PATH',sys.path)
 
 redvypr_versionfile = '../../redvypr/VERSION'
 redvypr_version_f = open(redvypr_versionfile)
@@ -20,7 +25,7 @@ redvypr_version = redvypr_version_f.read().strip()
 # -- Project information -----------------------------------------------------
 
 project = 'redvypr'
-copyright = '2021, Peter Holtermann'
+copyright = '2025, Peter Holtermann'
 author = 'Peter Holtermann'
 
 # The full version, including alpha/beta/rc tags
@@ -39,17 +44,23 @@ extensions = ['sphinx.ext.napoleon',
               'sphinx.ext.autosectionlabel',
               'sphinx.ext.autosummary',
               'sphinx.ext.viewcode',
-              'sphinx.ext.autodoc',
-              'sphinxcontrib.autodoc_pydantic',]
+              'sphinx.ext.autodoc']
+              #'sphinxcontrib.autodoc_pydantic',]
 
 
 autosummary_generate = True
 
 autodoc_mock_imports = ["time", "serial","serial.tools","datetime","logging","queue","yaml","PyQt5","pkg_resources","pyqtgraph","numpy","inspect","threading","multiprocessing","socket","argparse","importlib","glob","pathlib","signal","QtWidgets", "QtCore", "QtGui","netCDF4","copy","threading","socket","serial.tools.list_ports","redvypr.version","redvypr.files","pyqtconsole","qtawesome"]
 autodoc_mock_imports.append("QTextCursor")
+#autodoc_mock_imports.append("numpy.core")
+autodoc_mock_imports.append("scipy")
+#autodoc_mock_imports.append("numpy._core.multiarray")
 autodoc_mock_imports.append("zmq")
+#autodoc_mock_imports.append("redvypr.redvypr.device")
+#autodoc_mock_imports.append("redvypr")
 #autodoc_mock_imports.append("redvypr.redvypr")
-autodoc_mock_imports.append("redvypr.utils")
+#autodoc_mock_imports.append("redvypr.redvypr")
+#autodoc_mock_imports.append("redvypr.utils")
 #autodoc_mock_imports.append("redvypr.devices")
 #autodoc_mock_imports.append("redvypr.devices.fileio")
 #autodoc_mock_imports.append("redvypr.devices.db")

@@ -14,20 +14,20 @@ import threading
 import pydantic
 import redvypr
 from . import hexflasher
-
+from redvypr.devices.sensors.generic_sensor.calibrationWidget import sensorCalibrationsWidget
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('hexflash_util')
+logger = logging.getLogger('sensorconfig')
 logger.setLevel(logging.DEBUG)
 
 
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = True
-    description: str = 'Reads to and write from the flash of a compatible device'
-    gui_tablabel_display: str = 'Hexflasher'
+    description: str = 'Configuration of a sensor: Reads to and write from the flash of a compatible device, reads/write parameter calibrations'
+    gui_tablabel_display: str = 'Sensorconfig'
 
 class DeviceCustomConfig(pydantic.BaseModel):
     baud: int = 115200
@@ -50,16 +50,6 @@ class HexSpinBox(QtWidgets.QSpinBox):
         self.setMaximum(1000000)
         self.setPrefix("0x")
         self.setDisplayIntegerBase(16)
-
-    #def textFromValue(self, value):
-    #    return "{:05x}".format(value)
-
-    #def valueFromText(self, text):
-    #    if '0x' in text:
-    #        return int(text, 16)
-    #    else:
-    #        return int(text, 10)
-
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
     """
@@ -344,11 +334,13 @@ class SensorCalibrationWidget(QtWidgets.QWidget):
 
         self.devicetree = QtWidgets.QTreeWidget()
         self.devicetree.currentItemChanged.connect(self.qtreewidget_item_changed)
-        self.coeffwidget = redvypr.widgets.pydanticConfigWidget.pydanticConfigWidget(config = {})
+        #self.coeffwidget = redvypr.widgets.pydanticConfigWidget.pydanticConfigWidget(config = {})
+        self.calibwidget = sensorCalibrationsWidget(redvypr_device=self.device, calibrations = [])
 
         self.layout.addWidget(self.query_button,0,0)
         self.layout.addWidget(self.devicetree,1,0)
-        self.layout.addWidget(self.coeffwidget, 0, 1,2,1)
+        #self.layout.addWidget(self.coeffwidget, 0, 1,2,1)
+        self.layout.addWidget(self.calibwidget, 0, 1, 2, 1)
 
     def start(self, dhffl, statuswidget):
         self.logger.info('Starting')

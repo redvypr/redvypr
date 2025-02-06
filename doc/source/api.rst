@@ -3,22 +3,14 @@ API
 
 .. toctree::
 
-redvypr
-_______
+redvypr API
+___________
 .. autosummary::
    :toctree: _autosummary
    :recursive:
 
-   redvypr
+   redvypr.redvypr.redvyprdevices
 
-
-redvypr devices
-_______________
-.. autosummary::
-   :toctree: _autosummary
-   :recursive:
-
-   redvypr.devices
 
    
    

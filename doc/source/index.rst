@@ -11,10 +11,11 @@ Welcome to redvypr's documentation!
    :caption: Contents:
 
    redvypr.rst
-   device.rst
-   design.rst
    api.rst
-   changelog.rst
+
+..   device.rst
+..   design.rst   
+..   changelog.rst
 ..   examples.rst      
 ..   installation.rst   
 

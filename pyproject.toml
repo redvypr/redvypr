@@ -24,6 +24,7 @@ dependencies = ['pyaml',
 	     'matplotlib',
 	     'python-dateutil',
 	     'pympler',
+	     'autodoc_pydantic',
 	     'deepdiff',
 	     ]
 requires-python = ">=3.7"

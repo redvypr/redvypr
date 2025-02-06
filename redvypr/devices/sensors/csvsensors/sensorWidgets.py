@@ -541,7 +541,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
                 calibrations = {'calibrations': self.device.custom_config['calibrations'][sn]}
                 self.calibrationConfigWidget = gui.configWidget(calibrations, editable=False,
                                                                 configname='Coefficients of {:s}'.format(sn))
-                self.sensorCoeffWidget_layout.addWidget(self.calibrationConfigWidget, 0, 1)
+                self.calibrations_allLayout.addWidget(self.calibrationConfigWidget, 0, 1)
                 # self.sensorstack.setCurrentIndex(index)
             else:
                 try:

@@ -31,6 +31,12 @@ def array(byte_string):
 
 
 class Sensor(pydantic.BaseModel):
+    """
+    The sensor class processes redvypr datapackets and converts the data with calibrations into more meaningful units.
+    the :py:method:`datapacket_process` method checks first if the packets fits with self.datastream, after this check the packet is checked
+    for each datakey of self.calibration, which is a dictionary with the keys being redvypr address strings.
+    For each key (address string) it is checked if it is within the datapacket.
+    """
     name: str = pydantic.Field(default='sensor')
     description: str = pydantic.Field(default='Sensor')
     example_data: typing.Union[None,bytes, str] = pydantic.Field(default=None)

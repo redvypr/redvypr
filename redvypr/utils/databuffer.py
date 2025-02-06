@@ -3,7 +3,7 @@ import numpy as np
 
 
 
-class DatapacketBuffer():
+class DatapacketBuffer:
     def __init__(self, address='*', buffersize=10000):
         self.address = redvypr_address.RedvyprAddress(address)
         self.datapackets = []

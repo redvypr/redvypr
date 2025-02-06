@@ -12,6 +12,8 @@ import pydantic
 import redvypr
 from redvypr.device import RedvyprDevice
 from redvypr.widgets.standard_device_widgets import RedvyprDeviceWidget_simple
+from redvypr.devices.sensors.generic_sensor.calibrationWidget import SensorCalibrationsTable
+import redvypr.devices.sensors.calibration.calibration_models as calibration_models
 import redvypr.devices.sensors.generic_sensor.sensor_definitions as sensor_definitions
 from . import hexflasher
 
@@ -38,6 +40,29 @@ tarv2nmea_sample_description = 'Temperature array datapacket initiated by a samp
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('tar')
 logger.setLevel(logging.DEBUG)
+
+
+class TarSensor(sensor_definitions.BinarySensor):
+    num_ntc: int = pydantic.Field(default=64, description='number of ntc sensors')
+
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args, **kwargs)
+        for n in range(self.num_ntc):
+            datakey_ntc = '''R['{}'].'''.format(n)
+            self.calibrations_raw[datakey_ntc] = None
+
+        self.set_standard_calibrations()
+
+    def set_standard_calibrations(self):
+        """
+        Sets standard NTC calibrations to all parameters
+        """
+        for datakey_ntc in self.calibrations_raw:
+            coeffs = [-2.3169660632264368e-08, - 1.0330814536964214e-06, - 0.000210399828596111, - 0.001612330551548827]
+            calNTC = calibration_models.CalibrationNTC(coeffs=coeffs)
+            self.calibrations_raw[datakey_ntc] = calNTC
+
+
 
 
 class DeviceBaseConfig(pydantic.BaseModel):
@@ -166,8 +191,12 @@ class RedvyprDeviceWidget(RedvyprDeviceWidget_simple):
         self.packetbuffer = {}
 
         self.datadisplaywidget = QtWidgets.QWidget(self)
-        self.datadisplaywidget_layout = QtWidgets.QHBoxLayout(self.datadisplaywidget)
+        self.datadisplaywidget_layout = QtWidgets.QVBoxLayout(self.datadisplaywidget)
 
+        self.tartest = TarSensor()
+        print('tartest', self.tartest)
+        self.calibrationstable = SensorCalibrationsTable(sensor=self.tartest)
+        self.datadisplaywidget_layout.addWidget(self.calibrationstable)
 
         self.layout.addWidget(self.datadisplaywidget)
 

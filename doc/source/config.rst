@@ -16,7 +16,7 @@ Often similar tasks for the configuration of devices are needed.
 Here is an uncomplete list of typical tasks
 
 Dynamic dictionary or list with a predefined number of allowed types to be added to the list
-~~~~~~~~~~~~~
+~~~~~~~~~~~~
 The device has a number of sensors attached. The sensors and their configuration are stored in a list.
 The sensors that are allowed to be added to the list are two types, sensorA and sensorB::
 

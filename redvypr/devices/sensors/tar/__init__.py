@@ -1,5 +1,5 @@
 from . import tar
-from . import hexflash_util
+from . import sensorconfig
 
 
 redvypr_devicemodule = True

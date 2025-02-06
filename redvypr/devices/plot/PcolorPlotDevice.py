@@ -2,27 +2,16 @@ import datetime
 import numpy as np
 import logging
 import sys
-import threading
-import copy
-import yaml
-import json
-import typing
 import pyqtgraph
 import pydantic
 import numpy
 from PyQt6 import QtWidgets, QtCore, QtGui
-
 import redvypr
 from redvypr.device import RedvyprDevice, device_start_standard
+from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
+from redvypr.widgets.standard_device_widgets import RedvyprDeviceWidget_startonly
 from redvypr.data_packets import check_for_command
-#from redvypr.packet_statistics import get_keys_from_data
-#import redvypr.packet_statistic as redvypr_packet_statistic
-import redvypr.data_packets as data_packets
-import redvypr.gui as gui
-#import redvypr.config as redvypr_config
 from redvypr.redvypr_address import RedvyprAddress
-#from redvypr.devices.plot import plot_widgets
-from redvypr.devices.plot import XYplotWidget
 import redvypr.files as redvypr_files
 
 _icon_file = redvypr_files.icon_file
@@ -34,7 +23,6 @@ logger = logging.getLogger('pcolorplot')
 logger.setLevel(logging.INFO)
 
 start = device_start_standard
-
 
 class configPcolorPlot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
@@ -49,7 +37,6 @@ class DeviceBaseConfig(pydantic.BaseModel):
     description: str = 'Device to plot Pcolor-Data'
     gui_icon: str = 'ph.chart-line-fill'
 
-
 #class DeviceCustomConfig(configPcolorPlot):
 class DeviceCustomConfig(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
@@ -59,7 +46,6 @@ class DeviceCustomConfig(pydantic.BaseModel):
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
 
 # Use the standard start function as the start function
-
 class PcolorPlotWidget(QtWidgets.QWidget):
     def __init__(self, config=None, redvypr_device=None, loglevel=logging.DEBUG):
         funcname = __name__ + '.init():'
@@ -67,6 +53,8 @@ class PcolorPlotWidget(QtWidgets.QWidget):
         self.device = redvypr_device
         if self.device is not None:
             self.redvypr = self.device.redvypr
+            self.device.thread_started.connect(self.device_thread_started)
+            self.device.thread_stopped.connect(self.device_thread_stopped)
         else:
             self.redvypr = None
 
@@ -74,6 +62,8 @@ class PcolorPlotWidget(QtWidgets.QWidget):
             self.config = configPcolorPlot()
         else:
             self.config = config
+
+        self.config_backup = self.config.model_dump()
         self.logger = logging.getLogger('PcolorPlot')
         self.logger.setLevel(loglevel)
         self.description = 'Pcolor plot'
@@ -83,11 +73,55 @@ class PcolorPlotWidget(QtWidgets.QWidget):
         self.data_y = []
         self.data_all = []
         self.create_widgets()
+        self.applyConfig()
+
+    def thread_startstop(self):
+        if 'start' in self.startAction.text().lower():
+            self.device.thread_start()
+            return
+
+        if 'stop' in self.startAction.text().lower():
+            self.device.thread_stop()
+            return
+
+    def device_thread_started(self):
+        print('started')
+        self.startAction.setText('Stop')
+
+    def device_thread_stopped(self):
+        print('stopped')
+        self.startAction.setText('Start')
+
+    def pyqtgraphConfigAction(self):
+        if self.device is not None:
+            self.config_widget = pydanticDeviceConfigWidget(self.device)
+            self.config_widget.showMaximized()
+
+    def applyConfig(self):
+        funcname = __name__ + '.applyConfig():'
+        self.logger.debug(funcname)
+        self.setTitle()
+        try:
+            self.device.subscribe_address(self.config.datastream)
+        except:
+            self.logger.warning('Could not subscribe to address: "{}"'.format(self.config.datastream))
+
+    def setTitle(self):
+        titlestr = str(self.config.datastream)
+        self.plotwidget.setTitle(titlestr)
 
     def create_widgets(self):
-
         self.graphiclayout = pyqtgraph.GraphicsLayoutWidget()
         self.plotwidget = self.graphiclayout.addPlot()
+        self.setTitle()
+        # Modify the right-click menu
+        #self.plotwidget.vb.menu.clear()
+        # Add the general config
+        configAction = self.plotwidget.vb.menu.addAction('General config')
+        configAction.triggered.connect(self.pyqtgraphConfigAction)
+
+        self.startAction = self.plotwidget.vb.menu.addAction('Start')
+        self.startAction.triggered.connect(self.thread_startstop)
         z = numpy.random.rand(10,10)
         pcmi = pyqtgraph.PColorMeshItem()
         pcmi.setData(z)
@@ -139,23 +173,22 @@ class PcolorPlotWidget(QtWidgets.QWidget):
             except:
                 logger.warning('Could not update data',exc_info=True)
 
-class displayDeviceWidget(QtWidgets.QWidget):
-    def __init__(self,device=None,tabwidget=None):
+class RedvyprDeviceWidget(RedvyprDeviceWidget_startonly):
+    def __init__(self,*args,**kwargs):
         funcname = __name__ + '__init__():'
         logger.debug(funcname)
-        super(QtWidgets.QWidget, self).__init__()
-        self.device = device
-        self.layout = QtWidgets.QGridLayout(self)
-        self.pcolorplot = PcolorPlotWidget(redvypr_device=device, config=self.device.custom_config)
+        super().__init__(*args,**kwargs)
+        #self.layout = QtWidgets.QGridLayout(self)
+        self.pcolorplot = PcolorPlotWidget(redvypr_device=self.device, config=self.device.custom_config)
         self.layout.addWidget(self.pcolorplot)
         self.device.config_changed_signal.connect(self.config_changed)
 
     def config_changed(self):
-        print('XYplot config changed')
+        print('PcolorPlotDevice config changed')
         print('Config',self.device.custom_config)
         # Check if subscriptions need to be changed
         self.pcolorplot.config = self.device.custom_config
-        #self.pcolorplot.apply_config()
+        self.pcolorplot.applyConfig()
 
     def update_data(self, data):
         funcname = __name__ + '.update_data():'

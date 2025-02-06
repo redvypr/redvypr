@@ -41,6 +41,14 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('generic_sensor')
 logger.setLevel(logging.INFO)
 
+
+#class SensorCalibrations(pydantic.BaseModel):
+#    """
+#
+#    """
+#    sensor: typing.Annotated[typing.Optional[Sensor, BinarySensor], pydantic.Field(discriminator='sensortype')] = pydantic.Field(default=None, description='Sensor')
+#    calibrations: typing.List[typing.Annotated[typing.Union[*calibration_models], pydantic.Field(discriminator='calibration_type')]] = pydantic.Field(default=[],description='List of possible calibrations for the sensor')
+
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = True

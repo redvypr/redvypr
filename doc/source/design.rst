@@ -17,6 +17,8 @@ gives as result::
 
    Hostinfo {'hostname': 'someredvypr', 'tstart': 1723380212.3953316, 'addr': '192.168.178.157', 'uuid': '118902019882015-126'}
    Hostinfo redvypr {'hostname': 'otherredvypr', 'tstart': 1723380212.3956072, 'addr': '192.168.178.157', 'uuid': '118902019882015-250'}
+
+   
 Devices added to redvypr have a unique `name`, if more than one device of the same kind is added, redvypr automatically changes the name if necessary::
 
    import redvypr

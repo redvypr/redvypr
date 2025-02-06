@@ -1,7 +1,7 @@
 .. _python: https://www.python.org
 
-redvypr
-=======
+Welcome to redvypr
+==================
 
 .. image:: figures/logo_v03.1.png
   :width: 250
@@ -27,7 +27,7 @@ Sampling data does always require the similar tasks.
     - location
     - experiment
     - responsible person(s)
-  project ...
+    - project name
 - Plotting data for a quicklook
 - Do a first dataanalysis
 
@@ -80,8 +80,6 @@ Each devices runs in an own thread or an own process, which allows to
 do multiprocessing. Time or computationally intensive tasks are not
 blocking the whole process, an example is the netCDF logger, that can
 write on-the-fly compressed data provided by different sensors
-(:ref:`GPS example <examplegps>`).
-
 
 
 

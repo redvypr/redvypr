@@ -537,6 +537,9 @@ class RedvyprDevice(QtCore.QObject):
         else:
             raise TypeError('address needs to be a str or a redvypr_address')
 
+        if len(raddr.address_str) == 0:
+            raise ValueError('Address length is 0')
+
         FLAG_NEW = True
         # Test if the same address exists already
         for a in self.subscribed_addresses:

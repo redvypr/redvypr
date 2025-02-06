@@ -258,7 +258,6 @@ class RedvyprAddress():
 
         """
 
-
         # Create blank parsed_addrstr
         parsed_addrstr = {}
         parsed_addrstr_expand = {}

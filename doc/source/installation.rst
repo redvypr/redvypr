@@ -28,4 +28,5 @@ Command line interface
 ----------------------
 redvypr can be configured by command line arguments
 For example::
- redvypr -p . -hn hf -a csvlogger,s,name:csv_raw,a:1,pi=3.1415,filepostfix:HF_raw,datastreams:"'['§.*§/§DHF_raw.*§','§.*§']'"
+  
+  redvypr -p . -hn hf -a csvlogger,s,name:csv_raw,a:1,pi=3.1415,filepostfix:HF_raw,datastreams:"'['§.*§/§DHF_raw.*§','§.*§']'"
