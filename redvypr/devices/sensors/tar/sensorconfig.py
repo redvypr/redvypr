@@ -10,11 +10,13 @@ import serial
 import serial.tools.list_ports
 import logging
 import sys
+import copy
 import threading
 import pydantic
 import redvypr
 from . import hexflasher
-from redvypr.devices.sensors.generic_sensor.calibrationWidget import sensorCalibrationsWidget
+from . import tar
+from redvypr.devices.sensors.generic_sensor.calibrationWidget import GenericSensorCalibrationWidget, CalibrationsTable
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
 
 
@@ -68,15 +70,25 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         self.initwidget = QtWidgets.QWidget()
         self.initlayout = QtWidgets.QVBoxLayout(self.initwidget)
         self.tabwidget = QtWidgets.QTabWidget()
-        self.calibration = SensorCalibrationWidget()
+        self.calibration = FirmwareCalibrationsWidget(comqueue=self.__comqueue)
         self.tabwidget.addTab(self.calibration,'Calibration coefficients')
         self.hexflasher = HexflashWidget(comqueue=self.__comqueue)
         self.device = device
+        self.dhffl = None
         self.serialwidget = QtWidgets.QWidget()
         self.init_serialwidget()
         self.label = QtWidgets.QLabel("Serial device")
+
+        # Command and devictreewidget
+        self.commandwidget = QtWidgets.QWidget()
+        self.commandwidget.setEnabled(False)
+        self.init_commandwidget()
+        self.devicetree = QtWidgets.QTreeWidget()
+
         self.initlayout.addWidget(self.label)
         self.initlayout.addWidget(self.serialwidget)
+        self.initlayout.addWidget(self.commandwidget)
+        self.initlayout.addWidget(self.devicetree)
         self.initlayout.addStretch()
         layout.addWidget(self.tabwidget)
         self.tabwidget.addTab(self.initwidget, 'Serial setup')
@@ -84,6 +96,14 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         self.tabwidget.addTab(self.calibration, 'Calibration coefficients')
         #layout.addWidget(self.startbtn)
         #layout.addWidget(self.stopbtn)
+
+        self.update_device_tree()
+
+    def init_commandwidget(self):
+        layout = QtWidgets.QGridLayout(self.commandwidget)
+        self.query_button = QtWidgets.QPushButton('Query devices')
+        self.query_button.clicked.connect(self.query_devices)
+        layout.addWidget(self.query_button, 0, 0)
 
     def init_serialwidget(self):
         """Fills the serial widget with content
@@ -164,14 +184,112 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self._combo_stopbits, 2, 4)
         layout.addWidget(self._button_serial_openclose, 2, 5)
 
+
+    def query_devices(self):
+        if self.dhffl is None:
+            logger.warning('Open serial port first')
+        else:
+            mac_sensors = self.dhffl.ping_devices()
+            if mac_sensors is not None:
+                for mac in self.dhffl.devices_mac:
+                    mac_sensor = self.dhffl.devices_mac[mac]
+                    print('Mac sensor', mac_sensor)
+                    logger.debug('Getting config of device')
+                    self.dhffl.get_config_of_device(mac_sensor.macstr)
+                    #self.logger.debug('Getting calibration config of device')
+                    #self.dhffl.get_calibration_of_device(mac_sensor.macstr)
+                time.sleep(0.1)
+                for mac in self.dhffl.devices_mac:
+                    mac_sensor = self.dhffl.devices_mac[mac]
+                    print('Mac sensor', mac_sensor)
+                    logger.debug('Getting sample interval')
+                    macobject = self.dhffl.get_sampling_period_of_device(mac_sensor.macstr)
+                    if macobject is not None:
+                        logger.debug('Found sampling period')
+
+                    macobject = self.dhffl.get_calibration_of_device(mac_sensor.macstr)
+                    if macobject is not None:
+                        logger.debug('Found calibrations, updating coeff tables')
+                        # updating tables
+                        calibrations = macobject.calibrations
+                        #calibrations_edit = copy.deepcopy(macobject.calibrations)
+                        calibrations_edit = {}
+                        for key in macobject.calibrations.keys():
+                            calib = macobject.calibrations[key]
+                            calibrations_edit[key] = None
+                            if calib not in self.calibration.calibrations_all:
+                                self.calibration.calibrations_all.append(calib)
+
+                        # Update calibration table
+                        self.calibration.calibwidget.update_calibration_all_table(self.calibration.calibrations_all)
+                        self.calibration.calibwidget.update_calibration_table(self.calibration.calibtablename_firmware, calibrations)
+                        self.calibration.calibwidget.update_calibration_table(self.calibration.calibtablename_edit, calibrations_edit)
+                        self.calibration.macobject_choosen = macobject
+
+                print('Found devices {}'.format(mac_sensors.keys()))
+                self.calibration.update_device_tree()
+                self.hexflasher.update_device_tree()
+                self.update_device_tree()
+
+    def update_device_tree(self):
+        logger.debug('Updating device tree')
+        #self.devicetree.currentItemChanged.disconnect(self.qtreewidget_item_changed)
+        self.devicetree.clear()
+        self.devicetree.setColumnCount(10)
+        # self.devicetree.setHeaderHidden(True)
+        self.devicetree.setHeaderLabels(
+            ['Device', 'Firmware status', 'Version', 'Bootloader version', 'Board ID', 'Bootflag', 'Boot countdown','Flagsample','Sample counter','Sampling period'])
+        root = self.devicetree.invisibleRootItem()
+        if self.dhffl is None:
+            logger.warning('No serial connection yet')
+        else:
+            for macstr in self.dhffl.devices_mac.keys():
+                if self.dhffl.devices_mac[macstr].parents is None:
+                    mac = self.dhffl.devices_mac[macstr]
+                    bootloader_version = mac.bootloader_version
+                    if bootloader_version is None:
+                        bootloader_version = 'Inactive'
+                    version = mac.version
+                    brdid = mac.brdid
+                    status = mac.status
+                    bootflag = mac.bootflag
+                    countdown = mac.countdown
+                    sample_counter = mac.sample_counter
+                    sample_period = mac.sample_period
+                    flagsample = mac.flagsample
+                    itm = QtWidgets.QTreeWidgetItem(
+                        [macstr, status, version, bootloader_version, brdid, str(bootflag), str(countdown),str(flagsample), str(sample_counter),str(sample_period)])
+                    root.addChild(itm)
+                else:
+                    parentitm = root
+                    for m in self.dhffl.devices_mac[macstr].parents:
+                        mactmp = self.dhffl.devices_mac[m]
+                        bootloader_version = mactmp.bootloader_version
+                        if bootloader_version is None:
+                            bootloader_version = 'Inactive'
+                        version = mactmp.version
+                        brdid = mactmp.brdid
+                        status = mactmp.status
+                        bootflag = mactmp.bootflag
+                        countdown = mactmp.countdown
+                        itm = QtWidgets.QTreeWidgetItem(
+                            [m, status, version, bootloader_version, brdid, str(bootflag), str(countdown)])
+                        parentitm.addChild(itm)
+                        parentitm = itm
+
+        self.devicetree.expandAll()
+        self.devicetree.resizeColumnToContents(0)
+        self.devicetree.sortByColumn(0, QtCore.Qt.AscendingOrder)
+        #self.devicetree.currentItemChanged.connect(self.qtreewidget_item_changed)
+
     def start_clicked(self):
         logger.debug('Start clicked')
         #print('Start clicked')
         button = self._button_serial_openclose
         print('ischecked',button.isChecked())
+
         #if ('Open' in button.text()):
         if button.isChecked():
-            button.setText('Close')
             serial_name = str(self._combo_serial_devices.currentText())
             serial_baud = int(self._combo_serial_baud.currentText())
             self.device.custom_config.comport = serial_name
@@ -200,7 +318,13 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
                 self.device.custom_config.parity = serial.PARITY_SPACE
 
             logger.info('Starting dhffl at comport {:s}'.format(serial_name))
-            self.dhffl = hexflasher.dhf_flasher(serial_name, baud=serial_baud)
+            try:
+                self.dhffl = hexflasher.dhf_flasher(serial_name, baud=serial_baud)
+            except:
+                logger.warning('Could not open serial port',exc_info=True)
+                button.setChecked(False)
+                return
+
             self.statuswidget = SerialStatusWidget(dhffl=self.dhffl, data_queue=self.dhffl.serial_queue_write,
                                                    comqueue=self.__comqueue)
             self.statuswidget.statuswidget_queue.put('test')
@@ -210,17 +334,20 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
 
             self.calibration.start(self.dhffl, statuswidget=self.statuswidget)
             self.tabwidget.addTab(self.statuswidget, 'Serial status')
+            self.commandwidget.setEnabled(True)
+            button.setText('Close')
         else:
             self.stop_clicked()
+            self.commandwidget.setEnabled(False)
 
     def stop_clicked(self):
         logger.debug('Stop clicked')
         button = self._button_serial_openclose
         self.hexflasher.stop()
-        index = self.tabwidget.indexOf(self.serial_status)
+        index = self.tabwidget.indexOf(self.statuswidget)
         self.tabwidget.removeTab(index)
-        self.serial_status.close()
-        button.setText('Start')
+        self.statuswidget.close()
+        button.setText('Open')
 
 
 class SerialStatusWidget(QtWidgets.QWidget):
@@ -291,6 +418,9 @@ class SerialStatusWidget(QtWidgets.QWidget):
                 serial_data = data[2]
                 datastr = direction + ':' + td.isoformat() + '\t' + str(serial_data) + '\n'
                 self.statuswidget_text.insertPlainText(datastr)
+                cursor = self.statuswidget_text.textCursor()
+                cursor.movePosition(cursor.End)
+                self.statuswidget_text.setTextCursor(cursor)
             elif isinstance(data, dict):
                 #infodata = {'status': 'write', 'written': ihexd, 'write_total': len(hexdata)}
                 if data['status'] == 'write':
@@ -321,26 +451,145 @@ class SerialStatusWidget(QtWidgets.QWidget):
             else:
                 self.logger.debug('Statuswidget, got data:{}'.format(data))
 
-class SensorCalibrationWidget(QtWidgets.QWidget):
-    def __init__(self, dhffl=None):
+class CalibrationsWriteToSensorWidget(QtWidgets.QWidget):
+    def __init__(self, *args, calibrations=None, macobject=None, dhffl=None, comqueue=None):
+        funcname = __name__ + '__init__()'
+        super().__init__(*args)
+        self.logger = logging.getLogger('CalibrationsWriteToSensorWidget')
+        self.logger.setLevel(logging.DEBUG)
+        self.__comqueue = comqueue
+        self.calibrations = calibrations
+        self.macobject = macobject
+        self.dhffl = dhffl
+
+        # self.dhffl
+        for para0 in self.calibrations:
+            self.cal0 = self.calibrations[para0]
+            break
+
+        meta_data = {}
+        meta_data['id'] = self.cal0.calibration_id
+        meta_data['date'] = self.cal0.date.isoformat()
+        meta_data['uuid'] = self.cal0.calibration_uuid
+        meta_data['comment'] = self.cal0.comment
+        self.layout = QtWidgets.QGridLayout(self)
+        self.cal_meta = QtWidgets.QWidget()
+        self.cal_meta_layout = QtWidgets.QFormLayout(self.cal_meta)
+        self.cal_meta_lineedits = {}
+        file_format_check = {'id':'Calibration ID', 'uuid':'Calibration UUID', 'comment':'Comment', 'date':'Calibration date'}
+        for format_check in file_format_check:
+            self.cal_meta_lineedits[format_check] = QtWidgets.QLineEdit()
+            self.cal_meta_lineedits[format_check].setText(str(meta_data[format_check]))
+            self.cal_meta_layout.addRow(file_format_check[format_check],self.cal_meta_lineedits[format_check])
+            self.cal_meta_lineedits[format_check].textChanged.connect(self.__update_calcommands__)
+
+        # Write buttons
+        self.write_button = QtWidgets.QPushButton('Write to sensor')
+        self.write_button.clicked.connect(self.__write_clicked__)
+        self.show_write_button = QtWidgets.QPushButton('Show files to write')
+        self.show_write_button.clicked.connect(self.__write_clicked__)
+        self.result_text = QtWidgets.QPlainTextEdit()
+
+        self.layout.addWidget(self.cal_meta, 0, 0)
+        self.layout.addWidget(self.result_text, 1, 0)
+        self.layout.addWidget(self.show_write_button, 2, 0)
+        self.layout.addWidget(self.write_button, 3, 0)
+
+        self.__update_calcommands__()
+
+    def __update_calcommands__(self):
+        meta_data = {}
+        for key in self.cal_meta_lineedits.keys():
+            metastr = str(self.cal_meta_lineedits[key].text())
+            if len(metastr) > 0:
+                meta_data[key] = metastr
+            else:
+                meta_data[key] = None
+
+        calcommands = self.macobject.create_calibration_commands(self.calibrations, calibration_id=meta_data['id'],
+                                                                 date=meta_data['date'],
+                                                                 calibration_uuid=meta_data['uuid'], comment=meta_data['comment'])
+
+        self.result_text.clear()
+        for calcommand in calcommands:
+            self.result_text.appendPlainText(str(calcommand[:-1]))  # Without the newline
+
+        cursor = self.result_text.textCursor()
+        cursor.movePosition(cursor.Start)
+        self.result_text.setTextCursor(cursor)
+        self.calcommands = calcommands
+
+        print('Calcommands', calcommands)
+
+    def __write_clicked__(self):
+        print('Writing ...')
+        self.__update_calcommands__()
+        if self.dhffl is not None and self.macobject is not None:
+            macstr = self.macobject.macstr
+            thread_args = (self.calcommands, None, self.__comqueue)
+
+            writethread = threading.Thread(target=self.dhffl.write_calibrations, args=thread_args)
+            self.logger.info('Starting write calibration thread')
+            writethread.start()
+
+        #for calcommand in self.calcommands:
+        #    print('Writing')
+        #    logstr = 'Writing:' + str(calcommand[:-1])
+        #    self.result_text.appendPlainText(logstr)  # Without the newline
+        #    self.dhffl.write_data(calcommand)
+        #    cursor = self.result_text.textCursor()
+        #    cursor.movePosition(cursor.End)
+        #    self.result_text.setTextCursor(cursor)
+        #    time.sleep(0.2)
+
+
+class FirmwareCalibrationsWidget(QtWidgets.QWidget):
+    def __init__(self, dhffl=None, sensor = None, comqueue=None):
+        funcname = __name__ + '.__init__():'
         super(QtWidgets.QWidget, self).__init__()
+        self.__comqueue = comqueue
         self.logger = logging.getLogger('SensorCalibrationWidget')
         self.logger.setLevel(logging.DEBUG)
         self.layout = QtWidgets.QGridLayout(self)
+        if sensor is None:
+            self.logger.debug(funcname + 'Adding standard tar sensor')
+            self.sensor = tar.TarSensor()
+
         self.dhffl = dhffl
 
         self.query_button = QtWidgets.QPushButton('Query devices')
         self.query_button.clicked.connect(self.query_devices)
-
+        self.choose_calibrations_button = QtWidgets.QPushButton('Write calibrations to device')
+        self.choose_calibrations_button.clicked.connect(self.write_calibrations_to_device)
+        # List of calibrations
+        self.calibrations_all = []
         self.devicetree = QtWidgets.QTreeWidget()
         self.devicetree.currentItemChanged.connect(self.qtreewidget_item_changed)
-        #self.coeffwidget = redvypr.widgets.pydanticConfigWidget.pydanticConfigWidget(config = {})
-        self.calibwidget = sensorCalibrationsWidget(redvypr_device=self.device, calibrations = [])
+        self.calibtablename_edit = 'Edit calibrations'
+        self.calibtablename_firmware = 'Calibrations Sensorfirmware'
+        calibrations_sensor = {self.calibtablename_firmware:[], self.calibtablename_edit:[]}
+        calibrations_sensor_options = {self.calibtablename_firmware: {'editable':False}, self.calibtablename_edit: {'editable':True}}
+        self.calibwidget = GenericSensorCalibrationWidget(calibrations_all=self.calibrations_all, calibrations_sensor=calibrations_sensor, calibrations_sensor_options=calibrations_sensor_options)
 
-        self.layout.addWidget(self.query_button,0,0)
-        self.layout.addWidget(self.devicetree,1,0)
-        #self.layout.addWidget(self.coeffwidget, 0, 1,2,1)
-        self.layout.addWidget(self.calibwidget, 0, 1, 2, 1)
+        self.layout.addWidget(self.query_button, 0, 0)
+        self.layout.addWidget(self.choose_calibrations_button, 1, 0)
+        self.layout.addWidget(self.devicetree, 2, 0)
+        self.layout.addWidget(self.calibwidget, 3, 0)
+
+        self.update_device_tree()
+
+    def write_calibrations_to_device(self):
+        funcname = __name__ + '.write_calibrations_to_device():'
+        logger.debug(funcname)
+        try:
+            macobject = self.macobject_choosen
+        except:
+            self.logger.warning('No object choosen to write data to')
+
+        calibrations = self.calibwidget.calibrationsTable[self.calibtablename_edit].calibrations
+        self.__calwritewidget__ = CalibrationsWriteToSensorWidget(calibrations=calibrations, macobject=macobject, dhffl=self.dhffl, comqueue=self.__comqueue)
+        self.__calwritewidget__.setWindowTitle('Calibrations to sensor {}'.format(macobject.macstr))
+        self.__calwritewidget__.show()
 
     def start(self, dhffl, statuswidget):
         self.logger.info('Starting')
@@ -357,36 +606,39 @@ class SensorCalibrationWidget(QtWidgets.QWidget):
         self.devicetree.setHeaderLabels(
             ['Device', 'Firmware status', 'Version', 'Bootloader version', 'Board ID', 'Bootflag', 'Boot countdown'])
         root = self.devicetree.invisibleRootItem()
-        for macstr in self.dhffl.devices_mac.keys():
-            if self.dhffl.devices_mac[macstr].parents is None:
-                mac = self.dhffl.devices_mac[macstr]
-                bootloader_version = mac.bootloader_version
-                if bootloader_version is None:
-                    bootloader_version = 'Inactive'
-                version = mac.version
-                brdid = mac.brdid
-                status = mac.status
-                bootflag = mac.bootflag
-                countdown = mac.countdown
-                itm = QtWidgets.QTreeWidgetItem(
-                    [macstr, status, version, bootloader_version, brdid, str(bootflag), str(countdown)])
-                root.addChild(itm)
-            else:
-                parentitm = root
-                for m in self.dhffl.devices_mac[macstr].parents:
-                    mactmp = self.dhffl.devices_mac[m]
-                    bootloader_version = mactmp.bootloader_version
+        if self.dhffl is None:
+            self.logger.warning('No serial connection yet')
+        else:
+            for macstr in self.dhffl.devices_mac.keys():
+                if self.dhffl.devices_mac[macstr].parents is None:
+                    mac = self.dhffl.devices_mac[macstr]
+                    bootloader_version = mac.bootloader_version
                     if bootloader_version is None:
                         bootloader_version = 'Inactive'
-                    version = mactmp.version
-                    brdid = mactmp.brdid
-                    status = mactmp.status
-                    bootflag = mactmp.bootflag
-                    countdown = mactmp.countdown
+                    version = mac.version
+                    brdid = mac.brdid
+                    status = mac.status
+                    bootflag = mac.bootflag
+                    countdown = mac.countdown
                     itm = QtWidgets.QTreeWidgetItem(
-                        [m, status, version, bootloader_version, brdid, str(bootflag), str(countdown)])
-                    parentitm.addChild(itm)
-                    parentitm = itm
+                        [macstr, status, version, bootloader_version, brdid, str(bootflag), str(countdown)])
+                    root.addChild(itm)
+                else:
+                    parentitm = root
+                    for m in self.dhffl.devices_mac[macstr].parents:
+                        mactmp = self.dhffl.devices_mac[m]
+                        bootloader_version = mactmp.bootloader_version
+                        if bootloader_version is None:
+                            bootloader_version = 'Inactive'
+                        version = mactmp.version
+                        brdid = mactmp.brdid
+                        status = mactmp.status
+                        bootflag = mactmp.bootflag
+                        countdown = mactmp.countdown
+                        itm = QtWidgets.QTreeWidgetItem(
+                            [m, status, version, bootloader_version, brdid, str(bootflag), str(countdown)])
+                        parentitm.addChild(itm)
+                        parentitm = itm
 
         self.devicetree.expandAll()
         self.devicetree.resizeColumnToContents(0)
@@ -420,9 +672,25 @@ class SensorCalibrationWidget(QtWidgets.QWidget):
                     mac_sensor = self.dhffl.devices_mac[mac]
                     print('Mac sensor', mac_sensor)
                     self.logger.debug('Getting calibration config of device')
-                    self.dhffl.get_calibration_of_device(mac_sensor.macstr)
-                print('Found devices {}'.format(mac_sensors.keys()))
+                    macobject = self.dhffl.get_calibration_of_device(mac_sensor.macstr)
+                    if macobject is not None:
+                        logger.debug('Found calibrations, updating coeff tables')
+                        # updating tables
+                        calibrations = macobject.calibrations
+                        #calibrations_edit = copy.deepcopy(macobject.calibrations)
+                        calibrations_edit = {}
+                        for key in macobject.calibrations.keys():
+                            calib = macobject.calibrations[key]
+                            calibrations_edit[key] = None
+                            if calib not in self.calibrations_all:
+                                self.calibrations_all.append(calib)
 
+                        self.calibwidget.update_calibration_all_table(self.calibrations_all)
+                        self.calibwidget.update_calibration_table(self.calibtablename_firmware, calibrations)
+                        self.calibwidget.update_calibration_table(self.calibtablename_edit, calibrations_edit)
+                        self.macobject_choosen = macobject
+
+                print('Found devices {}'.format(mac_sensors.keys()))
                 self.update_device_tree()
 
 
@@ -559,6 +827,8 @@ class HexflashWidget(QtWidgets.QWidget):
             b.setEnabled(False)
 
         self.automatic_filename_changed()
+        self.update_device_tree()
+
 
     def create_statuswidget_legacy(self):
         """
@@ -623,53 +893,6 @@ class HexflashWidget(QtWidgets.QWidget):
                 except Exception as e:
                     continue
 
-    def update_statuswidget_legacy(self):
-        #print('Hallo')
-        while True:
-            try:
-                data = self.statuswidget_queue.get_nowait()
-            except:
-                break
-
-            #print('data',data)
-            if isinstance(data, list):
-                tu = data[0]
-                td = datetime.datetime.fromtimestamp(tu)
-                direction = data[1]
-                serial_data = data[2]
-                datastr = direction + ':' + td.isoformat() + '\t' + str(serial_data) + '\n'
-                self.statuswidget_text.insertPlainText(datastr)
-            elif isinstance(data, dict):
-                #infodata = {'status': 'write', 'written': ihexd, 'write_total': len(hexdata)}
-                if data['status'] == 'write':
-                    try:
-                        progress = int(data['written'] / data['write_total'] * 100)
-                        self.statuswidget_progress.setValue(progress)
-                    except:
-                        pass
-                    try:
-                        message = data['message']
-                    except:
-                        message = 'Writing'
-                    self.statuswidget_progress_label.setText(message)
-                elif data['status'] == 'read':
-                    progress = int(data['read'] / data['read_total'] * 100)
-                    self.statuswidget_progress.setValue(progress)
-                    try:
-                        message = data['message']
-                    except:
-                        message = 'Reading'
-                    self.statuswidget_progress_label.setText(message)
-                else:
-                    try:
-                        message = data['message']
-                    except:
-                        continue
-                    self.statuswidget_progress_label.setText(message)
-            else:
-                self.logger.debug('Statuswidget, got data:{}'.format(data))
-
-
     def qtreewidget_item_changed(self,itemnew,itemold):
         self.logger.debug('Itemchanged {} {}'.format(itemnew,itemold))
         macstr = itemnew.text(0)
@@ -706,9 +929,20 @@ class HexflashWidget(QtWidgets.QWidget):
         if filename:
             self.filename_write_edit.setText(filename[0])
 
+    def write_callback(self):
+        self.writethread = False
+        self.write_button.setEnabled(True)
     def write_clicked(self):
         self.logger.debug('Write clicked')
         filename = self.filename_write_edit.text()
+        #try:
+        #    self.writethread
+        #    flag_nowrite = False
+        #except:
+        #    flag_nowrite = True
+
+        #if flag_nowrite == False:
+        #    self.logger.warning('Already writing')
         if len(filename)>0:
             self.logger.debug('Will flash device {} with data from file'.format(self.mac_sensor.macstr, filename))
             macstr = self.mac_sensor.macstr
@@ -724,11 +958,16 @@ class HexflashWidget(QtWidgets.QWidget):
             if self.dhffl is not None and self.mac_sensor is not None:
                 macstr = self.mac_sensor.macstr
                 filename = self.filename_read_edit.text()
-                thread_args = (macstr, hexdata, True, self.__comqueue)
+                callback = self.write_callback
+                thread_args = (macstr, hexdata, True, self.__comqueue,callback)
 
                 writethread = threading.Thread(target=self.dhffl.writeFlash, args=thread_args)
                 self.logger.info('Starting write thread')
                 writethread.start()
+                self.write_button.setEnabled(False)
+                #index = self.parent().tabwidget.indexOf(self.parent().statuswidget)
+                #self.parent().tabwidget.setCurrentIndex(index)
+                #self.parent().statuswidget.setFocus()
                 # macsensor = self.dhffl.readFlash(macstr, addr_start=addr_start, addr_end=addr_end)
 
     def read_clicked(self):
@@ -772,7 +1011,6 @@ class HexflashWidget(QtWidgets.QWidget):
                     self.logger.debug('Getting config of device')
                     self.dhffl.get_config_of_device(mac_sensor.macstr)
                 print('Found devices {}'.format(mac_sensors.keys()))
-                # TODO: Get config bootflag and countdown
                 self.update_device_tree()
 
     def start(self, dhffl, statuswidget):
@@ -802,40 +1040,45 @@ class HexflashWidget(QtWidgets.QWidget):
         # self.devicetree.setHeaderHidden(True)
         self.devicetree.setHeaderLabels(['Device','Firmware status','Version','Bootloader version','Board ID','Bootflag','Boot countdown'])
         root = self.devicetree.invisibleRootItem()
-        for macstr in self.dhffl.devices_mac.keys():
-            status = None
-            version = None
-            brdid = None
-            bootloader_version = None
-            bootflag = None
-            countdown = None
-            if self.dhffl.devices_mac[macstr].parents is None:
-                mac = self.dhffl.devices_mac[macstr]
-                bootloader_version = mac.bootloader_version
-                if bootloader_version is None:
-                    bootloader_version = 'Inactive'
-                version = mac.version
-                brdid = mac.brdid
-                status = mac.status
-                bootflag = mac.bootflag
-                countdown = mac.countdown
-                itm = QtWidgets.QTreeWidgetItem([macstr, status, version, bootloader_version, brdid, str(bootflag), str(countdown)])
-                root.addChild(itm)
-            else:
-                parentitm = root
-                for m in self.dhffl.devices_mac[macstr].parents:
-                    mactmp = self.dhffl.devices_mac[m]
-                    bootloader_version = mactmp.bootloader_version
+
+        if self.dhffl is None:
+            self.logger.warning('No serial connection yet')
+        else:
+
+            for macstr in self.dhffl.devices_mac.keys():
+                status = None
+                version = None
+                brdid = None
+                bootloader_version = None
+                bootflag = None
+                countdown = None
+                if self.dhffl.devices_mac[macstr].parents is None:
+                    mac = self.dhffl.devices_mac[macstr]
+                    bootloader_version = mac.bootloader_version
                     if bootloader_version is None:
                         bootloader_version = 'Inactive'
-                    version = mactmp.version
-                    brdid = mactmp.brdid
-                    status = mactmp.status
-                    bootflag = mactmp.bootflag
-                    countdown = mactmp.countdown
-                    itm = QtWidgets.QTreeWidgetItem([m, status, version, bootloader_version, brdid, str(bootflag), str(countdown)])
-                    parentitm.addChild(itm)
-                    parentitm = itm
+                    version = mac.version
+                    brdid = mac.brdid
+                    status = mac.status
+                    bootflag = mac.bootflag
+                    countdown = mac.countdown
+                    itm = QtWidgets.QTreeWidgetItem([macstr, status, version, bootloader_version, brdid, str(bootflag), str(countdown)])
+                    root.addChild(itm)
+                else:
+                    parentitm = root
+                    for m in self.dhffl.devices_mac[macstr].parents:
+                        mactmp = self.dhffl.devices_mac[m]
+                        bootloader_version = mactmp.bootloader_version
+                        if bootloader_version is None:
+                            bootloader_version = 'Inactive'
+                        version = mactmp.version
+                        brdid = mactmp.brdid
+                        status = mactmp.status
+                        bootflag = mactmp.bootflag
+                        countdown = mactmp.countdown
+                        itm = QtWidgets.QTreeWidgetItem([m, status, version, bootloader_version, brdid, str(bootflag), str(countdown)])
+                        parentitm.addChild(itm)
+                        parentitm = itm
 
 
         self.devicetree.expandAll()
@@ -881,214 +1124,3 @@ class HexflashWidget(QtWidgets.QWidget):
 
             for b in self.flash_buttons_enable:
                 b.setEnabled(False)
-
-    def process_commands_legacy(self):
-        if True:
-            # Wait for device to be ready
-            # Flush the queue
-            while True:
-                time.sleep(0.5)
-                try:
-                    ret = outq.get_nowait()
-                    if (ret['status'] == 'ready'):
-                        logger.info('Device is ready')
-                        break
-                except:
-                    continue
-            time.sleep(0.5)
-            # Check if interactive or command line mode
-            if args.write_flash is not None:
-                try:
-                    macstr = list(dhffl.devices.keys())[0]
-                    d = dhffl.devices[macstr]
-                    macsum = d.macsum_boots
-                    flag_device = True
-                except:
-                    logger.warning('No device found')
-                    flag_device = False
-
-                if flag_device == False:
-                    logger.warning('No device found')
-                    time.sleep(1)
-                    inq.put('STOP')
-                    time.sleep(1)
-                    print('Stopping now')
-                    return True
-                else:
-                    # Flush the queue
-                    while True:
-                        try:
-                            ret = outq.get_nowait()
-                        except:
-                            break
-
-                    filename = args.write_flash
-                    logger.info('Writing file to flash {:s}'.format(filename))
-                    fwrite = open(filename)
-                    flag_ready = True
-                    flag_writegood = True
-                    flag_timeout = False
-                    hexdata_all = []
-                    for hexdata in fwrite.readlines():
-                        hexdata_all.append(hexdata)
-
-                    nlines = len(hexdata_all)
-                    for nline, hexdata in enumerate(hexdata_all):
-                        logger.info('Writing {:d} of {:d}'.format(nline, nlines))
-                        hexdata_mod = hexdata.replace("\n", "").replace("\c", "")
-                        DEVICECOMMAND = "${:s}{:s}{:s}\n".format(macstr, macsum, hexdata_mod)
-                        logger.debug(
-                            'Sending write command:{:s}, with len {:d}'.format(DEVICECOMMAND, len(DEVICECOMMAND)))
-                        inq.put('SEND {:s}'.format(DEVICECOMMAND))
-                        flag_ready = False
-                        flag_writegood = False
-                        tsend = time.time()
-                        while True:
-                            try:
-                                ret = outq.get_nowait()
-                            except:
-                                time.sleep(0.01)
-                                ret = {}
-                                ret['status'] = 'exception'
-
-                            if ret['status'] == 'writegood':
-                                #print('Writegood, continuing')
-                                flag_writegood = True
-                            elif ret['status'] == 'ready':
-                                #print('ready, continuing')
-                                flag_ready = True
-
-                            if flag_ready and flag_writegood:
-                                print('All good, continuing')
-                                break
-                            elif (time.time() - tsend) > 5:
-                                logger.warning('Timeout, stopping write')
-                                flag_timeout = True
-                                break
-
-                        if flag_timeout:
-                            break
-                        #input('Yes?')
-                        #time.sleep(10)
-
-                # Check if programming has been done
-                while True:
-                    flag_done = (len(dhffl.serial_commands) == 0) and dhffl.FLAG_READY
-                    print('Status', len(dhffl.serial_commands), dhffl.FLAG_READY)
-                    time.sleep(0.5)
-                    if flag_done:
-                        time.sleep(1)
-                        inq.put('STOP')
-                        time.sleep(1)
-                        print('Stopping now')
-                        return True
-
-            macstr = ''
-            #inq.put('Hallo')
-            #time.sleep(0.5)
-            while True:
-                command = input('Command:')
-                print('Got command {:s}'.format(command))
-                if (command == '\n'):
-                    continue
-                elif (command.upper() == 'DEVICES'):
-                    print(dhffl.devices)
-                    for i, mac in enumerate(dhffl.devices.keys()):
-                        print('Device {:d}: MAC {:s}'.format(i, mac))
-                elif (command.upper() == 'STOP') or (command.upper() == 'EXIT'):
-                    inq.put('STOP')
-                    time.sleep(1)
-                    print('Stopping now')
-                    return True
-                elif (command.upper() == 'RESET'):
-                    macstr = ''
-                    inq.put('RESET')
-                elif command.upper().startswith('WRITE'):
-                    # WRITE 2 4000 ABCD
-                    try:
-                        macstr = list(dhffl.devices.keys())[0]
-                        d = dhffl.devices[macstr]
-                        macsum = d.macsum_boots
-                    except:
-                        logger.warning('No device found')
-                        continue
-
-                    nbytestr = command.split(' ')[1]
-                    nbyteshexstr = hex(int(nbytestr))
-                    startaddrhexstr = command.split(' ')[2]
-                    datahexstr = command.split(' ')[3]
-                    try:
-                        datawrite = bytes.fromhex(datahexstr)
-                        nbytes_int = int(nbyteshexstr, 16)
-                        startaddr_int = int(startaddrhexstr, 16)
-                        logger.debug('Writing {:s} bytes from {:s} '.format(nbytestr, startaddrhexstr))
-                        FLAG_WRITE = True
-                    except Exception as e:
-                        logger.exception(e)
-                        FLAG_WRITE = False
-
-                    if FLAG_WRITE:
-                        comstr = ':'
-                        checksum = 0xFF
-                        DEVICECOMMAND = "${:s}{:s}{:s}{:02X}{:04X}00{:s}{:02X}\n".format(macstr, macsum, comstr,
-                                                                                         nbytes_int, startaddr_int,
-                                                                                         datahexstr, checksum)
-                        logger.debug(
-                            'Sending write command:{:s}, with len {:d}'.format(DEVICECOMMAND, len(DEVICECOMMAND)))
-                        inq.put('SEND {:s}'.format(DEVICECOMMAND))
-                elif command.upper().startswith('READ'):
-                    try:
-                        macstr = list(dhffl.devices.keys())[0]
-                        d = dhffl.devices[macstr]
-                        macsum = d.macsum_boots
-                    except:
-                        logger.warning('No device found')
-                        continue
-                    # READ NBYTES STARTADDR
-                    nread = 32  # read nread bytes at once from device
-                    comstr_input = command.split(' ')[0]
-                    nbytestr = command.split(' ')[1]
-                    nbyteshexstr = hex(int(nbytestr))
-                    startaddrhexstr = command.split(' ')[2]
-                    try:
-                        nbytes_int = int(nbyteshexstr, 16)
-                        startaddr_int = int(startaddrhexstr, 16)
-                        logger.debug('Reading {:s} bytes from {:s} '.format(nbytestr, startaddrhexstr))
-                        FLAG_READ = True
-                    except Exception as e:
-                        logger.exception(e)
-                        FLAG_READ = False
-
-                    if FLAG_READ:
-                        print('READING from device {:s}'.format(macstr))
-                        ntotal = 0
-                        t0 = time.time()
-                        for nread_tmp in range(0, nbytes_int, nread):
-                            nread_com = nread
-                            raddr = startaddr_int + nread_tmp
-                            # Check if the number of bytes to read is correct, this can happen at the end of the loop
-                            eaddr = raddr + nread_com
-                            endaddr_int = startaddr_int + nbytes_int
-                            #print('Hallo',eaddr,endaddr_int)
-                            if eaddr > endaddr_int:
-                                #print('Larger')
-                                nread_com -= eaddr - endaddr_int
-
-                            ntotal += nread_com
-                            #print(nread_tmp, nbytes_int, nread,nread_com, ntotal)
-                            #print('reading from 0x{:04X}'.format(raddr))
-                            #macstr = 'FC0FE7FFFE16A264'
-                            #macsum = '0B'
-                            comstr = 'r'
-                            DEVICECOMMAND = "${:s}{:s}{:s}{:02X}{:08X}0000\n".format(macstr, macsum, comstr, nread_com,
-                                                                                     raddr)
-                            logger.debug(
-                                'Sending read command:{:s}, with len {:d}'.format(DEVICECOMMAND, len(DEVICECOMMAND)))
-                            inq.put('SEND {:s}'.format(DEVICECOMMAND))
-                            data = outq.get()
-                            #print('data',data)
-
-                        t1 = time.time()
-                        dtread = t1 - t0
-                        logger.info('Read {:d}bytes in {:f}s'.format(ntotal, dtread))
-                        print('Total', nbytes_int, ntotal)

@@ -12,7 +12,7 @@ import pydantic
 import redvypr
 from redvypr.device import RedvyprDevice
 from redvypr.widgets.standard_device_widgets import RedvyprDeviceWidget_simple
-from redvypr.devices.sensors.generic_sensor.calibrationWidget import SensorCalibrationsTable
+from redvypr.devices.sensors.generic_sensor.calibrationWidget import GenericSensorCalibrationWidget
 import redvypr.devices.sensors.calibration.calibration_models as calibration_models
 import redvypr.devices.sensors.generic_sensor.sensor_definitions as sensor_definitions
 from . import hexflasher
@@ -193,10 +193,10 @@ class RedvyprDeviceWidget(RedvyprDeviceWidget_simple):
         self.datadisplaywidget = QtWidgets.QWidget(self)
         self.datadisplaywidget_layout = QtWidgets.QVBoxLayout(self.datadisplaywidget)
 
-        self.tartest = TarSensor()
-        print('tartest', self.tartest)
-        self.calibrationstable = SensorCalibrationsTable(sensor=self.tartest)
-        self.datadisplaywidget_layout.addWidget(self.calibrationstable)
+        #self.tartest = TarSensor()
+        #print('tartest', self.tartest)
+        #self.calibrationstable = GenericSensorCalibrationWidget()
+        #self.datadisplaywidget_layout.addWidget(self.calibrationstable)
 
         self.layout.addWidget(self.datadisplaywidget)
 

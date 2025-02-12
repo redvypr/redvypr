@@ -9,6 +9,7 @@ import dateutil
 import numpy as np
 import pydantic
 
+import redvypr
 from redvypr.redvypr_address import RedvyprAddress
 
 logging.basicConfig(stream=sys.stderr)
@@ -16,6 +17,58 @@ logger = logging.getLogger('calibration_models')
 logger.setLevel(logging.DEBUG)
 
 
+
+def find_calibration_for_parameter(parameter, calibrations, sn=None, date=None, date2=None, calibration_type=None, calibration_id=None, calibration_uuid=None, sort_by='date'):
+    """
+
+    Parameters
+    ----------
+    sn
+    date
+    date2
+    calibration_type
+    calibration_id
+    calibration_uuid
+    sort_by
+    parameter
+    calibrations
+
+    Returns
+    -------
+
+    """
+    # make an address out of the parameter
+    parameter = redvypr.RedvyprAddress(parameter)
+    calibration_candidates = []
+    for calibration in calibrations:
+        # Check if the address fits
+        flag_candidate = True
+        if calibration.parameter in parameter:
+            logger.debug('Found correct parameter')
+            if sn is not None:
+                flag_candidate = sn == calibration.sn
+            if calibration_type is not None:
+                flag_candidate = calibration_type == calibration.calibration_type
+            if calibration_uuid is not None:
+                flag_candidate = calibration_uuid == calibration.calibration_uuid
+            if calibration_id is not None:
+                flag_candidate = calibration_id == calibration.calibration_id
+            if date is not None and date2 is None:
+                logger.debug('Exact match of date')
+                flag_candidate = date == calibration.date
+            if date is not None and date2 is not None:
+                logger.debug('Checking for time interval date <= calibration >= date2')
+                flag_candidate = (date <= calibration.date) and (date2 >= calibration.date)
+
+            if flag_candidate:
+                logger.debug('Adding calibration')
+                calibration_candidates.append(calibration)
+
+    # Sort by date
+    if sort_by == 'date':
+        calibration_candidates = sorted(calibration_candidates, key=lambda x: x.date)
+
+    return calibration_candidates
 def get_date_from_calibration(calibration, parameter, return_str = False, strformat = '%Y-%m-%d %H:%M:%S'):
     """
     Searches within the calibration for a calibration date. This is a helper function as the date might be at different locations
@@ -173,6 +226,7 @@ class CalibrationList(list):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.calibration_files = []
+        self.calfiles_processed = []
 
     def add_calibration_file(self, calfile, reload=True):
         funcname = __name__ + 'add_calibration_file():'
@@ -205,14 +259,17 @@ class CalibrationList(list):
         for fname in fnames:
             if fname not in self.calfiles_processed:
                 logger.debug(funcname + ' reading file {:s}'.format(fname))
-                calibration = self.read_calibration_file(fname)
-                if calibration is not None:
-                    flag_add = self.add_calibration(calibration)
-                    if flag_add:
-                        self.calfiles_processed.append(fname)
+                calibrations = self.read_calibration_file(fname)
+                if calibrations is not None:
+                    for calibration in calibrations:
+                        flag_add = self.add_calibration(calibration)
+                        if flag_add:
+                            self.calfiles_processed.append(fname)
             else:
                 logger.debug(funcname + ' file {:s} already processed'.format(fname))
 
+        # Remove double entries
+        self.calfiles_processed = list(set(self.calfiles_processed))
         # print(self.calibration['sn'].keys())
         # self.logger_autocalibration()
 
@@ -224,14 +281,14 @@ class CalibrationList(list):
         """
         flag_new_calibration = True
         calibration_json = json.dumps(calibration.model_dump_json())
-        for cal_old in self.calibrations:
+        for cal_old in self:
             if calibration_json == json.dumps(cal_old.model_dump_json()):
                 flag_new_calibration = False
                 break
 
         if flag_new_calibration:
-            logger.debug('Sending new calibration signal')
-            self.calibrations.append(calibration)
+            logger.debug('New calibration')
+            self.append(calibration)
             return True
         else:
             logger.warning('Calibration exists already')
@@ -253,16 +310,32 @@ class CalibrationList(list):
             else:
                 loader = yaml.CLoader
 
-            data = yaml.load(f, Loader=loader)
+            data = f.read()
+            calibrations_raw = []
+            for databs in data.split('...\n'):  # Split the text into single subpackets
+                try:
+                    #data = yaml.safe_load(databs)
+                    data_yaml = yaml.load(databs, Loader=loader)
+                    if (data_yaml is not None):
+                        calibrations_raw.append(data_yaml)
+
+                except Exception as e:
+                    logger.debug(funcname + ': Could not decode message {:s}'.format(str(databs)))
+                    data_yaml = None
+
             # print('data',data)
-            if 'structure_version' in data.keys():  # Calibration model
-                logger.debug(funcname + ' Version {} pydantic calibration model dump'.format(data['structure_version']))
-                for calmodel in self.calibration_models:  # Loop over all calibration models definded in sensor_calibrations.py
-                    try:
-                        calibration = calmodel.model_validate(data)
-                        return calibration
-                    except:
-                        pass
+            calibrations = []
+            for data in calibrations_raw:
+                if 'structure_version' in data.keys():  # Calibration model
+                    logger.debug(funcname + ' Version {} pydantic calibration model dump'.format(data['structure_version']))
+                    for calmodel in calibration_models:  # Loop over all calibration models definded in sensor_calibrations.py
+                        try:
+                            calibration = calmodel.model_validate(data)
+                            calibrations.append(calibration)
+                        except:
+                            pass
+
+            return calibrations
 
         except Exception as e:
             logger.exception(e)
@@ -276,22 +349,22 @@ class CalibrationList(list):
         if calfile in calfiles_tmp:
             calibration = self.read_calibration_file(calfile)
             calibration_json = json.dumps(calibration.model_dump_json())
-            for cal_old in self.calibrations:
+            for cal_old in self:
                 # Test if the calibration is existing
                 if calibration_json == json.dumps(cal_old.model_dump_json()):
                     logger.debug(funcname + ' Removing calibration')
                     self.calibration_files.remove(calfile)
-                    self.calibrations.remove(cal_old)
+                    self.remove(cal_old)
                     self.calfiles_processed.remove(calfile)
                     return True
 
-    def save(self, calfile, group=None):
+    def save(self, calfile, write_file=True):
         """
 
         Parameters
         ----------
-        calfile: The filename
-        group: ('sn', 'date', 'sensor_model', 'calibration_id', 'calibration_uuid', 'calibration_type')
+        calfile: The filename, can be modified by format: {sn}, {date}, {sensor_model}, {calibration_id}, {calibration_uuid}, {calibration_type}
+        write_file:
 
         Returns
         -------
@@ -301,17 +374,8 @@ class CalibrationList(list):
         funcname = __name__ + '.save():'
         logger.debug(funcname)
         calfiles = {}
-        if group is None:
-            calfiles = {calfile:self}
-        else:
-            calfile_mod = calfile.replace('.yaml','')
-            # Add the group as additional filename information
-            for g in group:
-                calfile_mod += '_{' + g + '}'
-
-            calfile_mod += '.yaml'
-            logger.debug(funcname + ' calfile_mod:{}'.format(calfile_mod))
-            # Sort the calibrations
+        calfile_mod = calfile
+        if True:
             logger.debug(funcname + ' Sorting calibrations')
             for calibration in self:
                 calfile_name = calfile_mod.format(sn=calibration.sn,date=calibration.date,sensor_model=calibration.sensor_model,calibration_id=calibration.calibration_id,calibration_uuid=calibration.calibration_uuid,calibration_type=calibration.calibration_type)
@@ -325,16 +389,18 @@ class CalibrationList(list):
                 calfiles[calfile_name].append(calibration)
 
 
+        if write_file:
+            for calfile_write in calfiles:
+                logger.debug('Writing to file {}'.format(calfile_write))
+                f = open(calfile_write,'w')
+                for calibration_write in calfiles[calfile_write]:
+                    calibration_yaml = yaml.dump(calibration_write.model_dump(), explicit_end=True, explicit_start=True)
+                    f.write(calibration_yaml)
+                    #print('Calibration dump ...', calibration_yaml)
 
-        for calfile_write in calfiles:
-            logger.debug('Writing to file {}'.format(calfile_write))
-            f = open(calfile_write,'w')
-            for calibration_write in calfiles[calfile_write]:
-                calibration_yaml = yaml.dump(calibration_write.model_dump(), explicit_end=True, explicit_start=True)
-                f.write(calibration_yaml)
-                #print('Calibration dump ...', calibration_yaml)
+                f.close()
 
-            f.close()
+        return calfiles
 
 
 

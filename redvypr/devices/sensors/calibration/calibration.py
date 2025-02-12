@@ -30,7 +30,7 @@ from redvypr.devices.plot import XYplotWidget
 from redvypr.devices.plot import plot_widgets
 from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly
 from .autocalibration import  AutoCalEntry, AutoCalConfig, autocalWidget
-
+from redvypr.devices.sensors.generic_sensor.calibrationWidget import CalibrationsSaveWidget
 _logo_file = redvypr_files.logo_file
 _icon_file = redvypr_files.icon_file
 description = 'Calibration of sensors'
@@ -367,7 +367,7 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
     def calc_poly_coeff(self, parameter, sdata, tdatetime, caldata, refdata, degree):
         funcname = __name__ + '.calc_poly_coeff():'
         logger.debug(funcname)
-        cal_poly = CalibrationPoly(parameter = parameter, sn = sdata.sn, sensor_model = sdata.sensor_model)
+        cal_poly = CalibrationPoly(parameter=parameter, sn=sdata.sn, sensor_model=sdata.sensor_model, calibration_uuid=self.device.custom_config.calibration_uuid)
         #cal_poly.parameter = sdata.parameter
         #cal_poly.sn = sdata.sn
         #cal_poly.sensor_model = sdata.sensor_model
@@ -475,24 +475,24 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
 
         print(funcname + 'Calculating coefficients')
         try:
-            coeffs = self.calc_poly_coeffs()
+            calibrations = self.calc_poly_coeffs()
         except Exception as e:
             logger.warning(funcname)
             logger.exception(e)
-            coeffs = None
+            calibrations = None
 
-        print(funcname + 'Coeffs',coeffs)
+        print(funcname + 'Calibrations',calibrations)
 
-        if coeffs is not None:
+        if calibrations is not None:
             # Save the data
             self.calibration_poly['calibrationdata'] = calibrationdata
-            self.calibration_poly['coeffs'] = coeffs
+            self.calibration_poly['calibrations'] = calibrations
             # Save the calibration as a private attribute
-            self.device.custom_config.__calibration_coeffs__ = coeffs
+            self.device.custom_config.__calibrations__ = calibrations
             headers = ['Parameter','SN','Coeffs']
             self.calibration_poly['coefftable'].setHorizontalHeaderLabels(headers)
             irow = 0
-            for i, coeff_tmp in enumerate(coeffs):
+            for i, coeff_tmp in enumerate(calibrations):
                 if coeff_tmp is None:
                     continue
                 if type(coeff_tmp) == list:
@@ -541,7 +541,7 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
             logger.debug(funcname + ' plotting POLY calibration')
             try:
                 calibrationdata = self.device.custom_config.calibrationdata
-                coeffs = self.device.custom_config.__calibration_coeffs__
+                coeffs = self.device.custom_config.__calibrations__
             except Exception as e:
                 coeffs = None
                 logger.exception(e)
@@ -555,6 +555,14 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
 
     def save_calibration(self):
         funcname = __name__ + '.save_calibration():'
+        logger.debug(funcname)
+        calibrations = self.device.custom_config.__calibrations__
+        self.__savecalwidget__ = CalibrationsSaveWidget(calibrations=calibrations)
+        self.__savecalwidget__.show()
+
+
+    def save_calibration_legacy(self):
+        funcname = __name__ + '.save_calibration_legacy():'
         logger.debug(funcname)
 
         self.save_widget = QtWidgets.QWidget()
@@ -637,7 +645,7 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
     def __populate__calibrationfilelist__(self):
         funcname = __name__ + '__populate__calibrationfilelist__():'
         calibrationdata = self.device.custom_config.calibrationdata
-        coeffs = self.device.custom_config.__calibration_coeffs__
+        coeffs = self.device.custom_config.__calibrations__
 
         fnames_full = []
         folderpath = self.save_widget_dict['le'].text()
@@ -860,7 +868,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
             self.calibration_ntc['calibrationdata'] = calibrationdata
             self.calibration_ntc['coeffs'] = coeffs
             # Save the calibration as a private attribute
-            self.device.custom_config.__calibration_coeffs__ = coeffs
+            self.device.custom_config.__calibrations__ = coeffs
             headers = ['Parameter','SN','Coeffs']
             self.calibration_ntc['coefftable'].setHorizontalHeaderLabels(headers)
             irow = 0
@@ -919,7 +927,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
             logger.debug(funcname + ' plotting NTC calibration')
             try:
                 calibrationdata = self.device.custom_config.calibrationdata
-                coeffs = self.device.custom_config.__calibration_coeffs__
+                coeffs = self.device.custom_config.__calibrations__
             except Exception as e:
                 coeffs = None
                 logger.exception(e)
@@ -936,7 +944,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         logger.debug(funcname)
         try:
             calibrationdata = self.device.custom_config.calibrationdata
-            coeffs = self.device.custom_config.__calibration_coeffs__
+            coeffs = self.device.custom_config.__calibrations__
         except Exception as e:
             logger.exception(e)
             logger.debug(funcname)
@@ -1047,7 +1055,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
     def __populate__calibrationfilelist__(self):
         funcname = __name__ + '__populate__calibrationfilelist__():'
         calibrationdata = self.device.custom_config.calibrationdata
-        coeffs = self.device.custom_config.__calibration_coeffs__
+        coeffs = self.device.custom_config.__calibrations__
 
         fnames_full = []
         folderpath = self.save_widget_dict['le'].text()
@@ -1224,7 +1232,7 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
         #    coeffs = None
 
         calibrationdata = self.device.custom_config.calibrationdata
-        coeffs = self.device.custom_config.__calibration_coeffs__
+        coeffs = self.device.custom_config.__calibrations__
 
         folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
         if len(folderpath) > 0:
@@ -1263,7 +1271,7 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
         logger.debug(funcname)
         try:
             calibrationdata = self.device.custom_config.calibrationdata
-            coeffs = self.device.custom_config.__calibration_coeffs__
+            coeffs = self.device.custom_config.__calibrations__
         except Exception as e:
             logger.exception(e)
             logger.debug(funcname)
@@ -1296,7 +1304,7 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
             logger.debug(funcname + ' plotting NTC calibration')
             try:
                 calibrationdata = self.device.custom_config.calibrationdata
-                coeffs = self.device.custom_config.__calibration_coeffs__
+                coeffs = self.device.custom_config.__calibrations__
             except Exception as e:
                 coeffs = None
                 logger.exception(e)
@@ -1371,7 +1379,7 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
             colheaders = ['SN','Coeff','Coeff std']
             self.calibration_hf['coefftable'].setHorizontalHeaderLabels(colheaders)
             # Save the calibration as a private attribute
-            self.device.custom_config.__calibration_coeffs__ = calibrations
+            self.device.custom_config.__calibrations__ = calibrations
             refindex = self.device.custom_config.ind_ref_sensor
             imac   = 0
             icoeff = 1

@@ -10,6 +10,7 @@ import json
 import typing
 import pydantic
 import numpy
+import qtawesome
 
 import redvypr.devices.sensors.calibration.calibration_models
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
@@ -22,17 +23,132 @@ logger = logging.getLogger('calibrationWidget')
 logger.setLevel(logging.DEBUG)
 
 
+
+class CalibrationsSaveWidget(QtWidgets.QTableWidget):
+    def __init__(self, *args, calibrations=None):
+        funcname = __name__ + '__init__()'
+        super().__init__(*args)
+        if isinstance(calibrations,list):
+            logger.debug(funcname + 'Changing calibrations to CalibrationList')
+            calibrations = redvypr.devices.sensors.calibration.calibration_models.CalibrationList(calibrations)
+
+        self.calibrations = calibrations
+        self.layout = QtWidgets.QGridLayout(self)
+        self.check_sensor = QtWidgets.QWidget()
+        self.check_sensor_layout = QtWidgets.QHBoxLayout(self.check_sensor)
+        self.file_format_checkboxes = {}
+        file_format_check = {'sn':'Serial Number', 'date':'Date', 'sensor_model':'Sensor model', 'calibration_id': 'Calibration Id', 'calibration_uuid':'Calibration UUID', 'calibration_type':'Calibration type'}
+        for format_check in file_format_check:
+            self.file_format_checkboxes[format_check] = QtWidgets.QCheckBox(file_format_check[format_check])
+            self.file_format_checkboxes[format_check].stateChanged.connect(self.__update_filename__)
+            self.check_sensor_layout.addWidget(self.file_format_checkboxes[format_check])
+        self.filename_edit = QtWidgets.QLineEdit()
+        self.filename_edit.editingFinished.connect(self.__filename_text_changed__)
+        iconname = "fa5.folder-open"
+        folder_icon = qtawesome.icon(iconname)
+        self.filename_button = QtWidgets.QPushButton()
+        self.filename_button.setIcon(folder_icon)
+        #self.filename_button.textChanged.connect(self.__filename_text_changed__)
+        self.filename_button.clicked.connect(self.__get_filename_clicked__)
+        #self.filename_choose = QtWidgets.QLineEdit()
+        self.filename_widget = QtWidgets.QWidget()
+        self.filename_widget_layout = QtWidgets.QHBoxLayout(self.filename_widget)
+
+        # Save buttons
+        self.save_button = QtWidgets.QPushButton('Save')
+        self.save_button.clicked.connect(self.__save_clicked__)
+        self.show_save_button = QtWidgets.QPushButton('Show files to write')
+        self.show_save_button.clicked.connect(self.__save_clicked__)
+        self.result_text = QtWidgets.QPlainTextEdit()
+
+        self.filename_widget_layout.addWidget(self.filename_edit)
+        self.filename_widget_layout.addWidget(self.filename_button)
+
+        self.filename = 'calib_'
+
+        self.layout.addWidget(self.check_sensor, 0, 0)
+        self.layout.addWidget(self.filename_widget, 1, 0)
+        self.layout.addWidget(self.result_text, 2, 0)
+        self.layout.addWidget(self.show_save_button, 3, 0)
+        self.layout.addWidget(self.save_button, 4, 0)
+
+    def __filename_text_changed__(self):
+        self.filename = self.filename_edit.text()
+        print('Editing finished', self.filename)
+
+    def __get_filename_clicked__(self):
+        funcname = __name__ + '.__filename_clicked__()'
+        if True:
+            fileName = QtWidgets.QFileDialog.getSaveFileName(self, 'Save Calibration', '',
+                                                             "Yaml Files (*.yaml);;All Files (*)")
+        if fileName:
+            self.filename = fileName[0]
+            self.filename_edit.setText(self.filename)
+            self.__update_filename__()
+
+    def __update_filename__(self):
+        # Check which fileformats should be added
+        self.filename = self.filename_edit.text()
+        filename = self.filename
+        filename_base = os.path.splitext(filename)[0]
+        filename_ext = os.path.splitext(filename)[1]
+        for file_format in self.file_format_checkboxes:
+            checkbox = self.file_format_checkboxes[file_format]
+            format_str = '_{' + file_format + '}'
+            if checkbox.isChecked():
+                if format_str not in filename_base:
+                    filename_base += format_str
+            else:
+                filename_base = filename_base.replace(format_str,'')
+
+        self.filename = filename_base + filename_ext
+        self.filename_edit.setText(self.filename)
+
+    def __save_clicked__(self):
+        funcname = __name__ + '.__filename_clicked__()'
+
+        if self.sender() == self.show_save_button:
+            write_file = False
+        elif self.sender() == self.save_button:
+            write_file = True
+        else: # shouldnt happen
+            write_file = None
+
+        if True:
+            logger.debug(funcname + ' Saving to file {}'.format(self.filename))
+            filegrouping = ('sn', 'caldate')
+            filegrouping = ('sn', 'calibration_uuid', 'calibration_type')
+            fileinfo = self.calibrations.save(self.filename, write_file=write_file)
+            # Show results in text window
+            self.result_text.clear()
+            fileinfostr = 'Filenames:\n'
+            self.result_text.appendPlainText(fileinfostr)
+            for filename_save in fileinfo.keys():
+                nfiles = len(fileinfo[filename_save])
+                fileinfostr = str(filename_save) + ':{} calibrations'.format(nfiles)
+                self.result_text.appendPlainText(fileinfostr)
+
+            if write_file:
+                fileinfostr = 'written to disk\n'
+            else:
+                fileinfostr = 'info only (not written to disk)\n'
+            self.result_text.appendPlainText(fileinfostr)
+
 class CalibrationsTable(QtWidgets.QTableWidget):
     """
     Table that is designed to show calibrations. Calibrations can be either a dictionary or a list.
     """
-    def __init__(self, *args, calibrations=None, show_columns=None, **kwargs):
+    def __init__(self, *args, calibrations=None, show_columns=None, hide_columns=None, **kwargs):
         funcname = __name__ + '__init__()'
-        #super(QtWidgets.QTableWidget, self).__init__(*args)
         super().__init__(*args)
         self.datefmt = '%Y-%m-%d %H:%M:%S'
         self.calibrations = calibrations
         self.show_columns = show_columns
+        if hide_columns is None:
+            hide_columns = ['show']
+        else:
+            hide_columns.append('show')
+        self.hide_columns = hide_columns
 
         self.columns = {'datastream':0}
         self.columns['caltype'] = 1
@@ -41,12 +157,28 @@ class CalibrationsTable(QtWidgets.QTableWidget):
         self.columns['sn'] = 4
         self.columns['parameter'] = 5
         self.columns['date'] = 6
-        self.columns['comment'] = 7
-        self.columns['coeffs'] = 8
+        self.columns['id'] = 7
+        self.columns['uuid'] = 8
+        self.columns['comment'] = 9
+        self.columns['coeffs'] = 10
 
-        self.header_labels = ['Sensor Parameter', 'Calibration Type', 'Choose calibration', 'Show calibration', 'Cal SN', 'Cal Parameter',
-         'Cal Date', 'Cal Comment']
-        self.nCols = 9
+        self.column_names = {'datastream': 'Sensor Parameter'}
+        self.column_names['caltype'] = 'Calibration Type'
+        self.column_names['choose'] = 'Choose Calibration'
+        self.column_names['show'] = 'Show Calibration'
+        self.column_names['sn'] = 'Serial number'
+        self.column_names['parameter'] = 'Parameter'
+        self.column_names['date'] = 'Calibration Date'
+        self.column_names['id'] = 'Calibration ID'
+        self.column_names['uuid'] = 'Calibration UUID'
+        self.column_names['comment'] = 'Comment'
+        self.column_names['coeffs'] = 'Coefficients'
+
+        self.header_labels = []
+        for lab in self.column_names.keys():
+            self.header_labels.append(self.column_names[lab])
+
+        self.nCols = len(self.columns.keys())
 
         # Populate the table
         self.update_table()
@@ -78,21 +210,20 @@ class CalibrationsTable(QtWidgets.QTableWidget):
         self.setColumnCount(self.nCols)
         self.setHorizontalHeaderLabels(self.header_labels)
 
-        print('Calibrations',self.calibrations)
+        #print('Calibrations',self.calibrations)
         for i, cal_key in enumerate(self.calibrations):
-
             if isinstance(self.calibrations,dict):
                 calibration = self.calibrations[cal_key]
-                print('calibration dict', i, cal_key)
+                #print('calibration dict', i, cal_key)
                 datastreamstr = str(cal_key)
             elif isinstance(self.calibrations, list):
                 calibration = cal_key
-                print('calibration list', i )
+                #print('calibration list', i )
                 datastreamstr = None
             else:
                 calibration = None
-            if calibration is not None:
-                print('Calibration',calibration)
+
+            if True:
                 # Choose calibration button
                 but_choose = QtWidgets.QPushButton('Choose')
                 #but_choose.clicked.connect(self.__create_calibration_widget__)
@@ -102,15 +233,16 @@ class CalibrationsTable(QtWidgets.QTableWidget):
                 # Show calibration button
                 but_show = QtWidgets.QPushButton('Show')
                 #but_show.clicked.connect(self.__show_calibration__)
-
+                self.setCellWidget(i, self.columns['choose'], but_choose)
+                self.setCellWidget(i, self.columns['show'], but_show)
                 # Datastream
                 item = QtWidgets.QTableWidgetItem(datastreamstr)
                 self.setItem(i, self.columns['datastream'], item)
+            if calibration is not None:
+                #print('Calibration', calibration)
                 # Calibration type
                 item_type = QtWidgets.QTableWidgetItem(calibration.calibration_type)
                 self.setItem(i, self.columns['caltype'], item_type)
-                self.setCellWidget(i, self.columns['choose'], but_choose)
-                self.setCellWidget(i, self.columns['show'], but_show)
                 # SN
                 item = QtWidgets.QTableWidgetItem(calibration.sn)
                 self.setItem(i, self.columns['sn'], item)
@@ -122,6 +254,12 @@ class CalibrationsTable(QtWidgets.QTableWidget):
                 datestr = calibration.date.strftime(self.datefmt)
                 item = QtWidgets.QTableWidgetItem(datestr)
                 self.setItem(i, self.columns['date'], item)
+                # Calibration ID
+                item = QtWidgets.QTableWidgetItem(calibration.calibration_id)
+                self.setItem(i, self.columns['id'], item)
+                # Calibration UUID
+                item = QtWidgets.QTableWidgetItem(calibration.calibration_uuid)
+                self.setItem(i, self.columns['uuid'], item)
                 # Comment
                 item = QtWidgets.QTableWidgetItem(calibration.comment)
                 self.setItem(i, self.columns['comment'], item)
@@ -130,14 +268,26 @@ class CalibrationsTable(QtWidgets.QTableWidget):
                 item = QtWidgets.QTableWidgetItem(coeffstr)
                 self.setItem(i, self.columns['coeffs'], item)
 
+
+        # Hide columns
+        #print('Hiding columns',self.hide_columns)
+        if self.hide_columns is not None:
+            if 'show' not in self.hide_columns:
+                self.hide_columns.append('show')
+            for col in self.hide_columns:
+                logger.debug('Will hide column {}'.format(col))
+                colhide = self.columns[col]
+                #print('Colhide',colhide)
+                self.hideColumn(colhide)
+
         self.resizeColumnsToContents()
 
-class SensorCalibrationsTable(QtWidgets.QWidget):
+class GenericSensorCalibrationWidget(QtWidgets.QWidget):
     """
     Widget to display the calibrations of a sensor and to let the user choose different calibrations.
     """
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
-    def __init__(self, *args, sensor, calibrations=None, redvypr_device=None, calibration_models=None):
+    def __init__(self, *args, calibrations_all=None, redvypr_device=None, calibration_models=None, calibrations_sensor={'Calibrations':[], 'Raw Calibrations':[]},calibrations_sensor_options={'Calibrations':None, 'Raw Calibrations':None}):
         funcname = __name__ + '__init__()'
         super(QtWidgets.QWidget, self).__init__(*args)
         logger.debug(funcname)
@@ -145,13 +295,12 @@ class SensorCalibrationsTable(QtWidgets.QWidget):
         self.calfiles_processed = []
         self.datefmt = '%Y-%m-%d %H:%M:%S'
         self.device = redvypr_device
-        self.sensor = sensor
         #self.sn = sensor.sn
         # Take care of the calibration list
-        if calibration_models is None:
+        if calibrations_all is None:
             self.calibrations = redvypr.devices.sensors.calibration.calibration_models.CalibrationList()
         else:
-            self.calibrations = redvypr.devices.sensors.calibration.calibration_models.CalibrationList(calibrations)
+            self.calibrations = redvypr.devices.sensors.calibration.calibration_models.CalibrationList(calibrations_all)
         if calibration_models is None:
             calibration_models = redvypr.devices.sensors.calibration.calibration_models.calibration_models
 
@@ -161,9 +310,36 @@ class SensorCalibrationsTable(QtWidgets.QWidget):
         self.configWidget = QtWidgets.QWidget()
         self.configWidget_layout = QtWidgets.QGridLayout(self.configWidget)
 
+        # Create calibrationstables
+        self.calibrationsTable = {}
+        self.calibrationsTableWidgets = {}
+        self.calibrationsTableAutoCalButtons = {}
+        self.calibrationsTableWidgets_layout = {}
+        for calibtablename in calibrations_sensor.keys():
+            self.calibrationsTableWidgets[calibtablename] = QtWidgets.QWidget()
+            self.calibrationsTableWidgets_layout[calibtablename] = QtWidgets.QVBoxLayout(self.calibrationsTableWidgets[calibtablename])
+            # Get some options
+            try:
+                editable = calibrations_sensor_options[calibtablename]['editable']
+            except:
+                editable = False
 
-        self.calibrationsTable = CalibrationsTable(calibrations=self.sensor.calibrations)
-        self.calibrations_rawTable = CalibrationsTable(calibrations=self.sensor.calibrations_raw)
+
+            if editable == False:
+                hide_columns = ['choose']
+            else:
+                # Add autofindbutton
+                autofindcal_button = QtWidgets.QPushButton('Find calibration')
+                autofindcal_button.clicked.connect(self.find_calibrations)
+                autofindcal_button.calibtablename = calibtablename
+                self.calibrationsTableAutoCalButtons[calibtablename] = autofindcal_button
+                self.calibrationsTableWidgets_layout[calibtablename].addWidget(autofindcal_button)
+                hide_columns = []
+
+            calibrations_tmp = calibrations_sensor[calibtablename]
+            self.calibrationsTable[calibtablename] = CalibrationsTable(calibrations=calibrations_tmp, hide_columns=hide_columns)
+            self.calibrationsTableWidgets_layout[calibtablename].addWidget(self.calibrationsTable[calibtablename])
+
         self.calibrations_allTable = CalibrationsTable(calibrations=self.calibrations)
 
         # All calibrations widget
@@ -197,32 +373,69 @@ class SensorCalibrationsTable(QtWidgets.QWidget):
         self.calibrations_allLayout.addWidget(self.loadCalibrationsfSubFolder, 3, 0)
         self.calibrations_allLayout.addWidget(self.editCalibrations, 3, 1)
 
-
         # Calibrations tab
         self.calibrationsTab = QtWidgets.QTabWidget(self)
-        self.calibrationsTab.addTab(self.calibrationsTable, 'Calibrations')
-        self.calibrationsTab.addTab(self.calibrations_rawTable, 'Raw Calibrations')
-        self.calibrationsTab.addTab(self.calibrations_allWidget, 'All Calibrations')
+        for calibtablename in self.calibrationsTable:
+            self.calibrationsTab.addTab(self.calibrationsTableWidgets[calibtablename], calibtablename)
 
+        self.calibrationsTab.addTab(self.calibrations_allWidget, 'All Calibrations')
         self.layout = QtWidgets.QGridLayout(self)
         self.layout.addWidget(self.calibrationsTab, 0, 0)
         #self.layout.addWidget(self.configWidget, 0, 0)
         #self.layout.addWidget(self.parameterWidget,0,1)
 
+    def find_calibrations(self):
+        funcname = __name__ + '.find_calibrations():'
+        logger.debug(funcname)
+        autofindcal_button = self.sender()
+        calibtablename = autofindcal_button.calibtablename
+        print('Autofind for table',calibtablename)
+        calibrations = self.calibrations
+        calibrations_find = self.calibrationsTable[calibtablename].calibrations
+        calibrations_found = copy.deepcopy(calibrations_find)
+        # Loop over the calibrations, check if list or dict and try to find proper calibration
+        # if dict
+        flag_found_calibration = 0
+        for i, cal_key in enumerate(calibrations_find):
+            if isinstance(calibrations_find, dict):
+                calibration = calibrations_find[cal_key]
+                print('calibration dict', i, cal_key)
+                datastreamstr = str(cal_key)
+            elif isinstance(calibrations_find, list):
+                raise ValueError('Calibrations need to be a dictionary')
+            else:
+                raise ValueError('Calibrations need to be a dictionary')
+
+            parameter = cal_key
+            calibration_candidates = redvypr.devices.sensors.calibration.calibration_models.find_calibration_for_parameter(parameter,calibrations)
+            print('Calibration candidates for parameter',calibration_candidates)
+            if len(calibration_candidates) > 0:
+                calibration_candidate_final = calibration_candidates[0]
+                calibrations_found[cal_key] = calibration_candidate_final
+                flag_found_calibration += 1
+
+        # update the table
+        if flag_found_calibration > 0:
+            self.calibrationsTable[calibtablename].update_table(calibrations=calibrations_found)
+
+    def update_calibration_table(self,calibtablename,calibrations):
+        funcname = __name__ + '.__update_calibration_tables__():'
+        logger.debug(funcname)
+        self.calibrationsTable[calibtablename].update_table(calibrations)
+
+    def update_calibration_all_table(self, calibrations):
+        funcname = __name__ + '.__update_calibration_tables__():'
+        logger.debug(funcname)
+        self.calibrations = redvypr.devices.sensors.calibration.calibration_models.CalibrationList(calibrations)
+        self.calibrations_allTable.update_table(self.calibrations)
+
+
     def __save_calibration__(self):
         funcname = __name__ + '.__save_calibration__():'
         logger.debug(funcname)
-        if True:
-            fileName = QtWidgets.QFileDialog.getSaveFileName(self, 'Save Calibration', '',
-                                                               "Yaml Files (*.yaml);;All Files (*)")
 
-        if fileName:
-            logger.debug(funcname + ' Saving to file {}'.format(fileName))
-            filegrouping = ('sn','caldate')
-            filegrouping = ('sn','calibration_uuid','calibration_type')
-            self.calibrations.save(fileName[0],group=filegrouping)
-
-
+        self.__calsavewidget__ = CalibrationsSaveWidget(calibrations = self.calibrations)
+        self.__calsavewidget__.show()
 
     def chooseCalibrationFiles(self):
         """
@@ -250,123 +463,14 @@ class SensorCalibrationsTable(QtWidgets.QWidget):
                 print('Coeffiles', coefffiles)
                 for coefffile in coefffiles:
                     print('Coefffile to open', coefffile, str(coefffile))
-                    self.add_calibration_file(str(coefffile))
+                    self.calibrations.add_calibration_file(str(coefffile))
             else:
-                self.add_calibration_file(fileName)
+                self.calibrations.add_calibration_file(fileName)
 
         # Fill the list with sn
         if len(fileNames[0]) > 0:
             logger.debug(funcname + ' Updating the calibration table')
             self.calibrations_allTable.update_table(self.calibrations)
-
-    def add_calibration_file(self, calfile, reload=True):
-        funcname = __name__ + 'add_calibration_file():'
-        logger.debug(funcname)
-        calfiles_tmp = list(self.calibration_files)
-        if (calfile in calfiles_tmp) and reload:
-            #print('Removing file first')
-            self.rem_calibration_file(calfile)
-
-        calfiles_tmp = list(self.calibration_files)
-        #print('Hallo',calfiles_tmp)
-        if calfile not in calfiles_tmp:
-            #print('Adding file 2',calfile)
-            self.calibration_files.append(calfile)
-        else:
-            logger.debug(funcname + ' File is already listed')
-
-        self.process_calibrationfiles()
-
-    def process_calibrationfiles(self):
-        funcname = __name__ + '.process_calibrationfiles()'
-        logger.debug(funcname)
-        fnames = []
-
-        for fname in self.calibration_files:
-            fnames.append(str(fname))
-
-        self.coeff_filenames = fnames
-
-        for fname in fnames:
-            if fname not in self.calfiles_processed:
-                logger.debug(funcname + ' reading file {:s}'.format(fname))
-                calibration = self.read_calibration_file(fname)
-                if calibration is not None:
-                    flag_add = self.add_calibration(calibration)
-                    if flag_add:
-                        self.calfiles_processed.append(fname)
-            else:
-                logger.debug(funcname + ' file {:s} already processed'.format(fname))
-
-        # print(self.calibration['sn'].keys())
-        # self.logger_autocalibration()
-    def add_calibration(self, calibration):
-        """
-        Adds a calibration to the calibration list, checks before, if the calibration exists
-        calibration: calibration model
-        """
-        flag_new_calibration = True
-        calibration_json = json.dumps(calibration.model_dump_json())
-        for cal_old in self.calibrations:
-            if calibration_json == json.dumps(cal_old.model_dump_json()):
-                flag_new_calibration = False
-                break
-
-        if flag_new_calibration:
-            logger.debug('Sending new calibration signal')
-            self.calibrations.append(calibration)
-            return True
-        else:
-            logger.warning('Calibration exists already')
-            return False
-
-    def read_calibration_file(self, fname):
-        """
-        Open and reads a calibration file, it will as well determine the type of calibration and call the proper function
-
-        """
-        funcname = __name__ + '.read_calibration_file():'
-        logger.debug(funcname + 'Opening file {:s}'.format(fname))
-        try:
-            f = open(fname)
-            safe_load = False
-            if safe_load:
-                loader = yaml.SafeLoader
-            else:
-                loader = yaml.CLoader
-
-            data = yaml.load(f,Loader=loader)
-            # print('data',data)
-            if 'structure_version' in data.keys(): # Calibration model
-                logger.debug(funcname + ' Version {} pydantic calibration model dump'.format(data['structure_version']))
-                for calmodel in self.calibration_models: # Loop over all calibration models definded in sensor_calibrations.py
-                    try:
-                        calibration = calmodel.model_validate(data)
-                        return calibration
-                    except:
-                        pass
-
-
-        except Exception as e:
-            logger.exception(e)
-            return None
-
-
-    def rem_calibration_file(self, calfile):
-        funcname = __name__ + 'rem_calibration_file():'
-        logger.debug(funcname)
-        calfiles_tmp = list(self.calibration_files)
-        if calfile in calfiles_tmp:
-            calibration = self.read_calibration_file(calfile)
-            calibration_json = json.dumps(calibration.model_dump_json())
-            for cal_old in self.calibrations:
-                # Test if the calibration is existing
-                if calibration_json == json.dumps(cal_old.model_dump_json()):
-                    logger.debug(funcname + ' Removing calibration')
-                    self.calibration_files.remove(calfile)
-                    self.calibrations.remove(cal_old)
-                    self.calfiles_processed.remove(calfile)
-                    return True
 
     def __add_calibration__(self):
         """
@@ -390,7 +494,6 @@ class SensorCalibrationsTable(QtWidgets.QWidget):
         self.addCalibrationWidget_layout.addWidget(self.calibrationModelCombo, 0, 1)
         self.addCalibrationWidget_layout.addWidget(self.addCalibrationApply, 2, 0,1,2)
         self.addCalibrationWidget.show()
-
         self.__add_calibration_type_changed__(0)
 
     def __addCalibrationClicked__(self):

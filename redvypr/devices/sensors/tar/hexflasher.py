@@ -26,6 +26,32 @@ calibration_types[1] = calibration_models.CalibrationPoly
 calibration_types[2] = calibration_models.CalibrationLinearFactor
 calibration_types[4] = calibration_models.CalibrationNTC
 
+
+def strip_first_macs(datad):
+    tmpstr0 = datad
+    datads = None
+    while True:
+        print('tmpstr0',tmpstr0)
+        try:
+            dhf_sensor(tmpstr0[1:17])
+            datads = tmpstr0
+        except:
+            break
+
+        if tmpstr0[17] == ':':
+            tmpstr = tmpstr0[18:]
+            try:
+                dhf_sensor(tmpstr[1:17])
+                tmpstr0 = tmpstr
+            except:
+                break
+        else:
+            break
+
+    return datads
+
+
+
 class dhf_sensor():
     def __init__(self,macstr=''):
         self.macstr = macstr
@@ -44,6 +70,8 @@ class dhf_sensor():
 
         # Calibrations
         self.calibrations = {}
+        self.sample_counter = None
+        self.sample_period = None
 
         self.memfile = None
         self.lhexdata = ''  # String containing the hexdata
@@ -150,6 +178,102 @@ class dhf_sensor():
         comstr = 'f'
         DEVICECOMMAND = "${:s}{:s}{:s}\n".format(macstr, macsum_str, comstr)
         return DEVICECOMMAND
+
+    def create_getts_command(self):
+        """
+        Create a sampling period command
+        Returns
+        -------
+
+        """
+        macstr = self.macstr
+        comstr = "getts"
+        devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+        return devicecommand
+
+    def create_calibration_commands(self, calibrations, calibration_id=None, calibration_uuid=None, comment=None, date=None, savecal=True):
+        """
+        Creates commands to set the calibrations of the sensor
+        The structure is similar to this here:
+        $D8478FFFFE95CA01,set calid <id>\n
+        $D8478FFFFE95CA01,set caluuid <uuid>\n
+        $D8478FFFFE95CA01,set calcomment <comment>\n
+        $D8478FFFFE95CA01,set caldate <datestr in ISO8190 format (max 31 Bytes)>\n
+        $D8478FFFFE95CA01,set ntc21 4 1.128271e-03 3.289026e-04 -1.530210e-05 1.131836e-06 0.000000e+00\n
+
+        Parameters
+        ----------
+        calibrations
+        calibration_id
+        calibration_uuid
+        comment
+
+        Returns
+        -------
+
+        """
+        maxlen = 20
+        macstr = self.macstr
+        commands = []
+
+        if calibration_id is not None:
+            tmpstr = str(calibration_id)
+            if len(tmpstr) > maxlen:
+                tmpstr = tmpstr[:maxlen]
+            comstr = "set calid {}".format(tmpstr)
+            devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+            commands.append(devicecommand)
+        if calibration_uuid is not None:
+            tmpstr = str(calibration_uuid)
+            if len(tmpstr) > maxlen:
+                tmpstr = tmpstr[:maxlen]
+            comstr = "set caluuid {}".format(tmpstr)
+            devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+            commands.append(devicecommand)
+        if date is not None:
+            if isinstance(date,datetime.datetime):
+                datestr = datetime.datetime.isoformat(date)
+            else:
+                datestr = str(date)
+            tmpstr = datestr
+            if len(tmpstr) > 31:
+                tmpstr = tmpstr[:maxlen]
+            comstr = "set caldate {}".format(tmpstr)
+            devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+            commands.append(devicecommand)
+        if comment is not None:
+            tmpstr = str(comment)
+            if len(tmpstr) > maxlen:
+                tmpstr = tmpstr[:maxlen]
+            comstr = "set calcomment {}".format(tmpstr)
+            devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+            commands.append(devicecommand)
+        for i, cal_key in enumerate(calibrations):
+            # Check if dictionary or list, if dictionary, parameter is dict_key
+            if isinstance(calibrations, dict):
+                calibration = calibrations[cal_key]
+                parameter = str(cal_key)
+            elif isinstance(calibrations, list):
+                calibration = cal_key
+                parameter = str(calibration.parameter.datakey)
+
+            print('Parameter',parameter)
+            if calibration.calibration_type == 'ntc':
+                self.logger.debug('NTC calibration')
+                # Find index in parameter that looks like this: '''R["63"]''')
+                indices = re.findall(r'\d+', str(parameter))
+                if len(indices) == 1:  # Should be only one
+                    index = indices[0]
+                    caltype = 4
+                    coeff = calibration.coeff
+                    comstr = "set ntc{index} {caltype} {c0} {c1} {c2} {c3} {c4}".format(index=index,caltype=caltype,c0=coeff[0],c1=coeff[1],c2=coeff[2],c3=coeff[3],c4=coeff[4])
+                    devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+                    commands.append(devicecommand)
+        if savecal:
+            devicecommand = "${:s}!,savecal\n".format(macstr)
+            commands.append(devicecommand)
+
+        return commands
 
 
     def create_read_commands(self,addr,nbytes):
@@ -355,6 +479,67 @@ class dhf_flasher():
         # res = s.read()
         # print(res)
 
+    def get_sampling_period_of_device(self, macstr):
+        """
+        $D8478FFFFE95CA01!,getts
+        returns
+        $D8478FFFFE95CA01:sample counter 32, period 2.000000, flagsample 0
+        Parameters
+        ----------
+        macstr
+
+        Returns
+        -------
+
+        """
+        funcname = '.get_sampling_period_of_device():'
+        self.logger.debug(funcname + '{}'.format(macstr))
+        macobject = self.devices_mac[macstr]
+        # Start a ping first and wait for response to get the MAC
+        command = macobject.create_getts_command()
+        try:
+            self.logger.debug('Sending {}'.format(command))
+            self.serial.write(command.encode('utf-8'))
+        except:
+            self.logger.info('Exception', exc_info=True)
+
+        t1 = time.time()
+        twait = 1.0
+        if True:
+            # And now check if there is something to receive from the device
+            while True:
+                dt = time.time() - t1
+                if dt > twait:
+                    break
+                try:
+                    data = self.serial.readline()
+                except Exception as e:
+                    continue
+
+                if len(data) > 0:
+                    print(funcname + 'Data:{}'.format(data))
+                    datad = data.decode('utf-8')
+                    datads = strip_first_macs(datad)  # Strip the string such that only the last mac is there
+                    # datads = datad.split(':')[-1]
+                    mactmp = dhf_sensor(datads[1:17])
+                    print('mactmp', mactmp)
+                    if ('sample counter' in datads) and (mactmp is not None):
+                        print('Found valid response',datads)
+                        try:
+                            sample_counter = int(datads.split('sample counter')[1].split(',')[0])
+                        except:
+                            sample_counter = None
+
+                        try:
+                            sample_period = float(datads.split('period')[1].split(',')[0])
+                        except:
+                            sample_period = None
+
+                        macobject.sample_counter = sample_counter
+                        macobject.sample_period = sample_period
+
+
+
     def get_calibration_of_device(self, macstr):
         funcname = '.get_calibration_of_devices():'
         self.logger.debug(funcname + '{}'.format(macstr))
@@ -369,6 +554,11 @@ class dhf_flasher():
 
         t1 = time.time()
         twait = 3.0
+        flag_cal_found = False
+        calid = ''
+        caluuid = ''
+        calcomment = ''
+        caldate = datetime.datetime(1970,1,1,0,0,0)
         if True:
             # And now check if there is something to receive from the device
             while True:
@@ -380,35 +570,69 @@ class dhf_flasher():
                 except Exception as e:
                     continue
 
+
                 if len(data) > 0:
-                    print('Data', data)
+                    print(funcname + 'Data:{}'.format(data))
                     datad = data.decode('utf-8')
-                    datads = datad.split(':')[-1]
+                    datads = strip_first_macs(datad)  # Strip the string such that only the last mac is there
+                    #datads = datad.split(':')[-1]
                     mactmp = dhf_sensor(datads[1:17])
                     print('mactmp',mactmp)
+                    if ('set calid' in datads) and (mactmp is not None):
+                        calid = datads.split('set calid ')[1][:-1]
+                    if ('set caluuid' in datads) and (mactmp is not None):
+                        caluuid = datads.split('set caluuid ')[1][:-1]
+                    if ('set caldate' in datads) and (mactmp is not None):
+                        caldatestr = datads.split('set caldate ')[1][:-1]
+                        try:
+                            caldate = datetime.datetime.fromisoformat(caldatestr)
+                        except:
+                            self.logger.warning('Could not convert date:{} into datetime'.format(caldate))
+                            caldate = datetime.datetime(1, 1, 1, 0, 0, 0)
+
+                        self.logger.warning('Caldate:{}'.format(caldate))
+                    if ('set calcomment' in datads) and (mactmp is not None):
+                        calcomment = datads.split('set calcomment ')[1][:-1]
                     if ('set ntc' in datads) and (mactmp is not None):
                         self.logger.debug('Found calibration entry')
                         #'$D8478FFFFE95CD4D,set ntc56 4 1.128271e-03 3.289026e-04 -1.530210e-05 1.131836e-06 0.000000e+00\n'
-                        repattern = r"^\$(\w+),set (\w+) (\d+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+)"
+                        repattern = r"^\$(\w+)!,set (\w+) (\d+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+)"
                         match = re.match(repattern, datads)
                         print('datads',datads)
                         if match:
                             wholematch = match.group(0)
                             mac_cal = match.group(1)
                             parameter = match.group(2)
+                            # Replace 'ntc' with 'R'
+                            if 'ntc' in parameter:
+                                parameter = parameter.replace('ntc','R["')
+                                parameter += '"]'
+                                parameter_apply = parameter.replace('R','T')
+
                             caltype = int(match.group(3))
                             coeffs = [float(match.group(i)) for i in range(4, 9)]
                             if caltype in calibration_types.keys():
                                 if caltype == 4: # At the moment only hoge-3 is supported
                                     parameter = redvypr.RedvyprAddress(parameter)
                                     calmodel = calibration_models.CalibrationNTC(coeff=coeffs,sn=mac_cal,
+                                                                                 comment=calcomment,
+                                                                                 date=caldate,
+                                                                                 calibration_id=calid,
+                                                                                 calibration_uuid=caluuid,
                                                                                  parameter=parameter,
+                                                                                 parameter_apply=parameter_apply,
                                                                                  sensor_model=macobject.brdid)
                                     self.logger.debug('Adding {} to calibrations'.format(macobject.macstr))
                                     macobject.calibrations[parameter] = calmodel
                                     print('Calmodel',calmodel)
+                                    flag_cal_found=True
                         else:
                             print("Could not find calibration")
+
+            if flag_cal_found:
+                return macobject
+            else:
+                return None
 
     def get_config_of_device(self, macstr):
         # '$D8478FFFFE95CD4D, flag_boot 1 countdown 52\n'
@@ -424,8 +648,9 @@ class dhf_flasher():
             self.logger.info('Exception', exc_info=True)
 
         ntries = 2
+        ntries_tot = ntries
         while ntries > 0:
-            print('Ntries get config of device', ntries)
+            self.logger.debug(funcname + 'Ntries get config of device:{} of {}'.format(ntries,ntries_tot))
             ntries -= 1
             time.sleep(0.1)
             # And now check if there is something to receive from the device
@@ -433,7 +658,7 @@ class dhf_flasher():
                 try:
                     data = self.serial.readline()
                     if len(data) > 0:
-                        print('Data',data)
+                        self.logger.debug(funcname + ' Got data:{}'.format(data))
                         datad = data.decode('utf-8')
                         datads = datad.split(':')[-1]
                         if ('flag_boot' in datads) and ('countdown' in datads):
@@ -528,7 +753,7 @@ class dhf_flasher():
             time.sleep(0.2)
             ntries = 3
             while ntries > 0:
-                print('Ntries',ntries)
+                print('Waiting for response:{}'.format(ntries))
                 ntries -= 1
                 time.sleep(0.1)
                 # And now check if there is something to receive from the device
@@ -542,7 +767,7 @@ class dhf_flasher():
                         continue
 
                 if len(data_recv) > 0:
-                    print('Got data',data_recv)
+                    print('Got response:{}'.format(data_recv))
                     for d in data_recv:
                         macobjects = self.get_macobject_from_string(d)
                         for macobj in macobjects:
@@ -588,7 +813,73 @@ class dhf_flasher():
         self.logger.debug('Got flash size data: {}'.format(data_recv))
         return flashsize
 
-    def writeFlash(self, macstr, hexdata, addr_check=True, comqueue=None):
+    def write_calibrations(self, commands, macstr=None, comqueue=None):
+        """
+        Writes the commands to the device and waits for receiving answers
+        """
+        funcname = __name__ + '.writeCommands():'
+        tstart = time.time()
+        if macstr is not None:
+            try:
+                mac = self.devices_mac[macstr]
+            except:
+                raise ValueError("MAC {} not found".format(macstr))
+
+            addrstr = '$' + mac.macstr + '!,'
+        else:
+            addrstr = ''
+
+        flag_written = False
+        for icom, command in enumerate(commands):
+            try:
+                com = comqueue.get_nowait()
+                self.logger.debug('Received cancel command')
+                return
+            except:
+                pass
+
+            write_command = addrstr + command
+            write_command = write_command.replace('\n', '') + '\n'
+            self.logger.debug(funcname + ' writing {} of {}:{}'.format(icom, len(commands), write_command))
+            self.serial.write(write_command.encode('utf-8'))
+            if 'savecal' in command:
+                nwait = 500
+            else:
+                nwait = 5
+
+            if True:
+                for i in range(nwait):
+                    try:
+                        com = comqueue.get_nowait()
+                        self.logger.debug('Received cancel command')
+                        return
+                    except:
+                        pass
+                    data = self.serial.readline()
+                    if (len(data) > 0):
+                        self.logger.debug('Received data:{}'.format(data))
+                        data_ret = data.decode('utf-8')
+                        if 'savecal:done' in data_ret:
+                            message = 'Calibration saved to flash'
+                            infodata = {'status': 'write', 'written': len(commands), 'write_total': len(commands),
+                                        'message': message}
+                            self.serial_queue_write.put(infodata)
+                            time.sleep(0.001)
+                            self.logger.debug('Data written to flash')
+                            break
+                if True:
+                    infodata = {'status': 'write', 'written': icom, 'write_total': len(commands)}
+                    self.serial_queue_write.put(infodata)
+                    time.sleep(0.001)
+
+        tend = time.time()
+        dt = tend - tstart
+        message = 'Sent {} commands in {}'.format(len(commands), dt)
+        infodata = {'status': 'write', 'written': len(commands), 'write_total': len(commands), 'message': message}
+        self.serial_queue_write.put(infodata)
+        return None
+
+    def writeFlash(self, macstr, hexdata, addr_check=True, comqueue=None, callback=None):
         """
         Writes the flash of a device with mac with the data stored in the hexdata list
         """
@@ -661,6 +952,8 @@ class dhf_flasher():
         message = 'Flashed {} rows in {}'.format(len(hexdata),dt)
         infodata = {'status': 'write', 'written': len(hexdata), 'write_total': len(hexdata),'message':message}
         self.serial_queue_write.put(infodata)
+        if callback is not None:
+            callback()
         return mac
 
     def readFlash(self, macstr, addr_start=None, addr_stop=None, filename=None, comqueue=None):
@@ -801,6 +1094,18 @@ class dhf_flasher():
                 continue
 
         return None
+
+    def write_data(self, data):
+        self.logger.debug('Writing data:"{}"'.format(data))
+        self.serial.write(data.encode('utf-8'))
+        # And now check if there is something to receive from the device
+        for i in range(10):
+            try:
+                data_ret = self.serial.read()
+                if len(data_ret) > 0:
+                    return data_ret
+            except:
+                continue
 
     def readwrite(self, inqueue, outqueue, enter_command_mode=True):
         """
