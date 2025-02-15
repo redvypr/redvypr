@@ -11,6 +11,7 @@ import sys
 import numpy
 import copy
 import logging
+import yaml
 from redvypr.data_packets import create_datadict as redvypr_create_datadict, add_metadata2datapacket, Datapacket
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.devices.sensors.calibration.calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationLinearFactor, \
@@ -154,6 +155,7 @@ class Sensor(pydantic.BaseModel):
             #print('Calibrations',self.calibrations)
             if len(self.calibrations.keys()) == 0:
                 #print('Returning data')
+                print('yaml2',yaml.dump(data))
                 return data
             else:
                 for datapacket_calkey in self.calibrations.keys():
@@ -197,6 +199,7 @@ class Sensor(pydantic.BaseModel):
                                 rdata[address_result] = caldata_cal
 
                         #print('data done', rdata)
+                        print('yaml2', yaml.dump(dict(rdata)))
                         return dict(rdata)
 
 
@@ -354,10 +357,11 @@ class BinarySensor(Sensor):
 
                         data_packet[keyname] = data
                         flag_data = True
-                        #print('Converted data to', data, flag_data)
+                        #print('Converted data to', data, flag_data,type(data))
+                        #print('yaml',yaml.dump(data))
 
             if self.calibration_python_str is not None:
-                #print('Found a python calibration eval str, applying')
+                logger.debug('Found a python calibration eval str, applying')
                 for keyname_eval in self.calibration_python_str:
                     evalcommand = self.calibration_python_str[keyname_eval]
                     evalcommand = evalcommand.split('\n')[0]

@@ -5,11 +5,13 @@ import queue
 from PyQt6 import QtWidgets, QtCore, QtGui
 import qtawesome
 import time
+import yaml
 import numpy as numpy
 import logging
 import sys
 import pydantic
 import redvypr
+from redvypr.data_packets import check_for_command
 from redvypr.device import RedvyprDevice
 from redvypr.widgets.standard_device_widgets import RedvyprDeviceWidget_simple
 from redvypr.devices.sensors.generic_sensor.calibrationWidget import GenericSensorCalibrationWidget
@@ -102,25 +104,35 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
     while True:
         datapacket = datainqueue.get()
-        try:
-            print('Data',datapacket['data'])
-        except:
-            continue
-        print('Processing!!!!!')
+        [command, comdata] = check_for_command(datapacket, thread_uuid=device_info['thread_uuid'],
+                                               add_data=True)
+        if command is not None:
+            logger.debug('Command is for me: {:s}'.format(str(command)))
+            if command=='stop':
+                logger.info(funcname + 'received command:' + str(datapacket) + ' stopping now')
+                logger.debug('Stop command')
+                return
+
+
+        #try:
+        #    print('Data',datapacket['data'])
+        #except:
+        #    continue
         data_packet_processed = tarv2nmea.datapacket_process(datapacket)
-        print(type(data_packet_processed))
+        if data_packet_processed is None:
+            continue
         if len(data_packet_processed) == 0:
             data_packet_processed = tarv2nmea_sample.datapacket_process(datapacket)
 
         if len(data_packet_processed) > 0:
             #print('Datapacket processed',data_packet_processed)
-            print('Data packet processed (without calibration)', len(data_packet_processed))
+            logger.debug('Data packet processed (without calibration):{}'.format(len(data_packet_processed)))
             mac = data_packet_processed[0]['MAC']
             counter = data_packet_processed[0]['counter']
             np = data_packet_processed[0]['np']
             parameterunit = data_packet_processed[0]['parameterunit']
             npmax = max(packetbuffer.keys())
-            print('MAC',mac,counter,np)
+            #print('MAC',mac,counter,np)
             #if npmax < 0:  # The first measurement
             #    npmax = np
             # Check if a new packet arrived, if yes, process the old one first
@@ -129,13 +141,13 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                     npackets = len(packetbuffer[npmax][parameterunit_tmp].keys())
                     dmerge = [None] * npackets
                     datapacket_merged = {}
-                    print('Npackets',npackets)
+                    #print('Npackets',npackets)
                     for mac_tmp in packetbuffer[npmax][parameterunit_tmp].keys():
                         p = packetbuffer[npmax][parameterunit_tmp][mac_tmp]
                         # Count the ':' and put it at the list location
                         i = mac_tmp.count(':')
                         if i >= npackets:
-                            print('Could not add {}'.format(mac_tmp))
+                            logger.debug('Could not add {}'.format(mac_tmp))
                             continue
                         if i == 0:
                             mac_final = mac_tmp
@@ -145,16 +157,17 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                             datapacket_merged.update(dp)
                             datapacket_merged['mac'] = mac_final
                             datapacket_merged['counter'] = counter_final
-                        print('mac_tmp',mac_tmp,i)
+                        #print('mac_tmp',mac_tmp,i)
                         dmerge[i] = p['TAR']
                     # Merge the packages into one large one
                     #print('dmerge', dmerge)
                     #print('len dmerge', len(dmerge))
-                    tar_merge = list(numpy.hstack(dmerge))
+                    tar_merge = numpy.hstack(dmerge).tolist()
                     #print('Tar merge',len(tar_merge))
                     datapacket_merged['tar'] = tar_merge
                     datapacket_merged['np'] = npmax
                     datapacket_merged['parameterunit'] = parameterunit_tmp
+                    #print('publish')
                     dataqueue.put(datapacket_merged)
                 # Remove from buffer
                 packetbuffer.pop(npmax)

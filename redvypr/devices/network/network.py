@@ -27,7 +27,7 @@ from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('network_device')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 redvypr_devicemodule = True
 
@@ -415,7 +415,7 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
                 #    logger.debug('Metadata command')
                 #    if p_address.packetid == 'metadata':
 
-                print(funcname + ' publishing packet',p)
+                #print(funcname + ' publishing packet',p)
                 dataqueue.put(p)
                 npackets += 1
 

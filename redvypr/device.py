@@ -166,7 +166,7 @@ class RedvyprDeviceScan():
         self.__modules_scanned__.append(redvypr) # Do not scan redvypr itself
 
         # Start scanning
-        if(scan):
+        if scan:
             if scan_redvypr:
                 if redvypr_devices is not None:
                     if isinstance(redvypr_devices,list):
@@ -271,7 +271,7 @@ class RedvyprDeviceScan():
                         if len(module_dict[testmodule.__name__].keys()) == 0:
                             module_dict.pop(testmodule.__name__)
 
-    def scan_redvypr(self,redvyprdevices):
+    def scan_redvypr(self, redvyprdevices):
         funcname = 'scan_redvypr():'
         self.logger.debug(funcname)
         if True:
