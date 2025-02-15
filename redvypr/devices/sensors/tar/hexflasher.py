@@ -662,7 +662,7 @@ class dhf_flasher():
                                 parameter = match.group(2)
                                 # Replace 'ntc' with 'R'
                                 if 'ntc' in parameter:
-                                    parameter = parameter.replace('ntc','[''R''][')
+                                    parameter = parameter.replace('ntc',"['''R'''][")
                                     parameter += ']'
                                     parameter_apply = parameter.replace('R','T')
 
