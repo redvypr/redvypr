@@ -691,10 +691,6 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
 
 
 
-
-
-
-
 class CalibrationWidgetNTC(QtWidgets.QWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -711,8 +707,6 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         self.calibration_ntc['plotbutton'].clicked.connect(self.plot_data)
         self.calibration_ntc['calcbutton'] = QtWidgets.QPushButton('Calculate')
         self.calibration_ntc['calcbutton'].clicked.connect(self.calc_ntc_coeffs_clicked)
-        self.calibration_ntc['dhfsbutton'] = QtWidgets.QPushButton('DHFS commands')
-        self.calibration_ntc['dhfsbutton'].clicked.connect(self.dhfs_command_clicked)
         self.calibration_ntc['savecalibbutton'] = QtWidgets.QPushButton('Save Calibration')
         self.calibration_ntc['savecalibbutton'].clicked.connect(self.save_calibration)
         self.calibration_ntc['coefftable'] = QtWidgets.QTableWidget()
@@ -724,16 +718,13 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
             # label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
             label.setAlignment(QtCore.Qt.AlignCenter)
             reflabel = QtWidgets.QLabel('Reference Sensor')
-            print('Add')
             self.calibration_ntc['layout'].addRow(label)
             self.calibration_ntc['layout'].addRow(self.calibration_ntc['coefftable'])
             self.calibration_ntc['layout'].addRow(self.calibration_ntc['calcbutton'])
             self.calibration_ntc['layout'].addRow(self.calibration_ntc['plotbutton'])
-            self.calibration_ntc['layout'].addRow(self.calibration_ntc['dhfsbutton'])
             self.calibration_ntc['layout'].addRow(self.calibration_ntc['savecalibbutton'])
             # self.calibration_ntc['layout'].setStretch(0, 1)
             # self.calibration_ntc['layout'].setStretch(1, 10)
-
 
     def calc_ntc_coeffs_clicked(self):
         """
@@ -754,8 +745,8 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         R = np.asarray(caldata)
         R = np.abs(R)
         T = refdata
-        print('R', R)
-        print('T', T)
+        #print('R', R)
+        #print('T', T)
         # And finally the fit
         TOFF = 273.15
         fitdata = fit_ntc(T, R, TOFF, poly_degree)
@@ -836,6 +827,22 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
             logger.warning('No reference sensor or not enough data')
             return None
 
+    def get_calibrations(self):
+        table = self.calibration_ntc['coefftable']
+        rows = []
+        calibrations = []
+        if table.selectionModel().selection().indexes():
+            for i in table.selectionModel().selection().indexes():
+                row, column = i.row(), i.column()
+                item = table.item(row,0)
+                calibration = item.__calibration__
+                rows.append(row)
+                calibrations.append(calibration)
+
+        return calibrations
+
+
+
     def update_coefftable_ntc(self):
         funcname = __name__ + '.update_coefftable_ntc():'
         logger.debug(funcname)
@@ -885,8 +892,8 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
                     coeff_tmp = [coeff_tmp]
                     coeff_index = [None]
 
-                for cindex,coeff in zip(coeff_index,coeff_tmp):
-                    parameter = coeff.parameter
+                for cindex,calibration in zip(coeff_index,coeff_tmp):
+                    parameter = calibration.parameter
                     #if cindex is not None:
                     #    parameter += '[{}]'.format(cindex)
                     try:
@@ -896,11 +903,12 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
                     print('Parameter',parameter,str(parameter),type(parameter))
                     item = QtWidgets.QTableWidgetItem(parameter_str)
                     item.__parameter__ = parameter
+                    item.__calibration__ = calibration
                     self.calibration_ntc['coefftable'].setItem(irow,0,item)
-                    item = QtWidgets.QTableWidgetItem(coeff.sn)
+                    item = QtWidgets.QTableWidgetItem(calibration.sn)
                     self.calibration_ntc['coefftable'].setItem(irow,1,item)
                     try:
-                        coeff_sen = coeff.coeff
+                        coeff_sen = calibration.coeff
                         coeff_str = str(coeff_sen)
                         item_coeff = QtWidgets.QTableWidgetItem(coeff_str)
                         self.calibration_ntc['coefftable'].setItem(irow, 2, item_coeff)
@@ -939,35 +947,13 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         else:
             logger.debug(funcname + ' Unknown calibration {:s}'.format(calibrationtype))
 
-        # self.update_tables_calc_coeffs()
-
-    def dhfs_command_clicked(self):
-        funcname = __name__ + '.dhfs_command_clicked():'
+    def plot_ntc(self, coeffs=None):
+        funcname = __name__ + '.plot_ntc():'
         logger.debug(funcname)
-        try:
-            calibrationdata = self.device.custom_config.calibrationdata
-            coeffs = self.device.custom_config.__calibrations__
-        except Exception as e:
-            logger.exception(e)
-            logger.debug(funcname)
-
-        for c, cal in zip(coeffs, calibrationdata):
-            # print('Coeff', c)
-            if 'ntc' in c.parameter.lower():
-                coeffstr = ''
-                # print('coeff',c.coeff)
-                for ctmp in reversed(c.coeff):
-                    coeffstr += '{:.6e} '.format(ctmp)
-                comstr = '{:s}: set {:s} {:s}'.format(c.sn, c.parameter.lower(), coeffstr)
-                # print('Command')
-                print(comstr)
-            elif 'hf' in c.parameter.lower():
-                coeffstr = '{:.3f} '.format(c.coeff)
-                comstr = '{:s}: set {:s} {:s}'.format(c.sn, c.parameter.lower(), coeffstr)
-                # print('Command')
-                print(comstr)
-            else:
-                logger.info(funcname + ' unknown parameter {:s}'.format(c.parameter))
+        calibrations = self.get_calibrations()
+        print('Calibrations',calibrations)
+        #self.plot_coeff_widget = PlotWidgetNTC(self.device.custom_config, coeffs)
+        #self.plot_coeff_widget.show()
 
     def save_calibration(self):
         funcname = __name__ + '.save_calibration():'
@@ -976,143 +962,9 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         self.__savecalwidget__ = CalibrationsSaveWidget(calibrations=calibrations)
         self.__savecalwidget__.show()
 
-    def save_calibration_legacy(self):
-        funcname = __name__ + '.save_calibration():'
-        logger.debug(funcname)
-
-        self.save_widget = QtWidgets.QWidget()
-        self.save_widget_layout = QtWidgets.QFormLayout(self.save_widget)
-        self.save_widget_dict = {}
-        folderpath_init = '.' + os.sep + '{SN}' + os.sep + '{CALDATE}'
-        self.save_widget_dict['le'] = QtWidgets.QLineEdit(folderpath_init)
-        self.save_widget_dict['le'].editingFinished.connect(self.__populate__calibrationfilelist__)
-        calfolder = QtWidgets.QPushButton('Choose Calibration Folder')
-        calfolder.clicked.connect(self.__choose_calfolder__)
-
-        calfile_structure = '{SN}_{PARAMETER}_{CALDATE}.yaml'
-        self.save_widget_dict['le_calfile'] = QtWidgets.QLineEdit(calfile_structure)
-        self.save_widget_dict['le_calfile'].editingFinished.connect(self.__populate__calibrationfilelist__)
-
-        self.save_widget_dict['filelist'] = QtWidgets.QListWidget()
-
-        savecal_but = QtWidgets.QPushButton('Save calibration')
-        savecal_but.clicked.connect(self.__save_calibration__)
-
-        self.save_widget_layout.addRow(calfolder, self.save_widget_dict['le'])
-        self.save_widget_layout.addRow(QtWidgets.QLabel('Calibrationfile'),self.save_widget_dict['le_calfile'])
-        self.save_widget_layout.addRow(self.save_widget_dict['filelist'])
-        self.save_widget_layout.addRow(savecal_but)
-        # Update the calibrationdata
-        # calibrationdata = self.calibdata_to_dict()
-        # self.update_coefftable_ntc()
-        # try:
-        #    calibrationdata = self.calibration_ntc['calibrationdata']
-        #    coeffs = self.calibration_ntc['coeffs']
-        # except Exception as e:
-        #    logger.debug(funcname)
-        #    logger.exception(e)
-        #    coeffs = None
 
 
-        self.__populate__calibrationfilelist__()
-        #folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
-
-
-        self.save_widget.show()
-
-    def __save_calibration___legacy(self):
-        funcname = __name__ + '__save_calibration__():'
-        overwrite = True
-        create_path = True
-        fnames_full = self.save_widget_dict['fnames_full']
-        for fname_full,fname_cal_full,c,cal in fnames_full:
-            dirname = os.path.dirname(fname_full)
-            if os.path.isdir(dirname):
-                logger.info('Folder exists:{}'.format(dirname))
-            elif c.comment == 'reference sensor':
-                logger.info('Reference sensor, ignoring')
-            elif create_path:
-                logger.info('Creating folder:{}'.format(dirname))
-                #os.mkdir(dirname)
-                os.makedirs(dirname)
-            else:
-
-                logger.info('Folder {} does not exist, will not write file'.format(dirname))
-                continue
-            if os.path.isfile(fname_full):
-                logger.warning('File is already existing {:s}'.format(fname_full))
-                file_exist = True
-            else:
-                file_exist = False
-
-            if overwrite or (file_exist == False):
-                logger.info('Saving file to {:s}'.format(fname_full))
-                if c.comment == 'reference sensor':
-                    logger.debug(funcname + ' Will not save calibration (reference sensor)')
-                else:
-                    cdump = c.model_dump()
-                    # data_save = yaml.dump(cdump)
-
-                    with open(fname_full, 'w') as fyaml:
-                        yaml.dump(cdump, fyaml)
-                    print('Cal', cal)
-                    caldump = cal.model_dump()
-                    # data_save = yaml.dump(cdump)
-                    #with open(fname_cal_full, 'w') as fyaml:
-                    #    yaml.dump(caldump, fyaml)
-
-    def __populate__calibrationfilelist___legacy(self):
-        funcname = __name__ + '__populate__calibrationfilelist__():'
-        calibrationdata = self.device.custom_config.calibrationdata
-        coeffs = self.device.custom_config.__calibrations__
-
-        fnames_full = []
-        folderpath = self.save_widget_dict['le'].text()
-        self.save_widget_dict['filelist'].clear()
-        if len(folderpath) > 0:
-            logger.debug(funcname + ' Saving data to folder {:s}'.format(folderpath))
-            for c_tmp, cal in zip(coeffs, calibrationdata):
-                if type(c_tmp) is not list:
-                    c_tmp = [c_tmp]
-                for c in c_tmp:
-                    # Calibrationdata stays the same if its a list for all subparameter
-                    print('Saving coeff', c)
-                    date = datetime.datetime.strptime(c.date, "%Y-%m-%d %H:%M:%S.%f")
-                    dstr = date.strftime('%Y-%m-%d_%H-%M-%S')
-                    # Distinguish between RedvyprAddress and str
-                    try:
-                        parameter_str = c.parameter.address_str
-                    except:
-                        parameter_str = c.parameter
-                    fname = '{:s}_{:s}_{:s}.yaml'.format(c.sn, parameter_str, dstr)
-                    calfile_structure = self.save_widget_dict['le_calfile'].text()
-                    try:
-                        fname = calfile_structure.format(SN=c.sn, CALDATE=dstr, PARAMETER=parameter_str)
-                    except:
-                        fname = calfile_structure
-
-                    fname_full = folderpath + '/' + fname
-                    # Add the placeholders
-                    try:
-                        fname_full = fname_full.format(SN=c.sn, CALDATE=dstr, PARAMETER=parameter_str)
-                    except:
-                        pass
-
-                    fname_cal = '{:s}_{:s}_{:s}_calibrationdata.yaml'.format(c.sn, parameter_str, dstr)
-                    fname_cal_full = folderpath + '/' + fname_cal
-                    fnames_full.append([fname_full,fname_cal_full, c,cal])
-
-                    self.save_widget_dict['filelist'].addItem(fname_full)
-
-                self.save_widget_dict['fnames_full'] = fnames_full
-
-
-    def __choose_calfolder___legacy(self):
-        folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
-        if len(folderpath) > 0:
-            self.save_widget_dict['le'].setText(folderpath)
-
-class PlotWidgetNTC(QtWidgets.QWidget):
+class PlotWidgetNTC_legacy(QtWidgets.QWidget):
     def __init__(self, config, coeffs):
         super().__init__()
         self.setWindowIcon(QtGui.QIcon(_icon_file))
@@ -1148,7 +1000,8 @@ class PlotWidgetNTC(QtWidgets.QWidget):
                     T = refdata
                     print('R', R)
                     print('T', T)
-                    sen = cal_NTC.parameter + '/' + cal_NTC.sn
+                    #sen = cal_NTC.parameter + '/' + cal_NTC.sn
+                    sen = str(cal_NTC.parameter)
                     self.plotlist.addItem(sen)
                     senwidgets[sen] = {}
                     senwidget = QtWidgets.QWidget()
@@ -1168,9 +1021,6 @@ class PlotWidgetNTC(QtWidgets.QWidget):
                         axes_dT.plot(caldata, dT, 'or')
 
                     senlayout.addWidget(mplplot)
-
-
-
 
     def change_plot(self,index):
         funcname = self.__class__.__name__ + '.change_plot():'
@@ -2790,12 +2640,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
             #self.datacolumns[col] = senstr
             self.update_datatable()
             self.device.deviceinitwidget.populateSensorInputWidgets()
-
-    def plot_ntc(self, coeffs = None):
-        funcname = __name__ + '.plot_ntc():'
-        logger.debug(funcname)
-        self.plot_coeff_widget = PlotWidgetNTC(self.device.custom_config, coeffs)
-        self.plot_coeff_widget.show()
 
     def update_data(self, data):
         funcname = __name__ + '.update():'

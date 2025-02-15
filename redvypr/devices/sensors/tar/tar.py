@@ -27,14 +27,14 @@ tarv2nmea_test1 = b'$D8478FFFFE95CD4D,TAR,R_B4,88.125000,23,3791.505,3780.276,37
 tarv2nmea_split = b'\$(?P<MAC>.+),TAR,(?P<parameterunit>[A-c])_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<TAR>.*)\n'
 tarv2nmea_str_format = {'MAC':'str','counter':'float','parameterunit':'str','ntctype':'str','ntcdist':'float','np':'int','TAR':'array'}
 tarv2nmea_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'TAR':{'unit':'Ohm'}}
-tarv2nmea_packetid_format = '{MAC},TAR'
+tarv2nmea_packetid_format = '{MAC}__TAR'
 tarv2nmea_description = 'Temperature array NMEA like text format'
 
 
 tarv2nmea_sample_split = b'\$(?P<MAC>.+),TAR_S;(?P<counter>[0-9.]+);(?P<np>[0-9]+),(?P<parameterunit>[A-c])_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter_local>[0-9.]+),(?P<np_local>[0-9]+),(?P<TAR>.*)\n'
 tarv2nmea_sample_str_format = {'MAC':'str','counter':'float','counter_local':'float','parameterunit':'str','ntctype':'str','ntcdist':'float','np':'int','np_local':'int','TAR':'array'}
 tarv2nmea_sample_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'TAR':{'unit':'Ohm'}}
-tarv2nmea_sample_packetid_format = '{MAC},TAR_S'
+tarv2nmea_sample_packetid_format = '{MAC}__TAR_S'
 tarv2nmea_sample_description = 'Temperature array datapacket initiated by a sample command'
 
 logging.basicConfig(stream=sys.stderr)
@@ -44,7 +44,6 @@ logger.setLevel(logging.DEBUG)
 
 class TarSensor(sensor_definitions.BinarySensor):
     num_ntc: int = pydantic.Field(default=64, description='number of ntc sensors')
-
     def __init__(self,*args,**kwargs):
         super().__init__(*args, **kwargs)
         for n in range(self.num_ntc):
@@ -61,8 +60,6 @@ class TarSensor(sensor_definitions.BinarySensor):
             coeffs = [-2.3169660632264368e-08, - 1.0330814536964214e-06, - 0.000210399828596111, - 0.001612330551548827]
             calNTC = calibration_models.CalibrationNTC(coeffs=coeffs)
             self.calibrations_raw[datakey_ntc] = calNTC
-
-
 
 
 class DeviceBaseConfig(pydantic.BaseModel):
@@ -146,7 +143,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                         if i == 0:
                             mac_final = mac_tmp
                             counter_final = counter
-                            packetid_final = '{},TAR,{}'.format(mac_final,parameterunit_tmp)
+                            packetid_final = '{}__TAR__{}'.format(mac_final,parameterunit_tmp)
                             dp = redvypr.Datapacket(packetid=packetid_final)
                             datapacket_merged.update(dp)
                             datapacket_merged['mac'] = mac_final
