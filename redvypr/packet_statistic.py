@@ -26,6 +26,8 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket, devicemodulen
         data['_redvypr']['tag'] = {}
     if ('device' not in data['_redvypr'].keys()):
         data['_redvypr']['device'] = str(devicename)
+    elif data['_redvypr']['device'] is None:
+        data['_redvypr']['device'] = str(devicename)
     #if ('publisher' not in data['_redvypr'].keys()):
     #    data['_redvypr']['publisher'] = str(devicename)
     if ('packetid' not in data['_redvypr'].keys()):
