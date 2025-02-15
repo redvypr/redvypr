@@ -75,6 +75,7 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         self.hexflasher = HexflashWidget(comqueue=self.__comqueue)
         self.device = device
         self.dhffl = None
+        self.mac_sensor = None
         self.serialwidget = QtWidgets.QWidget()
         self.init_serialwidget()
         self.label = QtWidgets.QLabel("Serial device")
@@ -103,7 +104,25 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout(self.commandwidget)
         self.query_button = QtWidgets.QPushButton('Query devices')
         self.query_button.clicked.connect(self.query_devices)
-        layout.addWidget(self.query_button, 0, 0)
+        self.startsample_button = QtWidgets.QPushButton('Startsample')
+        self.stopsample_button = QtWidgets.QPushButton('Stopsample')
+
+        self.setsampleinterval_button = QtWidgets.QPushButton('Set sampling interval')
+        self.setsampleinterval_button.clicked.connect(self.set_sampleinterval)
+        self.sampleinterval_spin = QtWidgets.QSpinBox()
+        self.sampleinterval_spin.setMaximum(3600)
+        self.sampleinterval_spin.setMinimum(0)
+        self.startsample_button.setEnabled(False)
+        self.stopsample_button.setEnabled(False)
+        self.setsampleinterval_button.setEnabled(False)
+        self.startsample_button.clicked.connect(self.startstopsample_clicked)
+        self.stopsample_button.clicked.connect(self.startstopsample_clicked)
+
+        layout.addWidget(self.query_button, 0, 0, 1, -1)
+        layout.addWidget(self.startsample_button, 1, 0)
+        layout.addWidget(self.stopsample_button, 1, 1)
+        layout.addWidget(self.setsampleinterval_button, 2, 0)
+        layout.addWidget(self.sampleinterval_spin, 2, 1)
 
     def init_serialwidget(self):
         """Fills the serial widget with content
@@ -184,8 +203,30 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self._combo_stopbits, 2, 4)
         layout.addWidget(self._button_serial_openclose, 2, 5)
 
+    def qtreewidget_item_changed(self, itemnew, itemold):
+        logger.debug('Itemchanged {} {}'.format(itemnew, itemold))
+        macstr = itemnew.text(0)
+        nchilds = itemnew.childCount()
+        if nchilds == 0:
+            self.mac_sensor = self.dhffl.devices_mac[macstr]
+            #print('Macstr', macstr, self.mac_sensor)
+            self.device_changed()
 
-    def query_devices(self):
+    def set_sampleinterval(self):
+        funcname = __name__ + 'set_sampleinterval():'
+        logger.debug(funcname)
+        ts = self.sampleinterval_spin.value()
+        macobject = self.mac_sensor
+        logger.debug(funcname + ' Setting sampling counter to {}'.format(ts))
+        self.dhffl.set_sampling_period_of_device(macstr=macobject.macstr, ts=ts)
+        self.dhffl.get_sampling_period_of_device(macstr=macobject.macstr)
+        self.update_device_tree()
+
+    def device_changed(self):
+        self.startsample_button.setEnabled(True)
+        self.stopsample_button.setEnabled(True)
+        self.setsampleinterval_button.setEnabled(True)
+    def query_devices(self, get_calib=False):
         if self.dhffl is None:
             logger.warning('Open serial port first')
         else:
@@ -207,24 +248,25 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
                     if macobject is not None:
                         logger.debug('Found sampling period')
 
-                    macobject = self.dhffl.get_calibration_of_device(mac_sensor.macstr)
-                    if macobject is not None:
-                        logger.debug('Found calibrations, updating coeff tables')
-                        # updating tables
-                        calibrations = macobject.calibrations
-                        #calibrations_edit = copy.deepcopy(macobject.calibrations)
-                        calibrations_edit = {}
-                        for key in macobject.calibrations.keys():
-                            calib = macobject.calibrations[key]
-                            calibrations_edit[key] = None
-                            if calib not in self.calibration.calibrations_all:
-                                self.calibration.calibrations_all.append(calib)
+                    if get_calib:
+                        macobject = self.dhffl.get_calibration_of_device(mac_sensor.macstr)
+                        if macobject is not None:
+                            logger.debug('Found calibrations, updating coeff tables')
+                            # updating tables
+                            calibrations = macobject.calibrations
+                            #calibrations_edit = copy.deepcopy(macobject.calibrations)
+                            calibrations_edit = {}
+                            for key in macobject.calibrations.keys():
+                                calib = macobject.calibrations[key]
+                                calibrations_edit[key] = None
+                                if calib not in self.calibration.calibrations_all:
+                                    self.calibration.calibrations_all.append(calib)
 
-                        # Update calibration table
-                        self.calibration.calibwidget.update_calibration_all_table(self.calibration.calibrations_all)
-                        self.calibration.calibwidget.update_calibration_table(self.calibration.calibtablename_firmware, calibrations)
-                        self.calibration.calibwidget.update_calibration_table(self.calibration.calibtablename_edit, calibrations_edit)
-                        self.calibration.macobject_choosen = macobject
+                            # Update calibration table
+                            self.calibration.calibwidget.update_calibration_all_table(self.calibration.calibrations_all)
+                            self.calibration.calibwidget.update_calibration_table(self.calibration.calibtablename_firmware, calibrations)
+                            self.calibration.calibwidget.update_calibration_table(self.calibration.calibtablename_edit, calibrations_edit)
+                            self.calibration.macobject_choosen = macobject
 
                 print('Found devices {}'.format(mac_sensors.keys()))
                 self.calibration.update_device_tree()
@@ -233,7 +275,10 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
 
     def update_device_tree(self):
         logger.debug('Updating device tree')
-        #self.devicetree.currentItemChanged.disconnect(self.qtreewidget_item_changed)
+        try:
+            self.devicetree.currentItemChanged.disconnect(self.qtreewidget_item_changed)
+        except:
+            pass
         self.devicetree.clear()
         self.devicetree.setColumnCount(10)
         # self.devicetree.setHeaderHidden(True)
@@ -280,7 +325,30 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         self.devicetree.expandAll()
         self.devicetree.resizeColumnToContents(0)
         self.devicetree.sortByColumn(0, QtCore.Qt.AscendingOrder)
-        #self.devicetree.currentItemChanged.connect(self.qtreewidget_item_changed)
+        self.devicetree.currentItemChanged.connect(self.qtreewidget_item_changed)
+
+    def startstopsample_clicked(self):
+        b = self.sender()
+        macobject = self.mac_sensor
+        if b == self.startsample_button:
+            logger.debug('Start sampling')
+            COMMAND = "${:s}!,startsample\n".format(macobject.macstr)
+            self.dhffl.serial.write(COMMAND.encode('utf-8'))
+        else:
+            logger.debug('Stop sampling')
+            COMMAND = "${:s}!,stopsample\n".format(macobject.macstr)
+            self.dhffl.serial.write(COMMAND.encode('utf-8'))
+
+        nlines_max = 5
+        for i in range(nlines_max):
+            try:
+                data = self.dhffl.serial.readline()
+                if len(data) == 0:
+                    continue
+            except Exception as e:
+                continue
+
+        self.query_devices()
 
     def start_clicked(self):
         logger.debug('Start clicked')
@@ -719,13 +787,6 @@ class HexflashWidget(QtWidgets.QWidget):
         self.command_buttons_enable.append(self.startbootmon_button)
         self.startbootmon_button.clicked.connect(self.start_bootmonitor_clicked)
 
-        self.startsample_button = QtWidgets.QPushButton('Startsample')
-        self.command_buttons_enable.append(self.startsample_button)
-        self.stopsample_button = QtWidgets.QPushButton('Stopsample')
-        self.command_buttons_enable.append(self.stopsample_button)
-        self.startsample_button.clicked.connect(self.startstopsample_clicked)
-        self.stopsample_button.clicked.connect(self.startstopsample_clicked)
-
         # read
         self.read_button = QtWidgets.QPushButton('Read')
         self.flash_buttons_enable.append(self.read_button)
@@ -809,8 +870,6 @@ class HexflashWidget(QtWidgets.QWidget):
         self.command_button_widget_layout = QtWidgets.QHBoxLayout(self.command_button_widget)
         self.command_button_widget_layout.addWidget(self.startbootmon_button)
         self.command_button_widget_layout.addWidget(self.reset_button)
-        self.command_button_widget_layout.addWidget(self.startsample_button)
-        self.command_button_widget_layout.addWidget(self.stopsample_button)
 
         self.layout.addWidget(self.query_button, 0, 0)
         self.layout.addWidget(self.command_button_widget, 0, 1, 1, -1)
@@ -856,26 +915,7 @@ class HexflashWidget(QtWidgets.QWidget):
             self.statuswidget_timer.timeout.connect(self.update_statuswidget)
             self.statuswidget_timer.start(200)
 
-    def startstopsample_clicked(self):
-        b = self.sender()
-        macobject = self.mac_sensor
-        if b == self.startsample_button:
-            self.logger.debug('Start sample, not implemented yet')
-            COMMAND = "${:s}!,startsample\n".format(macobject.macstr)
-            self.dhffl.serial.write(COMMAND.encode('utf-8'))
-        else:
-            self.logger.debug('Stop sample, not implemented yet')
-            COMMAND = "${:s}!,stopsample\n".format(macobject.macstr)
-            self.dhffl.serial.write(COMMAND.encode('utf-8'))
 
-        nlines_max = 5
-        for i in range(nlines_max):
-            try:
-                data = self.dhffl.serial.readline()
-                if len(data) == 0:
-                    continue
-            except Exception as e:
-                continue
     def send_command_clicked(self):
         COMMAND = self.statuswidget_com.text()
         self.logger.debug('Send command {}'.format(COMMAND))

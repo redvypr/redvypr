@@ -240,9 +240,9 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
                 devinfo_all = metadata_send.pop('deviceinfo_all')
                 metadata_tmp = devinfo_all['metadata']
                 metadata_send['_metadata'] = {}
-                raddr_tmp = redvypr_address.RedvyprAddress(metadata_packet,datakey='')
+                raddr_tmp = redvypr_address.RedvyprAddress(metadata_packet,datakey='REMOTE')
                 raddr_tmp_str = raddr_tmp.get_fullstr()
-                raddr_tmp_str = 'REMOTE__' + raddr_tmp_str
+                raddr_tmp_str = raddr_tmp_str
                 metadata_send['_metadata'][raddr_tmp_str] = metadata_tmp
                 datab = packet_to_raw(metadata_send, config)
                 q = thread_queue_dict
@@ -670,13 +670,13 @@ class Device(RedvyprDevice):
         metadata_remote_query = {}
         # Loop over all keys, check for REMOTE__ and loop over entries
         for metadatakey in self.statistics['metadata']:
-            if metadatakey.startswith('REMOTE__'):
+            metadatakey_raddr = redvypr_address.RedvyprAddress(metadatakey)
+            if 'REMOTE' in metadatakey_raddr.key():
                 mtmp = metadata_local['metadata'].pop(metadatakey)
                 #print('Mtmp',mtmp)
                 #print('Mtmp keys', mtmp.keys())
                 #print('Mtmp metadatakey', metadatakey)
-                raddr_tmp_str = metadatakey.split('REMOTE__')[1]
-                raddr_tmp = redvypr_address.RedvyprAddress(raddr_tmp_str)
+                raddr_tmp = metadatakey_raddr
                 remote_address_str = raddr_tmp.get_fullstr()
                 metadata_remote[remote_address_str] = {}
                 metadata_remote[remote_address_str]['metadata'] = mtmp

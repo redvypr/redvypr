@@ -191,6 +191,18 @@ class dhf_sensor():
         devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
         return devicecommand
 
+    def create_setts_command(self, ts):
+        """
+        Create a set sampling period command
+        Returns
+        -------
+
+        """
+        macstr = self.macstr
+        comstr = "set ts"
+        devicecommand = "${:s}!,{:s} {:d}\n".format(macstr, comstr, ts)
+        return devicecommand
+
     def create_calibration_commands(self, calibrations, calibration_id=None, calibration_uuid=None, comment=None, date=None, savecal=True):
         """
         Creates commands to set the calibrations of the sensor
@@ -538,6 +550,48 @@ class dhf_flasher():
                         macobject.sample_counter = sample_counter
                         macobject.sample_period = sample_period
 
+    def set_sampling_period_of_device(self, macstr, ts):
+        """
+        $D8478FFFFE95CA01!,set ts
+        Parameters
+        ----------
+        macstr
+
+        Returns
+        -------
+
+        """
+        funcname = '.set_sampling_period_of_device():'
+        self.logger.debug(funcname + '{}'.format(macstr))
+        macobject = self.devices_mac[macstr]
+        # Start a ping first and wait for response to get the MAC
+        command = macobject.create_setts_command(ts)
+        try:
+            self.logger.debug('Sending {}'.format(command))
+            self.serial.write(command.encode('utf-8'))
+        except:
+            self.logger.info('Exception', exc_info=True)
+
+        t1 = time.time()
+        twait = 1.0
+        if True:
+            # And now check if there is something to receive from the device
+            while True:
+                dt = time.time() - t1
+                if dt > twait:
+                    break
+                try:
+                    data = self.serial.readline()
+                except Exception as e:
+                    continue
+
+                if len(data) > 0:
+                    print(funcname + 'Data:{}'.format(data))
+                    datad = data.decode('utf-8')
+                    datads = strip_first_macs(datad)  # Strip the string such that only the last mac is there
+                    # datads = datad.split(':')[-1]
+                    mactmp = dhf_sensor(datads[1:17])
+                    print('mactmp', mactmp)
 
 
     def get_calibration_of_device(self, macstr):

@@ -16,3 +16,5 @@ class DatapacketBuffer:
             if len(self.datapackets) > self.buffersize:
                 self.datapackets.pop(0)
                 self.t.pop(0)
+        else:
+            raise ValueError('Address does not fit')

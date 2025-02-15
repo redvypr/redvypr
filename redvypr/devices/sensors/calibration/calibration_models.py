@@ -358,7 +358,7 @@ class CalibrationList(list):
                     self.calfiles_processed.remove(calfile)
                     return True
 
-    def save(self, calfile, write_file=True):
+    def save(self, calfile, write_file=True, datefmt='%Y%m%d_%H%M%S'):
         """
 
         Parameters
@@ -378,7 +378,8 @@ class CalibrationList(list):
         if True:
             logger.debug(funcname + ' Sorting calibrations')
             for calibration in self:
-                calfile_name = calfile_mod.format(sn=calibration.sn,date=calibration.date,sensor_model=calibration.sensor_model,calibration_id=calibration.calibration_id,calibration_uuid=calibration.calibration_uuid,calibration_type=calibration.calibration_type)
+                datestr = calibration.date.strftime(datefmt)
+                calfile_name = calfile_mod.format(sn=calibration.sn,date=datestr,sensor_model=calibration.sensor_model,calibration_id=calibration.calibration_id,calibration_uuid=calibration.calibration_uuid,calibration_type=calibration.calibration_type)
                 #print('calfile_name',calfile_name)
                 try:
                     calfiles[calfile_name]

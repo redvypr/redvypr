@@ -367,12 +367,13 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
     def calc_poly_coeff(self, parameter, sdata, tdatetime, caldata, refdata, degree):
         funcname = __name__ + '.calc_poly_coeff():'
         logger.debug(funcname)
-        cal_poly = CalibrationPoly(parameter=parameter, sn=sdata.sn, sensor_model=sdata.sensor_model, calibration_uuid=self.device.custom_config.calibration_uuid)
+        parameter_raddr = RedvyprAddress(parameter)
+        cal_poly = CalibrationPoly(parameter=parameter_raddr, sn=sdata.sn, sensor_model=sdata.sensor_model, calibration_uuid=self.device.custom_config.calibration_uuid)
         #cal_poly.parameter = sdata.parameter
         #cal_poly.sn = sdata.sn
         #cal_poly.sensor_model = sdata.sensor_model
         tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
-        cal_poly.date = tdatas
+        cal_poly.date = tdatetime
         caldataa = np.asarray(caldata)
         print('caldata', caldataa)
         print('refdata', refdata)
@@ -416,9 +417,9 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
             for i, sdata in enumerate(self.device.custom_config.calibrationdata):
                 if i == refindex:
                     cal_POLY = CalibrationPoly()
-                    cal_POLY.parameter = sdata.parameter
+                    cal_POLY.parameter = RedvyprAddress(sdata.parameter)
                     cal_POLY.sn = sdata.sn
-                    cal_POLY.date = tdatas
+                    cal_POLY.date = tdatetime
                     cal_POLY.comment = 'reference sensor'
                     calibrations.append(cal_POLY)
                 else:
@@ -429,14 +430,14 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
                         calshape = np.shape(caldata)
                         if len(calshape) == 1:
                             print('Normal array')
-                            parameter = sdata.parameter
+                            parameter = RedvyprAddress(sdata.parameter)
                             cal_POLY = self.calc_poly_coeff(parameter, sdata, tdatetime, caldata, refdata, degree)
                             calibrations.append(cal_POLY)
                         elif len(calshape) == 2:
                             print('Array of sensors')
                             cal_POLYs = []
                             for isub in range(calshape[1]):
-                                parameter = sdata.parameter + '[{}]'.format(isub)
+                                parameter = RedvyprAddress(sdata.parameter + '[{}]'.format(isub))
                                 cal_POLYs.append(self.calc_poly_coeff(parameter, sdata, tdatetime, caldata[:,isub], refdata, degree))
 
                             calibrations.append(cal_POLYs)
@@ -605,7 +606,7 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
 
         self.save_widget.show()
 
-    def __save_calibration__(self):
+    def __save_calibration___legacy(self):
         funcname = __name__ + '__save_calibration__():'
         overwrite = True
         create_path = True
@@ -642,7 +643,7 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
                     #with open(fname_cal_full, 'w') as fyaml:
                     #    yaml.dump(caldump, fyaml)
 
-    def __populate__calibrationfilelist__(self):
+    def __populate__calibrationfilelist___legacy(self):
         funcname = __name__ + '__populate__calibrationfilelist__():'
         calibrationdata = self.device.custom_config.calibrationdata
         coeffs = self.device.custom_config.__calibrations__
@@ -683,7 +684,7 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
                 self.save_widget_dict['fnames_full'] = fnames_full
 
 
-    def __choose_calfolder__(self):
+    def __choose_calfolder___legacy(self):
         folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
         if len(folderpath) > 0:
             self.save_widget_dict['le'].setText(folderpath)
@@ -743,12 +744,13 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         self.update_coefftable_ntc()
 
     def calc_ntc_coeff(self, parameter, sdata, tdatetime, caldata, refdata):
-        cal_NTC = CalibrationNTC(parameter = parameter, sn = sdata.sn, sensor_model = sdata.sensor_model, calibration_uuid=self.device.custom_config.calibration_uuid)
+        parameter_raddr = RedvyprAddress(parameter)
+        cal_NTC = CalibrationNTC(parameter = parameter_raddr, sn = sdata.sn, sensor_model = sdata.sensor_model, calibration_uuid=self.device.custom_config.calibration_uuid)
         #cal_NTC.parameter = sdata.parameter
         #cal_NTC.sn = sdata.sn
         #cal_NTC.sensor_model = sdata.sensor_model
         tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
-        cal_NTC.date = tdatas
+        cal_NTC.date = tdatetime
         R = np.asarray(caldata)
         R = np.abs(R)
         T = refdata
@@ -796,9 +798,9 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
             for i, sdata in enumerate(self.device.custom_config.calibrationdata):
                 if i == refindex:
                     cal_NTC = CalibrationNTC()
-                    cal_NTC.parameter = sdata.parameter
+                    cal_NTC.parameter = RedvyprAddress(sdata.parameter)
                     cal_NTC.sn = sdata.sn
-                    cal_NTC.date = tdatas
+                    cal_NTC.date = tdatetime
                     cal_NTC.comment = 'reference sensor'
                     calibrations.append(cal_NTC)
                 else:
@@ -809,14 +811,14 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
                         calshape = np.shape(caldata)
                         if len(calshape) == 1:
                             print('Normal array')
-                            parameter = sdata.parameter
+                            parameter = RedvyprAddress(sdata.parameter)
                             cal_NTC = self.calc_ntc_coeff(parameter, sdata, tdatetime, caldata, refdata)
                             calibrations.append(cal_NTC)
                         elif len(calshape) == 2:
                             print('Array of sensors')
                             cal_NTCs = []
                             for isub in range(calshape[1]):
-                                parameter = sdata.parameter + '[{}]'.format(isub)
+                                parameter = RedvyprAddress(sdata.parameter + '[{}]'.format(isub))
                                 cal_NTCs.append(self.calc_ntc_coeff(parameter, sdata, tdatetime, caldata[:,isub], refdata))
 
                             calibrations.append(cal_NTCs)
@@ -970,6 +972,13 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
     def save_calibration(self):
         funcname = __name__ + '.save_calibration():'
         logger.debug(funcname)
+        calibrations = self.device.custom_config.__calibrations__
+        self.__savecalwidget__ = CalibrationsSaveWidget(calibrations=calibrations)
+        self.__savecalwidget__.show()
+
+    def save_calibration_legacy(self):
+        funcname = __name__ + '.save_calibration():'
+        logger.debug(funcname)
 
         self.save_widget = QtWidgets.QWidget()
         self.save_widget_layout = QtWidgets.QFormLayout(self.save_widget)
@@ -1011,7 +1020,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
 
         self.save_widget.show()
 
-    def __save_calibration__(self):
+    def __save_calibration___legacy(self):
         funcname = __name__ + '__save_calibration__():'
         overwrite = True
         create_path = True
@@ -1052,7 +1061,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
                     #with open(fname_cal_full, 'w') as fyaml:
                     #    yaml.dump(caldump, fyaml)
 
-    def __populate__calibrationfilelist__(self):
+    def __populate__calibrationfilelist___legacy(self):
         funcname = __name__ + '__populate__calibrationfilelist__():'
         calibrationdata = self.device.custom_config.calibrationdata
         coeffs = self.device.custom_config.__calibrations__
@@ -1098,7 +1107,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
                 self.save_widget_dict['fnames_full'] = fnames_full
 
 
-    def __choose_calfolder__(self):
+    def __choose_calfolder___legacy(self):
         folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
         if len(folderpath) > 0:
             self.save_widget_dict['le'].setText(folderpath)
@@ -1344,13 +1353,13 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
                 if i == refindex:
                     cal_HF = CalibrationHeatFlow(calibration_id=self.device.custom_config.calibration_id, calibration_comment=self.device.custom_config.calibration_comment, calibration_uuid=self.device.custom_config.calibration_uuid)
                     cal_HF.sn = sdata.sn
-                    cal_HF.date = tdatas
+                    cal_HF.date = tdatetime
                     cal_HF.comment = 'reference sensor'
                     calibrations.append(cal_HF)
                 else:
                     cal_HF = CalibrationHeatFlow(calibration_id=self.device.custom_config.calibration_id, calibration_comment=self.device.custom_config.calibration_comment, calibration_uuid=self.device.custom_config.calibration_uuid)
                     cal_HF.sn = sdata.sn
-                    cal_HF.date = tdatas
+                    cal_HF.date = tdatetime
                     cal_HF.sensor_model = sdata.sensor_model
                     # TODO, V to mV more smart
                     caldata = np.asarray(self.device.custom_config.calibrationdata[i].data) * 1000 # V to mV
@@ -2809,7 +2818,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
                         if update_datainfo:
                             datastream = caldata.datastream
                             logger.debug('Updating datastreams {}'.format(datastream))
-                            keyinfo = self.device.redvypr.get_metadata(datastream)
+                            try:
+                                keyinfo = self.device.redvypr.get_metadata(datastream)
+                            except:
+                                keyinfo = None
                             #keyinfo = self.device.get_metadata(datastream)
                             logger.debug(funcname + 'Datakeyinfo {}'.format(keyinfo))
                             print('Keyinfo',keyinfo)
