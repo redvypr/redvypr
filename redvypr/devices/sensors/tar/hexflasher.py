@@ -278,7 +278,14 @@ class dhf_sensor():
                     index = indices[0]
                     caltype = 4
                     coeff = calibration.coeff
-                    comstr = "set ntc{index} {caltype} {c0} {c1} {c2} {c3} {c4}".format(index=index,caltype=caltype,c0=coeff[0],c1=coeff[1],c2=coeff[2],c3=coeff[3],c4=coeff[4])
+                    coeff_write = []
+                    for icoeff in range(5):
+                        try:
+                            coeff_write.append(coeff[icoeff])
+                        except:
+                            coeff_write.append(0.0)
+
+                    comstr = "set ntc{index} {caltype} {c0} {c1} {c2} {c3} {c4}".format(index=index,caltype=caltype,c0=coeff_write[0],c1=coeff_write[1],c2=coeff_write[2],c3=coeff_write[3],c4=coeff_write[4])
                     devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
                     commands.append(devicecommand)
         if savecal:
