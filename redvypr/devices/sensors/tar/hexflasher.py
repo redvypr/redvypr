@@ -634,7 +634,7 @@ class dhf_flasher():
                     else:
                         #datads = datad.split(':')[-1]
                         mactmp = dhf_sensor(datads[1:17])
-                        print('mactmp',mactmp)
+                        self.logger.debug(funcname + 'mactmp:{}'.format(mactmp))
                         if ('set calid' in datads) and (mactmp is not None):
                             calid = datads.split('set calid ')[1][:-1]
                         if ('set caluuid' in datads) and (mactmp is not None):
