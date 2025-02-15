@@ -626,62 +626,65 @@ class dhf_flasher():
 
 
                 if len(data) > 0:
-                    print(funcname + 'Data:{}'.format(data))
+                    self.logger.debug(funcname + 'Data:{}'.format(data))
                     datad = data.decode('utf-8')
                     datads = strip_first_macs(datad)  # Strip the string such that only the last mac is there
-                    #datads = datad.split(':')[-1]
-                    mactmp = dhf_sensor(datads[1:17])
-                    print('mactmp',mactmp)
-                    if ('set calid' in datads) and (mactmp is not None):
-                        calid = datads.split('set calid ')[1][:-1]
-                    if ('set caluuid' in datads) and (mactmp is not None):
-                        caluuid = datads.split('set caluuid ')[1][:-1]
-                    if ('set caldate' in datads) and (mactmp is not None):
-                        caldatestr = datads.split('set caldate ')[1][:-1]
-                        try:
-                            caldate = datetime.datetime.fromisoformat(caldatestr)
-                        except:
-                            self.logger.warning('Could not convert date:{} into datetime'.format(caldate))
-                            caldate = datetime.datetime(1, 1, 1, 0, 0, 0)
+                    if datads is None:
+                        self.logger.debug('Could not find valid mac for str:{}'.format(data))
+                    else:
+                        #datads = datad.split(':')[-1]
+                        mactmp = dhf_sensor(datads[1:17])
+                        print('mactmp',mactmp)
+                        if ('set calid' in datads) and (mactmp is not None):
+                            calid = datads.split('set calid ')[1][:-1]
+                        if ('set caluuid' in datads) and (mactmp is not None):
+                            caluuid = datads.split('set caluuid ')[1][:-1]
+                        if ('set caldate' in datads) and (mactmp is not None):
+                            caldatestr = datads.split('set caldate ')[1][:-1]
+                            try:
+                                caldate = datetime.datetime.fromisoformat(caldatestr)
+                            except:
+                                self.logger.warning('Could not convert date:{} into datetime'.format(caldate))
+                                caldate = datetime.datetime(1, 1, 1, 0, 0, 0)
 
-                        self.logger.warning('Caldate:{}'.format(caldate))
-                    if ('set calcomment' in datads) and (mactmp is not None):
-                        calcomment = datads.split('set calcomment ')[1][:-1]
-                    if ('set ntc' in datads) and (mactmp is not None):
-                        self.logger.debug('Found calibration entry')
-                        #'$D8478FFFFE95CD4D,set ntc56 4 1.128271e-03 3.289026e-04 -1.530210e-05 1.131836e-06 0.000000e+00\n'
-                        repattern = r"^\$(\w+)!,set (\w+) (\d+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+)"
-                        match = re.match(repattern, datads)
-                        print('datads',datads)
-                        if match:
-                            wholematch = match.group(0)
-                            mac_cal = match.group(1)
-                            parameter = match.group(2)
-                            # Replace 'ntc' with 'R'
-                            if 'ntc' in parameter:
-                                parameter = parameter.replace('ntc','R["')
-                                parameter += '"]'
-                                parameter_apply = parameter.replace('R','T')
+                            self.logger.warning('Caldate:{}'.format(caldate))
+                        if ('set calcomment' in datads) and (mactmp is not None):
+                            calcomment = datads.split('set calcomment ')[1][:-1]
+                        if ('set ntc' in datads) and (mactmp is not None):
+                            self.logger.debug('Found calibration entry')
+                            #'$D8478FFFFE95CD4D,set ntc56 4 1.128271e-03 3.289026e-04 -1.530210e-05 1.131836e-06 0.000000e+00\n'
+                            repattern = r"^\$(\w+)!,set (\w+) (\d+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+)"
+                            match = re.match(repattern, datads)
+                            print('datads',datads)
+                            if match:
+                                wholematch = match.group(0)
+                                mac_cal = match.group(1)
+                                parameter = match.group(2)
+                                # Replace 'ntc' with 'R'
+                                if 'ntc' in parameter:
+                                    parameter = parameter.replace('ntc','R["')
+                                    parameter += '"]'
+                                    parameter_apply = parameter.replace('R','T')
 
-                            caltype = int(match.group(3))
-                            coeffs = [float(match.group(i)) for i in range(4, 9)]
-                            if caltype in calibration_types.keys():
-                                if caltype == 4: # At the moment only hoge-3 is supported
-                                    parameter = redvypr.RedvyprAddress(parameter)
-                                    calmodel = calibration_models.CalibrationNTC(coeff=coeffs,sn=mac_cal,
-                                                                                 comment=calcomment,
-                                                                                 date=caldate,
-                                                                                 calibration_id=calid,
-                                                                                 calibration_uuid=caluuid,
-                                                                                 parameter=parameter,
-                                                                                 parameter_apply=parameter_apply,
-                                                                                 sensor_model=macobject.brdid)
-                                    self.logger.debug('Adding {} to calibrations'.format(macobject.macstr))
-                                    macobject.calibrations[parameter] = calmodel
-                                    print('Calmodel',calmodel)
-                                    flag_cal_found=True
-                        else:
-                            print("Could not find calibration")
+                                caltype = int(match.group(3))
+                                coeffs = [float(match.group(i)) for i in range(4, 9)]
+                                if caltype in calibration_types.keys():
+                                    if caltype == 4: # At the moment only hoge-3 is supported
+                                        parameter = redvypr.RedvyprAddress(parameter)
+                                        calmodel = calibration_models.CalibrationNTC(coeff=coeffs,sn=mac_cal,
+                                                                                     comment=calcomment,
+                                                                                     date=caldate,
+                                                                                     calibration_id=calid,
+                                                                                     calibration_uuid=caluuid,
+                                                                                     parameter=parameter,
+                                                                                     parameter_apply=parameter_apply,
+                                                                                     sensor_model=macobject.brdid)
+                                        self.logger.debug('Adding {} to calibrations'.format(macobject.macstr))
+                                        macobject.calibrations[parameter] = calmodel
+                                        print('Calmodel',calmodel)
+                                        flag_cal_found=True
+                            else:
+                                print("Could not find calibration")
 
             if flag_cal_found:
                 return macobject
