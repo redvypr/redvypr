@@ -2187,7 +2187,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def remCalibrationData(self):
         """
-        Adds a blank calibrationdata to the datatable
+        Removes selected data entries
         """
         funcname = __name__ + '.remCalibrationData():'
         logger.debug(funcname)

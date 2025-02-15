@@ -183,6 +183,24 @@ class CalibrationsTable(QtWidgets.QTableWidget):
         # Populate the table
         self.update_table()
 
+    def get_selected_calibrations(self):
+        """
+
+        Returns
+        -------
+        List of calibrations of selected rows
+        """
+        funcname = __name__ + 'get_calibrations():'
+        calibrations = []
+        table = self
+        if table.selectionModel().selection().indexes():
+            for i in table.selectionModel().selection().indexes():
+                row, column = i.row(), i.column()
+                caltmp = self.__calibrations_list__[row]
+                calibrations.append(caltmp)
+
+        return calibrations
+
     def update_table(self, calibrations=None):
         """
         updates the table, either with own calibrations or with given calibrations
@@ -210,6 +228,7 @@ class CalibrationsTable(QtWidgets.QTableWidget):
         self.setColumnCount(self.nCols)
         self.setHorizontalHeaderLabels(self.header_labels)
 
+        self.__calibrations_list__ = []
         #print('Calibrations',self.calibrations)
         for i, cal_key in enumerate(self.calibrations):
             if isinstance(self.calibrations,dict):
@@ -224,6 +243,8 @@ class CalibrationsTable(QtWidgets.QTableWidget):
                 calibration = None
 
             if True:
+                # Create an extra list with the calibrations
+                self.__calibrations_list__.append(calibration)
                 # Choose calibration button
                 but_choose = QtWidgets.QPushButton('Choose')
                 #but_choose.clicked.connect(self.__create_calibration_widget__)
@@ -360,7 +381,7 @@ class GenericSensorCalibrationWidget(QtWidgets.QWidget):
         # self.filterCoeffButton = QtWidgets.QPushButton('Filter coefficient')
         # self.filterCoeffButton.setEnabled(False)
         self.remCalibButton = QtWidgets.QPushButton('Remove Calibration(s)')
-        #self.remCoeffButton.clicked.connect(self.remCalibration_clicked)
+        self.remCalibButton.clicked.connect(self.remCalibration_clicked)
 
         # self.calibrationConfigWidget = gui.configWidget(self.device.calibration, editable=False)
         self.calibrations_allWidget = QtWidgets.QWidget()
@@ -383,6 +404,16 @@ class GenericSensorCalibrationWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.calibrationsTab, 0, 0)
         #self.layout.addWidget(self.configWidget, 0, 0)
         #self.layout.addWidget(self.parameterWidget,0,1)
+
+    def remCalibration_clicked(self):
+        funcname = __name__ + '.remCalibration_clicked():'
+        logger.debug(funcname)
+        calibrations_remove = self.calibrations_allTable.get_selected_calibrations()
+        for i,cal in enumerate(calibrations_remove):
+            logger.debug(funcname + 'removing {} of {}:{}'.format(i,len(calibrations_remove),cal))
+            self.calibrations.remove(cal)
+
+        self.update_calibration_all_table(self.calibrations)
 
     def find_calibrations(self):
         funcname = __name__ + '.find_calibrations():'
