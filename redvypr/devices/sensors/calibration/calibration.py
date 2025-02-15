@@ -743,7 +743,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         logger.debug(funcname)
         self.update_coefftable_ntc()
 
-    def calc_ntc_coeff(self, parameter, sdata, tdatetime, caldata, refdata):
+    def calc_ntc_coeff(self, parameter, sdata, tdatetime, caldata, refdata, poly_degree=4):
         parameter_raddr = RedvyprAddress(parameter)
         cal_NTC = CalibrationNTC(parameter = parameter_raddr, sn = sdata.sn, sensor_model = sdata.sensor_model, calibration_uuid=self.device.custom_config.calibration_uuid)
         #cal_NTC.parameter = sdata.parameter
@@ -758,7 +758,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         print('T', T)
         # And finally the fit
         TOFF = 273.15
-        fitdata = fit_ntc(T, R, TOFF)
+        fitdata = fit_ntc(T, R, TOFF, poly_degree)
         P_R = fitdata['P_R']
         cal_NTC.coeff = P_R.tolist()
         print('P_R', P_R)
@@ -1532,12 +1532,12 @@ class PlotCanvas(FigureCanvas):
         self.draw()
 
 
-def fit_ntc(T,R,Toff):
+def fit_ntc(T,R,Toff, poly_degree=4):
     TK = T + Toff
     T_1 = 1 / (TK)
     # logR = log(R/R0)
     logR = np.log(R)
-    P_R = np.polyfit(logR, T_1, 3)
+    P_R = np.polyfit(logR, T_1, poly_degree)
     return {'P_R':P_R}
 
 def calc_ntc_legacy(R,P_R,Toff):

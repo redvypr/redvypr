@@ -281,7 +281,10 @@ class dhf_sensor():
                     coeff_write = []
                     for icoeff in range(5):
                         try:
-                            coeff_write.append(coeff[icoeff])
+                            #coeff_write.append(coeff[icoeff])
+                            # Send the reverse entries
+                            itmp = - icoeff - 1
+                            coeff_write.append(coeff[itmp])
                         except:
                             coeff_write.append(0.0)
 
