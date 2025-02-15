@@ -26,7 +26,7 @@ def decode_utf8(byte_string):
 
 
 def array(byte_string):
-    return list(numpy.fromstring(byte_string,sep=','))
+    return numpy.fromstring(byte_string,sep=',').tolist()
 
 
 

@@ -115,9 +115,6 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
         if len(data_packet_processed) > 0:
             #print('Datapacket processed',data_packet_processed)
             print('Data packet processed (without calibration)', len(data_packet_processed))
-            print('Processing!!!!! done')
-            print('Processing!!!!! done')
-            print('Processing!!!!! done')
             mac = data_packet_processed[0]['MAC']
             counter = data_packet_processed[0]['counter']
             np = data_packet_processed[0]['np']
