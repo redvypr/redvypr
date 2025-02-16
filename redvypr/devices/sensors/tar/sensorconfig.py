@@ -21,7 +21,7 @@ from redvypr.devices.sensors.generic_sensor.calibrationWidget import GenericSens
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.device.sensorconfig')
+logger = logging.getLogger('redvypr.device.tar.sensorconfig')
 logger.setLevel(logging.DEBUG)
 
 
@@ -421,7 +421,7 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
 class SerialStatusWidget(QtWidgets.QWidget):
     def __init__(self, dhffl=None, data_queue=None, comqueue=None):
         super(QtWidgets.QWidget, self).__init__()
-        self.logger = logging.getLogger('SerialStatusWidget')
+        self.logger = logging.getLogger('redvypr.device.tar.sensorconfig.SerialStatusWidget')
         self.logger.setLevel(logging.DEBUG)
         #self.layout = QtWidgets.QGridLayout(self)
         self.dhffl = dhffl
@@ -523,7 +523,7 @@ class CalibrationsWriteToSensorWidget(QtWidgets.QWidget):
     def __init__(self, *args, calibrations=None, macobject=None, dhffl=None, comqueue=None):
         funcname = __name__ + '__init__()'
         super().__init__(*args)
-        self.logger = logging.getLogger('CalibrationsWriteToSensorWidget')
+        self.logger = logging.getLogger('redvypr.device.tar.sensorconfig.CalibrationsWriteToSensorWidget')
         self.logger.setLevel(logging.DEBUG)
         self.__comqueue = comqueue
         self.calibrations = calibrations
@@ -616,7 +616,7 @@ class FirmwareCalibrationsWidget(QtWidgets.QWidget):
         funcname = __name__ + '.__init__():'
         super(QtWidgets.QWidget, self).__init__()
         self.__comqueue = comqueue
-        self.logger = logging.getLogger('SensorCalibrationWidget')
+        self.logger = logging.getLogger('redvypr.device.tar.sensorconfig.SensorCalibrationWidget')
         self.logger.setLevel(logging.DEBUG)
         self.layout = QtWidgets.QGridLayout(self)
         #if sensor is None:
@@ -773,7 +773,7 @@ class HexflashWidget(QtWidgets.QWidget):
         self.command_buttons_enable = [] # List of command buttons that are only enabled if a serial device is open
         self.flash_buttons_enable = []  # List of command buttons that are only enabled if a serial device is open
 
-        self.logger = logging.getLogger('HexflashWidget')
+        self.logger = logging.getLogger('redvypr.device.tar.sensorconfig.HexflashWidget')
         self.logger.setLevel(logging.DEBUG)
         self.layout = QtWidgets.QGridLayout(self)
 

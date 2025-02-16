@@ -16,7 +16,7 @@ from redvypr.devices.sensors.calibration import calibration_models
 
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
-logger = logging.getLogger("hexflasher")
+logger = logging.getLogger("redvypr.devices.tar.hexflasher")
 
 # Calibration models for the different caliration types
 #'$D8478FFFFE95CD4D,set ntc56 4 1.128271e-03 3.289026e-04 -1.530210e-05 1.131836e-06 0.000000e+00\n'
@@ -55,7 +55,7 @@ def strip_first_macs(datad):
 class dhf_sensor():
     def __init__(self,macstr=''):
         self.macstr = macstr
-        self.logger = logging.getLogger('dhf_sensor({})'.format(macstr))
+        self.logger = logging.getLogger('redvypr.device.tar.dhf_sensor({})'.format(macstr))
         self.logger.setLevel(logging.DEBUG)
         self.macsum_boots = None  # The sum of the macstring as in the BOOT string of the device
         self.parents = None
