@@ -19,7 +19,7 @@ _icon_file = redvypr_files.icon_file
 redvypr_devicemodule = True
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('pcolorplot')
+logger = logging.getLogger('redvypr.pcolorplot')
 logger.setLevel(logging.INFO)
 
 start = device_start_standard
@@ -64,7 +64,7 @@ class PcolorPlotWidget(QtWidgets.QWidget):
             self.config = config
 
         self.config_backup = self.config.model_dump()
-        self.logger = logging.getLogger('PcolorPlot')
+        self.logger = logging.getLogger('redvypr.PcolorPlot')
         self.logger.setLevel(loglevel)
         self.description = 'Pcolor plot'
         self.layout = QtWidgets.QGridLayout(self)

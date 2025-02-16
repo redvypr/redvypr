@@ -27,7 +27,7 @@ import faulthandler
 faulthandler.enable()
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr_main_widget')
+logger = logging.getLogger('redvypr.redvypr_main_widget')
 logger.setLevel(logging.INFO)
 
 _logo_file = files.logo_file

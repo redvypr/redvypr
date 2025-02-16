@@ -28,7 +28,7 @@ _icon_file = redvypr_files.icon_file
 redvypr_devicemodule = True
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('xyplot')
+logger = logging.getLogger('redvypr.xyplot')
 logger.setLevel(logging.INFO)
 
 

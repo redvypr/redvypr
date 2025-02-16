@@ -8,7 +8,7 @@ import json
 import deepdiff
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr_packet_statistics')
+logger = logging.getLogger('redvypr.packet_statistics')
 logger.setLevel(logging.INFO)
 
 # A dictionary for the device_redvypr entry in the statistics

@@ -22,7 +22,7 @@ pyqtgraph.setConfigOption('background', 'w')
 pyqtgraph.setConfigOption('foreground', 'k')
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('plot_widgets')
+logger = logging.getLogger('redvypr.plot_widgets')
 #logger.setLevel(logging.DEBUG)
 logger.setLevel(logging.INFO)
 

@@ -14,7 +14,7 @@ from redvypr.data_packets import check_for_command
 from redvypr.packet_statistic import do_data_statistics, create_data_statistic_dict
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('fileread')
+logger = logging.getLogger('redvypr.fileread')
 logger.setLevel(logging.DEBUG)
 
 description = "Reads a file and publishes the data as chunks defined by the users"

@@ -4,7 +4,7 @@ import sys
 import logging
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('files')
+logger = logging.getLogger('redvypr.files')
 logger.setLevel(logging.INFO)
 
 #https://stackoverflow.com/questions/7674790/bundling-data-files-with-pyinstaller-onefile/13790741#13790741

@@ -155,7 +155,6 @@ class Sensor(pydantic.BaseModel):
             #print('Calibrations',self.calibrations)
             if len(self.calibrations.keys()) == 0:
                 #print('Returning data')
-                print('yaml2',yaml.dump(data))
                 return data
             else:
                 for datapacket_calkey in self.calibrations.keys():
@@ -309,9 +308,15 @@ class BinarySensor(Sensor):
                     data_packets_calibrated.append(data_packet)
 
                 #print('Autocalibration',data_packets_calibrated)
-                return data_packets_calibrated
+                if len(data_packets_calibrated)>0:
+                    return data_packets_calibrated
+                else:
+                    return None
             else: # no calibration, just return the data packets
-                return data_packets
+                if len(data_packets) > 0:
+                    return data_packets
+                else:
+                    return None
 
     def binary_process(self, binary_stream, datapacket_orig):
         """

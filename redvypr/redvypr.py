@@ -32,6 +32,7 @@ import redvypr
 import redvypr.data_packets as data_packets
 import redvypr.redvypr_address as redvypr_address
 import redvypr.packet_statistic as redvypr_packet_statistic
+import redvypr.logger as redvypr_logger
 from redvypr.version import version
 import redvypr.files as files
 from redvypr.device import RedvyprDeviceConfig, RedvyprDeviceBaseConfig, RedvyprDevice, RedvyprDeviceScan, RedvyprDeviceParameter, queuesize
@@ -406,6 +407,8 @@ class Redvypr(QtCore.QObject):
         self.devicethreadtimer.timeout.connect(self.update_status)  # Add to the timer another update
         self.devicethreadtimer.start(250)
 
+        # Check for all loggers
+        scanned_logger = redvypr_logger.LoggerScan(self)
         # A timer to print the status in the nogui environment
         if (nogui):
             self.statustimer = QtCore.QTimer()
@@ -419,7 +422,6 @@ class Redvypr(QtCore.QObject):
         -------
 
         """
-
         redvypr_config = merge_configuration(config)
         self.add_devices_from_config(redvypr_config, rename_if_exists=False)
 

@@ -26,7 +26,7 @@ from redvypr.widgets.pydanticConfigWidget import dictQTreeWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('network_device')
+logger = logging.getLogger('redvypr.network_device')
 logger.setLevel(logging.INFO)
 
 redvypr_devicemodule = True

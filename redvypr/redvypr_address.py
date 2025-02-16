@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_core import SchemaSerializer, core_schema
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr_address')
+logger = logging.getLogger('redvypr.redvypr_address')
 logger.setLevel(logging.DEBUG)
 
 restr = r'''\[['"].+['"]\].*''' # Regex that searches for square brackets as start, followed by quotation strs, arbitraty string and again quotation and bracket

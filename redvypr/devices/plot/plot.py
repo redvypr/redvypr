@@ -26,7 +26,7 @@ from redvypr.data_packets import check_for_command
 #from redvypr.configdata import configdata, getdata
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('plot')
+logger = logging.getLogger('redvypr.plot')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True

@@ -106,7 +106,7 @@ class deviceQThread(QtCore.QThread):
 
 def device_start_standard(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start():'
-    logger = logging.getLogger('device_start():')
+    logger = logging.getLogger('redvypr.device_start():')
     while True:
         data = datainqueue.get()
         if(data is not None):
@@ -153,7 +153,7 @@ class RedvyprDeviceScan():
         loglevel: logging.loglevel
             The loglevel
         """
-        self.logger = logging.getLogger('redvypr_device_scan')
+        self.logger = logging.getLogger('redvypr.redvypr_device_scan')
         self.logger.setLevel(loglevel)
         self.device_paths = device_path
         self.redvypr_devices = redvypr_devices
@@ -228,8 +228,6 @@ class RedvyprDeviceScan():
                         self.logger.debug(funcname + 'Found device: {}'.format(module_name))
                 else:
                     self.logger.debug(funcname + 'Not a valid device')
-
-
 
     def scan_module_recursive(self,testmodule, module_dict):
         funcname = 'scan_module_recursive():'
@@ -451,7 +449,7 @@ class RedvyprDevice(QtCore.QObject):
 
         self.subscribed_addresses = []
         
-        self.logger = logging.getLogger(self.name)
+        self.logger = logging.getLogger('redvypr.' + self.name)
         self.logger.setLevel(device_parameter.loglevel)
         # Some placeholder attribute, that will be filled by redvypr_main_widget, if the gui is used
         self.deviceinitwidget = None

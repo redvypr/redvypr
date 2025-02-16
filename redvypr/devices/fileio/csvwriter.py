@@ -28,7 +28,7 @@ import redvypr.redvypr_address as redvypr_address
 import redvypr.gui
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('csvwriter')
+logger = logging.getLogger('redvypr.csvwriter')
 logger.setLevel(logging.INFO)
 
 redvypr_devicemodule = True
