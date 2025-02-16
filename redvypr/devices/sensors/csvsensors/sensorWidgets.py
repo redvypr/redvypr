@@ -16,7 +16,7 @@ import redvypr.gui as gui
 from pathlib import Path
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('sensorWidgets')
+logger = logging.getLogger('redvypr.sensorWidgets')
 logger.setLevel(logging.DEBUG)
 
 

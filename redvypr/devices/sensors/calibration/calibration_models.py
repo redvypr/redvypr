@@ -13,7 +13,7 @@ import redvypr
 from redvypr.redvypr_address import RedvyprAddress
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('calibration_models')
+logger = logging.getLogger('redvypr.calibration_models')
 logger.setLevel(logging.DEBUG)
 
 

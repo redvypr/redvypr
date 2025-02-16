@@ -37,7 +37,7 @@ _icon_file = redvypr_files.icon_file
 redvypr_devicemodule = True
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('csvsensors')
+logger = logging.getLogger('redvypr.csvsensors')
 logger.setLevel(logging.DEBUG)
 
 

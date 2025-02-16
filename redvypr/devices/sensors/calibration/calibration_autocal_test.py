@@ -22,7 +22,7 @@ import pydantic
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('calibration_autocal_test')
+logger = logging.getLogger('redvypr.calibration_autocal_test')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True

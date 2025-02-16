@@ -106,7 +106,7 @@ class deviceQThread(QtCore.QThread):
 
 def device_start_standard(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start():'
-    logger = logging.getLogger('redvypr.device_start():')
+    logger = logging.getLogger('redvypr.redvypr.device_start():')
     while True:
         data = datainqueue.get()
         if(data is not None):

@@ -13,7 +13,7 @@ from .average_data import average_data
 from .sensorWidgets import sensorCoeffWidget
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('temperature_array_sensors')
+logger = logging.getLogger('redvypr.temperature_array_sensors')
 logger.setLevel(logging.DEBUG)
 
 avg_objs_TAR_raw = {}  # Average dataobjects
