@@ -256,7 +256,6 @@ class redvyprWidget(QtWidgets.QWidget):
             self.console.push_local_ns('redvypr', self.redvypr)
             self.console.resize(width, height)
             self.console.show()
-
             self.console.eval_queued()
 
         # self.devicetabs.addTab(self.console,'Console')
@@ -273,11 +272,11 @@ class redvyprWidget(QtWidgets.QWidget):
 
         for dev in self.redvypr.devices:
             devname = dev['device'].name
-            if (devname == oldname):  # Found the device, lets rename it
+            if devname == oldname:  # Found the device, lets rename it
                 dev['device'].change_name(name)
                 widget = dev['widget']
                 for i in range(self.devicetabs.count()):
-                    if (self.devicetabs.widget(i) == widget):
+                    if self.devicetabs.widget(i) == widget:
                         self.devicetabs.setTabText(i, name)
                         break
 
@@ -904,6 +903,79 @@ class redvyprWidget(QtWidgets.QWidget):
 
         self.__hostinfo_opt_edit.show()
 
+    def show_loglevelwidget(self):
+        """A widget to show and edit the loglevel of the redvypr instances
+
+        """
+        self.__loglevelwidget = QtWidgets.QWidget()
+        self.__logtable = QtWidgets.QTableWidget()
+        self.__loglevelwidget_layout = QtWidgets.QVBoxLayout(self.__loglevelwidget)
+        loglevels = ['INFO', 'DEBUG', 'WARNING', 'ERROR', 'CRITICAL']
+        self.loglevel_combobox = QtWidgets.QComboBox()
+        for i, l in enumerate(loglevels):
+            self.loglevel_combobox.addItem(l)
+
+        logger = redvypr.logger
+        level = logger.getEffectiveLevel()
+        levelname = logging.getLevelName(level)
+        self.loglevel_combobox.currentIndexChanged.connect(self.__loglevelChanged__)
+        self.__loglevelwidget_layout.addWidget(self.loglevel_combobox)
+        self.__loglevelwidget_layout.addWidget(self.__logtable)
+        self.__update_logleveltable()
+        self.__loglevelwidget.show()
+
+    def __update_logleveltable(self):
+        self.__logtable.clear()
+        table = self.__logtable
+        redvypr_logger = []
+        other_logger = []
+        for name in logging.root.manager.loggerDict:
+            logger_tmp = logging.getLogger(name)
+            if 'redvypr' in name:
+                redvypr_logger.append(logger_tmp)
+            else:
+                other_logger.append(logger_tmp)
+
+        nrows = len(redvypr_logger) + len(other_logger) + 1
+        table.setRowCount(nrows)
+        table.setColumnCount(2)
+        loglevels = ['INFO', 'DEBUG', 'WARNING', 'ERROR', 'CRITICAL']
+        row_tmp = 0
+        for logger_tmp in redvypr_logger:
+            logger_children = logger_tmp.getChildren()
+            #print('logger children',logger_children)
+            #print('logger name', logger_tmp.name)
+            row_tmp += 1
+            loglevel_combobox = QtWidgets.QComboBox()
+            loglevel_combobox.__logger__ = logger_tmp
+            for i, l in enumerate(loglevels):
+                loglevel_combobox.addItem(l)
+
+            level = logger_tmp.getEffectiveLevel()
+            levelname = logging.getLevelName(level)
+            loglevel_combobox.setCurrentText(levelname)
+            loglevel_combobox.currentIndexChanged.connect(self.__loglevelChanged__)
+
+            item = QtWidgets.QTableWidgetItem(logger_tmp.name)
+            item.setFlags(item.flags() ^ QtCore.Qt.ItemIsEditable)
+
+            table.setItem(row_tmp, 0, item)
+            table.setCellWidget(row_tmp, 1, loglevel_combobox)
+
+        table.resizeColumnsToContents()
+
+    def __loglevelChanged__(self):
+        loglevel = self.sender().currentText()
+        logger_tmp = self.sender().__logger__
+        if (logger_tmp is not None):
+            logger_tmp.info('loglevel changed to {}'.format(loglevel))
+            logger_tmp.setLevel(loglevel)
+            self.__update_logleveltable()
+
+        #loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
+        #for logger in loggers:
+        #    print('Logger', logger)
+
     def show_devicepathwidget(self):
         """A widget to show the pathes to search for additional devices
 
@@ -1057,11 +1129,13 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         devcurAction.setStatusTip('Go to the home tab')
         devcurAction.triggered.connect(self.goto_home_tab)
 
-        # TODO rename to subscribe
-        conAction = QtGui.QAction("&Connect devices", self)
-        conAction.setShortcut("Ctrl+C")
-        conAction.setStatusTip('Connect the input/output datastreams of the devices')
+        conAction = QtGui.QAction("&Subscribe devices", self)
+        conAction.setStatusTip('Subscribe the datastreams of the different devices')
         conAction.triggered.connect(self.connect_device_gui)
+
+        loglevelAction = QtGui.QAction("&Loglevel", self)
+        loglevelAction.setStatusTip('Change the logging level')
+        loglevelAction.triggered.connect(self.redvypr_widget.show_loglevelwidget)
 
         self.statusBar()
 
@@ -1069,13 +1143,16 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         fileMenu = mainMenu.addMenu('&File')
         fileMenu.addAction(loadcfgAction)
         fileMenu.addAction(savecfgAction)
-        fileMenu.addAction(pathAction)
         fileMenu.addAction(quitAction)
 
         deviceMenu = mainMenu.addMenu('&Devices')
         deviceMenu.addAction(devcurAction)
         deviceMenu.addAction(deviceAction)
         deviceMenu.addAction(conAction)
+
+        settingsMenu = mainMenu.addMenu('&Settings')
+        settingsMenu.addAction(pathAction)
+        settingsMenu.addAction(loglevelAction)
 
         # Help and About menu
         toolMenu = mainMenu.addMenu('&Tools')

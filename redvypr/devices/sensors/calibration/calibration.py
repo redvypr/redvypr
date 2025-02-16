@@ -37,7 +37,7 @@ description = 'Calibration of sensors'
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.calibration')
+logger = logging.getLogger('redvypr.device.calibration')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True

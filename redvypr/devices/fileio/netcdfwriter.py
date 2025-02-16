@@ -25,7 +25,7 @@ import redvypr.packet_statistic as packet_statistics
 import redvypr.gui
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.netcdfwriter')
+logger = logging.getLogger('redvypr.device.netcdfwriter')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True

@@ -26,7 +26,7 @@ import redvypr.packet_statistic as packet_statistics
 import redvypr.gui
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.xlsxwriter')
+logger = logging.getLogger('redvypr.device.xlsxwriter')
 logger.setLevel(logging.INFO)
 
 time_format = 'yyyy-mm-dd HH:MM:SS.000'

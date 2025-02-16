@@ -5,7 +5,7 @@ from redvypr.redvypr_address import RedvyprAddress
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('RedvyprSubsribeWidget')
+logger = logging.getLogger('redvypr.widgets.RedvyprSubsribeWidget')
 logger.setLevel(logging.DEBUG)
 
 class LineEditFocus(QtWidgets.QLineEdit):

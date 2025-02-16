@@ -16,7 +16,7 @@ from .sensorWidgets import sensorCoeffWidget, sensorConfigWidget
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.heatflow_sensors')
+logger = logging.getLogger('redvypr.device.heatflow_sensors')
 logger.setLevel(logging.DEBUG)
 
 

@@ -19,7 +19,7 @@ import redvypr.gui as gui
 from pathlib import Path
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.calibrationWidget')
+logger = logging.getLogger('redvypr.device.calibrationWidget')
 logger.setLevel(logging.DEBUG)
 
 

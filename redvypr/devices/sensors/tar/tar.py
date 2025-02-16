@@ -68,9 +68,10 @@ tarv2nmea_T_sample_packetid_format = '{MAC}__TAR_S__T'
 tarv2nmea_T_sample_description = 'Temperature array datapacket initiated by a sample command'
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('tar')
+logger = logging.getLogger('redvypr.device.tar')
 logger.setLevel(logging.DEBUG)
 
+redvypr_devicemodule = True
 
 class TarSensor(sensor_definitions.BinarySensor):
     num_ntc: int = pydantic.Field(default=64, description='number of ntc sensors')
@@ -100,8 +101,6 @@ class DeviceBaseConfig(pydantic.BaseModel):
 
 class DeviceCustomConfig(pydantic.BaseModel):
     baud: int = 115200
-
-redvypr_devicemodule = True
 
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):

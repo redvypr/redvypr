@@ -20,7 +20,7 @@ from redvypr.data_packets import check_for_command
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.rawdatareplay')
+logger = logging.getLogger('redvypr.device.rawdatareplay')
 logger.setLevel(logging.DEBUG)
 
 class DeviceBaseConfig(pydantic.BaseModel):

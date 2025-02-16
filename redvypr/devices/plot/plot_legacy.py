@@ -25,7 +25,7 @@ pyqtgraph.setConfigOption('background', 'w')
 pyqtgraph.setConfigOption('foreground', 'k')
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('plot')
+logger = logging.getLogger('redvypr.device.plot_legacy')
 logger.setLevel(logging.DEBUG)
 
 description = 'Device that plots the received data'

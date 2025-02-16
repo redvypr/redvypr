@@ -30,7 +30,7 @@ description = 'Reading data from a serial device'
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.serial')
+logger = logging.getLogger('redvypr.device.serial')
 logger.setLevel(logging.INFO)
 
 

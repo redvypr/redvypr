@@ -12,7 +12,7 @@ from redvypr.device import RedvyprDevice
 from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr')
+logger = logging.getLogger('redvypr.widgets.standard_device_widgets')
 logger.setLevel(logging.DEBUG)
 
 

@@ -6,7 +6,7 @@ import redvypr.data_packets as data_packets
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.average_data')
+logger = logging.getLogger('redvypr.device.average_data')
 logger.setLevel(logging.DEBUG)
 
 class average_data():

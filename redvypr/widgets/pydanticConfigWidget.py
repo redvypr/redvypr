@@ -15,7 +15,7 @@ from redvypr.data_packets import RedvyprMetadata, RedvyprMetadataGeneral
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('pydanticConfigWidget')
+logger = logging.getLogger('redvypr.widgets.pydanticConfigWidget')
 logger.setLevel(logging.DEBUG)
 
 

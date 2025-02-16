@@ -475,7 +475,7 @@ class dhf_flasher():
 
     """
     def __init__(self,comport=None,baud=9600,loglevel=logging.DEBUG,logcom=True):
-        self.logger = logging.getLogger('dhf_flasher')
+        self.logger = logging.getLogger('redvypr.dhf_flasher')
         loglevel = logging.DEBUG
         self.logger.setLevel(loglevel)
         funcname = '.init():'
@@ -1180,7 +1180,7 @@ class dhf_flasher():
         :return:
         """
         funcname = '.readwrite():'
-        logger_thread = logging.getLogger('dhf_flasher' + funcname)
+        logger_thread = logging.getLogger('redvypr.device.dhf_flasher' + funcname)
         logger_thread.setLevel(logging.DEBUG)
         logger_thread.debug(funcname)
         self.serial_commands = []

@@ -19,7 +19,7 @@ from redvypr.devices.sensors.calibration.calibration_models import CalibrationHe
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.sensor_definitions')
+logger = logging.getLogger('redvypr.device.sensor_definitions')
 logger.setLevel(logging.DEBUG)
 
 def decode_utf8(byte_string):

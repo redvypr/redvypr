@@ -31,7 +31,7 @@ from redvypr.devices.plot import plot_widgets
 from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.autocalibration')
+logger = logging.getLogger('redvypr.device.autocalibration')
 logger.setLevel(logging.DEBUG)
 
 class AutoCalEntry(pydantic.BaseModel):

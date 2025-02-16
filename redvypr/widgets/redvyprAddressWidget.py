@@ -14,7 +14,7 @@ _icon_file = files.icon_file
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvyprAddressWidget')
+logger = logging.getLogger('redvypr.widgets.redvyprAddressWidget')
 logger.setLevel(logging.DEBUG)
 
 

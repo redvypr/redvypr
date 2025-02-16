@@ -19,7 +19,7 @@ _icon_file = redvypr_files.icon_file
 redvypr_devicemodule = True
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.pcolorplot')
+logger = logging.getLogger('redvypr.device.pcolorplot')
 logger.setLevel(logging.INFO)
 
 start = device_start_standard

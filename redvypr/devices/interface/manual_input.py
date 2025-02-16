@@ -18,7 +18,7 @@ import redvypr.files as redvypr_files
 import redvypr.devices.plot.plot_widgets as redvypr_plot_widgets
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.manual')
+logger = logging.getLogger('redvypr.device.manual')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True

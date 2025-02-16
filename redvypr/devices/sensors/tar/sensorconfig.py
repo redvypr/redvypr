@@ -15,13 +15,13 @@ import threading
 import pydantic
 import redvypr
 from . import hexflasher
-from . import tar
+#from . import tar
 from redvypr.devices.sensors.generic_sensor.calibrationWidget import GenericSensorCalibrationWidget, CalibrationsTable
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
 
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('sensorconfig')
+logger = logging.getLogger('redvypr.device.sensorconfig')
 logger.setLevel(logging.DEBUG)
 
 
@@ -619,9 +619,9 @@ class FirmwareCalibrationsWidget(QtWidgets.QWidget):
         self.logger = logging.getLogger('SensorCalibrationWidget')
         self.logger.setLevel(logging.DEBUG)
         self.layout = QtWidgets.QGridLayout(self)
-        if sensor is None:
-            self.logger.debug(funcname + 'Adding standard tar sensor')
-            self.sensor = tar.TarSensor()
+        #if sensor is None:
+        #    self.logger.debug(funcname + 'Adding standard tar sensor')
+        #    self.sensor = tar.TarSensor()
 
         self.dhffl = dhffl
 
