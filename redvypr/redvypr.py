@@ -32,7 +32,6 @@ import redvypr
 import redvypr.data_packets as data_packets
 import redvypr.redvypr_address as redvypr_address
 import redvypr.packet_statistic as redvypr_packet_statistic
-import redvypr.logger as redvypr_logger
 from redvypr.version import version
 import redvypr.files as files
 from redvypr.device import RedvyprDeviceConfig, RedvyprDeviceBaseConfig, RedvyprDevice, RedvyprDeviceScan, RedvyprDeviceParameter, queuesize
@@ -406,9 +405,10 @@ class Redvypr(QtCore.QObject):
         self.devicethreadtimer = QtCore.QTimer()
         self.devicethreadtimer.timeout.connect(self.update_status)  # Add to the timer another update
         self.devicethreadtimer.start(250)
-
-        # Check for all loggers
-        scanned_logger = redvypr_logger.LoggerScan(self)
+        print('LOGLEVEL',loglevel)
+        if loglevel is None:
+            loglevel = 'INFO'
+        self.set_loglevel(loggername='redvypr',loglevel=loglevel)
         # A timer to print the status in the nogui environment
         if (nogui):
             self.statustimer = QtCore.QTimer()
@@ -1008,6 +1008,30 @@ class Redvypr(QtCore.QObject):
             if dev == devsender:
                 continue
             dev.subscription_changed_global(devsender)
+
+    def set_loglevel(self,loglevel='INFO', loggername='redvypr', propagate_down=True):
+        """
+        Sets the loglevel of the logger and to the children if propate_down==True
+
+        Parameters
+        ----------
+        loggername
+        loglevel
+        propagate_down
+
+        Returns
+        -------
+
+        """
+        try:
+            logger_tmp = logging.getLogger(loggername)
+        except:
+            raise ValueError('Could not find logger')
+
+        logger_tmp.setLevel(loglevel)
+        if propagate_down:
+            for logger_child in logger_tmp.getChildren():
+                self.set_loglevel(loglevel,logger_child.name,propagate_down)
 
     def get_all_subscriptions(self):
         """
