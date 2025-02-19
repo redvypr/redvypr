@@ -536,7 +536,6 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
     def plot_data(self):
         funcname = __name__ + '.plot_data():'
         logger.debug(funcname)
-        print('Hallo')
         calibrationtype = self.device.custom_config.calibrationtype.lower()
         if calibrationtype == 'poly':
             logger.debug(funcname + ' plotting POLY calibration')
@@ -561,133 +560,6 @@ class CalibrationWidgetPoly(QtWidgets.QWidget):
         self.__savecalwidget__ = CalibrationsSaveWidget(calibrations=calibrations)
         self.__savecalwidget__.show()
 
-
-    def save_calibration_legacy(self):
-        funcname = __name__ + '.save_calibration_legacy():'
-        logger.debug(funcname)
-
-        self.save_widget = QtWidgets.QWidget()
-        self.save_widget_layout = QtWidgets.QFormLayout(self.save_widget)
-        self.save_widget_dict = {}
-        folderpath_init = '.' + os.sep + '{SN}'
-        self.save_widget_dict['le'] = QtWidgets.QLineEdit(folderpath_init)
-        self.save_widget_dict['le'].editingFinished.connect(self.__populate__calibrationfilelist__)
-        calfolder = QtWidgets.QPushButton('Choose Calibration Folder')
-        calfolder.clicked.connect(self.__choose_calfolder__)
-
-        calfile_structure = '{SN}_{PARAMETER}_{CALDATE}.yaml'
-        self.save_widget_dict['le_calfile'] = QtWidgets.QLineEdit(calfile_structure)
-        self.save_widget_dict['le_calfile'].editingFinished.connect(self.__populate__calibrationfilelist__)
-
-        self.save_widget_dict['filelist'] = QtWidgets.QListWidget()
-
-        savecal_but = QtWidgets.QPushButton('Save calibration')
-        savecal_but.clicked.connect(self.__save_calibration__)
-
-        self.save_widget_layout.addRow(calfolder, self.save_widget_dict['le'])
-        self.save_widget_layout.addRow(QtWidgets.QLabel('Calibrationfile'),self.save_widget_dict['le_calfile'])
-        self.save_widget_layout.addRow(self.save_widget_dict['filelist'])
-        self.save_widget_layout.addRow(savecal_but)
-        # Update the calibrationdata
-        # calibrationdata = self.calibdata_to_dict()
-        # self.update_coefftable_poly()
-        # try:
-        #    calibrationdata = self.calibration_poly['calibrationdata']
-        #    coeffs = self.calibration_poly['coeffs']
-        # except Exception as e:
-        #    logger.debug(funcname)
-        #    logger.exception(e)
-        #    coeffs = None
-
-
-        self.__populate__calibrationfilelist__()
-        #folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
-
-
-        self.save_widget.show()
-
-    def __save_calibration___legacy(self):
-        funcname = __name__ + '__save_calibration__():'
-        overwrite = True
-        create_path = True
-        fnames_full = self.save_widget_dict['fnames_full']
-        for fname_full,fname_cal_full,c,cal in fnames_full:
-            dirname = os.path.dirname(fname_full)
-            if os.path.isdir(dirname):
-                print('Path exists')
-            elif create_path:
-                print('Creating directory')
-                os.mkdir(dirname)
-            else:
-                print('Directory does not exist, will not write file')
-                continue
-            if os.path.isfile(fname_full):
-                logger.warning('File is already existing {:s}'.format(fname_full))
-                file_exist = True
-            else:
-                file_exist = False
-
-            if overwrite or (file_exist == False):
-                logger.info('Saving file to {:s}'.format(fname_full))
-                if c.comment == 'reference sensor':
-                    logger.debug(funcname + ' Will not save calibration (reference sensor)')
-                else:
-                    cdump = c.model_dump()
-                    # data_save = yaml.dump(cdump)
-
-                    with open(fname_full, 'w') as fyaml:
-                        yaml.dump(cdump, fyaml)
-                    print('Cal', cal)
-                    caldump = cal.model_dump()
-                    # data_save = yaml.dump(cdump)
-                    #with open(fname_cal_full, 'w') as fyaml:
-                    #    yaml.dump(caldump, fyaml)
-
-    def __populate__calibrationfilelist___legacy(self):
-        funcname = __name__ + '__populate__calibrationfilelist__():'
-        calibrationdata = self.device.custom_config.calibrationdata
-        coeffs = self.device.custom_config.__calibrations__
-
-        fnames_full = []
-        folderpath = self.save_widget_dict['le'].text()
-        self.save_widget_dict['filelist'].clear()
-        if len(folderpath) > 0:
-            logger.debug(funcname + ' Saving data to folder {:s}'.format(folderpath))
-            for c_tmp, cal in zip(coeffs, calibrationdata):
-                if type(c_tmp) is not list:
-                    c_tmp = [c_tmp]
-                for c in c_tmp:
-                    # Calibrationdata stays the same if its a list for all subparameter
-                    print('Saving coeff', c)
-                    date = datetime.datetime.strptime(c.date, "%Y-%m-%d %H:%M:%S.%f")
-                    dstr = date.strftime('%Y-%m-%d_%H-%M-%S')
-                    fname = '{:s}_{:s}_{:s}.yaml'.format(c.sn, c.parameter, dstr)
-                    calfile_structure = self.save_widget_dict['le_calfile'].text()
-                    try:
-                        fname = calfile_structure.format(SN=c.sn, CALDATE=dstr, PARAMETER=c.parameter)
-                    except:
-                        fname = calfile_structure
-
-                    fname_full = folderpath + '/' + fname
-                    # Add the placeholders
-                    try:
-                        fname_full = fname_full.format(SN=c.sn, CALDATE=dstr, PARAMETER=c.parameter)
-                    except:
-                        pass
-
-                    fname_cal = '{:s}_{:s}_{:s}_calibrationdata.yaml'.format(c.sn, c.parameter, dstr)
-                    fname_cal_full = folderpath + '/' + fname_cal
-                    fnames_full.append([fname_full,fname_cal_full, c,cal])
-
-                    self.save_widget_dict['filelist'].addItem(fname_full)
-
-                self.save_widget_dict['fnames_full'] = fnames_full
-
-
-    def __choose_calfolder___legacy(self):
-        folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
-        if len(folderpath) > 0:
-            self.save_widget_dict['le'].setText(folderpath)
 
 
 
@@ -900,7 +772,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
                         parameter_str = parameter.address_str
                     except:
                         parameter_str = str(parameter)
-                    print('Parameter',parameter,str(parameter),type(parameter))
+                    #print('Parameter',parameter,str(parameter),type(parameter))
                     item = QtWidgets.QTableWidgetItem(parameter_str)
                     item.__parameter__ = parameter
                     item.__calibration__ = calibration
@@ -931,7 +803,6 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
     def plot_data(self):
         funcname = __name__ + '.plot_data():'
         logger.debug(funcname)
-        print('Hallo')
         calibrationtype = self.device.custom_config.calibrationtype.lower()
         if calibrationtype == 'ntc':
             logger.debug(funcname + ' plotting NTC calibration')
@@ -951,7 +822,7 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         funcname = __name__ + '.plot_ntc():'
         logger.debug(funcname)
         calibrations = self.get_calibrations()
-        print('Calibrations',calibrations)
+        logger.debug('Calibrations: {}'.format(calibrations))
         #self.plot_coeff_widget = PlotWidgetNTC(self.device.custom_config, coeffs)
         #self.plot_coeff_widget.show()
 
@@ -961,71 +832,6 @@ class CalibrationWidgetNTC(QtWidgets.QWidget):
         calibrations = self.device.custom_config.__calibrations__
         self.__savecalwidget__ = CalibrationsSaveWidget(calibrations=calibrations)
         self.__savecalwidget__.show()
-
-
-
-class PlotWidgetNTC_legacy(QtWidgets.QWidget):
-    def __init__(self, config, coeffs):
-        super().__init__()
-        self.setWindowIcon(QtGui.QIcon(_icon_file))
-        funcname = self.__class__.__name__ + '__init__():'
-
-        self.setWindowTitle('Calibration results')
-        self.plotlist = QtWidgets.QListWidget()
-        self.plotlist.currentRowChanged.connect(self.change_plot)
-        layout = QtWidgets.QHBoxLayout(self)
-        tabwidget = QtWidgets.QStackedWidget()
-        self.tabwidget = tabwidget
-        layout.addWidget(self.plotlist)
-        layout.addWidget(tabwidget)
-        layout.setStretch(0, 1)
-        layout.setStretch(1, 5)
-        senwidgets = {}
-
-        refindex = config.ind_ref_sensor
-        print('Refindex', refindex)
-        if refindex >= 0 and (len(config.calibrationdata_time) > 0):
-            refdata = np.asarray(config.calibrationdata[refindex].data)
-            tdata = config.calibrationdata_time[0]
-            tdatetime = datetime.datetime.utcfromtimestamp(tdata)
-            tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
-            calibrations = []
-            for i, sdata in enumerate(config.calibrationdata):
-                cal_NTC = coeffs[i]
-                if i == refindex:
-                    print('Refindex')
-                else:
-                    caldata = np.asarray(config.calibrationdata[i])
-                    R = np.asarray(caldata)
-                    T = refdata
-                    print('R', R)
-                    print('T', T)
-                    #sen = cal_NTC.parameter + '/' + cal_NTC.sn
-                    sen = str(cal_NTC.parameter)
-                    self.plotlist.addItem(sen)
-                    senwidgets[sen] = {}
-                    senwidget = QtWidgets.QWidget()
-                    senwidgets[sen]['widget'] = senwidget
-                    tabwidget.addWidget(senwidget)  # ,sen)
-                    senlayout = QtWidgets.QVBoxLayout(senwidget)
-
-                    mplplot = PlotCanvas(self, width=5, height=4)
-                    axes = mplplot.fig.add_subplot(211)
-                    axes.plot(caldata, refdata, 'or')
-                    axes.set_title(sen)
-                    # Calculate the data using the coefficients
-                    if True:
-                        T = calc_NTC(cal_NTC,caldata)
-                        dT = T - refdata
-                        axes_dT = mplplot.fig.add_subplot(212)
-                        axes_dT.plot(caldata, dT, 'or')
-
-                    senlayout.addWidget(mplplot)
-
-    def change_plot(self,index):
-        funcname = self.__class__.__name__ + '.change_plot():'
-        logger.debug(funcname)
-        self.tabwidget.setCurrentIndex(index)
 
 
 
@@ -1630,14 +1436,14 @@ class initDeviceWidget(QtWidgets.QWidget):
 
     def __realtimePlotChanged__(self,index):
         funcname = __name__ + '.__realtimePlotChanged__():'
-        print(funcname + ' {}'.format(index))
+        #print(funcname + ' {}'.format(index))
         sensorPlotType = self.sender()
         plottype = sensorPlotType.currentText()
 
         indexsensor = sensorPlotType.listindex
-        print('Hallo', sensorPlotType.currentText())
+        #print('Hallo', sensorPlotType.currentText())
         self.device.custom_config.calibrationdata[indexsensor].realtimeplottype = plottype
-        print('Sensor config', self.device.custom_config.calibrationdata[indexsensor])
+        #print('Sensor config', self.device.custom_config.calibrationdata[indexsensor])
         self.updateDisplayWidget()
 
     def refsensor_changed(self):
@@ -1671,7 +1477,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         index = self.sender().listindex
         #print('Index',index)
         #print('sensordata', self.device.custom_config.calibrationdata)
-        print('datastream',datastream_dict)
+        #print('datastream',datastream_dict)
         self.device.custom_config.calibrationdata[index].datastream = datastream_dict['datastream_address']
         try:
             self.device.devicedisplaywidget.plot_widgets[index].datastream = None
@@ -1762,8 +1568,8 @@ class initDeviceWidget(QtWidgets.QWidget):
             widget = item.widget()
             widget.deleteLater()
 
-        print('Config', self.device.custom_config)
-        print('Index',sensorRem.listindex)
+        #print('Config', self.device.custom_config)
+        #print('Index',sensorRem.listindex)
         if sensorRem.sensortype == 'manual':
             self.device.rem_sensor(sensorRem.listindex, 'manual')
         else:
@@ -2028,7 +1834,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def update_custom_config_from_widgets(self):
         funcname = __name__ + '.update_custom_config_from_widgets():'
-        print(funcname)
+        logger.deug(funcname)
         self.device.custom_config.calibration_comment = self.datainput_configwidgets['lco'].text()
         self.device.custom_config.calibration_id = self.datainput_configwidgets['lID'].text()
         #print('Config')
@@ -2051,7 +1857,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 else:
                     logger.debug(funcname + ' Metadata, will not remove')
 
-        print('Removing',rows)
+        #print('Removing',rows)
         if len(rows) > 0:
             for row in rows:
                 rowdata = row - self.irowdatastart
@@ -2207,10 +2013,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     logger.debug(funcname + 'creating plotwidget')
                     flag_new_plot_widget = True
 
-                print('same_plotwidgettype',realtimeplottype, same_plotwidgettype,flag_new_plot_widget)
+                #print('same_plotwidgettype',realtimeplottype, same_plotwidgettype,flag_new_plot_widget)
                 # Check if the plotwidgettype changed
                 if (same_plotwidgettype == False) and (flag_new_plot_widget == False):
-                    print('Changing plotwidget')
+                    #print('Changing plotwidget')
                     try:
                         sdata.__plot_widget.setParent(None)
                     except:
@@ -2219,13 +2025,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     flag_new_plot_widget = True
 
                 if flag_new_plot_widget:
-                    print('Adding new widget',sdata.realtimeplottype)
+                    #print('Adding new widget',sdata.realtimeplottype)
                     #config = {}
                     #config['title'] = sdata.sn
                     #self.datastreams.append(None)
                     #plot_widget = plot_widgets.redvypr_graph_widget(config=config)
                     if 'XY' in sdata.realtimeplottype:
-                        print('Adding XYplotwidget with address {}'.format(sdata.datastream))
+                        #print('Adding XYplotwidget with address {}'.format(sdata.datastream))
                         configLine = XYplotWidget.configLine(y_addr=sdata.datastream)
                         config = XYplotWidget.configXYplot(interactive='xlim_keep',data_dialog='off',lines=[configLine])
                         plot_widget = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
@@ -2291,7 +2097,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.xyplot_interactive_signal():'
         logger.debug(funcname)
         sender = self.sender()
-        print('Got data',data_interactive)
+        #print('Got data',data_interactive)
         xpos = data_interactive['xlines']
         try:
             self.__interactive_lines
@@ -2300,7 +2106,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
         if len(xpos) == 0:  # Set the position everywhere
             self.__t_intervall_interactive = None
-            print('Removing lines')
+            #print('Removing lines')
             for l in self.__interactive_lines:
                 l['plotwidget'].plotWidget.removeItem(l['line'])
 
@@ -2313,7 +2119,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     if sender == p.plotWidget.scene():
                         pass
                     else:
-                        print('Adding line')
+                        logger.debug('Adding line')
                         for i in range(2):
                             # Add lines to the graphs
                             angle = 90
@@ -2327,7 +2133,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def get_intervalldatamode_changed(self):
         mode = self.addintervall_combo.currentText()
-        print('Mode',mode)
+        #print('Mode',mode)
         for p in self.plot_widgets:
             # print('Moveit',type(p),type(XYplotWidget),isinstance(p,type(XYplotWidget)))
             if isinstance(p, XYplotWidget.XYPlotWidget):
@@ -2603,9 +2409,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.set_datastream():'
         logger.debug(funcname)
-        print('Set datastream!!')
-        print('i',i,'d',d,'sn',sn,'unit',unit,'sensortype',sensortype)
-        print('--------Set datastream!!---------')
+        #print('Set datastream!!')
+        #print('i',i,'d',d,'sn',sn,'unit',unit,'sensortype',sensortype)
+        #print('--------Set datastream!!---------')
         p = self.plot_widgets[i]
         if True:
             self.device.custom_config.calibrationdata[i].datastream = d
@@ -2650,9 +2456,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
             for i, caldata in enumerate(self.device.custom_config.calibrationdata):
                 if caldata.inputtype == 'datastream':
                     plot_widget = caldata.__plot_widget
-                    print('Checking widget',i,plot_widget.datastream)
+                    #print('Checking widget',i,plot_widget.datastream)
                     if data in plot_widget.datastream:
-                        logger.debug('Updating plot {:d}')
+                        #logger.debug('Updating plot {:d}')
                         plot_widget.update_plot(data)
                         try:
                             update_datainfo = caldata.__update_with_datapacket
@@ -2661,14 +2467,14 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
                         if update_datainfo:
                             datastream = caldata.datastream
-                            logger.debug('Updating datastreams {}'.format(datastream))
+                            #logger.debug('Updating datastreams {}'.format(datastream))
                             try:
                                 keyinfo = self.device.redvypr.get_metadata(datastream)
                             except:
                                 keyinfo = None
                             #keyinfo = self.device.get_metadata(datastream)
                             logger.debug(funcname + 'Datakeyinfo {}'.format(keyinfo))
-                            print('Keyinfo',keyinfo)
+                            #print('Keyinfo',keyinfo)
                             try:
                                 parameter = datastream.datakey
                             except:

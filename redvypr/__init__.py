@@ -4,6 +4,7 @@ from .redvypr_address import RedvyprAddress
 from . import data_packets
 from .data_packets import Datapacket
 from . import gui
+from . import logging_utils
 from .widgets import *
 from . import files
 #from . import standard_device_widgets

@@ -18,6 +18,7 @@ from redvypr.devices.sensors.generic_sensor.calibrationWidget import GenericSens
 import redvypr.devices.sensors.calibration.calibration_models as calibration_models
 import redvypr.devices.sensors.generic_sensor.sensor_definitions as sensor_definitions
 from . import hexflasher
+from redvypr.utils.databuffer import DatapacketAvg
 
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
 tarv2nmea_R_sample_test1 = b'$D8478FFFFE95CD4D,1417,88.562500:$D8478FFFFE95CA01,TAR_S,R_B4,85.125000,23,88.125000,23,3703.171,3687.865,3689.992,3673.995,3663.933,3646.964,3650.582,3658.807,3658.235,3659.743,3677.440,3656.256,3667.873,3692.007,3700.870,3693.682,3714.597,3723.282,3741.300,3729.004,3742.731,3734.452,3760.982,3785.253,3748.399,3769.112,3764.206,3778.452,3766.012,3773.516,3774.506,3782.260,3754.508,3738.320,3731.787,3747.988,3719.920,3736.585,3730.321,3727.657,3729.182,3723.627,3738.785,3752.083,3736.633,3725.642,3747.952,3708.696,3727.275,3738.761,3734.088,3707.147,3733.981,3712.535,3716.624,3746.563,3726.405,3743.333,3719.324,3713.793,3726.637,3713.620,3743.029,3731.889\n'
@@ -100,8 +101,23 @@ class DeviceBaseConfig(pydantic.BaseModel):
     gui_tablabel_display: str = 'Temperature array (TAR)'
 
 class DeviceCustomConfig(pydantic.BaseModel):
-    baud: int = 115200
+    merge_groups: bool = False
+    average: bool = True
+    #avg_intervals: list = [300,60,2]
+    #avg_dimensions: list = ['t','t','n']
+    avg_intervals: list = [2]
+    avg_dimensions: list = ['n']
 
+
+def create_avg_databuffer(config, datatype=None):
+    avg_intervals = config['avg_intervals']
+    avg_dimensions = config['avg_dimensions']
+    avg_databuffers = []
+    for avg_int,avg_dim in zip(avg_intervals,avg_dimensions):
+        avg_databuffer = redvypr.utils.databuffer.DatapacketAvg(avg_dimension=avg_dim,avg_interval=avg_int,address=datatype)
+        avg_databuffers.append(avg_databuffer)
+
+    return avg_databuffers
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
     """
@@ -110,6 +126,9 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     funcname = __name__ + '.start()'
     logger.debug(funcname)
     packetbuffer = {-1000:None} # Add a dummy key
+    packetbuffer_avg = {}  # Add a dummy key
+    packetbuffer_merged_avg = {}  # Add a dummy key
+
     # Create the tar sensor
     tarv2nmea_R = sensor_definitions.BinarySensor(name='tarv2nmea_R', regex_split=tarv2nmea_R_split,
                                                 str_format=tarv2nmea_R_str_format,
@@ -177,148 +196,266 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
         if data_packet_processed is not None:
             if len(data_packet_processed) > 0:
+                for ip,p in enumerate(data_packet_processed):
+                    mactmp = p['MAC']
+                    p['mac'] = p['MAC']
+                    mac = p['mac']
+                    print('mac {} {}'.format(ip,mactmp))
+                    dataqueue.put(p)
+                    # Averaging the data
+                    try:
+                        packetbuffer_avg[mac]
+                    except:
+                        packetbuffer_avg[mac] = {}
+                    try:
+                        packetbuffer_avg[mac][datatype]
+                    except:
+                        packetbuffer_avg[mac][datatype] = create_avg_databuffer(config, datatype=datatype)
+                    try:
+                        for d in packetbuffer_avg[mac][datatype]:  # loop over all average buffers and do the averaging
+                            packet_avg = d.append(p)
+                            print('Packet avg')
+                            try:
+                                d.__counter__ += 1
+                            except:
+                                d.__counter__ = 0
+                            # print('Packet avg raw',packet_avg)
+                            if packet_avg is not None:
+                                dpublish = redvypr.Datapacket()#packetid=packetid_final)
+                                packet_avg.update(dpublish)
+                                packet_avg['mac'] = mac
+                                packet_avg['np'] = d.__counter__
+                                packet_avg['counter'] = d.__counter__
+                                # print('Publishing average data', d.datakey_save)
+                                dataqueue.put(packet_avg)
+                                # print('Packet avg publish',packet_avg)
+                    except:
+                        logger.info('Could not average the data', exc_info=True)
+
+
                 #print('Datapacket processed',data_packet_processed)
                 logger.debug('Data packet processed (without calibration):{}'.format(len(data_packet_processed)))
-                mac = data_packet_processed[0]['MAC']
-                counter = data_packet_processed[0]['counter']
-                np = data_packet_processed[0]['np']
-                npmax = max(packetbuffer.keys())
                 #print('MAC',mac,counter,np)
                 #if npmax < 0:  # The first measurement
                 #    npmax = np
-                # Check if a new packet arrived (meaning that np is larger than npmax)
-                # If yes, merge all parts of the old one first
-                if (np > npmax) and (npmax > 0):  # Process packetnumber npmax
-                    for datatype_tmp in packetbuffer[npmax].keys():  # Loop over all datatypes
-                        npackets = len(packetbuffer[npmax][datatype_tmp].keys())
-                        dmerge = [None] * npackets
-                        datapacket_merged = {}
-                        #print('Npackets',npackets)
-                        for mac_tmp in packetbuffer[npmax][datatype_tmp].keys():
-                            p = packetbuffer[npmax][datatype_tmp][mac_tmp]
-                            # Count the ':' and put it at the list location
-                            i = mac_tmp.count(':')
-                            if i >= npackets:
-                                logger.debug('Could not add {}'.format(mac_tmp))
-                                continue
-                            if i == 0:  # First packet
-                                mac_final = mac_tmp
-                                counter_final = counter
-                                # The merged packetid
-                                packetid_final = '{}__TAR__{}'.format(mac_final,datatype_tmp)
-                                dp = redvypr.Datapacket(packetid=packetid_final)
-                                datapacket_merged.update(dp)
-                                datapacket_merged['mac'] = mac_final
-                                datapacket_merged['counter'] = counter_final
-                            #print('mac_tmp',mac_tmp,i)
-                            print('Datapacket processed', data_packet_processed)
-                            print('Datapacket',datapacket)
-                            print('P',p)
-                            # Add the data to a list, that is hstacked later
-                            dmerge[i] = p[datatype_tmp]
-                        # Merge the packages into one large one
-                        #print('dmerge', dmerge)
-                        #print('len dmerge', len(dmerge))
-                        tar_merge = numpy.hstack(dmerge).tolist()
-                        #print('Tar merge',len(tar_merge))
-                        datapacket_merged[datatype_tmp] = tar_merge
-                        datapacket_merged['np'] = npmax
-                        datapacket_merged['datatype'] = datatype_tmp
-                        #print('publish')
-                        dataqueue.put(datapacket_merged)
-                    # Remove from buffer
-                    packetbuffer.pop(npmax)
+                if config['merge_groups']:
+                    mac = data_packet_processed[0]['MAC']
+                    counter = data_packet_processed[0]['counter']
+                    np = data_packet_processed[0]['np']
+                    npmax = max(packetbuffer.keys())
+                    # Check if a new packet arrived (meaning that np is larger than npmax)
+                    # If yes, merge all parts of the old one first
+                    if (np > npmax) and (npmax > 0):  # Process packetnumber npmax
+                        for datatype_tmp in packetbuffer[npmax].keys():  # Loop over all datatypes
+                            npackets = len(packetbuffer[npmax][datatype_tmp].keys())
+                            dmerge = [None] * npackets
+                            datapacket_merged = {}
+                            #print('Npackets',npackets)
+                            for mac_tmp in packetbuffer[npmax][datatype_tmp].keys():
+                                p = packetbuffer[npmax][datatype_tmp][mac_tmp]
+                                # Count the ':' and put it at the list location
+                                i = mac_tmp.count(':')
+                                if i >= npackets:
+                                    logger.debug('Could not add {}'.format(mac_tmp))
+                                    continue
+                                if i == 0:  # First packet
+                                    mac_final = mac_tmp
+                                    counter_final = counter
+                                    # The merged packetid
+                                    packetid_final = '{}__TAR__{}_merged'.format(mac_final,datatype_tmp)
+                                    dp = redvypr.Datapacket(packetid=packetid_final)
+                                    datapacket_merged.update(dp)
+                                    datapacket_merged['mac'] = mac_final
+                                    datapacket_merged['counter'] = counter_final
+                                #print('mac_tmp',mac_tmp,i)
+                                #print('Datapacket processed', data_packet_processed)
+                                #print('Datapacket',datapacket)
 
-                try:
-                    packetbuffer[np]
-                except:
-                    packetbuffer[np] = {}
+                                #print('P',p)
+                                # Add the data to a list, that is hstacked later
+                                dmerge[i] = p[datatype_tmp]
+                            # Merge the packages into one large one
+                            #print('dmerge', dmerge)
+                            #print('len dmerge', len(dmerge))
+                            tar_merge = numpy.hstack(dmerge).tolist()
+                            #print('Tar merge',len(tar_merge))
+                            datapacket_merged[datatype_tmp] = tar_merge
+                            datapacket_merged['np'] = npmax
+                            datapacket_merged['datatype'] = datatype_tmp
+                            datapacket_merged['t'] = data_packet_processed[0]['t']  # Add time
+                            #print('publish')
+                            logger.info('Publishing merged data {} {} {}'.format(mac_final, np,datatype))
+                            dataqueue.put(datapacket_merged)
+                            # Averaging the data
+                            try:
+                                packetbuffer_merged_avg[mac]
+                            except:
+                                packetbuffer_merged_avg[mac] = {}
 
-                try:
-                    packetbuffer[np][datatype]
-                except:
-                    packetbuffer[np][datatype] = {}
+                            try:
+                                packetbuffer_merged_avg[mac][datatype_tmp]
+                            except:
+                                #packetbuffer_avg[mac][datatype_tmp] = DatapacketAvg(address=datatype_tmp)
+                                packetbuffer_merged_avg[mac][datatype_tmp] = create_avg_databuffer(config, datatype=datatype_tmp)
 
-                packetbuffer[np][datatype][mac] = data_packet_processed[0]
+                            try:
+                                for d in packetbuffer_merged_avg[mac][datatype_tmp]:  # loop over all average buffers and do the averaging
+                                    packet_avg = d.append(datapacket_merged)
+                                    try:
+                                        d.__counter__ += 1
+                                    except:
+                                        d.__counter__ = 0
+                                    #print('Packet avg raw',packet_avg)
+                                    if packet_avg is not None:
+                                        dpublish = redvypr.Datapacket(packetid=packetid_final)
+                                        packet_avg.update(dpublish)
+                                        packet_avg['mac'] = mac_final
+                                        packet_avg['np'] = d.__counter__
+                                        packet_avg['counter'] = d.__counter__
+                                        #print('Publishing average data', d.datakey_save)
+                                        dataqueue.put(packet_avg)
+                                        #print('Packet avg publish',packet_avg)
+                            except:
+                                logger.info('Could not average the data',exc_info=True)
 
-                #print(data_packet_processed[0]['MAC'])
-                #print(data_packet_processed[0]['counter'])
-                #print(data_packet_processed[0]['np'])
-                #print(data_packet_processed[0]['datatype'])
+                        # Remove from buffer
+                        packetbuffer.pop(npmax)
+
+                    try:
+                        packetbuffer[np]
+                    except:
+                        packetbuffer[np] = {}
+
+                    try:
+                        packetbuffer[np][datatype]
+                    except:
+                        packetbuffer[np][datatype] = {}
+
+                    packetbuffer[np][datatype][mac] = data_packet_processed[0]
+
     return None
 
 class RedvyprDeviceWidget(RedvyprDeviceWidget_simple):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.show_numpackets = 5
+        self.show_numpackets = 1
         self.packetbuffer = {}
         self.datadisplaywidget = QtWidgets.QWidget(self)
-        self.datadisplaywidget_layout = QtWidgets.QVBoxLayout(self.datadisplaywidget)
+        self.datadisplaywidget_layout = QtWidgets.QHBoxLayout(self.datadisplaywidget)
         self.layout.addWidget(self.datadisplaywidget)
+        self.avg_databuffer_dummy={}
+        self.avg_addresses = {'R':[],'T':[]}
+        self.avg_databuffer_dummy['R'] = create_avg_databuffer(self.device.custom_config.model_dump(), datatype='R')
+        self.avg_databuffer_dummy['T'] = create_avg_databuffer(self.device.custom_config.model_dump(), datatype='T')
+        for d in self.avg_databuffer_dummy['R']:
+            self.avg_addresses['R'].append(d.get_return_addresses()['avg'])
+            self.avg_addresses['R'].append(d.get_return_addresses()['std'])
+        for d in self.avg_databuffer_dummy['T']:
+            self.avg_addresses['T'].append(d.get_return_addresses()['avg'])
+            self.avg_addresses['T'].append(d.get_return_addresses()['std'])
+
 
     def update_data(self, data):
         """
         """
-        funcname = __name__ + '.update_data()'
+        funcname = __name__ + '.update_data():'
         tnow = time.time()
         #print(funcname + 'Got some data', data)
+        datatype = None
+        icols = []  # The columns in the table that will be updated
+        datatars = [] # The data in the columns to be updated
+        colheaders = []
+        headerlabels = {}
         # Check if datakeys has 'R' or 'T'
         if 'R' in data.keys():
             datatype = 'R'
+            datatar = data[datatype]
+            icol = 0
+            icols.append(icol)
+            datatars.append(datatar)
+            colheaders.append(datatype)
         elif 'T' in data.keys():
             datatype = 'T'
-        else:
-            return
-
-        irows = ['mac', 'np', 'counter', datatype]  # Rows to plot
-        try:
-            np = data['np']
-            mac = data['mac']
-            counter = data['counter']
             datatar = data[datatype]
-        except:
+            icol = 0
+            icols.append(icol)
+            datatars.append(datatar)
+            colheaders.append(datatype)
+        else:
+            #print('Data',data)
+            #print('Checking for average',data.keys())
+            for datatype_tmp in self.avg_addresses:
+                for icol_avg,a in enumerate(self.avg_addresses[datatype_tmp]):
+                    rdata = redvypr.Datapacket(data)
+                    #print('Address', rdata.datakeys())
+                    #print('testing a', a, data in a, a in data)
+                    if data in a:
+                        icol = icol_avg + 1
+                        print('Found averaged data from address {} {}'.format(a,icol))
+                        datatype = datatype_tmp
+                        datatar = rdata[a]
+                        icols.append(icol)
+                        datatars.append(datatar)
+                        colheaders.append(a.datakey)
+
+        if len(icols) == 0:
             return
 
-        try:
-            self.packetbuffer[mac]
-        except:
-            self.packetbuffer[mac] = {}
+        for icol,datatar,colheader in zip(icols,datatars,colheaders):
+            print('Plotting icol',icol)
+            irows = ['mac', 'np', 'counter']  # Rows to plot
+            try:
+                np = data['np']
+                mac = data['mac']
+                counter = data['counter']
+            except:
+                logger.info('Could not get data',exc_info=True)
+                return
 
-        try:
-            self.packetbuffer[mac][datatype]
-        except:
-            table = QtWidgets.QTableWidget()
-            self.packetbuffer[mac][datatype] = {'table': table,
-                                                     'packets': []}
+            try:
+                self.packetbuffer[mac]
+            except:
+                self.packetbuffer[mac] = {}
 
-            table.setRowCount(len(datatar) + len(irows) - 1)
+            try:
+                self.packetbuffer[mac][datatype]
+            except:
+                table = QtWidgets.QTableWidget()
+                self.packetbuffer[mac][datatype] = {'table': table,
+                                                         'packets': []}
+
+                table.setRowCount(len(datatar) + len(irows) - 1)
+                numcols = 1 + 1 + len(self.avg_addresses[datatype]) * 2
+                #print('Numcols')
+                table.setColumnCount(numcols)
+                self.datadisplaywidget_layout.addWidget(table)
+                headeritem = QtWidgets.QTableWidgetItem(colheader)
+                table.setHorizontalHeaderItem(icol, headeritem)
 
 
-            table.setColumnCount(self.show_numpackets)
-            self.datadisplaywidget_layout.addWidget(table)
+            try:
+                numcols = 1 + 1 + len(self.avg_addresses[datatype]) * 2
+                self.packetbuffer[mac][datatype]['packets'].append(data)
+                # Update the table
+                table = self.packetbuffer[mac][datatype]['table']
+                if len(self.packetbuffer[mac][datatype]['packets']) > self.show_numpackets:
+                    self.packetbuffer[mac][datatype]['packets'].pop(0)
+                    #table.removeColumn(0)
+                    #table.setColumnCount(self.show_numpackets)
 
-        try:
-            self.packetbuffer[mac][datatype]['packets'].append(data)
+                #print('Icol',icol)
+                #print('Colheader',colheader)
 
-            # Update the table
-            table = self.packetbuffer[mac][datatype]['table']
-            if len(self.packetbuffer[mac][datatype]['packets']) > self.show_numpackets:
-                self.packetbuffer[mac][datatype]['packets'].pop(0)
-                table.removeColumn(0)
-                table.setColumnCount(self.show_numpackets)
-
-            icol = len(self.packetbuffer[mac][datatype]['packets']) - 1
-            for irow,key in enumerate(irows):
-                d = data[key]
-                dataitem = QtWidgets.QTableWidgetItem(str(d))
-                table.setItem(irow, icol, dataitem)
-                if key == datatype:
-                    for i, d in enumerate(datatar):
-                        dataitem = QtWidgets.QTableWidgetItem(str(d))
-                        irowtar = i + irow
-                        table.setItem(irowtar, icol, dataitem)
-        except:
-            logger.info('Does not work',exc_info=True)
+                for irow,key in enumerate(irows):
+                    d = data[key]
+                    dataitem = QtWidgets.QTableWidgetItem(str(d))
+                    table.setItem(irow, icol, dataitem)
+                for i, d in enumerate(datatar):
+                    dataitem = QtWidgets.QTableWidgetItem(str(d))
+                    irowtar = i + irow
+                    table.setItem(irowtar, icol, dataitem)
+            except:
+                logger.info('Does not work',exc_info=True)
 
 
 
