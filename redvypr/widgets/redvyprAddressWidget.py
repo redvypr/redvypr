@@ -530,7 +530,6 @@ class datastreamWidget(QtWidgets.QWidget):
                     itm.setBackground(0, col)
                     itm.device = dev
                     itm.redvypr_address = dev.address
-
                     itm.iskey = False
                     # Check for forwarded devices
                     if True:
@@ -559,8 +558,9 @@ class datastreamWidget(QtWidgets.QWidget):
                                 itmf.device = dev
                                 itmf.redvypr_address = devaddress_redvypr
                                 itmf.address_forwarded = devaddress
+                                itmf.iskey = True
                                 itm.addChild(itmf)
-                                itmf.iskey = False
+
 
                                 #print('Datakeys',datakeys,devs_forwarded[devaddress])
                                 # Sort the datakey
@@ -647,6 +647,8 @@ class datastreamWidget(QtWidgets.QWidget):
 
             elif isinstance(data_new, list):
                 itmk = QtWidgets.QTreeWidgetItem([str(data_new_key)])
+                itmk.redvypr_address = RedvyprAddress(data_new_key)
+                itmk.iskey = True
                 itmk.setBackground(0, colgrey)
                 parent_item.addChild(itmk)
                 for data_new_index, data_new_item in enumerate(data_new):
@@ -654,6 +656,7 @@ class datastreamWidget(QtWidgets.QWidget):
 
             elif isinstance(data_new, dict):
                 itmk = QtWidgets.QTreeWidgetItem([data_new_key])
+                itmk.iskey = False
                 itmk.setBackground(0, colgrey)
                 parent_item.addChild(itmk)
                 for data_new_key in data_new.keys():

@@ -923,7 +923,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         line = self.sender()._line
         #print('Line',line,line.y_addr)
         #line.y_addr = address_dict['datastream_str']
-        print('Address dict',address_dict)
+        #print('Address dict',address_dict)
         line.y_addr = address_dict['datastream_address']
         #print('Line config',line.confg)
         self.apply_config()

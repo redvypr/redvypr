@@ -103,10 +103,10 @@ class DeviceBaseConfig(pydantic.BaseModel):
 class DeviceCustomConfig(pydantic.BaseModel):
     merge_groups: bool = False
     average: bool = True
-    #avg_intervals: list = [300,60,2]
-    #avg_dimensions: list = ['t','t','n']
-    avg_intervals: list = [2]
-    avg_dimensions: list = ['n']
+    avg_intervals: list = [300,30,10]
+    avg_dimensions: list = ['t','t','n']
+    #avg_intervals: list = [2]
+    #avg_dimensions: list = ['n']
 
 
 def create_avg_databuffer(config, datatype=None):
@@ -342,6 +342,8 @@ class RedvyprDeviceWidget(RedvyprDeviceWidget_simple):
         self.packetbuffer = {}
         self.datadisplaywidget = QtWidgets.QWidget(self)
         self.datadisplaywidget_layout = QtWidgets.QHBoxLayout(self.datadisplaywidget)
+        self.tabwidget = QtWidgets.QTabWidget()
+        self.datadisplaywidget_layout.addWidget(self.tabwidget)
         self.layout.addWidget(self.datadisplaywidget)
         self.avg_databuffer_dummy={}
         self.avg_addresses = {'R':[],'T':[]}
@@ -391,7 +393,7 @@ class RedvyprDeviceWidget(RedvyprDeviceWidget_simple):
                     #print('testing a', a, data in a, a in data)
                     if data in a:
                         icol = icol_avg + 1
-                        print('Found averaged data from address {} {}'.format(a,icol))
+                        #print('Found averaged data from address {} {}'.format(a,icol))
                         datatype = datatype_tmp
                         datatar = rdata[a]
                         icols.append(icol)
@@ -402,7 +404,6 @@ class RedvyprDeviceWidget(RedvyprDeviceWidget_simple):
             return
 
         for icol,datatar,colheader in zip(icols,datatars,colheaders):
-            print('Plotting icol',icol)
             irows = ['mac', 'np', 'counter']  # Rows to plot
             try:
                 np = data['np']
@@ -425,16 +426,22 @@ class RedvyprDeviceWidget(RedvyprDeviceWidget_simple):
                                                          'packets': []}
 
                 table.setRowCount(len(datatar) + len(irows) - 1)
-                numcols = 1 + 1 + len(self.avg_addresses[datatype]) * 2
+                numcols = 1 + len(self.avg_addresses[datatype])
                 #print('Numcols')
                 table.setColumnCount(numcols)
-                self.datadisplaywidget_layout.addWidget(table)
-                headeritem = QtWidgets.QTableWidgetItem(colheader)
-                table.setHorizontalHeaderItem(icol, headeritem)
+                #self.datadisplaywidget_layout.addWidget(table)
+                self.tabwidget.addTab(table,'{} {}'.format(mac,datatype))
+                headerlabels = []
+                headerlabels.append(datatype)
+                for icol_avg, a in enumerate(self.avg_addresses[datatype]):
+                    headerlabels.append(a.datakey)
 
+                table.setHorizontalHeaderLabels(headerlabels)
 
+            # Fill the table
+            #headeritem = QtWidgets.QTableWidgetItem(colheader)
+            #table.setHorizontalHeaderItem(icol, headeritem)
             try:
-                numcols = 1 + 1 + len(self.avg_addresses[datatype]) * 2
                 self.packetbuffer[mac][datatype]['packets'].append(data)
                 # Update the table
                 table = self.packetbuffer[mac][datatype]['table']
@@ -444,18 +451,17 @@ class RedvyprDeviceWidget(RedvyprDeviceWidget_simple):
                     #table.setColumnCount(self.show_numpackets)
 
                 #print('Icol',icol)
-                #print('Colheader',colheader)
-
                 for irow,key in enumerate(irows):
                     d = data[key]
                     dataitem = QtWidgets.QTableWidgetItem(str(d))
                     table.setItem(irow, icol, dataitem)
                 for i, d in enumerate(datatar):
-                    dataitem = QtWidgets.QTableWidgetItem(str(d))
+                    datastr = "{:4f}".format(d)
+                    dataitem = QtWidgets.QTableWidgetItem(datastr)
                     irowtar = i + irow
                     table.setItem(irowtar, icol, dataitem)
             except:
                 logger.info('Does not work',exc_info=True)
 
-
+        table.resizeColumnsToContents()
 

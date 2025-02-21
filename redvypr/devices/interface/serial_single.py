@@ -9,6 +9,8 @@ import serial.tools.list_ports
 import logging
 import sys
 import pydantic
+
+import redvypr
 from redvypr.data_packets import check_for_command
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
 

@@ -30,6 +30,7 @@ class configPcolorPlot(pydantic.BaseModel):
     buffersize: int = pydantic.Field(default=100,description='Size of the buffer that is used to store the plot data')
     dt_update: float = pydantic.Field(default=0.25,description='Update time of the plot [s]')
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
+    autolevel: bool = pydantic.Field(default=True,description='If true colorlevels will be set automatically')
 
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = False
@@ -44,6 +45,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
     buffersize: int = pydantic.Field(default=100, description='Size of the buffer that is used to store the plot data')
     dt_update: float = pydantic.Field(default=0.25, description='Update time of the plot [s]')
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
+    autolevel: bool = pydantic.Field(default=True, description='If true colorlevels will be set automatically')
 
 # Use the standard start function as the start function
 class PcolorPlotWidget(QtWidgets.QWidget):
@@ -58,7 +60,7 @@ class PcolorPlotWidget(QtWidgets.QWidget):
         else:
             self.redvypr = None
 
-        if (config == None):  # Create a config from the template
+        if config is None:  # Create a config from the template
             self.config = configPcolorPlot()
         else:
             self.config = config
@@ -68,6 +70,7 @@ class PcolorPlotWidget(QtWidgets.QWidget):
         self.logger.setLevel(loglevel)
         self.description = 'Pcolor plot'
         self.layout = QtWidgets.QGridLayout(self)
+        self.levels = None
         self.data_z = []
         self.data_x = []
         self.data_y = []
@@ -92,10 +95,43 @@ class PcolorPlotWidget(QtWidgets.QWidget):
         print('stopped')
         self.startAction.setText('Start')
 
+    def pyqtgraphAddressAction(self):
+        if self.device is not None:
+            self.configWidget = redvypr.widgets.redvyprAddressWidget.datastreamWidget(redvypr=self.redvypr,
+                                                                                          device=self.device)
+            self.configWidget.setWindowTitle('Address for {}'.format(self.device.name))
+            self.configWidget.apply.connect(self.apply_config_address)
+            self.configWidget._pcolor = self.sender()._pcolor
+            self.configWidget.show()
+
+    def pyqtgraphClearBufferAction(self):
+        self.logger.debug('Clearing buffer')
+        self.data_z = []
+        self.data_x = []
+        self.data_y = []
+        self.data_all = []
+        z = numpy.random.rand(10, 10) * 0
+        self.mesh.setData(z)
+
+    def pyqtgraphLevelAction(self):
+        print('Hallo')
+        self.config.autolevel = self.autolevelcheck.isChecked()
+
     def pyqtgraphConfigAction(self):
         if self.device is not None:
             self.config_widget = pydanticDeviceConfigWidget(self.device)
             self.config_widget.showMaximized()
+
+    def apply_config_address(self, address_dict):
+        funcname = __name__ + '.apply_config_address():'
+        self.logger.debug(funcname)
+        pcolor = self.sender()._pcolor
+        # print('Line',line,line.y_addr)
+        # line.y_addr = address_dict['datastream_str']
+        print('Address dict', address_dict)
+        self.device.custom_config.datastream = redvypr.RedvyprAddress(address_dict['datastream_address'])
+        # print('Line config',line.confg)
+        self.applyConfig()
 
     def applyConfig(self):
         funcname = __name__ + '.applyConfig():'
@@ -115,24 +151,53 @@ class PcolorPlotWidget(QtWidgets.QWidget):
         self.plotwidget = self.graphiclayout.addPlot()
         self.setTitle()
         # Modify the right-click menu
-        #self.plotwidget.vb.menu.clear()
+        self.plotwidget.vb.menu.clear()
+        # Add the general config
+        addressAction = self.plotwidget.vb.menu.addAction('Address')
+        addressAction.triggered.connect(self.pyqtgraphAddressAction)
+        # Add the general config
+        clearbufAction = self.plotwidget.vb.menu.addAction('Clear Buffer')
+        clearbufAction.triggered.connect(self.pyqtgraphClearBufferAction)
         # Add the general config
         configAction = self.plotwidget.vb.menu.addAction('General config')
         configAction.triggered.connect(self.pyqtgraphConfigAction)
 
         self.startAction = self.plotwidget.vb.menu.addAction('Start')
         self.startAction.triggered.connect(self.thread_startstop)
+
+
+
         z = numpy.random.rand(10,10)
         pcmi = pyqtgraph.PColorMeshItem()
         pcmi.setData(z)
-        colbar = pyqtgraph.ColorBarItem()
+        cmenu = pyqtgraph.ColorMapMenu(showColorMapSubMenus=True)
+        autolevelcheck = QtWidgets.QCheckBox('Automatic Colorlevel')
+        self.autolevelcheck = autolevelcheck
+        autolevelcheck.setChecked(self.config.autolevel)
+        autolevelcheck.stateChanged.connect(self.pyqtgraphLevelAction)
+        autolevelAction = QtWidgets.QWidgetAction(self)
+        autolevelAction.setDefaultWidget(autolevelcheck)
+        self.autolevelAction = cmenu.addAction(autolevelAction)
+        colbar = pyqtgraph.ColorBarItem(rounding=0.01,colorMapMenu=cmenu)
         colbar.setImageItem(pcmi)
+
         self.mesh = pcmi
+        self.colorbar = colbar
+        colbar.sigLevelsChangeFinished.connect(self.colorlevels_changed)
         self.plotwidget.addItem(pcmi)
         self.graphiclayout.addItem(colbar)
         axis = pyqtgraph.DateAxisItem(orientation='bottom', utcOffset=0)
         self.plotwidget.setAxisItems({"bottom": axis})
         self.layout.addWidget(self.graphiclayout, 0, 0, 1, 2)
+
+        addressAction._pcolor = pcmi
+
+    def colorlevels_changed(self):
+
+        levels = self.colorbar.levels()
+        self.levels = levels
+        self.mesh.setLevels(self.levels)
+        print('Scale',self.levels)
 
     def update_data(self,rdata):
         funcname = __name__ + '.update_data():'
@@ -169,7 +234,15 @@ class PcolorPlotWidget(QtWidgets.QWidget):
                 print('Y', Y)
                 print('z', z)
                 print('shapes', numpy.shape(X),numpy.shape(Y),numpy.shape(Z))
+                #levels_old = self.mesh.getLevels()
+                print('levels', self.levels,self.mesh.getLevels())
                 self.mesh.setData(X,Y,Z)
+                if self.levels is not None:
+                    if self.config.autolevel:
+                        self.levels = self.mesh.getLevels()
+                    else:
+                        self.mesh.setLevels(self.levels)
+                    print('Set levels', self.levels)
             except:
                 logger.warning('Could not update data',exc_info=True)
 
