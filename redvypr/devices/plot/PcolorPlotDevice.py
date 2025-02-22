@@ -97,8 +97,8 @@ class PcolorPlotWidget(QtWidgets.QWidget):
 
     def pyqtgraphAddressAction(self):
         if self.device is not None:
-            self.configWidget = redvypr.widgets.redvyprAddressWidget.datastreamWidget(redvypr=self.redvypr,
-                                                                                          device=self.device)
+            self.configWidget = redvypr.widgets.redvyprAddressWidget.DatastreamWidget(redvypr=self.redvypr,
+                                                                                      device=self.device)
             self.configWidget.setWindowTitle('Address for {}'.format(self.device.name))
             self.configWidget.apply.connect(self.apply_config_address)
             self.configWidget._pcolor = self.sender()._pcolor

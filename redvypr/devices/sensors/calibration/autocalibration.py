@@ -25,7 +25,7 @@ import redvypr.files as redvypr_files
 import redvypr.gui
 import redvypr.data_packets
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
-from redvypr.gui import datastreamWidget
+from redvypr.gui import DatastreamWidget
 from redvypr.devices.plot import XYplotWidget
 from redvypr.devices.plot import plot_widgets
 from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly
@@ -385,7 +385,7 @@ class autocalWidget(QtWidgets.QWidget):
         #print('Devicename',devicename)
 
     def parameterClicked(self):
-        self.pydantic_config = datastreamWidget(redvypr=self.device.redvypr)
+        self.pydantic_config = DatastreamWidget(redvypr=self.device.redvypr)
         self.pydantic_config.apply.connect(self.parameter_changed)
         self.__pydantic_config_sender__ = self.sender()
         self.pydantic_config.show()

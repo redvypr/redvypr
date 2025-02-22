@@ -762,7 +762,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.addDatastreamClicked():'
         logger.debug(funcname)
-        self.dstreamwidget = redvypr.gui.datastreamWidget(self.device.redvypr, closeAfterApply=False)
+        self.dstreamwidget = redvypr.gui.DatastreamWidget(self.device.redvypr, closeAfterApply=False)
         self.dstreamwidget.apply.connect(self.__datastream_choosen__)
         self.dstreamwidget.layout.removeWidget(self.dstreamwidget.buttondone)
         label = QtWidgets.QLabel('Add at column number')

@@ -674,7 +674,7 @@ class XYPlotWidget(QtWidgets.QFrame):
             #print('Address')
             linename = self.sender()._linename
             lineConfig = self.sender()._line
-            self.lineConfigWidget = redvypr.widgets.redvyprAddressWidget.datastreamWidget(redvypr=self.redvypr, device=self.device)
+            self.lineConfigWidget = redvypr.widgets.redvyprAddressWidget.DatastreamWidget(redvypr=self.redvypr, device=self.device)
             self.lineConfigWidget.setWindowTitle('Y-Address for {}'.format(linename))
             self.lineConfigWidget.apply.connect(self.apply_config_address)
             self.lineConfigWidget._line = self.sender()._line
