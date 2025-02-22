@@ -35,7 +35,7 @@ RedvyprAddressStr = typing.Annotated[
 ]
 
 
-class RedvyprAddress():
+class RedvyprAddress:
     """
     """
     address_str: str
@@ -43,10 +43,10 @@ class RedvyprAddress():
         # Some definitions
         self.__regex_symbol_start = '{'
         self.__regex_symbol_end = '}'
-        self.__add_entries_short = {'k': 'datakey', 'd': 'devicename', 'i': 'packetid', 'a': 'addr', 'u': 'uuid', 'h': 'hostname', 'p': 'publisher', 'c': 'compare'}
-        self.__addr_entries_short_r = {'datakey': 'k', 'devicename': 'd' , 'packetid': 'i', 'addr': 'a', 'uuid': 'u' , 'hostname': 'h', 'publisher': 'p', 'compare': 'c'}
-        self.__addr_entries = ['datakey', 'devicename', 'packetid', 'addr', 'uuid', 'hostname', 'publisher', 'compare']
-        self.__addr_entries_expand = ['datakeyexpand', 'deviceexpand', 'packetidexpand', 'addrexpand', 'uuidexpand', 'hostexpand', 'publisherexpand', 'compareexpand']
+        self.add_entries_short = {'k': 'datakey', 'd': 'devicename', 'i': 'packetid', 'a': 'addr', 'u': 'uuid', 'h': 'hostname', 'p': 'publisher', 'c': 'compare'}
+        self.addr_entries_short_r = {'datakey': 'k', 'devicename': 'd' , 'packetid': 'i', 'addr': 'a', 'uuid': 'u' , 'hostname': 'h', 'publisher': 'p', 'compare': 'c'}
+        self.addr_entries = ['datakey', 'devicename', 'packetid', 'addr', 'uuid', 'hostname', 'publisher', 'compare']
+        self.addr_entries_expand = ['datakeyexpand', 'deviceexpand', 'packetidexpand', 'addrexpand', 'uuidexpand', 'hostexpand', 'publisherexpand', 'compareexpand']
         self.__delimiter_parts = '/'
         self.__delimiter_id = ':'
 
@@ -153,15 +153,15 @@ class RedvyprAddress():
         # Add the attributes to the object and an explicit address string
 
         self.explicit_format = '/'
-        for addr_id in self.__addr_entries:
+        for addr_id in self.addr_entries:
             addr_entry = parsed_addrstr[addr_id]
             if addr_entry is None:
                 addr_entry = '*'
             setattr(self,addr_id,addr_entry)
             expand_attribute = addr_id + 'expand'
             setattr(self, expand_attribute, parsed_addrstr_expand[addr_id])
-            if addr_entry is not '*':
-                addr_id_short = self.__addr_entries_short_r[addr_id]
+            if addr_entry != '*':
+                addr_id_short = self.addr_entries_short_r[addr_id]
                 self.explicit_format += addr_id_short + '/'
 
         self.address_str_explicit = self.get_str(self.explicit_format)
@@ -204,26 +204,26 @@ class RedvyprAddress():
 
         address_str = ''
         if compare is not None:
-            address_str += self.__addr_entries_short_r['compare'] + self.__delimiter_id + compare + self.__delimiter_parts
+            address_str += self.addr_entries_short_r['compare'] + self.__delimiter_id + compare + self.__delimiter_parts
         if uuid is not None:
-            address_str += self.__addr_entries_short_r['uuid'] + self.__delimiter_id + uuid + self.__delimiter_parts
+            address_str += self.addr_entries_short_r['uuid'] + self.__delimiter_id + uuid + self.__delimiter_parts
         if addr is not None:
-            address_str += self.__addr_entries_short_r['addr'] + self.__delimiter_id + addr + self.__delimiter_parts
+            address_str += self.addr_entries_short_r['addr'] + self.__delimiter_id + addr + self.__delimiter_parts
         if hostname is not None:
-            address_str += self.__addr_entries_short_r['hostname'] + self.__delimiter_id + hostname + self.__delimiter_parts
+            address_str += self.addr_entries_short_r['hostname'] + self.__delimiter_id + hostname + self.__delimiter_parts
         if publisher is not None:
-            address_str += self.__addr_entries_short_r['publisher'] + self.__delimiter_id + publisher + self.__delimiter_parts
+            address_str += self.addr_entries_short_r['publisher'] + self.__delimiter_id + publisher + self.__delimiter_parts
         if devicename is not None:
-            address_str += self.__addr_entries_short_r['devicename'] + self.__delimiter_id + devicename + self.__delimiter_parts
+            address_str += self.addr_entries_short_r['devicename'] + self.__delimiter_id + devicename + self.__delimiter_parts
         if packetid is not None:
-            address_str += self.__addr_entries_short_r['packetid'] + self.__delimiter_id + packetid + self.__delimiter_parts
+            address_str += self.addr_entries_short_r['packetid'] + self.__delimiter_id + packetid + self.__delimiter_parts
         if datakey is not None:
-            address_str += self.__addr_entries_short_r['datakey'] + self.__delimiter_id + datakey + self.__delimiter_parts
+            address_str += self.addr_entries_short_r['datakey'] + self.__delimiter_id + datakey + self.__delimiter_parts
 
         if len(address_str)>0:
             address_str = self.__delimiter_parts + address_str
         else:
-            address_str += self.__addr_entries_short_r['datakey'] + self.__delimiter_id + '*' + self.__delimiter_parts
+            address_str += self.addr_entries_short_r['datakey'] + self.__delimiter_id + '*' + self.__delimiter_parts
 
         return address_str
 
@@ -261,18 +261,23 @@ class RedvyprAddress():
         # Create blank parsed_addrstr
         parsed_addrstr = {}
         parsed_addrstr_expand = {}
+        # Split string into parts separated by the slash
         # Use regex to account for quoted strings
         #https://stackoverflow.com/questions/2785755/how-to-split-but-ignore-separators-in-quoted-strings-in-python
         regex_str = '''{}(?=(?:[^'"]|'[^']*'|"[^"]*")*$)'''.format(self.__delimiter_parts)
         #print('Regex str',regex_str)
         addrsplit_re = re.compile(regex_str)
         addr_parts = addrsplit_re.split(addrstr)
-        #print('addr_parts',addr_parts,len(addr_parts))
+        #print('addrstr',addrstr,'addr_parts',addr_parts,len(addr_parts))
         for addr_part in addr_parts:
             #print('Part',addr_part)
             if len(addr_part) > 0:
-                addr_part_sp = addr_part.split(self.__delimiter_id)
-                #print('addr_part_sp',addr_part_sp)
+                #print('split test', addr_part)
+                if addr_part.startswith('['):  # Test if an eval is found, if so treat special as it might contain the ":"
+                    addr_part_sp = [addr_part]
+                else:
+                    addr_part_sp = addr_part.split(self.__delimiter_id,1)
+                #print('addr_part_sp 1', addr_part_sp)
                 # Check if there is a single string, if so interprete as datakey entry
                 if len(addr_part_sp) == 1 and len(addr_parts) == 1:
                     #print('Single entry, interpreting as datakey')
@@ -283,7 +288,7 @@ class RedvyprAddress():
                     #print('part',addr_part_id,addr_part_content)
                     # Try to add to parsed addrstr
                     try:
-                        addr_part_id_decoded = self.__add_entries_short[addr_part_id]
+                        addr_part_id_decoded = self.add_entries_short[addr_part_id]
                         parsed_addrstr[addr_part_id_decoded] = addr_part_content
                     except:
                         pass
@@ -293,7 +298,7 @@ class RedvyprAddress():
         #print(parsed_addrstr)
         # Check for expansion and fill not explicitly defined ids with *
         #for addr_id,addr_idexpand in zip(self.__addr_ids,self.__addr_idsexpand):
-        for addr_id in self.__addr_entries:
+        for addr_id in self.addr_entries:
             try:
                 addr_content = parsed_addrstr[addr_id]
             except:
@@ -354,7 +359,7 @@ class RedvyprAddress():
         addr_ids = address_format.split(self.__delimiter_parts)
         for a_id in addr_ids:
             if len(a_id) > 0:
-                addr_id = self.__add_entries_short[a_id]
+                addr_id = self.add_entries_short[a_id]
                 addr_id_data = self.parsed_addrstr[addr_id]
                 if (addr_id_data is None) or (addr_id_data == '*'):
                     addr_id_data = r'{\*}'
@@ -364,30 +369,36 @@ class RedvyprAddress():
 
 
     def get_str(self, address_format = '/u/a/h/d/p/i/k/'):
-        """
-
-        Args:
-            addr_ids:
-
-        Returns:
-
-        """
         funcname = __name__ + '.get_str():'
         address_str = self.__delimiter_parts
         addr_ids = address_format.split(self.__delimiter_parts)
         for a_id in addr_ids:
-            if len(a_id)>0:
+            if len(a_id) > 0:
                 if ':==' in a_id:
                     addr_id_addon = '=='
                     a_id = a_id.replace(':==','')
                 else:
                     addr_id_addon = ''
-                addr_id = self.__add_entries_short[a_id]
+                addr_id = self.add_entries_short[a_id]
                 addr_id_data = self.parsed_addrstr[addr_id]
                 if addr_id_data is not None:
                     address_str += a_id + self.__delimiter_id + addr_id_addon + addr_id_data + self.__delimiter_parts
 
         return address_str
+
+    def get_str_from_format(self, address_format='/{u}/{a}/{h}/{d}/{p}/{i}/{k}/'):
+        """ Returns a string of the redvypr address from format string.
+        """
+        funcname = __name__ + '.get_str_from_format():'
+        retstr = address_format.format(u='u:' + self.uuid,
+                                       a='a:' + self.addr,
+                                       h='h:' + self.hostname,
+                                       d='d:' + self.devicename,
+                                       i='i:' + self.packetid,
+                                       p='p:' + self.publisher,
+                                       c='c:' + self.compare,
+                                       k='k:' + self.datakey)
+        return retstr
 
     def compare_address_substrings(self, str1, str2):
         #if str1 == '' and str2 == '':

@@ -340,12 +340,11 @@ class datastreamWidget(QtWidgets.QWidget):
 
         super(QtWidgets.QWidget, self).__init__()
         logger.setLevel(logging.DEBUG)
-        #logger.debug('HALLLOHALLO')
         self.setWindowIcon(QtGui.QIcon(_icon_file))
         self.closeAfterApply = closeAfterApply
         self.redvypr = redvypr
         self.datakeys_expanded = datakeys_expanded
-        self.expandlevel = 3
+
         self.external_filter_include = filter_include
         self.datastreamstring_orig = datastreamstring
         self.datastreamstring  = datastreamstring
@@ -368,23 +367,26 @@ class datastreamWidget(QtWidgets.QWidget):
         else:
             self.devicename = ''
 
-        self.deviceavaillabel = QtWidgets.QLabel('Available devices')
+        if self.datakeys_expanded == False:
+            self.expandlevel = 0
+        else:
+            self.expandlevel = 3
 
-
+        self.addrentries_show_for_publishing_devices = ['h','d','i']  # The entries that are shown for the devices
         self.devicelist = QtWidgets.QTreeWidget()  # List of available devices
         self.devicelist.setHeaderLabels(['Datastreams'])
         self.devicelist.setColumnCount(1)
         self.devicelist.itemClicked.connect(self.__device_clicked)
-
+        # Add menus to the qtreewidgetitems
+        self.devicelist.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.devicelist.customContextMenuRequested.connect(self.show_menu_for_treeitem)
         self.addressline_manual = QtWidgets.QLineEdit()
         self.addressline_manual.setReadOnly(False)
         if manual_address is not None:
             self.addressline_manual.setText(manual_address)
         self.addressline_manual.textChanged.connect(self.__addrManualChanged)
-
         self.addressline = QtWidgets.QLineEdit()
         self.addressline.setReadOnly(True)
-
         # A combobox to choose between different styles of the address
         self.addrtype_combo = QtWidgets.QComboBox()  # Combo for the different combination types
         redvypr_addresstypes = RedvyprAddress().get_common_address_formats()
@@ -394,7 +396,6 @@ class datastreamWidget(QtWidgets.QWidget):
         #self.addrtype_combo.setCurrentIndex(2)
         self.addrtype_combo.currentIndexChanged.connect(self.__addrtype_changed__)
         self.filterWidget = address_filterWidget(redvypr = redvypr)
-
         # Expansion level
         expandlayout = QtWidgets.QHBoxLayout()
         self.expandlevel_spin = QtWidgets.QSpinBox()
@@ -402,15 +403,16 @@ class datastreamWidget(QtWidgets.QWidget):
         self.expandlevel_spin.valueChanged.connect(self.__expandlevelChanged)
         expandlayout.addWidget(QtWidgets.QLabel('Expansion level'))
         expandlayout.addWidget(self.expandlevel_spin)
-
         # Add widgets to layout
+        # Right/left layout side
         self.layout_left = QtWidgets.QVBoxLayout()
         self.layout_right = QtWidgets.QVBoxLayout()
-        self.layout_right.addLayout(expandlayout)
-        self.layout_right.addWidget(self.filterWidget)
-        self.layout_left.addWidget(self.deviceavaillabel)
+        # Left side
         self.layout_left.addWidget(self.devicelist)
-
+        self.layout_left.addLayout(expandlayout)
+        self.layout_left.addWidget(self.filterWidget)
+        # Right side
+        self.layout_right.addStretch()  # Add a stretch
         self.layout_right.addWidget(QtWidgets.QLabel('Manual Address'))
         self.layout_right.addWidget(self.addressline_manual)
         self.layout_right.addWidget(QtWidgets.QLabel('Address format'))
@@ -435,16 +437,55 @@ class datastreamWidget(QtWidgets.QWidget):
         else:
             self.buttondone.hide()
 
-        # Add a stretch
-        self.layout_right.addStretch()
+
         devicelist = []
         self.datakeylist_subscribed = {}
-        if self.datakeys_expanded:
+        if True:
             self.__update_devicetree_expanded()
             self.filterWidget.filterChanged.connect(self.__update_devicetree_expanded)
-        else:
-            self.__update_devicetree()
-            self.filterWidget.filterChanged.connect(self.__update_devicetree)
+
+    def show_menu_for_treeitem(self,pos: QtCore.QPoint):
+        tree = self.devicelist
+        item = tree.itemAt(pos)  # Get the item
+
+
+        try:
+            addrentries = item.addrentries
+        except:
+            addrentries = self.addrentries_show_for_publishing_devices
+
+        print('Item', item,'Addrentries',addrentries)
+
+        if True:
+            menu = QtWidgets.QMenu(tree)
+            check_all = QtWidgets.QWidget()
+            check_all_layout = QtWidgets.QVBoxLayout(check_all)
+            atmp = RedvyprAddress()
+            all_check = {}
+            #print('Hallo',atmp.__addr_entries_short_r)
+            for k in atmp.addr_entries_short_r.keys():
+                entry_tmp = atmp.addr_entries_short_r[k]
+                check = QtWidgets.QCheckBox(k)
+                check.__item = item
+                if entry_tmp in addrentries:
+                    check.setChecked(True)
+                check.stateChanged.connect(self.__update_item)
+                check_all_layout.addWidget(check)
+                all_check[entry_tmp] = check
+                item.all_check = all_check
+            checkAction = QtWidgets.QWidgetAction(self)
+            checkAction.setDefaultWidget(check_all)
+            menu.addAction(checkAction)
+            action1 = QtGui.QAction("Aktion 1", tree)
+            action2 = QtGui.QAction("Aktion 2", tree)
+
+            menu.addAction(action1)
+            menu.addAction(action2)
+
+            action1.triggered.connect(self.__update_all_items)
+            action2.triggered.connect(lambda: print("Aktion 2 ausgeführt"))
+
+            menu.exec_(tree.mapToGlobal(pos))
 
     def __expandlevelChanged(self):
         funcname = __name__ + '.____expandlevelChanged():'
@@ -485,7 +526,13 @@ class datastreamWidget(QtWidgets.QWidget):
             self.addressline.devaddress = item.devaddress
             self.buttondone.setEnabled(True)
 
-    def __update_devicetree(self):
+    def __update_devicetree_simple(self):
+        """
+
+        Returns
+        -------
+
+        """
         if True:
             self.devicelist.clear()
             root = self.devicelist.invisibleRootItem()
@@ -588,7 +635,8 @@ class datastreamWidget(QtWidgets.QWidget):
     def __update_devicetree_expanded(self):
         funcname = __name__ + '.__update_devicetree_expanded():'
         logger.debug(funcname)
-        colgrey = QtGui.QColor(220, 220, 220)
+        colgrey = QtGui.QColor(210, 210, 210)
+        colgrey_key = QtGui.QColor(240, 240, 240)
         def update_recursive(data_new_key, data_new, parent_item, datakey_construct, expandlevel):
             funcname = __name__ + '.__update_recursive():'
             logger.debug(funcname)
@@ -649,14 +697,18 @@ class datastreamWidget(QtWidgets.QWidget):
                 itmk = QtWidgets.QTreeWidgetItem([str(data_new_key)])
                 itmk.redvypr_address = RedvyprAddress(data_new_key)
                 itmk.iskey = True
-                itmk.setBackground(0, colgrey)
+                itmk.device = dev
+                itmk.setBackground(0, colgrey_key)
+                itmk.datakey_address = itmk.redvypr_address
                 parent_item.addChild(itmk)
                 for data_new_index, data_new_item in enumerate(data_new):
                     update_recursive(data_new_index, data_new_item, parent_item=itmk, datakey_construct=datakey_construct_new, expandlevel=expandlevel+1)
 
             elif isinstance(data_new, dict):
                 itmk = QtWidgets.QTreeWidgetItem([data_new_key])
+                itmk.redvypr_address = RedvyprAddress(data_new_key)
                 itmk.iskey = False
+                itmk.device = dev
                 itmk.setBackground(0, colgrey)
                 parent_item.addChild(itmk)
                 for data_new_key in data_new.keys():
@@ -713,14 +765,13 @@ class datastreamWidget(QtWidgets.QWidget):
                             #print('No filter match for ', dev.address)
                             continue
 
+                    # The device itself
                     itm = QtWidgets.QTreeWidgetItem([dev.name])
-                    col = QtGui.QColor(220, 220, 220)
-                    itm.setBackground(0, col)
+                    itm.setBackground(0, colgrey)
                     itm.device = dev
                     itm.redvypr_address = dev.address
-
                     itm.iskey = False
-                    # Check for forwarded devices
+                    # Loop over all devices that have published through this device
                     if True:
                         devs_forwarded = dev.get_device_info()
                         devkeys = list(devs_forwarded.keys())
@@ -728,38 +779,78 @@ class datastreamWidget(QtWidgets.QWidget):
                         for devaddress in devkeys:
                             datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
                             #print('Datakeys',datakey_dict)
-
-                            #fdsfdsf
-                            flag_datastreams = True
                             devaddress_redvypr = RedvyprAddress(devaddress)
                             if self.filterWidget.filter_on:
                                 if devaddress_redvypr not in self.filterWidget.filter_address:
                                     #print('No filter match for ', devaddress_redvypr)
                                     continue
-                            addrtype = '/d/i/'
-                            #print('Hallo', devaddress_redvypr, devaddress_redvypr.get_str())
-                            devicestr = devaddress_redvypr.devicename
-                            # TODO, this should be defined in the configuration of the widget
-                            #devicestr = devaddress_redvypr.get_str(addrtype)
-                            devicestr = devaddress_redvypr.get_str()
+
+                            #print('Addr', devaddress_redvypr, devaddress_redvypr.get_str())
+                            devicestr = self.get_addressstr_for_item(devaddress_redvypr,self.addrentries_show_for_publishing_devices)
                             itmf = QtWidgets.QTreeWidgetItem([devicestr])
-                            itmf.setBackground(0, col)
+                            itmf.setBackground(0, colgrey)
                             itmf.device = dev
+                            itmf.addrentries = self.addrentries_show_for_publishing_devices
                             itmf.redvypr_address = devaddress_redvypr
                             itmf.address_forwarded = devaddress
-                            itm.addChild(itmf)
                             itmf.iskey = False
-
-                            for key in datakey_dict.keys():
-                                data_new = datakey_dict[key]
-                                datakey_construct_new = ''
-                                update_recursive(key, data_new, parent_item=itmf, datakey_construct=datakey_construct_new, expandlevel=0)
+                            if len(datakey_dict.keys())>0:  # Only add the device if it has some datakey to show
+                                itm.addChild(itmf)
+                                for key in datakey_dict.keys():
+                                    data_new = datakey_dict[key]
+                                    datakey_construct_new = ''
+                                    update_recursive(key, data_new, parent_item=itmf, datakey_construct=datakey_construct_new, expandlevel=0)
+                                    flag_datastreams = True
 
                     if flag_datastreams:  # If we have datastreams found, add the itm
                         root.addChild(itm)
 
             self.devicelist.expandAll()
             self.devicelist.resizeColumnToContents(0)
+
+    def get_addressstr_for_item(self,raddr, addrentrylist):
+        #self.addrtype_for_publishing_devices = '/{h}\n/{d}\n/{i}'  # The addrtype to show for publishin devices
+        addrformat = ''
+        for k in addrentrylist:
+            addrformat += '/{' + k + '}\n'
+
+        addrformat = addrformat[:-1]
+        devicestr = raddr.get_str_from_format(addrformat)
+        return devicestr
+
+    def __update_item(self):
+        try:
+            item = self.sender().__item
+        except:
+            print('No item selected')
+            return
+
+        entries = []
+        for entry in item.all_check:
+            check = item.all_check[entry]
+            if check.isChecked():
+                entries.append(entry)
+
+        print('Entries',entries)
+        item.addrentries = entries
+        raddr = item.redvypr_address
+        devicestr = self.get_addressstr_for_item(raddr,entries)
+        item.setText(0,devicestr)
+
+    def __update_all_items(self):
+        tree = self.devicelist
+        #
+        def iterate_items(parent):
+            for i in range(parent.childCount()):
+                child = parent.child(i)
+                print(child.text(0))
+                iterate_items(child)
+
+
+        for i in range(tree.topLevelItemCount()):
+            root = tree.topLevelItem(i)
+            print(root.text(0))
+            iterate_items(root)
 
     def __addrtype_changed__(self):
         """ Update the datakeylist whenever the device was changed
@@ -1080,6 +1171,7 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
         funcname = __name__ + '.__update_devicetree_expanded():'
         logger.debug(funcname)
         colgrey = QtGui.QColor(220, 220, 220)
+        colgrey_key = QtGui.QColor(150, 150, 150)
         def update_recursive(data_new_key, data_new, parent_item, datakey_construct, expandlevel):
             funcname = __name__ + '.__update_recursive():'
             #logger.debug(funcname)
@@ -1203,8 +1295,7 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
                             continue
 
                     itm = QtWidgets.QTreeWidgetItem([dev.name])
-                    col = QtGui.QColor(220, 220, 220)
-                    itm.setBackground(0, col)
+                    itm.setBackground(0, colgrey)
                     itm.device = dev
                     itm.redvypr_address = dev.address
                     itm.raddress = dev.address
@@ -1243,7 +1334,7 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
                             #devicestr = devaddress_redvypr.get_str(addrtype)
                             devicestr = devaddress_redvypr.get_str()
                             itmf = QtWidgets.QTreeWidgetItem([devicestr])
-                            itmf.setBackground(0, col)
+                            itmf.setBackground(0, colgrey)
                             itmf.device = dev
                             itmf.redvypr_address = devaddress_redvypr
                             itmf.address_forwarded = devaddress
