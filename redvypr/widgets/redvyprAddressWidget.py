@@ -50,7 +50,7 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
             keyedit = QtWidgets.QLineEdit()
             keyedit.editingFinished.connect(self.update_address_from_linedits)
             keycheck = QtWidgets.QCheckBox()
-            if k in self.addrentries_for_str_format:
+            if entry_tmp in self.addrentries_for_str_format:
                 keycheck.setChecked(True)
 
             keycheck.stateChanged.connect(self.update_address_from_linedits)
@@ -120,8 +120,8 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
         funcname = __name__ + '.applyClicked():'
         logger.debug(funcname + 'Address: {} ({})'.format(self.redvypr_address,type(self.redvypr_address)))
         #self.address_finished.emit(str(self.redvypr_address))
-        signal_dict = {'address_str': self.submitaddr.text(), 'address':self.redvypr_address,
-                       'address_format': self.address_format}
+        signal_dict = {'address_str': self.submitaddr.text(), 'address':self.redvypr_address_format,
+                       'address_format': self.address_format, 'address_full':self.redvypr_address}
 
         self.address_finished.emit(signal_dict)
 
@@ -491,19 +491,12 @@ class DatastreamWidget(QtWidgets.QWidget):
         self.layout.addLayout(self.layout_right,0,1)
 
         # The datakeys
-        if (deviceonly == False):
+        if deviceonly == False:
             pass
 
-        if True:
-            self.buttondone = QtWidgets.QPushButton('Apply')
-            self.buttondone.clicked.connect(self.done_clicked)
-            self.buttondone.setEnabled(False)
-        if showapplybutton:
-            self.layout_right.addWidget(self.buttondone)
-        else:
-            self.buttondone.hide()
+        if showapplybutton == False:
+            self.address_edit.__configwidget_apply.hide()
 
-        devicelist = []
         self.datakeylist_subscribed = {}
         if True:
             self.__update_devicetree_expanded()
@@ -557,18 +550,11 @@ class DatastreamWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         #print('Item',item.iskey)
         if(item.iskey): # If this is a datakey item
-            addrtype = self.addrtype_combo.currentText()
-            addrstring = item.datakey_address.get_str(addrtype)
             self.address_edit.setAddress(item.datakey_address)
             #print('Addresstype', addrtype)
             #print('Address',item.datakey_address)
             #print('Addrstring',addrstring)
             #print('Devstring', item.devaddress)
-            self.addressline.setText(addrstring)
-            self.addressline.datakey_address = item.datakey_address
-            self.addressline.device = item.device
-            self.addressline.devaddress = item.devaddress
-            self.buttondone.setEnabled(True)
         else:
             logger.debug('this is not an address with a datakey, doing nothing')
 
@@ -897,21 +883,6 @@ class DatastreamWidget(QtWidgets.QWidget):
             root = tree.topLevelItem(i)
             print(root.text(0))
             iterate_items(root)
-
-    def __addrtype_changed__(self):
-        """ Update the datakeylist whenever the device was changed
-        """
-        funcname = __name__ + '.__addrtype_changed__():'
-        logger.debug(funcname)
-        addrtype = self.addrtype_combo.currentText()
-        try:
-            addrstring =  self.addressline.datakey_address.get_str(addrtype)
-            self.buttondone.setEnabled(True)
-        except:
-            addrstring = ''
-            self.buttondone.setEnabled(False)
-
-        self.addressline.setText(addrstring)
 
     def get_all_items(self):
         tree_widget = self.devicelist
