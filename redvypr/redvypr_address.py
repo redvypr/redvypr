@@ -180,7 +180,7 @@ class RedvyprAddress:
 
     def get_common_address_formats(self):
         return self._common_address_formats
-    def create_addrstr(self, datakey=None, packetid=None, devicename=None, hostname=None, addr=None, uuid=None, publisher=None, local_hostinfo=None, compare=None):
+    def create_addrstr(self, datakey=None, packetid=None, devicename=None, hostname=None, addr=None, uuid=None, publisher=None, local_hostinfo=None, compare=None, ignore_expand=True):
         """
             Creates an address string from given ingredients
             Args:
@@ -204,21 +204,29 @@ class RedvyprAddress:
 
         address_str = ''
         if compare is not None:
-            address_str += self.addr_entries_short_r['compare'] + self.__delimiter_id + compare + self.__delimiter_parts
+            if compare != '*' or ignore_expand:
+                address_str += self.addr_entries_short_r['compare'] + self.__delimiter_id + compare + self.__delimiter_parts
         if uuid is not None:
-            address_str += self.addr_entries_short_r['uuid'] + self.__delimiter_id + uuid + self.__delimiter_parts
+            if uuid != '*' or ignore_expand:
+                address_str += self.addr_entries_short_r['uuid'] + self.__delimiter_id + uuid + self.__delimiter_parts
         if addr is not None:
-            address_str += self.addr_entries_short_r['addr'] + self.__delimiter_id + addr + self.__delimiter_parts
+            if addr != '*' or ignore_expand:
+                address_str += self.addr_entries_short_r['addr'] + self.__delimiter_id + addr + self.__delimiter_parts
         if hostname is not None:
-            address_str += self.addr_entries_short_r['hostname'] + self.__delimiter_id + hostname + self.__delimiter_parts
+            if hostname != '*' or ignore_expand:
+                address_str += self.addr_entries_short_r['hostname'] + self.__delimiter_id + hostname + self.__delimiter_parts
         if publisher is not None:
-            address_str += self.addr_entries_short_r['publisher'] + self.__delimiter_id + publisher + self.__delimiter_parts
+            if publisher != '*' or ignore_expand:
+                address_str += self.addr_entries_short_r['publisher'] + self.__delimiter_id + publisher + self.__delimiter_parts
         if devicename is not None:
-            address_str += self.addr_entries_short_r['devicename'] + self.__delimiter_id + devicename + self.__delimiter_parts
+            if devicename != '*' or ignore_expand:
+                address_str += self.addr_entries_short_r['devicename'] + self.__delimiter_id + devicename + self.__delimiter_parts
         if packetid is not None:
-            address_str += self.addr_entries_short_r['packetid'] + self.__delimiter_id + packetid + self.__delimiter_parts
+            if packetid != '*' or ignore_expand:
+                address_str += self.addr_entries_short_r['packetid'] + self.__delimiter_id + packetid + self.__delimiter_parts
         if datakey is not None:
-            address_str += self.addr_entries_short_r['datakey'] + self.__delimiter_id + datakey + self.__delimiter_parts
+            if datakey != '*' or ignore_expand:
+                address_str += self.addr_entries_short_r['datakey'] + self.__delimiter_id + datakey + self.__delimiter_parts
 
         if len(address_str)>0:
             address_str = self.__delimiter_parts + address_str

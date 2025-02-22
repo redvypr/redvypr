@@ -4,6 +4,7 @@ import logging
 import sys
 import pyqtgraph
 import pydantic
+import typing
 import numpy
 from PyQt6 import QtWidgets, QtCore, QtGui
 import redvypr
@@ -30,7 +31,10 @@ class configPcolorPlot(pydantic.BaseModel):
     buffersize: int = pydantic.Field(default=100,description='Size of the buffer that is used to store the plot data')
     dt_update: float = pydantic.Field(default=0.25,description='Update time of the plot [s]')
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
-    autolevel: bool = pydantic.Field(default=True,description='If true colorlevels will be set automatically')
+    datastreamformat: str = pydantic.Field(default='/k/i/d/h/', description='The string format of the datastream')
+    collevel_auto: bool = pydantic.Field(default=True, description='If true colorlevels will be set automatically')
+    collevel_min: typing.Optional[float] = pydantic.Field(default=None, description='Minimum color level')
+    collevel_max: typing.Optional[float] = pydantic.Field(default=None, description='Maximum color level')
 
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = False
@@ -45,7 +49,11 @@ class DeviceCustomConfig(pydantic.BaseModel):
     buffersize: int = pydantic.Field(default=100, description='Size of the buffer that is used to store the plot data')
     dt_update: float = pydantic.Field(default=0.25, description='Update time of the plot [s]')
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
-    autolevel: bool = pydantic.Field(default=True, description='If true colorlevels will be set automatically')
+    datastreamformat: str = pydantic.Field(default='/k/i/d/h/', description='The string format of the datastream')
+    collevel_auto: bool = pydantic.Field(default=True, description='If true colorlevels will be set automatically')
+    collevel_min: typing.Optional[float] = pydantic.Field(default=None, description='Minimum color level')
+    collevel_max: typing.Optional[float] = pydantic.Field(default=None, description='Maximum color level')
+
 
 # Use the standard start function as the start function
 class PcolorPlotWidget(QtWidgets.QWidget):
@@ -115,7 +123,7 @@ class PcolorPlotWidget(QtWidgets.QWidget):
 
     def pyqtgraphLevelAction(self):
         print('Hallo')
-        self.config.autolevel = self.autolevelcheck.isChecked()
+        self.config.collevel_auto = self.autolevelcheck.isChecked()
 
     def pyqtgraphConfigAction(self):
         if self.device is not None:
@@ -143,7 +151,7 @@ class PcolorPlotWidget(QtWidgets.QWidget):
             self.logger.warning('Could not subscribe to address: "{}"'.format(self.config.datastream))
 
     def setTitle(self):
-        titlestr = str(self.config.datastream)
+        titlestr = 'Datastream: ' + self.config.datastream.get_str(self.config.datastreamformat)
         self.plotwidget.setTitle(titlestr)
 
     def create_widgets(self):
@@ -173,7 +181,7 @@ class PcolorPlotWidget(QtWidgets.QWidget):
         cmenu = pyqtgraph.ColorMapMenu(showColorMapSubMenus=True)
         autolevelcheck = QtWidgets.QCheckBox('Automatic Colorlevel')
         self.autolevelcheck = autolevelcheck
-        autolevelcheck.setChecked(self.config.autolevel)
+        autolevelcheck.setChecked(self.config.collevel_auto)
         autolevelcheck.stateChanged.connect(self.pyqtgraphLevelAction)
         autolevelAction = QtWidgets.QWidgetAction(self)
         autolevelAction.setDefaultWidget(autolevelcheck)
@@ -238,7 +246,7 @@ class PcolorPlotWidget(QtWidgets.QWidget):
                 print('levels', self.levels,self.mesh.getLevels())
                 self.mesh.setData(X,Y,Z)
                 if self.levels is not None:
-                    if self.config.autolevel:
+                    if self.config.collevel_auto:
                         self.levels = self.mesh.getLevels()
                     else:
                         self.mesh.setLevels(self.levels)
