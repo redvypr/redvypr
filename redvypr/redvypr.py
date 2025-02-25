@@ -164,7 +164,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 while True:
                     try:
                         data = device.dataqueue.get(block=False)
-                        if(type(data) is not dict): # If data is not a dictionary, convert it to one
+                        if not (isinstance(data, dict)): # If data is not a dictionary, convert it to one
                             data = {'data':data}
 
                         devicedict['statistics']['packets_published'] += 1 # The total number of packets published by the device
