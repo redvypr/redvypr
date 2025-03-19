@@ -20,7 +20,7 @@ class LineEditFocus(QtWidgets.QLineEdit):
         # do custom stuff
         self.focusOutSignal.emit()
         super(LineEditFocus, self).focusOutEvent(event)
-class redvyprSubscribeWidget(QtWidgets.QWidget):
+class SubscribeWidget(QtWidgets.QWidget):
     """ Widget that lets the user add/modify/remove subscriptions of a device
 
     """
@@ -33,7 +33,7 @@ class redvyprSubscribeWidget(QtWidgets.QWidget):
             device: The device the user can change the
             show_devices: lets the user choose between different devices, otherwise only the subscriptions of device=device can be changed.
         """
-        super(redvyprSubscribeWidget, self).__init__()
+        super(SubscribeWidget, self).__init__()
         self.show_devices = show_devices
         self.redvypr = redvypr
         self.devices = self.redvypr.devices

@@ -17,7 +17,8 @@ from redvypr.widgets.standard_device_widgets import RedvyprDeviceWidget_simple
 from redvypr.devices.sensors.generic_sensor.calibrationWidget import GenericSensorCalibrationWidget
 import redvypr.devices.sensors.calibration.calibration_models as calibration_models
 import redvypr.devices.sensors.generic_sensor.sensor_definitions as sensor_definitions
-from . import hexflasher
+from . import sensor_firmware_config
+from . import nmea_mac64_utils
 from redvypr.utils.databuffer import DatapacketAvg
 
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
@@ -27,45 +28,46 @@ tarv2nmea_R_test1 = b'$D8478FFFFE95CD4D,TAR,R_B4,88.125000,23,3791.505,3780.276,
 
 # Generic tar, legacy, define two, one for R and one for T
 #tarv2nmea_test1 = b'$FC0FE7FFFE155D8C,TAR,B2,36533.125000,83117,3498.870,3499.174,3529.739,3490.359,3462.923,3467.226,3480.077,3443.092,3523.642,3525.567,3509.492,3561.330,3565.615,3486.693,3588.670,3539.169,3575.104,3523.946,3496.343,3480.160,3531.045,3501.624,3497.010,3557.235,3479.952,3458.297,3523.052,3487.223,3571.087,3525.740,3580.928,3534.818\n'
-#tar_b2_split = b'\$(?P<MAC>[A-F,0-9]+),TAR,B2,(?P<counter>[0-9.]+),(?P<np>[0.9]+),(?P<TAR>[0-9.]+,*)\n'
-tarv2nmea_split = b'\$(?P<MAC>.+),TAR,(?P<parameterunit>[A-c])_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<TAR>.*)\n'
-tarv2nmea_str_format = {'MAC':'str','counter':'float','parameterunit':'str','ntctype':'str','ntcdist':'float','np':'int','TAR':'array'}
-tarv2nmea_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'TAR':{'unit':'Ohm'}}
-tarv2nmea_packetid_format = '{MAC}__TAR'
+#tar_b2_split = b'\$(?P<mac>[A-F,0-9]+),TAR,B2,(?P<counter>[0-9.]+),(?P<np>[0.9]+),(?P<TAR>[0-9.]+,*)\n'
+tarv2nmea_split = b'\$(?P<mac>.+),TAR,(?P<parameterunit>[A-c])_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<TAR>.*)\n'
+tarv2nmea_str_format = {'mac':'str','counter':'float','parameterunit':'str','ntctype':'str','ntcdist':'float','np':'int','TAR':'array'}
+tarv2nmea_datakey_metadata = {'mac':{'unit':'mac64','description':'mac of the sensor'},'np':{'unit':'counter'},'TAR':{'unit':'Ohm'}}
+tarv2nmea_packetid_format = '{mac}__TAR'
 tarv2nmea_description = 'Temperature array NMEA like text format'
 
 # tar for R
-tarv2nmea_R_split = b'\$(?P<MAC>.+),TAR,R_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<R>.*)\n'
-tarv2nmea_R_str_format = {'MAC':'str','counter':'float','ntctype':'str','ntcdist':'float','np':'int','R':'array'}
-tarv2nmea_R_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'R':{'unit':'Ohm'}}
-tarv2nmea_R_packetid_format = '{MAC}__TAR__R'
+tarv2nmea_R_split = b'\$(?P<mac>.+),TAR,R_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<R>.*)\n'
+tarv2nmea_R_str_format = {'mac':'str','counter':'float','ntctype':'str','ntcdist':'float','np':'int','R':'array'}
+tarv2nmea_R_datakey_metadata = {'mac':{'unit':'mac64','description':'mac of the sensor'},'np':{'unit':'counter'},'R':{'unit':'Ohm'}}
+tarv2nmea_R_packetid_format = '{mac}__TAR__R'
 tarv2nmea_R_description = 'Temperature array of NTC resistance in ohm, NMEA like text format'
 
 # tar for T
-tarv2nmea_T_split = b'\$(?P<MAC>.+),TAR,T_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<T>.*)\n'
-tarv2nmea_T_str_format = {'MAC':'str','counter':'float','ntctype':'str','ntcdist':'float','np':'int','T':'array'}
-tarv2nmea_T_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'T':{'unit':'degC'}}
-tarv2nmea_T_packetid_format = '{MAC}__TAR__T'
+tarv2nmea_T_split = b'\$(?P<mac>.+),TAR,T_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<T>.*)\n'
+tarv2nmea_T_str_format = {'mac':'str','counter':'float','ntctype':'str','ntcdist':'float','np':'int','T':'array'}
+tarv2nmea_T_datakey_metadata = {'mac':{'unit':'mac64','description':'mac of the sensor'},'np':{'unit':'counter'},'T':{'unit':'degC'}}
+tarv2nmea_T_packetid_format = '__TAR__T'
 tarv2nmea_T_description = 'Temperature array of NTC temperature in degC, converted internally in the sensor using onboard coefficients NMEA like text format'
 
 # Generic tar sample, legacy, define two, one for R and one for T
-tarv2nmea_sample_split = b'\$(?P<MAC>.+),TAR_S;(?P<counter>[0-9.]+);(?P<np>[0-9]+),(?P<parameterunit>[A-c])_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter_local>[0-9.]+),(?P<np_local>[0-9]+),(?P<TAR>.*)\n'
-tarv2nmea_sample_str_format = {'MAC':'str','counter':'float','counter_local':'float','parameterunit':'str','ntctype':'str','ntcdist':'float','np':'int','np_local':'int','TAR':'array'}
-tarv2nmea_sample_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'TAR':{'unit':'Ohm'}}
-tarv2nmea_sample_packetid_format = '{MAC}__TAR_S'
+tarv2nmea_sample_split = b'\$(?P<mac>.+),TAR_S;(?P<counter>[0-9.]+);(?P<np>[0-9]+),(?P<parameterunit>[A-c])_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter_local>[0-9.]+),(?P<np_local>[0-9]+),(?P<TAR>.*)\n'
+tarv2nmea_sample_str_format = {'mac':'str','counter':'float','counter_local':'float','parameterunit':'str','ntctype':'str','ntcdist':'float','np':'int','np_local':'int','TAR':'array'}
+tarv2nmea_sample_datakey_metadata = {'mac':{'unit':'mac64','description':'mac of the sensor'},'np':{'unit':'counter'},'TAR':{'unit':'Ohm'}}
+tarv2nmea_sample_packetid_format = '__TAR_S'
 tarv2nmea_sample_description = 'Temperature array datapacket initiated by a sample command'
 
 
-tarv2nmea_R_sample_split = b'\$(?P<MAC>.+),TAR_S;(?P<counter>[0-9.]+);(?P<np>[0-9]+),R_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter_local>[0-9.]+),(?P<np_local>[0-9]+),(?P<R>.*)\n'
-tarv2nmea_R_sample_str_format = {'MAC':'str','counter':'float','counter_local':'float','ntctype':'str','ntcdist':'float','np':'int','np_local':'int','R':'array'}
-tarv2nmea_R_sample_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'R':{'unit':'Ohm'}}
-tarv2nmea_R_sample_packetid_format = '{MAC}__TAR_S__R'
+tarv2nmea_R_sample_split = b'\$(?P<mac>.+),TAR_S;(?P<counter>[0-9.]+);(?P<np>[0-9]+),R_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter_local>[0-9.]+),(?P<np_local>[0-9]+),(?P<R>.*)\n'
+tarv2nmea_R_sample_str_format = {'mac':'str','counter':'float','counter_local':'float','ntctype':'str','ntcdist':'float','np':'int','np_local':'int','R':'array'}
+tarv2nmea_R_sample_datakey_metadata = {'mac':{'unit':'mac64','description':'mac of the sensor'},'np':{'unit':'counter'},'R':{'unit':'Ohm'}}
+tarv2nmea_R_sample_packetid_format = '__TAR_S__R'
 tarv2nmea_R_sample_description = 'Temperature array datapacket initiated by a sample command'
 
-tarv2nmea_T_sample_split = b'\$(?P<MAC>.+),TAR_S;(?P<counter>[0-9.]+);(?P<np>[0-9]+),S_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter_local>[0-9.]+),(?P<np_local>[0-9]+),(?P<T>.*)\n'
-tarv2nmea_T_sample_str_format = {'MAC':'str','counter':'float','counter_local':'float','ntctype':'str','ntcdist':'float','np':'int','np_local':'int','T':'array'}
-tarv2nmea_T_sample_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'T':{'unit':'degC'}}
-tarv2nmea_T_sample_packetid_format = '{MAC}__TAR_S__T'
+#$D8478FFFFE95E740,1333612,83350.750000:$D8478FFFFE95CA01,1333609,83350.562500:$D8478FFFFE960155,TAR_S;83350.062500;41676,T_B4,83352.625000,41679,22.8676,23.3250,23.6779,23.8075,24.5429,24.5523,24.8531,24.6138,24.5245,24.3931,24.3789,23.9727,23.6818,23.2973,23.1026,22.9623,22.4240,22.0318,21.5546,20.9095,20.4307,19.9684,19.6013,19.1512,18.7156,18.3240,18.0466,17.9554,17.6042,17.2420,17.2303,16.9244,17.0201,16.7837,16.7710,16.5264,16.3620,16.2336,16.1800,16.1013,15.8603,15.8406,15.7468,15.8856,15.5547,15.7500,15.5480,15.3910,15.2764,15.4010,15.3414,15.1583,15.2317,14.9590,15.0831,15.0845,15.0918,14.8507,14.9967,14.9612,14.7171,14.9477,14.8946,14.7653\n
+tarv2nmea_T_sample_split = b'\$(?P<mac>.+),TAR_S;(?P<counter>[0-9.]+);(?P<np>[0-9]+),T_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter_local>[0-9.]+),(?P<np_local>[0-9]+),(?P<T>.*)\n'
+tarv2nmea_T_sample_str_format = {'mac':'str','counter':'float','counter_local':'float','ntctype':'str','ntcdist':'float','np':'int','np_local':'int','T':'array'}
+tarv2nmea_T_sample_datakey_metadata = {'mac':{'unit':'mac64','description':'mac of the sensor'},'np':{'unit':'counter'},'T':{'unit':'degC'}}
+tarv2nmea_T_sample_packetid_format = '__TAR_S__T'
 tarv2nmea_T_sample_description = 'Temperature array datapacket initiated by a sample command'
 
 logging.basicConfig(stream=sys.stderr)
@@ -101,7 +103,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
     gui_tablabel_display: str = 'Temperature array (TAR)'
 
 class DeviceCustomConfig(pydantic.BaseModel):
-    merge_groups: bool = False
+    merge_groups: bool = True
     average: bool = True
     avg_intervals: list = [300,30,10]
     avg_dimensions: list = ['t','t','n']
@@ -178,10 +180,10 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 return
 
 
-        #try:
-        #    print('Data',datapacket['data'])
-        #except:
-        #    continue
+        try:
+            print('Data',datapacket['data'])
+        except:
+            continue
         data_packet_processed = tarv2nmea_R.datapacket_process(datapacket)
         datatype = 'R'
         if data_packet_processed is None:
@@ -197,8 +199,13 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
         if data_packet_processed is not None:
             if len(data_packet_processed) > 0:
                 for ip,p in enumerate(data_packet_processed):
-                    mactmp = p['MAC']
-                    p['mac'] = p['MAC']
+                    print('p',p)
+                    mactmp = p['mac']
+                    mac_parsed = nmea_mac64_utils.parse_nmea_mac64_string(mactmp)
+                    print('mac parsed',mac_parsed)
+                    p['mac'] = mac_parsed['mac']
+                    p['parents'] = mac_parsed['parents']
+                    p['_redvypr']['packetid'] = p['mac'] + p['_redvypr']['packetid']
                     mac = p['mac']
                     print('mac {} {}'.format(ip,mactmp))
                     dataqueue.put(p)
@@ -235,103 +242,120 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
                 #print('Datapacket processed',data_packet_processed)
                 logger.debug('Data packet processed (without calibration):{}'.format(len(data_packet_processed)))
-                #print('MAC',mac,counter,np)
+                #print('mac',mac,counter,np)
                 #if npmax < 0:  # The first measurement
                 #    npmax = np
                 if config['merge_groups']:
-                    mac = data_packet_processed[0]['MAC']
-                    counter = data_packet_processed[0]['counter']
-                    np = data_packet_processed[0]['np']
-                    npmax = max(packetbuffer.keys())
-                    # Check if a new packet arrived (meaning that np is larger than npmax)
-                    # If yes, merge all parts of the old one first
-                    if (np > npmax) and (npmax > 0):  # Process packetnumber npmax
-                        for datatype_tmp in packetbuffer[npmax].keys():  # Loop over all datatypes
-                            npackets = len(packetbuffer[npmax][datatype_tmp].keys())
-                            dmerge = [None] * npackets
-                            datapacket_merged = {}
-                            #print('Npackets',npackets)
-                            for mac_tmp in packetbuffer[npmax][datatype_tmp].keys():
-                                p = packetbuffer[npmax][datatype_tmp][mac_tmp]
-                                # Count the ':' and put it at the list location
-                                i = mac_tmp.count(':')
-                                if i >= npackets:
-                                    logger.debug('Could not add {}'.format(mac_tmp))
-                                    continue
-                                if i == 0:  # First packet
-                                    mac_final = mac_tmp
-                                    counter_final = counter
-                                    # The merged packetid
-                                    packetid_final = '{}__TAR__{}_merged'.format(mac_final,datatype_tmp)
-                                    dp = redvypr.Datapacket(packetid=packetid_final)
-                                    datapacket_merged.update(dp)
-                                    datapacket_merged['mac'] = mac_final
-                                    datapacket_merged['counter'] = counter_final
-                                #print('mac_tmp',mac_tmp,i)
-                                #print('Datapacket processed', data_packet_processed)
-                                #print('Datapacket',datapacket)
+                    pmerge = data_packet_processed[0]
+                    mac = pmerge['mac']
+                    parents = pmerge['parents']
+                    counter = pmerge['counter']
+                    np = pmerge['np']
+                    # Check if we have the downstream device, if yes process, else do nothing
+                    if len(parents) > 0:  # The most downstream device
+                        macdown = parents[0]
+                    else:  # The most downstream device
+                        macdown = mac
+                        # Add the data to the buffer
+                        try:
+                            packetbuffer[macdown]
+                            npmax = max(packetbuffer[macdown].keys())
+                        except:
+                            packetbuffer[macdown] = {}
+                            npmax = -1000
 
-                                #print('P',p)
-                                # Add the data to a list, that is hstacked later
-                                dmerge[i] = p[datatype_tmp]
-                            # Merge the packages into one large one
-                            #print('dmerge', dmerge)
-                            #print('len dmerge', len(dmerge))
-                            tar_merge = numpy.hstack(dmerge).tolist()
-                            #print('Tar merge',len(tar_merge))
-                            datapacket_merged[datatype_tmp] = tar_merge
-                            datapacket_merged['np'] = npmax
-                            datapacket_merged['datatype'] = datatype_tmp
-                            datapacket_merged['t'] = data_packet_processed[0]['t']  # Add time
-                            #print('publish')
-                            logger.info('Publishing merged data {} {} {}'.format(mac_final, np,datatype))
-                            dataqueue.put(datapacket_merged)
-                            # Averaging the data
-                            try:
-                                packetbuffer_merged_avg[mac]
-                            except:
-                                packetbuffer_merged_avg[mac] = {}
 
-                            try:
-                                packetbuffer_merged_avg[mac][datatype_tmp]
-                            except:
-                                #packetbuffer_avg[mac][datatype_tmp] = DatapacketAvg(address=datatype_tmp)
-                                packetbuffer_merged_avg[mac][datatype_tmp] = create_avg_databuffer(config, datatype=datatype_tmp)
-
-                            try:
-                                for d in packetbuffer_merged_avg[mac][datatype_tmp]:  # loop over all average buffers and do the averaging
-                                    packet_avg = d.append(datapacket_merged)
+                        # Check if a new packet arrived (meaning that np is larger than npmax)
+                        # If yes, merge all parts of the old one first
+                        if (np > npmax) and (npmax > 0):  # Process packetnumber npmax
+                            for datatype_tmp in packetbuffer[macdown][npmax].keys():  # Loop over all datatypes
+                                npackets = len(packetbuffer[macdown][npmax][datatype_tmp].keys())
+                                dmerge = [None] * npackets
+                                datapacket_merged = {}
+                                #print('Npackets',npackets)
+                                for mac_tmp in packetbuffer[macdown][npmax][datatype_tmp].keys():
+                                    pmerge2 = packetbuffer[macdown][npmax][datatype_tmp][mac_tmp]
+                                    parents_tmp = pmerge2['parents']
+                                    # Count the number of parents and put it at the list location
+                                    i = len(parents_tmp)
+                                    if i >= npackets:
+                                        logger.debug('Could not add {}'.format(mac_tmp))
+                                        continue
+                                    if i == 0:  # First packet
+                                        mac_final = mac_tmp + '_m'
+                                        counter_final = counter
+                                        # The merged packetid
+                                        packetid_final = '{}__TAR__{}_merged'.format(mac_final,datatype_tmp)
+                                        dp = redvypr.Datapacket(packetid=packetid_final)
+                                        datapacket_merged.update(dp)
+                                        datapacket_merged['mac'] = mac_final
+                                        datapacket_merged['counter'] = counter_final
+                                    #print('mac_tmp',mac_tmp,i)
+                                    #print('Datapacket processed', data_packet_processed)
+                                    #print('Datapacket',datapacket)
+                                    #print('datatype_tmp',datatype_tmp,datatype)
+                                    #print('P',pmerge2)
+                                    # Add the data to a list, that is hstacked later
+                                    dmerge[i] = pmerge2[datatype_tmp]
+                                # Merge the packages into one large one
+                                #print('dmerge', dmerge)
+                                #print('len dmerge', len(dmerge))
+                                tar_merge = numpy.hstack(dmerge).tolist()
+                                #print('Tar merge',len(tar_merge))
+                                datapacket_merged[datatype_tmp] = tar_merge
+                                datapacket_merged['np'] = npmax
+                                datapacket_merged['datatype'] = datatype_tmp
+                                datapacket_merged['t'] = p['t']  # Add time
+                                print('publish merged data, merged merged')
+                                logger.info('Publishing merged data {} {} {}'.format(mac_final, np,datatype))
+                                dataqueue.put(datapacket_merged)
+                                if False:
+                                    # Averaging the data
                                     try:
-                                        d.__counter__ += 1
+                                        packetbuffer_merged_avg[macdown]
                                     except:
-                                        d.__counter__ = 0
-                                    #print('Packet avg raw',packet_avg)
-                                    if packet_avg is not None:
-                                        dpublish = redvypr.Datapacket(packetid=packetid_final)
-                                        packet_avg.update(dpublish)
-                                        packet_avg['mac'] = mac_final
-                                        packet_avg['np'] = d.__counter__
-                                        packet_avg['counter'] = d.__counter__
-                                        #print('Publishing average data', d.datakey_save)
-                                        dataqueue.put(packet_avg)
-                                        #print('Packet avg publish',packet_avg)
-                            except:
-                                logger.info('Could not average the data',exc_info=True)
+                                        packetbuffer_merged_avg[macdown] = {}
 
-                        # Remove from buffer
-                        packetbuffer.pop(npmax)
+                                    try:
+                                        packetbuffer_merged_avg[macdown][datatype_tmp]
+                                    except:
+                                        #packetbuffer_avg[mac][datatype_tmp] = DatapacketAvg(address=datatype_tmp)
+                                        packetbuffer_merged_avg[macdown][datatype_tmp] = create_avg_databuffer(config, datatype=datatype_tmp)
+
+                                    try:
+                                        for d in packetbuffer_merged_avg[macdown][datatype_tmp]:  # loop over all average buffers and do the averaging
+                                            packet_avg = d.append(datapacket_merged)
+                                            try:
+                                                d.__counter__ += 1
+                                            except:
+                                                d.__counter__ = 0
+                                            #print('Packet avg raw',packet_avg)
+                                            if packet_avg is not None:
+                                                dpublish = redvypr.Datapacket(packetid=packetid_final)
+                                                packet_avg.update(dpublish)
+                                                packet_avg['mac'] = mac_final
+                                                packet_avg['np'] = d.__counter__
+                                                packet_avg['counter'] = d.__counter__
+                                                #print('Publishing average data', d.datakey_save)
+                                                dataqueue.put(packet_avg)
+                                                #print('Packet avg publish',packet_avg)
+                                    except:
+                                        logger.info('Could not average the data',exc_info=True)
+
+                            # Remove from buffer
+                            packetbuffer[macdown].pop(npmax)
 
                     try:
-                        packetbuffer[np]
+                        packetbuffer[macdown][np]
                     except:
-                        packetbuffer[np] = {}
+                        packetbuffer[macdown][np] = {}
 
                     try:
-                        packetbuffer[np][datatype]
+                        packetbuffer[macdown][np][datatype]
                     except:
-                        packetbuffer[np][datatype] = {}
+                        packetbuffer[macdown][np][datatype] = {}
 
-                    packetbuffer[np][datatype][mac] = data_packet_processed[0]
+                    packetbuffer[macdown][np][datatype][mac] = p
 
     return None
 

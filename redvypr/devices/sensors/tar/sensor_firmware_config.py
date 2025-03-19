@@ -15,8 +15,7 @@ import re
 from redvypr.devices.sensors.calibration import calibration_models
 
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
-
-logger = logging.getLogger("redvypr.devices.tar.hexflasher")
+logger = logging.getLogger("redvypr.devices.tar.sensor_firmware_config")
 
 # Calibration models for the different caliration types
 #'$D8478FFFFE95CD4D,set ntc56 4 1.128271e-03 3.289026e-04 -1.530210e-05 1.131836e-06 0.000000e+00\n'

@@ -7,10 +7,10 @@ import qtawesome
 from pydantic.color import Color as pydColor
 from PyQt6 import QtWidgets, QtCore, QtGui
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
-from redvypr.widgets.redvyprSubscribeWidget import redvyprSubscribeWidget
+from redvypr.widgets.redvyprSubscribeWidget import SubscribeWidget
 #from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget,
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, dictQTreeWidget, datastreamMetadataWidget
-from redvypr.widgets.redvyprAddressWidget import DatastreamWidget, datastreamsWidget
+from redvypr.widgets.redvyprAddressWidget import DatastreamWidget, Datastreamswidget
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import RedvyprMetadata, RedvyprDeviceMetadata
 import redvypr.files as files
@@ -219,7 +219,7 @@ class deviceTableWidget(QtWidgets.QTableWidget):
         device = button.__device
         logger.debug(funcname + ':' + str(device))
         # self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
-        self.__subscribeWidget = redvyprSubscribeWidget(redvypr=self.redvypr, device=device)
+        self.__subscribeWidget = SubscribeWidget(redvypr=self.redvypr, device=device)
         self.__subscribeWidget.show()
 
     def deviceConfigureClicked(self):
@@ -719,7 +719,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         funcname = __name__ + '.subscribe_clicked():'
         logger.debug(funcname)
         button = self.sender()
-        self.__subscribeWidget = redvyprSubscribeWidget(redvypr=self.redvypr, device=self.device)
+        self.__subscribeWidget = SubscribeWidget(redvypr=self.redvypr, device=self.device)
         self.__subscribeWidget.show()
         #self.connect.emit(self.device)
 

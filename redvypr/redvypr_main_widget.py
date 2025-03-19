@@ -624,7 +624,7 @@ class redvyprWidget(QtWidgets.QWidget):
         funcname = __name__ + '.open_connect_widget()'
         logger.debug(funcname + ':' + str(device))
         # self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
-        self.__con_widget = redvypr.widgets.redvyprSubscribeWidget.redvyprSubscribeWidget(redvypr=self.redvypr, device=device)
+        self.__con_widget = redvypr.widgets.redvyprSubscribeWidget.SubscribeWidget(redvypr=self.redvypr, device=device)
         self.__con_widget.show()
 
     def __hostname_changed_click(self):

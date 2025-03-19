@@ -14,7 +14,7 @@ import copy
 import threading
 import pydantic
 import redvypr
-from . import hexflasher
+from . import sensor_firmware_config
 #from . import tar
 from redvypr.devices.sensors.generic_sensor.calibrationWidget import GenericSensorCalibrationWidget, CalibrationsTable
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict

@@ -1506,7 +1506,7 @@ class initDeviceWidget(QtWidgets.QWidget):
     def sensorsAddClicked(self):
         funcname = __name__ + '.sensorsAddClicked():'
         logger.debug(funcname)
-        self.dstreamswidget = redvypr.gui.datastreamsWidget(self.device.redvypr)
+        self.dstreamswidget = redvypr.gui.Datastreamswidget(self.device.redvypr)
         self.dstreamswidget.apply.connect(self.sensorsApplyClicked)
         self.dstreamswidget.show()
 

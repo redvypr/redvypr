@@ -786,7 +786,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.addDatastreamClicked():'
         logger.debug(funcname)
-        self.dstreamswidget = redvypr.gui.datastreamsWidget(self.device.redvypr, closeAfterApply=True)
+        self.dstreamswidget = redvypr.gui.Datastreamswidget(self.device.redvypr, closeAfterApply=True)
         self.dstreamswidget.apply.connect(self.__datastreams_choosen__)
         self.dstreamswidget.show()
 

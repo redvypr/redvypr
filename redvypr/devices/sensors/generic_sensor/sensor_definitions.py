@@ -484,10 +484,10 @@ NMEARMC = BinarySensor(name='NMEA0183_RMC', regex_split=nmea_rmc_split,
 # TAR (temperature array)
 tar_b2_test1 = b'$FC0FE7FFFE155D8C,TAR,B2,36533.125000,83117,3498.870,3499.174,3529.739,3490.359,3462.923,3467.226,3480.077,3443.092,3523.642,3525.567,3509.492,3561.330,3565.615,3486.693,3588.670,3539.169,3575.104,3523.946,3496.343,3480.160,3531.045,3501.624,3497.010,3557.235,3479.952,3458.297,3523.052,3487.223,3571.087,3525.740,3580.928,3534.818\n'
 #tar_b2_split = b'\$(?P<MAC>[A-F,0-9]+),TAR,B2,(?P<counter>[0-9.]+),(?P<np>[0.9]+),(?P<TAR>[0-9.]+,*)\n'
-tar_b2_split = b'\$(?P<MAC>.+),TAR,B2,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<TAR>.*)\n'
-tar_b2_str_format = {'MAC':'str','counter':'float','np':'int','TAR':'array'}
-tar_b2_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'TAR':{'unit':'Ohm'}}
-tar_b2_packetid_format = 'TAR_B2_{MAC}'
+tar_b2_split = b'\$(?P<mac>.+),TAR,B2,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<TAR>.*)\n'
+tar_b2_str_format = {'mac':'str','counter':'float','np':'int','tar':'array'}
+tar_b2_datakey_metadata = {'mac':{'unit':'mac64','description':'mac of the sensor'},'np':{'unit':'counter'},'TAR':{'unit':'Ohm'}}
+tar_b2_packetid_format = 'TAR_B2_{mac}'
 tar_b2_description = 'Temperature array NMEA like text format'
 tar_b2 = BinarySensor(name='tar_b2', regex_split=tar_b2_split,
                        str_format=tar_b2_str_format,
@@ -501,10 +501,10 @@ tar_b2 = BinarySensor(name='tar_b2', regex_split=tar_b2_split,
 # HF (Heatflow)
 HF_test1 = b'$FC0FE7FFFE1567E3,HF,00000431.3125,108,-0.000072,2774.364,2782.398,2766.746\n'
 HF_test2 = b'$FC0FE7FFFE1567E3,HF,00054411.3125,13603,0.000037,2780.217,2786.642,2774.316\n'
-HF_split = b'\$(?P<MAC>.+),HF,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<HF_V>[-,\+]*[0-9.]+),(?P<NTC_R>.*)\n'
-HF_str_format = {'MAC':'str','counter':'float','np':'int','HF_V':'float','NTC_R':'array'}
-HF_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'HF_V':{'unit':'Volt'},'NTC_R':{'unit':'Ohm'}}
-HF_packetid_format = 'HF_{MAC}'
+HF_split = b'\$(?P<mac>.+),HF,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<HF_V>[-,\+]*[0-9.]+),(?P<NTC_R>.*)\n'
+HF_str_format = {'mac':'str','counter':'float','np':'int','HF_V':'float','NTC_R':'array'}
+HF_datakey_metadata = {'mac':{'unit':'mac64','description':'Mac of the sensor'},'np':{'unit':'counter'},'HF_V':{'unit':'Volt'},'NTC_R':{'unit':'Ohm'}}
+HF_packetid_format = 'HF_{mac}'
 HF_description = 'Heatflow sensor raw data (units are Volt and Ohm)'
 HF = BinarySensor(name='HF', regex_split=HF_split,
                        str_format=HF_str_format,
@@ -518,10 +518,10 @@ HF = BinarySensor(name='HF', regex_split=HF_split,
 # HFS (Heatflow)
 HFS_test1 = b'$FC0FE7FFFE153BDC,HFS,00182595.0000,45649,2.151728,29.609,29.561,29.631\n'
 HFS_test2 = b'$FC0FE7FFFE153BDC,HFS,00182635.0000,45659,2.152100,29.609,29.560,29.631\n'
-HFS_split = b'\$(?P<MAC>.+),HFS,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<HF_Wm2>[-,\+]*[0-9.]+),(?P<T_degC>.*)\n'
-HFS_str_format = {'MAC':'str','counter':'float','np':'int','HF_Wm2':'float','T_degC':'array'}
-HFS_datakey_metadata = {'MAC':{'unit':'MAC64','description':'MAC of the sensor'},'np':{'unit':'counter'},'HF_Wm2':{'unit':'W m-2'},'T_degC':{'unit':'degC'}}
-HFS_packetid_format = 'HFS_{MAC}'
+HFS_split = b'\$(?P<mac>.+),HFS,(?P<counter>[0-9.]+),(?P<np>[0-9]+),(?P<HF_Wm2>[-,\+]*[0-9.]+),(?P<T_degC>.*)\n'
+HFS_str_format = {'mac':'str','counter':'float','np':'int','HF_Wm2':'float','T_degC':'array'}
+HFS_datakey_metadata = {'mac':{'unit':'mac64','description':'mac of the sensor'},'np':{'unit':'counter'},'HF_Wm2':{'unit':'W m-2'},'T_degC':{'unit':'degC'}}
+HFS_packetid_format = 'HFS_{mac}'
 HFS_description = 'Heatflow sensor data in SI units'
 HFS = BinarySensor(name='HFS', regex_split=HFS_split,
                        str_format=HFS_str_format,
