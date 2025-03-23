@@ -258,10 +258,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                         macdown = mac
                         # Add the data to the buffer
                         try:
-                            packetbuffer[macdown]
                             npmax = max(packetbuffer[macdown].keys())
                         except:
-                            packetbuffer[macdown] = {}
                             npmax = -1000
 
 
@@ -309,7 +307,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 print('publish merged data, merged merged')
                                 logger.info('Publishing merged data {} {} {}'.format(mac_final, np,datatype))
                                 dataqueue.put(datapacket_merged)
-                                if False:
+                                if True:
                                     # Averaging the data
                                     try:
                                         packetbuffer_merged_avg[macdown]
@@ -344,6 +342,12 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
                             # Remove from buffer
                             packetbuffer[macdown].pop(npmax)
+
+                    # Add the data to the buffer
+                    try:
+                        packetbuffer[macdown]
+                    except:
+                        packetbuffer[macdown] = {}
 
                     try:
                         packetbuffer[macdown][np]

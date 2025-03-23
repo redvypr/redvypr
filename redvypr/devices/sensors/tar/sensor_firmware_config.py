@@ -12,6 +12,7 @@ import time
 import datetime
 import numpy
 import re
+from . import nmea_mac64_utils
 from redvypr.devices.sensors.calibration import calibration_models
 
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
@@ -372,13 +373,24 @@ class dhf_sensor():
 
         return command
 
-    def create_printcalib_command(self):
-        self.logger.debug('create_printcalib_command()')
+    def create_printcalib_command_all(self):
+        self.logger.debug('create_printcalib_command_all()')
         if self.status_firmware == 'bootmonitor':
             return None
             self.logger.debug('Device is in bootmonitor, calibration config is not supported')
         else:
             command = "${:s}!,printcalib\n".format(self.macstr)
+            self.logger.debug('Device calibration command:{}'.format(command))
+            return command
+
+    def create_printcalib_command(self, print_meta=True, index_ntc0 = 0, index_ntc1 = 63):
+        self.logger.debug('create_printcalib_command()')
+        if self.status_firmware == 'bootmonitor':
+            return None
+            self.logger.debug('Device is in bootmonitor, calibration config is not supported')
+        else:
+            imeta = print_meta * 1
+            command = "${:s}!,printcal ntc {} {} {}\n".format(self.macstr,imeta,index_ntc0,index_ntc1)
             self.logger.debug('Device calibration command:{}'.format(command))
             return command
 
@@ -404,6 +416,39 @@ def queue_decorator_read_with_param(data_queue):
             return data
         return wrapper
     return decorator_readline
+
+def readwrite(serial_device, inqueue, outqs):
+    """
+
+    :return:
+    """
+    funcname = '.readwrite():'
+    logger_thread = logging.getLogger('redvypr.device.sensors.tar.readwrite')
+    logger_thread.setLevel(logging.DEBUG)
+    logger_thread.debug(funcname)
+    while True:
+        # print('Hallo ...')
+        try:
+            indata = inqueue.get_nowait()
+            if type(indata) == dict:
+                logger_thread.info('Closing')
+                break
+            logger_thread.debug('Sending data {:}'.format(indata))
+            serial_device.write(indata)
+        except:
+            pass
+
+        # And now check if there is something to receive from the device
+        try:
+            data = serial_device.readline()
+            if len(data) > 0:
+                t = time.time()
+                for out in outqs:
+                    #print(len(outqs), out)
+                    out.put([t, 'r', data])
+        except Exception as e:
+            continue
+
 
 class dhf_flasher():
     """
@@ -481,13 +526,22 @@ class dhf_flasher():
         self.logger.debug(funcname)
         self.devices = {}
         self.devices_mac = {}
-        self.serial = serial.Serial(comport,baudrate=baud)
-        self.serial.timeout = 0.06
+        self.comport = comport
+        self.baud = baud
+
         # self.serial.timeout = 0.02
         # Decorate the serial function, to get the data for logging
         self.serial_queue_write = queue.Queue(maxsize=100000)
-        self.serial.write = queue_decorator_write_with_param(self.serial_queue_write)(self.serial.write)
-        self.serial.readline = queue_decorator_read_with_param(self.serial_queue_write)(self.serial.readline)
+        self.serial_queue_status = queue.Queue(maxsize=100000)
+        self.serial_queue_received = queue.Queue(maxsize=100000)
+        self.serial_queue_received2 = queue.Queue(maxsize=100000)
+        self.outqs = [self.serial_queue_status, self.serial_queue_received, self.serial_queue_received2]
+
+
+
+        #self.serial_queue_status = queue.Queue(maxsize=100000)
+        #self.serial.write = queue_decorator_write_with_param(self.serial_queue_status)(self.serial.write)
+        #self.serial.readline = queue_decorator_read_with_param(self.serial_queue_status)(self.serial.readline)
 
         self.logcom = logcom
         self.FLAG_READY = True
@@ -499,6 +553,97 @@ class dhf_flasher():
             self.logfile = open(self.filename_log,'wb')
         # res = s.read()
         # print(res)
+
+    def start(self):
+        self.serial_device = serial.Serial(self.comport, baudrate=self.baud)
+        self.serial_device.timeout = 0.06
+
+        readwritethread = threading.Thread(target=readwrite,
+                                           args=(self.serial_device, self.serial_queue_write, self.outqs))
+        logger.info('Starting readwrite thread')
+        readwritethread.start()
+
+    def add_serial_read_queue_legacy(self):  # Not working at the moment, plan to re-alive and get read of readline2()
+        queue_received = queue.Queue(maxsize=100000)
+        self.outqs.append(queue_received)
+        return queue_received
+
+    def stop(self):
+        self.serial_queue_write.put({'STOP':True})
+        self.serial_device.close()
+
+    def readwrite(self, inqueue, outqs):
+        """
+
+        :return:
+        """
+        funcname = '.readwrite():'
+        logger_thread = logging.getLogger('redvypr.device.sensors.tar.readwrite')
+        logger_thread.setLevel(logging.DEBUG)
+        logger_thread.debug(funcname)
+        while True:
+            # print('Hallo ...')
+            try:
+                indata = inqueue.get_nowait()
+                if type(indata) == dict:
+                    logger_thread.info('Closing')
+                    break
+                logger_thread.debug('Sending data {:}'.format(indata))
+                self.serial_device.write(indata)
+            except:
+                pass
+
+            # And now check if there is something to receive from the device
+            try:
+                data = self.serial_device.readline()
+                if len(data)>0:
+                    t = time.time()
+                    print(len(self.outqs))
+                    for out in self.outqs:
+                        out.put([t, 'r', data])
+            except Exception as e:
+                continue
+
+    def serial_write(self,data):
+        self.serial_queue_write.put(data)
+
+    def serial_readline(self):
+        read_queue = self.serial_queue_received
+
+        #print('Queue', read_queue,self.serial_queue_received)
+        try:
+            data = read_queue.get_nowait()
+        except:
+            raise ValueError('serial_readline(): Nothing to read')
+
+        return data[2]
+
+    def serial_readline2(self):
+        read_queue = self.serial_queue_received2
+
+        # print('Queue', read_queue,self.serial_queue_received)
+        try:
+            data = read_queue.get_nowait()
+        except:
+            raise ValueError('serial_readline2(): Nothing to read')
+
+        return data[2]
+
+    def serial_readline_timout(self,twait=0.2):
+        t1 = time.time()
+        while True:
+            t2 = time.time()
+            dt = t2 - t1
+            if dt > twait:
+                raise ValueError('serial_readline_timout(): timeout')
+
+            try:
+                data = self.serial_queue_received.get_nowait()
+                print('Got data from queue',data)
+                return data[2]
+            except:
+                pass
+
 
     def get_sampling_period_of_device(self, macstr):
         """
@@ -520,7 +665,7 @@ class dhf_flasher():
         command = macobject.create_getts_command()
         try:
             self.logger.debug('Sending {}'.format(command))
-            self.serial.write(command.encode('utf-8'))
+            self.serial_write(command.encode('utf-8'))
         except:
             self.logger.info('Exception', exc_info=True)
 
@@ -533,7 +678,7 @@ class dhf_flasher():
                 if dt > twait:
                     break
                 try:
-                    data = self.serial.readline()
+                    data = self.serial_readline()
                 except Exception as e:
                     continue
 
@@ -577,7 +722,7 @@ class dhf_flasher():
         command = macobject.create_setts_command(ts)
         try:
             self.logger.debug('Sending {}'.format(command))
-            self.serial.write(command.encode('utf-8'))
+            self.serial_write(command.encode('utf-8'))
         except:
             self.logger.info('Exception', exc_info=True)
 
@@ -590,7 +735,7 @@ class dhf_flasher():
                 if dt > twait:
                     break
                 try:
-                    data = self.serial.readline()
+                    data = self.serial_readline()
                 except Exception as e:
                     continue
 
@@ -603,7 +748,125 @@ class dhf_flasher():
                     print('mactmp', mactmp)
 
 
+
     def get_calibration_of_device(self, macstr):
+        funcname = '.get_calibration_of_devices():'
+        self.logger.debug(funcname + '{}'.format(macstr))
+        macobject = self.devices_mac[macstr]
+        # Start a ping first and wait for response to get the MAC
+        commands = []
+        commands.append(macobject.create_printcalib_command(print_meta=True, index_ntc0=0, index_ntc1=16))
+        commands.append(macobject.create_printcalib_command(print_meta=True, index_ntc0=16, index_ntc1=32))
+        commands.append(macobject.create_printcalib_command(print_meta=True, index_ntc0=32, index_ntc1=42))
+        commands.append(macobject.create_printcalib_command(print_meta=True, index_ntc0=42, index_ntc1=64))
+        #commands.append(macobject.create_printcalib_command(print_meta=True, index_ntc0=61, index_ntc1=64))
+        data_recv = []
+        for command in commands:
+            try:
+                self.logger.debug('Sending {}'.format(command))
+                self.serial_write(command.encode('utf-8'))
+            except:
+                self.logger.info('Exception', exc_info=True)
+
+            t1 = time.time()
+            twait = 1.0
+            if True:
+                # And now check if there is something to receive from the device
+                while True:
+                    dt = time.time() - t1
+                    if dt > twait:
+                        break
+                    try:
+                        data_tmp = self.serial_readline()
+                        print('Got data for calibration',data_tmp)
+                        data_recv.append(data_tmp)
+                    except Exception as e:
+                        time.sleep(0.1)
+                        continue
+        if True:
+            flag_cal_found = False
+            calid = ''
+            caluuid = ''
+            calcomment = ''
+            caldate = datetime.datetime(1970, 1, 1, 0, 0, 0)
+            for data in data_recv:
+                if len(data) > 0:
+                    self.logger.debug(funcname + 'Data:{}'.format(data))
+                    datad = data.decode('utf-8')
+                    #datads = strip_first_macs(datad)  # Strip the string such that only the last mac is there
+                    datad_parsed = nmea_mac64_utils.parse_nmea_mac64_string(datad)
+                    if datad_parsed is None:
+                        self.logger.debug('Could not find valid mac for str:{}'.format(data))
+                    else:
+                        datads = datad_parsed['stripped_string']
+                        mactmp = datad_parsed['mac']
+                        self.logger.debug(funcname + 'mactmp:{} datads:{}'.format(mactmp,datads))
+                        if ('set calid' in datads) and (mactmp is not None):
+                            calid = datads.split('set calid ')[1][:-1]
+                            self.logger.debug('{}:Calid:{}'.format(mactmp, calid))
+                        if ('set caluuid' in datads) and (mactmp is not None):
+                            caluuid = datads.split('set caluuid ')[1][:-1]
+                            self.logger.debug('{}:Caluuid:{}'.format(mactmp, caluuid))
+                        if ('set caldate' in datads) and (mactmp is not None):
+                            print('Set caldata', datads)
+                            caldatestr = datads.split('set caldate ')[1][:-1]
+                            print('Set caldata', caldatestr)
+                            self.logger.debug('{}:Caldatestr:{}'.format(mactmp, caldatestr))
+                            try:
+                                caldate = datetime.datetime.fromisoformat(caldatestr)
+                            except:
+                                self.logger.info('Could not convert date:{} into datetime'.format(caldatestr),exc_info=True)
+                                caldate = datetime.datetime(1, 1, 1, 0, 0, 0)
+
+                            self.logger.debug('{}:Caldate:{}'.format(mactmp,caldate))
+                        if ('set calcomment' in datads) and (mactmp is not None):
+                            calcomment = datads.split('set calcomment ')[1][:-1]
+                            self.logger.debug('{}:Caldcomment:{}'.format(mactmp, calcomment))
+                        if ('set ntc' in datads) and (mactmp is not None):
+                            self.logger.debug('Found calibration entry')
+                            #'$D8478FFFFE95CD4D,set ntc56 4 1.128271e-03 3.289026e-04 -1.530210e-05 1.131836e-06 0.000000e+00\n'
+                            repattern = r"^\$(\w+)!,set (\w+) (\d+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+)"
+                            match = re.match(repattern, datads)
+                            #print('datads (ntc)',datads)
+                            if match:
+                                wholematch = match.group(0)
+                                mac_cal = match.group(1)
+                                parameter = match.group(2)
+                                # Replace 'ntc' with 'R'
+                                if 'ntc' in parameter:
+                                    parameter = parameter.replace('ntc',"['''R'''][")
+                                    parameter += ']'
+                                    parameter_apply = parameter.replace('R','T')
+
+                                caltype = int(match.group(3))
+                                coeffs = [float(match.group(i)) for i in range(4, 9)]
+                                if caltype in calibration_types.keys():
+                                    if caltype == 4: # At the moment only hoge-3 is supported
+                                        parameter = redvypr.RedvyprAddress(parameter)
+                                        print('Sensor model',str(macobject.brdid))
+                                        calmodel = calibration_models.CalibrationNTC(coeff=coeffs,sn=mac_cal,
+                                                                                     comment=calcomment,
+                                                                                     date=caldate,
+                                                                                     calibration_id=calid,
+                                                                                     calibration_uuid=caluuid,
+                                                                                     parameter=parameter,
+                                                                                     parameter_apply=parameter_apply,
+                                                                                     sensor_model=str(macobject.brdid))
+                                        self.logger.debug('Adding {} to calibrations'.format(macobject.macstr))
+                                        macobject.calibrations[parameter] = calmodel
+                                        print('Calmodel',calmodel)
+                                        flag_cal_found=True
+                            else:
+                                print("Could not find calibration")
+
+            if flag_cal_found:
+                return macobject
+            else:
+                return None
+
+
+
+    def get_calibration_of_device_legacy(self, macstr):
         funcname = '.get_calibration_of_devices():'
         self.logger.debug(funcname + '{}'.format(macstr))
         macobject = self.devices_mac[macstr]
@@ -611,7 +874,7 @@ class dhf_flasher():
         command = macobject.create_printcalib_command()
         try:
             self.logger.debug('Sending {}'.format(command))
-            self.serial.write(command.encode('utf-8'))
+            self.serial_write(command.encode('utf-8'))
         except:
             self.logger.info('Exception', exc_info=True)
 
@@ -622,6 +885,7 @@ class dhf_flasher():
         caluuid = ''
         calcomment = ''
         caldate = datetime.datetime(1970,1,1,0,0,0)
+        data_recv = []
         if True:
             # And now check if there is something to receive from the device
             while True:
@@ -629,11 +893,14 @@ class dhf_flasher():
                 if dt > twait:
                     break
                 try:
-                    data = self.serial.readline()
+                    data_tmp = self.serial_readline()
+                    print('Got data for calibration',data_tmp)
+                    data_recv.append(data_tmp)
                 except Exception as e:
+                    time.sleep(0.1)
                     continue
-
-
+        if True:
+            for data in data_recv:
                 if len(data) > 0:
                     self.logger.debug(funcname + 'Data:{}'.format(data))
                     datad = data.decode('utf-8')
@@ -680,6 +947,7 @@ class dhf_flasher():
                                 if caltype in calibration_types.keys():
                                     if caltype == 4: # At the moment only hoge-3 is supported
                                         parameter = redvypr.RedvyprAddress(parameter)
+                                        print('Sensor model',str(macobject.brdid))
                                         calmodel = calibration_models.CalibrationNTC(coeff=coeffs,sn=mac_cal,
                                                                                      comment=calcomment,
                                                                                      date=caldate,
@@ -687,7 +955,7 @@ class dhf_flasher():
                                                                                      calibration_uuid=caluuid,
                                                                                      parameter=parameter,
                                                                                      parameter_apply=parameter_apply,
-                                                                                     sensor_model=macobject.brdid)
+                                                                                     sensor_model=str(macobject.brdid))
                                         self.logger.debug('Adding {} to calibrations'.format(macobject.macstr))
                                         macobject.calibrations[parameter] = calmodel
                                         print('Calmodel',calmodel)
@@ -709,7 +977,7 @@ class dhf_flasher():
         command = macobject.create_bootconfig_command()
         try:
             self.logger.debug('Sending {}'.format(command))
-            self.serial.write(command.encode('utf-8'))
+            self.serial_write(command.encode('utf-8'))
         except:
             self.logger.info('Exception', exc_info=True)
 
@@ -722,7 +990,7 @@ class dhf_flasher():
             # And now check if there is something to receive from the device
             for i in range(10):
                 try:
-                    data = self.serial.readline()
+                    data = self.serial_readline()
                     if len(data) > 0:
                         self.logger.debug(funcname + ' Got data:{}'.format(data))
                         datad = data.decode('utf-8')
@@ -747,33 +1015,53 @@ class dhf_flasher():
         self.devices_mac = {} # Delete the old devices ...
         # Start a ping first and wait for response to get the MAC
         try:
-            self.serial.write(b"$*!,ping\n")
+            self.serial_write(b"$*!,ping\n")
         except:
             self.logger.info('Exception', exc_info=True)
 
+        data_recv = self.read_messages_for_parsing_devicemacs()
+        return self.parse_messages_and_create_devicemacs(data_recv=data_recv)
+
+    def read_messages_for_parsing_devicemacs(self, read_queue=1):
+        """
+        Reads data from dataqueue and returns a list of messages
+        Returns:
+
+        """
+
         ntries = 3
-        num_devices_found = 0
+
+        data_recv = []
         while ntries > 0:
-            print('Ntries', ntries)
+            #print('Ntries', ntries)
             ntries -= 1
             time.sleep(0.1)
             # And now check if there is something to receive from the device
-            data_recv = []
+
             #for i in range(5):
+            # Get all data in queue
             while True:
                 try:
-                    data = self.serial.readline()
+                    # This is clumsy, lets change that later again
+                    if read_queue == 1:
+                        data = self.serial_readline()
+                    else:
+                        data = self.serial_readline2()
+                    #print('Got data from readline',data)
                     if len(data) > 0:
                         data_recv.append(data)
-                    else:
-                        break
                 except Exception as e:
-                    continue
+                    break
 
+        return data_recv
+
+    def parse_messages_and_create_devicemacs(self, data_recv, overwrite=True):
+        if True:
+            num_devices_found = 0
             flag_firmware = False
             flag_bootmonitor = False
             if len(data_recv) > 0:
-                print('Got data', data_recv)
+                #print('Got data for parsing', data_recv)
                 for d in data_recv:
                     macobjects = self.get_macobject_from_string(d)
                     if len(macobjects) > 0:
@@ -782,14 +1070,31 @@ class dhf_flasher():
                             mac.parents = []
                             for m in macobjects:
                                 mac.parents.append(m.macstr)
-                        self.logger.debug('Got data from a valid mac:{}'.format(mac.macstr))
+                                # Update devices_mac
+                                try:
+                                    self.devices_mac[m.macstr]
+                                except:
+                                    self.logger.debug('Updating parent {} from a valid mac:{}'.format(m.macstr, mac.macstr))
+                                    self.devices_mac[m.macstr] = m
+                        #self.logger.debug('Got data from a valid mac:{} from string {}'.format(mac.macstr, data))
                         ret = self.parse_string_from_device(d,mac)
                         if ret is not None:
-                            self.logger.debug('Added device {}'.format(ret.macstr))
-                            self.devices_mac[mac.macstr] = ret
-                            num_devices_found += 1
+                            try:
+                                self.devices_mac[mac.macstr]
+                                if overwrite:
+                                    self.devices_mac[mac.macstr] = ret
+                                    num_devices_found += 1
+                                    self.logger.debug('Added device {}'.format(ret.macstr))
+                            except:
+                                self.devices_mac[mac.macstr] = ret
+                                num_devices_found += 1
+                                self.logger.debug('Added device {}'.format(ret.macstr))
                         else:
-                            self.logger.debug('Could not parse data')
+                            try:
+                                self.devices_mac[mac.macstr]
+                                self.logger.debug('Did not add device {} (data: existing already)'.format(mac.macstr))
+                            except:
+                                self.logger.debug('Did not add device {}'.format(mac.macstr))
 
         if num_devices_found > 0:
             return self.devices_mac
@@ -811,11 +1116,11 @@ class dhf_flasher():
             # Set the bootflag to 0 and reset the device
             command = '${}!,bootflag 0\n'.format(macobject.macstr)
             self.logger.debug("Sending: {}".format(command))
-            self.serial.write(command.encode('utf-8'))
+            self.serial_write(command.encode('utf-8'))
             time.sleep(0.2)
             command = '${}!,resetdevice\n'.format(macobject.macstr)
             self.logger.debug("Sending: {}".format(command))
-            self.serial.write(command.encode('utf-8'))
+            self.serial_write(command.encode('utf-8'))
             time.sleep(0.2)
             ntries = 3
             while ntries > 0:
@@ -826,7 +1131,7 @@ class dhf_flasher():
                 data_recv = []
                 for i in range(5):
                     try:
-                        data = self.serial.readline()
+                        data = self.serial_readline()
                         if len(data) > 0:
                             data_recv.append(data)
                     except Exception as e:
@@ -861,14 +1166,14 @@ class dhf_flasher():
 
         command = mac.create_read_flashsize_command()
         self.logger.debug("Sending: {}".format(command))
-        self.serial.write(command.encode('utf-8'))
+        self.serial_write(command.encode('utf-8'))
         time.sleep(0.1)
 
         data_recv = []
         nlines = 20
         for i in range(nlines):
             if True:
-                data = self.serial.readline()
+                data = self.serial_readline()
                 if len(data) > 0:
                     data_recv.append(data)
                     if b'mems' in data:
@@ -907,7 +1212,7 @@ class dhf_flasher():
             write_command = addrstr + command
             write_command = write_command.replace('\n', '') + '\n'
             self.logger.debug(funcname + ' writing {} of {}:{}'.format(icom, len(commands), write_command))
-            self.serial.write(write_command.encode('utf-8'))
+            self.serial_write(write_command.encode('utf-8'))
             if 'savecal' in command:
                 nwait = 500
             else:
@@ -921,7 +1226,7 @@ class dhf_flasher():
                         return
                     except:
                         pass
-                    data = self.serial.readline()
+                    data = self.serial_readline()
                     if (len(data) > 0):
                         self.logger.debug('Received data:{}'.format(data))
                         data_ret = data.decode('utf-8')
@@ -929,20 +1234,20 @@ class dhf_flasher():
                             message = 'Calibration saved to flash'
                             infodata = {'status': 'write', 'written': len(commands), 'write_total': len(commands),
                                         'message': message}
-                            self.serial_queue_write.put(infodata)
+                            self.serial_queue_status.put(infodata)
                             time.sleep(0.001)
                             self.logger.debug('Data written to flash')
                             break
                 if True:
                     infodata = {'status': 'write', 'written': icom, 'write_total': len(commands)}
-                    self.serial_queue_write.put(infodata)
+                    self.serial_queue_status.put(infodata)
                     time.sleep(0.001)
 
         tend = time.time()
         dt = tend - tstart
         message = 'Sent {} commands in {}'.format(len(commands), dt)
         infodata = {'status': 'write', 'written': len(commands), 'write_total': len(commands), 'message': message}
-        self.serial_queue_write.put(infodata)
+        self.serial_queue_status.put(infodata)
         return None
 
     def writeFlash(self, macstr, hexdata, addr_check=True, comqueue=None, callback=None):
@@ -969,7 +1274,7 @@ class dhf_flasher():
                 write_command = write_command.replace(':','.').replace(';',',')
             print('Write command',ihexd,len(hexdata),write_command)
             if True:
-                self.serial.write(write_command.encode('utf-8'))
+                self.serial_write(write_command.encode('utf-8'))
                 flag_ok = False
                 flag_newcommand = False
                 nwait = 500
@@ -980,9 +1285,17 @@ class dhf_flasher():
                         return
                     except:
                         pass
-                    data = self.serial.readline()
+
+                    print('reading data')
+                    try:
+                        #data = self.serial_readline_timout(twait=1.0)
+                        data = self.serial_readline()
+                    except:
+                        time.sleep(0.02)
+                        continue
+
                     if (len(data) > 0):
-                        print('data',data)
+                        print('Got response',data)
                     if (len(data) > 0) and (b'w&' in data):  # if there is a proper response
                         flag_ok = True
                     if (len(data) > 0) and (b'?' in data):  # if there is a proper response
@@ -992,32 +1305,32 @@ class dhf_flasher():
                         break
                     elif flag_ok and (flag_newcommand is False):
                         write_command = mac.create_write_command('')
-                        self.serial.write(write_command.encode('utf-8'))
+                        self.serial_write(write_command.encode('utf-8'))
                         infodata = {'status': 'write', 'written': ihexd, 'write_total': len(hexdata),
                                     'message': 'Waiting for confirmation of new command {}/{}'.format(i,nwait)}
-                        self.serial_queue_write.put(infodata)
+                        self.serial_queue_status.put(infodata)
                         time.sleep(0.05)
                     elif i > 1:
                         infodata = {'status': 'write','message': 'Waiting for response ({},{}) {}/{}'.format(flag_newcommand, flag_ok, i,nwait)}
-                        self.serial_queue_write.put(infodata)
+                        self.serial_queue_status.put(infodata)
 
                 if (flag_ok is False) and (flag_newcommand is False):
                     message = 'Error, could not flash memory content'
                     self.logger.warning(message)
                     infodata = {'status': 'write', 'written': len(hexdata), 'write_total': len(hexdata),'message':message}
-                    self.serial_queue_write.put(infodata)
+                    self.serial_queue_status.put(infodata)
                     return None
                 else:
                     print('ok data', data)
                     infodata = {'status': 'write', 'written': ihexd, 'write_total': len(hexdata)}
-                    self.serial_queue_write.put(infodata)
+                    self.serial_queue_status.put(infodata)
                     time.sleep(0.001)
 
         tend = time.time()
         dt = tend - tstart
         message = 'Flashed {} rows in {}'.format(len(hexdata),dt)
         infodata = {'status': 'write', 'written': len(hexdata), 'write_total': len(hexdata),'message':message}
-        self.serial_queue_write.put(infodata)
+        self.serial_queue_status.put(infodata)
         if callback is not None:
             callback()
         return mac
@@ -1056,9 +1369,9 @@ class dhf_flasher():
                 except:
                     pass
                 print('Reading', ind_com, len(read_commands))
-                self.serial.write(command.encode('utf-8'))
+                self.serial_write(command.encode('utf-8'))
                 for i in range(5):
-                    data = self.serial.readline()
+                    data = self.serial_readline()
                     if (len(data) > 0) and (b'r:' in data):  # if there is a proper response
                         break
 
@@ -1073,7 +1386,7 @@ class dhf_flasher():
                         mac.lhexdata += lhexstr + '\n'
                         #print('Hallo', lhexstr)
                         infodata = {'status': 'read','read': ind_com,'read_total': len(read_commands)}
-                        self.serial_queue_write.put(infodata)
+                        self.serial_queue_status.put(infodata)
                 else:
                     self.logger.warning('Error, did not receive memory content')
                     break
@@ -1083,12 +1396,12 @@ class dhf_flasher():
         dt = tend - tstart
         self.logger.debug('Took {}s for reading'.format(dt))
         infodata = {'status': 'read', 'read': len(read_commands), 'read_total': len(read_commands)}
-        self.serial_queue_write.put(infodata)
+        self.serial_queue_status.put(infodata)
         if filename is not None:
             self.logger.debug('Writing to file {}'.format(filename))
             mac.writelhex(filename)
             infodata['message'] = filename
-            self.serial_queue_write.put(infodata)
+            self.serial_queue_status.put(infodata)
 
         return mac
 
@@ -1102,11 +1415,11 @@ class dhf_flasher():
         if bootflag is not None:
             self.logger.debug(funcname + ' bootflag {}'.format(bootflag))
             command = mac.create_bootflag_command(bootflag)
-            self.serial.write(command.encode('utf-8'))
+            self.serial_write(command.encode('utf-8'))
             # And now check if there is something to receive from the device
             for i in range(10):
                 try:
-                    data = self.serial.readline()
+                    data = self.serial_readline()
                 except:
                     continue
         if countdown is not None:
@@ -1116,11 +1429,11 @@ class dhf_flasher():
                 DEVICECOMMAND = '${}{}countdown {}\n'.format(mac.macstr, mac.macsum_str, str(countdown))
             else:
                 DEVICECOMMAND = "${:s}!,countdown {}\n".format(macstr, str(countdown))
-            self.serial.write(DEVICECOMMAND.encode('utf-8'))
+            self.serial_write(DEVICECOMMAND.encode('utf-8'))
             # And now check if there is something to receive from the device
             for i in range(10):
                 try:
-                    data = self.serial.readline()
+                    data = self.serial_readline()
                 except:
                     continue
 
@@ -1138,7 +1451,7 @@ class dhf_flasher():
         if mac is None:
             self.logger.debug(funcname + 'Sending generic reset')
             try:
-                self.serial.write(b"$ReSeTtEsEr\n")
+                self.serial_write(b"$ReSeTtEsEr\n")
             except Exception as e:
                 print('Exception', e)
         else:
@@ -1149,21 +1462,21 @@ class dhf_flasher():
                 DEVICECOMMAND = "${:s}!,resetdevice\n".format(macstr)
 
             self.logger.debug('Sending command:{}'.format(DEVICECOMMAND))
-            self.serial.write(DEVICECOMMAND.encode('utf-8'))
+            self.serial_write(DEVICECOMMAND.encode('utf-8'))
 
         time.sleep(0.1)
         # And now check if there is something to receive from the device
         for i in range(5):
             try:
-                data = self.serial.readline()
+                data = self.serial_readline()
             except:
                 continue
 
         return None
 
-    def write_data(self, data):
+    def write_data_legacy(self, data):
         self.logger.debug('Writing data:"{}"'.format(data))
-        self.serial.write(data.encode('utf-8'))
+        self.serial_write(data.encode('utf-8'))
         # And now check if there is something to receive from the device
         for i in range(10):
             try:
@@ -1173,7 +1486,9 @@ class dhf_flasher():
             except:
                 continue
 
-    def readwrite(self, inqueue, outqueue, enter_command_mode=True):
+
+
+    def readwrite_legacy(self, inqueue, outqueue, enter_command_mode=True):
         """
 
         :return:
@@ -1265,7 +1580,10 @@ class dhf_flasher():
         """
         d = datastr
         mac = macobject
-        if b'pong' in d:  # Firmware, thats a good start
+        if (b'TAR_S' in d) or (b'TAR,' in d):  # Firmware, sampling
+            mac.status_firmware = 'firmware, sampling'
+            return mac
+        elif b'pong' in d:  # Firmware, thats a good start
             # b'$D8478FFFFE95CD4D,!pong FIRMWARE VER 0.6.0 BRDID TARV2.1\n'
             # d.replace('\n','').split('pong ')[1].split(' ')
             # ['FIRMWARE', 'VER', '0.6.0', 'BRDID', 'TARV2.1']

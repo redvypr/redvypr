@@ -42,9 +42,9 @@ def parse_nmea_mac64_string(macstr):
     """
     result = {}
     macs = []
-
+    stripped_string = ''
     splits = macstr.split(':')
-    for s in splits:
+    for i,s in enumerate(splits):
         if len(s) >= 16:  # Add a dollar, if not present
             if s[0] != '$':
                 s = '$' + s
@@ -53,10 +53,13 @@ def parse_nmea_mac64_string(macstr):
             if (calc_macsum(s[1:17]) is not None) and (s[0] == '$'):
                 #print('Found mac',s)
                 macs.append(s[1:17])
+                # Add the subsequent string as extra data, this will be done to get the last valid string
+                stripped_string = ':'.join(splits[i:])
 
     if len(macs)==0:
         result = None
     else:
+        result['stripped_string'] = stripped_string
         result['mac'] = macs[-1]
         result['parents'] = []
         if len(macs) > 1:
