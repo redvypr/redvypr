@@ -511,7 +511,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.tabwidget = QtWidgets.QTabWidget()
         self.datadisplaywidget_layout.addWidget(self.tabwidget)
         self.layout.addWidget(self.splitter)
-
         self.devicetree.currentItemChanged.connect(self.devicetree_item_changed)
 
     def devicetree_item_changed(self, itemnew, itemold):
@@ -555,6 +554,25 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 for (guiqueue, widget) in plotdevice.guiqueues:
                     widget.update_data(p)
 
+    def parameter_plot_button_clicked(self, row):
+        funcname = __name__ + 'parameter_plot_button_clicked():'
+        print(funcname)
+        print('Row',row)
+        button = self.sender()
+        print('Button',button.__address__)
+        address = button.__address__
+        if True:
+            mac = 'Test'
+            devicemodulename = 'redvypr.devices.plot.XYPlotDevice'
+            plotname = 'XYPlot({})'.format(mac)
+            device_parameter = RedvyprDeviceParameter(name=plotname)
+            custom_config = redvypr.devices.plot.XYPlotDevice.DeviceCustomConfig()
+            custom_config.lines[0].y_addr = redvypr.RedvyprAddress(address)
+            plotdevice = self.device.redvypr.add_device(devicemodulename=devicemodulename,
+                                                        base_config=device_parameter,
+                                                        custom_config=custom_config)
+
+
     def update_data(self, data):
         """
         """
@@ -568,7 +586,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             colheaders = []
             headerlabels = {}
             packetid = data['_redvypr']['packetid']
-
             print('Got packet',packetid)
             # Check if datakeys has 'R' or 'T'
             if 'R' in data.keys():
@@ -586,122 +603,154 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 datatars.append(datatar)
                 colheaders.append(datatype)
 
+            if True:
+                icols.append(1)
+                datatars.append(None)
+                colheaders.append('Plot')
 
+            # If nothing to display
             if len(icols) == 0:
                 return
 
+            # Get data from packet
+            try:
+                np = data['np']
+                mac = data['mac']
+                counter = data['counter']
+            except:
+                logger.info('Could not get data', exc_info=True)
+                return
+
+            try:
+                parents = data['parents']
+            except:
+                parents = []
+
+            macs_tarchain = parents + [mac]
+            if "raw" in packetid:
+                parentitm = self.root_raw
+            elif "TARM" in packetid:
+                parentitm = self.root_tar
+            else:
+                parentitm = self.root_single
+            print('mac', mac, 'Macs', macs_tarchain)
+            tmpdict = self.qtreebuffer
+            flag_tree_update = False
+            for mac_qtree in macs_tarchain:
+                try:
+                    itm = tmpdict[mac_qtree]['item']
+                    tmpdict_new = tmpdict[mac_qtree]
+                except:
+                    logger.info('did not work', exc_info=True)
+                    itm = QtWidgets.QTreeWidgetItem([mac_qtree, ''])
+                    tmpdict_new = {'item': itm}
+                    tmpdict[mac_qtree] = tmpdict_new
+                    parentitm.addChild(itm)
+                    flag_tree_update = True
+
+                try:
+                    itm_datatype = tmpdict_new['item_' + datatype]
+                except:
+                    itm_datatype = QtWidgets.QTreeWidgetItem([packetid, datatype])
+                    tmpdict_new['item_' + datatype] = itm_datatype
+                    itm_datatype.__mac__ = mac
+                    itm_datatype.__datatype__ = datatype
+                    itm_datatype.__packetid__ = packetid
+                    itm.addChild(itm_datatype)
+                    flag_tree_update = True
+                    # Button erstellen und zur Zelle hinzufügen
+                    button = QtWidgets.QPushButton("Plot")
+                    button.clicked.connect(lambda _, item=itm_datatype: self.devicetree_plot_button_clicked(item))
+                    # Button in die dritte Spalte des TreeWidgetItems einfügen
+                    self.devicetree.setItemWidget(itm_datatype, 2, button)
+                parentitm = itm
+                tmpdict = tmpdict_new
+
+            if flag_tree_update:
+                self.devicetree.expandAll()
+                #self.devicetree.resizeColumnToContents(0)
+                #self.devicetree.sortByColumn(0, QtCore.Qt.AscendingOrder)
+
+            # Test if packetbuffer exists
+            try:
+                self.packetbuffer[mac]
+            except:
+                self.packetbuffer[mac] = {}
+
+            # update the table packetbuffer
+            try:
+                self.packetbuffer[mac][datatype]
+            except:
+                self.packetbuffer[mac][datatype] = {'packets': []}
+
+            self.packetbuffer[mac][datatype]['packets'].append(data)
+            # if len(self.packetbuffer[mac][datatype]['packets']) > self.show_numpackets:
+            if len(self.packetbuffer[mac][datatype]['packets']) > self.device.custom_config.size_packetbuffer:
+                self.packetbuffer[mac][datatype]['packets'].pop(0)
+
+            # Update the table
+            irows = ['mac', 'np', 'counter']  # Rows to plot
+            try:
+                table = self.packetbuffer[mac][datatype]['table']
+            except:
+                table = QtWidgets.QTableWidget()
+                self.packetbuffer[mac][datatype]['table'] = table
+                table.setRowCount(len(datatar) + len(irows) - 1)
+                numcols = len(icols)
+                # print('Numcols')
+                table.setColumnCount(numcols)
+                # self.datadisplaywidget_layout.addWidget(table)
+                self.tabwidget.addTab(table, '{} {}'.format(mac, datatype))
+                headerlabels = [datatype]
+                table.setHorizontalHeaderLabels(headerlabels)
+                # Create plot buttons
+                if True:
+
+                    try:
+                        for irow, key in enumerate(irows):
+                            pass
+                            #d = data[key]
+                            #dataitem = QtWidgets.QTableWidgetItem(str(d))
+                            #table.setItem(irow, icol, dataitem)
+
+                        # And now the real data
+                        for i, d in enumerate(datatar):
+                            rdata = redvypr.Datapacket(data)
+                            datakey = "['{}'][{}]".format(datatype,i)
+                            address = redvypr.RedvyprAddress(data, datakey = datakey)
+                            datastr = "{:4f}".format(d)
+                            # Button erstellen und zur Zelle hinzufügen
+                            button = QtWidgets.QPushButton("Plot")
+
+                            #button.clicked.connect(
+                            #    lambda _, item=itm_datatype: self.devicetree_plot_button_clicked(item))
+                            dataitem = QtWidgets.QTableWidgetItem(datastr)
+                            irowtar = i + irow
+                            button.clicked.connect(self.parameter_plot_button_clicked)
+                            button.__address__ = address
+                            icol = 1
+                            table.setCellWidget(irowtar, icol, button)
+                    except:
+                        logger.info('Could not add button', exc_info=True)
+
             for icol,datatar,colheader in zip(icols,datatars,colheaders):
-                irows = ['mac', 'np', 'counter']  # Rows to plot
-                try:
-                    np = data['np']
-                    mac = data['mac']
-                    counter = data['counter']
-                except:
-                    logger.info('Could not get data',exc_info=True)
-                    return
-
-                try:
-                    parents = data['parents']
-                except:
-                    parents = []
-
-                macs_tarchain = parents + [mac]
-                root = self.devicetree.invisibleRootItem()
-                if "raw" in packetid:
-                    parentitm = self.root_raw
-                elif "TARM" in packetid:
-                    parentitm = self.root_tar
-                else:
-                    parentitm = self.root_single
-                print('mac',mac,'Macs',macs_tarchain)
-                tmpdict = self.qtreebuffer
-                flag_tree_update = False
-                for mac_qtree in macs_tarchain:
-                    try:
-                        itm = tmpdict[mac_qtree]['item']
-                        tmpdict_new = tmpdict[mac_qtree]
-                    except:
-                        logger.info('did not work',exc_info=True)
-                        itm = QtWidgets.QTreeWidgetItem([mac_qtree,''])
-                        tmpdict_new = {'item': itm}
-                        tmpdict[mac_qtree] = tmpdict_new
-                        parentitm.addChild(itm)
-                        flag_tree_update = True
-
-                    try:
-                        itm_datatype = tmpdict_new['item_' + datatype]
-                    except:
-                        itm_datatype = QtWidgets.QTreeWidgetItem([packetid, datatype])
-                        tmpdict_new['item_' + datatype] = itm_datatype
-                        itm_datatype.__mac__ = mac
-                        itm_datatype.__datatype__ = datatype
-                        itm_datatype.__packetid__ = packetid
-                        itm.addChild(itm_datatype)
-                        flag_tree_update = True
-                        # Button erstellen und zur Zelle hinzufügen
-                        button = QtWidgets.QPushButton("Plot")
-                        button.clicked.connect(lambda _, item=itm_datatype: self.devicetree_plot_button_clicked(item))
-
-                        # Button in die dritte Spalte des TreeWidgetItems einfügen
-                        self.devicetree.setItemWidget(itm_datatype, 2, button)
-
-                    parentitm = itm
-                    tmpdict = tmpdict_new
-
-                if flag_tree_update:
-                    self.devicetree.expandAll()
-                    self.devicetree.resizeColumnToContents(0)
-                    self.devicetree.sortByColumn(0, QtCore.Qt.AscendingOrder)
-
-
                 # update the table packetbuffer
-                try:
-                    self.packetbuffer[mac]
-                except:
-                    self.packetbuffer[mac] = {}
-
-                try:
-                    self.packetbuffer[mac][datatype]
-                except:
-                    table = QtWidgets.QTableWidget()
-                    self.packetbuffer[mac][datatype] = {'table': table,
-                                                             'packets': []}
-
-                    table.setRowCount(len(datatar) + len(irows) - 1)
-                    numcols = 1
-                    #print('Numcols')
-                    table.setColumnCount(numcols)
-                    #self.datadisplaywidget_layout.addWidget(table)
-                    self.tabwidget.addTab(table,'{} {}'.format(mac,datatype))
-                    headerlabels = []
-                    headerlabels.append(datatype)
-                    table.setHorizontalHeaderLabels(headerlabels)
-
-                # Fill the table
-                #headeritem = QtWidgets.QTableWidgetItem(colheader)
-                #table.setHorizontalHeaderItem(icol, headeritem)
-                try:
-                    self.packetbuffer[mac][datatype]['packets'].append(data)
-                    # Update the table
-                    table = self.packetbuffer[mac][datatype]['table']
-                    #if len(self.packetbuffer[mac][datatype]['packets']) > self.show_numpackets:
-                    if len(self.packetbuffer[mac][datatype]['packets']) > self.device.custom_config.size_packetbuffer:
-                        self.packetbuffer[mac][datatype]['packets'].pop(0)
-                        #table.removeColumn(0)
-                        #table.setColumnCount(self.show_numpackets)
-
-                    #print('Icol',icol)
-                    for irow,key in enumerate(irows):
-                        d = data[key]
-                        dataitem = QtWidgets.QTableWidgetItem(str(d))
-                        table.setItem(irow, icol, dataitem)
-                    for i, d in enumerate(datatar):
-                        datastr = "{:4f}".format(d)
-                        dataitem = QtWidgets.QTableWidgetItem(datastr)
-                        irowtar = i + irow
-                        table.setItem(irowtar, icol, dataitem)
-                except:
-                    logger.info('Does not work',exc_info=True)
+                if datatar is not None:
+                    try:
+                        #print('Icol',icol)
+                        # First the metadata
+                        for irow,key in enumerate(irows):
+                            d = data[key]
+                            dataitem = QtWidgets.QTableWidgetItem(str(d))
+                            table.setItem(irow, icol, dataitem)
+                        # And now the real data
+                        for i, d in enumerate(datatar):
+                            datastr = "{:4f}".format(d)
+                            dataitem = QtWidgets.QTableWidgetItem(datastr)
+                            irowtar = i + irow
+                            table.setItem(irowtar, icol, dataitem)
+                    except:
+                        logger.info('Does not work',exc_info=True)
 
             table.resizeColumnsToContents()
         except:
