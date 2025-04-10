@@ -301,7 +301,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
 class Device(RedvyprDevice):
     """
-    heatflow_serial device
+    serial device
     """
 
     def __init__(self, **kwargs):

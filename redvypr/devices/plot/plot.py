@@ -80,7 +80,7 @@ class PlotDock(pyqtgraph.dockarea.Dock):
         super().mouseDoubleClickEvent(ev)
 
 
-class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.RedvyprDeviceWidget_startonly):
+class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.RedvyprdevicewidgetStartonly):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         layout = QtWidgets.QGridLayout(self)

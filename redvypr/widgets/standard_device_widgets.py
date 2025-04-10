@@ -5,11 +5,11 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 import time
 import logging
 import sys
-import yaml
-
 import redvypr.widgets.redvyprSubscribeWidget
 from redvypr.device import RedvyprDevice
 from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
+from redvypr.gui import iconnames
+import qtawesome
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.widgets.standard_device_widgets')
@@ -225,7 +225,7 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
 
 
 
-class RedvyprDeviceWidget_simple(QtWidgets.QWidget):
+class RedvyprdevicewidgetSimple(QtWidgets.QWidget):
     subscribed = QtCore.pyqtSignal(
         RedvyprDevice)  # Signal displaying a subscription
 
@@ -240,6 +240,8 @@ class RedvyprDeviceWidget_simple(QtWidgets.QWidget):
         logger.debug(funcname)
         super().__init__()
         self.layout_base = QtWidgets.QVBoxLayout(self)
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        self.layout_base.addWidget(self.splitter)
         self.widget = QtWidgets.QWidget()
         self.layout = QtWidgets.QVBoxLayout(self.widget)
         self.buttons_widget = QtWidgets.QWidget()
@@ -262,28 +264,34 @@ class RedvyprDeviceWidget_simple(QtWidgets.QWidget):
             #self.killbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
 
         # configure button
+        icon = qtawesome.icon(iconnames['settings'])
         self.configure_button = QtWidgets.QPushButton("Configure")
+        self.configure_button.setIcon(icon)
         self.configure_button.clicked.connect(self.configure_clicked)
         # self.conbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         self.config_widgets.append(self.configure_button)
-
         # subscribe button
         self.subscribe_button = QtWidgets.QPushButton("Subscribe")
         self.subscribe_button.clicked.connect(self.subscribe_clicked)
         #self.conbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         self.config_widgets.append(self.subscribe_button)
-
         #self.layout.addWidget(self.config_widget, 0, 0, 1, 4)
-        self.layout_buttons.addWidget(self.configure_button, 1, 0, 1, 4)
-        self.layout_buttons.addWidget(self.subscribe_button, 2, 0, 1, 4)
+        self.layout_buttons.addWidget(self.subscribe_button, 2, 0, 1, 2)
+        self.layout_buttons.addWidget(self.configure_button, 2, 2, 1, 2)
         if (self.device.mp == 'multiprocess')  or (self.device.mp == 'qthread'):
             self.layout_buttons.addWidget(self.startbutton, 3, 0, 1, 3)
             self.layout_buttons.addWidget(self.killbutton, 3, 3)
         else:
             self.layout_buttons.addWidget(self.startbutton, 4, 0, 1, 4)
 
-        self.layout_base.addWidget(self.widget)
-        self.layout_base.addWidget(self.buttons_widget)
+        # Add both widgets to splitter
+        #self.layout_base.addWidget(self.widget)
+        #self.layout_base.addWidget(self.buttons_widget)
+        self.splitter.addWidget(self.widget)
+        self.splitter.addWidget(self.buttons_widget)
+        self.splitter.setStretchFactor(0, 1)  # Stretch the upper one
+        self.splitter.setStretchFactor(1, 0)  # Make the lower one smaller
+        self.splitter.setHandleWidth(2)
         # If the config is changed, update the device widget
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_buttons)
@@ -292,7 +300,7 @@ class RedvyprDeviceWidget_simple(QtWidgets.QWidget):
     def thread_status_changed(self, status):
         funcname = __name__ + '.thread_status_changed():'
         logger.debug(funcname)
-        print('status',status)
+        #print('status',status)
 
     def config_changed(self):
         """
@@ -365,7 +373,7 @@ class RedvyprDeviceWidget_simple(QtWidgets.QWidget):
         #self.subscribed.emit(self.device)
 
 
-class RedvyprDeviceWidget_startonly(QtWidgets.QWidget):
+class RedvyprdevicewidgetStartonly(QtWidgets.QWidget):
     subscribed = QtCore.pyqtSignal(
         RedvyprDevice)  # Signal displaying a subscription
 

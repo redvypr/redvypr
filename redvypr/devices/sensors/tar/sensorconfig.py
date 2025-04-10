@@ -77,9 +77,11 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         self.dhffl = None
         self.dhffl_show = None
         self.mac_sensor = None
+        self.detectandstayinbootloader = QtWidgets.QCheckBox('Stay in bootloader if starting device detected')
         self.serialwidget = QtWidgets.QWidget()
         self.init_serialwidget()
         self.label = QtWidgets.QLabel("Serial device")
+
 
         # Command and devictreewidget
         self.commandwidget = QtWidgets.QWidget()
@@ -129,6 +131,7 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         self.startsample_button = QtWidgets.QPushButton('Startsample')
         self.stopsample_button = QtWidgets.QPushButton('Stopsample')
 
+
         self.setsampleinterval_button = QtWidgets.QPushButton('Set sampling interval')
         self.setsampleinterval_button.clicked.connect(self.set_sampleinterval)
         self.sampleinterval_spin = QtWidgets.QSpinBox()
@@ -145,6 +148,7 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.stopsample_button, 1, 1)
         layout.addWidget(self.setsampleinterval_button, 2, 0)
         layout.addWidget(self.sampleinterval_spin, 2, 1)
+
 
     def init_serialwidget(self):
         """Fills the serial widget with content
@@ -224,6 +228,8 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel('Stopbits'), 1, 4)
         layout.addWidget(self._combo_stopbits, 2, 4)
         layout.addWidget(self._button_serial_openclose, 2, 5)
+        layout.addWidget(self.detectandstayinbootloader, 3, 0)
+
 
     def qtreewidget_item_changed(self, itemnew, itemold):
         logger.debug('Itemchanged {} {}'.format(itemnew, itemold))

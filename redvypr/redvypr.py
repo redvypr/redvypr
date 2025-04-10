@@ -662,14 +662,12 @@ class Redvypr(QtCore.QObject):
             :param device_parameter:
 
         Returns:
-            devicelist: a list containing all devices of this redvypr instance
+            device: the device added
 
 
         """
         funcname = self.__class__.__name__ + '.add_device():'
         logger.debug(funcname + ':devicemodule: ' + str(devicemodulename) + ':deviceconfig: ' + str(custom_config))
-        #print('add_device custom_config:',custom_config)
-        #print('add_device base_config:', base_config)
         devicelist = []
         device_found = False
         # Loop over all modules and check of we find the name
@@ -928,7 +926,6 @@ class Redvypr(QtCore.QObject):
         if (device_found == False):
             logger.warning(funcname + ': Could not add device (not found): {:s}'.format(str(devicemodulename)))
 
-        #return devicelist
         return device
 
     def start_device_thread(self, device):

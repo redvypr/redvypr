@@ -17,7 +17,7 @@ from pyqtconsole.highlighter import format
 
 import redvypr.widgets.redvyprSubscribeWidget
 # Import redvypr specific stuff
-from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget, RedvyprDeviceWidget_simple, RedvyprDeviceWidget_startonly
+from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget, RedvyprdevicewidgetSimple, RedvyprdevicewidgetStartonly
 #from redvypr.gui import datastreamWidget # Do we need this?
 import redvypr.gui as gui
 from redvypr.version import version
@@ -308,29 +308,6 @@ class redvyprWidget(QtWidgets.QWidget):
                             break
                             # logger.exception(e)
 
-    def readguiqueue_legacy(self):
-        """This periodically called function reads the guiqueue and calls
-        the widgets of the devices update function (if they exist)
-
-        """
-        # Update devices
-        for devicedict in self.redvypr.devices:
-            device = devicedict['device']
-            if True:
-                # Feed the data into the modules/functions/objects and
-                # let them treat the data
-                for i, guiqueue in enumerate(devicedict['guiqueue']):
-                    while True:
-                        try:
-                            data = guiqueue.get(block=False)
-                        except Exception as e:
-                            # print('Exception gui',e)
-                            break
-                        try:
-                            devicedict['gui'][i].update(data)
-                        except Exception as e:
-                            break
-                            # logger.exception(e)
 
     def load_config(self):
         """ Loads a configuration file
@@ -410,9 +387,9 @@ class redvyprWidget(QtWidgets.QWidget):
             initargs = inspect.signature(redvyprdevicewidget.__init__)
             initargs_parameters = dict(initargs.parameters)
             initargs2 = None
-            if (RedvyprDeviceWidget_startonly in redvyprdevicewidget.__mro__):
+            if (RedvyprdevicewidgetStartonly in redvyprdevicewidget.__mro__):
                 initargs2 = inspect.signature(redvypr_deviceInitWidget.__init__)
-            if (RedvyprDeviceWidget_simple in redvyprdevicewidget.__mro__):
+            if (RedvyprdevicewidgetSimple in redvyprdevicewidget.__mro__):
                 initargs2 = inspect.signature(redvypr_deviceInitWidget.__init__)
             if initargs2 is not None:
                 logger.debug(funcname + 'adding arguments {}'.format(dict(initargs2.parameters)))

@@ -311,7 +311,7 @@ class Device(RedvyprDevice):
         #self.logger_autocalibration()
 
 
-class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.RedvyprDeviceWidget_startonly):
+class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.RedvyprdevicewidgetStartonly):
     def __init__(self,*args,**kwargs):
         super().__init__(*args, **kwargs)
         self.devicedisplaywidget = displayDeviceWidget(device=self.device)

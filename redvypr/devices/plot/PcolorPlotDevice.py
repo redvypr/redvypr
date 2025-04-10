@@ -10,7 +10,7 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 import redvypr
 from redvypr.device import RedvyprDevice, device_start_standard
 from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
-from redvypr.widgets.standard_device_widgets import RedvyprDeviceWidget_startonly
+from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetStartonly
 from redvypr.data_packets import check_for_command
 from redvypr.redvypr_address import RedvyprAddress
 import redvypr.files as redvypr_files
@@ -122,7 +122,6 @@ class PcolorPlotWidget(QtWidgets.QWidget):
         self.mesh.setData(z)
 
     def pyqtgraphLevelAction(self):
-        print('Hallo')
         self.config.collevel_auto = self.autolevelcheck.isChecked()
 
     def pyqtgraphConfigAction(self):
@@ -136,7 +135,7 @@ class PcolorPlotWidget(QtWidgets.QWidget):
         pcolor = self.sender()._pcolor
         # print('Line',line,line.y_addr)
         # line.y_addr = address_dict['datastream_str']
-        print('Address dict', address_dict)
+        #print('Address dict', address_dict)
         self.device.custom_config.datastream = redvypr.RedvyprAddress(address_dict['datastream_address'])
         # print('Line config',line.confg)
         self.applyConfig()
@@ -209,12 +208,12 @@ class PcolorPlotWidget(QtWidgets.QWidget):
 
     def update_data(self,rdata):
         funcname = __name__ + '.update_data():'
-        self.logger.debug(funcname + 'Got data to plot {}'.format(rdata))
+        self.logger.debug(funcname + 'Got data to plot {}'.format(rdata.address))
         data_plot = rdata[self.config.datastream]
-        print('Data to plot', data_plot)
+        #print('Data to plot', data_plot)
         try:
             if len(self.data_x) > self.config.buffersize:
-                print('Bufferoverflow')
+                self.logger.debug('Bufferoverflow')
                 self.data_z.pop(0)
                 self.data_all.pop(0)
                 self.data_x.pop(0)
@@ -223,9 +222,12 @@ class PcolorPlotWidget(QtWidgets.QWidget):
             self.data_all.append(rdata)
             self.data_x.append(rdata['t'])
         except:
-            logger.warning('Could append update data', exc_info=True)
+            self.logger.warning('Could append update data', exc_info=True)
+
         if len(self.data_x) > 2:
             try:
+                print('Plotting')
+                #print(self.data_z)
                 z = numpy.asarray(self.data_z)
                 Z = z[:-1, :]
                 ny = numpy.shape(z)[1]
@@ -236,25 +238,27 @@ class PcolorPlotWidget(QtWidgets.QWidget):
                 X = X.T
                 Y = numpy.asarray(numpy.tile(y, (nx, 1)))
                 #Y = Y.T
-                print('x',x)
-                print('X', X)
-                print('y', y)
-                print('Y', Y)
-                print('z', z)
-                print('shapes', numpy.shape(X),numpy.shape(Y),numpy.shape(Z))
+                #print('x',x)
+                #print('X', X)
+                #print('y', y)
+                #print('Y', Y)
+                #print('z', z)
+                #print('shapes', numpy.shape(X),numpy.shape(Y),numpy.shape(Z))
                 #levels_old = self.mesh.getLevels()
-                print('levels', self.levels,self.mesh.getLevels())
+                #print('levels', self.levels,self.mesh.getLevels())
                 self.mesh.setData(X,Y,Z)
                 if self.levels is not None:
                     if self.config.collevel_auto:
                         self.levels = self.mesh.getLevels()
                     else:
                         self.mesh.setLevels(self.levels)
-                    print('Set levels', self.levels)
+                    #print('Set levels', self.levels)
             except:
+                print('Problem')
+                self.logger.info('Could not update data', exc_info=True)
                 logger.warning('Could not update data',exc_info=True)
 
-class RedvyprDeviceWidget(RedvyprDeviceWidget_startonly):
+class RedvyprDeviceWidget(RedvyprdevicewidgetStartonly):
     def __init__(self,*args,**kwargs):
         funcname = __name__ + '__init__():'
         logger.debug(funcname)
@@ -265,8 +269,8 @@ class RedvyprDeviceWidget(RedvyprDeviceWidget_startonly):
         self.device.config_changed_signal.connect(self.config_changed)
 
     def config_changed(self):
-        print('PcolorPlotDevice config changed')
-        print('Config',self.device.custom_config)
+        #print('PcolorPlotDevice config changed')
+        #print('Config',self.device.custom_config)
         # Check if subscriptions need to be changed
         self.pcolorplot.config = self.device.custom_config
         self.pcolorplot.applyConfig()
@@ -274,14 +278,12 @@ class RedvyprDeviceWidget(RedvyprDeviceWidget_startonly):
     def update_data(self, data):
         funcname = __name__ + '.update_data():'
         try:
-            print(funcname)
-            print('Got data', data)
-            print('Datastream', self.device.custom_config.datastream)
-            #self.pcolorplot.update_plot(data)
+            #print(funcname)
+            #print('Got data', data)
+            #print('Datastream', self.device.custom_config.datastream)
             rdata = redvypr.data_packets.Datapacket(data)
             if rdata in self.device.custom_config.datastream:
                 self.pcolorplot.update_data(rdata)
 
         except:
-            pass
-            #logger.warning(funcname + 'Could not process data',exc_info=True)
+            self.logger.warning(funcname + 'Could not process data',exc_info=True)
