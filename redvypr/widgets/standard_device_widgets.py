@@ -297,6 +297,15 @@ class RedvyprdevicewidgetSimple(QtWidgets.QWidget):
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
 
+
+    #def close(self):
+    #    try:
+    #        self.redvypr.rem_device(self.device)
+    #    except:
+    #        logger.warning('Could not remove device from redvypr',exc_info=True)
+    #    # Close the widgets (init/display)
+    #    super().close()
+
     def thread_status_changed(self, status):
         funcname = __name__ + '.thread_status_changed():'
         logger.debug(funcname)

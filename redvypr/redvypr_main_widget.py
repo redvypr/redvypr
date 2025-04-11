@@ -179,6 +179,8 @@ class redvyprWidget(QtWidgets.QWidget):
         # Update hostinformation widgets
         self.__update_hostinfo_widget__()
         self.__populate_devicepathlistWidget()
+        # Cross link myself
+        self.redvypr.redvypr_widget = self
 
     def createHomeWidget(self):
         """
@@ -940,6 +942,17 @@ class redvyprWidget(QtWidgets.QWidget):
         rempath = self.__devicepathlist.item(ind).text()
         # Remove from the main widget and redraw the whole list (is done by the signal emitted by redvypr)
         self.redvypr.remdevicepath(rempath)
+
+    def closeDevice(self, device):
+        for sendict in self.redvypr.devices:
+            if device == sendict['device']:
+                currentWidget = sendict['widget']
+                currentIndex = self.devicetabs.indexOf(currentWidget)
+                self.redvypr.rem_device(device)
+                # Close the widgets (init/display)
+                currentWidget.close()
+                self.devicetabs.removeTab(currentIndex)
+                break
 
     def closeTab(self, currentIndex):
         """ Closing a device tab and removing the device

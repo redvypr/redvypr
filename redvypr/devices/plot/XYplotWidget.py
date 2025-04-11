@@ -1366,7 +1366,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         #print('Close event')
         self.closing.emit()
 
-    def update_plot(self, data):
+    def update_plot(self, data, force_update=False):
         """ Updates the plot based on the given data
         """
         funcname = self.__class__.__name__ + '.update_plot():'
@@ -1414,6 +1414,8 @@ class XYPlotWidget(QtWidgets.QFrame):
                 # Check if an update of the plot shall be done, or if only the buffer is updated
                 dt = tnow - tlastupdate
                 if dt > self.config.dt_update:
+                    update = True
+                elif force_update:
                     update = True
                 else:
                     update = False

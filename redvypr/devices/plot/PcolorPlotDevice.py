@@ -96,11 +96,9 @@ class PcolorPlotWidget(QtWidgets.QWidget):
             return
 
     def device_thread_started(self):
-        print('started')
         self.startAction.setText('Stop')
 
     def device_thread_stopped(self):
-        print('stopped')
         self.startAction.setText('Start')
 
     def pyqtgraphAddressAction(self):

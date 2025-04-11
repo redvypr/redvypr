@@ -497,9 +497,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.root_raw = QtWidgets.QTreeWidgetItem(['raw'])
         self.root_single = QtWidgets.QTreeWidgetItem(['single sensor'])
         self.root_tar = QtWidgets.QTreeWidgetItem(['tar merged'])
-        root.addChild(self.root_raw)
-        root.addChild(self.root_single)
         root.addChild(self.root_tar)
+        root.addChild(self.root_single)
+        root.addChild(self.root_raw)
         self.datadisplaywidget = QtWidgets.QWidget(self)
         self.splitter = QtWidgets.QSplitter()
         self.splitter.addWidget(self.devicetree)
@@ -525,34 +525,48 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.tabwidget.setCurrentWidget(table)
 
     def devicetree_plot_button_clicked(self, itemclicked):
+        button = self.sender()
         #print('Itemclicked',itemclicked)
         #print(self.device.redvypr.redvypr_device_scan.redvypr_devices)
-        try:
-            plotdevice = itemclicked.__plotdevice__
-        except:
-            plotdevice = None
+        if button.isChecked() == False:
+            logger.debug('Closing plot')
+            try:
+                self.device.redvypr.redvypr_widget.closeDevice(button.__plotdevice__)
+                delattr(button, '__plotdevice__')
+                delattr(itemclicked,'__plotdevice__')
+            except:
+                logger.debug('Could not close device',exc_info=True)
+                button.setChecked(True)
+        else:
+            try:
+                plotdevice = itemclicked.__plotdevice__
+            except:
+                plotdevice = None
 
-        if plotdevice is None:
-            logger.debug('Creating PcolorPlotDevice')
-            mac = itemclicked.__mac__
-            datatype = itemclicked.__datatype__
-            packetid = itemclicked.__packetid__
-            datastream = redvypr.RedvyprAddress(packetid=packetid,datakey=datatype)
-            custom_config = redvypr.devices.plot.PcolorPlotDevice.DeviceCustomConfig(datastream=datastream)
-            devicemodulename = 'redvypr.devices.plot.PcolorPlotDevice'
-            plotname = 'Pcolor({})'.format(mac)
-            device_parameter = RedvyprDeviceParameter(name=plotname)
-            plotdevice = self.device.redvypr.add_device(devicemodulename=devicemodulename,
-                                           base_config=device_parameter, custom_config=custom_config)
+            if plotdevice is None:
+                logger.debug('Creating PcolorPlotDevice')
+                mac = itemclicked.__mac__
+                datatype = itemclicked.__datatype__
+                packetid = itemclicked.__packetid__
+                datastream = redvypr.RedvyprAddress(packetid=packetid,datakey=datatype)
+                custom_config = redvypr.devices.plot.PcolorPlotDevice.DeviceCustomConfig(datastream=datastream)
+                devicemodulename = 'redvypr.devices.plot.PcolorPlotDevice'
+                plotname = 'Pcolor({})'.format(mac)
+                device_parameter = RedvyprDeviceParameter(name=plotname)
+                plotdevice = self.device.redvypr.add_device(devicemodulename=devicemodulename,
+                                               base_config=device_parameter, custom_config=custom_config)
 
-            itemclicked.__plotdevice__ = plotdevice
-            logger.debug('Starting plot device')
-            plotdevice.thread_start()
-            packets = self.packetbuffer[mac][datatype]['packets']
-            # Update the plot widget with the data in the buffer
-            for ip,p in enumerate(packets):
-                for (guiqueue, widget) in plotdevice.guiqueues:
-                    widget.update_data(p)
+                itemclicked.__plotdevice__ = plotdevice
+                packets = self.packetbuffer[mac][datatype]['packets']
+                # Update the plot widget with the data in the buffer
+                for ip,p in enumerate(packets):
+
+                    for (guiqueue, widget) in plotdevice.guiqueues:
+                        widget.update_data(p)
+
+                logger.debug('Starting plot device')
+                plotdevice.thread_start()
+                button.__plotdevice__ = plotdevice
 
     def parameter_plot_button_clicked(self, row):
         funcname = __name__ + 'parameter_plot_button_clicked():'
@@ -561,16 +575,40 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         button = self.sender()
         print('Button',button.__address__)
         address = button.__address__
-        if True:
-            mac = 'Test'
-            devicemodulename = 'redvypr.devices.plot.XYPlotDevice'
-            plotname = 'XYPlot({})'.format(mac)
-            device_parameter = RedvyprDeviceParameter(name=plotname)
-            custom_config = redvypr.devices.plot.XYPlotDevice.DeviceCustomConfig()
-            custom_config.lines[0].y_addr = redvypr.RedvyprAddress(address)
-            plotdevice = self.device.redvypr.add_device(devicemodulename=devicemodulename,
-                                                        base_config=device_parameter,
-                                                        custom_config=custom_config)
+        mac = button.__mac__
+        datatype = button.__datatype__
+        packetid = button.__packetid__
+        if button.isChecked():
+            try:
+                button.__plotdevice__
+            except:
+                devicemodulename = 'redvypr.devices.plot.XYPlotDevice'
+                plotname = 'XYPlot({},{})'.format(mac,address.datakey)
+                device_parameter = RedvyprDeviceParameter(name=plotname)
+                custom_config = redvypr.devices.plot.XYPlotDevice.DeviceCustomConfig()
+                custom_config.lines[0].y_addr = redvypr.RedvyprAddress(address)
+                plotdevice = self.device.redvypr.add_device(devicemodulename=devicemodulename,
+                                                            base_config=device_parameter,
+                                                            custom_config=custom_config)
+
+                packets = self.packetbuffer[mac][datatype]['packets']
+                # Update the plot widget with the data in the buffer
+                for ip, p in enumerate(packets):
+                    for (guiqueue, widget) in plotdevice.guiqueues:
+                        widget.update_data(p,force_update=True)
+
+                logger.debug('Starting plot device')
+                plotdevice.thread_start()
+                button.__plotdevice__ = plotdevice
+        else:
+            try:
+                self.device.redvypr.redvypr_widget.closeDevice(button.__plotdevice__)
+                delattr(button,'__plotdevice__')
+            except:
+                logger.info('Could not close device',exc_info=True)
+                button.setChecked(True)
+
+
 
 
     def update_data(self, data):
@@ -660,6 +698,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     flag_tree_update = True
                     # Button erstellen und zur Zelle hinzufügen
                     button = QtWidgets.QPushButton("Plot")
+                    button.setCheckable(True)
                     button.clicked.connect(lambda _, item=itm_datatype: self.devicetree_plot_button_clicked(item))
                     # Button in die dritte Spalte des TreeWidgetItems einfügen
                     self.devicetree.setItemWidget(itm_datatype, 2, button)
@@ -667,8 +706,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 tmpdict = tmpdict_new
 
             if flag_tree_update:
-                self.devicetree.expandAll()
-                #self.devicetree.resizeColumnToContents(0)
+                #self.devicetree.expandAll()
+                self.devicetree.resizeColumnToContents(0)
                 #self.devicetree.sortByColumn(0, QtCore.Qt.AscendingOrder)
 
             # Test if packetbuffer exists
@@ -721,13 +760,16 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                             datastr = "{:4f}".format(d)
                             # Button erstellen und zur Zelle hinzufügen
                             button = QtWidgets.QPushButton("Plot")
-
+                            button.setCheckable(True)
                             #button.clicked.connect(
                             #    lambda _, item=itm_datatype: self.devicetree_plot_button_clicked(item))
                             dataitem = QtWidgets.QTableWidgetItem(datastr)
                             irowtar = i + irow
                             button.clicked.connect(self.parameter_plot_button_clicked)
                             button.__address__ = address
+                            button.__mac__ = mac
+                            button.__datatype__ = datatype
+                            button.__packetid__ = packetid
                             icol = 1
                             table.setCellWidget(irowtar, icol, button)
                     except:
