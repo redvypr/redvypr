@@ -25,7 +25,7 @@ import redvypr.files as redvypr_files
 import redvypr.gui
 import redvypr.data_packets
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
-from redvypr.gui import DatastreamWidget
+from redvypr.gui import RedvyprAddressWidget
 from redvypr.devices.plot import XYplotWidget
 from redvypr.devices.plot import plot_widgets
 from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly
@@ -1462,7 +1462,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.chooseDatastream():'
         logger.debug(funcname)
         button = self.sender()
-        self.dstreamwidget = redvypr.gui.DatastreamWidget(self.device.redvypr)
+        self.dstreamwidget = redvypr.gui.RedvyprAddressWidget(self.device.redvypr)
         self.dstreamwidget.apply.connect(self.datastreamChosen)
         self.dstreamwidget.lineEditDatastream_addr = button.lineEditDatastream_addr
         self.dstreamwidget.listindex = button.listindex
@@ -1506,7 +1506,7 @@ class initDeviceWidget(QtWidgets.QWidget):
     def sensorsAddClicked(self):
         funcname = __name__ + '.sensorsAddClicked():'
         logger.debug(funcname)
-        self.dstreamswidget = redvypr.gui.Datastreamswidget(self.device.redvypr)
+        self.dstreamswidget = redvypr.gui.RedvyprMultipleAddressesWidget(self.device.redvypr)
         self.dstreamswidget.apply.connect(self.sensorsApplyClicked)
         self.dstreamswidget.show()
 

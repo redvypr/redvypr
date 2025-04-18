@@ -390,7 +390,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 packets_publish[npmerge] = {}
                                 for datatype_tmp in packetbuffer[macdown][npmerge].keys():  # Loop over all datatypes
                                     npackets = len(packetbuffer[macdown][npmerge][datatype_tmp].keys())
-                                    print('!npmax', npmerge, datatype_tmp,'packets',npackets)
+                                    #print('!npmax', npmerge, datatype_tmp,'packets',npackets)
                                     datapacket_merged = {}
                                     mac_final = 'TARM_' + macdown
                                     counter_final = npmerge
@@ -435,8 +435,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                         # Add the data to a list, that is hstacked later
                                         dmerge[i] = pmerge2[datatype_tmp]
                                     # Merge the packages into one large one
-                                    print('dmerge', dmerge)
-                                    print('len dmerge', len(dmerge))
+                                    #print('dmerge', dmerge)
+                                    #print('len dmerge', len(dmerge))
                                     if mac_final is not None:
                                         tar_merge = numpy.hstack(dmerge).tolist()
                                         #print('Tar merge',len(tar_merge))
@@ -444,7 +444,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                         datapacket_merged['np'] = npmerge
                                         datapacket_merged['datatype'] = datatype_tmp
                                         datapacket_merged['t'] = p['t']  # Add time
-                                        print('publish merged data, merged merged')
+                                        #print('publish merged data, merged merged')
                                         logger.info('Publishing merged data {} {} {}'.format(mac_final, nump,datatype))
                                         # Adding the merged data to the publish dictionary
                                         packets_publish[npmerge][datatype_tmp] = datapacket_merged
@@ -534,6 +534,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 self.device.redvypr.redvypr_widget.closeDevice(button.__plotdevice__)
                 delattr(button, '__plotdevice__')
                 delattr(itemclicked,'__plotdevice__')
+                button.setText('Plot')
             except:
                 logger.debug('Could not close device',exc_info=True)
                 button.setChecked(True)
@@ -567,6 +568,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 logger.debug('Starting plot device')
                 plotdevice.thread_start()
                 button.__plotdevice__ = plotdevice
+                button.setText('Close')
 
     def parameter_plot_button_clicked(self, row):
         funcname = __name__ + 'parameter_plot_button_clicked():'
@@ -600,10 +602,12 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 logger.debug('Starting plot device')
                 plotdevice.thread_start()
                 button.__plotdevice__ = plotdevice
+                button.setText('Close')
         else:
             try:
                 self.device.redvypr.redvypr_widget.closeDevice(button.__plotdevice__)
                 delattr(button,'__plotdevice__')
+                button.setText('Plot')
             except:
                 logger.info('Could not close device',exc_info=True)
                 button.setChecked(True)
@@ -624,7 +628,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             colheaders = []
             headerlabels = {}
             packetid = data['_redvypr']['packetid']
-            print('Got packet',packetid)
+            #print('Got packet',packetid)
             # Check if datakeys has 'R' or 'T'
             if 'R' in data.keys():
                 datatype = 'R'
@@ -671,7 +675,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 parentitm = self.root_tar
             else:
                 parentitm = self.root_single
-            print('mac', mac, 'Macs', macs_tarchain)
+            #print('mac', mac, 'Macs', macs_tarchain)
             tmpdict = self.qtreebuffer
             flag_tree_update = False
             for mac_qtree in macs_tarchain:

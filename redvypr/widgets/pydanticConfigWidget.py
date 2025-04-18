@@ -1,3 +1,7 @@
+"""
+
+"""
+
 import copy
 import time
 import logging
@@ -8,7 +12,7 @@ import pydantic
 from pydantic.color import Color as pydColor
 import typing
 from redvypr.device import RedvyprDevice
-from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidgetSimple, RedvyprAddressWidget, datastreamQTreeWidget
+from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidgetSimple, datastreamQTreeWidget, RedvyprAddressWidget, RedvyprAddressEditWidget
 import redvypr.files as files
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import RedvyprMetadata, RedvyprMetadataGeneral
@@ -359,7 +363,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
 
     def __openConfigGui__(self, item):
         """
-        Function is called when an item is double clicked. It creates the
+        Function is called when an item is double-clicked. It creates the
         config widget.
         :param item:
         :return:
@@ -372,7 +376,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
         editable = item.__editable__
         #print('editable',editable)
         flag_add = False
-        if editable==False:
+        if editable == False:
             #print('Not editable')
             pass
         else:
@@ -389,8 +393,9 @@ class pydanticConfigWidget(QtWidgets.QWidget):
                 type_hints = None
 
             type_dict = self.interprete_type_hints(type_hints)
-            #print(funcname + ' Type hints', type_hints)
-            #print(funcname + ' Type dict', type_dict)
+            print(funcname + ' 1: Type hints', type_hints)
+            print(funcname + ' 1: Type dict', type_dict)
+            print('Check different types')
             if type_dict is not None:
                 index_datatype = None
                 # Create a combo to allow the user to choose between the different
@@ -773,12 +778,16 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             self.__configwidget = QtWidgets.QWidget()
             self.__layoutwidget = QtWidgets.QFormLayout(self.__configwidget)
             if self.redvypr is not None:
-                self.__configwidget_input = RedvyprAddressWidget(data,redvypr=self.redvypr)
+                #self.__configwidget_input = RedvyprAddressWidget(data,redvypr=self.redvypr)
+                self.__configwidget_input = RedvyprAddressWidget(datastreamstring=data, redvypr=self.redvypr)
+                self.__configwidget_input.apply.connect(self.applyGuiInput)
             else:
-                self.__configwidget_input = RedvyprAddressWidgetSimple(data)
+                #self.__configwidget_input = RedvyprAddressWidgetSimple(data)
+                self.__configwidget_input = RedvyprAddressEditWidget(redvypr_address_str=data)
+                self.__configwidget_input.address_finished.connect(self.applyGuiInput)
+
             self.__configwidget_input.__configType = 'configRedvyprAddress'
             self.__configwidget_input.item = item
-            self.__configwidget_input.address_finished.connect(self.applyGuiInput)
             self.__layoutwidget.addWidget(self.__configwidget_input)
         except:
             logger.info('Error in RedvyprAddress',exc_info=True)
@@ -915,7 +924,7 @@ class pydanticConfigWidget(QtWidgets.QWidget):
             user_role_config = 11
             role = QtCore.Qt.UserRole + user_role_config
             dobject = self.__configwidget_combo.itemData(index, role)
-            #print('Dobject', dobject)
+            print('Dobject', dobject,type(dobject))
             dobject_add = dobject()
             data.append(dobject_add)
             # Reload and redraw all data
@@ -1287,7 +1296,7 @@ class pydanticQTreeWidget(QtWidgets.QTreeWidget):
                     parent.child(index_child).setText(1,str(data_value))
 
             else: # Item that is iterable and can be a parent
-                #print('loop')
+                print('loop item item item', type_hints_index)
                 datatmp = data
                 typestr = datatmp.__class__.__name__
                 flag_modifiable = True

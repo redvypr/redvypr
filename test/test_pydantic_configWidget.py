@@ -11,6 +11,18 @@ import numpy as np
 import uuid
 
 
+# This does not work yet
+class AverageFilterConfig(pydantic.BaseModel):
+    datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress('*'), description='The address of the datastream to filter')
+    avg_interval: float = 10
+    avg_dimension: typing.Optional[RedvyprAddress] = pydantic.Field(default=None, editable=True)
+
+# This does not work yet (Optional with pydantic class)
+class DeviceCustomConfig(pydantic.BaseModel):
+    #filters_1: typing.List[typing.Union[AverageFilterConfig,HighpassFilterConfig]] = pydantic.Field(default=[], editable=True)
+    filters_2: typing.Optional[typing.List[typing.Union[AverageFilterConfig]]] = pydantic.Field(default=[],
+                                                                                                editable=True,
+                                                                                                description='This does not work yet')
 class config_test_sub(pydantic.BaseModel):
     a: str = 'Hello'
     b: float = 1.0
