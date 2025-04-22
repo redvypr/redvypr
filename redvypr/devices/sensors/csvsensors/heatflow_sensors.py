@@ -13,7 +13,6 @@ from redvypr.devices.sensors.calibration.calibration_models import CalibrationHe
 import redvypr.gui as gui
 from .sensorWidgets import sensorCoeffWidget, sensorConfigWidget
 
-
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.heatflow_sensors')
 logger.setLevel(logging.DEBUG)
