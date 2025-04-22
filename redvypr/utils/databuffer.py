@@ -113,6 +113,6 @@ class DatapacketAvg:
                 print('Returning data')
                 return data_avg
         else:
-            print('Address',self.address)
-            print('rdata',rdata.get_addressstr())
+            #print('Address',self.address)
+            #print('rdata',rdata.get_addressstr())
             raise ValueError('Address does not fit')

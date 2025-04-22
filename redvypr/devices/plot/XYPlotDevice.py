@@ -10,14 +10,13 @@ import typing
 import pydantic
 from PyQt6 import QtWidgets, QtCore, QtGui
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetStartonly, RedvyprdevicewidgetSimple
-
 import redvypr
 from redvypr.device import RedvyprDevice, device_start_standard
 from redvypr.data_packets import check_for_command
 import redvypr.data_packets as data_packets
 import redvypr.gui as gui
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.devices.plot import XYplotWidget
+from redvypr.devices.plot import XYPlotWidget
 import redvypr.files as redvypr_files
 
 _icon_file = redvypr_files.icon_file
@@ -32,11 +31,11 @@ logger.setLevel(logging.INFO)
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = True
-    description: str = 'Device to plot XY-Data'
+    description: str = 'Device to plot data in a classical XY-Plot'
     gui_icon: str = 'ph.chart-line-fill'
 
 
-class DeviceCustomConfig(XYplotWidget.configXYplot):
+class DeviceCustomConfig(XYPlotWidget.configXYplot):
     pass
 
 

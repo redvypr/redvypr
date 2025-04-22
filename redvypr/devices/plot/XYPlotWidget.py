@@ -24,7 +24,7 @@ pyqtgraph.setConfigOption('background', 'w')
 pyqtgraph.setConfigOption('foreground', 'k')
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.device.XYplotWidget(base)')
+logger = logging.getLogger('redvypr.device.XYPlotWidget(base)')
 #logger.setLevel(logging.DEBUG)
 logger.setLevel(logging.INFO)
 
@@ -183,6 +183,7 @@ class configXYplot(pydantic.BaseModel):
 class XYDataViewer(QtWidgets.QWidget):
     def __init__(self, data, device = None, xyplotwidget=None):
         """
+        Widget is used to select data in plot and display it
 
         """
         funcname = __name__ + '.init():'

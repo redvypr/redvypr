@@ -12,10 +12,12 @@
 #
 import os
 import sys
+import redvypr
 sys.path.insert(0, os.path.abspath('.'))
 #sys.path.insert(0, os.path.abspath(".."))
 sys.path.insert(0, os.path.abspath("../.."))
-sys.path.append(os.path.abspath("../../redvypr/devices"))
+#sys.path.append(os.path.abspath("../../redvypr/devices"))
+sys.path.insert(0,os.path.abspath("../../redvypr"))
 #sys.path.insert(0, os.path.abspath(os.path.join('..', 'redvypr')))
 print('PATH',sys.path)
 

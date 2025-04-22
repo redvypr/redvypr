@@ -7,8 +7,8 @@ import zoneinfo
 from PyQt6 import QtWidgets, QtCore, QtGui
 import pydantic
 import typing
-from redvypr.devices.plot import XYplotWidget
-from redvypr.devices.plot import plot_widgets
+from redvypr.devices.plot import XYPlotWidget
+from redvypr.devices.plot import plot_widgets_legacy
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.devices.sensors.calibration.calibration_models import CalibrationHeatFlow, CalibrationNTC
 import redvypr.gui as gui

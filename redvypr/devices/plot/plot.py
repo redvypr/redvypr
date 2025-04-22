@@ -18,7 +18,7 @@ from redvypr.device import RedvyprDevice
 from redvypr.gui import iconnames
 #from redvypr.gui import configWidget
 #from redvypr.devices.plot.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
-from redvypr.devices.plot.XYplotWidget import XYPlotWidget
+from redvypr.devices.plot.XYPlotWidget import XYPlotWidget
 import redvypr.files as files
 from redvypr.device import device_start_standard
 from redvypr.data_packets import check_for_command

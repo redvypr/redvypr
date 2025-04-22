@@ -9,6 +9,7 @@ import pydantic
 import typing
 import copy
 import redvypr.data_packets
+from redvypr.device import RedvyprDevice
 import redvypr.data_packets as data_packets
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import check_for_command
@@ -35,7 +36,7 @@ class FilterConfig(pydantic.BaseModel):
 class AverageFilterConfig(pydantic.BaseModel):
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress('*'), description='The address of the datastream to filter')
     avg_interval: float = 10
-    avg_dimension: typing.Optional[RedvyprAddress] = pydantic.Field(default=None, editable=True)
+    avg_dimension: typing.Literal['n', 't'] = pydantic.Field(default='n', description='The dimension of average, can be either time in seconds [t] or numpackets [n]')
 
 class DeviceCustomConfig(pydantic.BaseModel):
     filters: typing.List[typing.Union[AverageFilterConfig,FilterConfig]] = pydantic.Field(default=[], editable=True)
@@ -65,7 +66,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
 
     for f in pdconfig.filters:
         if isinstance(f,AverageFilterConfig):
-            print('Average filter')
+            print('Average filter', f.avg_dimension, f.avg_interval, f.datastream)
             avg_databuffer = redvypr.utils.databuffer.DatapacketAvg(avg_dimension=f.avg_dimension, avg_interval=f.avg_interval,
                                                                     address=f.datastream)
             print('databuffer',avg_databuffer)
@@ -81,21 +82,31 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 break
 
         for d in databuffers:
-            packet_avg = d.append(data)
-            print('Packet avg',packet_avg)
+            try:
+                packet_avg = d.append(data)
+                print('Packet avg',packet_avg)
+            except:
+                #logger.info('Cannot append',exc_info=True)
+                packet_avg = None
+
             # print('Packet avg raw',packet_avg)
             if packet_avg is not None:
-                dpublish = redvypr.Datapacket()  # packetid=packetid_final)
-                #packet_avg.update(dpublish)
-                #packet_avg['mac'] = mac
-                #packet_avg['np'] = d.__counter__
-                #packet_avg['counter'] = d.__counter__
-                # print('Publishing average data', d.datakey_save)
-                #dataqueue.put(packet_avg)
+                data_tmp = redvypr.Datapacket(data)  # packetid=packetid_final)
+                dpublish = redvypr.Datapacket(packetid=data_tmp.address.packetid)  # packetid=packetid_final)
+                packet_avg.update(dpublish)
+                print('Packet avg',packet_avg)
+                dataqueue.put(packet_avg)
+                return
 
 
+class Device(RedvyprDevice):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
 
-
+    def thread_start(self, config=None):
+        for f in self.custom_config.filters:
+            self.subscribe_address(f.datastream)
+        super().thread_start(config=config)
 
 
 class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):

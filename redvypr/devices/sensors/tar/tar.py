@@ -175,9 +175,6 @@ class DeviceCustomConfig(pydantic.BaseModel):
     size_packetbuffer: int = 10
 
 
-
-
-
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
     """
 
@@ -611,9 +608,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             except:
                 logger.info('Could not close device',exc_info=True)
                 button.setChecked(True)
-
-
-
 
     def update_data(self, data):
         """

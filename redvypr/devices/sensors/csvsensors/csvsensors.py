@@ -24,8 +24,8 @@ import redvypr.data_packets as data_packets
 import redvypr.gui as gui
 #import redvypr.config as redvypr_config
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.devices.plot import plot_widgets
-from redvypr.devices.plot import XYplotWidget
+from redvypr.devices.plot import plot_widgets_legacy
+from redvypr.devices.plot import XYPlotWidget
 import redvypr.files as redvypr_files
 from redvypr.devices.sensors.calibration.calibration_models import CalibrationHeatFlow, CalibrationNTC, get_date_from_calibration
 from .heatflow_sensors import parse_HFV_raw, process_IMU_packet, process_HFS_data, process_HF_data, DHFSWidget, HFVWidget, HFVWidget_config, sensor_DHFS50, logger_HFV4CH

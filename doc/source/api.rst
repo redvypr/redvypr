@@ -9,7 +9,7 @@ ___________
    :toctree: _autosummary
    :recursive:
 
-   redvypr.redvypr.redvyprdevices
+   redvypr.Datapacket
 
 
    

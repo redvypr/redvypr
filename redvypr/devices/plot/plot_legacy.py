@@ -12,7 +12,7 @@ import pyqtgraph
 import qtawesome as qta
 import redvypr.data_packets
 #from redvypr.gui import configWidget
-from redvypr.devices.plot.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
+from redvypr.devices.plot.plot_widgets_legacy import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
 import redvypr.files as files
 from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command

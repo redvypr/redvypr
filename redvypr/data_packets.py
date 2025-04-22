@@ -37,7 +37,57 @@ class RedvyprMetadataGeneral(pydantic.BaseModel):
     address: typing.Dict[str, typing.Any] = {}
 
 class Datapacket(dict):
+    """
+    The `Datapacket` class extends the built-in `dict` class to include additional functionality for managing
+    data packets, including initialization with specific parameters and automatic generation of metadata that is
+    used by redvypr to identify a datapacket.
+    A main functionality is to retrieve data using redvypr addresses.
+
+    Examples
+    --------
+    >>> from redvypr import Datapacket
+    >>> from redvypr import RedvyprAddress
+    >>> ar = Datapacket({'a': [[2, 3, 4], 2, 3, 4]})
+    >>> addr = RedvyprAddress('/k:["a"][0]')
+    >>> ar[addr]
+    [2, 3, 4]
+
+    Attributes
+    ----------
+    address : redvypr_address.RedvyprAddress
+        An address object associated with the data packet, initialized using the data packet's contents.
+
+    Methods
+    -------
+    __init__(self, *args, device=None, packetid=None, **kwargs):
+        Initializes a new instance of the Datapacket class.
+
+    Notes
+    -----
+    The `Datapacket` class is designed to work with the `redvypr` framework, utilizing helper functions like
+    `create_datadict` to populate initial data and `redvypr_address.RedvyprAddress` to manage addressing.
+    """
     def __init__(self, *args, device=None, packetid=None, **kwargs):
+        """
+        Initializes a new instance of the Datapacket class.
+
+        Parameters
+        ----------
+        *args : tuple
+            Variable length argument list. If the first argument is a dictionary, it is used to initialize
+            the data packet.
+        device : str, optional
+            The device associated with the data packet. Used to populate the '_redvypr' metadata.
+        packetid : str, optional
+            A unique identifier for the data packet. Used to populate the '_redvypr' metadata.
+        **kwargs : dict
+            Additional keyword arguments that can be used to initialize the data packet.
+
+        Notes
+        -----
+        If the data packet does not contain the key '_redvypr', it is automatically populated using the
+        `create_datadict` function. The `address` attribute is also initialized using the data packet's contents.
+        """
         if len(args)>0:
             # Check if the datapacket is created from a dictionary, without kwargs
             if isinstance(args[0],dict):
@@ -146,14 +196,72 @@ class Datapacket(dict):
                 else:
                     key_list.append(k)
 
-    def datakeys(self, expand=False, return_type='dict'):
+    def datakeys(self, datakeys=None, expand=False, return_type='dict'):
         """
-        Returns the datakeys of the redvypr dictionary
-        :param expand: True/False or level [int], if true return expanded datakeys with a level depth of 100
-        :param return_type: 'dict,'list','both'
-        :return:
+        Retrieves the data keys from the data packet, with options to expand and format the output. If expand==True the
+        datakeys are in a format that can be used within an "eval" operator, or as an index to the datapacket. Refer
+        to the last example.
+
+        Examples
+        --------
+        >>> ar = Datapacket({'a': [[2, 3, 4], 2, 3, 4]})
+        >>> ar.datakeys(expand=False)
+        ['a']
+
+        >>> ar.datakeys(datakeys=["['a'][1]"], expand=True, return_type='dict')
+        {"['a'][1]": ("['a'][1]", int)}
+
+        >>> ar.datakeys(datakeys=["['a'][0]"], expand=True)
+        (["['a'][0][0]", "['a'][0][1]", "['a'][0][2]"], {"['a'][0][0]": ("['a'][0][0]", int), "['a'][0][1]": ("['a'][0][1]", int), "['a'][0][2]": ("['a'][0][2]", int)})
+
+        >>> datakeys = ar.datakeys(datakeys=["['a'][1]"], expand=True, return_type='list')
+        >>> print(datakeys)
+        ["['a'][1]"]
+        >>> ar[datakeys[0]]
+        2
+
+        Parameters
+        ----------
+        datakeys : list or str or RedvyprAddress, optional
+            A list of specific data keys to retrieve. If None, all keys in the data packet will be used, if of type str
+            it will be converted to RedvyprAddress(datakeys) and treated as RedvyprAddress. If RedvyprAddress datakeys
+            will be [RedvyprAddress.datakey] or all keys if datakey is "*".
+        expand : bool or int, optional
+            If True, recursively expands the data keys up to a default depth of 100. If an integer is provided,
+            it specifies the maximum depth for expansion. Default is False.
+        return_type : str, optional
+            The format in which to return the data keys. Options are:
+            - 'list': Returns the data keys as a list.
+            - 'dict': Returns the data keys as a dictionary.
+            - Any other value: Returns the data keys as a tuple containing both a list and a dictionary.
+            Default is 'dict'.
+
+        Returns
+        -------
+        list or dict or tuple
+            The data keys in the specified format. If `expand` is False, returns a list of keys. If `expand` is True
+            or an integer, returns the expanded keys in the format specified by `return_type`.
+
+        Notes
+        -----
+        This method uses a helper function `__expand_datakeys_recursive__` to handle the recursive expansion
+        of data keys. It also filters out certain predefined keys (`redvypr_data_keys`) from the result.
+
+
         """
-        keys = list(self.keys())
+        if isinstance(datakeys, str):
+            datakeys = redvypr_address.RedvyprAddress(datakeys)
+
+        if datakeys is None:  # Use all keys
+            keys = list(self.keys())
+        elif isinstance(datakeys, redvypr_address.RedvyprAddress):
+            if datakeys.datakey_expand:
+                keys = list(self.keys())
+            else:
+                keys = [datakeys.datakey]
+        else:
+            keys = datakeys
+
         for key_remove in redvypr_data_keys:
             try:
                 keys.remove(key_remove)
@@ -181,37 +289,47 @@ class Datapacket(dict):
                 return (keys_expand, keys_dict_expand)
 
     def datastreams(self, expand=True):
+        """
+        Retrieves the datastreams from the data packet as a list of RedvyprAddress objects.
+
+        This method uses the `datakeys` method to obtain the data keys and then converts them into `RedvyprAddress` objects,
+        which represent the datastreams within the data packet.
+
+        Parameters
+        ----------
+        expand : bool or int, optional
+            If True, recursively expands the data keys up to a default depth of 100. If an integer is provided,
+            it specifies the maximum depth for expansion. Default is True.
+
+        Returns
+        -------
+        list of RedvyprAddress
+            A list of `RedvyprAddress` objects, each representing a datastream in the data packet.
+
+        Examples
+        --------
+        >>> ar = Datapacket({'a': [[2, 3, 4], 2, 3, 4]})
+        >>> datastreams = ar.datastreams(expand=True)
+        >>> for ds in datastreams:
+        ...     print(ds.get_str())
+
+        Notes
+        -----
+        The `datastreams` method relies on the `datakeys` method to retrieve the data keys and the `RedvyprAddress` class
+        to create address objects for each datastream. The `expand` parameter is passed to the `datakeys` method to control
+        the depth of key expansion.
+        """
+
         datakeys = self.datakeys(expand=expand,return_type='list')
         daddresses = []
         for d in datakeys:
-            daddr = redvypr_address.RedvyprAddress(self.address,datakey=d)
+            daddr = redvypr_address.RedvyprAddress(self.address, datakey=d)
             daddresses.append(daddr)
 
         return daddresses
 
-
-    def legacy_datastreams_legacy(self):
-        """
-        Returns the datastreams of the redvypr dictionary
-        """
-        keys = list(self.keys())
-        datastreams = []
-        for key_remove in redvypr_data_keys:
-            try:
-                keys.remove(key_remove)
-            except:
-                pass
-
-        keys.sort()
-        for k in keys:
-            datastreams.append(redvypr_address.RedvyprAddress(self, datakey=k))
-
-        return datastreams
-
     def get_addressstr(self,addrformat='/i/k/'):
         return self.address.get_str(addrformat)
-
-
 
 
 def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None, publisher=None, hostinfo=None):

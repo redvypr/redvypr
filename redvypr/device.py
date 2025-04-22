@@ -54,7 +54,7 @@ class RedvyprDeviceBaseConfig(pydantic.BaseModel):
     This is the base config of any redvypr device.
     """
     name: str = pydantic.Field(default='')
-    multiprocess: str = pydantic.Field(default='qthread')
+    multiprocess: typing.Literal['qthread','multiprocess'] = pydantic.Field(default='qthread')  # str = pydantic.Field(default='qthread')
     loglevel: str = pydantic.Field(default='')
     autostart: bool = False
     clear_datainqueue_before_thread_starts: bool = pydantic.Field(default=False, description='Clears the datainqueue before the thread is started.')
@@ -679,7 +679,7 @@ class RedvyprDevice(QtCore.QObject):
 
     def kill_process(self):
         funcname = __name__ + '.kill_process():'
-        self.logger.debug(funcname)
+        self.logger.debug(funcname + 'Type {}'.format(type(self.thread)))
         if self.thread is not None:
             if isinstance(self.thread, deviceQThread):
                 self.logger.debug(funcname + ': Terminating now')
@@ -818,11 +818,11 @@ class RedvyprDevice(QtCore.QObject):
                                 except:
                                     break
                         args = (device_info, config, self.dataqueue, self.datainqueue, self.statusqueue)
-                        if True:
+                        if self.mp == 'qthread':
                             self.thread = deviceQThread(startfunction=self.start,start_arguments=args)
-                        elif self.mp == 'thread':
-                            self.logger.info(funcname + 'Starting as thread')
-                            self.thread = threading.Thread(target=self.start, args=args, daemon=True)
+                        #elif self.mp == 'thread':
+                        #    self.logger.info(funcname + 'Starting as thread')
+                        #    self.thread = threading.Thread(target=self.start, args=args, daemon=True)
                         else:
                             self.logger.info(funcname + 'Starting as process')
                             self.thread = multiprocessing.Process(target=self.start, args=args)

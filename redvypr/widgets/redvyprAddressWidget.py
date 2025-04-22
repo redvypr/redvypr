@@ -424,7 +424,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
         expandlayout.addWidget(QtWidgets.QLabel('Expansion level'))
         expandlayout.addWidget(self.expandlevel_spin)
         #
-        self.address_edit = RedvyprAddressEditWidget()
+        self.address_edit = RedvyprAddressEditWidget(datastreamstring)
         self.address_edit.address_finished.connect(self.done_clicked)
         # Add widgets to layout
         # Right/left layout side

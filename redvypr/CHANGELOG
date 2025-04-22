@@ -1,3 +1,6 @@
+- 0.9.13:
+       - TablePlotDevice added
+       - datafilter improved
 - 0.9.12:
        - cleanup of address widgets
        - datafilter device and necessary changes

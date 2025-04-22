@@ -15,7 +15,7 @@ import redvypr.data_packets
 from redvypr.data_packets import check_for_command, create_datadict
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
-import redvypr.devices.plot.plot_widgets as redvypr_plot_widgets
+import redvypr.devices.plot.plot_widgets_legacy as redvypr_plot_widgets
 import redvypr.widgets.standard_device_widgets #import redvypr_deviceInitWidget, displayDeviceWidget_standard
 
 logging.basicConfig(stream=sys.stderr)
