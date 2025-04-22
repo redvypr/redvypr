@@ -11,13 +11,14 @@ import yaml
 import pydantic
 import pydantic_core
 import typing
-
 from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_core import SchemaSerializer, core_schema
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.redvypr_address')
 logger.setLevel(logging.DEBUG)
+
+metadata_address = '/d:/p:/i:metadata/k:_redvypr_command'
 
 restr = r'''\[['"].+['"]\].*''' # Regex that searches for square brackets as start, followed by quotation strs, arbitraty string and again quotation and bracket
 rtest = re.compile(restr)

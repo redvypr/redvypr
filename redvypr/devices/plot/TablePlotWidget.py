@@ -41,9 +41,11 @@ class ConfigTablePlot(pydantic.BaseModel):
                                           description='Ignore command packets')
     ignore_metadata_packets: bool = pydantic.Field(default=True,
                                                   description='Ignore metadata packets')
+    show_unit: bool = pydantic.Field(default=True,
+                                                  description='Show the unit')
 
 class TablePlotWidget(QtWidgets.QWidget):
-    def __init__(self, *args, config=ConfigTablePlot(), **kwargs):
+    def __init__(self, *args, config=ConfigTablePlot(), redvypr_device=None, **kwargs):
         """
         A table widget that displays data of subscribed redvypr data packets
 
@@ -51,6 +53,11 @@ class TablePlotWidget(QtWidgets.QWidget):
         funcname = __name__ + '.init():'
         super().__init__(*args, **kwargs)
         self.config = config
+        self.device = redvypr_device
+        if self.device is not None:
+            self.redvypr = self.device.redvypr
+        else:
+            self.redvypr = None
         self.counter = 0
         self.data_table_keys_show = []
         self.col_last_keys_show = 0
@@ -62,6 +69,14 @@ class TablePlotWidget(QtWidgets.QWidget):
         self.table.horizontalHeader().setVisible(False)
         self.table.verticalHeader().setVisible(False)
         self.layout.addWidget(self.table)
+        self.apply_config()
+
+    def apply_config(self):
+        self.reset_table()
+        self.device.unsubscribe_all()
+        if self.device is not None:
+            for d in self.config.datastreams:
+                self.device.subscribe_address(d)
 
     def reset_table(self):
         self.col_last_keys_show = 0
@@ -113,11 +128,14 @@ class TablePlotWidget(QtWidgets.QWidget):
         expand_level = self.config.expansion_level
         data_table = []
         data_table_keys_new = []
+        data_table_datastreams_new = []
         for d in self.config.datastreams:
             #print('d',d, d in rdata, rdata in d)
             if rdata in d:
                 #print('d in data',d)
                 datakeys = rdata.datakeys([d], expand=expand_level,return_type='list')
+                datastreams = rdata.datastreams([d], expand=expand_level)
+                data_table_datastreams_new += datastreams
                 # print('rdata',rdata)
                 #print('expand level',expand_level)
                 #print('datakeys',datakeys)
@@ -161,12 +179,25 @@ class TablePlotWidget(QtWidgets.QWidget):
             for irow in range(self.table.rowCount()):
                 if irow < len(data_table_keys_new):
                     dk = data_table_keys_new[irow]
+                    ds = data_table_datastreams_new[irow]
                 else:
                     dk = ''
 
-                item = QtWidgets.QTableWidgetItem(str(dk))
+                dkstr = str(dk)  # Here one could do some formatting
+                # Metadata
+                if self.redvypr is not None and self.config.show_unit:
+                    print('dk', dk, 'ds', ds)
+                    metadata = self.redvypr.get_metadata(ds)
+                    try:
+                        unit = " / {}".format(metadata['unit'])
+                        dkstr += unit
+                    except:
+                        pass
+
+                item = QtWidgets.QTableWidgetItem(dkstr)
                 item.__counter__ = self.counter
                 self.table.setItem(irow+self.numrows_header,icol,item)
+
 
         # Plot data
         if True:

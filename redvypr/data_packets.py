@@ -296,7 +296,7 @@ class Datapacket(dict):
             else:
                 return (keys_expand, keys_dict_expand)
 
-    def datastreams(self, expand=True):
+    def datastreams(self, datakeys=None, expand=True):
         """
         Retrieves the datastreams from the data packet as a list of RedvyprAddress objects.
 
@@ -305,6 +305,10 @@ class Datapacket(dict):
 
         Parameters
         ----------
+        datakeys : list or str or RedvyprAddress, optional
+            A list of specific data keys to retrieve the datastream. If None, all keys in the data packet will be used,
+            if of type str it will be converted to RedvyprAddress(datakeys) and treated as RedvyprAddress. If
+            RedvyprAddress datakeys will be [RedvyprAddress.datakey] or all keys if datakey is "*".
         expand : bool or int, optional
             If True, recursively expands the data keys up to a default depth of 100. If an integer is provided,
             it specifies the maximum depth for expansion. Default is True.
@@ -328,7 +332,7 @@ class Datapacket(dict):
         the depth of key expansion.
         """
 
-        datakeys = self.datakeys(expand=expand,return_type='list')
+        datakeys = self.datakeys(datakeys=datakeys, expand=expand,return_type='list')
         daddresses = []
         for d in datakeys:
             daddr = redvypr_address.RedvyprAddress(self.address, datakey=d)

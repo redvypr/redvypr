@@ -48,18 +48,20 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         funcname = __name__ + '__init__():'
         logger.debug(funcname)
         super().__init__(*args,**kwargs)
-        self.tablewidget = TablePlotWidget.TablePlotWidget()
+        self.tablewidget = TablePlotWidget.TablePlotWidget(config=self.device.custom_config, redvypr_device=self.device)
         self.layout.addWidget(self.tablewidget)
         self.device.config_changed_signal.connect(self.config_changed)
 
     def config_changed(self):
         funcname = __name__ + '.config_changed():'
         logger.debug(funcname)
+        # Check if subscriptions need to be changed
+        self.tablewidget.config = self.device.custom_config
+        self.tablewidget.apply_config()
 
     def update_data(self, data, force_update = False):
         funcname = __name__ + '.update_data():'
         logger.debug(funcname)
-        print('update data',data)
         try:
             self.tablewidget.update_data(data)
         except:

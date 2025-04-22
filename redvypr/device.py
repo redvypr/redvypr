@@ -29,7 +29,7 @@ import typing
 import re
 from redvypr.data_packets import commandpacket, create_datadict
 from redvypr.packet_statistic import do_data_statistics
-from redvypr.redvypr_address import RedvyprAddress
+from redvypr.redvypr_address import RedvyprAddress, metadata_address
 
 logging.basicConfig(stream=sys.stderr)
 
@@ -561,7 +561,7 @@ class RedvyprDevice(QtCore.QObject):
         funcname = self.__class__.__name__ + '.unsubscribe_address()'
         self.logger.debug(funcname + ' unsubscribing from device {:s}'.format(str(address)))
         #print('Address', address, type(address))
-        if (type(address) == str):
+        if type(address) == str:
             raddr = RedvyprAddress(address)
         else:
             raddr = address
@@ -572,16 +572,20 @@ class RedvyprDevice(QtCore.QObject):
         except Exception as e:
             self.logger.warning('Could not remove address {:s}: {:s}'.format(str(address),str(e)))
 
-    def unsubscribe_all(self):
+    def unsubscribe_all(self, exclude_metadata=True):
         """
         """
         funcname = self.__class__.__name__ + '.unsubscribe_all():'
         self.logger.debug(funcname + ' unsubscribing all')
-        while len(self.subscribed_addresses)>0:
+        while len(self.subscribed_addresses) > 0:
             try:
                 self.subscribed_addresses.pop(0)
             except Exception as e:
                 self.logger.warning(funcname + 'Could not remove address')
+
+        # Add the metadata again
+        if exclude_metadata:
+            self.subscribed_addresses.append(RedvyprAddress(metadata_address))
 
         self.subscription_changed_signal.emit()
 

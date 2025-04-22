@@ -29,7 +29,7 @@ logger.setLevel(logging.INFO)
 
 
 class DeviceBaseConfig(pydantic.BaseModel):
-    publishes: bool = True
+    publishes: bool = False
     subscribes: bool = True
     description: str = 'Device to plot data in a classical XY-Plot'
     gui_icon: str = 'ph.chart-line-fill'
@@ -48,7 +48,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         funcname = __name__ + '__init__():'
         logger.debug(funcname)
         super().__init__(*args,**kwargs)
-        self.xyplot = XYplotWidget.XYPlotWidget(redvypr_device=self.device, config=self.device.custom_config,
+        self.xyplot = XYPlotWidget.XYPlotWidget(redvypr_device=self.device, config=self.device.custom_config,
                                                 loglevel=self.device.loglevel)
         self.layout.addWidget(self.xyplot)
         self.device.config_changed_signal.connect(self.config_changed)

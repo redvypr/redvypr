@@ -59,10 +59,7 @@ logger = logging.getLogger('redvypr')
 logger.setLevel(logging.INFO)
 
 
-metadata_address = '/d:/p:/i:metadata/k:_redvypr_command'
-
 # Pydantic
-
 class RedvyprMetadata(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="allow")
     description: str = pydantic.Field(default='')
@@ -859,7 +856,7 @@ class Redvypr(QtCore.QObject):
                                     statistics=statistics, startfunction=startfunction)
 
                     # Subscribe to info packets from redvypr itself
-                    device.subscribe_address(metadata_address)
+                    device.subscribe_address(redvypr_address.metadata_address)
                     device.subscription_changed_signal.connect(self.process_subscription_changed)
                     self.numdevice += 1
                     # If the device has a logger

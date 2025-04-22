@@ -1083,7 +1083,7 @@ class XYPlotWidget(QtWidgets.QFrame):
                 if line._xdata_addr_old == line.x_addr:
                     self.logger.debug('Address did not change')
                 else:
-                    print('Address changed!')
+                    self.logger.debug('Address changed')
                     line._xdata_addr_old = line.x_addr
                     line.databuffer.clear()
                     # TODO, here an unsubscribe and resubscribe would be better
