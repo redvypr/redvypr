@@ -29,7 +29,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
     description: str = 'A simple test device'
 
 class DeviceCustomConfig(RedvyprDeviceCustomConfig):
-    delay_s: float = 1.0
+    delay_s: float = 5.0
 
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start():'

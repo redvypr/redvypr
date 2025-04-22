@@ -249,18 +249,26 @@ class Datapacket(dict):
 
 
         """
-        if isinstance(datakeys, str):
-            datakeys = redvypr_address.RedvyprAddress(datakeys)
-
         if datakeys is None:  # Use all keys
             keys = list(self.keys())
-        elif isinstance(datakeys, redvypr_address.RedvyprAddress):
-            if datakeys.datakey_expand:
-                keys = list(self.keys())
-            else:
-                keys = [datakeys.datakey]
         else:
-            keys = datakeys
+            keys = []  # Fill keys list manually
+            if isinstance(datakeys, str):
+                datakeys = [redvypr_address.RedvyprAddress(datakeys)]
+            elif isinstance(datakeys, redvypr_address.RedvyprAddress):
+                datakeys = [datakeys]
+            elif isinstance(datakeys, list):
+                pass
+            else:
+                raise ValueError('datakeys must be None, str, RedvyprAdress or list')
+
+            for k in datakeys:
+                if isinstance(k, redvypr_address.RedvyprAddress):
+                    if k.datakeyexpand:
+                        keys = list(self.keys())
+                        break
+                    else:
+                        keys.append(k.datakey)
 
         for key_remove in redvypr_data_keys:
             try:
