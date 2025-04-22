@@ -16,9 +16,9 @@ import typing
 import redvypr.data_packets
 from redvypr.device import RedvyprDevice
 from redvypr.gui import iconnames
-#from redvypr.gui import configWidget
-#from redvypr.devices.plot.plot_widgets import redvypr_numdisp_widget, redvypr_graph_widget, config_template_numdisp, config_template_graph
 from redvypr.devices.plot.XYPlotWidget import XYPlotWidget
+from redvypr.devices.plot.TablePlotWidget import TablePlotWidget
+from redvypr.devices.plot.PcolorPlotDevice import PcolorPlotWidget
 import redvypr.files as files
 from redvypr.device import device_start_standard
 from redvypr.data_packets import check_for_command
@@ -39,7 +39,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
 
 
 class PlotConfig(pydantic.BaseModel):
-    plottype: typing.Literal['XY-Plot'] = pydantic.Field(default='XY-Plot')
+    plottype: typing.Literal['XY-Plot','Datatable'] = pydantic.Field(default='XY-Plot')
     docklabel: str = pydantic.Field(default='Dock')
     location: typing.Literal['left','right','top','bottom'] = pydantic.Field(default='left')
 
@@ -89,8 +89,10 @@ class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.Redvyprdevicew
         self.numdocks = 1
         if len(self.device.custom_config.plots.keys()) == 0:
             # This adds a plot, if not existing already
-            xyplotconfig = PlotConfig(plottype='XY-Plot',docklabel='Dock 1')
+            xyplotconfig = PlotConfig(plottype='XY-Plot',docklabel='XY-Plot')
             self.add_plot_to_config(xyplotconfig)
+            datatableconfig = PlotConfig(plottype='Datatable', docklabel='Datatable')
+            self.add_plot_to_config(datatableconfig)
 
         self.add_plots_from_config()
         menu = QtWidgets.QMenu()
@@ -154,6 +156,8 @@ class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.Redvyprdevicew
             dock = PlotDock(plotconfig.docklabel, size=(1, 1))  # give this dock the minimum possible size
             if plotconfig.plottype == 'XY-Plot':
                 plotwidget = XYPlotWidget(redvypr_device=self.device)
+            elif plotconfig.plottype == 'Datatable':
+                plotwidget = TablePlotWidget(redvypr_device=self.device)
             else:
                 raise 'Unknown plottype'
 

@@ -158,7 +158,7 @@ class configXYplot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
     type: str = 'XYplot'
     dt_update: float = pydantic.Field(default=0.25,description='Update time of the plot [s]')
-    interactive: typing.Literal['standard', 'rectangle','xlim','ylim','xlim_keep','ylim_keep'] = pydantic.Field(default='rectangle',description='Interactive modes')
+    interactive: typing.Literal['standard', 'rectangle','xlim','ylim','xlim_keep','ylim_keep'] = pydantic.Field(default='standard',description='Interactive modes')
     data_dialog: typing.Literal['off', 'table'] = pydantic.Field(default='table', description='Option if a data dialog is shown when finished with the interactive mode')
     backgroundcolor: pydColor = pydantic.Field(default=pydColor('lightgray'),description='Backgroundcolor')
     bordercolor: pydColor = pydantic.Field(default=pydColor('lightgray'), description='Bordercolor')
