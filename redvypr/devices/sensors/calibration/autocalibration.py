@@ -26,8 +26,6 @@ import redvypr.gui
 import redvypr.data_packets
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from redvypr.gui import RedvyprAddressWidget
-from redvypr.devices.plot import XYPlotWidget
-from redvypr.devices.plot import plot_widgets_legacy
 from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly
 
 logging.basicConfig(stream=sys.stderr)

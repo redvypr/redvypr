@@ -15,7 +15,6 @@ import typing
 from redvypr.data_packets import check_for_command, create_datadict
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
-import redvypr.devices.plot.plot_widgets_legacy as redvypr_plot_widgets
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.manual')

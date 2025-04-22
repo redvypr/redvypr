@@ -21,7 +21,6 @@ from redvypr.redvypr_address import RedvyprAddress
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 from redvypr.data_packets import RedvyprMetadata, RedvyprDeviceMetadata
-import redvypr.devices.plot.plot_widgets_legacy as redvypr_plot_widgets
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, dictQTreeWidget, datastreamMetadataWidget
 
 _logo_file = redvypr_files.logo_file
