@@ -69,8 +69,47 @@ class TablePlotWidget(QtWidgets.QWidget):
         self.table = QtWidgets.QTableWidget()
         self.table.horizontalHeader().setVisible(False)
         self.table.verticalHeader().setVisible(False)
+
+        # Enable context menu policy
+        self.table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.show_context_menu)
         self.layout.addWidget(self.table)
         self.apply_config()
+
+    def show_context_menu(self, position):
+        # Get the item at the clicked position
+        item = self.table.itemAt(position)
+        # Create a menu specific to the item
+        menu = QtWidgets.QMenu(self)
+        # Create actions specific to the item
+        configAction = QtGui.QAction("Configure", self)
+        configAction.triggered.connect(self.config_clicked)
+        menu.addAction(configAction)
+        if item is not None:
+            action1 = QtGui.QAction(f"Edit {item.text()}", self)
+            action2 = QtGui.QAction(f"Delete {item.text()}", self)
+
+            # Add actions to the menu
+            menu.addAction(action1)
+            menu.addAction(action2)
+
+            ## Connect actions to slots (for demonstration purposes)
+            #action1.triggered.connect(lambda: self.edit_item(item))
+            #action2.triggered.connect(lambda: self.delete_item(item))
+
+        # Show the menu at the position of the mouse click
+        menu.exec_(self.table.viewport().mapToGlobal(position))
+
+    def config_clicked(self):
+        button = self.sender()
+
+        funcname = __name__ + '.config_clicked():'
+        logger.debug(funcname)
+        self.config_widget = pydanticConfigWidget(self.config)
+        self.config_widget.show()
+        #self.config_widget.showMaximized()
+
+        # self.subscribed.emit(self.device)
 
     def apply_config(self):
         self.reset_table()
@@ -84,9 +123,20 @@ class TablePlotWidget(QtWidgets.QWidget):
         self.col_current = 0
         self.col_packets_showed = 0
         self.data_table_keys_show = []
-        self.table.setColumnCount(0)
-        self.table.setRowCount(0)
+        self.table.setColumnCount(2)
+        self.table.setRowCount(1)
         self.table.clear()
+        # Plot the header
+        item = QtWidgets.QTableWidgetItem('Datakeys')
+        item.__counter__ = self.counter
+        item.__numrows__ = 1
+        item.setBackground(QtGui.QBrush(QtGui.QColor("lightblue")))
+        self.table.setItem(0, 0, item)
+        item = QtWidgets.QTableWidgetItem('Data')
+        item.__counter__ = self.counter
+        item.__numrows__ = 1
+        item.setBackground(QtGui.QBrush(QtGui.QColor("lightgrey")))
+        self.table.setItem(0, 1, item)
 
     def update_plot(self, data):
         """
@@ -101,10 +151,9 @@ class TablePlotWidget(QtWidgets.QWidget):
             if command is not None:
                 return
 
+        # Check if everything is found in the data packet
         for d in self.config.datastreams:
-            # print('d',d, d in rdata, rdata in d)
             if rdata not in d:
-                flag_all_datastreams_found = False
                 return
 
         # Check if the table has to be resized
@@ -136,11 +185,8 @@ class TablePlotWidget(QtWidgets.QWidget):
         data_table = []
         data_table_keys_new = []
         data_table_datastreams_new = []
-        flag_all_datastreams_found = True
         for d in self.config.datastreams:
-            #print('d',d, d in rdata, rdata in d)
             if rdata not in d:
-                flag_all_datastreams_found = False
                 return
             else:
                 #print('d in data',d)
@@ -164,8 +210,8 @@ class TablePlotWidget(QtWidgets.QWidget):
             flag_new_keys = True
             self.counter += 1
 
-        print('Data keys table', data_table_keys_new,flag_new_keys)
-        print('Data keys table show', self.data_table_keys_show)
+        #print('Data keys table', data_table_keys_new,flag_new_keys)
+        #print('Data keys table show', self.data_table_keys_show)
         #print('Data show',data_table)
         if self.table.rowCount() < len(self.data_table_keys_show):
             self.table.setRowCount(len(self.data_table_keys_show)+self.numrows_header)
@@ -198,7 +244,7 @@ class TablePlotWidget(QtWidgets.QWidget):
                 dkstr = str(dk)  # Here one could do some formatting
                 # Metadata
                 if self.redvypr is not None and self.config.show_unit:
-                    print('dk', dk, 'ds', ds)
+                    #print('dk', dk, 'ds', ds)
                     metadata = self.redvypr.get_metadata(ds)
                     try:
                         unit = " / {}".format(metadata['unit'])
