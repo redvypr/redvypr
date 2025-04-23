@@ -25,9 +25,9 @@ logger.setLevel(logging.INFO)
 
 start = device_start_standard
 
-class configPcolorPlot(pydantic.BaseModel):
+class ConfigPcolorPlot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
-    type: str = 'PcolorPlot'
+    type: typing.Literal['PcolorPlot']  = pydantic.Field(default='PcolorPlot')
     buffersize: int = pydantic.Field(default=100,description='Size of the buffer that is used to store the plot data')
     dt_update: float = pydantic.Field(default=0.25,description='Update time of the plot [s]')
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
@@ -45,7 +45,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
 #class DeviceCustomConfig(configPcolorPlot):
 class DeviceCustomConfig(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
-    type: str = 'PcolorPlot'
+    type: typing.Literal['PcolorPlot'] = pydantic.Field(default='PcolorPlot')
     buffersize: int = pydantic.Field(default=100, description='Size of the buffer that is used to store the plot data')
     dt_update: float = pydantic.Field(default=0.25, description='Update time of the plot [s]')
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
@@ -69,7 +69,7 @@ class PcolorPlotWidget(QtWidgets.QWidget):
             self.redvypr = None
 
         if config is None:  # Create a config from the template
-            self.config = configPcolorPlot()
+            self.config = ConfigPcolorPlot()
         else:
             self.config = config
 

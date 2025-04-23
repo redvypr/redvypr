@@ -26,11 +26,12 @@ logger.setLevel(logging.INFO)
 
 
 class ConfigTablePlot(pydantic.BaseModel):
+    type: typing.Literal['TablePlot'] = pydantic.Field(default='TablePlot')
     datastreams: typing.List[typing.Union[RedvyprAddress]] = pydantic.Field(default=[RedvyprAddress('/k:["_redvypr"]["t"]'),
                                                                                      RedvyprAddress('/k:["_redvypr"]["numpacket"]'),
                                                                                      RedvyprAddress(
                                                                                          '/k:["_redvypr"]["packetid"]'),
-                                                                                     RedvyprAddress('/k:*')
+                                                                                     RedvyprAddress('/k:sine_rand')
                                                                                      ],
                                                                                  description='The realtimedata datastreams to be displayed in the table')
     num_packets_show: int = pydantic.Field(default=2,
@@ -87,7 +88,7 @@ class TablePlotWidget(QtWidgets.QWidget):
         self.table.setRowCount(0)
         self.table.clear()
 
-    def update_data(self, data):
+    def update_plot(self, data):
         """
         """
         funcname = __name__ + '.update_data():'
@@ -100,7 +101,13 @@ class TablePlotWidget(QtWidgets.QWidget):
             if command is not None:
                 return
 
-        # Ceck if the table has to be resized
+        for d in self.config.datastreams:
+            # print('d',d, d in rdata, rdata in d)
+            if rdata not in d:
+                flag_all_datastreams_found = False
+                return
+
+        # Check if the table has to be resized
         if self.col_packets_showed >= self.config.num_packets_show:
             #print('Reset')
             if self.table.columnCount() == 2:
@@ -123,15 +130,19 @@ class TablePlotWidget(QtWidgets.QWidget):
                 item = self.table.item(0,icol_tmp)
                 numrows_tmp = max(item.__numrows__,numrows_tmp)
 
-            self.table.setRowCount(numrows_tmp+self.numrows_header+1)
+            self.table.setRowCount(numrows_tmp+self.numrows_header)
 
         expand_level = self.config.expansion_level
         data_table = []
         data_table_keys_new = []
         data_table_datastreams_new = []
+        flag_all_datastreams_found = True
         for d in self.config.datastreams:
             #print('d',d, d in rdata, rdata in d)
-            if rdata in d:
+            if rdata not in d:
+                flag_all_datastreams_found = False
+                return
+            else:
                 #print('d in data',d)
                 datakeys = rdata.datakeys([d], expand=expand_level,return_type='list')
                 datastreams = rdata.datastreams([d], expand=expand_level)
@@ -145,7 +156,7 @@ class TablePlotWidget(QtWidgets.QWidget):
                     data_table.append(data_tmp)
                     data_table_keys_new.append(dk)
 
-        #print('Data keys table', data_table_keys_new)
+
         if self.data_table_keys_show == data_table_keys_new:
             flag_new_keys = False
         else:
@@ -153,10 +164,11 @@ class TablePlotWidget(QtWidgets.QWidget):
             flag_new_keys = True
             self.counter += 1
 
-        #print('Data keys table show', self.data_table_keys_show)
+        print('Data keys table', data_table_keys_new,flag_new_keys)
+        print('Data keys table show', self.data_table_keys_show)
         #print('Data show',data_table)
         if self.table.rowCount() < len(self.data_table_keys_show):
-            self.table.setRowCount(len(self.data_table_keys_show))
+            self.table.setRowCount(len(self.data_table_keys_show)+self.numrows_header)
 
         # Plot datakeys
         if flag_new_keys:

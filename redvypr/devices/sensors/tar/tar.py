@@ -560,7 +560,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 for ip,p in enumerate(packets):
 
                     for (guiqueue, widget) in plotdevice.guiqueues:
-                        widget.update_data(p)
+                        widget.update_plot(p)
 
                 logger.debug('Starting plot device')
                 plotdevice.thread_start()
@@ -594,7 +594,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 # Update the plot widget with the data in the buffer
                 for ip, p in enumerate(packets):
                     for (guiqueue, widget) in plotdevice.guiqueues:
-                        widget.update_data(p,force_update=True)
+                        widget.update_plot(p, force_update=True)
 
                 logger.debug('Starting plot device')
                 plotdevice.thread_start()

@@ -1391,7 +1391,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             print('Update sensor widget',sn)
             for w in self.sensorwidgets:
                 try:
-                   self.sensorwidgets[w].update_data(data)
+                   self.sensorwidgets[w].update_plot(data)
                 except:
                     logger.debug(funcname, exc_info=True)
             #try:

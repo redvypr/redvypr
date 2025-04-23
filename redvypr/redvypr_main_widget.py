@@ -305,6 +305,12 @@ class redvyprWidget(QtWidgets.QWidget):
 
                         # Updating the widget, if existing
                         try:
+                            gui_widget.update_plot(data)
+                        except Exception as e:
+                            break
+
+                        # Updating the widget, if existing
+                        try:
                             gui_widget.update_data(data)
                         except Exception as e:
                             break

@@ -63,6 +63,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         funcname = __name__ + '.update_data():'
         logger.debug(funcname)
         try:
-            self.tablewidget.update_data(data)
+            self.tablewidget.update_plot(data)
         except:
             logger.info('Could not update data',exc_info=True)

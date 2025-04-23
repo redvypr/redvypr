@@ -154,9 +154,9 @@ class configLine(pydantic.BaseModel,extra='allow'):
         else:
             raise ValueError('Datapacket does not contain data for address xaddr:{}:{}, yadd:{}:{}'.format(self.x_addr,inx,self.y_addr,iny))
 
-class configXYplot(pydantic.BaseModel):
+class ConfigXYplot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
-    type: str = 'XYplot'
+    type: typing.Literal['XY-Plot'] = pydantic.Field(default='XY-Plot')
     dt_update: float = pydantic.Field(default=0.25,description='Update time of the plot [s]')
     interactive: typing.Literal['standard', 'rectangle','xlim','ylim','xlim_keep','ylim_keep'] = pydantic.Field(default='standard',description='Interactive modes')
     data_dialog: typing.Literal['off', 'table'] = pydantic.Field(default='table', description='Option if a data dialog is shown when finished with the interactive mode')
@@ -336,7 +336,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.x_min = 0
         self.x_max = 0
         if (config == None):  # Create a config from the template
-            self.config = configXYplot()
+            self.config = ConfigXYplot()
         else:
             self.config = config
 

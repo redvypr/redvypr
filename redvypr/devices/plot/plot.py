@@ -16,9 +16,9 @@ import typing
 import redvypr.data_packets
 from redvypr.device import RedvyprDevice
 from redvypr.gui import iconnames
-from redvypr.devices.plot.XYPlotWidget import XYPlotWidget
-from redvypr.devices.plot.TablePlotWidget import TablePlotWidget
-from redvypr.devices.plot.PcolorPlotDevice import PcolorPlotWidget
+from redvypr.devices.plot.XYPlotWidget import XYPlotWidget, ConfigXYplot
+from redvypr.devices.plot.TablePlotWidget import TablePlotWidget, ConfigTablePlot
+from redvypr.devices.plot.PcolorPlotDevice import PcolorPlotWidget, ConfigPcolorPlot
 import redvypr.files as files
 from redvypr.device import device_start_standard
 from redvypr.data_packets import check_for_command
@@ -39,9 +39,10 @@ class DeviceBaseConfig(pydantic.BaseModel):
 
 
 class PlotConfig(pydantic.BaseModel):
-    plottype: typing.Literal['XY-Plot','Datatable'] = pydantic.Field(default='XY-Plot')
+    plottype: typing.Literal['XY-Plot','Datatable','PColorPlot'] = pydantic.Field(default='XY-Plot')
     docklabel: str = pydantic.Field(default='Dock')
     location: typing.Literal['left','right','top','bottom'] = pydantic.Field(default='left')
+    config: typing.Optional[typing.Union[ConfigXYplot, ConfigTablePlot, ConfigPcolorPlot]] = pydantic.Field(default=None, discriminator='type')
 
 
 class DeviceCustomConfig(pydantic.BaseModel,extra='allow'):
@@ -63,7 +64,6 @@ class Device(RedvyprDevice):
         config.custom_config.dockstate = state
         return config
 
-
 class PlotDock(pyqtgraph.dockarea.Dock):
     labelClicked = QtCore.pyqtSignal()  #
     def __init__(self,*args,**kwargs):
@@ -80,7 +80,9 @@ class PlotDock(pyqtgraph.dockarea.Dock):
         super().mouseDoubleClickEvent(ev)
 
 
-class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.RedvyprdevicewidgetStartonly):
+
+#class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.RedvyprdevicewidgetStartonly):
+class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.RedvyprdevicewidgetSimple):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         layout = QtWidgets.QGridLayout(self)
@@ -96,46 +98,53 @@ class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.Redvyprdevicew
 
         self.add_plots_from_config()
         menu = QtWidgets.QMenu()
-        menu_XYplot = QtWidgets.QMenu('XY-Plot',self)
-        menu.addMenu(menu_XYplot)
-        addAction = QtWidgets.QWidgetAction(self)
-        # Create add XYPlot-Menu
-        addMenuWidget = QtWidgets.QWidget()
-        addMenuWidget_layout = QtWidgets.QVBoxLayout(addMenuWidget)
-        comboXYplotlocation = QtWidgets.QComboBox()
-        comboXYplotlocation.addItem('Left')
-        comboXYplotlocation.addItem('Right')
-        comboXYplotlocation.addItem('Top')
-        comboXYplotlocation.addItem('Bottom')
-        addButton = QtWidgets.QPushButton('Add')
-        addButton.clicked.connect(self.__add_xy_clicked)
-        dockname_str = "Dock {}".format(self.numdocks)
-        dockName = QtWidgets.QLineEdit(dockname_str)
-        addButton.__comboXYplotlocation = comboXYplotlocation
-        addButton.__dockName = dockName
-        addButton.__addwidget_bare = XYPlotWidget
-        addButton.__plottype = 'XY-Plot'
-        addMenuWidget_layout.addWidget(dockName)
-        addMenuWidget_layout.addWidget(comboXYplotlocation)
-        addMenuWidget_layout.addWidget(addButton)
-        addAction.setDefaultWidget(addMenuWidget)
-        menu_XYplot.addAction(addAction)
+        plots = ['XY-Plot','Datatable','PColorPlot']
+        for pl in plots:
+            menu_XYplot = QtWidgets.QMenu(pl,self)
+            menu.addMenu(menu_XYplot)
+            addAction = QtWidgets.QWidgetAction(self)
+            # Create add XYPlot-Menu
+            addMenuWidget = QtWidgets.QWidget()
+            addMenuWidget_layout = QtWidgets.QVBoxLayout(addMenuWidget)
+            comboXYplotlocation = QtWidgets.QComboBox()
+            comboXYplotlocation.addItem('Left')
+            comboXYplotlocation.addItem('Right')
+            comboXYplotlocation.addItem('Top')
+            comboXYplotlocation.addItem('Bottom')
+            addButton = QtWidgets.QPushButton('Add')
+            addButton.clicked.connect(self.__add_xy_clicked)
+            dockname_str = "Dock {}".format(self.numdocks)
+            dockName = QtWidgets.QLineEdit(dockname_str)
+            addButton.__comboXYplotlocation = comboXYplotlocation
+            addButton.__dockName = dockName
+            addButton.__addwidget_bare = XYPlotWidget
+            addButton.__plottype = pl
+            addMenuWidget_layout.addWidget(dockName)
+            addMenuWidget_layout.addWidget(comboXYplotlocation)
+            addMenuWidget_layout.addWidget(addButton)
+            addAction.setDefaultWidget(addMenuWidget)
+            menu_XYplot.addAction(addAction)
 
-        #icon = qtawesome.icon(iconnames['settings'])
-        # self.settings_button = QtWidgets.QPushButton('Settings')
-        # self.settings_button.setIcon(icon)
+
         self.add_button = QtWidgets.QPushButton('Add')
         self.add_button.setMenu(menu)
 
 
-        #self.settings_button.clicked.connect(self.settings_clicked)
-        self.layout.removeWidget(self.buttons_widget)
-        self.layout.removeWidget(self.killbutton)
-        self.killbutton.hide()
+        #
+        #self.killbutton.hide()
 
-        self.layout.addWidget(self.dockarea,0,0)
-        self.layout.addWidget(self.buttons_widget, 1, 0)
-        self.layout_buttons.addWidget(self.add_button, 0, 4)
+        #self.layout.addWidget(self.dockarea,0,0)
+        #self.layout.addWidget(self.buttons_widget, 1, 0)
+        #self.layout_buttons.addWidget(self.add_button, 0, 4)
+        self.layout.addWidget(self.dockarea)
+        self.layout_buttons
+        self.layout_buttons.removeWidget(self.subscribe_button)
+        self.layout_buttons.removeWidget(self.configure_button)
+        self.layout_buttons.addWidget(self.add_button, 2, 0, 1, 2)
+        self.layout_buttons.addWidget(self.configure_button, 2, 2, 1, 1)
+        self.layout_buttons.addWidget(self.subscribe_button, 2, 3, 1, 1)
+        #self.layout.addWidget(self.buttons_widget)
+        #self.layout_buttons.addWidget(self.add_button)
         #self.layout_buttons.addWidget(self.settings_button, 0, 6)
 
     def add_plot_to_config(self, plotconfig):
@@ -155,11 +164,17 @@ class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.Redvyprdevicew
             # Test the dockarea
             dock = PlotDock(plotconfig.docklabel, size=(1, 1))  # give this dock the minimum possible size
             if plotconfig.plottype == 'XY-Plot':
-                plotwidget = XYPlotWidget(redvypr_device=self.device)
+                if plotconfig.config is None:
+                    plotconfig.config = ConfigXYplot()
+                plotwidget = XYPlotWidget(redvypr_device=self.device,config=plotconfig.config)
             elif plotconfig.plottype == 'Datatable':
-                plotwidget = TablePlotWidget(redvypr_device=self.device)
+                if plotconfig.config is None:
+                    plotconfig.config = ConfigTablePlot()
+                plotwidget = TablePlotWidget(redvypr_device=self.device,config=plotconfig.config)
             else:
-                raise 'Unknown plottype'
+                if plotconfig.config is None:
+                    plotconfig.config = ConfigPcolorPlot()
+                plotwidget = PcolorPlotWidget(redvypr_device=self.device,config=plotconfig.config)
 
             self.plot_widgets[docklabel] = plotwidget
             dock.addWidget(plotwidget)
@@ -181,15 +196,24 @@ class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.Redvyprdevicew
 
     def __add_xy_clicked(self):
         button = self.sender()
-        position = button.__comboXYplotlocation.currentText().lower()
-        dockname_str = button.__dockName.text()
-        plottype_str = button.__plottype
-        plotconfig = PlotConfig(plottype=plottype_str, docklabel=dockname_str,location=position)
-        logger.debug('Adding plot {}'.format(plotconfig))
-        self.add_plot_to_config(plotconfig)
-        self.add_plots_from_config()
-        dockname_str = "Dock {}".format(self.numdocks)
-        button.__dockName.setText(dockname_str)
+        plottype = button.__plottype
+        #if plottype == 'XY-Plot':
+        if True:
+            position = button.__comboXYplotlocation.currentText().lower()
+            dockname_str = button.__dockName.text()
+            plottype_str = button.__plottype
+            plotconfig = PlotConfig(plottype=plottype_str, docklabel=dockname_str,location=position)
+            logger.debug('Adding plot {}'.format(plotconfig))
+            self.add_plot_to_config(plotconfig)
+            self.add_plots_from_config()
+            dockname_str = "Dock {}".format(self.numdocks)
+            button.__dockName.setText(dockname_str)
+        #elif plottype == 'Datatable':
+        #    pass
+        #elif plottype == 'PColorPlot':
+        #    pass
+        #else:
+        #    print('Unknown plottype {}'.format(plottype))
 
     def __dockclosed(self):
         dock = self.sender()
@@ -200,9 +224,14 @@ class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.Redvyprdevicew
                     w.close()
                     break
 
-    def update_data(self, data):
+    def update_plot(self, data):
         for w in self.plot_widgets:
-            w.update_plot(data)
+            try:
+                print('Updating',data)
+                print(w,self.plot_widgets)
+                self.plot_widgets[w].update_plot(data)
+            except:
+                logger.debug('Could not update plot',exc_info=True)
 
 
 

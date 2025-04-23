@@ -61,6 +61,7 @@ various sensors at different times and frequencies (asynchrone).
 
 Redvypr was designed with the following goals in mind:
 - Runs on small embedded systems
+- Designed to work offline and standalone, an internet connection is not necessary
 - Allows to work with asynchronously received data from multiple sensors
 - Scalable by using several redvypr instances either on one computer or on a network
 - Can be easily extended by users

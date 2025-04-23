@@ -35,7 +35,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
     gui_icon: str = 'ph.chart-line-fill'
 
 
-class DeviceCustomConfig(XYPlotWidget.configXYplot):
+class DeviceCustomConfig(XYPlotWidget.ConfigXYplot):
     pass
 
 

@@ -25,7 +25,7 @@ from redvypr.redvypr_address import RedvyprAddress, RedvyprAddressStr
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 import redvypr.widgets.standard_device_widgets
-from redvypr.devices.plot.XYPlotWidget import XYPlotWidget, configXYplot
+from redvypr.devices.plot.XYPlotWidget import XYPlotWidget, ConfigXYplot
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, datastreamMetadataWidget
 from redvypr.devices.sensors.calibration.calibration_models import calibration_models, CalibrationNTC
 from redvypr.devices.sensors.csvsensors.sensorWidgets import sensorCoeffWidget, sensorConfigWidget
@@ -607,7 +607,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         tnow = time.time()
         for sensor in self.device.custom_config.sensors:
             try:
-                sensor.__sensorwidget__.update_data(data)
+                sensor.__sensorwidget__.update_plot(data)
             except:
                 logger.info('Could not update',exc_info=True)
 
@@ -693,7 +693,7 @@ class SensorWidget(QtWidgets.QWidget):
             k = self.sender().__k__
             logger.debug(funcname + 'Plot clicked, creating XY-Plotwidget')
             logger.debug(funcname + 'sensor address: {} packetid: {}, k: {}'.format(self.sensor_address,packetid,k))
-            config_plot = configXYplot(automatic_subscription=False)
+            config_plot = ConfigXYplot(automatic_subscription=False)
             self.datakey_plot[packetid][k] = XYPlotWidget(config=config_plot, add_line=False,
                                                           redvypr_device=self.device)
             yaddr = RedvyprAddress(self.sensor_address, datakey=k, packetid=packetid)

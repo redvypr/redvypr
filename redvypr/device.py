@@ -109,14 +109,13 @@ def device_start_standard(device_info, config=None, dataqueue=None, datainqueue=
     logger = logging.getLogger('redvypr.redvypr.device_start():')
     while True:
         data = datainqueue.get()
-        if(data is not None):
+        if data is not None:
             command = redvypr.data_packets.check_for_command(data, thread_uuid=device_info['thread_uuid'])
-            logger.debug('Got a command: {:s}'.format(str(data)))
-            if (command == 'stop'):
+            #logger.debug('Got a command: {:s}'.format(str(data)))
+            if command == 'stop':
                 logger.debug('Command is for me: {:s}'.format(str(command)))
                 break
 
-            #print('data',data)
             dataqueue.put(data)
 
 

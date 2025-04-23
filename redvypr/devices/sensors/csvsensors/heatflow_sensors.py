@@ -810,7 +810,7 @@ class HFVWidget(QtWidgets.QWidget):
         for i in range(4):
             # Create plots
             plot_widgets.logger.setLevel(logging.INFO)
-            config = XYplotWidget.configXYplot(title='Voltage CH{:d}'.format(i))
+            config = XYplotWidget.ConfigXYplot(title='Voltage CH{:d}'.format(i))
             plot_widget_HFV = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device.redvypr)
             # Subscribe to channel
             plot_widget_HFV.set_line(0, 'C{:d}'.format(i) + '/{HFV_raw_.*}', name='HFV C{:d}'.format(i), color='red', linewidth=2)
@@ -818,7 +818,7 @@ class HFVWidget(QtWidgets.QWidget):
             rawlayout.addWidget(plot_widget_HFV, row+1, col)
             rawlayout.setRowStretch(row+1, 3)
 
-            config = XYplotWidget.configXYplot(title='Heat flow CH{:d}'.format(i))
+            config = XYplotWidget.ConfigXYplot(title='Heat flow CH{:d}'.format(i))
             plot_widget_HFVSI = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device.redvypr)
             # Subscribe to channel
             plot_widget_HFVSI.set_line(0, 'C{:d}'.format(i) + '/{HFV_SI_.*}', name='HFVSI C{:d}'.format(i), color='red',
@@ -997,7 +997,7 @@ class DHFSWidget(QtWidgets.QWidget):
             # Raw
             subtmp_raw = '/d:{{DHF_raw_{}}}/k:{}/'.format(self.sn, p)
             self.device_subscriptions_raw.append(subtmp_raw)
-            config = XYplotWidget.configXYplot(title='{} {}'.format(self.sn, p))
+            config = XYplotWidget.ConfigXYplot(title='{} {}'.format(self.sn, p))
             self.plot_widget_HF_raw = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
             self.plot_widget_HF_raw.set_line(0, subtmp_raw, name=p, color='red', linewidth=2)
             # Create the button to plot the widget
@@ -1008,7 +1008,7 @@ class DHFSWidget(QtWidgets.QWidget):
             # Converted
             subtmp_si = '/d:{{DHF_SI_{}}}/k:{}/'.format(self.sn, p)
             self.device_subscriptions_si.append(subtmp_si)
-            config = XYplotWidget.configXYplot(title='{} (converted)'.format(p))
+            config = XYplotWidget.ConfigXYplot(title='{} (converted)'.format(p))
             self.plot_widget_HF_SI = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
             self.plot_widget_HF_SI.set_line(0, subtmp_si, name=p, color='red', linewidth=2)
             # Create the button to plot the widget
@@ -1026,7 +1026,7 @@ class DHFSWidget(QtWidgets.QWidget):
                 self.avgWidget_layout = QtWidgets.QVBoxLayout(self.avgWidget)
                 self.rawconvtabs.addTab(self.avgWidget, 'Average')
 
-                config = XYplotWidget.configXYplot(title='Heat flow average')
+                config = XYplotWidget.ConfigXYplot(title='Heat flow average')
                 self.plot_widget_HF_SI_AVG = XYplotWidget.XYPlotWidget(config=config, redvypr_device=redvypr_device, add_line=False)
                 for i,avg_s in enumerate(self.configuration.avg_data):
                     avg_str = str(avg_s) + 's'
@@ -1044,7 +1044,7 @@ class DHFSWidget(QtWidgets.QWidget):
 
                 # Add the three temperature sensors as well
                 for NNTC in range(0,3):
-                    config = XYplotWidget.configXYplot(title='Temperature (average)')
+                    config = XYplotWidget.ConfigXYplot(title='Temperature (average)')
                     plot_widget_NTC_SI_AVG = XYplotWidget.XYPlotWidget(config=config, redvypr_device=redvypr_device,
                                                                        add_line=False)
                     for i, avg_s in enumerate(self.configuration.avg_data):

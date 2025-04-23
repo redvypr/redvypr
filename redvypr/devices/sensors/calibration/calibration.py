@@ -2031,7 +2031,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     if 'XY' in sdata.realtimeplottype:
                         #print('Adding XYplotwidget with address {}'.format(sdata.datastream))
                         configLine = XYplotWidget.configLine(y_addr=sdata.datastream)
-                        config = XYplotWidget.configXYplot(interactive='xlim_keep',data_dialog='off',lines=[configLine])
+                        config = XYplotWidget.ConfigXYplot(interactive='xlim_keep', data_dialog='off', lines=[configLine])
                         plot_widget = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
                         plot_widget.plotWidget.scene().sigMouseMoved.connect(self.anyMouseMoved)
                         plot_widget.interactive_signal.connect(self.xyplot_interactive_signal)
