@@ -20,12 +20,11 @@ import pydantic
 import typing
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import check_for_command
-from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
+from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 import redvypr.gui
 import redvypr.data_packets
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
-from redvypr.gui import RedvyprAddressWidget
+from redvypr.devices.plot import XYPlotWidget
 from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly
 from .autocalibration import  AutoCalEntry, AutoCalConfig, autocalWidget
 from redvypr.devices.sensors.generic_sensor.calibrationWidget import CalibrationsSaveWidget
@@ -1995,14 +1994,14 @@ class displayDeviceWidget(QtWidgets.QWidget):
         for i, sdata in enumerate(self.device.custom_config.calibrationdata):
             # Realtimedata
             if sdata.inputtype == 'datastream':
+                # This is to check if the plot has changed
                 try:
                     realtimeplottype = sdata.__realtimeplottype
-                    same_plotwidgettype = realtimeplottype == sdata.realtimeplottype
                 except:
-                    logger.info('Could not get plottype',exc_info=True)
+                    #logger.info('Could not get plottype',exc_info=True)
                     realtimeplottype = 'unknown'
-                    same_plotwidgettype = False
 
+                same_plotwidgettype = realtimeplottype == sdata.realtimeplottype
                 try:
                     plot_widget = sdata.__plot_widget
                     logger.debug('Plotwidget is existing')
@@ -2030,9 +2029,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     #plot_widget = plot_widgets.redvypr_graph_widget(config=config)
                     if 'XY' in sdata.realtimeplottype:
                         #print('Adding XYplotwidget with address {}'.format(sdata.datastream))
-                        configLine = XYplotWidget.configLine(y_addr=sdata.datastream)
-                        config = XYplotWidget.ConfigXYplot(interactive='xlim_keep', data_dialog='off', lines=[configLine])
-                        plot_widget = XYplotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
+                        configLine = XYPlotWidget.configLine(y_addr=sdata.datastream)
+                        config = XYPlotWidget.ConfigXYplot(interactive='xlim_keep', data_dialog='off', lines=[configLine])
+                        plot_widget = XYPlotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
                         plot_widget.plotWidget.scene().sigMouseMoved.connect(self.anyMouseMoved)
                         plot_widget.interactive_signal.connect(self.xyplot_interactive_signal)
                         #plot_widget.plotWidget.scene().sigMouseClicked.connect(self.anyMouseClicked)
@@ -2113,7 +2112,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.__t_intervall_interactive = xpos
             for p in self.plot_widgets:
                 # print('Moveit',type(p),type(XYplotWidget),isinstance(p,type(XYplotWidget)))
-                if isinstance(p, XYplotWidget.XYPlotWidget):
+                if isinstance(p, XYPlotWidget.XYPlotWidget):
                     if sender == p.plotWidget.scene():
                         pass
                     else:
@@ -2134,7 +2133,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         #print('Mode',mode)
         for p in self.plot_widgets:
             # print('Moveit',type(p),type(XYplotWidget),isinstance(p,type(XYplotWidget)))
-            if isinstance(p, XYplotWidget.XYPlotWidget):
+            if isinstance(p, XYPlotWidget.XYPlotWidget):
                 if 'manually' in mode.lower():
                     p.set_interactive_mode('xlim_keep')
                 else:
@@ -2172,8 +2171,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     #print('b',sensor_data_tmp.realtimeplot)
 
                     data = plot_widget.get_data(t_intervall)
-                    print('Data',data)
-                    if isinstance(plot_widget, XYplotWidget.XYPlotWidget):
+                    #print('Data',data)
+                    if isinstance(plot_widget, XYPlotWidget.XYPlotWidget):
                         data = data['lines'][0]
                     #print('Got data from widget', data)
                     col = plot_widget.datatablecolumn
@@ -2374,7 +2373,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         #mousePoint = sender.plotItem.vb.mapSceneToView(evt)
         for p in self.plot_widgets:
             #print('Moveit',type(p),type(XYplotWidget),isinstance(p,type(XYplotWidget)))
-            if isinstance(p,XYplotWidget.XYPlotWidget):
+            if isinstance(p,XYPlotWidget.XYPlotWidget):
                 if sender == p.plotWidget.scene():
                     pass
                 else:
@@ -2419,7 +2418,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.device.custom_config.calibrationdata[i].parameter = parameter
             self.allsensornames[i] = d
             p.datastream = d
-        if isinstance(p, XYplotWidget.XYPlotWidget):
+        if isinstance(p, XYPlotWidget.XYPlotWidget):
             p.config.lines[0].y_addr = d
             #print('line', p.config.lines[0])
             p.set_title(d)
