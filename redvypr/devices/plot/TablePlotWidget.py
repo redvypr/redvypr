@@ -1,4 +1,5 @@
 import datetime
+import pytz
 import queue
 from PyQt6 import QtWidgets, QtCore, QtGui
 import time
@@ -15,6 +16,8 @@ import redvypr.data_packets
 import redvypr.gui
 import redvypr.files as files
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
+from redvypr.widgets.redvyprAddressWidget import RedvyprAddressEditWidget
+from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import Datapacket
 from redvypr.data_packets import check_for_command
@@ -34,6 +37,8 @@ class ConfigTablePlot(pydantic.BaseModel):
                                                                                      RedvyprAddress('/k:sine_rand')
                                                                                      ],
                                                                                  description='The realtimedata datastreams to be displayed in the table')
+    formats: typing.Dict[str, str] =  pydantic.Field(default={'/k:["_redvypr"]["t"]':'ISO8601',
+                                                            '/k:sine_rand':'{:.2f}'})
     num_packets_show: int = pydantic.Field(default=2,
                                             description='The number of columns to show')
     expansion_level: int = pydantic.Field(default=100,
@@ -81,25 +86,105 @@ class TablePlotWidget(QtWidgets.QWidget):
         item = self.table.itemAt(position)
         # Create a menu specific to the item
         menu = QtWidgets.QMenu(self)
-        # Create actions specific to the item
+        datastream = item.__datastream__
+        if item is not None and datastream is not None:
+            # Create a xyplot action
+            actionXyplot = QtGui.QAction("Plot XY", self)
+            actionXyplot.triggered.connect(lambda: self.create_xyplot(item))
+            menu.addAction(actionXyplot)
+            # Create a format menu/action
+            formats = []
+            menu_formats = menu.addMenu('Formats')
+            actionAddformat = QtGui.QAction("Add format", self)
+            actionAddformat.triggered.connect(lambda: self.edit_format(item))
+            menu_formats.addAction(actionAddformat)
+            for fa in self.config.formats:
+                if datastream in RedvyprAddress(fa):
+                    format_tmp = self.config.formats[fa]
+                    formats.append(format_tmp)
+                    menu_format_datastream = menu_formats.addMenu(fa)
+                    dataformatAction = QtWidgets.QWidgetAction(self)
+                    dataFormatWidget = QtWidgets.QWidget()
+                    dataFormatWidget_layout = QtWidgets.QVBoxLayout(dataFormatWidget)
+                    format_lineEdit = QtWidgets.QLineEdit(format_tmp)
+                    dataFormatWidget_layout.addWidget(format_lineEdit)
+                    applybutton = QtWidgets.QPushButton('Apply')
+                    applybutton.__formatskey__ = fa
+                    applybutton.__format__ = format_tmp
+                    applybutton.__format_lineEdit__ = format_lineEdit
+                    applybutton.__menu__ = menu_formats
+                    applybutton.clicked.connect(self.apply_format_clicked)
+                    removebutton = QtWidgets.QPushButton('Remove')
+                    removebutton.clicked.connect(self.remove_format_clicked)
+                    removebutton.__formatskey__ = fa
+                    removebutton.__menu__ = menu_formats
+                    dataFormatWidget_layout.addWidget(format_lineEdit)
+                    dataFormatWidget_layout.addWidget(applybutton)
+                    dataFormatWidget_layout.addWidget(removebutton)
+                    dataformatAction.setDefaultWidget(dataFormatWidget)
+                    menu_format_datastream.addAction(dataformatAction)
+
+        # Create a configure action
         configAction = QtGui.QAction("Configure", self)
         configAction.triggered.connect(self.config_clicked)
         menu.addAction(configAction)
-        if item is not None:
-            action1 = QtGui.QAction(f"Edit {item.text()}", self)
-            action2 = QtGui.QAction(f"Delete {item.text()}", self)
 
-            # Add actions to the menu
-            menu.addAction(action1)
-            menu.addAction(action2)
-
-            ## Connect actions to slots (for demonstration purposes)
-            #action1.triggered.connect(lambda: self.edit_item(item))
-            #action2.triggered.connect(lambda: self.delete_item(item))
 
         # Show the menu at the position of the mouse click
         menu.exec_(self.table.viewport().mapToGlobal(position))
 
+    def create_xyplot(self,item):
+        address = RedvyprAddress(item.__datastream__)
+        try:
+            devicemodulename = 'redvypr.devices.plot.XYPlotDevice'
+            plotname = 'XYPlot({})'.format(address.datakey)
+            device_parameter = RedvyprDeviceParameter(name=plotname)
+            custom_config = redvypr.devices.plot.XYPlotDevice.DeviceCustomConfig()
+            custom_config.lines[0].y_addr = redvypr.RedvyprAddress(address)
+            plotdevice = self.device.redvypr.add_device(devicemodulename=devicemodulename,
+                                                        base_config=device_parameter,
+                                                        custom_config=custom_config)
+
+            logger.debug('Starting plot device')
+            plotdevice.thread_start()
+        except:
+            logger.debug('Could not add XY-Plot',exc_info=True)
+
+    def edit_format(self,item):
+        #print('Editing format',item,item.__datastream__)
+        datastream = item.__datastream__
+        self.address_edit_tmp = RedvyprAddressEditWidget(redvypr_address_str=datastream)
+        applybutton = self.address_edit_tmp.configwidget_apply
+        self.address_edit_tmp.layout.removeWidget(applybutton)
+        self.address_edit_tmp.layout.addWidget(applybutton,8,0)
+
+        self.address_edit_tmp.layout.addWidget(QtWidgets.QLabel('Format'), 6, 0)
+        self.format_edit = QtWidgets.QLineEdit('{}')
+        self.address_edit_tmp.layout.addWidget(self.format_edit, 7, 0)
+        self.address_edit_tmp.address_finished.connect(self.edit_format_finished)
+
+        self.address_edit_tmp.show()
+
+    def edit_format_finished(self, addr):
+        #print('Address', addr)
+        format_new = self.format_edit.text()
+        #print('Format new',format_new)
+        addrstr = addr['address_str']
+        new_dict = {addrstr: format_new, **self.config.formats}
+        self.config.formats = new_dict
+        self.address_edit_tmp.close()
+
+    def apply_format_clicked(self):
+        button = self.sender()
+        print('Button apply', button)
+        self.config.formats[button.__formatskey__] = button.__format_lineEdit__.text()
+        button.__menu__.close()
+
+    def remove_format_clicked(self):
+        button = self.sender()
+        print('Button remove',button)
+        self.config.formats.pop(button.__formatskey__)
+        button.__menu__.close()
     def config_clicked(self):
         button = self.sender()
 
@@ -123,6 +208,7 @@ class TablePlotWidget(QtWidgets.QWidget):
         self.col_current = 0
         self.col_packets_showed = 0
         self.data_table_keys_show = []
+        self.data_table_datastreams_show = []
         self.table.setColumnCount(2)
         self.table.setRowCount(1)
         self.table.clear()
@@ -157,11 +243,36 @@ class TablePlotWidget(QtWidgets.QWidget):
                 return
 
         # Check if the table has to be resized
+        if False:
+            if self.col_packets_showed >= self.config.num_packets_show:
+                #print('Reset')
+                if self.table.columnCount() == 2:
+                    self.reset_table()
+                counter = self.table.item(0,0).__counter__
+                counter1 = self.table.item(0, 1).__counter__
+                if counter == counter1:
+                    self.table.removeColumn(1)
+                    self.col_packets_showed -= 1
+                    self.col_current -= 1
+
+                counter = self.table.item(self.numrows_header, 0).__counter__
+                counter1 = self.table.item(self.numrows_header, 1).__counter__
+                if counter != counter1:
+                    self.table.removeColumn(0)
+                    self.col_current -= 1
+
+                numrows_tmp = 0
+                for icol_tmp in range(self.table.columnCount()):
+                    item = self.table.item(0,icol_tmp)
+                    numrows_tmp = max(item.__numrows__,numrows_tmp)
+
+                self.table.setRowCount(numrows_tmp+self.numrows_header)
+
         if self.col_packets_showed >= self.config.num_packets_show:
-            #print('Reset')
+            # print('Reset')
             if self.table.columnCount() == 2:
                 self.reset_table()
-            counter = self.table.item(0,0).__counter__
+            counter = self.table.item(0, 0).__counter__
             counter1 = self.table.item(0, 1).__counter__
             if counter == counter1:
                 self.table.removeColumn(1)
@@ -176,10 +287,10 @@ class TablePlotWidget(QtWidgets.QWidget):
 
             numrows_tmp = 0
             for icol_tmp in range(self.table.columnCount()):
-                item = self.table.item(0,icol_tmp)
-                numrows_tmp = max(item.__numrows__,numrows_tmp)
+                item = self.table.item(0, icol_tmp)
+                numrows_tmp = max(item.__numrows__, numrows_tmp)
 
-            self.table.setRowCount(numrows_tmp+self.numrows_header)
+            self.table.setRowCount(numrows_tmp + self.numrows_header)
 
         expand_level = self.config.expansion_level
         data_table = []
@@ -219,6 +330,7 @@ class TablePlotWidget(QtWidgets.QWidget):
         # Plot datakeys
         if flag_new_keys:
             self.data_table_keys_show = data_table_keys_new
+            self.data_table_datastreams_show = data_table_datastreams_new
             icol = self.col_current
             ncols = self.table.columnCount()
             if ncols < (icol + 1):
@@ -234,6 +346,7 @@ class TablePlotWidget(QtWidgets.QWidget):
             item.setBackground(QtGui.QBrush(QtGui.QColor("lightblue")))
             self.table.setItem(0, icol, item)
             # Plot the datakeys
+            ds = None
             for irow in range(self.table.rowCount()):
                 if irow < len(data_table_keys_new):
                     dk = data_table_keys_new[irow]
@@ -244,7 +357,6 @@ class TablePlotWidget(QtWidgets.QWidget):
                 dkstr = str(dk)  # Here one could do some formatting
                 # Metadata
                 if self.redvypr is not None and self.config.show_unit:
-                    #print('dk', dk, 'ds', ds)
                     metadata = self.redvypr.get_metadata(ds)
                     try:
                         unit = " / {}".format(metadata['unit'])
@@ -254,8 +366,9 @@ class TablePlotWidget(QtWidgets.QWidget):
 
                 item = QtWidgets.QTableWidgetItem(dkstr)
                 item.__counter__ = self.counter
+                item.__datastream__ = ds
+                item.__datakey__ = dk
                 self.table.setItem(irow+self.numrows_header,icol,item)
-
 
         # Plot data
         if True:
@@ -270,14 +383,40 @@ class TablePlotWidget(QtWidgets.QWidget):
             item.__numrows__ = len(data_table)
             item.setBackground(QtGui.QBrush(QtGui.QColor("lightgrey")))
             self.table.setItem(0, icol, item)
+            datastream_show_tmp = None
+            datakey_show_tmp = None
             for irow in range(self.table.rowCount()):
                 if irow < len(data_table):
                     data_item = data_table[irow]
-                else:
-                    data_item = ''
+                    datastream_show_tmp = self.data_table_datastreams_show[irow]
+                    datakey_show_tmp = self.data_table_keys_show[irow]
+                    format_show = '{}'
+                    for format_addressstr in self.config.formats:
+                        format_address = RedvyprAddress(format_addressstr)
+                        if datastream_show_tmp in format_address:
+                            format_show = self.config.formats[format_addressstr]
+                            break
 
-                item = QtWidgets.QTableWidgetItem(str(data_item))
+                    # data_str = str(data_item)
+                    # Convert the data into a string
+                    if format_show == 'ISO8601':
+                        dt_object = datetime.datetime.fromtimestamp(data_item, pytz.utc)
+                        data_str = dt_object.isoformat()
+                    else:
+                        try:
+                            data_str = format_show.format(data_item)
+                        except:
+                            logger.warning('Could not apply format str "" for address: {}'.format(format_show,
+                                                                                              format_addressstr),
+                                       exc_info=True)
+                else:
+                    data_str = ''
+
+                item = QtWidgets.QTableWidgetItem(data_str)
                 item.__counter__ = self.counter
+                item.__data__ = data_item
+                item.__datastream__ = datastream_show_tmp
+                item.__datakey__ = datakey_show_tmp
                 self.table.setItem(irow+self.numrows_header, icol, item)
 
         self.table.resizeColumnsToContents()

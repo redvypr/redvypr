@@ -299,22 +299,21 @@ class redvyprWidget(QtWidgets.QWidget):
                     while True:
                         try:
                             data = guiqueue.get(block=False)
-                        except Exception as e:
-                            # print('Exception gui',e)
+                        except:
                             break
 
                         # Updating the widget, if existing
                         try:
                             gui_widget.update_plot(data)
-                        except Exception as e:
-                            break
+                        except:
+                            pass
 
                         # Updating the widget, if existing
                         try:
                             gui_widget.update_data(data)
-                        except Exception as e:
-                            break
-                            # logger.exception(e)
+                        except:
+                            pass
+
 
 
     def load_config(self):

@@ -65,14 +65,17 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
         self.submitaddr = QtWidgets.QLineEdit()
         self.submitaddr.setReadOnly(True)
         # Buttons
-        self.__configwidget_apply = QtWidgets.QPushButton('Apply')
-        self.__configwidget_apply.clicked.connect(self.applyClicked)
-        self.__configwidget_apply.__configType = 'configRedvyprAddressStr'
+        self.configwidget_apply = QtWidgets.QPushButton('Apply')
+        self.configwidget_apply.clicked.connect(self.applyClicked)
+        self.configwidget_apply.__configType = 'configRedvyprAddressStr'
 
-        self.layout.addWidget(self.key_widget, 0, 0)
-        self.layout.addWidget(self.fulladdr, 1, 0)
-        self.layout.addWidget(self.submitaddr, 2, 0)
-        self.layout.addWidget(self.__configwidget_apply, 3, 0)
+        self.layout.addWidget(QtWidgets.QLabel('Address Entries'), 0, 0)
+        self.layout.addWidget(self.key_widget, 1, 0)
+        self.layout.addWidget(QtWidgets.QLabel('Full address'), 2, 0)
+        self.layout.addWidget(self.fulladdr, 3, 0)
+        self.layout.addWidget(QtWidgets.QLabel('Address'), 4, 0)
+        self.layout.addWidget(self.submitaddr, 5, 0)
+        self.layout.addWidget(self.configwidget_apply, 6, 0)
         self.setAddress(self.redvypr_address_full)
 
     def setAddress(self, address):
