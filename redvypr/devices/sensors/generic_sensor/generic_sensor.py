@@ -607,7 +607,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         tnow = time.time()
         for sensor in self.device.custom_config.sensors:
             try:
-                sensor.__sensorwidget__.update_plot(data)
+                sensor.__sensorwidget__.update_data(data)
             except:
                 logger.info('Could not update',exc_info=True)
 
