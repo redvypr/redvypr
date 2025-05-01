@@ -647,7 +647,6 @@ class FirmwareCalibrationsWidget(QtWidgets.QWidget):
         #    self.sensor = tar.TarSensor()
 
         self.dhffl = dhffl
-
         self.query_button = QtWidgets.QPushButton('Query devices')
         self.query_button.clicked.connect(self.query_devices)
         self.readcal_button = QtWidgets.QPushButton('Read calibrations')
@@ -662,6 +661,7 @@ class FirmwareCalibrationsWidget(QtWidgets.QWidget):
         self.calibtablename_firmware = 'Calibrations Sensorfirmware'
         calibrations_sensor = {self.calibtablename_firmware:[], self.calibtablename_edit:[]}
         calibrations_sensor_options = {self.calibtablename_firmware: {'editable':False}, self.calibtablename_edit: {'editable':True}}
+
         self.calibwidget = GenericSensorCalibrationWidget(calibrations_all=self.calibrations_all, calibrations_sensor=calibrations_sensor, calibrations_sensor_options=calibrations_sensor_options)
 
         self.layout.addWidget(self.query_button, 0, 0)
@@ -698,6 +698,8 @@ class FirmwareCalibrationsWidget(QtWidgets.QWidget):
                 self.calibwidget.update_calibration_all_table(self.calibrations_all)
                 self.calibwidget.update_calibration_table(self.calibtablename_firmware, calibrations)
                 self.calibwidget.update_calibration_table(self.calibtablename_edit, calibrations_edit)
+                sensor_info = {'sn': self.currentmac}
+                self.calibwidget.update_sensor_info(sensor_info)
                 self.macobject_choosen = macobject
 
 
@@ -1043,6 +1045,7 @@ class HexflashWidget(QtWidgets.QWidget):
     def write_callback(self):
         self.writethread = False
         self.write_button.setEnabled(True)
+
     def write_clicked(self):
         self.logger.debug('Write clicked')
         filename = self.filename_write_edit.text()

@@ -327,6 +327,7 @@ class GenericSensorCalibrationWidget(QtWidgets.QWidget):
 
         self.calibration_models = calibration_models
 
+        self.sensorinfo = {'sn':None, 'calibration_type':None, 'calibration_id':None, 'calibration_uuid':None}
         # Sensor generic config widget to load, save sensor config
         self.configWidget = QtWidgets.QWidget()
         self.configWidget_layout = QtWidgets.QGridLayout(self.configWidget)
@@ -353,13 +354,20 @@ class GenericSensorCalibrationWidget(QtWidgets.QWidget):
                 autofindcal_button = QtWidgets.QPushButton('Find calibration')
                 autofindcal_button.clicked.connect(self.find_calibrations)
                 autofindcal_button.calibtablename = calibtablename
-                self.calibrationsTableAutoCalButtons[calibtablename] = autofindcal_button
+
+                clearcal_button = QtWidgets.QPushButton('Clear')
+                clearcal_button.clicked.connect(self.clear_calibrations)
+                clearcal_button.calibtablename = calibtablename
+
+                self.calibrationsTableAutoCalButtons[calibtablename] = {'find':autofindcal_button,'clear':clearcal_button}
                 self.calibrationsTableWidgets_layout[calibtablename].addWidget(autofindcal_button)
+                self.calibrationsTableWidgets_layout[calibtablename].addWidget(clearcal_button)
                 hide_columns = []
 
             calibrations_tmp = calibrations_sensor[calibtablename]
             self.calibrationsTable[calibtablename] = CalibrationsTable(calibrations=calibrations_tmp, hide_columns=hide_columns)
             self.calibrationsTableWidgets_layout[calibtablename].addWidget(self.calibrationsTable[calibtablename])
+
 
         self.calibrations_allTable = CalibrationsTable(calibrations=self.calibrations)
 
@@ -405,6 +413,11 @@ class GenericSensorCalibrationWidget(QtWidgets.QWidget):
         #self.layout.addWidget(self.configWidget, 0, 0)
         #self.layout.addWidget(self.parameterWidget,0,1)
 
+    def update_sensor_info(self,sensorinfo):
+        funcname = __name__ + '.update_sensorinfo():'
+        logger.debug(funcname)
+        self.sensorinfo = sensorinfo
+
     def remCalibration_clicked(self):
         funcname = __name__ + '.remCalibration_clicked():'
         logger.debug(funcname)
@@ -414,6 +427,22 @@ class GenericSensorCalibrationWidget(QtWidgets.QWidget):
             self.calibrations.remove(cal)
 
         self.update_calibration_all_table(self.calibrations)
+
+    def clear_calibrations(self):
+        funcname = __name__ + '.clear_calibrations():'
+        logger.debug(funcname)
+        clearcal_button = self.sender()
+        calibtablename = clearcal_button.calibtablename
+        calibrations = self.calibrations
+        calibrations_find = self.calibrationsTable[calibtablename].calibrations
+        calibrations_found = copy.deepcopy(calibrations_find)
+        # Loop over the calibrations, check if list or dict and try to find proper calibration
+        # if dict
+        flag_found_calibration = 0
+        for i, cal_key in enumerate(calibrations_find):
+            calibrations_find[cal_key] = None
+
+        self.calibrationsTable[calibtablename].update_table(calibrations=calibrations_find)
 
     def find_calibrations(self):
         funcname = __name__ + '.find_calibrations():'
@@ -438,10 +467,23 @@ class GenericSensorCalibrationWidget(QtWidgets.QWidget):
                 raise ValueError('Calibrations need to be a dictionary')
 
             parameter = cal_key
-            calibration_candidates = redvypr.devices.sensors.calibration.calibration_models.find_calibration_for_parameter(parameter,calibrations)
-            print('Calibration candidates for parameter',calibration_candidates)
+            try:
+                sn = self.sensorinfo['sn']
+            except:
+                sn = None
+            calibration_candidates = redvypr.devices.sensors.calibration.calibration_models.find_calibration_for_parameter(parameter=parameter,calibrations=calibrations,sn=sn)
+
+            print('Finding calibration for parameter {} with sn {}'.format(parameter,sn))
+            #print('Calibration candidates for parameter',calibration_candidates)
             if len(calibration_candidates) > 0:
-                calibration_candidate_final = calibration_candidates[0]
+                print('Found {} calibrations:'.format(len(calibration_candidates)))
+                for icand, ctmp in enumerate(calibration_candidates):
+                    print('{}:'.format(icand))
+                    print(ctmp)
+
+                ichoose = 0
+                print('Choosing calibration with index {} '.format(ichoose))
+                calibration_candidate_final = calibration_candidates[ichoose]
                 calibrations_found[cal_key] = calibration_candidate_final
                 flag_found_calibration += 1
 

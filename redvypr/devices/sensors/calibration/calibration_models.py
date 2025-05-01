@@ -46,7 +46,7 @@ def find_calibration_for_parameter(parameter, calibrations, sn=None, date=None, 
         if calibration.parameter in parameter:
             logger.debug('Found correct parameter')
             if sn is not None:
-                flag_candidate = sn == calibration.sn
+                flag_candidate = sn in calibration.sn
             if calibration_type is not None:
                 flag_candidate = calibration_type == calibration.calibration_type
             if calibration_uuid is not None:
@@ -66,7 +66,7 @@ def find_calibration_for_parameter(parameter, calibrations, sn=None, date=None, 
 
     # Sort by date
     if sort_by == 'date':
-        calibration_candidates = sorted(calibration_candidates, key=lambda x: x.date)
+        calibration_candidates = sorted(calibration_candidates, key=lambda x: x.date, reverse=True)
 
     return calibration_candidates
 def get_date_from_calibration(calibration, parameter, return_str = False, strformat = '%Y-%m-%d %H:%M:%S'):

@@ -1226,7 +1226,13 @@ class dhf_flasher():
                         return
                     except:
                         pass
-                    data = self.serial_readline()
+
+                    try:
+                        data = self.serial_readline()
+                    except:
+                        time.sleep(0.02)
+                        continue
+
                     if (len(data) > 0):
                         self.logger.debug('Received data:{}'.format(data))
                         data_ret = data.decode('utf-8')
