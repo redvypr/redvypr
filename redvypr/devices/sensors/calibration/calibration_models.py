@@ -8,6 +8,7 @@ import yaml
 import dateutil
 import numpy as np
 import pydantic
+import pytz
 
 import redvypr
 from redvypr.redvypr_address import RedvyprAddress
@@ -16,6 +17,12 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.calibration_models')
 logger.setLevel(logging.DEBUG)
 
+
+# Convert to timezone-aware datetime, needed for sorting
+def to_aware(dt):
+    if dt.tzinfo is None:
+        return pytz.utc.localize(dt)
+    return dt
 
 
 def find_calibration_for_parameter(parameter, calibrations, sn=None, date=None, date2=None, calibration_type=None, calibration_id=None, calibration_uuid=None, sort_by='date'):
@@ -66,7 +73,7 @@ def find_calibration_for_parameter(parameter, calibrations, sn=None, date=None, 
 
     # Sort by date
     if sort_by == 'date':
-        calibration_candidates = sorted(calibration_candidates, key=lambda x: x.date, reverse=True)
+        calibration_candidates = sorted(calibration_candidates, key=lambda x: to_aware(x.date), reverse=True)
 
     return calibration_candidates
 def get_date_from_calibration(calibration, parameter, return_str = False, strformat = '%Y-%m-%d %H:%M:%S'):

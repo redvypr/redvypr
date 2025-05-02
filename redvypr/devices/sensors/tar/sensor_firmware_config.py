@@ -211,7 +211,7 @@ class dhf_sensor():
         $D8478FFFFE95CA01,set caluuid <uuid>\n
         $D8478FFFFE95CA01,set calcomment <comment>\n
         $D8478FFFFE95CA01,set caldate <datestr in ISO8190 format (max 31 Bytes)>\n
-        $D8478FFFFE95CA01,set ntc21 4 1.128271e-03 3.289026e-04 -1.530210e-05 1.131836e-06 0.000000e+00\n
+        $D8478FFFFE95CA01,set cal ntc21 4 1.128271e-03 3.289026e-04 -1.530210e-05 1.131836e-06 0.000000e+00\n
 
         Parameters
         ----------
@@ -269,7 +269,7 @@ class dhf_sensor():
                 calibration = cal_key
                 parameter = str(calibration.parameter.datakey)
 
-            print('Parameter',parameter)
+            #print('Parameter',parameter)
             if calibration.calibration_type == 'ntc':
                 self.logger.debug('NTC calibration')
                 # Find index in parameter that looks like this: '''R["63"]''')
@@ -288,7 +288,7 @@ class dhf_sensor():
                         except:
                             coeff_write.append(0.0)
 
-                    comstr = "set ntc{index} {caltype} {c0} {c1} {c2} {c3} {c4}".format(index=index,caltype=caltype,c0=coeff_write[0],c1=coeff_write[1],c2=coeff_write[2],c3=coeff_write[3],c4=coeff_write[4])
+                    comstr = "set cal ntc{index} {caltype} {c0} {c1} {c2} {c3} {c4}".format(index=index,caltype=caltype,c0=coeff_write[0],c1=coeff_write[1],c2=coeff_write[2],c3=coeff_write[3],c4=coeff_write[4])
                     devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
                     commands.append(devicecommand)
         if savecal:
@@ -822,10 +822,10 @@ class dhf_flasher():
                         if ('set calcomment' in datads) and (mactmp is not None):
                             calcomment = datads.split('set calcomment ')[1][:-1]
                             self.logger.debug('{}:Caldcomment:{}'.format(mactmp, calcomment))
-                        if ('set ntc' in datads) and (mactmp is not None):
+                        if ('set cal ntc' in datads) and (mactmp is not None):
                             self.logger.debug('Found calibration entry')
-                            #'$D8478FFFFE95CD4D,set ntc56 4 1.128271e-03 3.289026e-04 -1.530210e-05 1.131836e-06 0.000000e+00\n'
-                            repattern = r"^\$(\w+)!,set (\w+) (\d+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+)"
+                            #'$D8478FFFFE95CD4D,set cal ntc56 4 1.128271e-03 3.289026e-04 -1.530210e-05 1.131836e-06 0.000000e+00\n'
+                            repattern = r"^\$(\w+)!,set cal (\w+) (\d+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+) ([0-9A-Za-z+.-]+)"
                             match = re.match(repattern, datads)
                             #print('datads (ntc)',datads)
                             if match:
@@ -854,7 +854,7 @@ class dhf_flasher():
                                                                                      sensor_model=str(macobject.brdid))
                                         self.logger.debug('Adding {} to calibrations'.format(macobject.macstr))
                                         macobject.calibrations[parameter] = calmodel
-                                        print('Calmodel',calmodel)
+                                        #print('Calmodel',calmodel)
                                         flag_cal_found=True
                             else:
                                 print("Could not find calibration")
@@ -1214,9 +1214,9 @@ class dhf_flasher():
             self.logger.debug(funcname + ' writing {} of {}:{}'.format(icom, len(commands), write_command))
             self.serial_write(write_command.encode('utf-8'))
             if 'savecal' in command:
-                nwait = 500
+                nwait = 5000
             else:
-                nwait = 5
+                nwait = 50
 
             if True:
                 for i in range(nwait):
@@ -1236,7 +1236,9 @@ class dhf_flasher():
                     if (len(data) > 0):
                         self.logger.debug('Received data:{}'.format(data))
                         data_ret = data.decode('utf-8')
-                        if 'savecal:done' in data_ret:
+                        if ',set cal done' in data_ret:
+                            break
+                        elif 'savecal:done' in data_ret:
                             message = 'Calibration saved to flash'
                             infodata = {'status': 'write', 'written': len(commands), 'write_total': len(commands),
                                         'message': message}
