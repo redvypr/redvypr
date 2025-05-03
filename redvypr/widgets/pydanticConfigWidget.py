@@ -20,7 +20,7 @@ from redvypr.data_packets import RedvyprMetadata, RedvyprMetadataGeneral
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.widgets.pydanticConfigWidget')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 class pydanticDeviceConfigWidget(QtWidgets.QWidget):
