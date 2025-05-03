@@ -610,10 +610,10 @@ class CalibrationsWriteToSensorWidget(QtWidgets.QWidget):
         self.result_text.setTextCursor(cursor)
         self.calcommands = calcommands
 
-        print('Calcommands', calcommands)
+        self.logger.debug('Calcommands: {}'.format(calcommands))
 
     def __write_clicked__(self):
-        print('Writing ...')
+        self.logger.debug('Writing calcommands')
         self.__update_calcommands__()
         if self.dhffl is not None and self.macobject is not None:
             macstr = self.macobject.macstr
@@ -623,15 +623,7 @@ class CalibrationsWriteToSensorWidget(QtWidgets.QWidget):
             self.logger.info('Starting write calibration thread')
             writethread.start()
 
-        #for calcommand in self.calcommands:
-        #    print('Writing')
-        #    logstr = 'Writing:' + str(calcommand[:-1])
-        #    self.result_text.appendPlainText(logstr)  # Without the newline
-        #    self.dhffl.write_data(calcommand)
-        #    cursor = self.result_text.textCursor()
-        #    cursor.movePosition(cursor.End)
-        #    self.result_text.setTextCursor(cursor)
-        #    time.sleep(0.2)
+
 
 
 class FirmwareCalibrationsWidget(QtWidgets.QWidget):
