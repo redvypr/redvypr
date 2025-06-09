@@ -7,6 +7,8 @@ import numpy as np
 import logging
 import sys
 import yaml
+import pydantic
+import typing
 import copy
 import os
 from redvypr.device import RedvyprDevice
@@ -17,43 +19,29 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.fileread')
 logger.setLevel(logging.DEBUG)
 
-description = "Reads a file and publishes the data as chunks defined by the users"
-config_template = {}
-config_template['name']              = 'fileread'
-config_template['files']             = {'type':'list','description':'List of files ro replay'} # TODO, list
-config_template['loop']              = {'type':'bool','default':True,'description':'Loop over all files if set'}
-config_template['speedup']           = {'type':'float','description':'Speedup factor of the data'}
-config_template['redvypr_device']    = {}
-config_template['redvypr_device']['publishes']   = True
-config_template['redvypr_device']['subscribes']  = False
-config_template['redvypr_device']['description'] = description
+
+class DeviceBaseConfig(pydantic.BaseModel):
+    publishes: bool = True
+    subscribes: bool = False
+    description: str = "Reads a file and publishes the data as chunks defined by the users"
+    gui_tablabel_display: str = 'File status'
+    gui_icon: str = 'mdi.code-json'
+
+class DeviceCustomConfig(pydantic.BaseModel):
+    files: list = pydantic.Field(default=[], description='List of files to replay')
+    replay_index: list = pydantic.Field(default=['0,-1,1'], description='The index of the packets to be replayed [start, end, nth]')
+    loop: bool = pydantic.Field(default=False, description='Loop over all files if set')
+    chunksize: int = pydantic.Field(default=2560, description='The chunksize to be read from the file')
+    delimiter: bytes = pydantic.Field(default=b'\n', description='The delimiter for a packet')
+
 redvypr_devicemodule = True
-def get_packets(filestream=None):
-    funcname = __name__ + '.get_packets()'
-    packets = []
-    if(filestream is not None):
-        data = filestream.read()
-        for databs in data.split('...\n'): # Split the text into single subpackets
-            try:
-                data = yaml.safe_load(databs)
-                if(data is not None):
-                    packets.append(data)
-                    
-            except Exception as e:
-                logger.debug(funcname + ': Could not decode message {:s}'.format(str(databs)))
-                data = None
-    
-        return packets
-    else:
-        return None
+
         
-    
-
-
 def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening reading:')
     files = config['files']
+    print('Config',config)
     t_sent = 0 # The time the last packets was sent
     t_packet_old = 1e12 # The time the last packet had (internally)
     #
@@ -71,20 +59,21 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
         
     loop = config['loop']
     
-    
+    bps_config = 115200
+
     statistics = create_data_statistic_dict()
     
-    bytes_read         = 0
-    packets_read       = 0
-    bytes_read_total   = 0
+    bytes_read = 0
+    packets_read = 0
+    bytes_read_total = 0
     packets_read_total = 0
-    
-    tfile           = time.time() # Save the time the file was created
-    tflush          = time.time() # Save the time the file was created
+
+    bytes_read_bps = 0
+    tupdate = time.time()
     f = None    
     nfile = 0
     while True:
-        tcheck      = time.time()
+        tcheck = time.time()
         try:
             data = datainqueue.get(block=False)
         except:
@@ -103,40 +92,42 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                         pass
                     break
 
-        packets = get_packets(f)
-        if(packets is None):
+        try:
+            data_raw = b''
+            while True:
+                #data_tmp = f.read(config['chunksize'])
+                data_tmp = f.read(1)
+                data_raw += data_tmp
+                bytes_read += 1
+                if data_tmp == config['delimiter'] or data_tmp == b'' or len(data_raw) >= config['chunksize']:
+                    tread = time.time()
+                    bytes_read_bps += len(data_raw)
+                    break
+
+        except:
+            logger.debug('Could not read data',exc_info=True)
+            data_raw = b''
+
+        if(len(data_raw) == 0):
             FLAG_NEW_FILE = True
         else:
             FLAG_NEW_FILE = False
             
-        if(packets is not None):
-            for p in packets:
+        if(len(data_raw) > 0):
+            p = {'data':data_raw}
+            #print('P',p)
+            if True:
                 t_now = time.time()
-                dt = t_now - t_sent
-                dt_packet = (p['_redvypr']['t'] - t_packet_old)/speedup
-                if(dt_packet < 0):
-                    dt_packet = 0
+                dataqueue.put(p)
 
-                if True:
-                    time.sleep(dt_packet)
-                    t_sent = time.time()
-                    t_packet_old = p['_redvypr']['t']
-                    dataqueue.put(p)
+        if FLAG_NEW_FILE:
+            try:
+                f.close()
+            except:
+                pass
 
-                sstr = 'Sending packet in {:f} s.'.format(dt_packet)
-                logger.debug(sstr)
-                try:
-                    statusqueue.put_nowait(sstr)
-                except:
-                    pass
-
-
-            FLAG_NEW_FILE = True
-            f.close()
-            
-        if(FLAG_NEW_FILE):
-            if(nfile >= len(files)):
-                if(loop == False):
+            if nfile >= len(files):
+                if loop == False:
                     sstr = funcname + ': All files read, stopping now.'
                     try:
                         statusqueue.put_nowait(sstr)
@@ -161,11 +152,21 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             except:
                 pass
             logger.info(sstr)
-            f = open(filename)
+            filesize = os.path.getsize(filename)
+            f = open(filename,'rb')
+            bytes_read = 0
             nfile += 1
-        
-        time.sleep(0.05)
 
+        if (time.time() - tupdate) > 2.0:
+            tupdate = time.time()
+            #print('f', bytes_read_bps, bytes_read / filesize * 100)
+            sstr = "{}: {}, {} bps, {:.1f}%".format(datetime.datetime.now(), filename, bytes_read_bps, bytes_read / filesize * 100)
+            statusqueue.put_nowait(sstr)
+
+        if bytes_read_bps >= bps_config:
+            dt_sleep = 0.05
+            time.sleep(dt_sleep)
+            bytes_read_bps -= int(bps_config * 0.05)
 
 #
 #
@@ -233,39 +234,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
 
-    def inspect_data(self, filename, rescan=False):
-        """ Inspects the files for possible datastreams in the file with the filename located in config['files'][fileindex].
-        """
-        funcname = self.__class__.__name__ + '.inspect_data()'
-        logger.debug(funcname)
-        try:
-            stat = self.file_statistics[filename]
-            FLAG_HASSTAT = True
-        except:
-            FLAG_HASSTAT = False
-
-        if (rescan or (FLAG_HASSTAT == False)):
-            logger.debug(funcname + ': Scanning file {:s}'.format(filename))
-            stat = create_data_statistic_dict()
-            # Create tmin/tmax in statistics
-            stat['t_min'] = 1e12
-            stat['t_max'] = -1e12
-            f = open(filename)
-            packets = get_packets(f)
-            f.close()
-            for p in packets:
-                stat = do_data_statistics(p, stat)
-                tminlist = [stat['t_min'], p['_redvypr']['t']]
-                tmaxlist = [stat['t_max'], p['_redvypr']['t']]
-                stat['t_min'] = min(tminlist)
-                stat['t_max'] = max(tmaxlist)
-
-            self.file_statistics[filename] = stat
-        else:
-            logger.debug(funcname + ': No rescan of {:s}'.format(filename))
-
-        return stat
-        
     def finalize_init(self):
         """ Util function that is called by redvypr after initializing all config (i.e. the configuration from a yaml file)
         """
@@ -277,35 +245,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.scan_files_clicked()'
         logger.debug(funcname)
-        rows = []
-        for i in self.inlist.selectionModel().selection().indexes():
-            row, column = i.row(), i.column()
-            rows.append(row)
-    
-        self.scan_files(rows)
-        
-    def scan_files(self,rows):
-        """ Scans the selected files from the files list for possible datastreams 
-        """
-        funcname = self.__class__.__name__ + '.scan_files()'
-        logger.debug(funcname)
 
-        for i in rows:
-            filename = self.inlist.item(i,0).text()
-            stat = self.inspect_data(filename,rescan=False)
-            packetitem = QtWidgets.QTableWidgetItem(str(stat['packets_published']))
-            self.inlist.setItem(i,1,packetitem)
-            tdmin = datetime.datetime.fromtimestamp(stat['t_min'])
-            tminstr = str(tdmin)
-            tdmax = datetime.datetime.fromtimestamp(stat['t_max'])
-            tmaxstr = str(tdmax)
-            t_min_item = QtWidgets.QTableWidgetItem(tminstr)
-            t_max_item = QtWidgets.QTableWidgetItem(tmaxstr)
-            self.inlist.setItem(i,2,t_min_item)
-            self.inlist.setItem(i,3,t_max_item)
-            
-        self.inlist.resizeColumnsToContents()
-            
+        
     def rem_files(self):
         """ Remove the selected files from the files list
         """
@@ -319,7 +260,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         rows = list(set(rows))
         rows.sort(reverse=True)  
         for i in rows:
-            self.device.custom_config['files'].pop(i)
+            self.device.custom_config.files.pop(i)
             
         self.update_filenamelist() 
 
@@ -328,9 +269,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.add_files()'
         logger.debug(funcname)
-        filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self,"Rawdatafiles","","redvypr raw (*.redvypr_yaml);;All Files (*)")
+        filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self,"Rawdatafiles","","All Files (*)")
         for f in filenames: 
-            self.device.custom_config['files'].append(f)
+            self.device.custom_config.files.append(f)
             
         
         self.update_filenamelist()
@@ -343,29 +284,27 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         self.inlist.clear()
         self.inlist.setHorizontalHeaderLabels(self.__filelistheader__)
-        nfiles = len(self.device.custom_config['files'])
+        nfiles = len(self.device.custom_config.files)
         self.inlist.setRowCount(nfiles)
 
         rows = []        
-        for i,f in enumerate(self.device.custom_config['files']):
+        for i,f in enumerate(self.device.custom_config.files):
             item = QtWidgets.QTableWidgetItem(f)
             self.inlist.setItem(i,0,item)
             rows.append(i)
-            
-            
-        self.scan_files(rows)
+
         self.inlist.resizeColumnsToContents()
         
     def resort_files(self):
         """ Resorts the files in config['files'] according to the sorting in the table
         """
         files_new = []
-        nfiles = len(self.device.custom_config['files'])
+        nfiles = len(self.device.custom_config.files)
         for i in range(nfiles):
             filename = self.inlist.item(i,0).text()
             files_new.append(filename)
             
-        self.device.custom_config['files'] = files_new
+        self.device.custom_config.files = files_new
         
     def con_clicked(self):
         funcname = self.__class__.__name__ + '.con_clicked():'
@@ -383,9 +322,9 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.resort_files()
             loop = self.loop_checkbox.isChecked()
             # Loop
-            self.device.custom_config['loop']    = loop
+            self.device.custom_config.loop = loop
             # Speedup
-            self.device.custom_config['speedup'] = float(self.speedup_edit.text())
+            #self.device.custom_config['speedup'] = float(self.speedup_edit.text())
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')
@@ -439,12 +378,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.statustimer.timeout.connect(self.update)
         self.statustimer.start(500)
 
-    def update_data(self):
+    def update(self):
         statusqueue = self.device.statusqueue
-        while (statusqueue.empty() == False):
+        while True:
             try:
                 data = statusqueue.get(block=False)
             except:
+                #logger.info('Could not read data',exc_info=True)
                 break
 
             self.text.insertPlainText(str(data) + '\n')

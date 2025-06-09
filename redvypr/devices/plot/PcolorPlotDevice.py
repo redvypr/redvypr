@@ -55,6 +55,11 @@ class DeviceCustomConfig(pydantic.BaseModel):
     collevel_max: typing.Optional[float] = pydantic.Field(default=None, description='Maximum color level')
 
 
+
+
+
+
+
 # Use the standard start function as the start function
 class PcolorPlotWidget(QtWidgets.QWidget):
     def __init__(self, config=None, redvypr_device=None, loglevel=logging.DEBUG):
@@ -204,6 +209,40 @@ class PcolorPlotWidget(QtWidgets.QWidget):
         self.mesh.setLevels(self.levels)
         print('Scale',self.levels)
 
+    def repair_data(self):
+        """
+        Repairs data such that it can be plotted in a pcolor-plot like style
+        Parameters
+        ----------
+        data
+        config
+
+        Returns
+        -------
+
+        """
+        lenmax = -1000
+        for d in self.data_z:
+            lenmax = max(len(d), lenmax)
+
+        data_clean_z = []
+        data_clean_x = []
+        for i, d in enumerate(self.data_z):
+            if len(d) != lenmax:
+                pass
+                # d_new = numpy.zeros(lenmax) * numpy.nan
+                # data[i] = d_new.tolist()
+            elif numpy.isnan(d).any():
+                pass
+            else:
+                data_clean_z.append(d)
+                data_clean_x.append(self.data_x[i])
+
+        self.data_x = data_clean_x
+        self.data_z = data_clean_z
+
+        #print('Repaired',numpy.shape(self.data_z),numpy.shape(self.data_y),numpy.shape(self.data_x))
+
     def update_data(self,rdata):
         funcname = __name__ + '.update_data():'
         self.logger.debug(funcname + 'Got data to plot {}'.format(rdata.address))
@@ -220,13 +259,26 @@ class PcolorPlotWidget(QtWidgets.QWidget):
             self.data_all.append(rdata)
             self.data_x.append(rdata['t'])
         except:
-            self.logger.warning('Could append update data', exc_info=True)
+            self.logger.warning('Could not append update data', exc_info=True)
 
         if len(self.data_x) > 2:
             try:
                 print('Plotting')
-                #print(self.data_z)
-                z = numpy.asarray(self.data_z)
+                print(self.data_z)
+
+                try:
+                    z = numpy.asarray(self.data_z)
+                except:
+                    print('Repairing')
+                    print('Repairing')
+                    print('Repairing')
+                    print('Repairing')
+                    self.repair_data()
+                    z = numpy.asarray(self.data_z)
+
+                if numpy.isnan(self.data_z).any() or numpy.isnan(self.data_x).any():
+                    print('Repairing nan')
+                    self.repair_data()
                 Z = z[:-1, :]
                 ny = numpy.shape(z)[1]
                 nx = numpy.shape(z)[0]
@@ -235,16 +287,8 @@ class PcolorPlotWidget(QtWidgets.QWidget):
                 X = numpy.asarray(numpy.tile(x,(ny+1,1)))
                 X = X.T
                 Y = numpy.asarray(numpy.tile(y, (nx, 1)))
-                #Y = Y.T
-                #print('x',x)
-                #print('X', X)
-                #print('y', y)
-                #print('Y', Y)
-                #print('z', z)
-                #print('shapes', numpy.shape(X),numpy.shape(Y),numpy.shape(Z))
-                #levels_old = self.mesh.getLevels()
-                #print('levels', self.levels,self.mesh.getLevels())
-                self.mesh.setData(X,Y,Z)
+
+                self.mesh.setData(X, Y, Z)
                 if self.levels is not None:
                     if self.config.collevel_auto:
                         self.levels = self.mesh.getLevels()
@@ -253,8 +297,14 @@ class PcolorPlotWidget(QtWidgets.QWidget):
                     #print('Set levels', self.levels)
             except:
                 print('Problem')
-                self.logger.info('Could not update data', exc_info=True)
-                logger.warning('Could not update data',exc_info=True)
+                #self.logger.info('Could not update data', exc_info=True)
+                self.logger.warning('Could not update data',exc_info=True)
+                self.logger.warning('Resetting buffer')
+                return
+                self.data_z = []
+                self.data_x = []
+                self.data_y = []
+                self.data_all = []
 
 class RedvyprDeviceWidget(RedvyprdevicewidgetStartonly):
     def __init__(self,*args,**kwargs):

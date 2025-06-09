@@ -198,7 +198,7 @@ class Sensor(pydantic.BaseModel):
                                 rdata[address_result] = caldata_cal
 
                         #print('data done', rdata)
-                        print('yaml2', yaml.dump(dict(rdata)))
+                        #print('yaml2', yaml.dump(dict(rdata)))
                         return dict(rdata)
 
 
@@ -279,7 +279,7 @@ class BinarySensor(Sensor):
             return data_packet
         else:
             return None
-    def datapacket_process(self, data):
+    def datapacket_process(self, data, datakey=None):
         """
         Processes a redvypr datapacket.
         :param data:
@@ -287,9 +287,18 @@ class BinarySensor(Sensor):
         """
         #print('Hallo data', data)
         #print('address',self.__rdatastream__)
-        if data in self.__rdatastream__:
+        flag_data = False
+        if datakey is None:
+            if data in self.__rdatastream__:
+                binary_data = self.__rdatastream__.get_data(data)
+                flag_data = True
+        else:
+            binary_data = data[datakey]
+            flag_data = True
+
+        if flag_data:
             #print('Processing data',data)
-            binary_data = self.__rdatastream__.get_data(data)
+
             #print('Binary data', binary_data)
             data_packets = self.binary_process(binary_data, datapacket_orig=data)
             #print('data packets',data_packets)

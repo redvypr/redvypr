@@ -196,6 +196,9 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         [command, comdata] = data_packets.check_for_command(data, add_data=True)
                         if (command == 'reply'):  # status update
                             device.distribute_data_replyqueue.put_nowait(data)
+                        elif (command == 'device'):  # A command for the device
+                            command = 'device.' + comdata
+                            print('Got a command',command)
                         elif (command == 'device_status'):  # status update
                             try:
                                 devaddr = comdata['data']['deviceaddr']
