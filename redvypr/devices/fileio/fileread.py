@@ -14,6 +14,7 @@ import os
 from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 from redvypr.packet_statistic import do_data_statistics, create_data_statistic_dict
+from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.fileread')
@@ -29,10 +30,11 @@ class DeviceBaseConfig(pydantic.BaseModel):
 
 class DeviceCustomConfig(pydantic.BaseModel):
     files: list = pydantic.Field(default=[], description='List of files to replay')
-    replay_index: list = pydantic.Field(default=['0,-1,1'], description='The index of the packets to be replayed [start, end, nth]')
+    packets_per_second: float = pydantic.Field(default=2.0, description='Number of packets per second')
     loop: bool = pydantic.Field(default=False, description='Loop over all files if set')
-    chunksize: int = pydantic.Field(default=2560, description='The chunksize to be read from the file')
-    delimiter: bytes = pydantic.Field(default=b'\n', description='The delimiter for a packet')
+    chunksize: int = pydantic.Field(default=2560, description='The chunksize to be read from the file and used as a package')
+    bytes_per_second: int = pydantic.Field(default=-1, description='The datarate in bytes per second to read data')
+    delimiter: bytes = pydantic.Field(default=b'\n', description='The delimiter for a packet, leave empty to disable')
 
 redvypr_devicemodule = True
 
@@ -41,17 +43,10 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Opening reading:')
     files = config['files']
-    print('Config',config)
     t_sent = 0 # The time the last packets was sent
     t_packet_old = 1e12 # The time the last packet had (internally)
     #
-    try:
-        config['speedup']
-    except:
-        config['speedup'] = 1.0 # Realtime
-    
-    speedup = config['speedup']    
-    #
+
     try:
         config['loop']
     except:
@@ -59,8 +54,10 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
         
     loop = config['loop']
     
-    bps_config = 115200
-
+    #bps_config = 115200
+    bps_config = -1
+    packets_per_second = config['packets_per_second']
+    t_last = -1
     statistics = create_data_statistic_dict()
     
     bytes_read = 0
@@ -92,78 +89,89 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                         pass
                     break
 
-        try:
-            data_raw = b''
-            while True:
-                #data_tmp = f.read(config['chunksize'])
-                data_tmp = f.read(1)
-                data_raw += data_tmp
-                bytes_read += 1
-                if data_tmp == config['delimiter'] or data_tmp == b'' or len(data_raw) >= config['chunksize']:
-                    tread = time.time()
-                    bytes_read_bps += len(data_raw)
-                    break
-
-        except:
-            logger.debug('Could not read data',exc_info=True)
-            data_raw = b''
-
-        if(len(data_raw) == 0):
-            FLAG_NEW_FILE = True
+        packet_per_second_tmp = 1/(time.time() - t_last)
+        if (packet_per_second_tmp > packets_per_second) and (packets_per_second>0):
+            time.sleep(0.01)
         else:
-            FLAG_NEW_FILE = False
-            
-        if(len(data_raw) > 0):
-            p = {'data':data_raw}
-            #print('P',p)
-            if True:
-                t_now = time.time()
-                dataqueue.put(p)
-
-        if FLAG_NEW_FILE:
             try:
-                f.close()
+                data_raw = b''
+                while True:
+                    #data_tmp = f.read(config['chunksize'])
+                    data_tmp = f.read(1)
+                    data_raw += data_tmp
+                    bytes_read += 1
+                    if (len(config['delimiter']) > 0) and (data_tmp == config['delimiter']):
+                        tread = time.time()
+                        bytes_read_bps += len(data_raw)
+                        break
+                    elif (data_tmp == b'') or ((len(data_raw) >= config['chunksize']) and config['chunksize']>0):
+                        tread = time.time()
+                        bytes_read_bps += len(data_raw)
+                        break
+
             except:
-                pass
+                logger.debug('Could not read data',exc_info=True)
+                data_raw = b''
 
-            if nfile >= len(files):
-                if loop == False:
-                    sstr = funcname + ': All files read, stopping now.'
-                    try:
-                        statusqueue.put_nowait(sstr)
-                    except:
-                        pass
-                    logger.info(sstr)
-                    break
-                else:
-                    sstr = funcname + ': All files read, loop again.'
-                    try:
-                        statusqueue.put_nowait(sstr)
-                    except:
-                        pass
+            if(len(data_raw) == 0):
+                FLAG_NEW_FILE = True
+            else:
+                FLAG_NEW_FILE = False
 
-                    logger.info(sstr)
-                    nfile = 0
-            
-            filename = files[nfile]
-            sstr = 'Opening file {:s}'.format(filename)
-            try:
-                statusqueue.put_nowait(sstr)
-            except:
-                pass
-            logger.info(sstr)
-            filesize = os.path.getsize(filename)
-            f = open(filename,'rb')
-            bytes_read = 0
-            nfile += 1
+            if(len(data_raw) > 0):
+                p = {'data':data_raw}
+                #print('P',p)
+                if True:
+                    t_now = time.time()
+                    dataqueue.put(p)
+                    t_last = t_now
+                    packets_read += 1
 
-        if (time.time() - tupdate) > 2.0:
+            if FLAG_NEW_FILE:
+                try:
+                    f.close()
+                except:
+                    pass
+
+                if nfile >= len(files):
+                    if loop == False:
+                        sstr = funcname + ': All files read, stopping now.'
+                        #try:
+                        #    statusqueue.put_nowait(sstr)
+                        #except:
+                        #    pass
+                        logger.info(sstr)
+                        break
+                    else:
+                        sstr = funcname + ': All files read, loop again.'
+                        #try:
+                        #    statusqueue.put_nowait(sstr)
+                        #except:
+                        #    pass
+
+                        logger.info(sstr)
+                        nfile = 0
+
+                filename = files[nfile]
+                sstr = 'Opening file {:s}'.format(filename)
+                #try:
+                #    statusqueue.put_nowait(sstr)
+                #except:
+                #    pass
+                logger.info(sstr)
+                filesize = os.path.getsize(filename)
+                f = open(filename,'rb')
+                bytes_read = 0
+                packets_read = 0
+                nfile += 1
+
+        if (time.time() - tupdate) > 1.0:
             tupdate = time.time()
             #print('f', bytes_read_bps, bytes_read / filesize * 100)
-            sstr = "{}: {}, {} bps, {:.1f}%".format(datetime.datetime.now(), filename, bytes_read_bps, bytes_read / filesize * 100)
-            statusqueue.put_nowait(sstr)
+            statusdict = {'nfile':nfile,'td':datetime.datetime.now(), 'filename':filename, 'bps':bytes_read_bps, 'pc':bytes_read / filesize * 100,'packets_sent':packets_read}
+            statusqueue.put_nowait(statusdict)
 
-        if bytes_read_bps >= bps_config:
+        if (bytes_read_bps >= bps_config) and (bps_config>0):
             dt_sleep = 0.05
             time.sleep(dt_sleep)
             bytes_read_bps -= int(bps_config * 0.05)
@@ -173,14 +181,13 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
 # The init widget
 #
 #
-class initDeviceWidget(QtWidgets.QWidget):
-    connect      = QtCore.pyqtSignal(RedvyprDevice) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
-    def __init__(self,device=None):
-        super(QtWidgets.QWidget, self).__init__()
-        layout        = QtWidgets.QGridLayout(self)
+class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args, **kwargs)
+        layout = QtWidgets.QGridLayout()
         self.file_statistics = {}
-        self.device   = device
-        self.label    = QtWidgets.QLabel("rawdatareplay setup")
+        #self.device   = device
+        self.label    = QtWidgets.QLabel("Fileread")
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         self.label.setStyleSheet(''' font-size: 24px; font: bold''')
         self.config_widgets= [] # A list of all widgets that can only be used of the device is not started yet
@@ -192,60 +199,68 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.inlist.setRowCount(1)
         self.inlist.setSortingEnabled(True)
         
-        self.__filelistheader__ = ['Name','Packets','First date','Last date']
+        self.__filelistheader__ = ['Name','Size','% read','Packets sent']
         self.inlist.setHorizontalHeaderLabels(self.__filelistheader__)
         self.addfilesbtn   = QtWidgets.QPushButton("Add files")
         self.addfilesbtn.clicked.connect(self.add_files)
         self.remfilesbtn   = QtWidgets.QPushButton("Rem files")
         self.remfilesbtn.clicked.connect(self.rem_files)
-        self.scanfilesbtn   = QtWidgets.QPushButton("Scan files")
-        self.scanfilesbtn.clicked.connect(self.scan_files_clicked)
-        self.config_widgets.append(self.inlist)
+        self.config_widgets.append(self.remfilesbtn)
         self.config_widgets.append(self.addfilesbtn)
         # Looping the data?
         self.loop_checkbox = QtWidgets.QCheckBox('Loop')
-        # Speedup
-        self.speedup_edit  = QtWidgets.QLineEdit(self)
-        onlyDouble = QtGui.QDoubleValidator()
-        self.speedup_edit.setValidator(onlyDouble)
-        self.speedup_edit.setToolTip('Speedup of the packet replay.')
-        self.speedup_label = QtWidgets.QLabel("Speedup factor")
-        self.speedup_edit.setText("1.0")
-        
-        
-        self.startbtn = QtWidgets.QPushButton("Start replay")
-        self.startbtn.clicked.connect(self.start_clicked)
-        self.startbtn.setCheckable(True)
-        self.startbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
+        self.loop_checkbox.setChecked(self.device.custom_config.loop)
+        # Delimiter
+        self.delimiter_edit  = QtWidgets.QLineEdit(self)
+        self.delimiter_edit.setToolTip("Delimiter for a new packet, leave empty if not required (i.e. '\n', '\r')")
+        self.delimiter_label = QtWidgets.QLabel("Delimiter for new packet")
+        delimiter_text = self.device.custom_config.delimiter.decode('utf-8').replace("\n", "\\n").replace("\0", "\\0").replace("\r", "\\r")
+        self.delimiter_edit.setText(delimiter_text)
+
+        self.chunksize_edit = QtWidgets.QSpinBox()
+        self.chunksize_edit.setMaximum(1000000)
+        self.chunksize_edit.setMinimum(0)
+        self.chunksize_edit.setToolTip("The chunksize to be read per packet.")
+        self.chunksize_label = QtWidgets.QLabel("Chunksize")
+        self.chunksize_edit.setValue(self.device.custom_config.chunksize)
+
+        self.packets_per_second_edit = QtWidgets.QDoubleSpinBox()
+        self.packets_per_second_edit.setToolTip("The number of packets to be sent per second")
+        self.packets_per_second_label = QtWidgets.QLabel("Packets per second")
+        self.packets_per_second_edit.setValue(self.device.custom_config.packets_per_second)
         
         layout.addWidget(self.label,0,0,1,-1)
         
         layout.addWidget(self.addfilesbtn,1,0,1,-1)               
         layout.addWidget(self.remfilesbtn,2,0,1,-1)          
-        layout.addWidget(self.scanfilesbtn,3,0,1,-1)
-        layout.addWidget(self.inlabel,4,0,1,-1,QtCore.Qt.AlignCenter)         
+        layout.addWidget(self.inlabel,4,0,1,-1,QtCore.Qt.AlignCenter)
         layout.addWidget(self.inlist,5,0,1,-1)
         layout.addWidget(self.loop_checkbox,6,0)
-        layout.addWidget(self.speedup_label,6,1,1,1,QtCore.Qt.AlignRight)
-        layout.addWidget(self.speedup_edit,6,2,1,1,QtCore.Qt.AlignRight)
-        layout.addWidget(self.startbtn,7,0,2,-1)
+        layout.addWidget(self.delimiter_label,6, 1, 1, 1,QtCore.Qt.AlignRight)
+        layout.addWidget(self.delimiter_edit, 6, 2, 1, 1, QtCore.Qt.AlignRight)
+        layout.addWidget(self.chunksize_label, 6, 3, 1, 1, QtCore.Qt.AlignRight)
+        layout.addWidget(self.chunksize_edit, 6, 4, 1, 1, QtCore.Qt.AlignRight)
+        layout.addWidget(self.packets_per_second_label, 6, 5, 1, 1, QtCore.Qt.AlignRight)
+        layout.addWidget(self.packets_per_second_edit, 6, 6, 1, 1, QtCore.Qt.AlignRight)
 
-        self.statustimer = QtCore.QTimer()
-        self.statustimer.timeout.connect(self.update_buttons)
-        self.statustimer.start(500)
+        self.layout_buttons.removeWidget(self.subscribe_button)
+        self.layout_buttons.removeWidget(self.configure_button)
+        self.layout_buttons.addWidget(self.configure_button,3,5,1,1)
+        #self.layout_buttons.addWidget(self.configure_button, 2, 2, 1, 2)
+        self.subscribe_button.close()
+        self.startbutton.disconnect()
+        self.startbutton.clicked.connect(self.start_clicked)
+        self.layout.addLayout(layout)
+
+        self.statustimer_2 = QtCore.QTimer()
+        self.statustimer_2.timeout.connect(self.update_status)
+        self.statustimer_2.start(500)
 
     def finalize_init(self):
         """ Util function that is called by redvypr after initializing all config (i.e. the configuration from a yaml file)
         """
         funcname = self.__class__.__name__ + '.finalize_init()'
         logger.debug(funcname)
-        
-    def scan_files_clicked(self):
-        """ Scans the selected files from the files list for possible datastreams 
-        """
-        funcname = self.__class__.__name__ + '.scan_files_clicked()'
-        logger.debug(funcname)
-
         
     def rem_files(self):
         """ Remove the selected files from the files list
@@ -291,6 +306,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         for i,f in enumerate(self.device.custom_config.files):
             item = QtWidgets.QTableWidgetItem(f)
             self.inlist.setItem(i,0,item)
+            size_in_bytes = os.path.getsize(f)
+            sizestr = str(size_in_bytes)
+            item = QtWidgets.QTableWidgetItem(sizestr)
+            self.inlist.setItem(i, 1, item)
             rows.append(i)
 
         self.inlist.resizeColumnsToContents()
@@ -323,73 +342,36 @@ class initDeviceWidget(QtWidgets.QWidget):
             loop = self.loop_checkbox.isChecked()
             # Loop
             self.device.custom_config.loop = loop
-            # Speedup
-            #self.device.custom_config['speedup'] = float(self.speedup_edit.text())
+            # Delimiter
+            str_newlines = self.delimiter_edit.text().replace("\\n", "\n").replace("\\r", "\r").replace("\\0", "\0")
+            byte_array = str_newlines.encode("utf-8")
+            self.device.custom_config.delimiter = byte_array
+            self.device.custom_config.packets_per_second = self.packets_per_second_edit.value()
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')
             self.device.thread_stop()
 
-            
-    def update_buttons(self):
-            """ Updating all buttons depending on the thread status (if its alive, graying out things)
-            """
-
-            status = self.device.get_thread_status()
-            thread_status = status['thread_running']
-
-            # Running
-            if(thread_status):
-                self.startbtn.setText('Stop')
-                self.startbtn.setChecked(True)
-                for w in self.config_widgets:
-                    w.setEnabled(False)
-            # Not running
-            else:
-                self.startbtn.setText('Start')
-                for w in self.config_widgets:
-                    w.setEnabled(True)
-                    
-                # Check if an error occured and the startbutton 
-                if(self.startbtn.isChecked()):
-                    self.startbtn.setChecked(False)
-                #self.conbtn.setEnabled(True)
-
-
-class displayDeviceWidget(QtWidgets.QWidget):
-    def __init__(self,device=None):
-        super(QtWidgets.QWidget, self).__init__()
-        layout          = QtWidgets.QVBoxLayout(self)
-        hlayout         = QtWidgets.QHBoxLayout()
-        self.device     = device
-        self.text       = QtWidgets.QPlainTextEdit(self)
-        self.text.setReadOnly(True)
-        self.filelab= QtWidgets.QLabel("File: ")
-        self.byteslab   = QtWidgets.QLabel("Bytes written: ")
-        self.packetslab = QtWidgets.QLabel("Packets written: ")
-        self.text.setMaximumBlockCount(10000)
-        hlayout.addWidget(self.byteslab)
-        hlayout.addWidget(self.packetslab)
-        layout.addWidget(self.filelab)        
-        layout.addLayout(hlayout)
-        layout.addWidget(self.text)
-        #self.text.insertPlainText("hallo!")
-        self.statustimer = QtCore.QTimer()
-        self.statustimer.timeout.connect(self.update)
-        self.statustimer.start(500)
-
-    def update(self):
+    def update_status(self):
         statusqueue = self.device.statusqueue
-        while True:
+        while (statusqueue.empty() == False):
             try:
-                data = statusqueue.get(block=False)
+                statusdata = statusqueue.get(block=False)
+                print('Data',statusdata)
+                filename = statusdata['filename']
+                for i, f in enumerate(self.device.custom_config.files):
+                    if f == filename:
+                        percentstr = "{:.2f}".format(statusdata['pc'])
+                        item = QtWidgets.QTableWidgetItem(percentstr)  # Percent read
+                        self.inlist.setItem(i, 2, item)
+                        packetstr = "{:d}".format(statusdata['packets_sent'])
+                        item = QtWidgets.QTableWidgetItem(packetstr)  # Packets sent
+                        self.inlist.setItem(i, 3, item)
             except:
-                #logger.info('Could not read data',exc_info=True)
+                logger.info('Problem',exc_info=True)
                 break
 
-            self.text.insertPlainText(str(data) + '\n')
 
-        #self.byteslab.setText("Bytes written: {:d}".format(data['bytes_written']))
-        #self.packetslab.setText("Packets written: {:d}".format(data['packets_written']))
-        #self.text.insertPlainText(str(data['data']))
-        
+
+
+
