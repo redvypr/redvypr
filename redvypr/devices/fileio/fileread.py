@@ -130,6 +130,10 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             if FLAG_NEW_FILE:
                 try:
                     f.close()
+                    # Sending status
+                    statusdict = {'nfile': nfile, 'td': datetime.datetime.now(), 'filename': filename,
+                                  'bps': bytes_read_bps, 'pc': 100, 'packets_sent': packets_read}
+                    statusqueue.put_nowait(statusdict)
                 except:
                     pass
 
@@ -153,16 +157,14 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                         nfile = 0
 
                 filename = files[nfile]
-                sstr = 'Opening file {:s}'.format(filename)
-                #try:
-                #    statusqueue.put_nowait(sstr)
-                #except:
-                #    pass
-                logger.info(sstr)
                 filesize = os.path.getsize(filename)
                 f = open(filename,'rb')
                 bytes_read = 0
                 packets_read = 0
+                # Sending status
+                statusdict = {'nfile': nfile, 'td': datetime.datetime.now(), 'filename': filename,
+                              'bps': 0, 'pc': 0, 'packets_sent': 0}
+                statusqueue.put_nowait(statusdict)
                 nfile += 1
 
         if (time.time() - tupdate) > 1.0:

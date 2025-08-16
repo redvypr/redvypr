@@ -458,7 +458,14 @@ def start_udp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
         client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,  1)  # https://stackoverflow.com/questions/13637121/so-reuseport-is-not-defined-on-windows-7
         # Enable broadcasting mode
         client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        udp_addr = ""
+        # Optional: reuse port if supported (multiple processes on same port)
+        try:
+            client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            print("SO_REUSEPORT enabled")
+        except (AttributeError, OSError):
+            print("SO_REUSEPORT not available on this system")
+        #udp_addr = ""
+        udp_addr = "255.255.255.255"
     else:
         udp_addr = config['address']
 
@@ -470,20 +477,21 @@ def start_udp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
             try:
                 data_dict = datainqueue.get(block=False)
                 command = check_for_command(data_dict, thread_uuid=device_info['thread_uuid'])
-                if (command is not None):
-                    logger.debug('Command is for me: {:s}'.format(str(command)))
-                    client.close()
-                    logger.info(funcname + 'received command:' + str(data_dict) + ' stopping now')
-                    statusdata = {}
-                    udpaddrstr = str((udp_addr, config['port']))
-                    statusdata = '{} Stopping UDP send thread to {}'.format(str(datetime.datetime.now()),udpaddrstr)
-                    try:
-                        statusqueue.put_nowait(statusdata)
-                    except:  # If the queue is full
-                        pass
 
-                    FLAG_RUN = False
-                    break
+                if (command is not None):
+                    logger.debug(funcname + 'Command is for me: {:s}'.format(str(command)))
+                    if (command == 'stop'):
+                        logger.info(funcname + 'received command:' + str(command) + ' stopping now')
+                        client.close()
+                        udpaddrstr = str((udp_addr, config['port']))
+                        statusdata = '{} Stopping UDP send thread to {}'.format(str(datetime.datetime.now()),udpaddrstr)
+                        try:
+                            statusqueue.put_nowait(statusdata)
+                        except:  # If the queue is full
+                            pass
+
+                        FLAG_RUN = False
+                        break
                 else:
                     npackets   += 1
                     # Call the send_data function to create a binary sendable datastream
@@ -493,8 +501,8 @@ def start_udp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
                     client.sendto(datab, (udp_addr, config['port']))
 
 
-            except Exception as e:
-                logger.debug(funcname + ':Exception:' + str(e))
+            except:
+                logger.debug(funcname + ':Error', exc_info=True)
 
 
 
@@ -532,10 +540,17 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
     #client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) # UDP
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # UDP
     if(config['address'] == '<broadcast>'):
+        # Optional: reuse port if supported (multiple processes on same port)
+        try:
+            client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            print("SO_REUSEPORT enabled")
+        except (AttributeError, OSError):
+            print("SO_REUSEPORT not available on this system")
+
         #client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1) # https://stackoverflow.com/questions/13637121/so-reuseport-is-not-defined-on-windows-7
         client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # https://stackoverflow.com/questions/13637121/so-reuseport-is-not-defined-on-windows-7
         # Enable broadcasting mode
-        client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1) # Not really necessary
         udp_addr = ""
     else:
         udp_addr = config['address']
@@ -548,18 +563,19 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
             command = check_for_command(com,thread_uuid=device_info['thread_uuid'])
             logger.debug('Got a command: {:s}'.format(str(com)))
             if (command is not None):
-                logger.debug('Command is for me: {:s}'.format(str(command)))
-                client.close()
-                logger.info(funcname + 'received command:' + str(com) + ' stopping now')
-                statusdata = {}
-                statusdata['status'] = 'Stopping UDP redcv thread'
-                statusdata['time'] = str(datetime.datetime.now())
-                try:
-                    statusqueue.put_nowait(statusdata)
-                except:  # If the queue is full
-                    pass
+                if (command == 'stop'):
+                    logger.debug('Command is for me: {:s}'.format(str(command)))
+                    client.close()
+                    logger.info(funcname + 'received command:' + str(com) + ' stopping now')
+                    statusdata = {}
+                    statusdata['status'] = 'Stopping UDP redcv thread'
+                    statusdata['time'] = str(datetime.datetime.now())
+                    try:
+                        statusqueue.put_nowait(statusdata)
+                    except:  # If the queue is full
+                        pass
 
-                break
+                    break
 
         except:
             pass
