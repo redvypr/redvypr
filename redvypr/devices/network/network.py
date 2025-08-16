@@ -406,7 +406,7 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
             datab_all += datab
             tmp = raw_to_packet(datab_all, config, safe_load=False)
             packets = tmp['packets']
-            datab_all = tmp['datab_rest']
+            datab_all = tmp['datab_rest'] # Store the rest
             for p in packets:
                 ## Check if there is a deviceinfo command
                 #command = check_for_command(p)
