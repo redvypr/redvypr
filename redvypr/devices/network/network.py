@@ -587,6 +587,7 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
             bytes_read += len(datab)
             t = time.time()
             # Check what data we are expecting and convert it accordingly
+            datab_all += datab
             tmp = raw_to_packet(datab_all, config, safe_load=False)
             packets = tmp['packets']
             datab_all = tmp['datab_rest']
@@ -969,15 +970,14 @@ class initDeviceWidget(QtWidgets.QWidget):
         config   = {}
         logger.debug(funcname)
         config = self.device.custom_config
-
-        config.address   = self.addressline.text()
+        config.address = self.addressline.text()
         config.direction = self._combo_inout.currentText().lower()
-        config.protocol  = self._combo_proto.currentText().lower()
+        config.protocol = self._combo_proto.currentText().lower()
         if(self._data_pub_all.isChecked()): # sending/receiving YAML dictionaries
             self.dataentry.setEnabled(False)
             self._combo_ser.setEnabled(False)
             config.serialize = 'yaml'
-            config.datakey      = 'all'
+            config.datakey = 'all'
         else:
             self.dataentry.setEnabled(True)
             self._combo_ser.setEnabled(True)
