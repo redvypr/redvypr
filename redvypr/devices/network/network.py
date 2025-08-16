@@ -531,11 +531,11 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
     """
     funcname = __name__ + '.start_udp_recv():'
     logger.debug(funcname + ':Starting network thread (uuid: {:s})'.format(device_info['thread_uuid']))
-    npackets     = 0
-    bytes_read   = 0
+    npackets = 0
+    bytes_read = 0
     threadqueues = []
-    tstatus      = 0
-    dt_status     = 2 # Send a status message every dtstatus seconds
+    tstatus = 0
+    dt_status = 2 # Send a status message every dtstatus seconds
     
     #client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) # UDP
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # UDP
@@ -557,6 +557,7 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
     client.settimeout(0.05) # timeout for listening
     logger.debug(funcname + 'Will bind to {:s} on port {:d}'.format(udp_addr,config['port']))
     client.bind((udp_addr,config['port']))
+    datab_all = b''
     while True:
         try:
             com = datainqueue.get(block=False)
@@ -586,7 +587,9 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
             bytes_read += len(datab)
             t = time.time()
             # Check what data we are expecting and convert it accordingly
-            packets = raw_to_packet(datab, config, safe_load=False)
+            tmp = raw_to_packet(datab_all, config, safe_load=False)
+            packets = tmp['packets']
+            datab_all = tmp['datab_rest']
             for p in packets:
                 dataqueue.put(p)
                 npackets += 1
