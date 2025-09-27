@@ -66,19 +66,18 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
         # Checking for datakey, if existing, process data, TODO: Replace with address
         try:
-            print(config["datastream"])
+            #print(config["datastream"])
             rawdata = Datapacket(datapacket)[config["datastream"]]
-            print("Rawdata",rawdata)
+            #print("Rawdata",rawdata)
         except:
             logger.info("Could not get data",exc_info=True)
             rawdata = None
 
         if rawdata is not None:
             processed_packets = nmea_mac_processer.process_rawdata(rawdata)
-            print(processed_packets)
             if len(processed_packets['merged'])>0:
                 for ppub in processed_packets['merged']:
-                        print('Publishing',ppub)
+                        #print('Publishing',ppub)
                         dataqueue.put(ppub)
 
 
@@ -93,8 +92,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         # self.devicetree.setHeaderHidden(True)
         self.devicetree.setHeaderLabels(['MAC','Datatype','Plot'])
         root = self.devicetree.invisibleRootItem()
-        self.root_data = QtWidgets.QTreeWidgetItem(['data'])
-        root.addChild(self.root_data)
+        self.root_data = root
         self.datadisplaywidget = QtWidgets.QWidget(self)
         self.splitter = QtWidgets.QSplitter()
         self.splitter.addWidget(self.devicetree)
@@ -139,61 +137,20 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         button = self.sender()
         #print('Itemclicked',itemclicked)
         #print(self.device.redvypr.redvypr_device_scan.redvypr_devices)
-        if button.isChecked() == False:
-            logger.debug('Closing plot')
-            try:
-                self.device.redvypr.redvypr_widget.closeDevice(button.__plotdevice__)
-                delattr(button, '__plotdevice__')
-                delattr(itemclicked,'__plotdevice__')
-                button.setText('Plot')
-            except:
-                logger.debug('Could not close device',exc_info=True)
-                button.setChecked(True)
-        else:
+
+        if True:
             try:
                 plotdevice = itemclicked.__plotdevice__
             except:
                 plotdevice = None
 
+            print("Plotdevice", plotdevice)
             if plotdevice is None:
                 logger.debug('Creating PcolorPlotDevice')
                 mac = itemclicked.__mac__
                 datatype = itemclicked.__datatype__
                 packetid = itemclicked.__packetid__
-                datastream = redvypr.RedvyprAddress(packetid=packetid,datakey=datatype)
-                custom_config = redvypr.devices.plot.PcolorPlotDevice.DeviceCustomConfig(datastream=datastream)
-                devicemodulename = 'redvypr.devices.plot.PcolorPlotDevice'
-                plotname = 'Pcolor({})'.format(mac)
-                device_parameter = RedvyprDeviceParameter(name=plotname,autostart=True)
-                plotdevice = self.device.redvypr.add_device(devicemodulename=devicemodulename,
-                                               base_config=device_parameter, custom_config=custom_config)
-
-                itemclicked.__plotdevice__ = plotdevice
-                packets = self.packetbuffer[mac][datatype]['packets']
-                # Update the plot widget with the data in the buffer
-                for ip,p in enumerate(packets):
-                    for (guiqueue, widget) in plotdevice.guiqueues:
-                        widget.update_plot(p)
-
-                #logger.debug('Starting plot device')
-                #plotdevice.thread_start()
-                button.__plotdevice__ = plotdevice
-                button.setText('Close')
-
-    def parameter_plot_button_clicked(self, row):
-        funcname = __name__ + 'parameter_plot_button_clicked():'
-        print(funcname)
-        print('Row',row)
-        button = self.sender()
-        print('Button',button.__address__)
-        address = button.__address__
-        mac = button.__mac__
-        datatype = button.__datatype__
-        packetid = button.__packetid__
-        if button.isChecked():
-            try:
-                button.__plotdevice__
-            except:
+                address = itemclicked.__address__
                 devicemodulename = 'redvypr.devices.plot.XYPlotDevice'
                 plotname = 'XYPlot({},{})'.format(mac,address.datakey)
                 device_parameter = RedvyprDeviceParameter(name=plotname, autostart=True)
@@ -216,14 +173,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 plotdevice.thread_start()
                 button.__plotdevice__ = plotdevice
                 button.setText('Close')
-        else:
-            try:
-                self.device.redvypr.redvypr_widget.closeDevice(button.__plotdevice__)
-                delattr(button,'__plotdevice__')
-                button.setText('Plot')
-            except:
-                logger.info('Could not close device',exc_info=True)
-                button.setChecked(True)
+
 
     def update_data(self, data):
         """
@@ -232,11 +182,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             funcname = __name__ + '.update_data():'
             tnow = time.time()
             #print(funcname + 'Got some data', data)
-            datatype = None
-            icols = []  # The columns in the table that will be updated
-            datatars = [] # The data in the columns to be updated
-            colheaders = []
-            headerlabels = {}
             packetid = data['_redvypr']['packetid']
             # Get data from packet
             try:
@@ -246,26 +191,62 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             except:
                 #logger.info('Could not get data', exc_info=True)
                 return
+
+
             #print('Got packet',packetid)
-            for datatype in ["R","T"]:
+
+            # Update the packetbuffer
+            # Test if packetbuffer exists
+            try:
+                self.packetbuffer[mac]
+            except:
+                self.packetbuffer[mac] = {}
+
+            try:
+                self.packetbuffer[mac][packetid]
+            except:
+                self.packetbuffer[mac][packetid] = {'packets': []}
+
+            self.packetbuffer[mac][packetid]['packets'].append(data)
+            # if len(self.packetbuffer[mac][datatype]['packets']) > self.show_numpackets:
+            if len(self.packetbuffer[mac][packetid]['packets']) > self.device.custom_config.size_packetbuffer:
+                self.packetbuffer[mac][packetid]['packets'].pop(0)
+
+            # Create or get the table
+            irows = ['mac', 'np']  # Rows to plot
+            try:
+                table = self.packetbuffer[mac][packetid]['table']
+            except:
+                table = QtWidgets.QTableWidget()
+                self.packetbuffer[mac][packetid]['table'] = table
+                self.packetbuffer[mac][packetid]['colheaders'] = ["Description"]
+                # print('Numcols')
+                # self.datadisplaywidget_layout.addWidget(table)
+                self.tabwidget.addTab(table, '{}'.format(packetid))
+                logger.info("Creating table", exc_info=True)
+
+            #print("Table",table,"Colheader",self.packetbuffer[mac][packetid]['colheaders'])
+            # Update widgets with the data in the packet
+            flag_col_update = False
+            flag_tree_update = False
+            datatypes = ["t","R","T"] # Hardcoded, this could be done smarter
+            for datatype in datatypes:
+                raddress = RedvyprAddress(datakey=datatype, packetid=packetid)
                 # Check if datakeys has 'R' or 'T'
                 if datatype in data.keys():
-                    datatar = data[datatype]
-                    icol = 0
-                    icols.append(icol)
-                    datatars.append(datatar)
-                    colheaders.append(datatype)
+                    datatar = data[datatype] # Get the data
+                    try:
+                        icol = self.packetbuffer[mac][packetid]['colheaders'].index(datatype)
+                    except:
+                        logger.info("Updating table", exc_info=True)
+                        self.packetbuffer[mac][packetid]['colheaders'].append(datatype)
+                        icol = len(self.packetbuffer[mac][packetid]['colheaders']) - 1
+                        flag_col_update = True
 
-                if True:
-                    icols.append(1)
-                    datatars.append(None)
-                    colheaders.append('Plot')
+                else:
+                    continue
 
-                # If nothing to display
-                if len(icols) == 0:
-                    return
-
-
+                #print("Table ......",icol,self.packetbuffer[mac][packetid]['colheaders'])
 
                 try:
                     parents = data['parents']
@@ -295,89 +276,28 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                         itm_datatype = QtWidgets.QTreeWidgetItem([packetid, datatype])
                         tmpdict_new['item_' + datatype] = itm_datatype
                         itm_datatype.__mac__ = mac
+                        itm_datatype.__address__ = raddress
                         itm_datatype.__datatype__ = datatype
                         itm_datatype.__packetid__ = packetid
                         itm.addChild(itm_datatype)
                         flag_tree_update = True
-                        # Button erstellen und zur Zelle hinzufügen
+                        # Create button
                         button = QtWidgets.QPushButton("Plot")
-                        button.setCheckable(True)
                         button.clicked.connect(lambda _, item=itm_datatype: self.devicetree_plot_button_clicked(item))
                         # Button in die dritte Spalte des TreeWidgetItems einfügen
                         self.devicetree.setItemWidget(itm_datatype, 2, button)
                     parentitm = itm
                     tmpdict = tmpdict_new
 
-
-
-                # Test if packetbuffer exists
-                try:
-                    self.packetbuffer[mac]
-                except:
-                    self.packetbuffer[mac] = {}
-
-                # update the table packetbuffer
-                try:
-                    self.packetbuffer[mac][datatype]
-                except:
-                    self.packetbuffer[mac][datatype] = {'packets': []}
-
-                self.packetbuffer[mac][datatype]['packets'].append(data)
-                # if len(self.packetbuffer[mac][datatype]['packets']) > self.show_numpackets:
-                if len(self.packetbuffer[mac][datatype]['packets']) > self.device.custom_config.size_packetbuffer:
-                    self.packetbuffer[mac][datatype]['packets'].pop(0)
-
-                # Update the table
-                irows = ['mac', 'np', 't']  # Rows to plot
-                try:
-                    table = self.packetbuffer[mac][datatype]['table']
-                except:
-                    table = QtWidgets.QTableWidget()
-                    self.packetbuffer[mac][datatype]['table'] = table
-                    table.setRowCount(len(datatar) + len(irows) - 1)
-                    numcols = len(icols)
-                    # print('Numcols')
+                if flag_col_update:
+                    headerlabels = self.packetbuffer[mac][packetid]['colheaders']
+                    numcols = len(headerlabels)
+                    #print("Setting header labels",headerlabels)
                     table.setColumnCount(numcols)
-                    # self.datadisplaywidget_layout.addWidget(table)
-                    self.tabwidget.addTab(table, '{} {}'.format(mac, datatype))
-                    headerlabels = [datatype]
                     table.setHorizontalHeaderLabels(headerlabels)
-                    # Create plot buttons
-                    if True:
 
-                        try:
-                            for irow, key in enumerate(irows):
-                                pass
-                                #d = data[key]
-                                #dataitem = QtWidgets.QTableWidgetItem(str(d))
-                                #table.setItem(irow, icol, dataitem)
-
-                            # And now the real data
-                            for i, d in enumerate(datatar):
-                                rdata = redvypr.Datapacket(data)
-                                datakey = "['{}'][{}]".format(datatype,i)
-                                address = redvypr.RedvyprAddress(data, datakey = datakey)
-                                datakey = "{}".format(datatype)
-                                address = redvypr.RedvyprAddress(data, datakey = datakey)
-                                datastr = "{:4f}".format(d)
-                                # Button erstellen und zur Zelle hinzufügen
-                                button = QtWidgets.QPushButton("Plot")
-                                button.setCheckable(True)
-                                #button.clicked.connect(
-                                #    lambda _, item=itm_datatype: self.devicetree_plot_button_clicked(item))
-                                dataitem = QtWidgets.QTableWidgetItem(datastr)
-                                irowtar = i + irow
-                                button.clicked.connect(self.parameter_plot_button_clicked)
-                                button.__address__ = address
-                                button.__mac__ = mac
-                                button.__datatype__ = datatype
-                                button.__packetid__ = packetid
-                                icol = 1
-                                table.setCellWidget(irowtar, icol, button)
-                        except:
-                            logger.info('Could not add button', exc_info=True)
-
-                for icol,datatar,colheader in zip(icols,datatars,colheaders):
+                table.setRowCount(len(datatar) + len(irows) - 1)
+                if True:
                     # update the table packetbuffer
                     if datatar is not None:
                         try:
@@ -399,7 +319,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 table.resizeColumnsToContents()
             # update qtreewidget
             if flag_tree_update:
-                # self.devicetree.expandAll()
+                self.devicetree.expandAll()
                 self.devicetree.resizeColumnToContents(0)
                 # self.devicetree.sortByColumn(0, QtCore.Qt.AscendingOrder)
         except:

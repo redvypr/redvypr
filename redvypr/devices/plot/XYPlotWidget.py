@@ -31,7 +31,7 @@ logger.setLevel(logging.INFO)
 
 colors = ['red','blue','green','gray','yellow','purple']
 
-class dataBufferLine(pydantic.BaseModel):
+class Databufferline(pydantic.BaseModel):
     model_config = {'extra': 'allow'}
     skip_bufferdata_when_serialized: bool = pydantic.Field(default=True, description='Do not save the buffer data when serialized')
     tdata: list = pydantic.Field(default=[])
@@ -69,7 +69,7 @@ class configLine(pydantic.BaseModel,extra='allow'):
     color: pydColor = pydantic.Field(default=pydColor('red'), description='The color of the line')
     linewidth: float = pydantic.Field(default=2.0, description='The linewidth')
     linestyle: typing.Literal['SolidLine','DashLine','DotLine','DashDotLine','DashDotDotLine'] = pydantic.Field(default='SolidLine', description='The linestyle, see also https://doc.qt.io/qt-6/qt.html#PenStyle-enum')
-    databuffer: dataBufferLine = pydantic.Field(default=dataBufferLine(), description='The databuffer', editable=False)
+    databuffer: Databufferline = pydantic.Field(default=Databufferline(), description='The databuffer', editable=False)
     plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_points'] = pydantic.Field(default='all', description='')
     last_N_s: float = pydantic.Field(default=60,
                                      description='Plots the last seconds, if plot_mode_x is set to last_N_s')
@@ -1227,7 +1227,7 @@ class XYPlotWidget(QtWidgets.QFrame):
             lines = self.config.lines
 
         for iline, line_tmp in enumerate(lines):
-            line_tmp.databuffer = dataBufferLine()
+            line_tmp.databuffer = Databufferline()
             # Set the data
             line_tmp._lineplot.setData(x=line_tmp.databuffer.xdata, y=line_tmp.databuffer.ydata)
 

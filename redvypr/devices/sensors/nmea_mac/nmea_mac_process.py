@@ -169,7 +169,6 @@ class NMEAMacProcessor():
         packets = {'merged':[],'raw':[]}
         lines = re.findall(b'.*?\n', binary_data_all)
         for binary_data in lines:
-            print("binary data",binary_data)
             for sensor in self.sensors:
                 flag_new_packets = False
                 #print('Checking for sensor',sensor)
@@ -185,11 +184,11 @@ class NMEAMacProcessor():
 
                 # Stop the loop if processing was succesfull
                 if data_packet_processed is not None:
-                    print("Could parse data of type {}: {}".format(sensor.name, data_packet_processed))
+                    #print("Could parse data of type {}: {}".format(sensor.name, data_packet_processed))
                     packets["raw"].extend(data_packet_processed)
                     # Merge the packets, if possible
                     merged_packets = self.merge_datapackets(data_packet_processed)
-                    print("Merged packets", merged_packets)
+                    #print("Merged packets", merged_packets)
                     if len(merged_packets) > 0:
                         packets["merged"].extend(merged_packets)
 
@@ -292,9 +291,9 @@ class NMEAMacProcessor():
     def process_file(self, filename_tar):
         f = open(filename_tar, 'rb')
         for binary_data in f.readlines():
-            print('data from line', binary_data)
+            #print('data from line', binary_data)
             packets = self.process_rawdata(binary_data)
-            print("Packets",packets)
+            #print("Packets",packets)
             if packets["merged"] is not None:
                 for p in packets["merged"]:
                     self.merge_dataset(p)
