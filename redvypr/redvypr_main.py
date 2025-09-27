@@ -13,7 +13,17 @@ import redvypr.files as files
 from redvypr import merge_configuration
 from redvypr.redvypr_main_widget import redvyprMainWidget
 import faulthandler
-faulthandler.enable()
+
+logfile = None
+
+if sys.stderr is not None:
+    #normal mode
+    faulthandler.enable()
+else:
+    # no-console, log to file
+    log_path = os.path.join(os.path.dirname(sys.executable), "faulthandler.log")
+    logfile = open(log_path, "w")
+    faulthandler.enable(file=logfile)
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.redvypr_main')

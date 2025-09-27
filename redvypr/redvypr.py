@@ -37,7 +37,17 @@ import redvypr.files as files
 from redvypr.device import RedvyprDeviceConfig, RedvyprDeviceBaseConfig, RedvyprDevice, RedvyprDeviceScan, RedvyprDeviceParameter, queuesize
 import redvypr.devices as redvyprdevices
 import faulthandler
-faulthandler.enable()
+
+logfile = None
+
+if sys.stderr is not None:
+    #normal mode
+    faulthandler.enable()
+else:
+    # no-console, log to file
+    log_path = os.path.join(os.path.dirname(sys.executable), "faulthandler.log")
+    logfile = open(log_path, "w")
+    faulthandler.enable(file=logfile)
 
 # Collect all logger
 logger_all = [data_packets.logger, redvypr_address.logger, redvypr_packet_statistic.logger]

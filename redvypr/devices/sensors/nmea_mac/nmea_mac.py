@@ -14,15 +14,14 @@ from redvypr.data_packets import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from . import nmea_mac_process
+from redvypr.redvypr_address import RedvyprAddress
+from redvypr.data_packets import Datapacket
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.device.tar')
+logger = logging.getLogger('redvypr.device.sensors.nmea_mac')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
-
-
-
 
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
@@ -33,6 +32,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
 class DeviceCustomConfig(pydantic.BaseModel):
     convert_files: list = pydantic.Field(default=[], description='Convert the files in the list')
     size_packetbuffer: int = 10
+    datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress("data"))
 
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
@@ -64,19 +64,22 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 logger.debug('Stop command')
                 return
 
+        # Checking for datakey, if existing, process data, TODO: Replace with address
         try:
-            print('Data', datapacket['data'])
-            print('Done done done')
+            print(config["datastream"])
+            rawdata = Datapacket(datapacket)[config["datastream"]]
+            print("Rawdata",rawdata)
         except:
-            continue
+            logger.info("Could not get data",exc_info=True)
+            rawdata = None
 
-        processed_packets = nmea_mac_processer.process_rawdata(datapacket['data'])
-        if processed_packets['merged'] is not None:
-            for ppub in processed_packets['merged']:
-                    print('Publishing')
-                    print('Publishing')
-                    print('Publishing',ppub)
-                    dataqueue.put(ppub)
+        if rawdata is not None:
+            processed_packets = nmea_mac_processer.process_rawdata(rawdata)
+            print(processed_packets)
+            if len(processed_packets['merged'])>0:
+                for ppub in processed_packets['merged']:
+                        print('Publishing',ppub)
+                        dataqueue.put(ppub)
 
 
 class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
@@ -235,6 +238,14 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             colheaders = []
             headerlabels = {}
             packetid = data['_redvypr']['packetid']
+            # Get data from packet
+            try:
+                np = data['np']
+                mac = data['mac']
+                counter = data['t']
+            except:
+                #logger.info('Could not get data', exc_info=True)
+                return
             #print('Got packet',packetid)
             for datatype in ["R","T"]:
                 # Check if datakeys has 'R' or 'T'
@@ -254,14 +265,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 if len(icols) == 0:
                     return
 
-                # Get data from packet
-                try:
-                    np = data['np']
-                    mac = data['mac']
-                    counter = data['t']
-                except:
-                    logger.info('Could not get data', exc_info=True)
-                    return
+
 
                 try:
                     parents = data['parents']

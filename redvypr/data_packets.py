@@ -522,6 +522,22 @@ def check_for_command(datapacket=None,uuid=None,thread_uuid=None,add_data=False)
             return command
 
 
+
+def set_packetid(datapacket,packetid):
+    """
+    Sets the packetid of a dictionary or a redypr datapacket
+    Parameters
+    ----------
+    datapacket
+    packetid
+
+    Returns
+    -------
+
+    """
+    datapacket["_redvypr"]["packetid"] = packetid
+    return datapacket
+
 #__rdvpraddr__ = redvypr_address('tmp')
 #addresstypes  = __rdvpraddr__.get_strtypes() # A list of all addresstypes
 

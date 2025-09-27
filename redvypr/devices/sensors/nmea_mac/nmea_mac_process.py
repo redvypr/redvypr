@@ -12,6 +12,7 @@ import logging
 import sys
 import pydantic
 import xarray as xr
+import re
 from collections.abc import Iterable
 import redvypr
 import redvypr.devices.sensors.generic_sensor.sensor_definitions as sensor_definitions
@@ -71,7 +72,7 @@ if True:
     nmeamac_t_str_format = {'mac': 'str', 'tp': 'float', 'np': 'int', 'nsamples': 'int', 'ts': 'array'}
     nmeamac_t_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
                                   'np': {'unit': 'counter'}, 'ts': {'unit': 's'}}
-    nmeamac_t_packetid_format = '__nmeamac_t'
+    nmeamac_t_packetid_format = '{mac}__nmeamac_t'
     nmeamac_t_description = 'time data'
 
     # T
@@ -88,7 +89,7 @@ if True:
     nmeamac_T_str_format = {'mac': 'str', 'tp': 'float', 'np': 'int','nsamples': 'int', 'T': 'array'}
     nmeamac_T_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
                                            'np': {'unit': 'counter'}, 'T': {'unit': 'degC'}}
-    nmeamac_T_packetid_format = '__nmeamac_T'
+    nmeamac_T_packetid_format = '{mac}__nmeamac_T'
     nmeamac_T_description = 'Temperature data'
     # R
     nmeamac_R = (
@@ -104,7 +105,7 @@ if True:
     nmeamac_R_str_format = {'mac': 'str', 'tp': 'float', 'np': 'int', 'nsamples': 'int', 'R': 'array'}
     nmeamac_R_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
                                   'np': {'unit': 'counter'}, 'R': {'unit': 'Ohm'}}
-    nmeamac_R_packetid_format = '__nmeamac_R'
+    nmeamac_R_packetid_format = '{mac}__nmeamac_R'
     nmeamac_R_description = 'Resistance data'
 
 
@@ -164,33 +165,36 @@ class NMEAMacProcessor():
         self.sensors.append(nmeamac_R_sensor)
 
 
-    def process_rawdata(self, binary_data):
-        packets = {'merged':None,'raw':None}
-        for sensor in self.sensors:
-            #print('Checking for sensor',sensor)
-            # Check for overflow
-            datapacket = redvypr.Datapacket()
-            datapacket['data'] = binary_data
-            datapacket['t'] = time.time()
+    def process_rawdata(self, binary_data_all):
+        packets = {'merged':[],'raw':[]}
+        lines = re.findall(b'.*?\n', binary_data_all)
+        for binary_data in lines:
+            print("binary data",binary_data)
+            for sensor in self.sensors:
+                flag_new_packets = False
+                #print('Checking for sensor',sensor)
+                # Check for overflow
+                datapacket = redvypr.Datapacket()
+                datapacket['data'] = binary_data
+                datapacket['t'] = time.time()
+                data_packet_processed = None
+                try:
+                    data_packet_processed = sensor.datapacket_process(datapacket, datakey='data')
+                except:
+                    logger.info('Could not process data', exc_info=True)
 
-            data_packet_processed = None
-            try:
-                data_packet_processed = sensor.datapacket_process(datapacket, datakey='data')
-            except:
-                logger.info('Could not process data', exc_info=True)
+                # Stop the loop if processing was succesfull
+                if data_packet_processed is not None:
+                    print("Could parse data of type {}: {}".format(sensor.name, data_packet_processed))
+                    packets["raw"].extend(data_packet_processed)
+                    # Merge the packets, if possible
+                    merged_packets = self.merge_datapackets(data_packet_processed)
+                    print("Merged packets", merged_packets)
+                    if len(merged_packets) > 0:
+                        packets["merged"].extend(merged_packets)
 
-            # Stop the loop if processing was succesfull
-            if data_packet_processed is not None:
-                print("Could parse data of type {}: {}".format(sensor.name, data_packet_processed))
-                packets["raw"] = data_packet_processed
-                break
+                    break
 
-        if data_packet_processed is not None:
-            merged_packets = self.merge_datapackets(data_packet_processed)
-            if len(merged_packets) > 0:
-                packets["merged"] = merged_packets
-                #print(packets)
-                #raise ValueError("FDSF")
 
         return packets
 
@@ -229,6 +233,8 @@ class NMEAMacProcessor():
                     try:
                         data_packet_merge["t"] = data_packet_merge.pop("ts")
                         data_packets_merged.append(data_packet_merge)
+                        packetid = data_packet_merge["mac"] + "__merged"
+                        redvypr.data_packets.set_packetid(data_packet_merge,packetid=packetid)
                     except:
                         logger.warning("Could not merge packet:{}".format(data_packets_merged),exc_info=True)
 
