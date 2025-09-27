@@ -11,6 +11,7 @@ import pydantic
 from pydantic.color import Color as pydColor
 #from pydantic_extra_types import Color as pydColor
 import typing
+from collections.abc import Iterable
 import pyqtgraph
 import redvypr.data_packets
 import redvypr.gui
@@ -133,15 +134,16 @@ class configLine(pydantic.BaseModel,extra='allow'):
                     # print('Error constant')
                     newerror = [self.error_constant] * len(newx)
             else:
-                newerror = [0]
+                newerror = [0] * len(newx)
 
-            if (len(newx) != len(newy)):
-                self.logger.warning(
-                    'lengths of x and y data different (x:{:d}, y:{:d})'.format(len(newx), len(newy)))
-                return
+            if (len(newx) != len(newy)) or (len(newx) != len(newerror)):
+                raise ValueError('lengths of x, y and error data different (x:{:d}, y:{:d}, err:{:d})'.format(len(newx), len(newy), len(newerror)))
 
             for inew in range(len(newx)):  # TODO this can be optimized using indices instead of a loop
-                self.databuffer.tdata.append(float(newt))
+                if isinstance(newt, Iterable):
+                    self.databuffer.tdata.append(float(newt[inew]))
+                else:
+                    self.databuffer.xdata.append(float(newt))
                 self.databuffer.xdata.append(float(newx[inew]))
                 self.databuffer.ydata.append(float(newy[inew]))
                 self.databuffer.errordata.append(float(newerror[inew]))
@@ -1375,7 +1377,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         tnow = time.time()
         # Create a redvypr datapacket
         rdata = redvypr.data_packets.Datapacket(data)
-        # print(funcname + 'got data',data,tnow)
+        print(funcname + 'got data',data,tnow)
         try:
             # Check if the device is to be plotted
             # Loop over all lines
@@ -1385,8 +1387,8 @@ class XYPlotWidget(QtWidgets.QFrame):
                     line.append(data)
                     line.__newdata = True
                 except:
-                    # self.logger.info('Could not add data',exc_info=True)
-                    pass
+                    self.logger.info('Could not add data',exc_info=True)
+                    #pass
 
                 if True:
                     # Show the unit in the legend, if wished by the user, and we have access to the device that can give us the metainformation
