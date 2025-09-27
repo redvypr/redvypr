@@ -6,22 +6,14 @@ import queue
 from PyQt6 import QtWidgets, QtCore, QtGui
 import qtawesome
 import time
-import yaml
-import numpy
 import logging
 import sys
 import pydantic
 import redvypr
 from redvypr.data_packets import check_for_command
-from redvypr.device import RedvyprDevice
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
-from redvypr.devices.sensors.generic_sensor.calibrationWidget import GenericSensorCalibrationWidget
-import redvypr.devices.sensors.generic_sensor.sensor_definitions as sensor_definitions
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
-from . import sensor_firmware_config
-from . import nmea_mac64_utils
 from . import nmea_mac_process
-from redvypr.utils.databuffer import DatapacketAvg
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.tar')
