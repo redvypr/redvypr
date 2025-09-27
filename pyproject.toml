@@ -27,6 +27,7 @@ dependencies = ['pyaml',
 	     'autodoc_pydantic',
 	     'deepdiff',
 	     'xarray',
+	     'pytz',
 	     ]
 requires-python = ">=3.7"
 readme = "README.md"
