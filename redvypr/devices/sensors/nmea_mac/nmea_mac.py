@@ -78,6 +78,18 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             if len(processed_packets['merged'])>0:
                 for ppub in processed_packets['merged']:
                         #print('Publishing',ppub)
+                        if True:
+                            metaddress = RedvyprAddress(datakey="R",packetid=RedvyprAddress(ppub).packetid)
+                            ppub = redvypr.data_packets.add_metadata2datapacket(datapacket=ppub,
+                                                                                address=metaddress,
+                                                                                datakey='R',
+                                                                                metakey='unit',
+                                                                                metadata='Ohm')
+                            ppub = redvypr.data_packets.add_metadata2datapacket(datapacket=ppub,
+                                                                                address=metaddress,
+                                                                                datakey='R',
+                                                                                metakey='sn',
+                                                                                metadata=ppub['mac'])
                         dataqueue.put(ppub)
 
 
@@ -232,6 +244,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             datatypes = ["t","R","T"] # Hardcoded, this could be done smarter
             for datatype in datatypes:
                 raddress = RedvyprAddress(datakey=datatype, packetid=packetid)
+                #keyinfo = self.device.redvypr.get_metadata(raddress)
+                #print("Metadata",keyinfo)
                 # Check if datakeys has 'R' or 'T'
                 if datatype in data.keys():
                     datatar = data[datatype] # Get the data

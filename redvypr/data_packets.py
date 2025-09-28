@@ -522,7 +522,6 @@ def check_for_command(datapacket=None,uuid=None,thread_uuid=None,add_data=False)
             return command
 
 
-
 def set_packetid(datapacket,packetid):
     """
     Sets the packetid of a dictionary or a redypr datapacket
@@ -536,6 +535,22 @@ def set_packetid(datapacket,packetid):
 
     """
     datapacket["_redvypr"]["packetid"] = packetid
+    return datapacket
+
+
+def set_device(datapacket,device):
+    """
+    Sets the device of a dictionary or a redypr datapacket
+    Parameters
+    ----------
+    datapacket
+    device
+
+    Returns
+    -------
+
+    """
+    datapacket["_redvypr"]["device"] = device
     return datapacket
 
 #__rdvpraddr__ = redvypr_address('tmp')

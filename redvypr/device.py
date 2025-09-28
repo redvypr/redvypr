@@ -1268,11 +1268,12 @@ class RedvyprDevice(QtCore.QObject):
         Parameters
         ----------
         address: RedvyprAddress
-        mode:
+        mode: "merge": If the redvypr address fits with several metadata entries, the metadata is merged, otherwise all metadata entries are provided as separate key
         local_statistics_only: If true use the local statistics of the datastreams only, otherwise ue the global statistics of redvypr
 
         Returns
         -------
+        Dictionary with redvypr addresses as keys and metadata as values
 
         """
 
@@ -1281,7 +1282,7 @@ class RedvyprDevice(QtCore.QObject):
         if local_statistics_only:
             metadata = redvypr.packet_statistic.get_metadata(self.statistics,address,mode=mode)
         else:
-            metadata = self.redvypr.get_metadata(self.statistics,address,mode=mode)
+            metadata = self.redvypr.get_metadata(address, mode=mode)
 
         return metadata
 

@@ -1375,9 +1375,9 @@ class XYPlotWidget(QtWidgets.QFrame):
         funcname = self.__class__.__name__ + '.update_plot():'
         #self.logger.debug(funcname + 'Update {}'.format(len(self.config.lines)))
         tnow = time.time()
-        # Create a redvypr datapacket
-        rdata = redvypr.data_packets.Datapacket(data)
-        print(funcname + 'got data',data,tnow)
+        ## Create a redvypr datapacket
+        #rdata = redvypr.data_packets.Datapacket(data)
+        #print(funcname + 'got data',data,tnow)
         try:
             # Check if the device is to be plotted
             # Loop over all lines
@@ -1387,7 +1387,7 @@ class XYPlotWidget(QtWidgets.QFrame):
                     line.append(data)
                     line.__newdata = True
                 except:
-                    self.logger.info('Could not add data',exc_info=True)
+                    self.logger.debug('Could not add data',exc_info=True)
                     #pass
 
                 if True:

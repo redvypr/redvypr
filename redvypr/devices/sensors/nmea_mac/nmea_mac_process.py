@@ -234,6 +234,7 @@ class NMEAMacProcessor():
                         data_packets_merged.append(data_packet_merge)
                         packetid = data_packet_merge["mac"] + "__merged"
                         redvypr.data_packets.set_packetid(data_packet_merge,packetid=packetid)
+                        redvypr.data_packets.set_device(data_packet_merge, device=packetid)
                     except:
                         logger.warning("Could not merge packet:{}".format(data_packets_merged),exc_info=True)
 

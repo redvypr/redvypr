@@ -19,6 +19,8 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 import random
 import pydantic
 import typing
+from collections.abc import Iterable
+import numpy
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import check_for_command
 from redvypr.device import RedvyprDevice
@@ -26,7 +28,7 @@ import redvypr.files as redvypr_files
 import redvypr.gui
 import redvypr.data_packets
 from redvypr.devices.plot import XYPlotWidget
-from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly
+from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly, calibration_models
 from .autocalibration import  AutoCalEntry, AutoCalConfig, autocalWidget
 from redvypr.devices.sensors.generic_sensor.calibrationWidget import CalibrationsSaveWidget
 _logo_file = redvypr_files.logo_file
@@ -1070,7 +1072,7 @@ class CalibrationWidgetHeatflow(QtWidgets.QWidget):
 
 
 class QTableCalibrationWidget(QtWidgets.QTableWidget):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, device=None, **kwargs):
         try:
             sensorindex = kwargs.pop('sensorindex')
         except:
@@ -1082,9 +1084,11 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
         self.data_buffer_len = 2000
         self.headerlabel = None
         self.sensorindex = sensorindex
+        self.device = device
         self.setColumnCount(1)
         hlabel = "{}:".format(sensorindex)
         self.setHorizontalHeaderLabels([hlabel])
+        self.verticalHeader().setVisible(False)
         header = self.horizontalHeader()
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
 
@@ -1133,24 +1137,28 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
             if rdata in daddr:
                 #print('Got data to update')
                 data_tmp = rdata[daddr.datakey]
-                self.data_buffer.append(data_tmp)
-                self.data_buffer_t.append(rdata['t'])
+                data_tmp_t = rdata['t']
+                if isinstance(data_tmp, numpy.ndarray):
+                    data_final = numpy.mean(data_tmp)
+                    data_final_t = numpy.mean(data_tmp_t)
+                    # Generic Iterables (Listen, Tupel, Sets, Generatoren)
+                elif isinstance(data_tmp, Iterable):
+                    data_final = numpy.mean(data_tmp)
+                    data_final_t = numpy.mean(data_tmp_t)
+
+                self.data_buffer.append(data_final)
+                self.data_buffer_t.append(data_final_t)
 
                 if len(self.data_buffer) > self.data_buffer_len:
                     self.data_buffer.pop(0)
                     self.data_buffer_t.pop(0)
 
-                # Update the table
+                # Update the realtime datatable
                 self.setRowCount(1)
-                if type(data_tmp) == list:
-                    self.setColumnCount(len(data_tmp))
-                    for indd, d in enumerate(data_tmp):
-                        dstr = str(d)
-                        item = QtWidgets.QTableWidgetItem(dstr)
-                        self.setItem(0,indd,item)
-                else:
+
+                if True:
                     self.setColumnCount(1)
-                    dstr = str(data_tmp)
+                    dstr = str(data_final)
                     item = QtWidgets.QTableWidgetItem(dstr)
                     self.setItem(0, 0, item)
 
@@ -1161,6 +1169,19 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
                 header.setSectionResizeMode(ncols-1, QtWidgets.QHeaderView.Stretch)
                 if self.headerlabel is None:
                     hlabel = "{}:".format(dindex) + daddr.get_str('/k')
+                    if self.device is not None:
+                        metadata = self.device.get_metadata(daddr)
+                        #print("Metadata of datapaket", rdata)
+                        #print("Metadata: ", daddr, metadata)
+                        try:
+                            unitstr = metadata["unit"]
+                        except:
+                            unitstr = ""
+
+                        if len(unitstr) > 0:
+                            hlabel += " [{}]".format(unitstr)
+
+                    self.headerlabel = hlabel
                     self.setHorizontalHeaderLabels([hlabel])
                     self.setVerticalHeaderLabels([])
                     header = self.horizontalHeader()
@@ -1702,7 +1723,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.clear_widgets():'
         logger.debug(funcname)
-        w_delete = [self.plot_widgets_parent, self.tablewidget, self.plot_widgets_parent, self.calibration_widget]
+        w_delete = [self.realtimedata_parent_widget, self.calibrationdata_widget, self.realtimedata_parent_widget, self.calibration_widget]
         for w in w_delete:
             try:
                 w.deleteLater()
@@ -1723,22 +1744,20 @@ class displayDeviceWidget(QtWidgets.QWidget):
         #
         # Create the Calibration widget with the averaged data
         #
-        self.tablewidget = QtWidgets.QWidget()
-        self.tablewidget_layout = QtWidgets.QGridLayout(self.tablewidget)
-        self.datatable = QtWidgets.QTableWidget()
-        # self.update_datatable()
+        self.calibrationdata_widget = QtWidgets.QWidget()
+        self.calibrationdata_widget_layout = QtWidgets.QGridLayout(self.calibrationdata_widget)
+        self.calibrationdata_table = QtWidgets.QTableWidget()
+
         self.addLineButton = QtWidgets.QPushButton('Add empty row')
         self.addLineButton.clicked.connect(self.addBlankCalibrationData)
         self.remLineButton = QtWidgets.QPushButton('Rem row(s)')
         self.remLineButton.clicked.connect(self.remCalibrationData)
-        #self.loadcalibbutton = QtWidgets.QPushButton('Load Calibration')
-        #self.loadcalibbutton.clicked.connect(self.load_calibration)
         # The widget the realtime data is shown
-        self.plot_widgets_parent = QtWidgets.QWidget()
-        self.plot_widgets_parent_layout = QtWidgets.QGridLayout(self.plot_widgets_parent)
+        self.realtimedata_parent_widget = QtWidgets.QWidget()
+        self.realtimedata_parent_widget_layout = QtWidgets.QGridLayout(self.realtimedata_parent_widget)
         # Add a scroll area, to deal with a lot of data
         self.plot_widgets_parent_scroll = QtWidgets.QScrollArea()
-        self.plot_widgets_parent_scroll.setWidget(self.plot_widgets_parent)
+        self.plot_widgets_parent_scroll.setWidget(self.realtimedata_parent_widget)
         self.plot_widgets_parent_scroll.setWidgetResizable(True)
         # Add the realtime data
         self.add_plots()
@@ -1772,9 +1791,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
         label.setStyleSheet("font-weight: bold")
         label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         label.setAlignment(QtCore.Qt.AlignCenter)
-        self.datatable_widget = QtWidgets.QWidget()
+        self.calibrationdata_table_widget = QtWidgets.QWidget()
         #self.datatable_widget.setStyleSheet("background-color: rgb(255,0,0); margin:5px; border:1px solid rgb(0, 255, 0); ")
-        datatable_widget_layout = QtWidgets.QVBoxLayout(self.datatable_widget)
+        calibrationdatatable_widget_layout = QtWidgets.QVBoxLayout(self.calibrationdata_table_widget)
         self.datainput_configwidget = QtWidgets.QWidget()
         self.inputlayout = QtWidgets.QGridLayout(self.datainput_configwidget)
         self.datainput_configwidgets = {}
@@ -1793,34 +1812,21 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.inputlayout.addWidget(self.datainput_configwidgets['lID'], 1, 1)
         self.inputlayout.addWidget(self.datainput_configwidgets['lco_label'], 2, 0)
         self.inputlayout.addWidget(self.datainput_configwidgets['lco'], 2, 1)
-        #datatable_widget_layout.addStretch()
 
-
-
-        datatable_widget_layout.addWidget(label)
-        datatable_widget_layout.addWidget(self.datainput_configwidget)
-        datatable_widget_layout.addWidget(self.datatable)
-        datatable_widget_layout.setStretch(0, 1)
-        datatable_widget_layout.setStretch(1, 1)
-        datatable_widget_layout.setStretch(2, 10)
-
+        calibrationdatatable_widget_layout.addWidget(label)
+        calibrationdatatable_widget_layout.addWidget(self.datainput_configwidget)
+        calibrationdatatable_widget_layout.addWidget(self.calibrationdata_table)
+        calibrationdatatable_widget_layout.setStretch(0, 1)
+        calibrationdatatable_widget_layout.setStretch(1, 1)
+        calibrationdatatable_widget_layout.setStretch(2, 10)
 
         # Create the layout
-
-        #splitter1 = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        #splitter1.addWidget(self.datatable_widget)
-        #splitter1.addWidget(self.calibration_widget)
-
-        #self.tablewidget_layout.addWidget(splitter1,0,0,1,2)
-        self.tablewidget_layout.addWidget(self.datatable_widget, 0, 0, 1, 3)
-        self.tablewidget_layout.addWidget(self.addLineButton, 1, 0)
-        self.tablewidget_layout.addWidget(self.remLineButton, 1, 1)
-        #self.tablewidget_layout.addWidget(self.loadcalibbutton, 1, 1)
-        #self.tablewidget_layout.addWidget(self.savecalibbutton, 1, 2)
-        #self.tablewidget_layout.addWidget(self.calibration_widget,0,3)
+        self.calibrationdata_widget_layout.addWidget(self.calibrationdata_table_widget, 0, 0, 1, 3)
+        self.calibrationdata_widget_layout.addWidget(self.addLineButton, 1, 0)
+        self.calibrationdata_widget_layout.addWidget(self.remLineButton, 1, 1)
 
         # Add the tablewidget as a new tab
-        self.tabwidget.addTab(self.tablewidget,'Calibration data')
+        self.tabwidget.addTab(self.calibrationdata_widget, 'Calibration data')
         # Add the tablewidget as a new tab
         calibrationtype = self.device.custom_config.calibrationtype.lower()
         self.tabwidget.addTab(self.calibration_widget, 'TMP')
@@ -1832,7 +1838,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
 
     def update_custom_config_from_widgets(self):
         funcname = __name__ + '.update_custom_config_from_widgets():'
-        logger.deug(funcname)
+        logger.debug(funcname)
         self.device.custom_config.calibration_comment = self.datainput_configwidgets['lco'].text()
         self.device.custom_config.calibration_id = self.datainput_configwidgets['lID'].text()
         #print('Config')
@@ -1846,8 +1852,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.remCalibrationData():'
         logger.debug(funcname)
         rows = []
-        if self.datatable.selectionModel().selection().indexes():
-            for i in self.datatable.selectionModel().selection().indexes():
+        if self.calibrationdata_table.selectionModel().selection().indexes():
+            for i in self.calibrationdata_table.selectionModel().selection().indexes():
                 row, column = i.row(), i.column()
                 if row >= self.irowdatastart:
                     if row not in rows:
@@ -1887,7 +1893,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         #print(funcname,old_position,'self')
         self.tabwidget.tabBar().moveTab(old_position, 1)
 
-        old_position = self.tabwidget.indexOf(self.tablewidget)
+        old_position = self.tabwidget.indexOf(self.calibrationdata_widget)
         #print(funcname, old_position, 'datatable')
         self.tabwidget.tabBar().moveTab(old_position, 2)
 
@@ -2041,7 +2047,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                         sdata.__realtimeplottype = sdata.realtimeplottype
                         print('Done')
                     elif 'able' in sdata.realtimeplottype:
-                        plot_widget = QTableCalibrationWidget(sensorindex=i)
+                        plot_widget = QTableCalibrationWidget(sensorindex=i, device=self.device)
                         sdata.__realtimeplottype = sdata.realtimeplottype
 
                 plot_widget.datatablecolumn = i + ioff  # The column the data is saved
@@ -2055,7 +2061,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 plot_widget.datastream = sdata.datastream  # Datastream to be plotted
                 #self.set_datastream(i, sdata.datastream, sn=sdata.sn, unit=sdata.unit, sensortype=sdata.sensor_model, parameter=sdata.parameter)
                 # Add the widget to the parent widget
-                self.plot_widgets_parent_layout.addWidget(plot_widget, nrow, ncol)
+                self.realtimedata_parent_widget_layout.addWidget(plot_widget, nrow, ncol)
                 ncol += 1
                 if ncol >= self.device.custom_config.gui_realtimedata_ncols:
                     ncol = 0
@@ -2082,7 +2088,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             self.device.custom_config.name_ref_sensor = ''
 
         self.plot_widgets = []
-        layout = self.plot_widgets_parent_layout
+        layout = self.realtimedata_parent_widget_layout
         for i in range(layout.count()):
             item = layout.itemAt(i)
 
@@ -2200,7 +2206,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         print('get intervalldata', self.device.custom_config.calibrationdata)
         self.update_datatable()
 
-    def __datatable_item_changed__(self,item):
+    def __datatable_item_changed__(self, item):
         funcname = __name__ + '__datatable_item_changed__():'
         logger.debug(funcname)
         #print(item)
@@ -2212,7 +2218,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         #self.datatable.setItem(self.irowunit, col, item)
         #item = QtWidgets.QTableWidgetItem(sdata.inputtype)
         #self.datatable.setItem(self.irowinput, col, item)
-        row = self.datatable.row(item)
+        row = self.calibrationdata_table.row(item)
         # Check if there is metadata to be changed
         if row == self.irowmac_sn:
             newsn = item.text()
@@ -2247,14 +2253,14 @@ class displayDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.update_datatable():'
         logger.debug(funcname)
         try:
-            self.datatable.itemChanged.disconnect(self.__datatable_item_changed__)
+            self.calibrationdata_table.itemChanged.disconnect(self.__datatable_item_changed__)
         except:
             pass
 
         ncols = 1 + len(self.device.custom_config.calibrationdata)
-        self.datatable.setColumnCount(ncols)
+        self.calibrationdata_table.setColumnCount(ncols)
         ndatarows = len(self.device.custom_config.calibrationdata_time)
-        self.datatable.setRowCount(self.irowdatastart + ndatarows)
+        self.calibrationdata_table.setRowCount(self.irowdatastart + ndatarows)
 
         #self.datatable.horizontalHeader().ResizeMode(self.datatable.horizontalHeader().ResizeToContents)
         #columns = ['Time'] + self.sensorcols + self.manualsensorcols
@@ -2263,9 +2269,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
             colheaders.append(str(i))
         # headeritem = QtWidgets.QTableWidgetItem('Time')
         # self.datatable.setHorizontalHeaderItem(self.timecolindex, headeritem)
-        self.datatable.setHorizontalHeaderLabels(colheaders)
-        self.datatable.setVerticalHeaderLabels(self.rowheader)
-        self.datatable.resizeColumnsToContents()
+        self.calibrationdata_table.setHorizontalHeaderLabels(colheaders)
+        self.calibrationdata_table.setVerticalHeaderLabels(self.rowheader)
+        self.calibrationdata_table.resizeColumnsToContents()
 
         # self.datatable.setHorizontalHeaderLabels(self.datacolumns)
         col = 0
@@ -2276,7 +2282,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             tdatetime = datetime.datetime.utcfromtimestamp(itemdata)
             itemdatastr = tdatetime.strftime('%d-%m-%Y %H:%M:%S.%f')
             item = QtWidgets.QTableWidgetItem(itemdatastr)
-            self.datatable.setItem(self.irowdatastart + idata, 0, item)
+            self.calibrationdata_table.setItem(self.irowdatastart + idata, 0, item)
 
 
         #print('config', self.device.custom_config)
@@ -2294,20 +2300,20 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 item = QtWidgets.QTableWidgetItem(sdata.inputtype)
                 item.__calibrationdata__ = sdata
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
-                self.datatable.setItem(self.irowinput, col, item)
+                self.calibrationdata_table.setItem(self.irowinput, col, item)
                 item = QtWidgets.QTableWidgetItem(sdata.parameter)
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
                 item.__calibrationdata__ = sdata
-                self.datatable.setItem(self.irowparameter, col, item)
+                self.calibrationdata_table.setItem(self.irowparameter, col, item)
                 item = QtWidgets.QTableWidgetItem(sdata.sn)
                 item.__calibrationdata__ = sdata
-                self.datatable.setItem(self.irowmac_sn, col, item)
+                self.calibrationdata_table.setItem(self.irowmac_sn, col, item)
                 item = QtWidgets.QTableWidgetItem(sdata.sensor_model)
                 item.__calibrationdata__ = sdata
-                self.datatable.setItem(self.irowsenstype, col, item)
+                self.calibrationdata_table.setItem(self.irowsenstype, col, item)
                 item = QtWidgets.QTableWidgetItem(sdata.unit)
                 item.__calibrationdata__ = sdata
-                self.datatable.setItem(self.irowunit, col, item)
+                self.calibrationdata_table.setItem(self.irowunit, col, item)
 
                 #print('ndatarows',ndatarows)
                 for idata in range(ndatarows):
@@ -2328,19 +2334,19 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     #sdata['time_data'][idata]
                     item = QtWidgets.QTableWidgetItem(itemdatastr)
                     item.__calibrationdata__ = sdata
-                    self.datatable.setItem(self.irowdatastart + idata, col, item)
+                    self.calibrationdata_table.setItem(self.irowdatastart + idata, col, item)
                     if sdata.inputtype == 'manual':
                         item.__parent__ = sdata.data
                         item.__dindex__  = idata
 
-        self.datatable.resizeColumnsToContents()
-        self.datatable.itemChanged.connect(self.__datatable_item_changed__)
+        self.calibrationdata_table.resizeColumnsToContents()
+        self.calibrationdata_table.itemChanged.connect(self.__datatable_item_changed__)
         #self.datatable.setSizeAdjustPolicy(QtWidgets.QTableWidget.AdjustToContents)
         # self.datatable.resize(self.datatable.sizeHint())
 
     def update_datatable_metainformation(self,i):
         """
-        Updates the metainformation of the datatable (units, sn/mac, sensortype
+        Updates the metainformation of the datatable (units, sn/mac, sensortype)
         """
         funcname = __name__ + '.update_datatable_metainformation():'
         logger.debug(funcname)
@@ -2349,17 +2355,17 @@ class displayDeviceWidget(QtWidgets.QWidget):
         p = self.plot_widgets[i]
         col = p.datatablecolumn
         item = QtWidgets.QTableWidgetItem(p.unit)
-        self.datatable.setItem(self.irowunit,col,item)
+        self.calibrationdata_table.setItem(self.irowunit, col, item)
         item = QtWidgets.QTableWidgetItem(p.sn)
-        self.datatable.setItem(self.irowmac_sn, col, item)
+        self.calibrationdata_table.setItem(self.irowmac_sn, col, item)
         item = QtWidgets.QTableWidgetItem(p.sensortype)
-        self.datatable.setItem(self.irowsenstype, col, item)
+        self.calibrationdata_table.setItem(self.irowsenstype, col, item)
 
         headeritem = QtWidgets.QTableWidgetItem(p.sensname_header)
-        self.datatable.setHorizontalHeaderItem(col, headeritem)
+        self.calibrationdata_table.setHorizontalHeaderItem(col, headeritem)
 
-        self.datatable.resizeColumnsToContents()
-        self.datatable.setSizeAdjustPolicy(QtWidgets.QTableWidget.AdjustToContents)
+        self.calibrationdata_table.resizeColumnsToContents()
+        self.calibrationdata_table.setSizeAdjustPolicy(QtWidgets.QTableWidget.AdjustToContents)
         #self.datatable.resize(self.datatable.sizeHint())
 
     def clear_buffer(self):
@@ -2479,6 +2485,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                                 parameter = 'NA'
 
                             # Try to get a serial number
+                            # Use the metadataentry first, otherwise use the packetid
                             try:
                                 sn = keyinfo['sn']
                             except:
