@@ -18,6 +18,26 @@ logger = logging.getLogger('redvypr.device.calibration_models')
 logger.setLevel(logging.DEBUG)
 
 
+
+class CalibrationData(pydantic.BaseModel):
+    sn: str = pydantic.Field(default='')
+    parameter: str = pydantic.Field(default='')
+    sensor_model: str = pydantic.Field(default='')
+    unit: str = pydantic.Field(default='')
+    sensortype: str = pydantic.Field(default='')
+    datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
+    inputtype: str = pydantic.Field(default='')
+    comment: str = pydantic.Field(default='')
+    data: list = pydantic.Field(default=[])
+    time_data: list = pydantic.Field(default=[])
+
+# A class to store sensordata used for the calibration
+class SensorData(CalibrationData):
+    rawdata: list = pydantic.Field(default=[])
+    time_rawdata: list = pydantic.Field(default=[])
+    realtimeplottype: typing.Literal['Table', 'XY-Plot'] = pydantic.Field(default='Table', description='Type of realtimedataplot')
+
+
 # Convert to timezone-aware datetime, needed for sorting
 def to_aware(dt):
     if dt.tzinfo is None:
@@ -139,10 +159,13 @@ class CalibrationGeneric(pydantic.BaseModel):
     unit: str = 'NA'
     unit_input: str = 'NA'
     date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
-    calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be choosen by the user')
+    calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be chosen by the user')
     calibration_uuid: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex,
-                                         description='uuid of the calibration, can be choosen by the user')
+                                         description='uuid of the calibration, can be chosen by the user')
     comment: typing.Optional[str] = None
+    calibration_data: typing.Optional[CalibrationData] = pydantic.Field(default=None)
+    calibration_reference_data: typing.Optional[CalibrationData] = pydantic.Field(default=None)
+
 
 
 
@@ -210,7 +233,7 @@ class CalibrationNTC(CalibrationGeneric):
     unit: str = 'degC'
     unit_input: str = 'Ohm'
 
-    def raw2data(self,data):
+    def raw2data(self, data):
         """
         Calculate the temperature based on the calibration and a resistance using a polynome
         """
@@ -219,6 +242,29 @@ class CalibrationNTC(CalibrationGeneric):
         T_1 = np.polyval(P_R, np.log(data))
         T = 1 / T_1 - Toff
         return T
+
+    def fit_ntc(self, poly_degree=3):
+        """
+        Hoge-type equation for NTC calibration
+
+        Parameters
+        ----------
+        poly_degree
+
+        Returns
+        -------
+
+        """
+        T = np.asarray(self.calibration_reference_data.data)
+        R = np.asarray(self.calibration_data.data)
+        Toff = self.Toff
+        TK = T + Toff
+        T_1 = 1 / (TK)
+        # logR = log(R/R0)
+        logR = np.log(R)
+        P_R = np.polyfit(logR, T_1, poly_degree)
+        self.coeff = P_R.tolist()
+
 
 calibration_models = []
 calibration_models.append(CalibrationLinearFactor)
@@ -365,13 +411,15 @@ class CalibrationList(list):
                     self.calfiles_processed.remove(calfile)
                     return True
 
-    def save(self, calfile, write_file=True, datefmt='%Y%m%d_%H%M%S'):
+    def create_filenames_save(self, calfile, datefmt='%Y%m%d_%H%M%S'):
         """
+        Returns the filenames for all calibrations
+        Can be modified by format: {sn}, {date}, {sensor_model}, {calibration_id}, {calibration_uuid}, {calibration_type}
 
         Parameters
         ----------
-        calfile: The filename, can be modified by format: {sn}, {date}, {sensor_model}, {calibration_id}, {calibration_uuid}, {calibration_type}
-        write_file:
+        calfile
+        datefmt
 
         Returns
         -------
@@ -380,33 +428,61 @@ class CalibrationList(list):
 
         funcname = __name__ + '.save():'
         logger.debug(funcname)
-        calfiles = {}
+        calfiles = []
         calfile_mod = calfile
-        if True:
+        for calibration in self:
             logger.debug(funcname + ' Sorting calibrations')
-            for calibration in self:
+            if calibration is None:
+                calfiles.append(None)
+            else:
                 datestr = calibration.date.strftime(datefmt)
-                calfile_name = calfile_mod.format(sn=calibration.sn,date=datestr,sensor_model=calibration.sensor_model,calibration_id=calibration.calibration_id,calibration_uuid=calibration.calibration_uuid,calibration_type=calibration.calibration_type)
-                #print('calfile_name',calfile_name)
-                try:
-                    calfiles[calfile_name]
-                except:
-                    logger.debug(funcname + ' Creating new file:{}'.format(calfile_name))
-                    calfiles[calfile_name] = []
+                calfile_name = calfile_mod.format(sn=calibration.sn,date=datestr,sensor_model=calibration.sensor_model,
+                                                  calibration_id=calibration.calibration_id,
+                                                  calibration_uuid=calibration.calibration_uuid,
+                                                  calibration_type=calibration.calibration_type)
 
-                calfiles[calfile_name].append(calibration)
+                calfiles.append(calfile_name)
 
+        return calfiles
 
-        if write_file:
+    def save(self, calfiles):
+        """
+        Saves the calibrations to the files given in the calfiles list. If the same name is given, the calibration data
+        is appended.
+
+        Parameters
+        ----------
+        calfiles: List of the filenames, length of the list has to be same as the number calibrations (including None)
+
+        Returns
+        -------
+
+        """
+
+        funcname = __name__ + '.save():'
+        logger.debug(funcname)
+        if True:
+            logger.debug(funcname + ' Writing calibrations')
+            # First empty all files
             for calfile_write in calfiles:
-                logger.debug('Writing to file {}'.format(calfile_write))
-                f = open(calfile_write,'w')
-                for calibration_write in calfiles[calfile_write]:
-                    calibration_yaml = yaml.dump(calibration_write.model_dump(), explicit_end=True, explicit_start=True)
-                    f.write(calibration_yaml)
-                    #print('Calibration dump ...', calibration_yaml)
+                if calfile_write is not None:
+                    open(calfile_write, 'w').close()
 
-                f.close()
+            for i,calibration in enumerate(self):
+                calfile_write = calfiles[i]
+                #print("Saving calibration",calibration)
+                #print("To files",calfile_write)
+                if calibration is None:
+                    logger.info("Will not save entry {}".format(i))
+                else:
+
+                    logger.debug('Writing to file {}'.format(calfile_write))
+                    f = open(calfile_write, 'a')
+                    calibration_yaml = yaml.dump(calibration.model_dump(), explicit_end=True, explicit_start=True, sort_keys=False)
+                    f.write(calibration_yaml)
+                    # print('Calibration dump ...', calibration_yaml)
+                    f.close()
+
 
         return calfiles
 

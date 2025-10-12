@@ -64,13 +64,13 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 logger.debug('Stop command')
                 return
 
-        # Checking for datakey, if existing, process data, TODO: Replace with address
+        # Checking for datakey, if existing, process data
         try:
             #print(config["datastream"])
             rawdata = Datapacket(datapacket)[config["datastream"]]
             #print("Rawdata",rawdata)
         except:
-            logger.info("Could not get data",exc_info=True)
+            #logger.info("Could not get data",exc_info=True)
             rawdata = None
 
         if rawdata is not None:
@@ -166,7 +166,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 devicemodulename = 'redvypr.devices.plot.XYPlotDevice'
                 plotname = 'XYPlot({},{})'.format(mac,address.datakey)
                 device_parameter = RedvyprDeviceParameter(name=plotname, autostart=True)
-                xaddr = redvypr.RedvyprAddress(datakey="t")
+                xaddr = redvypr.RedvyprAddress(datakey="ts")
                 #print("Addresses",address,xaddr)
                 custom_config = redvypr.devices.plot.XYPlotDevice.DeviceCustomConfig()
                 custom_config.lines[0].y_addr = redvypr.RedvyprAddress(address)
@@ -199,7 +199,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             try:
                 np = data['np']
                 mac = data['mac']
-                counter = data['t']
+                counter = data['ts']
             except:
                 #logger.info('Could not get data', exc_info=True)
                 return
@@ -241,7 +241,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             # Update widgets with the data in the packet
             flag_col_update = False
             flag_tree_update = False
-            datatypes = ["t","R","T"] # Hardcoded, this could be done smarter
+            datatypes = ["ts","R","T"] # Hardcoded, this could be done smarter
             for datatype in datatypes:
                 raddress = RedvyprAddress(datakey=datatype, packetid=packetid)
                 #keyinfo = self.device.redvypr.get_metadata(raddress)

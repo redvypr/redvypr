@@ -446,7 +446,7 @@ class redvyprWidget(QtWidgets.QWidget):
             initargs_parameters = dict(initargs.parameters)
             logger.debug(funcname + 'Initargs for initwidget {}'.format( initargs_parameters))
             # Check if the parent is a deviceinitwidget
-            #print('fdsfsd',deviceinitwidget_bare.__mro__)
+            #print('Deviceninit MRO',deviceinitwidget_bare.__mro__)
             if redvypr_deviceInitWidget in deviceinitwidget_bare.__mro__:
                 logger.debug(funcname + ' Child of deviceinitwidet')
                 initargs2 = inspect.signature(redvypr_deviceInitWidget.__init__)
@@ -976,27 +976,33 @@ class redvyprWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.closeTab()'
         logger.debug('Closing the tab now')
-        currentWidget = self.devicetabs.widget(currentIndex)
+        current_widget = self.devicetabs.widget(currentIndex)
         # Search for the corresponding device
         for sendict in self.redvypr.devices:
-            if (sendict['widget'] == currentWidget):
+            #print("Hello",sendict)
+            try:
                 device = sendict['device']
+                device_widget = sendict['widget'] # The widget that is shown in the tab
+            except:
+                continue
+            if device_widget == current_widget:
                 self.redvypr.rem_device(device)
                 # Close the widgets (init/display)
-                currentWidget.close()
+                current_widget.close()
                 self.devicetabs.removeTab(currentIndex)
                 break
 
     def close_application(self):
         funcname = __name__ + '.close_application():'
         print(funcname + ' Closing ...')
+        logger.debug(funcname)
         try:
             self.add_device_widget.close()
         except:
             pass
 
         for sendict in self.redvypr.devices:
-            print(funcname + ' Stopping {:s}'.format(sendict['device'].name))
+            logger.debug(funcname + ' Stopping {:s}'.format(sendict['device'].name))
             sendict['device'].thread_stop()
 
         time.sleep(1)
@@ -1006,7 +1012,7 @@ class redvyprWidget(QtWidgets.QWidget):
             except:
                 pass
 
-        print('All stopped, sys.exit()')
+        logger.info('All stopped, sys.exit()')
         # sys.exit()
         os._exit(1)
 

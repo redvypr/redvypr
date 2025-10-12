@@ -28,9 +28,9 @@ import redvypr.files as redvypr_files
 import redvypr.gui
 import redvypr.data_packets
 from redvypr.devices.plot import XYPlotWidget
-from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly, calibration_models
+from .calibration_models import SensorData
+from .calibration_type_widgets import  CalibrationWidgetNTC, CalibrationWidgetHeatflow, CalibrationWidgetPoly
 from .autocalibration import  AutoCalEntry, AutoCalConfig, autocalWidget
-from redvypr.devices.sensors.generic_sensor.calibrationWidget import CalibrationsSaveWidget
 _logo_file = redvypr_files.logo_file
 _icon_file = redvypr_files.icon_file
 description = 'Calibration of sensors'
@@ -48,21 +48,8 @@ class DeviceBaseConfig(pydantic.BaseModel):
     description: str = 'Calibration of sensors'
     gui_tablabel_display: str = 'Realtime data'
 
-# Dictionary for sensordata
-class SensorData(pydantic.BaseModel):
-    sn: str = pydantic.Field(default='')
-    parameter: str = pydantic.Field(default='')
-    sensor_model: str = pydantic.Field(default='')
-    unit: str = pydantic.Field(default='')
-    sensortype: str = pydantic.Field(default='')
-    datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''))
-    inputtype: str = pydantic.Field(default='')
-    comment: str = pydantic.Field(default='')
-    data: list = pydantic.Field(default=[])
-    rawdata: list = pydantic.Field(default=[])
-    time_data: list = pydantic.Field(default=[])
-    time_rawdata: list = pydantic.Field(default=[])
-    realtimeplottype: typing.Literal['Table', 'XY-Plot'] = pydantic.Field(default='Table', description='Type of realtimedataplot')
+
+
 
 def get_uuid():
     return 'CAL_' + str(uuid.uuid4())
@@ -207,10 +194,10 @@ class Device(RedvyprDevice):
             self.custom_config.calibrationdata_time.append(time)
             i = len(self.custom_config.calibrationdata_time) - 1
             for sdata in self.custom_config.calibrationdata:
-                sdata.data.append(np.NaN)
-                sdata.rawdata.append(np.NaN)
-                sdata.time_data.append(np.NaN)
-                sdata.time_rawdata.append(np.NaN)
+                sdata.data.append(np.nan)
+                sdata.rawdata.append(np.nan)
+                sdata.time_data.append(np.nan)
+                sdata.time_rawdata.append(np.nan)
 
         # And finally add the data
         sdata = self.custom_config.calibrationdata[sensorindex]
@@ -235,10 +222,10 @@ class Device(RedvyprDevice):
         if True:
             for sdata in self.custom_config.calibrationdata:
                 while len(sdata.data) < lmax:
-                    sdata.data.append(np.NaN)
-                    sdata.rawdata.append(np.NaN)
-                    sdata.time_data.append(np.NaN)
-                    sdata.time_rawdata.append(np.NaN)
+                    sdata.data.append(np.nan)
+                    sdata.rawdata.append(np.nan)
+                    sdata.time_data.append(np.nan)
+                    sdata.time_rawdata.append(np.nan)
 
     def save_calibrations(self, folder, calibrations):
         """
@@ -305,769 +292,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
 
 
 
-class CalibrationWidgetPoly(QtWidgets.QWidget):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        tabtext = 'Polynom Calibration'
-        # A widget for the calibration using a polynom
-        self.device = self.parent().device
-        try:
-            degree = self.device.custom_config.calibrationtype_extra['poly_degree']
-        except:
-            degree = 2
-            self.device.custom_config.calibrationtype_extra['poly_degree'] = degree
 
-        layout = QtWidgets.QVBoxLayout(self)
-        self.calibration_poly = {}
-        self.calibration_poly['widget'] = QtWidgets.QWidget()
-        layout.addWidget(self.calibration_poly['widget'])
-        self.calibration_poly['layout'] = QtWidgets.QFormLayout(self.calibration_poly['widget'])
-        self.calibration_poly['degree'] = QtWidgets.QSpinBox()
-        self.calibration_poly['degree'].setValue(degree)
-        self.calibration_poly['degree'].setMaximum(10)
-        self.calibration_poly['degree'].setMinimum(0)
-        self.calibration_poly['degree'].valueChanged.connect(self._poly_degree_changed)
-        self.calibration_poly['plotbutton'] = QtWidgets.QPushButton('Plot')
-        self.calibration_poly['plotbutton'].clicked.connect(self.plot_data)
-        self.calibration_poly['calcbutton'] = QtWidgets.QPushButton('Calculate')
-        self.calibration_poly['calcbutton'].clicked.connect(self.calc_poly_coeffs_clicked)
-        self.calibration_poly['savecalibbutton'] = QtWidgets.QPushButton('Save Calibration')
-        self.calibration_poly['savecalibbutton'].clicked.connect(self.save_calibration)
-        self.calibration_poly['coefftable'] = QtWidgets.QTableWidget()
-
-        if True:
-            self.update_coefftable_poly()
-            label = QtWidgets.QLabel('Polynom Calibration')
-            label.setStyleSheet("font-weight: bold")
-            # label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-            label.setAlignment(QtCore.Qt.AlignCenter)
-            deglabel = QtWidgets.QLabel('Degree')
-            self.calibration_poly['layout'].addRow(label)
-            self.calibration_poly['layout'].addRow(deglabel, self.calibration_poly['degree'])
-            self.calibration_poly['layout'].addRow(self.calibration_poly['coefftable'])
-            self.calibration_poly['layout'].addRow(self.calibration_poly['calcbutton'])
-            self.calibration_poly['layout'].addRow(self.calibration_poly['plotbutton'])
-            self.calibration_poly['layout'].addRow(self.calibration_poly['savecalibbutton'])
-            # self.calibration_poly['layout'].setStretch(0, 1)
-            # self.calibration_poly['layout'].setStretch(1, 10)
-
-    def _poly_degree_changed(self):
-        funcname = __name__ + '._poly_degree_changed():'
-        degree = self.calibration_poly['degree'].value()
-        logger.debug(funcname + 'Degree {}'.format(degree))
-        self.device.custom_config.calibrationtype_extra['poly_degree'] = degree
-    def calc_poly_coeffs_clicked(self):
-        """
-        Calculate the coefficients
-        """
-        funcname = __name__ + '.calc_poly_coeffs_clicked():'
-        logger.debug(funcname)
-        self.update_coefftable_poly()
-
-    def calc_poly_coeff(self, parameter, sdata, tdatetime, caldata, refdata, degree):
-        funcname = __name__ + '.calc_poly_coeff():'
-        logger.debug(funcname)
-        parameter_raddr = RedvyprAddress(parameter)
-        cal_poly = CalibrationPoly(parameter=parameter_raddr, sn=sdata.sn, sensor_model=sdata.sensor_model, calibration_uuid=self.device.custom_config.calibration_uuid)
-        #cal_poly.parameter = sdata.parameter
-        #cal_poly.sn = sdata.sn
-        #cal_poly.sensor_model = sdata.sensor_model
-        tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
-        cal_poly.date = tdatetime
-        caldataa = np.asarray(caldata)
-        print('caldata', caldataa)
-        print('refdata', refdata)
-        # And finally the fit
-        fitdata = np.polyfit(refdata,caldataa,degree)
-        cal_poly.coeff = fitdata.tolist()
-        # T_test = calc_poly(R, P_R, TOFF)
-        #T_test = calc_POLY(cal_POLY, R)
-        # Calculate Ntest values between min and max
-        #Ntest = 100
-        #Rtest = np.linspace(min(R), max(R), Ntest)
-        #T_Ntest = calc_POLY(cal_POLY, Rtest)
-
-        # caldata = np.asarray(self.device.config.calibrationdata[i].data) * 1000  # V to mV
-        # print('Caldata', caldata)
-        # print('Refdata', refdata)
-        # ratio = np.asarray(refdata) / np.asarray(caldata)
-        # cal_POLY.coeff = float(ratio.mean())
-        # cal_POLY.coeff_std = float(ratio.std())
-        print('Cal POLY', cal_poly)
-
-        return cal_poly
-
-    def calc_poly_coeffs(self):
-        funcname = __name__ + '.calc_poly_coeffs():'
-        logger.debug(funcname)
-
-        refindex = self.device.custom_config.ind_ref_sensor
-        print('Refindex', refindex)
-        if refindex >= 0 and (len(self.device.custom_config.calibrationdata_time) > 0):
-            refdata = np.asarray(self.device.custom_config.calibrationdata[refindex].data)
-            coeff_hf = {}
-            coeff_hf['hf'] = []
-            coeff_hf['hf_std'] = []
-            coeff_hf['hf_ratio'] = []
-            tdata = self.device.custom_config.calibrationdata_time[0]
-            tdatetime = datetime.datetime.utcfromtimestamp(tdata)
-            tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
-            calibrations = []
-            degree = self.device.custom_config.calibrationtype_extra['poly_degree']
-            for i, sdata in enumerate(self.device.custom_config.calibrationdata):
-                if i == refindex:
-                    cal_POLY = CalibrationPoly()
-                    cal_POLY.parameter = RedvyprAddress(sdata.parameter)
-                    cal_POLY.sn = sdata.sn
-                    cal_POLY.date = tdatetime
-                    cal_POLY.comment = 'reference sensor'
-                    calibrations.append(cal_POLY)
-                else:
-                    try:
-                        caldata = np.asarray(self.device.custom_config.calibrationdata[i].data)
-                        print('Caldata',caldata)
-                        print('Shape caldata',np.shape(caldata))
-                        calshape = np.shape(caldata)
-                        if len(calshape) == 1:
-                            print('Normal array')
-                            parameter = RedvyprAddress(sdata.parameter)
-                            cal_POLY = self.calc_poly_coeff(parameter, sdata, tdatetime, caldata, refdata, degree)
-                            calibrations.append(cal_POLY)
-                        elif len(calshape) == 2:
-                            print('Array of sensors')
-                            cal_POLYs = []
-                            for isub in range(calshape[1]):
-                                parameter = RedvyprAddress(sdata.parameter + '[{}]'.format(isub))
-                                cal_POLYs.append(self.calc_poly_coeff(parameter, sdata, tdatetime, caldata[:,isub], refdata, degree))
-
-                            calibrations.append(cal_POLYs)
-                        else:
-                            logger.warning(funcname + ' Too many dimensions', exc_info=True)
-                            calibrations.append(None)
-                            continue
-
-                    except:
-                        logger.warning(funcname + 'Could not calculate coefficients', exc_info=True)
-                        calibrations.append(None)
-
-            return calibrations
-        else:
-            logger.warning('No reference sensor or not enough data')
-            return None
-
-    def update_coefftable_poly(self):
-        funcname = __name__ + '.update_coefftable_poly():'
-        logger.debug(funcname)
-        self.calibration_poly['coefftable'].clear()
-        nrows = len(self.device.custom_config.calibrationdata)
-        try:
-            self.calibration_poly['coefftable'].setRowCount(nrows)
-        except:
-            logger.debug(funcname, exc_info=True)
-            return
-
-        self.calibration_poly['coefftable'].setColumnCount(3)
-        # Calculate the coefficients
-        try:
-            calibrationdata = self.calibdata_to_dict()
-        except Exception as e:
-            logger.exception(e)
-            return
-
-        print(funcname + 'Calculating coefficients')
-        try:
-            calibrations = self.calc_poly_coeffs()
-        except Exception as e:
-            logger.warning(funcname)
-            logger.exception(e)
-            calibrations = None
-
-        print(funcname + 'Calibrations',calibrations)
-
-        if calibrations is not None:
-            # Save the data
-            self.calibration_poly['calibrationdata'] = calibrationdata
-            self.calibration_poly['calibrations'] = calibrations
-            # Save the calibration as a private attribute
-            self.device.custom_config.__calibrations__ = calibrations
-            headers = ['Parameter','SN','Coeffs']
-            self.calibration_poly['coefftable'].setHorizontalHeaderLabels(headers)
-            irow = 0
-            for i, coeff_tmp in enumerate(calibrations):
-                if coeff_tmp is None:
-                    continue
-                if type(coeff_tmp) == list:
-                    nrows += len(coeff_tmp)
-                    coeff_index = range(len(coeff_tmp))
-                    self.calibration_poly['coefftable'].setRowCount(nrows)
-                else:
-                    coeff_tmp = [coeff_tmp]
-                    coeff_index = [None]
-
-                for cindex,coeff in zip(coeff_index,coeff_tmp):
-                    parameter = str(coeff.parameter)
-                    #if cindex is not None:
-                    #    parameter += '[{}]'.format(cindex)
-                    item = QtWidgets.QTableWidgetItem(parameter)
-                    self.calibration_poly['coefftable'].setItem(irow,0,item)
-                    item = QtWidgets.QTableWidgetItem(coeff.sn)
-                    self.calibration_poly['coefftable'].setItem(irow,1,item)
-                    try:
-                        coeff_sen = coeff.coeff
-                        coeff_str = str(coeff_sen)
-                        item_coeff = QtWidgets.QTableWidgetItem(coeff_str)
-                        self.calibration_poly['coefftable'].setItem(irow, 2, item_coeff)
-                    except Exception as e:
-                        logger.exception(e)
-
-                    irow += 1
-
-        self.calibration_poly['coefftable'].resizeColumnsToContents()
-
-    def calibdata_to_dict(self):
-        funcname = __name__ + '.calibdata_to_dict():'
-        logger.debug(funcname)
-        calibdata = []
-        for sdata in self.device.custom_config.calibrationdata:
-            calibdata.append(sdata.model_dump())
-
-        return calibdata
-
-    def plot_data(self):
-        funcname = __name__ + '.plot_data():'
-        logger.debug(funcname)
-        calibrationtype = self.device.custom_config.calibrationtype.lower()
-        if calibrationtype == 'poly':
-            logger.debug(funcname + ' plotting POLY calibration')
-            try:
-                calibrationdata = self.device.custom_config.calibrationdata
-                coeffs = self.device.custom_config.__calibrations__
-            except Exception as e:
-                coeffs = None
-                logger.exception(e)
-                logger.debug(funcname)
-            if coeffs is not None:
-                self.plot_poly(coeffs)
-        else:
-            logger.debug(funcname + ' Unknown calibration {:s}'.format(calibrationtype))
-
-        # self.update_tables_calc_coeffs()
-
-    def save_calibration(self):
-        funcname = __name__ + '.save_calibration():'
-        logger.debug(funcname)
-        calibrations = self.device.custom_config.__calibrations__
-        self.__savecalwidget__ = CalibrationsSaveWidget(calibrations=calibrations)
-        self.__savecalwidget__.show()
-
-
-
-
-class CalibrationWidgetNTC(QtWidgets.QWidget):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        tabtext = 'NTC Calibration'
-        # A NTC widget for the calibration
-        self.device = self.parent().device
-        layout = QtWidgets.QVBoxLayout(self)
-        self.calibration_ntc = {}
-        self.calibration_ntc['widget'] = QtWidgets.QWidget()
-        layout.addWidget(self.calibration_ntc['widget'])
-        self.calibration_ntc['layout'] = QtWidgets.QFormLayout(self.calibration_ntc['widget'])
-        self.calibration_ntc['refcombo'] = QtWidgets.QComboBox()
-        self.calibration_ntc['plotbutton'] = QtWidgets.QPushButton('Plot')
-        self.calibration_ntc['plotbutton'].clicked.connect(self.plot_data)
-        self.calibration_ntc['calcbutton'] = QtWidgets.QPushButton('Calculate')
-        self.calibration_ntc['calcbutton'].clicked.connect(self.calc_ntc_coeffs_clicked)
-        self.calibration_ntc['savecalibbutton'] = QtWidgets.QPushButton('Save Calibration')
-        self.calibration_ntc['savecalibbutton'].clicked.connect(self.save_calibration)
-        self.calibration_ntc['coefftable'] = QtWidgets.QTableWidget()
-
-        if True:
-            self.update_coefftable_ntc()
-            label = QtWidgets.QLabel('NTC Calibration')
-            label.setStyleSheet("font-weight: bold")
-            # label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-            label.setAlignment(QtCore.Qt.AlignCenter)
-            reflabel = QtWidgets.QLabel('Reference Sensor')
-            self.calibration_ntc['layout'].addRow(label)
-            self.calibration_ntc['layout'].addRow(self.calibration_ntc['coefftable'])
-            self.calibration_ntc['layout'].addRow(self.calibration_ntc['calcbutton'])
-            self.calibration_ntc['layout'].addRow(self.calibration_ntc['plotbutton'])
-            self.calibration_ntc['layout'].addRow(self.calibration_ntc['savecalibbutton'])
-            # self.calibration_ntc['layout'].setStretch(0, 1)
-            # self.calibration_ntc['layout'].setStretch(1, 10)
-
-    def calc_ntc_coeffs_clicked(self):
-        """
-        Calculate the coefficients
-        """
-        funcname = __name__ + '.calc_ntc_coeffs_clicked():'
-        logger.debug(funcname)
-        self.update_coefftable_ntc()
-
-    def calc_ntc_coeff(self, parameter, sdata, tdatetime, caldata, refdata, poly_degree=3):
-        parameter_raddr = RedvyprAddress(parameter)
-        cal_NTC = CalibrationNTC(parameter = parameter_raddr, sn = sdata.sn, sensor_model = sdata.sensor_model, calibration_uuid=self.device.custom_config.calibration_uuid)
-        #cal_NTC.parameter = sdata.parameter
-        #cal_NTC.sn = sdata.sn
-        #cal_NTC.sensor_model = sdata.sensor_model
-        tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
-        cal_NTC.date = tdatetime
-        R = np.asarray(caldata)
-        R = np.abs(R)
-        T = refdata
-        #print('R', R)
-        #print('T', T)
-        # And finally the fit
-        TOFF = 273.15
-        fitdata = fit_ntc(T, R, TOFF, poly_degree)
-        P_R = fitdata['P_R']
-        cal_NTC.coeff = P_R.tolist()
-        print('P_R', P_R)
-        # T_test = calc_ntc(R, P_R, TOFF)
-        T_test = calc_NTC(cal_NTC, R)
-        # Calculate Ntest values between min and max
-        Ntest = 100
-        Rtest = np.linspace(min(R), max(R), Ntest)
-        T_Ntest = calc_NTC(cal_NTC, Rtest)
-
-        # caldata = np.asarray(self.device.config.calibrationdata[i].data) * 1000  # V to mV
-        # print('Caldata', caldata)
-        # print('Refdata', refdata)
-        # ratio = np.asarray(refdata) / np.asarray(caldata)
-        # cal_NTC.coeff = float(ratio.mean())
-        # cal_NTC.coeff_std = float(ratio.std())
-        print('Cal NTC', cal_NTC)
-
-        return cal_NTC
-
-    def calc_ntc_coeffs(self):
-        funcname = __name__ + '.calc_ntc_coeffs():'
-        logger.debug(funcname)
-
-        refindex = self.device.custom_config.ind_ref_sensor
-        print('Refindex', refindex)
-        if refindex >= 0 and (len(self.device.custom_config.calibrationdata_time) > 0):
-            refdata = np.asarray(self.device.custom_config.calibrationdata[refindex].data)
-            coeff_hf = {}
-            coeff_hf['hf'] = []
-            coeff_hf['hf_std'] = []
-            coeff_hf['hf_ratio'] = []
-            tdata = self.device.custom_config.calibrationdata_time[0]
-            tdatetime = datetime.datetime.utcfromtimestamp(tdata)
-            tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
-            calibrations = []
-            for i, sdata in enumerate(self.device.custom_config.calibrationdata):
-                if i == refindex:
-                    cal_NTC = CalibrationNTC()
-                    cal_NTC.parameter = RedvyprAddress(sdata.parameter)
-                    cal_NTC.sn = sdata.sn
-                    cal_NTC.date = tdatetime
-                    cal_NTC.comment = 'reference sensor'
-                    calibrations.append(cal_NTC)
-                else:
-                    try:
-                        caldata = np.asarray(self.device.custom_config.calibrationdata[i].data)
-                        print('Caldata',caldata)
-                        print('Shape caldata',np.shape(caldata))
-                        calshape = np.shape(caldata)
-                        if len(calshape) == 1:
-                            print('Normal array')
-                            parameter = RedvyprAddress(sdata.parameter)
-                            cal_NTC = self.calc_ntc_coeff(parameter, sdata, tdatetime, caldata, refdata)
-                            calibrations.append(cal_NTC)
-                        elif len(calshape) == 2:
-                            print('Array of sensors')
-                            cal_NTCs = []
-                            for isub in range(calshape[1]):
-                                parameter = RedvyprAddress(sdata.parameter + '[{}]'.format(isub))
-                                cal_NTCs.append(self.calc_ntc_coeff(parameter, sdata, tdatetime, caldata[:,isub], refdata))
-
-                            calibrations.append(cal_NTCs)
-                        else:
-                            logger.warning(funcname + ' Too many dimensions', exc_info=True)
-                            calibrations.append(None)
-                            continue
-
-                    except:
-                        logger.warning(funcname + 'Could not calculate coefficients', exc_info=True)
-                        calibrations.append(None)
-
-            return calibrations
-        else:
-            logger.warning('No reference sensor or not enough data')
-            return None
-
-    def get_calibrations(self):
-        table = self.calibration_ntc['coefftable']
-        rows = []
-        calibrations = []
-        if table.selectionModel().selection().indexes():
-            for i in table.selectionModel().selection().indexes():
-                row, column = i.row(), i.column()
-                item = table.item(row,0)
-                calibration = item.__calibration__
-                rows.append(row)
-                calibrations.append(calibration)
-
-        return calibrations
-
-
-
-    def update_coefftable_ntc(self):
-        funcname = __name__ + '.update_coefftable_ntc():'
-        logger.debug(funcname)
-        self.calibration_ntc['coefftable'].clear()
-        nrows = len(self.device.custom_config.calibrationdata)
-        try:
-            self.calibration_ntc['coefftable'].setRowCount(nrows)
-        except:
-            logger.debug(funcname, exc_info=True)
-            return
-
-        self.calibration_ntc['coefftable'].setColumnCount(3)
-        # Calculate the coefficients
-        try:
-            calibrationdata = self.calibdata_to_dict()
-        except Exception as e:
-            logger.exception(e)
-            return
-
-        print(funcname + 'Calculating coefficients')
-        try:
-            coeffs = self.calc_ntc_coeffs()
-        except Exception as e:
-            logger.warning(funcname)
-            logger.exception(e)
-            coeffs = None
-
-        print(funcname + 'Coeffs',coeffs)
-
-        if coeffs is not None:
-            # Save the data
-            self.calibration_ntc['calibrationdata'] = calibrationdata
-            self.calibration_ntc['coeffs'] = coeffs
-            # Save the calibration as a private attribute
-            self.device.custom_config.__calibrations__ = coeffs
-            headers = ['Parameter','SN','Coeffs']
-            self.calibration_ntc['coefftable'].setHorizontalHeaderLabels(headers)
-            irow = 0
-            for i, coeff_tmp in enumerate(coeffs):
-                if coeff_tmp is None:
-                    continue
-                if type(coeff_tmp) == list:
-                    nrows += len(coeff_tmp)
-                    coeff_index = range(len(coeff_tmp))
-                    self.calibration_ntc['coefftable'].setRowCount(nrows)
-                else:
-                    coeff_tmp = [coeff_tmp]
-                    coeff_index = [None]
-
-                for cindex,calibration in zip(coeff_index,coeff_tmp):
-                    parameter = calibration.parameter
-                    #if cindex is not None:
-                    #    parameter += '[{}]'.format(cindex)
-                    try:
-                        parameter_str = parameter.address_str
-                    except:
-                        parameter_str = str(parameter)
-                    #print('Parameter',parameter,str(parameter),type(parameter))
-                    item = QtWidgets.QTableWidgetItem(parameter_str)
-                    item.__parameter__ = parameter
-                    item.__calibration__ = calibration
-                    self.calibration_ntc['coefftable'].setItem(irow,0,item)
-                    item = QtWidgets.QTableWidgetItem(calibration.sn)
-                    self.calibration_ntc['coefftable'].setItem(irow,1,item)
-                    try:
-                        coeff_sen = calibration.coeff
-                        coeff_str = str(coeff_sen)
-                        item_coeff = QtWidgets.QTableWidgetItem(coeff_str)
-                        self.calibration_ntc['coefftable'].setItem(irow, 2, item_coeff)
-                    except Exception as e:
-                        logger.exception(e)
-
-                    irow += 1
-
-        self.calibration_ntc['coefftable'].resizeColumnsToContents()
-
-    def calibdata_to_dict(self):
-        funcname = __name__ + '.calibdata_to_dict():'
-        logger.debug(funcname)
-        calibdata = []
-        for sdata in self.device.custom_config.calibrationdata:
-            calibdata.append(sdata.model_dump())
-
-        return calibdata
-
-    def plot_data(self):
-        funcname = __name__ + '.plot_data():'
-        logger.debug(funcname)
-        calibrationtype = self.device.custom_config.calibrationtype.lower()
-        if calibrationtype == 'ntc':
-            logger.debug(funcname + ' plotting NTC calibration')
-            try:
-                calibrationdata = self.device.custom_config.calibrationdata
-                coeffs = self.device.custom_config.__calibrations__
-            except Exception as e:
-                coeffs = None
-                logger.exception(e)
-                logger.debug(funcname)
-            if coeffs is not None:
-                self.plot_ntc(coeffs)
-        else:
-            logger.debug(funcname + ' Unknown calibration {:s}'.format(calibrationtype))
-
-    def plot_ntc(self, coeffs=None):
-        funcname = __name__ + '.plot_ntc():'
-        logger.debug(funcname)
-        calibrations = self.get_calibrations()
-        logger.debug('Calibrations: {}'.format(calibrations))
-        #self.plot_coeff_widget = PlotWidgetNTC(self.device.custom_config, coeffs)
-        #self.plot_coeff_widget.show()
-
-    def save_calibration(self):
-        funcname = __name__ + '.save_calibration():'
-        logger.debug(funcname)
-        calibrations = self.device.custom_config.__calibrations__
-        self.__savecalwidget__ = CalibrationsSaveWidget(calibrations=calibrations)
-        self.__savecalwidget__.show()
-
-
-
-class CalibrationWidgetHeatflow(QtWidgets.QWidget):
-    def __init__(self, *args, **kwargs):
-        QtWidgets.QWidget.__init__(self, *args, **kwargs)
-        self.device = self.parent().device # The redvypr device
-        self.calibration_hf = {}
-        self.calibration_hf['widget'] = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(self.calibration_hf['widget'])
-        self.calibration_hf['layout'] = QtWidgets.QFormLayout(self.calibration_hf['widget'])
-        self.calibration_hf['refcombo'] = QtWidgets.QComboBox()
-        self.calibration_hf['plotbutton'] = QtWidgets.QPushButton('Plot')
-        self.calibration_hf['plotbutton'].clicked.connect(self.plot_data)
-        self.calibration_hf['calcbutton'] = QtWidgets.QPushButton('Calculate')
-        self.calibration_hf['calcbutton'].clicked.connect(self.calc_hf_coeffs_clicked)
-        self.calibration_hf['dhfsbutton'] = QtWidgets.QPushButton('DHFS command')
-        self.calibration_hf['dhfsbutton'].clicked.connect(self.dhfs_command_clicked)
-        self.calibration_hf['savecalibbutton'] = QtWidgets.QPushButton('Save Calibration')
-        self.calibration_hf['savecalibbutton'].clicked.connect(self.save_calibration)
-        self.calibration_hf['coefftable'] = QtWidgets.QTableWidget()
-        self.calibration_hf['coefftable'].horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-
-        # self.calibration_hf['coefftable'].verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        # self.update_coefftable_ntc()
-        for sen in self.parent().sensorcols:
-            self.calibration_hf['refcombo'].addItem(sen)
-
-        for sen in self.parent().manualsensorcols:
-            self.calibration_hf['refcombo'].addItem(sen)
-
-        label = QtWidgets.QLabel('Heatflow Calibration')
-        label.setStyleSheet("font-weight: bold")
-        # label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        label.setAlignment(QtCore.Qt.AlignCenter)
-        reflabel = QtWidgets.QLabel('Reference Sensor')
-        self.calibration_hf['layout'].addRow(label)
-        self.calibration_hf['layout'].addRow(self.calibration_hf['coefftable'])
-        self.calibration_hf['layout'].addRow(self.calibration_hf['calcbutton'])
-        self.calibration_hf['layout'].addRow(self.calibration_hf['plotbutton'])
-        self.calibration_hf['layout'].addRow(self.calibration_hf['dhfsbutton'])
-        self.calibration_hf['layout'].addRow(self.calibration_hf['savecalibbutton'])
-        # self.calibration_ntc['layout'].setStretch(0, 1)
-        # self.calibration_ntc['layout'].setStretch(1, 10)
-        # END HF widget
-        # self.calibration_widget = self.calibration_ntc['widget']
-        self.update_coefftable_hf()
-
-    def save_calibration(self):
-        funcname = __name__ + '.save_calibration():'
-        logger.debug(funcname)
-        overwrite = True
-        # Update the calibrationdata
-        #calibrationdata = self.calibdata_to_dict()
-        #self.update_coefftable_ntc()
-        #try:
-        #    calibrationdata = self.calibration_ntc['calibrationdata']
-        #    coeffs = self.calibration_ntc['coeffs']
-        #except Exception as e:
-        #    logger.debug(funcname)
-        #    logger.exception(e)
-        #    coeffs = None
-
-        calibrationdata = self.device.custom_config.calibrationdata
-        coeffs = self.device.custom_config.__calibrations__
-
-        folderpath = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
-        if len(folderpath) > 0:
-            logger.debug(funcname + ' Saving data to folder {:s}'.format(folderpath))
-            for c,cal in zip(coeffs,calibrationdata):
-                print('Saving coeff',c)
-                date = datetime.datetime.strptime(c.date,"%Y-%m-%d %H:%M:%S.%f")
-                dstr = date.strftime('%Y-%m-%d_%H-%M-%S')
-                fname = '{:s}_{:s}_{:s}.yaml'.format(c.sn,c.parameter,dstr)
-                fname_full = folderpath + '/' + fname
-                fname_cal = '{:s}_{:s}_{:s}_calibrationdata.yaml'.format(c.sn, c.parameter, dstr)
-                fname_cal_full = folderpath + '/' + fname_cal
-                if os.path.isfile(fname_full):
-                    logger.warning('File is already existing {:s}'.format(fname_full))
-                    file_exist = True
-                else:
-                    file_exist = False
-
-                if overwrite or (file_exist == False):
-                    logger.info('Saving file to {:s}'.format(fname_full))
-                    if c.comment == 'reference sensor':
-                        logger.debug(funcname + ' Will not save calibration (reference sensor)')
-                    else:
-                        cdump = c.model_dump()
-                        #data_save = yaml.dump(cdump)
-                        with open(fname_full, 'w') as fyaml:
-                            yaml.dump(cdump, fyaml)
-
-                        caldump = cal.model_dump()
-                        # data_save = yaml.dump(cdump)
-                        with open(fname_cal_full, 'w') as fyaml:
-                            yaml.dump(caldump, fyaml)
-
-    def dhfs_command_clicked(self):
-        funcname = __name__ + '.dhfs_command_clicked():'
-        logger.debug(funcname)
-        try:
-            calibrationdata = self.device.custom_config.calibrationdata
-            coeffs = self.device.custom_config.__calibrations__
-        except Exception as e:
-            logger.exception(e)
-            logger.debug(funcname)
-
-
-        for c, cal in zip(coeffs, calibrationdata):
-            #print('Coeff', c)
-            if 'ntc' in c.parameter.lower():
-                coeffstr = ''
-                #print('coeff',c.coeff)
-                for ctmp in reversed(c.coeff):
-                    coeffstr += '{:.6e} '.format(ctmp)
-                comstr = '{:s}: set {:s} {:s}'.format(c.sn,c.parameter.lower(),coeffstr)
-                #print('Command')
-                print(comstr)
-            elif 'hf' in c.parameter.lower():
-                coeffstr = '{:.3f} '.format(c.coeff)
-                comstr = '{:s}: set {:s} {:s}'.format(c.sn, c.parameter.lower(), coeffstr)
-                # print('Command')
-                print(comstr)
-            else:
-                logger.info(funcname + ' unknown parameter {:s}'.format(c.parameter))
-
-    def plot_data(self):
-        funcname = __name__ + '.plot_data():'
-        logger.debug(funcname)
-        print('Hallo')
-        calibrationtype = self.device.custom_config.calibrationtype.lower()
-        if calibrationtype == 'ntc':
-            logger.debug(funcname + ' plotting NTC calibration')
-            try:
-                calibrationdata = self.device.custom_config.calibrationdata
-                coeffs = self.device.custom_config.__calibrations__
-            except Exception as e:
-                coeffs = None
-                logger.exception(e)
-                logger.debug(funcname)
-            if coeffs is not None:
-                self.plot_ntc(coeffs)
-        else:
-            logger.debug(funcname + ' Unknown calibration {:s}'.format(calibrationtype))
-
-        #self.update_tables_calc_coeffs()
-
-    def calc_hf_coeffs_clicked(self):
-        """
-        Calculate the coefficients
-        """
-        funcname = __name__ + '.calc_hf_coeffs_clicked():'
-        logger.debug(funcname)
-        self.update_coefftable_hf()
-
-    def calc_hf_coeffs(self):
-        funcname = __name__ + '.calc_hf_coeffs():'
-        logger.debug(funcname)
-
-        refindex  = self.device.custom_config.ind_ref_sensor
-        print('Refindex', refindex)
-        if refindex >= 0 and (len(self.device.custom_config.calibrationdata_time) > 0):
-            refdata = self.device.custom_config.calibrationdata[refindex].data
-            coeff_hf = {}
-            coeff_hf['hf'] = []
-            coeff_hf['hf_std'] = []
-            coeff_hf['hf_ratio'] = []
-            tdata = self.device.custom_config.calibrationdata_time[0]
-            tdatetime = datetime.datetime.utcfromtimestamp(tdata)
-            tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f')
-            calibrations = []
-            for i,sdata in enumerate(self.device.custom_config.calibrationdata):
-                if i == refindex:
-                    cal_HF = CalibrationHeatFlow(calibration_id=self.device.custom_config.calibration_id, calibration_comment=self.device.custom_config.calibration_comment, calibration_uuid=self.device.custom_config.calibration_uuid)
-                    cal_HF.sn = sdata.sn
-                    cal_HF.date = tdatetime
-                    cal_HF.comment = 'reference sensor'
-                    calibrations.append(cal_HF)
-                else:
-                    cal_HF = CalibrationHeatFlow(calibration_id=self.device.custom_config.calibration_id, calibration_comment=self.device.custom_config.calibration_comment, calibration_uuid=self.device.custom_config.calibration_uuid)
-                    cal_HF.sn = sdata.sn
-                    cal_HF.date = tdatetime
-                    cal_HF.sensor_model = sdata.sensor_model
-                    # TODO, V to mV more smart
-                    caldata = np.asarray(self.device.custom_config.calibrationdata[i].data) * 1000 # V to mV
-                    print('Caldata',caldata)
-                    print('Refdata', refdata)
-                    ratio = np.asarray(refdata)/np.asarray(caldata)
-                    cal_HF.coeff = float(ratio.mean())
-                    cal_HF.coeff_std = float(ratio.std())
-                    calibrations.append(cal_HF)
-
-            return calibrations
-        else:
-            logger.warning('No reference sensor or not enough data')
-            return None
-
-    def update_coefftable_hf(self):
-        funcname = __name__ + '.update_coefftable_hf():'
-        logger.debug(funcname)
-        calibrations = self.calc_hf_coeffs()
-        if calibrations is not None:
-            print('Calibrations',calibrations)
-            nrows = len(self.device.custom_config.calibrationdata) - 1
-            self.calibration_hf['coefftable'].clear()
-            self.calibration_hf['coefftable'].setColumnCount(3)
-            self.calibration_hf['coefftable'].setRowCount(nrows)
-            colheaders = ['SN','Coeff','Coeff std']
-            self.calibration_hf['coefftable'].setHorizontalHeaderLabels(colheaders)
-            # Save the calibration as a private attribute
-            self.device.custom_config.__calibrations__ = calibrations
-            refindex = self.device.custom_config.ind_ref_sensor
-            imac   = 0
-            icoeff = 1
-            icoeff_std = 2
-            irow   = -1
-            print('Calibrationdata', self.device.custom_config.calibrationdata)
-            for i, sdata in enumerate(self.device.custom_config.calibrationdata):
-                print('calibrationdata',i,sdata)
-                if i == refindex:
-                    continue
-                irow += 1
-                # MAC
-                senname = calibrations[i].sn
-                item = QtWidgets.QTableWidgetItem(senname)
-                self.calibration_hf['coefftable'].setItem(irow,imac,item)
-                # Coeff
-                coeffstr = "{:.4f}".format(calibrations[i].coeff)
-                item = QtWidgets.QTableWidgetItem(coeffstr)
-                self.calibration_hf['coefftable'].setItem(irow, icoeff, item)
-                # Coeff_std
-                coeff_stdstr = "{:.4f}".format(calibrations[i].coeff_std)
-                item = QtWidgets.QTableWidgetItem(coeff_stdstr)
-                self.calibration_hf['coefftable'].setItem(irow, icoeff_std, item)
 
 
 
@@ -1093,6 +318,8 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
 
     def get_data(self, t_intervall):
+        funcname = __name__ + '.get_data():'
+        logger.info(funcname)
         ## Relative data
         #if (t_intervall[0] <= 0) and (t_intervall[1] <= 0):
         #    t_intervall[0] = t_intervall[0] + self.data_buffer_t[-1]
@@ -1100,7 +327,7 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
 
         ttmp = np.asarray(self.data_buffer_t)
         ind = (ttmp >= min(t_intervall)) & (ttmp <= max(t_intervall))
-        #print('ind', ind)
+        print(funcname, 'ind', ind)
         data = {'t': [], 'x': [], 'y': []}
         if sum(ind) > 0:
             indi = np.where(ind)[0]
@@ -1145,6 +372,9 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
                 elif isinstance(data_tmp, Iterable):
                     data_final = numpy.mean(data_tmp)
                     data_final_t = numpy.mean(data_tmp_t)
+                else:
+                    data_final = data_tmp
+                    data_final_t = data_tmp_t
 
                 self.data_buffer.append(data_final)
                 self.data_buffer_t.append(data_final_t)
@@ -1207,7 +437,7 @@ class PlotCanvas(FigureCanvas):
         self.draw()
 
 
-def fit_ntc(T,R,Toff, poly_degree=3):
+def fit_ntc_legacy(T,R,Toff, poly_degree=3):
     TK = T + Toff
     T_1 = 1 / (TK)
     # logR = log(R/R0)
@@ -1220,7 +450,7 @@ def calc_ntc_legacy(R,P_R,Toff):
     T = 1/T_1 - Toff
     return T
 
-def calc_NTC(calibration, R):
+def calc_NTC_legacy(calibration, R):
     """
     Calculate the temperature based on the calibration and a resistance
     """
@@ -1879,7 +1109,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         tadd = time.time()
         # def add_data(self, time, sensorindex, sentype, data, time_data, rawdata, time_rawdata):
         if len(self.device.custom_config.calibrationdata) > 0:
-            self.device.add_data(tadd, 0, np.NaN, np.NaN, np.NaN, np.NaN)
+            self.device.add_data(tadd, 0, np.nan, np.nan, np.nan, np.nan)
             # Update the table
             self.update_datatable()
         else:
@@ -2178,7 +1408,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     #print('b',sensor_data_tmp.realtimeplot)
 
                     data = plot_widget.get_data(t_intervall)
-                    #print('Data',data)
+                    print("Caldata", caldata)
+                    print("t_interval", t_intervall)
+                    print('Data',data)
+                    print("Done")
                     if isinstance(plot_widget, XYPlotWidget.XYPlotWidget):
                         data = data['lines'][0]
                     #print('Got data from widget', data)

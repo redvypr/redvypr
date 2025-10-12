@@ -312,18 +312,21 @@ class RedvyprDeviceScan():
                 FLAG_POTENTIAL_MODULE = False
 
             if(FLAG_POTENTIAL_MODULE):
-                #print('Found potential package',d.location, d.project_name, d.version, d.key)
+                print('Found potential package',d.location, d.project_name, d.version, d.key)
                 libstr2 = d.key.replace('-','_')  # Need to replace - with _, because - is not allowed in python
                 try:
                     testmodule = importlib.import_module(libstr2)
-                    device_module_all = inspect.getmembers(testmodule)
+                except Exception as e:
+                    # self.logger.info(funcname + ' Could not import module: ' + str(e))  # If the module is valid add it to devices
+                    self.logger.warning('Could not import module', exc_info=True)
+                    continue
+
+                try:
                     #print('Scan recursive start')
                     self.scan_module_recursive(testmodule,self.redvypr_devices['redvypr_modules'])
-                    # Clean empty dictionaries
-
                 except Exception as e:
                     #self.logger.info(funcname + ' Could not import module: ' + str(e))  # If the module is valid add it to devices
-                    self.logger.debug('Could not import module', exc_info=True)
+                    self.logger.debug('Could not load module', exc_info=True)
 
 
     def valid_device(self, devicemodule):

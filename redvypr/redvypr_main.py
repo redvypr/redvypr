@@ -229,8 +229,8 @@ def redvypr_main():
 
                         #print('Data', data)
                         #print('type Data', type(data))
-                        print('Data', data)
-                        print('key', key)
+                        #print('Data', data)
+                        #print('key', key)
                         if(key == 'name'):
                             deviceconfig['base_config'][key] = data
                         elif (key == 'loglevel') or (key == 'll'):
@@ -297,9 +297,9 @@ def redvypr_main():
         config_metadata = redvypr.RedvyprConfig(metadata=metadata_obj)
         config_all.append(config_metadata)
 
-    print('Config all',config_all)
+    #print('Config all',config_all)
     config = merge_configuration(config_all)
-    print('Config',config)
+    #print('Config',config)
 
     #config_all.append({'hostinfo_opt':hostinfo_opt})
     #print('Hostinfo', hostinfo)

@@ -11,8 +11,9 @@ import typing
 import pydantic
 import numpy
 import qtawesome
-
+from typing import Union, Optional
 import redvypr.devices.sensors.calibration.calibration_models
+from redvypr.devices.sensors.calibration.calibration_models import CalibrationList
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from PyQt6 import QtWidgets, QtCore, QtGui
 import redvypr.gui as gui
@@ -24,7 +25,185 @@ logger.setLevel(logging.DEBUG)
 
 
 
-class CalibrationsSaveWidget(QtWidgets.QTableWidget):
+class CalibrationsSaveWidget(QtWidgets.QWidget):
+    def __init__(self, *args, calibrations: list | CalibrationList | None = None):
+        """
+        Widget that allows to save the calibration
+        Parameters
+        ----------
+        args
+        calibrations: Calibrationlist
+        """
+        funcname = __name__ + '__init__()'
+        super().__init__(*args)
+        if isinstance(calibrations,list):
+            logger.debug(funcname + 'Changing calibrations to CalibrationList')
+            calibrations = CalibrationList(calibrations)
+
+        self.calibrations = calibrations
+
+        # Add some extras to the calibrations
+        for cal in calibrations:
+            if cal is not None:
+                cal.__save__ = True
+                cal.__filename__ = None
+
+        self.calibration_table = QtWidgets.QTableWidget() # Table to show all calibrations and the users choice for saving
+
+        self.layout = QtWidgets.QGridLayout(self)
+        self.check_sensor = QtWidgets.QWidget()
+        self.check_sensor_layout = QtWidgets.QHBoxLayout(self.check_sensor)
+        self.file_format_checkboxes = {}
+        file_format_check = {'sn':'Serial Number', 'date':'Date', 'sensor_model':'Sensor model', 'calibration_id': 'Calibration Id', 'calibration_uuid':'Calibration UUID', 'calibration_type':'Calibration type'}
+        for format_check in file_format_check:
+            self.file_format_checkboxes[format_check] = QtWidgets.QCheckBox(file_format_check[format_check])
+            if format_check == "date":
+                self.file_format_checkboxes[format_check].setChecked(True)
+            self.file_format_checkboxes[format_check].stateChanged.connect(self.__update_filename__)
+            self.check_sensor_layout.addWidget(self.file_format_checkboxes[format_check])
+        self.filename_edit = QtWidgets.QLineEdit()
+
+        iconname = "fa5.folder-open"
+        folder_icon = qtawesome.icon(iconname)
+        self.filename_button = QtWidgets.QPushButton()
+        self.filename_button.setIcon(folder_icon)
+        #self.filename_button.textChanged.connect(self.__filename_text_changed__)
+        self.filename_button.clicked.connect(self.__get_filename_clicked__)
+        #self.filename_choose = QtWidgets.QLineEdit()
+        self.filename_widget = QtWidgets.QWidget()
+        self.filename_widget_layout = QtWidgets.QHBoxLayout(self.filename_widget)
+        # Checkbox to save all
+        self.save_all_check = QtWidgets.QCheckBox("Save all")
+        self.save_all_check.setCheckState(QtCore.Qt.Checked)
+        self.save_all_check.stateChanged.connect(self.__save_all_changed__)
+        # Save buttons
+        self.save_button = QtWidgets.QPushButton('Save')
+        self.save_button.clicked.connect(self.__save_clicked__)
+        self.filename_widget_layout.addWidget(self.filename_edit)
+        self.filename_widget_layout.addWidget(self.filename_button)
+
+
+        self.filename = "calibration_{date}.yaml"
+        self.filename_edit.setText(self.filename)
+        self.filename_edit.editingFinished.connect(self.__filename_text_changed__)
+        self.__populate_calibration_table__()  # Fill the table
+
+        self.layout.addWidget(self.check_sensor, 0, 0)
+        self.layout.addWidget(self.filename_widget, 1, 0)
+        self.layout.addWidget(self.save_all_check, 2, 0)
+        self.layout.addWidget(self.calibration_table, 3, 0)
+        self.layout.addWidget(self.save_button, 4, 0)
+
+    def __save_all_changed__(self, state):
+        print('save_all_changed',state)
+        if state == 0:
+            for cal in self.calibrations:
+                if cal is not None:
+                    cal.__save__ = False
+        else:
+            for cal in self.calibrations:
+                if cal is not None:
+                    cal.__save__ = True
+
+        self.__populate_calibration_table__() # Update the table
+
+    def __update_filenames_in_calibrations__(self):
+        print('Updating filenames of the calibrations')
+        calfiles = self.calibrations.create_filenames_save(self.filename)
+        if True:
+            for cal,filename in zip(self.calibrations,calfiles):
+                if cal is not None:
+                    cal.__filename__ = filename
+
+    def __populate_calibration_table__(self):
+        colheader = ["Save","SN","Filename"]
+        self.calibration_table.clear()
+        icol_save = 0
+        icol_sn = 1
+        icol_filename = 2
+        self.calibration_table.setColumnCount(len(colheader))
+        self.calibration_table.setHorizontalHeaderLabels(colheader)
+        self.__update_filenames_in_calibrations__() # update the filenames to save
+        nrows = 0
+        i = 0
+        for cal in self.calibrations:
+            if cal is not None:
+                nrows = +1
+                self.calibration_table.setRowCount(nrows)
+                # Save flag
+                checked = cal.__save__
+                item_checkbox = QtWidgets.QCheckBox()
+                item_checkbox.setChecked(checked)
+                cal.__save_check__ = item_checkbox
+                #item_checkbox.stateChanged.connect(self.__calibration_save_state_changed__)
+                self.calibration_table.setCellWidget(nrows - 1, icol_save, item_checkbox)
+                # Serial number
+                item = QtWidgets.QTableWidgetItem(cal.sn)
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                self.calibration_table.setItem(nrows-1, icol_sn, item)
+                # Filename
+                filename = cal.__filename__
+                item = QtWidgets.QTableWidgetItem(filename)
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                self.calibration_table.setItem(nrows - 1, icol_filename, item)
+
+        self.calibration_table.resizeColumnsToContents()
+
+    def __filename_text_changed__(self):
+        self.filename = self.filename_edit.text()
+        self.__update_filename__()
+
+    def __get_filename_clicked__(self):
+        funcname = __name__ + '.__filename_clicked__()'
+        if True:
+            fileName = QtWidgets.QFileDialog.getSaveFileName(self, 'Save Calibration', '',
+                                                             "Yaml Files (*.yaml);;All Files (*)")
+        if fileName:
+            self.filename = fileName[0]
+            self.filename_edit.setText(self.filename)
+            self.__update_filename__()
+
+    def __update_filename__(self):
+        # Check which fileformats should be added
+        self.filename = self.filename_edit.text()
+        filename = self.filename
+        filename_base = os.path.splitext(filename)[0]
+        filename_ext = os.path.splitext(filename)[1]
+        for file_format in self.file_format_checkboxes:
+            checkbox = self.file_format_checkboxes[file_format]
+            format_str = '_{' + file_format + '}'
+            if checkbox.isChecked():
+                if format_str not in filename_base:
+                    filename_base += format_str
+            else:
+                filename_base = filename_base.replace(format_str,'')
+
+        self.filename = filename_base + filename_ext
+        self.filename_edit.setText(self.filename)
+        self.__update_filenames_in_calibrations__()
+        self.__populate_calibration_table__()
+
+    def __save_clicked__(self):
+        funcname = __name__ + '.__save_clicked__()'
+        if True:
+            filenames_save = []
+            calibrations_save = []
+            for cal in self.calibrations:
+                if cal is not None:
+                    save_check = cal.__save_check__.isChecked()
+                    if cal.__save__ and save_check:
+                        filenames_save.append(cal.__filename__)
+                        calibrations_save.append(cal)
+
+            # Save the files
+            if len(filenames_save) > 0:
+                print("Calibrations to save",calibrations_save)
+                print("Filenames to save save", filenames_save)
+                CalibrationList(calibrations_save).save(filenames_save)
+            else:
+                logger.warning("No calibrations to save")
+
+class CalibrationsSaveWidget_legacy(QtWidgets.QTableWidget):
     def __init__(self, *args, calibrations=None):
         funcname = __name__ + '__init__()'
         super().__init__(*args)

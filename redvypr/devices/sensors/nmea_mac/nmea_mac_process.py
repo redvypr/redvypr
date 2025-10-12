@@ -230,7 +230,7 @@ class NMEAMacProcessor():
 
                     # replace ts with t
                     try:
-                        data_packet_merge["t"] = data_packet_merge.pop("ts")
+                        data_packet_merge["ts"] = data_packet_merge.pop("ts")
                         data_packets_merged.append(data_packet_merge)
                         packetid = data_packet_merge["mac"] + "__merged"
                         redvypr.data_packets.set_packetid(data_packet_merge,packetid=packetid)

@@ -95,7 +95,7 @@ class configLine(pydantic.BaseModel,extra='allow'):
         tdata_tmp = t[ind]
         xdata_tmp = x[ind]
         ydata_tmp = y[ind]
-        err_tmp = y[ind]
+        err_tmp = err[ind]
         return {'x': xdata_tmp, 'y': ydata_tmp, 't': tdata_tmp, 'err': err_tmp}
 
     def append(self, data):
@@ -143,7 +143,8 @@ class configLine(pydantic.BaseModel,extra='allow'):
                 if isinstance(newt, Iterable):
                     self.databuffer.tdata.append(float(newt[inew]))
                 else:
-                    self.databuffer.xdata.append(float(newt))
+                    self.databuffer.tdata.append(float(newt))
+
                 self.databuffer.xdata.append(float(newx[inew]))
                 self.databuffer.ydata.append(float(newy[inew]))
                 self.databuffer.errordata.append(float(newerror[inew]))
@@ -221,11 +222,11 @@ class XYDataViewer(QtWidgets.QWidget):
         self.layout.addWidget(self.cancel_button, 1, 1)
 
     def send_clicked(self):
-        print('Send clicked ...')
+        logger.debug('Send clicked ...')
         comment_str = self._comment_widget.text()
         self.data['comment'] = comment_str
         if self.xyplotwidget is not None:
-            print('Data',self.data)
+            logger.debug('Data:{}'.format(self.data))
 
             self.xyplotwidget.publish_data(self.data)
 
@@ -728,7 +729,7 @@ class XYPlotWidget(QtWidgets.QFrame):
                 y0 = self.interactive_rectangle['points'][0]['pos'][1]
                 dx = mousePoint.x() - x0
                 dy = mousePoint.y() - y0
-                print('Rectangle', dx, dy)
+                logger.debug('Rectangle:{} {}'.format(dx, dy))
                 if self.interactive_rectangle['rect'] is None:
                     self.interactive_rectangle['rect'] = pyqtgraph.RectROI([x0, y0], [dx, dy],
                                                                            pen='r')  # Position [2, 2], Größe [3, 2]
@@ -1252,14 +1253,14 @@ class XYPlotWidget(QtWidgets.QFrame):
         if dataqueue is not None:
             logger.debug(funcname + 'Sending datapacket')
             dataqueue.put(datapacket_publish)
-            print('datapacket',datapacket_publish)
+            logger.debug('datapacket:{}'.format(datapacket_publish))
 
     def get_data(self, xlim=None, ylim=None):
         """
         Gets the data of the buffer in the limits of xlim and/or ylim
         """
         funcname = __name__ + '.get_data():'
-        print(funcname + 'get data',xlim,ylim)
+        logger.debug(funcname + 'get data:{}'.format(xlim,ylim))
         data = []
         tdata = []
         xdata = []
@@ -1322,7 +1323,6 @@ class XYPlotWidget(QtWidgets.QFrame):
     plot_every_Nth: int = pydantic.Field(default=1, description='Uses every Nth datapoint for plotting')
 
         """
-
         if line.plot_mode_x == 'all':
             ttmp = line.databuffer.tdata[::line.plot_every_Nth]
             xtmp = line.databuffer.xdata[::line.plot_every_Nth]
@@ -1430,7 +1430,6 @@ class XYPlotWidget(QtWidgets.QFrame):
                     line._tlastupdate = tnow
                     try:
                         [x,y,err]= self.__get_data_for_line(line)
-                        #print('x',x,'err',err)
                         line._lineplot.setData(x=x, y=y)
                         self.x_min = min(self.x_min,min(x))
                         self.x_max = max(self.x_max, max(x))
