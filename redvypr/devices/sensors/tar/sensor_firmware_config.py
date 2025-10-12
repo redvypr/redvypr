@@ -267,7 +267,7 @@ class dhf_sensor():
                 parameter = str(cal_key)
             elif isinstance(calibrations, list):
                 calibration = cal_key
-                parameter = str(calibration.parameter.datakey)
+                parameter = str(calibration.channel.datakey)
 
             #print('Parameter',parameter)
             if calibration.calibration_type == 'ntc':
@@ -844,13 +844,13 @@ class dhf_flasher():
                                     if caltype == 4: # At the moment only hoge-3 is supported
                                         parameter = redvypr.RedvyprAddress(parameter)
                                         print('Sensor model',str(macobject.brdid))
-                                        calmodel = calibration_models.CalibrationNTC(coeff=coeffs,sn=mac_cal,
+                                        calmodel = calibration_models.CalibrationNTC(coeff=coeffs, sn=mac_cal,
                                                                                      comment=calcomment,
                                                                                      date=caldate,
                                                                                      calibration_id=calid,
                                                                                      calibration_uuid=caluuid,
-                                                                                     parameter=parameter,
-                                                                                     parameter_apply=parameter_apply,
+                                                                                     channel=parameter,
+                                                                                     channel_apply=parameter_apply,
                                                                                      sensor_model=str(macobject.brdid))
                                         self.logger.debug('Adding {} to calibrations'.format(macobject.macstr))
                                         macobject.calibrations[parameter] = calmodel
@@ -948,13 +948,13 @@ class dhf_flasher():
                                     if caltype == 4: # At the moment only hoge-3 is supported
                                         parameter = redvypr.RedvyprAddress(parameter)
                                         print('Sensor model',str(macobject.brdid))
-                                        calmodel = calibration_models.CalibrationNTC(coeff=coeffs,sn=mac_cal,
+                                        calmodel = calibration_models.CalibrationNTC(coeff=coeffs, sn=mac_cal,
                                                                                      comment=calcomment,
                                                                                      date=caldate,
                                                                                      calibration_id=calid,
                                                                                      calibration_uuid=caluuid,
-                                                                                     parameter=parameter,
-                                                                                     parameter_apply=parameter_apply,
+                                                                                     channel=parameter,
+                                                                                     channel_apply=parameter_apply,
                                                                                      sensor_model=str(macobject.brdid))
                                         self.logger.debug('Adding {} to calibrations'.format(macobject.macstr))
                                         macobject.calibrations[parameter] = calmodel

@@ -92,7 +92,7 @@ class Sensor(pydantic.BaseModel):
             sn = calibration.sn
             sensor_model = calibration.sensor_model
             caldate = calibration.date
-            parameter_calibrated = calibration.parameter
+            parameter_calibrated = calibration.channel
             # 1: Check if calibration.parameter is existing in the datapacket
             # 2: Compare serial number with packetid (not done yet)
             # 3: save date (not done yet)
@@ -108,7 +108,7 @@ class Sensor(pydantic.BaseModel):
             if flag_parameter:
                 logger.debug(funcname+ 'Adding calibration')
                 calibration_apply = calibration.model_copy()
-                calibration_apply.parameter_apply = calibration_apply.parameter
+                calibration_apply.channel_apply = calibration_apply.channel
                 #calibration_apply.datakey_result = 'test1'
                 self.add_calibration_for_datapacket(rdata.address,calibration=calibration_apply)
 

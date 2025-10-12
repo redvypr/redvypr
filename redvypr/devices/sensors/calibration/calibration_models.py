@@ -21,7 +21,7 @@ logger.setLevel(logging.DEBUG)
 
 class CalibrationData(pydantic.BaseModel):
     sn: str = pydantic.Field(default='')
-    parameter: str = pydantic.Field(default='')
+    channel: str = pydantic.Field(default='')
     sensor_model: str = pydantic.Field(default='')
     unit: str = pydantic.Field(default='')
     sensortype: str = pydantic.Field(default='')
@@ -32,10 +32,7 @@ class CalibrationData(pydantic.BaseModel):
     time_data: list = pydantic.Field(default=[])
 
 # A class to store sensordata used for the calibration
-class SensorData(CalibrationData):
-    rawdata: list = pydantic.Field(default=[])
-    time_rawdata: list = pydantic.Field(default=[])
-    realtimeplottype: typing.Literal['Table', 'XY-Plot'] = pydantic.Field(default='Table', description='Type of realtimedataplot')
+
 
 
 # Convert to timezone-aware datetime, needed for sorting
@@ -45,7 +42,7 @@ def to_aware(dt):
     return dt
 
 
-def find_calibration_for_parameter(parameter, calibrations, sn=None, date=None, date2=None, calibration_type=None, calibration_id=None, calibration_uuid=None, sort_by='date'):
+def find_calibration_for_channel(channel, calibrations, sn=None, date=None, date2=None, calibration_type=None, calibration_id=None, calibration_uuid=None, sort_by='date'):
     """
 
     Parameters
@@ -57,7 +54,7 @@ def find_calibration_for_parameter(parameter, calibrations, sn=None, date=None, 
     calibration_id
     calibration_uuid
     sort_by
-    parameter
+    channel
     calibrations
 
     Returns
@@ -65,12 +62,12 @@ def find_calibration_for_parameter(parameter, calibrations, sn=None, date=None, 
 
     """
     # make an address out of the parameter
-    parameter = redvypr.RedvyprAddress(parameter)
+    channel = redvypr.RedvyprAddress(channel)
     calibration_candidates = []
     for calibration in calibrations:
         # Check if the address fits
         flag_candidate = True
-        if calibration.parameter in parameter:
+        if calibration.channel in channel:
             logger.debug('Found correct parameter')
             if sn is not None:
                 flag_candidate = sn in calibration.sn
@@ -96,13 +93,13 @@ def find_calibration_for_parameter(parameter, calibrations, sn=None, date=None, 
         calibration_candidates = sorted(calibration_candidates, key=lambda x: to_aware(x.date), reverse=True)
 
     return calibration_candidates
-def get_date_from_calibration(calibration, parameter, return_str = False, strformat = '%Y-%m-%d %H:%M:%S'):
+def get_date_from_calibration(calibration, channel, return_str = False, strformat = '%Y-%m-%d %H:%M:%S'):
     """
     Searches within the calibration for a calibration date. This is a helper function as the date might be at different locations
     """
     funcname = __name__ + '.get_date_from_calibration():'
     try:
-        coeff = calibration['parameter'][parameter]
+        coeff = calibration['channel'][channel]
     except:
         coeff = None
     # Get the calibration data, that can be either in each of the parameters, or as a key for all parameter
@@ -143,14 +140,14 @@ class CalibrationGeneric(pydantic.BaseModel):
     """
     structure_version: str = '1.1'
     calibration_type: typing.Literal['generic'] = 'generic'
-    parameter: RedvyprAddress = pydantic.Field(default=RedvyprAddress('/k:PARA_CONST'),
-                                               description='The address of calibrated parameter in the datapacket',
-                                               editable=False)
-    parameter_apply: typing.Optional[RedvyprAddress] = pydantic.Field(default=None,
-                                               description='The address of the parameter the calibration should '
+    channel: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''),
+                                             description='The address of calibrated channel in the datapacket',
+                                             editable=False)
+    channel_apply: typing.Optional[RedvyprAddress] = pydantic.Field(default=None,
+                                                                    description='The address of the channel the calibration should '
                                                           'be applied to. This is optional, if the calibrated '
-                                                          'parameter shall be applied to a different parameter. '
-                                                          'If it is not set parameter will be used.')
+                                                          'channel shall be applied to a different channel. '
+                                                          'If it is not set channel will be used.')
     datakey_result: typing.Optional[str] = pydantic.Field(default=None,
                                                           description='The keyname of the output of the calibration. '
                                                                       'Note that this is the basekey of the datadictionary.')
@@ -199,7 +196,9 @@ class CalibrationPoly(CalibrationGeneric):
     """
     Calibration model for a parameter with a polynomial behaviour
     """
+    calibration_type: typing.Literal['polynom'] = 'polynom'
     coeff: list = pydantic.Field(default = [1.0, 0], description='The calibration polynomial. The first entry is the one with the highest exponent, the last the constant: y = coeff[-1] + x * coeff[-2] + x**2 * coeff[-3]')
+    poly_degree: int = 3
     date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
     calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be choosen by the user')
     calibration_uuid: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex,
@@ -211,12 +210,32 @@ class CalibrationPoly(CalibrationGeneric):
         return data
 
 
+    def calc_coeffs(self, poly_degree=None):
+        """
+        Hoge-type equation for NTC calibration
+
+        Parameters
+        ----------
+        poly_degree
+
+        Returns
+        -------
+
+        """
+        if poly_degree is not None:
+            self.poly_degree = poly_degree
+
+        refdata = np.asarray(self.calibration_reference_data.data)
+        caldata = np.asarray(self.calibration_data.data)
+        fitdata = np.polyfit(refdata, caldata, self.poly_degree)
+        self.coeff = fitdata.tolist()
+
 class CalibrationHeatFlow(CalibrationGeneric):
     """
     Calibration model for a heatflow sensor
     """
     calibration_type: typing.Literal['heatflow'] = 'heatflow'
-    parameter: str = 'HF'
+    channel: str = 'HF'
     coeff: float = np.nan
     coeff_std: typing.Optional[float] = None
     unit:  str = 'W m-2 mV-1'
@@ -229,6 +248,7 @@ class CalibrationNTC(CalibrationGeneric):
     calibration_type: typing.Literal['ntc'] = 'ntc'
     datakey_result: typing.Optional[str] = pydantic.Field(default='{datakey}_cal_ntc', description='The keyname of the output of the calibration. Note that this is the basekey of the datadictionary.')
     Toff: float = 273.15 # Offset between K and degC
+    poly_degree: int = 3
     coeff: list = pydantic.Field(default = [np.nan, np.nan, np.nan, np.nan])
     unit: str = 'degC'
     unit_input: str = 'Ohm'
@@ -243,7 +263,7 @@ class CalibrationNTC(CalibrationGeneric):
         T = 1 / T_1 - Toff
         return T
 
-    def fit_ntc(self, poly_degree=3):
+    def calc_coeffs(self, poly_degree=None):
         """
         Hoge-type equation for NTC calibration
 
@@ -255,6 +275,9 @@ class CalibrationNTC(CalibrationGeneric):
         -------
 
         """
+        if poly_degree is not None:
+            self.poly_degree = poly_degree
+
         T = np.asarray(self.calibration_reference_data.data)
         R = np.asarray(self.calibration_data.data)
         Toff = self.Toff
@@ -262,7 +285,7 @@ class CalibrationNTC(CalibrationGeneric):
         T_1 = 1 / (TK)
         # logR = log(R/R0)
         logR = np.log(R)
-        P_R = np.polyfit(logR, T_1, poly_degree)
+        P_R = np.polyfit(logR, T_1, self.poly_degree)
         self.coeff = P_R.tolist()
 
 
@@ -478,6 +501,7 @@ class CalibrationList(list):
 
                     logger.debug('Writing to file {}'.format(calfile_write))
                     f = open(calfile_write, 'a')
+                    #print("Data save",calibration.model_dump())
                     calibration_yaml = yaml.dump(calibration.model_dump(), explicit_end=True, explicit_start=True, sort_keys=False)
                     f.write(calibration_yaml)
                     # print('Calibration dump ...', calibration_yaml)

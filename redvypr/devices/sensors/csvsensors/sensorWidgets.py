@@ -163,7 +163,7 @@ class sensorConfigWidget(QtWidgets.QWidget):
         funcname = __name__ + '__fill_calibration_table__():'
         logger.debug(funcname)
         self.parameterTable.clear()
-        parameter_all = self.get_parameter(self.sensor.parameter)
+        parameter_all = self.get_parameter(self.sensor.channel)
         #print('Parameter all',parameter_all)
         nRows = len(parameter_all)
         nCols = 8
@@ -200,7 +200,7 @@ class sensorConfigWidget(QtWidgets.QWidget):
             item = QtWidgets.QTableWidgetItem(para.sn)
             self.parameterTable.setItem(i, 1+2+1, item)
             # Parameter
-            item = QtWidgets.QTableWidgetItem(para.parameter)
+            item = QtWidgets.QTableWidgetItem(para.channel)
             self.parameterTable.setItem(i, 2+2+1, item)
             # Date
             datestr = para.date.strftime(self.datefmt)
@@ -441,8 +441,8 @@ class sensorCoeffWidget(QtWidgets.QWidget):
                     # If the calibration was edited, update the list
                     self.__calConfigWidget_tmp__.config_changed_flag.connect(self.__configEdited__)
                 else:
-                    self.__calConfigWidget_tmp__ = gui.pydanticQTreeWidget(cal, dataname=cal.sn + '/' + cal.parameter,
-                    show_datatype=False)
+                    self.__calConfigWidget_tmp__ = gui.pydanticQTreeWidget(cal, dataname=cal.sn + '/' + cal.channel,
+                                                                           show_datatype=False)
 
                 self.__calConfigWidget_tmp__.cal = cal
                 self.calibrationConfigWidget_layout.addWidget(self.__calConfigWidget_tmp__)
@@ -489,7 +489,7 @@ class sensorCoeffWidget(QtWidgets.QWidget):
             self.sensorCoeffWidget_list.setItem(i, icol_caltype, item)
             # Parameter
             icol_caltype = colheaders.index('Calibration type')
-            item = QtWidgets.QTableWidgetItem(cal.parameter)
+            item = QtWidgets.QTableWidgetItem(cal.channel)
             item.setData(role, cal)
             self.sensorCoeffWidget_list.setItem(i, icol_para, item)
             # Caldate

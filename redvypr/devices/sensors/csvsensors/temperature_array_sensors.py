@@ -64,7 +64,7 @@ class sensor_TAR(pydantic.BaseModel):
                 ntc_coeff = [1.9560290742146262e-07, -7.749325133113135e-08, 0.00025341112950681254,
                              0.0012350747622505245]
                 coeff_comment = 'Standard coefficients, not calibration'
-                NTCcal = CalibrationNTC(parameter=parameter_name, coeff=ntc_coeff, comment=coeff_comment, sn=self.sn)
+                NTCcal = CalibrationNTC(channel=parameter_name, coeff=ntc_coeff, comment=coeff_comment, sn=self.sn)
                 self.parameter.NTC_A.append(NTCcal)
                 self.parameter.pos_x.append(pos_x)
                 self.parameter.name.append(NTC_name)
@@ -100,7 +100,7 @@ def process_TAR_data(dataline, data, device_info, loggerconfig):
         for i, R in enumerate(datapacket_TAR['NTC_A']):
             j += 1
             #print('COEFF',loggerconfig.parameter.NTC_A)
-            poly = loggerconfig.parameter.NTC_A[i].coeff
+            poly = loggerconfig.channel.NTC_A[i].coeff
             #poly = [1.9560290742146262e-07, -7.749325133113135e-08, 0.00025341112950681254, 0.0012350747622505245]
             Toff = 273.15
             # print('Poly', poly)
@@ -337,7 +337,7 @@ class TARWidget_config(QtWidgets.QWidget):
         print('calibrations', self.device.custom_config.calibrations)
         cals = self.device.custom_config.calibrations
         match = ['parameter','sn']
-        for i, para in enumerate(self.config.parameter.NTC_A):
+        for i, para in enumerate(self.config.channel.NTC_A):
             print('Searching for calibration for parameter',i)
             print('Para',i,para)
             cal_match = []
@@ -360,7 +360,7 @@ class TARWidget_config(QtWidgets.QWidget):
             if len(cal_match) > 0:
                 imin = numpy.argmin(cal_match)
                 print('Assigning matching parameter')
-                self.config.parameter.NTC_A[i] = cal_match[imin]
+                self.config.channel.NTC_A[i] = cal_match[imin]
 
         self.__fill_calibration_table__()
 
@@ -392,7 +392,7 @@ class TARWidget_config(QtWidgets.QWidget):
                 #Update the calibration
                 iupdate = self.__calbutton_clicked__.__para_index__
                 print('Iupdate', iupdate)
-                self.config.parameter.NTC_A[iupdate] = cal
+                self.config.channel.NTC_A[iupdate] = cal
                 self.__calwidget__.close()
                 self.__fill_calibration_table__()
 
@@ -401,15 +401,15 @@ class TARWidget_config(QtWidgets.QWidget):
         funcname = __name__ + '__fill_calibration_table__():'
         logger.debug(funcname)
         self.parameterTable.clear()
-        nRows = len(self.config.parameter.NTC_A)
+        nRows = len(self.config.channel.NTC_A)
         nCols = 5
         self.parameterTable.setRowCount(nRows)
         self.parameterTable.setColumnCount(nCols)
         self.parameterTable.setHorizontalHeaderLabels(['Sensor Parameter','Cal SN','Cal Parameter','Cal Date','Cal Comment'])
         #print('Config parameter',self.config.parameter)
-        for i,para in enumerate(self.config.parameter.NTC_A):
+        for i,para in enumerate(self.config.channel.NTC_A):
             #print('Para',para)
-            name = self.config.parameter.name[i]
+            name = self.config.channel.name[i]
             but = QtWidgets.QPushButton(name)
 
             #but.clicked.connect(self.parent().show_coeffwidget_apply)
@@ -421,7 +421,7 @@ class TARWidget_config(QtWidgets.QWidget):
             item = QtWidgets.QTableWidgetItem(para.sn)
             self.parameterTable.setItem(i, 1, item)
             # Parameter
-            item = QtWidgets.QTableWidgetItem(para.parameter)
+            item = QtWidgets.QTableWidgetItem(para.channel)
             self.parameterTable.setItem(i, 2, item)
             # Date
             item = QtWidgets.QTableWidgetItem(para.date)

@@ -32,39 +32,39 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.autocalibration')
 logger.setLevel(logging.DEBUG)
 
-class AutoCalEntry(pydantic.BaseModel):
+class Autocalentry(pydantic.BaseModel):
     """
     An entry for the autocalibration procedure
     """
     autocalmode: typing.Literal['timer', 'response', 'threshold'] = pydantic.Field(default='response',
                                                                                    description='The mode, i.e. the way autocal shall behave after the value is set.')
-    parameter: RedvyprAddress = pydantic.Field(default=RedvyprAddress(),
-                                                       description='The parameter to be changed')
-    parameter_set: float = pydantic.Field(default=0.0, description='The value the parameter shall be changed to')
-    parameter_steady: RedvyprAddress = pydantic.Field(default=RedvyprAddress(),
-                                               description='The parameter giving the signal if the desired value is steady')
-    parameter_steady_true: typing.Any = pydantic.Field(default=1, description='The value that is sent by parameter_steady when the value is steady')
-    parameter_steady_false: typing.Any = pydantic.Field(default=0,
-                                                   description='The value that is sent by parameter_steady when the value ist not yet steady')
+    channel: RedvyprAddress = pydantic.Field(default=RedvyprAddress(),
+                                             description='The parameter to be changed')
+    channel_set: float = pydantic.Field(default=0.0, description='The value the parameter shall be changed to')
+    channel_steady: RedvyprAddress = pydantic.Field(default=RedvyprAddress(),
+                                                    description='The parameter giving the signal if the desired value is steady')
+    channel_steady_true: typing.Any = pydantic.Field(default=1, description='The value that is sent by parameter_steady when the value is steady')
+    channel_steady_false: typing.Any = pydantic.Field(default=0,
+                                                      description='The value that is sent by parameter_steady when the value ist not yet steady')
     command: str = pydantic.Field(default='', description='The command to be sent')
     timer_wait: float = pydantic.Field(default=120, description='Seconds to wait')
     sample_delay: float = pydantic.Field(default=2.0, description='The delay [s] after which the paremeters are sampled')
     entry_min_runtime: float = pydantic.Field(default=5.0, description='The mininum time[s] an entry should run before analysis is performed')
 
 
-class AutoCalConfig(AutoCalEntry):
-    entries: typing.Optional[typing.List[AutoCalEntry]] = pydantic.Field(default=[], editable=True)
+class Autocalconfig(Autocalentry):
+    entries: typing.Optional[typing.List[Autocalentry]] = pydantic.Field(default=[], editable=True)
     start_index: int = pydantic.Field(default=0, description='The index of the entries to start with')
-    parameter_delta: float = pydantic.Field(default=1.0,
-                                            description='The delta between the next entry if a new is added',
-                                            editable=True)
-    parameter_start: float = pydantic.Field(default=0, description='The start value of the parameter',
-                                            editable=True)
+    channel_delta: float = pydantic.Field(default=1.0,
+                                          description='The delta between the next entry if a new is added',
+                                          editable=True)
+    channel_start: float = pydantic.Field(default=0, description='The start value of the parameter',
+                                          editable=True)
     autocalmode: typing.Literal['timer', 'response', 'threshold'] = pydantic.Field(default='timer',
                                                                                    description='The mode, i.e. the way autocal shall behave after the value is set.')
 
 
-class autocalWidget(QtWidgets.QWidget):
+class Autocalwidget(QtWidgets.QWidget):
     def __init__(self, device=None):
         """
         Standard deviceinitwidget if the device is not providing one by itself.
@@ -82,22 +82,22 @@ class autocalWidget(QtWidgets.QWidget):
         self.parameterinput = QtWidgets.QPushButton('Parameter')
         self.parameterinput.clicked.connect(self.parameterClicked)
         self.parameterinput_edit = QtWidgets.QLineEdit()
-        self.parameterinput_edit.setText(self.config.parameter.get_str())
+        self.parameterinput_edit.setText(self.config.channel.get_str())
 
         self.parameter_steady_edit = QtWidgets.QLineEdit()
-        self.parameter_steady_edit.setText(self.config.parameter_steady.get_str())
+        self.parameter_steady_edit.setText(self.config.channel_steady.get_str())
         self.parameter_steady_button = QtWidgets.QPushButton('Parameter steady')
         self.parameter_steady_button.clicked.connect(self.parameterClicked)
 
         self.parameter_start = QtWidgets.QDoubleSpinBox()
         self.parameter_start.setMinimum(-1e10)
         self.parameter_start.setMaximum(1e10)
-        self.parameter_start.setValue(self.config.parameter_start)
+        self.parameter_start.setValue(self.config.channel_start)
 
         self.parameter_delta = QtWidgets.QDoubleSpinBox()
         self.parameter_delta.setMinimum(-1e10)
         self.parameter_delta.setMaximum(1e10)
-        self.parameter_delta.setValue(self.config.parameter_delta)
+        self.parameter_delta.setValue(self.config.channel_delta)
 
         self.addentry = QtWidgets.QPushButton('Add entry')
         self.addentry.clicked.connect(self.additem_clicked)
@@ -111,16 +111,16 @@ class autocalWidget(QtWidgets.QWidget):
         self.start_index.valueChanged.connect(self.start_index_changed)
         #timer_wait
         self.parameter_steady_true = QtWidgets.QLineEdit()
-        self.parameter_steady_true.setText(str(self.config.parameter_steady_true))
+        self.parameter_steady_true.setText(str(self.config.channel_steady_true))
         self.parameter_steady_false = QtWidgets.QLineEdit()
-        self.parameter_steady_false.setText(str(self.config.parameter_steady_false))
+        self.parameter_steady_false.setText(str(self.config.channel_steady_false))
         self.timer_wait = QtWidgets.QDoubleSpinBox()
         self.timer_wait.setMinimum(0.0)
         self.timer_wait.setMaximum(10000.0)
         self.timer_wait.setValue(self.config.timer_wait)
         self.parameter_threshold = QtWidgets.QDoubleSpinBox()
         self.modecombo = QtWidgets.QComboBox()
-        modes = typing.get_args(typing.get_type_hints(AutoCalConfig())['autocalmode'])
+        modes = typing.get_args(typing.get_type_hints(Autocalconfig())['autocalmode'])
         for m in modes:
             self.modecombo.addItem(str(m))
 
@@ -220,7 +220,7 @@ class autocalWidget(QtWidgets.QWidget):
         self.start_index.setEnabled(False)
         #print('Processing entry',self._autocal_entry_index)
         # Check if an entry is processed
-        parameter = self._autocal_entry_run.parameter
+        parameter = self._autocal_entry_run.channel
         #print('Device',parameter.devicename)
         #print('Datakey', parameter.datakey)
 
@@ -249,19 +249,19 @@ class autocalWidget(QtWidgets.QWidget):
 
             if self._autocal_entry_device is not None:
                 logger.debug(funcname + 'Sending command')
-                comdata = {'temp':self._autocal_entry_run.parameter_set}
+                comdata = {'temp':self._autocal_entry_run.channel_set}
                 self._autocal_entry_device.thread_command(command='set', data=comdata)
 
             if self._autocal_entry_run.autocalmode == 'response':
                 logger.debug(funcname + 'Processing entry with response mode')
-                self.device.subscribe_address(self._autocal_entry_run.parameter)
-                self.device.subscribe_address(self._autocal_entry_run.parameter_steady)
+                self.device.subscribe_address(self._autocal_entry_run.channel)
+                self.device.subscribe_address(self._autocal_entry_run.channel_steady)
                 self._autocal_response_steady = False
                 self._autocal_entry_running = True
                 self._autocal_entry_tstart = time.time()
             elif self._autocal_entry_run.autocalmode == 'timer':
                 logger.debug(funcname + 'Processing entry with timer mode')
-                self.device.subscribe_address(self._autocal_entry_run.parameter)
+                self.device.subscribe_address(self._autocal_entry_run.channel)
                 self._autocal_entry_running = True
                 self._autocal_entry_tstart = time.time()
                 dt_wait = self._autocal_entry_run.timer_wait
@@ -314,12 +314,12 @@ class autocalWidget(QtWidgets.QWidget):
             item_status.setFlags(item_status.flags() ^ QtCore.Qt.ItemIsEditable)
             self.calentrytable.setItem(irow, self.col_status, item_status)
 
-            addr = entry.parameter.get_str('/d/k')
+            addr = entry.channel.get_str('/d/k')
             item_addr = QtWidgets.QTableWidgetItem(addr)
             item_addr.setFlags(item_addr.flags() ^ QtCore.Qt.ItemIsEditable)
             self.calentrytable.setItem(irow, self.col_addr, item_addr)
 
-            parameter_set = str(entry.parameter_set)
+            parameter_set = str(entry.channel_set)
             item_set = QtWidgets.QTableWidgetItem(parameter_set)
             item_set.setFlags(item_set.flags() ^ QtCore.Qt.ItemIsEditable)
             self.calentrytable.setItem(irow, self.col_parameter_set,item_set)
@@ -343,7 +343,7 @@ class autocalWidget(QtWidgets.QWidget):
             item_value.setFlags(item_value.flags() ^ QtCore.Qt.ItemIsEditable)
             self.calentrytable.setItem(irow, self.col_value, item_value)
 
-            addr_steady = entry.parameter_steady.get_str('/d/k')
+            addr_steady = entry.channel_steady.get_str('/d/k')
             item_addr_steady = QtWidgets.QTableWidgetItem(addr_steady)
             item_addr_steady.setFlags(item_addr_steady.flags() ^ QtCore.Qt.ItemIsEditable)
             self.calentrytable.setItem(irow, self.col_addr_steady, item_addr_steady)
@@ -356,8 +356,8 @@ class autocalWidget(QtWidgets.QWidget):
         timer_wait = self.timer_wait.value()
         autocalmode = self.modecombo.currentText()
         self.parameter_start.setValue(parameter_start + parameter_delta)
-        entry = AutoCalEntry(parameter_set=parameter_start, parameter=self.config.parameter,autocalmode=autocalmode,
-                             parameter_steady=self.config.parameter_steady,
+        entry = Autocalentry(channel_set=parameter_start, channel=self.config.channel, autocalmode=autocalmode,
+                             channel_steady=self.config.channel_steady,
                              timer_wait=timer_wait)
         self.config.entries.append(entry)
         self.update_entrytable()
@@ -379,7 +379,7 @@ class autocalWidget(QtWidgets.QWidget):
     def send_commnd_to_device(self,calentry):
         funcname = __name__ + '.send_commnd_to_device()'
         logger.debug(funcname)
-        devicename = calentry.parameter.devicename
+        devicename = calentry.channel.devicename
         #print('Devicename',devicename)
 
     def parameterClicked(self):
@@ -393,31 +393,31 @@ class autocalWidget(QtWidgets.QWidget):
         device = config['device']
         address = config['datastream_address']
         if self.__pydantic_config_sender__ == self.parameterinput:
-            self.config.parameter = address
-            self.parameterinput_edit.setText(self.config.parameter.get_str())
+            self.config.channel = address
+            self.parameterinput_edit.setText(self.config.channel.get_str())
         elif self.__pydantic_config_sender__ == self.parameter_steady_button:
-            self.config.parameter_steady = address
-            self.parameter_steady_edit.setText(self.config.parameter_steady.get_str())
+            self.config.channel_steady = address
+            self.parameter_steady_edit.setText(self.config.channel_steady.get_str())
 
     def update_data(self,data):
         funcname = __name__ + '.update_data():'
         logger.debug(funcname)
-        if data in self._autocal_entry_run.parameter:
+        if data in self._autocal_entry_run.channel:
             #print('Data for autocalibration',data)
             item_value = self.calentrytable.item(self.config.start_index, self.col_value)
             rdata = redvypr.data_packets.Datapacket(data)
-            valuedata = rdata[self._autocal_entry_run.parameter]
+            valuedata = rdata[self._autocal_entry_run.channel]
             valuedatastr = str(valuedata)
             item_value.setText(valuedatastr)
 
         if self._autocal_entry_run.autocalmode == 'response':
-            if data in self._autocal_entry_run.parameter_steady:
+            if data in self._autocal_entry_run.channel_steady:
                 trun = time.time() - self._autocal_entry_tstart
                 #print('Found steady paramter')
-                steady_true = self._autocal_entry_run.parameter_steady_true
-                steady_false = self._autocal_entry_run.parameter_steady_false
+                steady_true = self._autocal_entry_run.channel_steady_true
+                steady_false = self._autocal_entry_run.channel_steady_false
                 rdata = redvypr.data_packets.Datapacket(data)
-                steadydata = rdata[self._autocal_entry_run.parameter_steady]
+                steadydata = rdata[self._autocal_entry_run.channel_steady]
                 #print('Steadydata',steadydata)
                 # Check if steady and at least next_entry_min_time seconds
 

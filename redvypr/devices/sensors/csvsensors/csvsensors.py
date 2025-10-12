@@ -332,7 +332,7 @@ class Device(RedvyprDevice):
     def get_sensor_parameter(self, sensor):
         funcname = __name__ + '.get_sensor_parameter():'
         logger.debug(funcname)
-        parameter = sensor.parameter
+        parameter = sensor.channel
         def __get_parameter_recursive__(index, parameter, parameter_all):
             for i, ptmp in enumerate(parameter):
                 if isinstance(ptmp, list):
@@ -680,7 +680,7 @@ class Device(RedvyprDevice):
 
         for calibration in calibrations_sn:
             if True:
-                parameter = calibration.parameter
+                parameter = calibration.channel
                 try:
                     parameters[parameter]
                 except:

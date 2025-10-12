@@ -484,7 +484,8 @@ class CalibrationsTable(QtWidgets.QTableWidget):
 
 class GenericSensorCalibrationWidget(QtWidgets.QWidget):
     """
-    Widget to display the calibrations of a sensor and to let the user choose different calibrations.
+    Widget to display the calibrations of a sensor and to let the user choose different calibrations. It can read
+    multiple files, check if they are already existing and if not add the calibrations.
     """
     config_changed_flag = QtCore.pyqtSignal()  # Signal notifying that the configuration has changed
     def __init__(self, *args, calibrations_all=None, redvypr_device=None, calibration_models=None, calibrations_sensor={'Calibrations':[], 'Raw Calibrations':[]},calibrations_sensor_options={'Calibrations':None, 'Raw Calibrations':None}):
@@ -650,7 +651,8 @@ class GenericSensorCalibrationWidget(QtWidgets.QWidget):
                 sn = self.sensorinfo['sn']
             except:
                 sn = None
-            calibration_candidates = redvypr.devices.sensors.calibration.calibration_models.find_calibration_for_parameter(parameter=parameter,calibrations=calibrations,sn=sn)
+            calibration_candidates = redvypr.devices.sensors.calibration.calibration_models.find_calibration_for_channel(
+                channel=parameter, calibrations=calibrations, sn=sn)
 
             print('Finding calibration for parameter {} with sn {}'.format(parameter,sn))
             #print('Calibration candidates for parameter',calibration_candidates)
@@ -966,8 +968,8 @@ class sensorCalibrationsWidget(QtWidgets.QWidget):
                     # If the calibration was edited, update the list
                     self.__calConfigWidget_tmp__.config_changed_flag.connect(self.__configEdited__)
                 else:
-                    self.__calConfigWidget_tmp__ = gui.pydanticQTreeWidget(cal, dataname=cal.sn + '/' + cal.parameter,
-                    show_datatype=False)
+                    self.__calConfigWidget_tmp__ = gui.pydanticQTreeWidget(cal, dataname=cal.sn + '/' + cal.channel,
+                                                                           show_datatype=False)
 
                 self.__calConfigWidget_tmp__.cal = cal
                 self.calibrationConfigWidget_layout.addWidget(self.__calConfigWidget_tmp__)
@@ -1016,9 +1018,9 @@ class sensorCalibrationsWidget(QtWidgets.QWidget):
             icol_caltype = colheaders.index('Calibration type')
             # Distinguish between RedvyprAddress and str
             try:
-                parameter_str = cal.parameter.address_str
+                parameter_str = cal.channel.address_str
             except:
-                parameter_str = cal.parameter
+                parameter_str = cal.channel
 
             item = QtWidgets.QTableWidgetItem(parameter_str)
             item.setData(role, cal)

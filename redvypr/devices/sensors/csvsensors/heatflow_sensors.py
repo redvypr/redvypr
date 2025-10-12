@@ -20,9 +20,9 @@ logger.setLevel(logging.DEBUG)
 
 class parameter_DHFS50(pydantic.BaseModel):
     HF: CalibrationHeatFlow = CalibrationHeatFlow(parameter='HF')
-    NTC0: CalibrationNTC = CalibrationNTC(parameter='NTC0')
-    NTC1: CalibrationNTC = CalibrationNTC(parameter='NTC1')
-    NTC2: CalibrationNTC = CalibrationNTC(parameter='NTC2')
+    NTC0: CalibrationNTC = CalibrationNTC(channel='NTC0')
+    NTC1: CalibrationNTC = CalibrationNTC(channel='NTC1')
+    NTC2: CalibrationNTC = CalibrationNTC(channel='NTC2')
 
 class sensor_DHFS50(pydantic.BaseModel):
     description: str = 'Digital heat flow sensor DHFS50'
@@ -442,7 +442,7 @@ class DHFS50Widget_config(QtWidgets.QWidget):
         snlabel = QtWidgets.QLabel('DHFS50 calibration coefficients of\n' + self.sn)
         self.layout.addWidget(snlabel,0,0)
 
-        nparameter = len(list(self.device.custom_config.sensorconfigurations[self.sn].parameter))
+        nparameter = len(list(self.device.custom_config.sensorconfigurations[self.sn].channel))
 
         #self.coeff_table = QtWidgets.QTableWidget()
         #self.coeff_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
@@ -451,14 +451,14 @@ class DHFS50Widget_config(QtWidgets.QWidget):
         self.parameter_buttons = {}
         self.parameter_widgets = {}
         self.parameter_calwidgets = {}
-        for i,k_tmp in enumerate(self.device.custom_config.sensorconfigurations[self.sn].parameter):
+        for i,k_tmp in enumerate(self.device.custom_config.sensorconfigurations[self.sn].channel):
             k = k_tmp[0]
             calibration = k_tmp[1]
             self.parameter_widgets[k] = QtWidgets.QWidget()
             layout = QtWidgets.QVBoxLayout(self.parameter_widgets[k])
             self.parameter_buttons[k] = QtWidgets.QPushButton('Choose calibration')
             self.parameter_buttons[k].clicked.connect(self.choose_calibration)
-            self.parameter_buttons[k].parameter = k
+            self.parameter_buttons[k].channel = k
             layout.addWidget(self.parameter_buttons[k])
             calwidget = gui.pydanticQTreeWidget(calibration,dataname = k)
             self.parameter_calwidgets[k] = calwidget
@@ -496,14 +496,14 @@ class DHFS50Widget_config(QtWidgets.QWidget):
             logger.debug('Adding {} to channel {:s}'.format(calibration_sent, parameter))
             #channels = self.device.config.sensorconfigurations[self.sn].channels
             #setattr(channels, channelname, calibration)
-            calibration_old = self.device.custom_config.sensorconfigurations[self.sn].parameter
+            calibration_old = self.device.custom_config.sensorconfigurations[self.sn].channel
             print('calibration_old', type(calibration_old))
             print('calibration_new', type(calibration_sent))
             print('hallohallo',calibration_old.model_validate(calibration_new))
             # Check if the new coefficients fit
             try:
                 calibration_old.model_validate(calibration_new)
-                setattr(self.device.custom_config.sensorconfigurations[self.sn].parameter, parameter, calibration_new)
+                setattr(self.device.custom_config.sensorconfigurations[self.sn].channel, parameter, calibration_new)
                 self.parameter_calwidgets[parameter].reload_data(calibration_new)
             except:
                 logger.debug('Calibration format does not fit',exc_info = True)
