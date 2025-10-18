@@ -14,6 +14,7 @@ import qtawesome
 from typing import Union, Optional
 import redvypr.devices.sensors.calibration.calibration_models
 from redvypr.devices.sensors.calibration.calibration_models import CalibrationList
+from redvypr.devices.sensors.calibration.calibration_plot_report_widgets import write_report_pdf
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from PyQt6 import QtWidgets, QtCore, QtGui
 import redvypr.gui as gui
@@ -26,7 +27,7 @@ logger.setLevel(logging.DEBUG)
 
 
 class CalibrationsSaveWidget(QtWidgets.QWidget):
-    def __init__(self, *args, calibrations: list | CalibrationList | None = None):
+    def __init__(self, *args, calibrations: list | CalibrationList | None = None, save_report = True):
         """
         Widget that allows to save the calibration
         Parameters
@@ -36,6 +37,7 @@ class CalibrationsSaveWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '__init__()'
         super().__init__(*args)
+        self.save_report = save_report
         if isinstance(calibrations,list):
             logger.debug(funcname + 'Changing calibrations to CalibrationList')
             calibrations = CalibrationList(calibrations)
@@ -54,13 +56,35 @@ class CalibrationsSaveWidget(QtWidgets.QWidget):
         self.check_sensor = QtWidgets.QWidget()
         self.check_sensor_layout = QtWidgets.QHBoxLayout(self.check_sensor)
         self.file_format_checkboxes = {}
-        file_format_check = {'sn':'Serial Number', 'date':'Date', 'sensor_model':'Sensor model', 'calibration_id': 'Calibration Id', 'calibration_uuid':'Calibration UUID', 'calibration_type':'Calibration type'}
+        self.filename = "{document_type}_{date}"
+        file_format_check = {'sn':'Serial Number', 'date':'Date', 'sensor_model':'Sensor model', 'calibration_id': 'Calibration Id', 'calibration_uuid':'Calibration UUID', 'calibration_type':'Calibration type', 'document_type':'Document type'}
         for format_check in file_format_check:
             self.file_format_checkboxes[format_check] = QtWidgets.QCheckBox(file_format_check[format_check])
-            if format_check == "date":
+            if format_check in self.filename:
                 self.file_format_checkboxes[format_check].setChecked(True)
+
             self.file_format_checkboxes[format_check].stateChanged.connect(self.__update_filename__)
             self.check_sensor_layout.addWidget(self.file_format_checkboxes[format_check])
+
+        # Text edits for the extensions
+        self.extensionstr_calibrationfile = ".yaml"
+        self.extensionstr_reportfile = ".pdf"
+        self.extension_calibration = QtWidgets.QLineEdit()
+        self.extension_calibration.setText(self.extensionstr_calibrationfile)
+        self.extension_calibration.editingFinished.connect(self.__filename_text_changed__)
+        if self.save_report:
+            self.extension_report = QtWidgets.QLineEdit()
+            self.extension_report.setText(self.extensionstr_reportfile)
+            self.extension_report.editingFinished.connect(self.__filename_text_changed__)
+
+        widget_extension = QtWidgets.QWidget()
+        layout_extension = QtWidgets.QHBoxLayout(widget_extension)
+        layout_extension.addWidget(QtWidgets.QLabel("Extension calibration file"))
+        layout_extension.addWidget(self.extension_calibration)
+        if self.save_report:
+            layout_extension.addWidget(QtWidgets.QLabel("Extension report file"))
+            layout_extension.addWidget(self.extension_report)
+
         self.filename_edit = QtWidgets.QLineEdit()
 
         iconname = "fa5.folder-open"
@@ -82,17 +106,16 @@ class CalibrationsSaveWidget(QtWidgets.QWidget):
         self.filename_widget_layout.addWidget(self.filename_edit)
         self.filename_widget_layout.addWidget(self.filename_button)
 
-
-        self.filename = "calibration_{date}.yaml"
         self.filename_edit.setText(self.filename)
         self.filename_edit.editingFinished.connect(self.__filename_text_changed__)
         self.__populate_calibration_table__()  # Fill the table
 
         self.layout.addWidget(self.check_sensor, 0, 0)
-        self.layout.addWidget(self.filename_widget, 1, 0)
-        self.layout.addWidget(self.save_all_check, 2, 0)
-        self.layout.addWidget(self.calibration_table, 3, 0)
-        self.layout.addWidget(self.save_button, 4, 0)
+        self.layout.addWidget(widget_extension,1,0)
+        self.layout.addWidget(self.filename_widget, 2, 0)
+        self.layout.addWidget(self.save_all_check, 3, 0)
+        self.layout.addWidget(self.calibration_table, 4, 0)
+        self.layout.addWidget(self.save_button, 5, 0)
 
     def __save_all_changed__(self, state):
         print('save_all_changed',state)
@@ -109,18 +132,23 @@ class CalibrationsSaveWidget(QtWidgets.QWidget):
 
     def __update_filenames_in_calibrations__(self):
         print('Updating filenames of the calibrations')
-        calfiles = self.calibrations.create_filenames_save(self.filename)
+        calfiles = self.calibrations.create_filenames_save(self.filename, document_type="calibration")
+        calfiles_report = self.calibrations.create_filenames_save(self.filename, document_type="report")
         if True:
-            for cal,filename in zip(self.calibrations,calfiles):
+            for cal,filename,filename_report in zip(self.calibrations,calfiles, calfiles_report):
                 if cal is not None:
-                    cal.__filename__ = filename
+                    cal.__filename__ = filename + self.extensionstr_calibrationfile
+                    cal.__filename_report__ = filename_report + self.extensionstr_reportfile
 
     def __populate_calibration_table__(self):
         colheader = ["Save","SN","Filename"]
+        if self.save_report:
+            colheader = ["Save", "SN", "Filename calibration", "Filename report"]
         self.calibration_table.clear()
         icol_save = 0
         icol_sn = 1
         icol_filename = 2
+        icol_filename_report = 3
         self.calibration_table.setColumnCount(len(colheader))
         self.calibration_table.setHorizontalHeaderLabels(colheader)
         self.__update_filenames_in_calibrations__() # update the filenames to save
@@ -141,16 +169,24 @@ class CalibrationsSaveWidget(QtWidgets.QWidget):
                 item = QtWidgets.QTableWidgetItem(cal.sn)
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
                 self.calibration_table.setItem(nrows-1, icol_sn, item)
-                # Filename
+                # Filename calibration
                 filename = cal.__filename__
                 item = QtWidgets.QTableWidgetItem(filename)
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
                 self.calibration_table.setItem(nrows - 1, icol_filename, item)
+                if self.save_report:
+                    # Filename calibration report
+                    filename_report = cal.__filename_report__
+                    item = QtWidgets.QTableWidgetItem(filename_report)
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                    self.calibration_table.setItem(nrows - 1, icol_filename_report, item)
 
         self.calibration_table.resizeColumnsToContents()
 
     def __filename_text_changed__(self):
         self.filename = self.filename_edit.text()
+        self.extensionstr_calibrationfile = self.extension_calibration.text()
+        self.extensionstr_reportfile = self.extension_report.text()
         self.__update_filename__()
 
     def __get_filename_clicked__(self):
@@ -171,10 +207,10 @@ class CalibrationsSaveWidget(QtWidgets.QWidget):
         filename_ext = os.path.splitext(filename)[1]
         for file_format in self.file_format_checkboxes:
             checkbox = self.file_format_checkboxes[file_format]
-            format_str = '_{' + file_format + '}'
+            format_str = '{' + file_format + '}'
             if checkbox.isChecked():
                 if format_str not in filename_base:
-                    filename_base += format_str
+                    filename_base = format_str + filename_base
             else:
                 filename_base = filename_base.replace(format_str,'')
 
@@ -187,12 +223,14 @@ class CalibrationsSaveWidget(QtWidgets.QWidget):
         funcname = __name__ + '.__save_clicked__()'
         if True:
             filenames_save = []
+            filenames_save_report = []
             calibrations_save = []
             for cal in self.calibrations:
                 if cal is not None:
                     save_check = cal.__save_check__.isChecked()
                     if cal.__save__ and save_check:
                         filenames_save.append(cal.__filename__)
+                        filenames_save_report.append(cal.__filename_report__)
                         calibrations_save.append(cal)
 
             # Save the files
@@ -200,118 +238,14 @@ class CalibrationsSaveWidget(QtWidgets.QWidget):
                 print("Calibrations to save",calibrations_save)
                 print("Filenames to save save", filenames_save)
                 CalibrationList(calibrations_save).save(filenames_save)
+                if self.save_report:
+                    report_function = write_report_pdf
+                    CalibrationList(calibrations_save).save_report(filenames_save_report,report_function)
+
             else:
                 logger.warning("No calibrations to save")
 
-class CalibrationsSaveWidget_legacy(QtWidgets.QTableWidget):
-    def __init__(self, *args, calibrations=None):
-        funcname = __name__ + '__init__()'
-        super().__init__(*args)
-        if isinstance(calibrations,list):
-            logger.debug(funcname + 'Changing calibrations to CalibrationList')
-            calibrations = redvypr.devices.sensors.calibration.calibration_models.CalibrationList(calibrations)
 
-        self.calibrations = calibrations
-        self.layout = QtWidgets.QGridLayout(self)
-        self.check_sensor = QtWidgets.QWidget()
-        self.check_sensor_layout = QtWidgets.QHBoxLayout(self.check_sensor)
-        self.file_format_checkboxes = {}
-        file_format_check = {'sn':'Serial Number', 'date':'Date', 'sensor_model':'Sensor model', 'calibration_id': 'Calibration Id', 'calibration_uuid':'Calibration UUID', 'calibration_type':'Calibration type'}
-        for format_check in file_format_check:
-            self.file_format_checkboxes[format_check] = QtWidgets.QCheckBox(file_format_check[format_check])
-            self.file_format_checkboxes[format_check].stateChanged.connect(self.__update_filename__)
-            self.check_sensor_layout.addWidget(self.file_format_checkboxes[format_check])
-        self.filename_edit = QtWidgets.QLineEdit()
-        self.filename_edit.editingFinished.connect(self.__filename_text_changed__)
-        iconname = "fa5.folder-open"
-        folder_icon = qtawesome.icon(iconname)
-        self.filename_button = QtWidgets.QPushButton()
-        self.filename_button.setIcon(folder_icon)
-        #self.filename_button.textChanged.connect(self.__filename_text_changed__)
-        self.filename_button.clicked.connect(self.__get_filename_clicked__)
-        #self.filename_choose = QtWidgets.QLineEdit()
-        self.filename_widget = QtWidgets.QWidget()
-        self.filename_widget_layout = QtWidgets.QHBoxLayout(self.filename_widget)
-
-        # Save buttons
-        self.save_button = QtWidgets.QPushButton('Save')
-        self.save_button.clicked.connect(self.__save_clicked__)
-        self.show_save_button = QtWidgets.QPushButton('Show files to write')
-        self.show_save_button.clicked.connect(self.__save_clicked__)
-        self.result_text = QtWidgets.QPlainTextEdit()
-
-        self.filename_widget_layout.addWidget(self.filename_edit)
-        self.filename_widget_layout.addWidget(self.filename_button)
-
-        self.filename = 'calib_'
-
-        self.layout.addWidget(self.check_sensor, 0, 0)
-        self.layout.addWidget(self.filename_widget, 1, 0)
-        self.layout.addWidget(self.result_text, 2, 0)
-        self.layout.addWidget(self.show_save_button, 3, 0)
-        self.layout.addWidget(self.save_button, 4, 0)
-
-    def __filename_text_changed__(self):
-        self.filename = self.filename_edit.text()
-        print('Editing finished', self.filename)
-
-    def __get_filename_clicked__(self):
-        funcname = __name__ + '.__filename_clicked__()'
-        if True:
-            fileName = QtWidgets.QFileDialog.getSaveFileName(self, 'Save Calibration', '',
-                                                             "Yaml Files (*.yaml);;All Files (*)")
-        if fileName:
-            self.filename = fileName[0]
-            self.filename_edit.setText(self.filename)
-            self.__update_filename__()
-
-    def __update_filename__(self):
-        # Check which fileformats should be added
-        self.filename = self.filename_edit.text()
-        filename = self.filename
-        filename_base = os.path.splitext(filename)[0]
-        filename_ext = os.path.splitext(filename)[1]
-        for file_format in self.file_format_checkboxes:
-            checkbox = self.file_format_checkboxes[file_format]
-            format_str = '_{' + file_format + '}'
-            if checkbox.isChecked():
-                if format_str not in filename_base:
-                    filename_base += format_str
-            else:
-                filename_base = filename_base.replace(format_str,'')
-
-        self.filename = filename_base + filename_ext
-        self.filename_edit.setText(self.filename)
-
-    def __save_clicked__(self):
-        funcname = __name__ + '.__filename_clicked__()'
-
-        if self.sender() == self.show_save_button:
-            write_file = False
-        elif self.sender() == self.save_button:
-            write_file = True
-        else: # shouldnt happen
-            write_file = None
-
-        if True:
-            logger.debug(funcname + ' Saving to file {}'.format(self.filename))
-            filegrouping = ('sn', 'caldate')
-            filegrouping = ('sn', 'calibration_uuid', 'calibration_type')
-            fileinfo = self.calibrations.save(self.filename, write_file=write_file)
-            # Show results in text window
-            self.result_text.clear()
-            fileinfostr = 'Filenames:\n'
-            self.result_text.appendPlainText(fileinfostr)
-            for filename_save in fileinfo.keys():
-                nfiles = len(fileinfo[filename_save])
-                fileinfostr = str(filename_save) + ':{} calibrations'.format(nfiles)
-                self.result_text.appendPlainText(fileinfostr)
-
-            if write_file:
-                fileinfostr = 'written to disk\n'
-            else:
-                fileinfostr = 'info only (not written to disk)\n'
-            self.result_text.appendPlainText(fileinfostr)
 
 class CalibrationsTable(QtWidgets.QTableWidget):
     """

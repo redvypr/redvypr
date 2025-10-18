@@ -151,10 +151,10 @@ class CalibrationGeneric(pydantic.BaseModel):
     datakey_result: typing.Optional[str] = pydantic.Field(default=None,
                                                           description='The keyname of the output of the calibration. '
                                                                       'Note that this is the basekey of the datadictionary.')
-    sn: str = '' # The serial number of the sensor
-    sensor_model: str = ''  # The sensor model
-    unit: str = 'NA'
-    unit_input: str = 'NA'
+    sn: str = pydantic.Field(default='NA', description='The serial number of the sensor')
+    sensor_model: str = pydantic.Field(default='NA', description='The sensor model')
+    unit: str = pydantic.Field(default='NA', description='The unit of the sensor data, after the calibration was applied')
+    unit_input: str = pydantic.Field(default='NA', description='The unit of the sensor raw data')
     date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
     calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be chosen by the user')
     calibration_uuid: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex,
@@ -162,9 +162,6 @@ class CalibrationGeneric(pydantic.BaseModel):
     comment: typing.Optional[str] = None
     calibration_data: typing.Optional[CalibrationData] = pydantic.Field(default=None)
     calibration_reference_data: typing.Optional[CalibrationData] = pydantic.Field(default=None)
-
-
-
 
     def raw2data(self, raw_data):
         """
@@ -212,7 +209,7 @@ class CalibrationPoly(CalibrationGeneric):
 
     def calc_coeffs(self, poly_degree=None):
         """
-        Hoge-type equation for NTC calibration
+        Polynom calibration
 
         Parameters
         ----------
@@ -288,6 +285,39 @@ class CalibrationNTC(CalibrationGeneric):
         P_R = np.polyfit(logR, T_1, self.poly_degree)
         self.coeff = P_R.tolist()
 
+    def get_formula(self):
+        """
+        Returns the formula in latex for the calculation of the converted value
+        Returns
+        -------
+
+        """
+        #T_1 = np.polyval(P_R, np.log(data))
+        #T = 1 / T_1 - Toff
+        channelname = self.channel.datakey
+        calc_str = "$T = \\left(c_0 + c_1\\times ln({}) + c_2\\times ln({})^2 ... \\right)^{{-1}} - T_{{off}}$".format(channelname,channelname)
+        calc_str += "\n $T_{{off}} = {}$".format(self.Toff)
+        print("calc str",calc_str)
+        return calc_str
+
+    def get_formula_explicit(self):
+        """
+        Returns the formula in latex for the calculation of the converted value with the coefficients inserted
+        Returns
+        -------
+
+        """
+        # T_1 = np.polyval(P_R, np.log(data))
+        # T = 1 / T_1 - Toff
+
+        calc_str = "$T = \\left["
+        for i,c in enumerate(self.coeff[::-1]):
+            cstr = "({:+e}) \\times ln(x)^{}".format(c,i)
+            calc_str += cstr
+        calc_str += "\\right]^{{-1}} - {}$".format(self.Toff)
+
+
+        return calc_str
 
 calibration_models = []
 calibration_models.append(CalibrationLinearFactor)
@@ -434,7 +464,7 @@ class CalibrationList(list):
                     self.calfiles_processed.remove(calfile)
                     return True
 
-    def create_filenames_save(self, calfile, datefmt='%Y%m%d_%H%M%S'):
+    def create_filenames_save(self, calfile, datefmt='%Y%m%d_%H%M%S', document_type="calibration"):
         """
         Returns the filenames for all calibrations
         Can be modified by format: {sn}, {date}, {sensor_model}, {calibration_id}, {calibration_uuid}, {calibration_type}
@@ -459,12 +489,35 @@ class CalibrationList(list):
                 calfiles.append(None)
             else:
                 datestr = calibration.date.strftime(datefmt)
-                calfile_name = calfile_mod.format(sn=calibration.sn,date=datestr,sensor_model=calibration.sensor_model,
+                calfile_name = calfile_mod.format(sn=calibration.sn, date=datestr, sensor_model=calibration.sensor_model,
                                                   calibration_id=calibration.calibration_id,
+                                                  document_type=document_type,
                                                   calibration_uuid=calibration.calibration_uuid,
                                                   calibration_type=calibration.calibration_type)
 
                 calfiles.append(calfile_name)
+
+        return calfiles
+
+    def save_report(self, calfiles, report_function):
+        funcname = __name__ + '.save_report():'
+        logger.debug(funcname)
+        calfiles_write = {}
+        # Sort the calibrations into file with the same name
+        for i,calfile in enumerate(calfiles):
+            if calfile is not None:
+                try:
+                    calfiles_write[calfile]
+                except:
+                    calfiles_write[calfile] = []
+
+                calfiles_write[calfile].append(self[i])
+
+        for calfile in calfiles_write:
+            logger.debug('Writing report to file {}'.format(calfile))
+            calibrations_write = calfiles_write[calfile]
+            # Call the report function with the calibration and the filename
+            report_function(calibrations_write, calfile)
 
         return calfiles
 
@@ -506,7 +559,6 @@ class CalibrationList(list):
                     f.write(calibration_yaml)
                     # print('Calibration dump ...', calibration_yaml)
                     f.close()
-
 
         return calfiles
 

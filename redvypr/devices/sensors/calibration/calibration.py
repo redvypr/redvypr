@@ -151,6 +151,7 @@ class Device(RedvyprDevice):
             calibration_final.calibration_id = self.custom_config.calibration_id
             calibration_final.calibration_data = calibration_data
             calibration_final.calibration_reference_data = calibration_data_reference
+            print("Time data",calibration_data.time_data)
             tdata = calibration_data.time_data[0]
             tdatetime = datetime.datetime.fromtimestamp(tdata, datetime.timezone.utc)
             tdatas = tdatetime.strftime('%Y-%m-%d %H:%M:%S.%f%z')
@@ -502,33 +503,6 @@ class PlotCanvas(FigureCanvas):
         ax.plot(data, 'r-')
         ax.set_title('PyQt and Matplotlib Demonstration')
         self.draw()
-
-
-def fit_ntc_legacy(T,R,Toff, poly_degree=3):
-    TK = T + Toff
-    T_1 = 1 / (TK)
-    # logR = log(R/R0)
-    logR = np.log(R)
-    P_R = np.polyfit(logR, T_1, poly_degree)
-    return {'P_R':P_R}
-
-def calc_ntc_legacy(R,P_R,Toff):
-    T_1 = np.polyval(P_R,np.log(R))
-    T = 1/T_1 - Toff
-    return T
-
-def calc_NTC_legacy(calibration, R):
-    """
-    Calculate the temperature based on the calibration and a resistance
-    """
-    P_R = calibration.coeff
-    Toff = calibration.Toff
-    T_1 = np.polyval(P_R,np.log(R))
-    T = 1/T_1 - Toff
-    return T
-
-
-
 
 
 #
@@ -1302,7 +1276,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
         tadd = time.time()
         # def add_data(self, time, sensorindex, sentype, data, time_data, rawdata, time_rawdata):
         if len(self.device.custom_config.calibrationdata) > 0:
-            self.device.add_data(tadd, 0, np.nan, tadd, np.nan, np.nan)
+            for i,cal in enumerate(self.device.custom_config.calibrationdata):
+                self.device.add_data(tadd, i, np.nan, tadd, np.nan, np.nan)
             # Update the table
             self.update_datatable()
         else:

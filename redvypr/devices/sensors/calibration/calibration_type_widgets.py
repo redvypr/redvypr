@@ -1,6 +1,14 @@
 import datetime
 import os.path
 from PyQt6 import QtWidgets, QtCore, QtGui
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+import tempfile
 import numpy as np
 import logging
 import sys
@@ -8,6 +16,7 @@ import yaml
 from redvypr.redvypr_address import RedvyprAddress
 import redvypr.files as redvypr_files
 from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly, CalibrationData
+from .calibration_plot_report_widgets import plot_calibration, write_report_pdf, figsize_report_plot
 from redvypr.devices.sensors.generic_sensor.calibrationWidget import CalibrationsSaveWidget
 _logo_file = redvypr_files.logo_file
 _icon_file = redvypr_files.icon_file
@@ -59,12 +68,143 @@ class ConfigWidgetInitPolynom(QtWidgets.QWidget):
     def emit_config_changed(self):
         self.config_changed.emit(self.get_config())
 
+
+
+
+# Widget display a plot of the calibration data
+class CalibrationReportWidget(QtWidgets.QWidget):
+    def __init__(self, *args, calibration=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        tabtext = 'Calculation of calibration coefficients'
+        self.calibration = calibration
+        layout = QtWidgets.QVBoxLayout(self)
+
+        try:
+            self.refchannel = self.calibration.calibration_reference_data.channel.datakey
+        except:
+            self.refchannel = self.calibration.calibration_reference_data.channel
+
+        try:
+            self.channel = self.calibration.channel.datakey
+        except:
+            self.channel = self.calibration.channel
+
+        # Create a matplotlib canvas
+        self.canvas = FigureCanvas(plt.Figure(figsize=figsize_report_plot))
+        layout.addWidget(self.canvas)
+        plot_calibration(self.calibration,self.canvas.figure)
+        self.canvas.draw()
+        write_report_pdf(calibration,"test.pdf")
+        #self.plot_data()
+
+    def plot_data(self):
+        # Get the data ready
+
+        refdata = np.asarray(self.calibration.calibration_reference_data.data)
+        caldata = np.asarray(self.calibration.calibration_data.data)
+
+        # Convert the data
+        convdata_calc = self.calibration.raw2data(caldata)
+        convdata_diff = refdata - convdata_calc
+
+        caldata_fine = np.linspace(caldata.min(), caldata.max(), len(caldata) * 100)
+        convdata_calc_fine = self.calibration.raw2data(caldata_fine)
+
+        #
+        ax = self.canvas.figure.add_subplot(2, 1, 1)
+        ax.clear()
+        ax.plot(convdata_calc_fine, caldata_fine, "-")
+        ax.plot(refdata, caldata, "o")
+        caltitle = "Calibration data of sn:{}".format(self.calibration.sn)
+        xlabel = "{} [{}]".format(self.refchannel, self.calibration.unit)
+        ylabel = "{}\n{} [{}]".format(self.calibration.sn, self.channel, self.calibration.unit_input)
+
+        #ax.set_title(caltitle)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.xaxis.set_label_position('top')  # Label at top
+        ax.xaxis.tick_top()
+        ax.grid(True)
+
+        # Difference plot
+        caldiff_title = "Difference between reference data and calculated values after calibration sn:{}".format(self.calibration.sn)
+        difflabel = "$\Delta$x [{}]".format(self.calibration.unit)
+        legstrdiff = "$\Delta${}: {}$_{{ref}}$ - {}$_{{coeff}}$".format(self.refchannel,self.refchannel,self.calibration.sn)
+        ax2 = self.canvas.figure.add_subplot(2, 1, 2)
+        ax2.clear()
+        #ax2.set_title(caldiff_title)
+        lpl = ax2.plot(refdata, convdata_diff, "o")
+
+        ax2.legend((lpl),[legstrdiff])
+        ax2.set_xlabel(xlabel)
+        ax2.set_ylabel(difflabel)
+        ax2.grid(True)
+
+        self.canvas.draw()
+        self.write_pdf()
+
+    def write_pdf(self):
+        temp_plot = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        print("Writing to file:{}".format(temp_plot.name))
+        self.canvas.figure.savefig(temp_plot.name)
+
+        filename = 'test.pdf'
+        doc = SimpleDocTemplate(filename, pagesize=A4)
+        styles = getSampleStyleSheet()
+        elements = []
+
+        elements.append(Paragraph("Calibration report", styles["Title"]))
+        elements.append(Paragraph("for {} (SN:{})".format(self.channel, self.calibration.sn), styles["Title"]))
+        elements.append(Spacer(1, 12))
+        elements.append(Image(temp_plot.name, width=400, height=300))
+        elements.append(Spacer(1, 12))
+
+        # Table with the coefficients
+        style_table = TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        ])
+        styles = getSampleStyleSheet()
+        style_header = styles["Normal"]
+        data = []
+        data1 = []
+        data2 = []
+        for i,c in enumerate(list(self.calibration.coeff)[::-1]): # Reverse
+            cheader = Paragraph("c<sub>{}</sub>".format(i+1), style_header)
+            data1.append(cheader)
+            cstring = "{:e}".format(c)
+            data2.append(cstring)
+
+        data.append(data1)
+        data.append(data2)
+        table = Table(data)
+        table.setStyle(style_table)
+        elements.append(table)
+        elements.append(Spacer(1, 12))
+        # Table with the rawdata
+        refdata = np.asarray(self.calibration.calibration_reference_data.data)
+        caldata = np.asarray(self.calibration.calibration_data.data)
+        data = [["Reference", "Calibration data"]]
+        for i,d in enumerate(zip(refdata,caldata)):
+            data.append(d)
+        #caldata_table = np.asarray([refdata,caldata]).tolist()
+        #data[0].append(caldata_table)
+        print("data for the table",data)
+        table = Table(data)
+        table.setStyle(style_table)
+        elements.append(table)
+
+        doc.build(elements)
+        print(f"PDF saved into: {filename}")
+
 # Widget that is showing the calibration calculations
 class CalibrationCalculationWidget(QtWidgets.QWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         tabtext = 'Calculation of calibration coefficients'
-        # A NTC widget for the calibration
         self.device = self.parent().device
         layout = QtWidgets.QVBoxLayout(self)
         self.calibration_widgets = {}
@@ -72,8 +212,8 @@ class CalibrationCalculationWidget(QtWidgets.QWidget):
         layout.addWidget(self.calibration_widgets['widget'])
         self.calibration_widgets['layout'] = QtWidgets.QFormLayout(self.calibration_widgets['widget'])
         self.calibration_widgets['refcombo'] = QtWidgets.QComboBox()
-        self.calibration_widgets['plotbutton'] = QtWidgets.QPushButton('Plot')
-        self.calibration_widgets['plotbutton'].clicked.connect(self.plot_data)
+        #self.calibration_widgets['plotbutton'] = QtWidgets.QPushButton('Plot')
+        #self.calibration_widgets['plotbutton'].clicked.connect(self.plot_data)
         self.calibration_widgets['calcbutton'] = QtWidgets.QPushButton('Calculate')
         self.calibration_widgets['calcbutton'].clicked.connect(self.calc_coeffs_clicked)
         self.calibration_widgets['savecalibbutton'] = QtWidgets.QPushButton('Save Calibration')
@@ -90,7 +230,7 @@ class CalibrationCalculationWidget(QtWidgets.QWidget):
             self.calibration_widgets['layout'].addRow(label)
             self.calibration_widgets['layout'].addRow(self.calibration_widgets['coefftable'])
             self.calibration_widgets['layout'].addRow(self.calibration_widgets['calcbutton'])
-            self.calibration_widgets['layout'].addRow(self.calibration_widgets['plotbutton'])
+            #self.calibration_widgets['layout'].addRow(self.calibration_widgets['plotbutton'])
             self.calibration_widgets['layout'].addRow(self.calibration_widgets['savecalibbutton'])
             # self.calibration_ntc['layout'].setStretch(0, 1)
             # self.calibration_ntc['layout'].setStretch(1, 10)
@@ -220,13 +360,14 @@ class CalibrationCalculationWidget(QtWidgets.QWidget):
 
         if calibrations is None:
             return
-        nrows = len(calibrations)
+        nrows = len(calibrations) -1 # One sensor is the reference
         self.calibration_widgets['coefftable'].setRowCount(nrows)
-        headers = ['Channel', 'Serial number', 'Calibration coefficients',"Calibration type"]
+        headers = ['Channel', 'Serial number', 'Calibration coefficients',"Calibration type","Plot"]
         icol_para = 0
         icol_sn = 1
         icol_coeff = 2
         icol_caltype = 3
+        icol_plot = 4
         self.calibration_widgets['coefftable'].setColumnCount(len(headers))
         self.calibration_widgets['coefftable'].setHorizontalHeaderLabels(headers)
 
@@ -238,8 +379,7 @@ class CalibrationCalculationWidget(QtWidgets.QWidget):
             self.device.custom_config.__calibrations__ = calibrations
             irow = 0
             for i, calibration in enumerate(calibrations):
-
-                print("Calibration to update....",calibration)
+                #print("Calibration to update....",calibration)
                 if calibration is None:
                     continue
                 else:
@@ -254,8 +394,6 @@ class CalibrationCalculationWidget(QtWidgets.QWidget):
                     item = QtWidgets.QTableWidgetItem(channel_str)
                     item.__channel__ = channel
                     item.__calibration__ = calibration
-
-
 
                     self.calibration_widgets['coefftable'].setItem(irow, icol_para, item)
                     # The serial number
@@ -273,12 +411,23 @@ class CalibrationCalculationWidget(QtWidgets.QWidget):
                     # The calibration type
                     item = QtWidgets.QTableWidgetItem(calibration.calibration_type)
                     self.calibration_widgets['coefftable'].setItem(irow, icol_caltype, item)
+                    # A report button
+                    plot_button = QtWidgets.QPushButton("Plot")
+                    plot_button.__calibration__ = calibration
+                    plot_button.clicked.connect(self.__create_plot_clicked__)
+                    self.calibration_widgets['coefftable'].setCellWidget(irow,icol_plot, plot_button)
 
                     irow += 1
 
         self.calibration_widgets['coefftable'].resizeColumnsToContents()
 
-    def plot_data(self):
+    def __create_plot_clicked__(self):
+        calibration = self.sender().__calibration__
+        print("Creating plot for calibration",calibration)
+        self.calreportwidget = CalibrationReportWidget(calibration=calibration)
+        self.calreportwidget.show()
+
+    def plot_data_legacy(self):
         funcname = __name__ + '.plot_data():'
         logger.debug(funcname)
         calibrationtype = self.device.custom_config.calibrationtype_default.lower()
@@ -296,7 +445,7 @@ class CalibrationCalculationWidget(QtWidgets.QWidget):
         else:
             logger.debug(funcname + ' Unknown calibration {:s}'.format(calibrationtype))
 
-    def plot_ntc(self, coeffs=None):
+    def plot_ntc_legacy(self, coeffs=None):
         funcname = __name__ + '.plot_ntc():'
         logger.debug(funcname)
         calibrations = self.get_calibrations()
@@ -832,7 +981,7 @@ class CalibrationWidgetNTC_legacy(QtWidgets.QWidget):
 
 
 
-class CalibrationWidgetHeatflow(QtWidgets.QWidget):
+class CalibrationWidgetHeatflow_legacy(QtWidgets.QWidget):
     def __init__(self, *args, **kwargs):
         QtWidgets.QWidget.__init__(self, *args, **kwargs)
         self.device = self.parent().device # The redvypr device
