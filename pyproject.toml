@@ -29,6 +29,7 @@ dependencies = ['pyaml',
 	     'xarray',
 	     'reportlab',
 	     'pytz',
+	     'pytest',
 	     ]
 requires-python = ">=3.7"
 readme = "README.md"

@@ -481,8 +481,9 @@ class RedvyprDevice(QtCore.QObject):
         # self.address_str = self.name + ':' + self.redvypr.hostinfo['hostname'] + '@' + self.redvypr.hostinfo[
         #    'addr'] + '::' + self.redvypr.hostinfo['uuid']
         # self.address = redvypr_address(self.address_str)
-        self.address = RedvyprAddress(devicename=self.name, local_hostinfo=self.redvypr.hostinfo, publisher=self.name)
-        self.address_str = self.address.get_str(address_format='/u/a/h/p/d/')
+        #local_hostinfo = self.redvypr.hostinfo
+        self.address = RedvyprAddress(devicename=self.name,  publisher=self.name)
+        self.address_str = str(self.address)
 
     def config_changed(self):
         """
@@ -537,13 +538,13 @@ class RedvyprDevice(QtCore.QObject):
         else:
             raise TypeError('address needs to be a str or a redvypr_address')
 
-        if len(raddr.address_str) == 0:
+        if len(str(raddr)) == 0:
             raise ValueError('Address length is 0')
 
         FLAG_NEW = True
         # Test if the same address exists already
         for a in self.subscribed_addresses:
-            if(a.address_str == raddr.address_str):
+            if(str(a) == str(raddr)):
                 FLAG_NEW = False
                 break
 
@@ -852,7 +853,7 @@ class RedvyprDevice(QtCore.QObject):
                         # Sending metadata
                         compacket = self.redvypr.get_metadata_commandpacket()
                         for addr in self.subscribed_addresses:
-                            if compacket in addr:
+                            if addr.matches(compacket):
                                 self.datainqueue.put(compacket)
 
                         info_dict = {}
@@ -1234,7 +1235,7 @@ class RedvyprDevice(QtCore.QObject):
         # Treat subscriptions
         subscriptions = []
         for raddr in self.subscribed_addresses:
-            subscriptions.append(raddr.address_str)
+            subscriptions.append(str(raddr))
         base_config = RedvyprDeviceBaseConfig(**self.device_parameter.model_dump())
         try:
             custom_config_dict = self.custom_config.model_dump()
@@ -1298,7 +1299,7 @@ class RedvyprDevice(QtCore.QObject):
         """
         funcname = __name__ + '.set_metadata():'
         self.logger.debug(funcname)
-        address_str = RedvyprAddress(address).address_str
+        address_str = str(RedvyprAddress(address))
         datapacket = redvypr.data_packets.commandpacket(command='reply')
         datapacket['_metadata'] = {}
         datapacket['_metadata'][address_str] = metadata

@@ -189,7 +189,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     redvypr_packet_statistic.treat_datadict(data, device.name, hostinfo, numpacket, tread,devicedict['devicemodulename'])
                     # Get the devicename
                     raddr = redvypr_address.RedvyprAddress(data)
-                    devicename_stat = raddr.address_str
+                    devicename_stat = str(raddr)
                     numtag = data['_redvypr']['tag'][hostinfo['uuid']]
                     if numtag < 2:  # Check if data packet fits with addr and its not recirculated again
                         # Do statistics
@@ -271,7 +271,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                                 # redvypr_address using "in"
                                 numtag_packet = data['_redvypr']['tag'][hostinfo['uuid']]
                                 #print('Testing packet',redvypr_address.RedvyprAddress(data_packet),numtag_packet,(data_packet in addr))
-                                if (data_packet in addr) and (numtag_packet < 2): # Check if data packet fits with addr and if its not recirculated again
+                                if addr.matches(data_packet) and (numtag_packet < 2): # Check if data packet fits with addr and if its not recirculated again
                                     try:
                                         #print(funcname + 'data to be sent',data)
                                         devicesub.datainqueue.put_nowait(data_packet) # These are the datainqueues of the subscribing devices

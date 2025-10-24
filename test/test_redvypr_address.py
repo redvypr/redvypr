@@ -1,80 +1,100 @@
-"""
-Tests redvypr address creation and comparison with a data packet
-"""
-import time
-import redvypr.data_packets
-from redvypr.redvypr_address import RedvyprAddress
+import pytest
+from redvypr.redvypr_address import RedvyprAddress, FilterNoMatch
 
-# Create some data
-datapacket_raw = {'t1':1,'t2':10,'somestring':'Hello World','somelist':[1,2,5,7],'somedict':{'test':'ok','number':3.0}}
-datapacket = datapacket_raw.copy()
-# Create a bogus redvypr host
-print('Creating hostinfo')
-hostinfo = redvypr.create_hostinfo(hostname='someredvypr')
-devicename = 'somedevice'
-devicemodulename = 'somedevicemodulename'
-numpacket = 0
-tread = time.time() # The time the packet was received from the queue (in redvypr.distribute_data)
-redvypr.packet_statistic.treat_datadict(datapacket, devicename, hostinfo, numpacket, tread,devicemodulename)
-print('Datapacket', datapacket)
+# -------------------------
+# Beispielpakete
+# -------------------------
+pkt1 = {
+    "_redvypr": {"packetid": "test", "publisher": "mainhub", "address": "node01", "device": "cam", "location": "lab1"},
+    "data": [1, 2, 3, 4, 5],
+    "payload": {"x": 42},
+    "data2": 10
+}
 
-print('Redvypr address test')
-rc0 = RedvyprAddress(datakey='t1')
-# Comparisons
-rc1 = RedvyprAddress(compare='["t1"]>=3')
-rc2 = RedvyprAddress(compare='["t2"]>=3')
-rc3 = RedvyprAddress(compare='["somelist"][2]<=1000')
-print(rc1)
+pkt2 = {
+    "_redvypr": {"packetid": 42, "publisher": "ctd", "address": "node02", "device": "gps", "location": "lab2"},
+    "data": [10, 20, 30],
+    "payload": {"x": 1.23}
+}
 
-print('Testing comparisons')
-print('Testing rc0',rc0)
-test0 = datapacket in rc0
-print('Test0',test0)
-print('-----------------')
-print('Testing rc1',rc1)
-test1 = datapacket in rc1
-print('Test1',test1)
-print('-----------------')
-print('Testing rc2',rc2)
-test2 = datapacket in rc2
-print('Test2',test2)
-print('-----------------')
-print('Testing rc3',rc3)
-test3 = datapacket in rc3
-print('Test3',test3)
-print('-----------------')
+pkt3 = {"_redvypr": {"packetid": 1}}
 
-print('Testing regular expressions')
-# Regular expressions
-re1 = RedvyprAddress('/d:{.*}')
-re2 = RedvyprAddress('/d:{some.*}')
-re3 = RedvyprAddress('/d:{other.*}')
-reall = [re1,re2,re3]
 
-for retest in reall:
-    print('-----------------')
-    print('Testing',retest)
-    test = datapacket in retest
-    print('Datapacket in test',test)
-    print('-----------------')
+pkt4 = {'x': 10, 'y': 20, 'z': [1, 2, 3, 4], 'u': {'a': [5, 6, 7], 'b': 'Hello'}, '_redvypr': {'tag': {'176473386979093-142': 1}, 'device': 'somedevice', 'packetid': 'somedevice', 'host': {'hostname': 'someredvypr', 'tstart': 1761197984.0251052, 'addr': '192.168.178.137', 'uuid': '176473386979093-142'}, 'localhost': {'hostname': 'someredvypr', 'tstart': 1761197984.0251052, 'addr': '192.168.178.137', 'uuid': '176473386979093-142'}, 'publisher': 'somedevice', 't': 1761197984.0252116, 'devicemodulename': 'somedevicemodulename', 'numpacket': 0}, 't': 1761197984.0252116}
 
 
 
-print('Testing datakey comparisons of eval strings that are formatted differently')
-rev0 = RedvyprAddress('/k:a')
-rev1 = RedvyprAddress('/k:["a"][0]["somedata"]')
-reeval_test = []
-reeval_test.append(RedvyprAddress('/k:["a"]'))
-reeval_test.append(RedvyprAddress('''/k:['a']'''))
-reeval_test.append(RedvyprAddress("/k:['''a''']"))
-reeval_test.append(RedvyprAddress('/k:{[a]}'))
-reeval_test.append(RedvyprAddress("/k:['''a'''][0]['somedata']"))
-reeval_test.append(RedvyprAddress("/k:['''a'''][1]['somedata']"))
+# -------------------------
+# LHS Evaluation / Basic Filters
+# -------------------------
+@pytest.mark.parametrize("addr_str,packet,expected", [
+    ("data[::-1] @ i:test", pkt1, [5,4,3,2,1]),
+    ("payload['x'] @ i:42", pkt2, 1.23),
+    ("data @ i:~/^te/", pkt1, [1,2,3,4,5]),
+    ("data @ d?:", pkt1, [1,2,3,4,5]),
+    ("data @ i:[test,foo,bar]", pkt1, [1,2,3,4,5]),
+    ("data @ (i:test and p:mainhub2) or data2==10", pkt1, [1,2,3,4,5]),
+    ("data @ r:location:[lab1,lab2]", pkt1, [1,2,3,4,5]),
+    ("_redvypr['packetid']@ i:[1,2,3]", pkt3, 1),
+    ("@i:test", pkt1, True),
+])
+def test_lhs_and_rhs(addr_str, packet, expected):
+    addr = RedvyprAddress(addr_str)
+    # Filter matches
+    assert addr.matches(packet)
+    # Evaluate LHS
+    val = addr(packet)
+    assert val == expected
 
-print('----- test 1 -----')
-for rev_test in reeval_test:
-    print('{} in {}: {}'.format(rev_test,rev0,rev_test in rev0))
-print('----- test 2 -----')
-for rev_test in reeval_test:
-    print('{} in {}: {}'.format(rev_test,rev1,rev_test in rev1))
+# -------------------------
+# Empty initialization
+# -------------------------
+def test_empty_address_returns_whole_packet():
+    addr = RedvyprAddress()
+    assert addr.matches(pkt1)
+    assert addr.matches(pkt2)
+    assert addr(pkt1) == pkt1
+    assert addr(pkt2) == pkt2
 
+# -------------------------
+# Copy Constructor and Roundtrip
+# -------------------------
+def test_copy_constructor_and_roundtrip():
+    original = RedvyprAddress("@i:test and d:cam")
+    # Copy constructor
+    copy_addr = RedvyprAddress(original)
+    assert copy_addr.left_expr == original.left_expr
+    assert copy_addr.filter_expr == original.filter_expr
+    assert copy_addr.filter_keys == original.filter_keys
+    # Roundtrip via str
+    roundtrip = RedvyprAddress(str(original))
+    assert str(roundtrip) == str(original)
+
+# -------------------------
+# Dynamic filter manipulation
+# -------------------------
+def test_dynamic_filter_add_update_delete():
+    addr = RedvyprAddress("@i:test")
+    # Add filter
+    addr.add_filter("device", "eq", "cam")
+    assert addr.matches(pkt1)
+    # Add failing filter
+    addr.add_filter("publisher", "eq", "ctd")
+    with pytest.raises(FilterNoMatch):
+        addr(pkt1)
+    # Update filter to match
+    addr.update_filter("publisher", "mainhub")
+    assert addr.matches(pkt1)
+    # Delete filter
+    addr.delete_filter("device")
+    assert addr.matches(pkt1)
+    assert "device" not in addr.filter_keys
+
+# -------------------------
+# Human-readable RHS string
+# -------------------------
+def test_human_readable_rhs():
+    addr = RedvyprAddress("@i:test and d:cam")
+    rhs_str = str(addr)
+    assert "i:test" in rhs_str
+    assert "d:cam" in rhs_str

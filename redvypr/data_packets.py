@@ -396,7 +396,7 @@ def add_metadata2datapacket(datapacket, address=None, datakey=None, metakey=None
                 logger.info('Could not create address',exc_info=True)
                 raddress = redvypr_address.RedvyprAddress(datakey=datakey)
 
-        address_str = raddress.address_str
+        address_str = str(raddress)
         try:
             datapacket['_metadata']
         except:

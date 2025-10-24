@@ -51,13 +51,15 @@ class ConfigTablePlot(pydantic.BaseModel):
                                                   description='Show the unit')
 
 class TablePlotWidget(QtWidgets.QWidget):
-    def __init__(self, *args, config=ConfigTablePlot(), redvypr_device=None, **kwargs):
+    def __init__(self, *args, config=None, redvypr_device=None, **kwargs):
         """
         A table widget that displays data of subscribed redvypr data packets
 
         """
         funcname = __name__ + '.init():'
         super().__init__(*args, **kwargs)
+        if config is None:
+            config = ConfigTablePlot()
         self.config = config
         self.device = redvypr_device
         if self.device is not None:

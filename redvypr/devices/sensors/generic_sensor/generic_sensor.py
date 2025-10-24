@@ -21,7 +21,7 @@ import qtawesome
 from redvypr.data_packets import check_for_command
 from  redvypr.data_packets import create_datadict as redvypr_create_datadict
 #import redvypr.config as redvypr_config
-from redvypr.redvypr_address import RedvyprAddress, RedvyprAddressStr
+from redvypr.redvypr_address import RedvyprAddress
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 import redvypr.widgets.standard_device_widgets
