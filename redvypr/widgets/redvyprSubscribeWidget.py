@@ -78,13 +78,13 @@ class SubscribeWidget(QtWidgets.QWidget):
         self.subscribe_edit = LineEditFocus()
         self.subscribe_edit.focusInSignal.connect(self.__focus_in__)
         self.subscribe_edit.focusOutSignal.connect(self.__focus_out__)
-        self.subscribe_edit.redvypr_address = RedvyprAddress('*')
+        self.subscribe_edit.redvypr_address = RedvyprAddress('@')
 
         self.__commitbtn = QtWidgets.QPushButton('Subscribe')
         self.__commitbtn.clicked.connect(self.commit_clicked)
         self.__commitbtn.setEnabled(False)
 
-        self.__subscribeAllBtn = QtWidgets.QPushButton('Subscribe all (*)')
+        self.__subscribeAllBtn = QtWidgets.QPushButton('Subscribe all (@)')
         self.__subscribeAllBtn.clicked.connect(self.subscribeAll_clicked)
 
         self.__closeBtn = QtWidgets.QPushButton('Close')
@@ -147,11 +147,11 @@ class SubscribeWidget(QtWidgets.QWidget):
         if self.__formatCombo.isEnabled():
             addr_format = self.__formatCombo.currentText()
         else:
-            addr_format = '/p:=='
+            addr_format = 'p'
 
         print('addr_format',addr_format)
         print('address',self.subscribe_edit.redvypr_address)
-        devstr = self.subscribe_edit.redvypr_address.get_str(addr_format)
+        devstr = self.subscribe_edit.redvypr_address.to_address_string(addr_format)
         self.subscribe_edit.setText(devstr)
 
     def __update_device_choice__(self, newitem, olditem):
@@ -223,9 +223,11 @@ class SubscribeWidget(QtWidgets.QWidget):
 
                     # Check if the device is already subscribed
                     subscribed = False
-                    #print('dev',dev.name,dev.redvypr.hostinfo)
+                    print('dev',dev.name,dev.redvypr.hostinfo)
                     for a in self.device.subscribed_addresses:
-                        subscribed = a in dev.address
+                        print("Checking a",a)
+                        #subscribed = a in dev.address
+                        subscribed = a.matches(dev.address)
                         if subscribed:
                             break
 
@@ -249,12 +251,12 @@ class SubscribeWidget(QtWidgets.QWidget):
                             devaddress_redvypr = RedvyprAddress(devaddress)
                             subscribed = False
                             for a in self.device.subscribed_addresses:
-                                subscribed = a in devaddress_redvypr
+                                subscribed = a.matches(devaddress_redvypr)
                                 if subscribed:
                                     print('Subscribed',a,devaddress_redvypr)
                                     break
 
-                            devaddress_str = devaddress_redvypr.get_str('/a/h/p/i/d/')
+                            devaddress_str = devaddress_redvypr.to_address_string('a,h,p,i,d')
                             itmf = QtWidgets.QTreeWidgetItem([devaddress_str, ''])
                             #itmf.setData(0, 0, devaddress_redvypr)
                             itmf.device = dev
@@ -293,7 +295,7 @@ class SubscribeWidget(QtWidgets.QWidget):
             if True:
                 # connecting devices
                 for s in self.device.subscribed_addresses:
-                    sstr = s.address_str
+                    sstr = s.to_address_string()
                     litm = QtWidgets.QListWidgetItem(sstr)
                     litm.redvypr_addr = s
                     self.devices_listallsub.addItem(litm)
@@ -341,7 +343,7 @@ class SubscribeWidget(QtWidgets.QWidget):
 
     def subscribeAll_clicked(self):
         logger.debug('Subscribe all')
-        self.device.subscribe_address('*')
+        self.device.subscribe_address('@')
         self.update_list(self.device)
         self.close()
 

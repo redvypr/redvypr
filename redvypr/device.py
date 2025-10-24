@@ -615,13 +615,13 @@ class RedvyprDevice(QtCore.QObject):
         self.statistics['datastreams_info'] = {}
         self.logger.warning('This changes only the device name but will not restart the thread.')
 
-    def address_string(self, address_format='/u/a/h/p/d'):
+    def address_string(self, address_filter='u,a,h,p,d'):
         """
         Returns the address string of the device
         Returns:
 
         """
-        astr = self.address.get_str(address_format = address_format)
+        astr = self.address.to_address_string(keys = address_filter)
         return astr
 
     def got_subscribed(self, dataprovider_address, datareceiver_address):
@@ -951,7 +951,7 @@ class RedvyprDevice(QtCore.QObject):
             dkeys = self.statistics['device_redvypr'][devaddr.address_str]['datakeys']
             for dkey in dkeys:
                 raddr = RedvyprAddress(devaddr, datakey=dkey)
-                dstr = raddr.get_str()
+                dstr = raddr.to_address_string()
                 datastreams.append(dstr)
 
 
