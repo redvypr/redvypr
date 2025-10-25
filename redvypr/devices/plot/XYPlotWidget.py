@@ -99,14 +99,16 @@ class configLine(pydantic.BaseModel,extra='allow'):
         return {'x': xdata_tmp, 'y': ydata_tmp, 't': tdata_tmp, 'err': err_tmp}
 
     def append(self, data):
-        inx = (data in self.x_addr)
-        iny = (data in self.y_addr)
+        inx = self.x_addr.matches(data)
+        iny = self.y_addr.matches(data)
+        print("append line", self.x_addr, self.y_addr)
+        print("append line",inx,iny)
         if inx and iny:
             rdata = redvypr.data_packets.Datapacket(data)
             # data can be a single float or a list, if its a list add it item by item
             newt = data['t']  # Add also the time of the packet
-            newx = self.x_addr.get_data(rdata)
-            newy = self.y_addr.get_data(rdata)
+            newx = self.x_addr(rdata)
+            newy = self.y_addr(rdata)
 
             if (type(newx) is not list):
                 newx = [newx]
@@ -121,7 +123,7 @@ class configLine(pydantic.BaseModel,extra='allow'):
                 # print('errordata',error_raddr.datakey)
                 if len(self.error_addr) > 0 and self.error_mode == 'standard':
                     # logger.debug('Error standard')
-                    newerror = self.error_addr.get_data(rdata)
+                    newerror = self.error_addr(data)
                     if (type(newerror) is not list):
                         newerror = [newerror]
                     # print('newerror',newerror)
@@ -1377,7 +1379,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         tnow = time.time()
         ## Create a redvypr datapacket
         #rdata = redvypr.data_packets.Datapacket(data)
-        #print(funcname + 'got data',data,tnow)
+        print(funcname + 'got data',data,tnow)
         try:
             # Check if the device is to be plotted
             # Loop over all lines

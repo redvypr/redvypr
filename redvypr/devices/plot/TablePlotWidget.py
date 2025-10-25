@@ -241,7 +241,7 @@ class TablePlotWidget(QtWidgets.QWidget):
 
         # Check if everything is found in the data packet
         for d in self.config.datastreams:
-            if rdata not in d:
+            if not d.matches(data):
                 return
 
         # Check if the table has to be resized
@@ -299,7 +299,7 @@ class TablePlotWidget(QtWidgets.QWidget):
         data_table_keys_new = []
         data_table_datastreams_new = []
         for d in self.config.datastreams:
-            if rdata not in d:
+            if not d.matches(data):
                 return
             else:
                 #print('d in data',d)

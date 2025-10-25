@@ -575,6 +575,70 @@ class RedvyprAddress:
             return ast.unparse(node)
 
     def to_address_string(self, keys: Union[str, List[str]] = None) -> str:
+        """Readable version of the address, optionally filtered by keys"""
+        if not self._rhs_ast:
+            return f"{self.left_expr}@" if self.left_expr else "@"
+
+        # Prepare the allowed keys set
+        allowed_keys_set = None
+        if keys is not None:
+            if isinstance(keys, str):
+                allowed_keys = [k.strip() for k in keys.split(",") if k.strip()]
+            else:
+                allowed_keys = keys
+            allowed_keys_set = set(self.PREFIX_MAP.get(k, k) for k in allowed_keys)
+
+        import copy
+
+        def prune_ast(node: ast.AST) -> Optional[ast.AST]:
+            if isinstance(node, ast.Expression):
+                node.body = prune_ast(node.body)
+                return node if node.body else None
+
+            elif isinstance(node, ast.BoolOp):
+                new_vals = [prune_ast(v) for v in node.values]
+                new_vals = [v for v in new_vals if v is not None]
+                if not new_vals:
+                    return None
+                node.values = new_vals
+                return node
+
+            elif isinstance(node, ast.Call):
+                try:
+                    key = ast.literal_eval(node.args[0])
+                except Exception:
+                    return None  # Discard nodes with invalid literals
+
+                # Discard node if the key is None
+                if key is None:
+                    return None
+
+                # Filter by allowed keys
+                if allowed_keys_set and key not in allowed_keys_set:
+                    return None
+
+                # Optionally check other arguments (value/content) for None
+                for arg in node.args[1:]:
+                    try:
+                        val = ast.literal_eval(arg)
+                        if val is None:
+                            return None
+                    except Exception:
+                        continue  # Ignore non-evaluable arguments
+
+                return node
+
+            else:
+                return node
+
+        filtered_ast = prune_ast(copy.deepcopy(self._rhs_ast)) if allowed_keys_set else self._rhs_ast
+        rhs_str = self._ast_to_rhs_string(filtered_ast) if filtered_ast else ""
+
+        if self.left_expr:
+            return f"{self.left_expr} @ {rhs_str}" if rhs_str else self.left_expr
+        return f"@{rhs_str}" if rhs_str else "@"
+
+    def to_address_string_legacy(self, keys: Union[str, List[str]] = None) -> str:
         """Lesbare Version der Adresse, optional gefiltert nach Keys"""
         if not self._rhs_ast:
             return f"{self.left_expr}@" if self.left_expr else "@"
@@ -686,9 +750,16 @@ class RedvyprAddress:
             'k': self.datakey,
         }
 
-        # nur Werte übernehmen, die nicht None sind
-        filtered_vals = {k: f"{k}:{v}" for k, v in vals.items() if v is not None}
-
+        #filtered_vals = {k: f"{k}:{v}" for k, v in vals.items() if v is not None}
+        # Treat None as empty string
+        filtered_vals = {}
+        for k, v in vals.items():
+            if v is not None:
+                v_print = v
+            else:
+                v_print = ""
+            filtered_vals[k] = f"{k}:{v_print}"
+        #print("Address format",address_format,filtered_vals)
         retstr = address_format.format(**filtered_vals)
         return retstr
 
@@ -777,7 +848,7 @@ class RedvyprAddress:
                 ]
             ),
             serialization=core_schema.plain_serializer_function_ser_schema(
-                lambda instance: instance.address_str
+                lambda instance: instance.to_address_string()
             ),
         )
 

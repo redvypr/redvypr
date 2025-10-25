@@ -93,6 +93,8 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
                 self.address_entries[k].blockSignals(True)
                 self.address_entries[k].setText(keyentry)
                 self.address_entries[k].blockSignals(False)
+            else:
+                self.address_entries[k].setText("")
 
         self.update_address_from_linedits()
 
@@ -514,7 +516,8 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
         funcname = __name__ + '__device_clicked()'
         logger.debug(funcname)
         #print('Item',item.iskey)
-        if(item.iskey): # If this is a datakey item
+        #if(item.iskey): # If this is a datakey item
+        if True:
             print(funcname + "Setting address to:{}".format(item.datakey_address))
             self.address_edit.setAddress(item.datakey_address)
             #print('Addresstype', addrtype)
@@ -638,35 +641,23 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
         def update_recursive(data_new_key, data_new, parent_item, datakey_construct, expandlevel):
             funcname = __name__ + '.__update_recursive():'
             logger.debug(funcname)
-            if self.expandlevel == 0:
-                datakey_construct_new = data_new_key
-            else:
-                datakey_construct_new = datakey_construct + '[' + json.dumps(data_new_key) + ']'
 
+            #if self.expandlevel == 0:
+            #    datakey_construct_new = data_new_key
+            #else:
+            #    datakey_construct_new = datakey_construct + '[' + json.dumps(data_new_key) + ']'
+
+            datakey_construct_new = str(data_new_key)
             #print('Hallo',data_new_key, data_new,type(data_new))
             #print('Datakey construct new',datakey_construct_new)
             # Check if we are at an item level that is a datakey to be used as a datastream
             if isinstance(data_new, tuple) or (expandlevel >= self.expandlevel):
                 #print('Set',data_new,self.expandlevel)
+                datakey_construct_new = data_new[0]
+                addrstr_expanded = datakey_construct_new
                 if expandlevel >= self.expandlevel:
                     #print('Level reached')
                     addrstr_expanded = datakey_construct_new
-                else:
-                    addrstr = data_new[0]  # Index 0 of set is the address, index 1 the datatype
-                    datakeyaddr = RedvyprAddress(addrstr)
-                    # Construct a datakey based on the expansion level
-                    dkeys_expanded = datakeyaddr.parsed_addrstr_expand['datakeyentries_str']
-                    #print('Datakeyaddr', datakeyaddr)
-                    #print('expanded datakeys', datakeyaddr.parsed_addrstr_expand['datakeyentries_str'])
-                    if datakeyaddr.parsed_addrstr_expand['datakeyeval']:
-                        addrstr_expanded = ''
-                        for iexpand in range(len(dkeys_expanded)):
-                            if iexpand < self.expandlevel:
-                                addrstr_expanded += '[' + dkeys_expanded[iexpand] + ']'
-
-                        #print('Addresstr expanded',addrstr_expanded)
-                    else:
-                        addrstr_expanded = addrstr
 
                 #print('Addresstr expanded',addrstr_expanded)
                 itmk = QtWidgets.QTreeWidgetItem([addrstr_expanded])
@@ -696,7 +687,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                 # check if data_new_key is an index, if yes enclose it
                 if type(data_new_key) == int:
                     data_new_key = '[{}]'.format(data_new_key)
-                itmk.redvypr_address = RedvyprAddress(data_new_key)
+                itmk.redvypr_address = RedvyprAddress(devaddress, datakey=data_new_key)
                 itmk.iskey = True
                 itmk.device = dev
                 itmk.setBackground(0, colgrey_key)
@@ -707,7 +698,8 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
 
             elif isinstance(data_new, dict):
                 itmk = QtWidgets.QTreeWidgetItem([data_new_key])
-                itmk.redvypr_address = RedvyprAddress(data_new_key)
+                itmk.redvypr_address = RedvyprAddress(devaddress, datakey=data_new_key)
+                #itmk.redvypr_address = RedvyprAddress(data_new_key,packetid="BLAR")
                 itmk.iskey = False
                 itmk.device = dev
                 itmk.setBackground(0, colgrey)
@@ -771,6 +763,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                     itm.setBackground(0, colgrey)
                     itm.device = dev
                     itm.redvypr_address = dev.address
+                    itm.datakey_address = RedvyprAddress(dev.address)
                     itm.iskey = False
                     # Loop over all devices that have published through this device
                     if True:
@@ -793,6 +786,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                             itmf.device = dev
                             itmf.addrentries = self.addrentries_show_for_publishing_devices
                             itmf.redvypr_address = devaddress_redvypr
+                            itmf.datakey_address = devaddress_redvypr
                             itmf.address_forwarded = devaddress
                             itmf.iskey = False
                             if len(datakey_dict.keys())>0:  # Only add the device if it has some datakey to show
@@ -821,6 +815,9 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
 
         if newline:  # remove the last newline
             addrformat = addrformat[:-1]
+
+        print("Address test",raddr)
+        print("Address test format", addrformat)
         devicestr = raddr.get_str_from_format(addrformat)
         return devicestr
 

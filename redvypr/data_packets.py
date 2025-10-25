@@ -148,15 +148,19 @@ class Datapacket(dict):
 
     def __expand_datakeys_recursive__(self, data, keys, level=0, parent_key='f', key_list = [], key_dict = {}, max_level=1000):
         for k in keys:
-            #print('k',k)
+            print('expand','k',k,level,parent_key)
             data_k = data[k]
             # Check if k is a list or a dict
-            if isinstance(k, int):
-                strformat = "[{}]".format(k)
-                key_dict.append(None)
-            else:
-                strformat = "['{}']".format(k)
+            if level == 0:
+                strformat = "{}".format(k)
                 key_dict[k] = None
+            else:
+                if isinstance(k, int):
+                    strformat = "[{}]".format(k)
+                    key_dict.append(None)
+                else:
+                    strformat = "['{}']".format(k)
+                    key_dict[k] = None
             if level < max_level:
                 if isinstance(data_k, list):
                     data_k_keys = range(0, len(data_k))
@@ -340,8 +344,8 @@ class Datapacket(dict):
 
         return daddresses
 
-    def get_addressstr(self,addrformat='/i/k/'):
-        return self.address.get_str(addrformat)
+    def get_addressstr(self,addrformat='k,i'):
+        return self.address.to_address_string(addrformat)
 
 
 def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None, publisher=None, hostinfo=None):
@@ -354,8 +358,9 @@ def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None
     datadict['_redvypr']['device'] = device
     if (packetid is None):
             datadict['_redvypr']['packetid'] = device
+    else:
+        datadict['_redvypr']['packetid'] = packetid
 
-    datadict['_redvypr']['packetid'] = packetid
     datadict['_redvypr']['publisher'] = publisher
     if (hostinfo is not None):
         if hostinfo == 'random':

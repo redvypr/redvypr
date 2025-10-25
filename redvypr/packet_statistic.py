@@ -14,7 +14,7 @@ logger.setLevel(logging.INFO)
 # A dictionary for the device_redvypr entry in the statistics
 device_redvypr_statdict = {'_redvypr': {},'datakeys':[],'datakeys_expanded': {},'packets_received':0,'packets_published':0,'packets_droped':0,'_metadata':{},'_deviceinfo':{},'_keyinfo':{}}
 
-
+data_statistics_address_format = ["i","p","d","h","u","a"]
 
 def treat_datadict(data, devicename, hostinfo, numpacket, tpacket, devicemodulename=''):
     """ Treats a datadict received from a device and adds additional information from redvypr as hostinfo, numpackets etc.
@@ -125,7 +125,8 @@ def do_data_statistics(data, statdict, address_data = None):
         raddr = address_data
 
     uuid = raddr.uuid
-    address_str = str(raddr)
+    address_str = raddr.to_address_string(data_statistics_address_format)
+
     # Create a hostinfo information
     try:
         statdict['host_redvypr'][uuid].update(data['_redvypr']['host'])
@@ -193,7 +194,7 @@ def do_data_statistics(data, statdict, address_data = None):
     # Deeper check, data types and expanded data types
     rdata = data_packets.Datapacket(data)
     datakeys_expanded = rdata.datakeys(expand=True)
-    #print('Datakeys expanded',datakeys_expanded)
+    print('Datakeys expanded',datakeys_expanded)
     statdict['device_redvypr'][address_str]['datakeys_expanded'].update(datakeys_expanded)
 
     return statdict, status
