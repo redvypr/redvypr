@@ -20,7 +20,7 @@ import pydantic
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('test_device')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 redvypr_devicemodule = True
 class DeviceBaseConfig(pydantic.BaseModel):
@@ -34,9 +34,9 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start():'
     logger.debug(funcname)
-    print('Config',config)
+    #print('Config',config)
     pdconfig = DeviceCustomConfig.model_validate(config)
-    print('pdconfig',pdconfig)
+    #print('pdconfig',pdconfig)
     #data = {'_keyinfo':config['_keyinfo']}
     # dataqueue.put(data)
     # Send a datapacket with metadata describing the device
@@ -74,7 +74,14 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         f_sin = 1 / 30  # Frequency in Hz
         A_sin = 10  # Amplitude
         data_sine = float(A_sin * np.sin(f_sin * time.time()))
-        dataqueue.put({'sine_rand': data_rand + data_sine,'count': counter,'sine': data_sine})
+        data_sine_packet = {'sine_rand': data_rand + data_sine, 'count': counter, 'sine': data_sine}
+        metadata = {'unit': 'nice sine unit'}
+        data_sine_packet = redvypr.data_packets.add_metadata2datapacket(data_sine_packet, datakey='sine',
+                                                            metadict=metadata)
+        metadata = {'unit': 'nice sine unit (random)'}
+        data_sine_packet = redvypr.data_packets.add_metadata2datapacket(data_sine_packet, datakey='sine_rand',
+                                                                        metadict=metadata)
+        dataqueue.put(data_sine_packet)
 
         time.sleep(config['delay_s'])
         #print('Hallo')
@@ -88,7 +95,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                                                                 metadict=metadata)
 
             metadata = {'unit': 'otherunit of entry 0'}
-            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='["data_list_list"][0]',
+            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_list_list[0]',
                                                                 metadict=metadata)
 
             metadata = {'description': 'Counter and polynomial functions of counter', 'unit': 'grigra'}
@@ -96,11 +103,11 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                                                                            metadict=metadata)
 
             metadata = {'description': 'Temperature', 'unit': 'degC'}
-            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='["data_dict_list"]["temp"]',
+            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_dict_list["temp"]',
                                                                 metadict=metadata)
 
             metadata = {'unit': 'Pa'}
-            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='["data_dict_list"]["pressure"]',
+            data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_dict_list["pressure"]',
                                                                 metadict=metadata)
         data['data_list'] = [counter,data_sine,data_rand]
         data['data_list_list'] = [[counter, data_sine, data_rand],[counter, data_sine]]

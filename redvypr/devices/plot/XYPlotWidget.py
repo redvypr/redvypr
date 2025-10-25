@@ -101,8 +101,8 @@ class configLine(pydantic.BaseModel,extra='allow'):
     def append(self, data):
         inx = self.x_addr.matches(data)
         iny = self.y_addr.matches(data)
-        print("append line", self.x_addr, self.y_addr)
-        print("append line",inx,iny)
+        #print("append line", self.x_addr, self.y_addr)
+        #print("append line",inx,iny)
         if inx and iny:
             rdata = redvypr.data_packets.Datapacket(data)
             # data can be a single float or a list, if its a list add it item by item
@@ -163,6 +163,7 @@ class ConfigXYplot(pydantic.BaseModel):
     location: list  = pydantic.Field(default=[])
     type: typing.Literal['XY-Plot'] = pydantic.Field(default='XY-Plot')
     dt_update: float = pydantic.Field(default=0.25,description='Update time of the plot [s]')
+    dt_update_metadata: float = pydantic.Field(default=5.0, description='Update time of the metadata [s]')
     interactive: typing.Literal['standard', 'rectangle','xlim','ylim','xlim_keep','ylim_keep'] = pydantic.Field(default='standard',description='Interactive modes')
     data_dialog: typing.Literal['off', 'table'] = pydantic.Field(default='table', description='Option if a data dialog is shown when finished with the interactive mode')
     backgroundcolor: pydColor = pydantic.Field(default=pydColor('lightgray'),description='Backgroundcolor')
@@ -337,6 +338,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.logger = logging.getLogger('XYplot')
         self.logger.setLevel(loglevel)
         self.description = 'XY plot'
+        self.tlastupdate_metadata = 0
         self._interactive_mode = ''
         self.x_min = 0
         self.x_max = 0
@@ -1044,7 +1046,7 @@ class XYPlotWidget(QtWidgets.QFrame):
 
             # print('Line',line)
             # FLAG_HAVE_LINE = False
-            self.get_metadata_for_line(line) # This is updating the unit
+            self.get_metadata_for_line(line,force_update=False) # This is updating the unit
             labelname = self.construct_labelname(line)
             line.label = labelname
             linename = "Line {}: {}".format(iline, labelname)
@@ -1199,13 +1201,18 @@ class XYPlotWidget(QtWidgets.QFrame):
 
         self.logger.debug(funcname + ' done.')
 
-    def get_metadata_for_line(self, line):
+    def get_metadata_for_line(self, line, force_update=False):
         funcname = __name__ + '.get_metadata_for_line():'
         iline = self.config.lines.index(line)
         self.logger.debug(funcname + 'Getting metadata for {}'.format(line.y_addr))
+
         try:
             line._metadata  # metadata found, doing nothing
+            has_metadata = True
         except:
+            has_metadata = False
+
+        if has_metadata == False or force_update:
             line._metadata = self.device.get_metadata(line.y_addr)
             self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._metadata)))
             try:
@@ -1379,7 +1386,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         tnow = time.time()
         ## Create a redvypr datapacket
         #rdata = redvypr.data_packets.Datapacket(data)
-        print(funcname + 'got data',data,tnow)
+        #print(funcname + 'got data',data,tnow)
         try:
             # Check if the device is to be plotted
             # Loop over all lines
@@ -1389,27 +1396,19 @@ class XYPlotWidget(QtWidgets.QFrame):
                     line.append(data)
                     line.__newdata = True
                 except:
-                    self.logger.debug('Could not add data',exc_info=True)
-                    #pass
+                    #self.logger.debug('Could not add data',exc_info=True)
+                    pass
 
                 if True:
                     # Show the unit in the legend, if wished by the user, and we have access to the device that can give us the metainformation
                     if (self.config.show_units) and (self.device is not None):
-                        #self.logger.debug(funcname + 'Getting metadata for {}'.format(line._y_raddr))
-                        try:
-                            line._metadata  # metadata found, doing nothing
-                        except:
-                            line._metadata = self.device.get_metadata(line._y_raddr)
-                            self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._datakeys)))
-                            try:
-                                unit = line._metadata['unit']
-                                self.logger.debug(funcname + 'Found a unit for {}'.format(line._y_raddr))
-                            except:
-                                self.logger.debug(funcname + 'Did not find a unit',exc_info=True)
-                                unit = None
-
-                            if unit is not None:
-                                self.config.lines[iline].unit_y = unit
+                        dt_metadata = tnow - self.tlastupdate_metadata
+                        if dt_metadata > self.config.dt_update_metadata:
+                            self.tlastupdate_metadata = tnow
+                            self.logger.debug(funcname + 'Getting metadata for {}'.format(line.y_addr))
+                            # Check for metadata
+                            flag_new_metadata = self.get_metadata_for_line(line,force_update=True)
+                            if flag_new_metadata:
                                 self.apply_config()
 
             # Update the lines plot

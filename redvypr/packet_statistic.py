@@ -1,7 +1,7 @@
 import sys
 import logging
 import copy
-from .redvypr_address import RedvyprAddress
+from .redvypr_address import RedvyprAddress, redvypr_standard_address_filter
 import redvypr.data_packets as data_packets
 import time
 import json
@@ -14,7 +14,7 @@ logger.setLevel(logging.INFO)
 # A dictionary for the device_redvypr entry in the statistics
 device_redvypr_statdict = {'_redvypr': {},'datakeys':[],'datakeys_expanded': {},'packets_received':0,'packets_published':0,'packets_droped':0,'_metadata':{},'_deviceinfo':{},'_keyinfo':{}}
 
-data_statistics_address_format = ["i","p","d","h","u","a"]
+data_statistics_address_format = redvypr_standard_address_filter#["i","p","d","h","u","a"]
 
 def treat_datadict(data, devicename, hostinfo, numpacket, tpacket, devicemodulename=''):
     """ Treats a datadict received from a device and adds additional information from redvypr as hostinfo, numpackets etc.
@@ -124,6 +124,8 @@ def do_data_statistics(data, statdict, address_data = None):
     else:
         raddr = address_data
 
+    #print("\n\nStatistics for data",data)
+    #print("\n\nStatistics for address", raddr)
     uuid = raddr.uuid
     address_str = raddr.to_address_string(data_statistics_address_format)
 
@@ -194,7 +196,7 @@ def do_data_statistics(data, statdict, address_data = None):
     # Deeper check, data types and expanded data types
     rdata = data_packets.Datapacket(data)
     datakeys_expanded = rdata.datakeys(expand=True)
-    print('Datakeys expanded',datakeys_expanded)
+    #print('Datakeys expanded',datakeys_expanded)
     statdict['device_redvypr'][address_str]['datakeys_expanded'].update(datakeys_expanded)
 
     return statdict, status
@@ -250,7 +252,7 @@ def get_metadata_deviceinfo_all(statistics, address, publisher_strict=True,  mod
         except:
             logger.debug('Could not find publisher for address {}'.format(raddress),exc_info=True)
     else:
-        print('Statistics keys',statistics.keys())
+        #print('Statistics keys',statistics.keys())
         for dev in statistics['metadata'].keys():
             mdata_device = {'metadata': statistics['metadata'][dev]}
             mdata = get_metadata(mdata_device, address, mode)
@@ -286,26 +288,13 @@ def get_metadata(statistics, address, mode='merge'):
     #for astr in statistics['metadata'].keys():
     for astr in metadata_keys_sorted:
         raddr = RedvyprAddress(astr)
-        if raddress.datakeyeval == False:
-            if raddr in raddress:
-                metadata = statistics['metadata'][astr]
-                #print('Metadata', metadata)
-                if mode == 'merge':
-                    metadata_return.update(metadata)
-                else:
-                    metadata_return[astr] = metadata
-        # loop over all datakeys and check for a hit
-        else:
-            dkeys1 = raddr.get_datakeyentries()
-            dkeys2 = raddress.get_datakeyentries()
-            dkeys2_fit = dkeys2[:len(dkeys1)]
-            datakey_construct_new = ''
-            for dentry in dkeys2_fit:
-                datakey_construct_new = datakey_construct_new + '[' + json.dumps(dentry) + ']'
-
-            raddress_construct = RedvyprAddress(address, datakey=datakey_construct_new)
-            #print('Constructed address {}'.format(raddress_construct))
-            if raddr in raddress_construct:
+        try:
+            retdata = raddr(raddress)
+        except:
+            continue
+        if True:
+            #print("Match of {}({}".format(raddr,raddress))
+            if True:
                 metadata = statistics['metadata'][astr]
                 #print('Metadata', metadata)
                 if mode == 'merge':
@@ -315,99 +304,3 @@ def get_metadata(statistics, address, mode='merge'):
 
     return metadata_return
 
-    #for astr in statistics['device_redvypr'].keys():
-    #    raddr = RedvyprAddress(astr)
-    #    if '_metadata' in statistics['device_redvypr'][astr].keys():
-    #        for astr2 in statistics['device_redvypr'][astr]['_metadata'].keys():
-    #            raddr2 = RedvyprAddress(astr2)
-    #            # Check if a eval address is present (or not), if yes, check for all components
-    #            if raddress.parsed_addrstr_expand['datakeyeval'] == False:
-    #                if raddr2 in raddress:
-    #                    metadata.update(statistics['device_redvypr'][astr]['_metadata'][astr2])
-    #            else:
-    #                print('Datakeyeval')
-    #                #if self.expandlevel == 0:
-    #                #    datakey_construct_new = data_new_key
-    #                #else:
-    #                #    datakey_construct_new = datakey_construct + '[' + json.dumps(data_new_key) + ']'
-    #                datakey_construct_new = '['
-    #                for dentry in raddress.parsed_addrstr_expand['datakeyentries_str']:
-    #                    datakey_construct_new = datakey_construct_new + '[' + json.dumps(dentry) + ']'
-    #                    raddr_construct = RedvyprAddress(address, datakey=datakey_construct_new)
-    #                    print('hallo',raddr_construct)
-    #                    pass
-
-
-
-    return metadata
-
-# Legacy
-def get_devicename_from_data(data, uuid=False):
-    """ Returns a redvypr devicename string including the hostname, ip with the optional uuid.
-
-    Args:
-        data (dict): A redvypr data dictionary
-        uuid (Optional[bool]): Default False. Returns the devicename with the uuid (True) or the hostname + IP-Address (False)
-
-    Returns:
-        str: The full devicename
-    """
-    if (uuid):
-        devicename = data['_redvypr']['device'] + ':' + data['_redvypr']['host']['hostname'] + '@' + \
-                     data['_redvypr']['host']['addr'] + '::' + data['_redvypr']['host']['uuid']
-    else:
-        devicename = data['_redvypr']['device'] + ':' + data['_redvypr']['host']['hostname'] + '@' + \
-                     data['_redvypr']['host']['addr']
-    return devicename
-
-# legacy
-def get_datastream_from_data(data, datakey, uuid=False):
-    """ Returns a redvypr datastream string including the hostname, ip with the optional uuid.
-
-    Args:
-        datakey (str): The datakey,
-        data (dict): A redvypr data dictionary
-        uuid (Optional[bool]): Default False. Returns the devicename with the uuid (True) or the hostname + IP-Address (False)
-
-    Returns:
-        str:
-            - The full datastream
-            - devicename string if datakey is None or ''
-            - None if datakey is not in data dict
-    """
-    devicestr = get_devicename_from_data(data, uuid)
-    if ((datakey == None) or (datakey == '')):
-        return devicestr
-    else:
-        if (datakey in data.keys()):
-            datastream = datakey + '/' + devicestr
-            return datastream
-        else:
-            return None
-
-# legacy
-def get_datastreams_from_data(data, uuid=False, add_dict=False):
-    """ Returns all datastreams of the datapacket
-
-    Args:
-        data (dict): A redvypr data dictionary
-        uuid (Optional[bool]): Default False. Returns the devicename with the uuid (True) or the hostname + IP-Address (False)
-        add_dict (Optional[bool]): Default False. Returns the devicename with the uuid (True) or the hostname + IP-Address (False)
-
-    Returns:
-        list: A list of all datastreams
-    """
-    t = time.time()
-    datastreams = []
-    datastreams_dict = {}
-    datakeys = get_keys_from_data(data)
-    devicename = get_devicename_from_data(data, uuid=True)
-    for key in datakeys:
-        datastream = key + '/' + devicename
-        datastreams.append(datastream)
-        datastreams_dict[datastream] = {'host': data['_redvypr']['host']}
-
-    if (add_dict):
-        return [datastreams, datastreams_dict]
-    else:
-        return datastreams

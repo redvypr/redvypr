@@ -5,7 +5,8 @@ import sys
 import re
 import numpy as np
 import redvypr
-import redvypr.redvypr_address as redvypr_address
+#import redvypr.redvypr_address as redvypr_address
+from redvypr.redvypr_address import RedvyprAddress, redvypr_standard_address_filter
 import collections
 import pydantic
 import typing
@@ -22,7 +23,7 @@ redvypr_data_keys = ['_redvypr','_redvypr_command','_deviceinfo','_keyinfo','_me
 
 # Defintions for common metadata types
 class RedvyprMetadata(pydantic.BaseModel):
-    address: typing.Dict[redvypr_address.RedvyprAddress, typing.Any] = {}
+    address: typing.Dict[RedvyprAddress, typing.Any] = {}
 class RedvyprDeviceMetadata(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="allow")
     location: str = ''
@@ -54,7 +55,7 @@ class Datapacket(dict):
 
     Attributes
     ----------
-    address : redvypr_address.RedvyprAddress
+    address : RedvyprAddress
         An address object associated with the data packet, initialized using the data packet's contents.
 
     Methods
@@ -65,7 +66,7 @@ class Datapacket(dict):
     Notes
     -----
     The `Datapacket` class is designed to work with the `redvypr` framework, utilizing helper functions like
-    `create_datadict` to populate initial data and `redvypr_address.RedvyprAddress` to manage addressing.
+    `create_datadict` to populate initial data and `RedvyprAddress` to manage addressing.
     """
     def __init__(self, *args, device=None, packetid=None, **kwargs):
         """
@@ -101,7 +102,7 @@ class Datapacket(dict):
             dataself = create_datadict(packetid=packetid, device=device)
             self.update(dataself)
 
-        self.address = redvypr_address.RedvyprAddress(self)
+        self.address = RedvyprAddress(self)
 
     def __getitem__(self, key):
         # Check if the key is a string but is an "eval" operator
@@ -114,7 +115,7 @@ class Datapacket(dict):
             else:
                 return super().__getitem__(key)
         # Check if the key is a RedvyprAddress
-        elif isinstance(key, redvypr_address.RedvyprAddress):
+        elif isinstance(key, RedvyprAddress):
             datakey = key.datakey
             if datakey.startswith('[') and datakey.endswith(']'):
                 evalstr = 'self' + datakey
@@ -136,7 +137,7 @@ class Datapacket(dict):
             else:
                 return super().__setitem__(key, value)
         # Check if the key is a RedvyprAddress
-        elif isinstance(key, redvypr_address.RedvyprAddress):
+        elif isinstance(key, RedvyprAddress):
             datakey = key.datakey
             if datakey.startswith('[') and datakey.endswith(']'):
                 evalstr = 'self' + datakey  + '=value'
@@ -148,7 +149,7 @@ class Datapacket(dict):
 
     def __expand_datakeys_recursive__(self, data, keys, level=0, parent_key='f', key_list = [], key_dict = {}, max_level=1000):
         for k in keys:
-            print('expand','k',k,level,parent_key)
+            #print('expand','k',k,level,parent_key)
             data_k = data[k]
             # Check if k is a list or a dict
             if level == 0:
@@ -258,8 +259,8 @@ class Datapacket(dict):
         else:
             keys = []  # Fill keys list manually
             if isinstance(datakeys, str):
-                datakeys = [redvypr_address.RedvyprAddress(datakeys)]
-            elif isinstance(datakeys, redvypr_address.RedvyprAddress):
+                datakeys = [RedvyprAddress(datakeys)]
+            elif isinstance(datakeys, RedvyprAddress):
                 datakeys = [datakeys]
             elif isinstance(datakeys, list):
                 pass
@@ -267,12 +268,12 @@ class Datapacket(dict):
                 raise ValueError('datakeys must be None, str, RedvyprAdress or list')
 
             for k in datakeys:
-                if isinstance(k, redvypr_address.RedvyprAddress):
-                    if k.datakeyexpand:
-                        keys = list(self.keys())
-                        break
-                    else:
-                        keys.append(k.datakey)
+                if isinstance(k, RedvyprAddress):
+                    print('data dict ', dict(self))
+                    print('Datakey expand ',k)
+                    print('Address call ', k(dict(self)))
+                    print('Address call list', list(k(dict(self)).keys()))
+                    keys += list(k(dict(self)).keys())
 
         for key_remove in redvypr_data_keys:
             try:
@@ -339,7 +340,7 @@ class Datapacket(dict):
         datakeys = self.datakeys(datakeys=datakeys, expand=expand,return_type='list')
         daddresses = []
         for d in datakeys:
-            daddr = redvypr_address.RedvyprAddress(self.address, datakey=d)
+            daddr = RedvyprAddress(self.address, datakey=d)
             daddresses.append(daddr)
 
         return daddresses
@@ -393,15 +394,15 @@ def add_metadata2datapacket(datapacket, address=None, datakey=None, metakey=None
     if True:
         #print('Datapacket',datapacket)
         if address is not None:
-            raddress = redvypr_address.RedvyprAddress(address)
+            raddress = RedvyprAddress(address)
         if datakey is not None:
             try: # Try first to create a RedvyprAddress from the datapacket itself
-                raddress = redvypr_address.RedvyprAddress(datapacket, datakey=datakey)
+                raddress = RedvyprAddress(datapacket, datakey=datakey)
             except:
                 logger.info('Could not create address',exc_info=True)
-                raddress = redvypr_address.RedvyprAddress(datakey=datakey)
+                raddress = RedvyprAddress(datakey=datakey)
 
-        address_str = str(raddress)
+        address_str = raddress.to_address_string(redvypr_standard_address_filter)
         try:
             datapacket['_metadata']
         except:

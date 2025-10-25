@@ -11,8 +11,10 @@ import yaml
 import pydantic
 import pydantic_core
 import typing
+from typing import Any, List, Tuple, Optional, Union
 from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_core import SchemaSerializer, core_schema
+import ast
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.redvypr_address')
@@ -22,13 +24,8 @@ logger.setLevel(logging.DEBUG)
 metadata_address = "_redvypr_command@i:metadata"
 
 
-# redvypr_address.py
-import re
-import ast
-import typing
-from typing import Any, List, Tuple, Optional, Union
-import pydantic
-from pydantic_core import core_schema
+redvypr_standard_address_filter = ["i","p","d","h","u","a"]
+
 
 # Exceptions
 class FilterNoMatch(Exception):
@@ -392,6 +389,8 @@ class RedvyprAddress:
             return False
 
     def __call__(self, packet):
+        if isinstance(packet, RedvyprAddress):
+            packet = packet.to_redvypr_dict()
         if self.left_expr is None and self._rhs_ast is None:
             return packet
         SAFE_GLOBALS = {"__builtins__": None, "True": True, "False": False, "None": None}
@@ -481,7 +480,7 @@ class RedvyprAddress:
         right = ast.unparse(self._rhs_ast.body) if self._rhs_ast else ""
         return f"{left}@{right}" if right else left or "@"
 
-    def to_redvypr_dict(self):
+    def to_redvypr_dict(self, include_datakey=True):
         """
         Liefert ein Dict mit '_redvypr', gefüllt aus den Filtern.
         - _eq: direkter Wert
@@ -490,9 +489,18 @@ class RedvyprAddress:
         - _exists: {"__exists__": True}
         """
         result = {}
+        result_datakey = {}
+        depth = None
+        if include_datakey:
+            try:
+                result_datakey = self.create_minimal_datakey_packet()
+            except:
+                pass
 
         if not self._rhs_ast:
-            return {"_redvypr": result}
+            red_dict = {"_redvypr": result}
+            red_dict.update(result_datakey)
+            return red_dict
 
         def add_to_dict(key, value):
             """Schlüssel wie 'host.addr' in verschachtelte Dicts umwandeln"""
@@ -528,7 +536,112 @@ class RedvyprAddress:
                     add_to_dict(key, {"__exists__": True})
 
         traverse(self._rhs_ast)
-        return {"_redvypr": result}
+
+        red_dict = {"_redvypr": result}
+        red_dict.update(result_datakey)
+        return red_dict
+
+
+    def get_datakeyentries(self):
+        """
+        Parses an LHS expression like "foo['bar'][2]['baz']"
+        and returns a list of path components:
+        e.g., ["foo", "bar", 2, "baz"]
+        """
+        expr = self.left_expr
+        entries = []
+        if expr is None:
+            return entries
+        elif len(expr.strip()) == 0:
+            return entries
+        expr = expr.strip()
+
+        # Extract top-level key
+        m = re.match(r"([A-Za-z_][A-Za-z_0-9]*)", expr)
+        if not m:
+            raise ValueError(f"Cannot extract top-level key from expression {expr!r}")
+        entries.append(m.group(1))
+        rest = expr[m.end():]
+
+        while rest:
+            rest = rest.strip()
+            # dict key ['key'] or ["key"]
+            m_key = re.match(r"\[\s*(['\"])(.+?)\1\s*\]", rest)
+            if m_key:
+                entries.append(m_key.group(2))
+                rest = rest[m_key.end():]
+                continue
+            # list index [n]
+            m_index = re.match(r"\[\s*(-?\d+)\s*\]", rest)
+            if m_index:
+                entries.append(int(m_index.group(1)))
+                rest = rest[m_index.end():]
+                continue
+            # slicing, we can store as string
+            m_slice = re.match(r"\[\s*([-0-9]*)\s*:\s*([-0-9]*)\s*(:\s*([-0-9]*))?\s*\]", rest)
+            if m_slice:
+                entries.append(rest[:m_slice.end()])  # keep original slice string
+                rest = rest[m_slice.end():]
+                continue
+
+            raise ValueError(f"Cannot parse remaining part of expression: {rest!r}")
+
+        return entries
+
+    def create_minimal_datakey_packet(self):
+        """
+        Create a nested dict/list structure from an expression like
+        'data[0]', "payload['x']", 'foo["bar"][2]', or "data[::-1]".
+        The resulting packet dict is suitable so that eval(expr, ..., packet)
+        will return a valid value without KeyError.
+        """
+        expr = self.left_expr
+        if expr is None:
+            raise ValueError("Cannot create packet from None")
+        elif len(expr.strip()) == 0:
+            raise ValueError("Cannot create packet from empty expression")
+        # Extract top-level key
+        m = re.match(r"\s*([A-Za-z_][A-Za-z_0-9]*)", expr)
+        if not m:
+            raise ValueError(f"Cannot extract top-level key from expression {expr!r}")
+        top = m.group(1)
+        rest = expr[m.end():]
+
+        if not rest:
+            return {top: 0}
+
+        value, depth = self._build_from_rest(rest, current_depth=1)
+        return {top: value}
+
+    def _build_from_rest(self, rest: str, current_depth: int):
+        rest = rest.strip()
+
+        # slicing
+        if re.match(r"\[\s*(-?\d*)?\s*:\s*(-?\d*)?\s*(:\s*(-?\d*)?)?\s*\]", rest):
+            return [1, 2, 3, 4, 5], current_depth + 1
+
+        # list index
+        m_index = re.match(r"\[\s*(-?\d+)\s*\]", rest)
+        if m_index:
+            remainder = rest[m_index.end():]
+            if remainder:
+                subval, depth = self._build_from_rest(remainder, current_depth + 1)
+                base = [subval]
+                return base, depth
+            else:
+                return [0], current_depth + 1
+
+        # dict key
+        m_key = re.match(r"""\[\s*(['"])(.+?)\1\s*\]""", rest)
+        if m_key:
+            remainder = rest[m_key.end():]
+            if remainder:
+                subval, depth = self._build_from_rest(remainder, current_depth + 1)
+                return {m_key.group(2): subval}, depth
+            else:
+                return {m_key.group(2): 0}, current_depth + 1
+
+        raise ValueError(f"Cannot interpret structure from remainder={rest!r}")
 
     def __repr__(self):
         return self.to_address_string()
@@ -858,6 +971,9 @@ class RedvyprAddress:
     ) -> pydantic.json_schema.JsonSchemaValue:
         # Use the same schema that would be used for `str`
         return handler(core_schema.str_schema())
+
+
+
 
 
 
