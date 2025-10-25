@@ -686,7 +686,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         funcname = __name__ + '.metadata_clicked():'
         logger.debug(funcname)
         metadata_device = copy.deepcopy(self.device.statistics['metadata'])
-        deviceAddress = RedvyprAddress(devicename=self.device.name)
+        deviceAddress = RedvyprAddress(device=self.device.name)
         try:
             metadata_raw = metadata_device[deviceAddress.address_str]
         except:

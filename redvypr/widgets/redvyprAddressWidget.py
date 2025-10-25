@@ -31,12 +31,13 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
         self.redvypr_address_full = None
         self.redvypr_address_format = None
         if redvypr_address_str is None:
-            self.redvypr_address = RedvyprAddress()
+            self.redvypr_address_full = RedvyprAddress()
         elif isinstance(redvypr_address_str, RedvyprAddress):
             self.redvypr_address_full = redvypr_address_str
         elif isinstance(redvypr_address_str, str):
             self.redvypr_address_full = RedvyprAddress(redvypr_address_str)
 
+        #print("REDVYPR ADDRESSES",)
         self.layout = QtWidgets.QGridLayout(self)
         self.key_widget = QtWidgets.QWidget()
 
@@ -45,18 +46,20 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
         atmp = RedvyprAddress()
         self.address_entries = {}
         self.address_entries_check = {}
-        for i,k in enumerate(atmp.addr_entries_short_r.keys()):
-            entry_tmp = atmp.addr_entries_short_r[k]
+        for i,k in enumerate(atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY.keys()):
+            entry_tmp = atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k]
             keyedit = QtWidgets.QLineEdit()
             keyedit.editingFinished.connect(self.update_address_from_linedits)
             keycheck = QtWidgets.QCheckBox()
-            if entry_tmp in self.addrentries_for_str_format:
+            if k in self.addrentries_for_str_format:
                 keycheck.setChecked(True)
 
             keycheck.stateChanged.connect(self.update_address_from_linedits)
+            label = QtWidgets.QLabel(k)
+            label.setToolTip(atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k])
             self.address_entries[k] = keyedit
             self.address_entries_check[k] = keycheck
-            self.layout_keys.addWidget(QtWidgets.QLabel(k),i,0)
+            self.layout_keys.addWidget(label,i,0)
             self.layout_keys.addWidget(keyedit,i,1)
             self.layout_keys.addWidget(keycheck, i, 2)
 
@@ -79,12 +82,17 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
         self.setAddress(self.redvypr_address_full)
 
     def setAddress(self, address):
+        funcname = __name__ + '.setAddress():'
+        logger.debug(funcname)
         self.redvypr_address_full = address
         atmp = RedvyprAddress()
-        for k in atmp.addr_entries_short_r.keys():
-            entry_tmp = atmp.addr_entries_short_r[k]
+        for k in atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY.keys():
+            entry_tmp = atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k]
             keyentry = getattr(address,k)
-            self.address_entries[k].setText(keyentry)
+            if keyentry not in ("", None):
+                self.address_entries[k].blockSignals(True)
+                self.address_entries[k].setText(keyentry)
+                self.address_entries[k].blockSignals(False)
 
         self.update_address_from_linedits()
 
@@ -93,28 +101,32 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
         addr_input = {}
         addr_input_submit = {}
         addr_input_submit_format = ''
-        for k in atmp.addr_entries_short_r.keys():
+        for k in atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY.keys():
             entry_tmp = self.address_entries[k].text()
-            addr_input[k] = entry_tmp
-            if self.address_entries_check[k].isChecked():
-                addr_input_submit[k] = entry_tmp
-                addr_input_submit_format += '/' + atmp.addr_entries_short_r[k]
+            #print("Got text for {}:{}".format(k,entry_tmp))
+            longform = atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k]
+            if entry_tmp not in ("", None):
+                addr_input[longform] = entry_tmp
+                if self.address_entries_check[k].isChecked():
+                    addr_input_submit[longform] = entry_tmp
+                    addr_input_submit_format += atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k] + ','
 
+        addr_input_submit_format = addr_input_submit_format.rstrip(',')
         try:
             raddr = RedvyprAddress(**addr_input)
         except:
-            logger.warning('Could not update address')
+            logger.warning('Could not update address',exc_info=True)
             return
 
         try:
             raddr_submit = RedvyprAddress(**addr_input_submit)
         except:
-            logger.warning('Could not update address')
+            logger.warning('Could not update address',exc_info=True)
             return
 
         self.redvypr_address_full = raddr
-        self.fulladdr.setText(raddr.get_str())
-        submit_str = raddr_submit.get_str(addr_input_submit_format)
+        self.fulladdr.setText(raddr.to_address_string())
+        submit_str = raddr_submit.to_address_string(addr_input_submit_format)
         self.submitaddr.setText(submit_str)
         self.address_format = addr_input_submit_format
         self.redvypr_address = raddr_submit
@@ -133,7 +145,7 @@ class RedvyprAddressWidgetSimple(QtWidgets.QWidget):
     """ A widget that allows to enter an address
     """
     address_finished = QtCore.pyqtSignal(str)  # Signal notifying that the configuration has changed
-    def __init__(self, redvypr_address_str='/d:*'):
+    def __init__(self, redvypr_address_str='@'):
         """
         """
         super(QtWidgets.QWidget, self).__init__()
@@ -187,7 +199,7 @@ class AddressFilterwidget(QtWidgets.QWidget):
         """
         """
         self.redvypr = redvypr
-        self.filter_address = RedvyprAddress('*')
+        self.filter_address = RedvyprAddress()
         self.filter_on = False
         super(QtWidgets.QWidget, self).__init__()
         self.layout = QtWidgets.QGridLayout(self)
@@ -208,7 +220,7 @@ class AddressFilterwidget(QtWidgets.QWidget):
         self.btn_packetidfilter = QtWidgets.QPushButton('Packet Id')
         self.line_packetidfilter = QtWidgets.QLineEdit(self.filter_address.packetid)
         self.btn_devicefilter = QtWidgets.QPushButton('Device')
-        self.line_devicefilter = QtWidgets.QLineEdit(self.filter_address.devicename)
+        self.line_devicefilter = QtWidgets.QLineEdit(self.filter_address.device)
         self.btn_publishingdevicefilter = QtWidgets.QPushButton('Publishing device')
         self.line_publishingdevicefilter = QtWidgets.QLineEdit(self.filter_address.publisher)
         self.btn_hostfilter = QtWidgets.QPushButton('Redvypr host')
@@ -229,7 +241,7 @@ class AddressFilterwidget(QtWidgets.QWidget):
         for l in lineedits:
             l.editingFinished.connect(self.__update_address_from_lineedits)
 
-        self.line_filterstr = QtWidgets.QLineEdit(self.filter_address.get_str())
+        self.line_filterstr = QtWidgets.QLineEdit(self.filter_address.to_address_string())
 
         self.filter_layout.addRow(self.btn_datakeyfilter,self.line_datakeyfilter)
         self.filter_layout.addRow(self.btn_packetidfilter, self.line_packetidfilter)
@@ -274,7 +286,7 @@ class AddressFilterwidget(QtWidgets.QWidget):
             options = []
 
         # Append the wildcard
-        options.append('*')
+        options.append("@")
 
         for o in options:
             self.__filterChoiceList.addItem(str(o))
@@ -294,8 +306,8 @@ class AddressFilterwidget(QtWidgets.QWidget):
             optionslist = []
             for o in options:
                 optionslist.append(o.text())
-            if '*' in optionslist:
-                optionstr = '*'
+            if '@' in optionslist:
+                optionstr = '@'
             else:
                 optionstr ='{'
                 for o in optionslist:
@@ -314,12 +326,12 @@ class AddressFilterwidget(QtWidgets.QWidget):
         host = self.line_hostfilter.text()
         datakey = self.line_datakeyfilter.text()
         packetid = self.line_packetidfilter.text()
-        devicename = self.line_devicefilter.text()
+        device = self.line_devicefilter.text()
         publisher = self.line_publishingdevicefilter.text()
         self.filter_address = RedvyprAddress(datakey=datakey,
                                              packetid=packetid,
                                              hostname=host,
-                                             devicename=devicename,
+                                             device=device,
                                              publisher=publisher)
         #print('Update filteraddress',self.filter_address.get_str())
         self.line_filterstr.setText(self.filter_address.get_str())
@@ -357,14 +369,14 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
     apply = QtCore.pyqtSignal(dict)  # Signal notifying if the Apply button was clicked
     datakey_name_changed = QtCore.pyqtSignal(str)  # Signal notifying if the datakey has changed
 
-    def __init__(self, redvypr, device=None, devicename_highlight=None, datakey=None, deviceonly=False,
-                 devicelock=False, subscribed_only=True, showapplybutton=True, datastreamstring='',closeAfterApply=True,
+    def __init__(self, redvypr, device=None, device_highlight=None, datakey=None, deviceonly=False,
+                 devicelock=False, subscribed_only=True, showapplybutton=True, datastreamstring=None,closeAfterApply=True,
                  filter_include=[], datakeys_expanded=True, manual_address=None):
         """
         Args:
             redvypr:
             device:
-            devicename_highlight: The devicename that is highlighted in the list
+            device_highlight: The device that is highlighted in the list
             datakey:
             deviceonly:
             devicelock:
@@ -385,10 +397,10 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
         self.datastreamstring  = datastreamstring
         self.layout = QtWidgets.QGridLayout(self)
         self.deviceonly = deviceonly
-        if (devicename_highlight == None):
-            self.devicename_highlight = 'Na'
+        if (device_highlight == None):
+            self.device_highlight = 'Na'
         else:
-            self.devicename_highlight = devicename_highlight
+            self.device_highlight = device_highlight
 
         self.device = device
         flag_all_devices = (self.device == None) or (subscribed_only == False)  # All devices or only one device?
@@ -474,8 +486,8 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
             atmp = RedvyprAddress()
             all_check = {}
             #print('Hallo',atmp.__addr_entries_short_r)
-            for k in atmp.addr_entries_short_r.keys():
-                entry_tmp = atmp.addr_entries_short_r[k]
+            for k in atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY.keys():
+                entry_tmp = atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k]
                 check = QtWidgets.QCheckBox(k)
                 check.__item = item
                 if entry_tmp in addrentries:
@@ -503,6 +515,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         #print('Item',item.iskey)
         if(item.iskey): # If this is a datakey item
+            print(funcname + "Setting address to:{}".format(item.datakey_address))
             self.address_edit.setAddress(item.datakey_address)
             #print('Addresstype', addrtype)
             #print('Address',item.datakey_address)
@@ -584,7 +597,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                                         logger.debug('No filter match for {}'.format(devaddress_redvypr))
                                         continue
                                 addrtype = '/d/'
-                                devicename = devaddress_redvypr.devicename
+                                devicename = devaddress_redvypr.device
                                 itmf = QtWidgets.QTreeWidgetItem([devicename])
                                 itmf.setBackground(0, col)
                                 itmf.device = dev
@@ -734,7 +747,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                         continue
                     # Check for filter from filter widget
                     if self.filterWidget.filter_on:
-                        test_filter = dev.address not in self.filterWidget.filter_address
+                        test_filter = not(self.filterWidget.filter_address).matches(dev.address)
                         test_filter_sub = True
                         if test_filter == True:
                             # Test all devices of publisher in brute force and check if one of them fits
@@ -743,7 +756,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                                 datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
                                 #print('Datakeys', datakey_dict)
                                 devaddress_redvypr = RedvyprAddress(devaddress)
-                                if devaddress_redvypr in self.filterWidget.filter_address:
+                                if self.filterWidget.filter_address.matches(devaddress_redvypr):
                                     test_filter_sub = False
                                     #print('Filter match for ', devaddress_redvypr)
                                     continue
@@ -804,7 +817,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
         else:
             newlinestr = ''
         for k in addrentrylist:
-            addrformat += '/{' + k + '}' + newlinestr
+            addrformat += '{' + k + '}' + newlinestr
 
         if newline:  # remove the last newline
             addrformat = addrformat[:-1]
@@ -923,8 +936,8 @@ class RedvyprMultipleAddressesWidget(RedvyprAddressWidget):
         all_check = {}
         # print('Hallo',atmp.__addr_entries_short_r)
         addrentries = self.addrentries_for_str_format
-        for k in atmp.addr_entries_short_r.keys():
-            entry_tmp = atmp.addr_entries_short_r[k]
+        for k in atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY.keys():
+            entry_tmp = atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k]
             check = QtWidgets.QCheckBox(k)
             if entry_tmp in addrentries:
                 check.setChecked(True)
@@ -1328,7 +1341,7 @@ class datastreamQTreeWidget(QtWidgets.QWidget):
                                 if devaddress_redvypr not in self.filterWidget.filter_address:
                                     #print('No filter match for ', devaddress_redvypr)
                                     continue
-                            addrtype = '/d/i/'
+                            addrtype = 'd,i'
                             #print('Hallo', devaddress_redvypr, devaddress_redvypr.get_str())
                             devicestr = devaddress_redvypr.devicename
                             # TODO, this should be defined in the configuration of the widget

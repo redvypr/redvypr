@@ -61,7 +61,7 @@ class configLine(pydantic.BaseModel,extra='allow'):
     label: str = pydantic.Field(default='', description='The of the line')
     label_format: str = pydantic.Field(default='{NAME} {Y_ADDR} [{UNIT}]', description='The name of the line, this is shown in the legend, $y to use the redvypr address')
     x_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress('t'), description='The realtimedata address of the x-axis')
-    y_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress('/d:somedevice/k:data'), description='The realtimedata address of the x-axis')
+    y_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress('data@d:somedevice'), description='The realtimedata address of the x-axis')
     error_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''), description='The realtimedata address for an optional error band around the line')
     error_mode: typing.Literal['off', 'standard', 'factor', 'constant'] = pydantic.Field(default='off', description='')
     error_factor: float = pydantic.Field(default=1.1, description='')
@@ -913,8 +913,8 @@ class XYPlotWidget(QtWidgets.QFrame):
     def construct_labelname(self, line, labelformat=None):
         name = line.name
         unit = line.unit_y
-        x_addr = RedvyprAddress(line.x_addr).address_str_explicit
-        y_addr = RedvyprAddress(line.y_addr).address_str_explicit
+        x_addr = RedvyprAddress(line.x_addr).to_address_string()
+        y_addr = RedvyprAddress(line.y_addr).to_address_string()
         if labelformat == None:
             labelname = line.label_format
             labelname = labelname.format(NAME=name,UNIT=unit,X_ADDR=x_addr,Y_ADDR=y_addr)

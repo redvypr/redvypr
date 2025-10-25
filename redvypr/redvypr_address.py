@@ -66,24 +66,59 @@ class RedvyprAddress:
         "addr_localhost": "localhost.addr",
     }
 
+    LONGFORM_TO_SHORT_MAP = {
+        "packetid": "i",
+        "publisher": "p",
+        "device": "d",
+        "uuid": "u",
+        "hostname": "h",
+        "addr": "a",
+        "uuid_localhost": "ul",
+        "hostname_localhost": "hl",
+        "addr_localhost": "al",
+    }
+    LONGFORM_TO_SHORT_MAP_DATAKEY = {
+        "datakey": "k",
+        "packetid": "i",
+        "publisher": "p",
+        "device": "d",
+        "uuid": "u",
+        "hostname": "h",
+        "addr": "a",
+        "uuid_localhost": "ul",
+        "hostname_localhost": "hl",
+        "addr_localhost": "al",
+    }
+
     common_address_formats = ['k,i', 'k,d,i', 'k', 'd', 'i', 'p', 'p,d', 'p,d,i', 'u,a,h,d,',
                             'u,a,h,d,i', 'k,u,a,h,d', 'k,u,a,h,d,i', 'a,h,d', 'a,h,d,i', 'a,h,p']
 
-    _REV_PREFIX_MAP = {v: k for k, v in PREFIX_MAP.items()}
+    REV_PREFIX_MAP = {v: k for k, v in PREFIX_MAP.items()}
+    REV_LONGFORM_MAP = {v: k for k, v in LONGFORM_MAP.items()}
+    REV_LONGFORM_TO_SHORT_MAP = {v: k for k, v in LONGFORM_TO_SHORT_MAP.items()}
+    REV_LONGFORM_TO_SHORT_MAP_DATAKEY = {v: k for k, v in LONGFORM_TO_SHORT_MAP_DATAKEY.items()}
+    #LONGFORM_TO_SHORT_MAP = {}
+    #for k, v in LONGFORM_MAP.items():
+    #    LONGFORM_TO_SHORT_MAP[k] = REV_PREFIX_MAP[v]
+
+
+    #LONGFORM_TO_SHORT_MAP_DATAKEY = dict(LONGFORM_TO_SHORT_MAP)  # Kopie
+    #LONGFORM_TO_SHORT_MAP_DATAKEY["datakey"] = "k"
+
 
     def __init__(self,
                  expr: Union[str, "RedvyprAddress", dict, None] = None,
                  *,
                  datakey: Optional[str] = None,
                  packetid: Optional[Any] = None,
-                 devicename: Optional[Any] = None,
+                 device: Optional[Any] = None,
                  publisher: Optional[Any] = None,
                  hostname: Optional[Any] = None,
                  uuid: Optional[Any] = None,
                  addr: Optional[Any] = None,
-                 local_hostname: Optional[Any] = None,
-                 local_uuid: Optional[Any] = None,
-                 local_addr: Optional[Any] = None):
+                 hostname_localhost: Optional[Any] = None,
+                 uuid_localhost: Optional[Any] = None,
+                 addr_localhost: Optional[Any] = None):
         self.left_expr: Optional[str] = None
         self._rhs_ast: Optional[ast.Expression] = None
         self.filter_keys: Dict[str, list] = {}
@@ -133,14 +168,14 @@ class RedvyprAddress:
         # Keyword args
         kw_map = [
             ("packetid", packetid),
-            ("device", devicename),
+            ("device", device),
             ("publisher", publisher),
             ("hostname", hostname),
             ("uuid", uuid),
             ("address", addr),
-            ("localhost.hostname", local_hostname),
-            ("localhost.uuid", local_uuid),
-            ("localhost.addr", local_addr),
+            ("localhost.hostname", hostname_localhost),
+            ("localhost.uuid", uuid_localhost),
+            ("localhost.addr", addr_localhost),
         ]
         for red_key, val in kw_map:
             if val is not None:
@@ -521,7 +556,7 @@ class RedvyprAddress:
             val = node.args[1] if len(node.args) > 1 else None
 
             # Kurzpräfix verwenden
-            field_prefix = self._REV_PREFIX_MAP.get(key, key)
+            field_prefix = self.REV_PREFIX_MAP.get(key, key)
 
             if func_name == "_eq":
                 val_str = ast.literal_eval(val) if isinstance(val, ast.Constant) else ast.unparse(val)
@@ -637,7 +672,30 @@ class RedvyprAddress:
     def get_common_address_formats(self):
         return self.common_address_formats
 
+    def get_str_from_format(self, address_format='{k}@{u} and {a} and {h} and {d} and {p} and {i}'):
+        """ Returns a string of the redvypr address from a format string.
+        """
+        funcname = __name__ + '.get_str_from_format():'
+        vals = {
+            'u': self.uuid,
+            'a': self.addr,
+            'h': self.hostname,
+            'd': self.device,
+            'i': self.packetid,
+            'p': self.publisher,
+            'k': self.datakey,
+        }
+
+        # nur Werte übernehmen, die nicht None sind
+        filtered_vals = {k: f"{k}:{v}" for k, v in vals.items() if v is not None}
+
+        retstr = address_format.format(**filtered_vals)
+        return retstr
+
     def __getattr__(self, name):
+        if name in ('datakey','k'):
+            return self.left_expr
+
         cls = type(self)
         if name in cls.PREFIX_MAP:
             red_key = cls.PREFIX_MAP[name]

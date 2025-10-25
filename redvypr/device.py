@@ -482,7 +482,7 @@ class RedvyprDevice(QtCore.QObject):
         #    'addr'] + '::' + self.redvypr.hostinfo['uuid']
         # self.address = redvypr_address(self.address_str)
         #local_hostinfo = self.redvypr.hostinfo
-        self.address = RedvyprAddress(devicename=self.name,  publisher=self.name)
+        self.address = RedvyprAddress(device=self.name, publisher=self.name)
         self.address_str = str(self.address)
 
     def config_changed(self):
@@ -515,7 +515,7 @@ class RedvyprDevice(QtCore.QObject):
         Returns:
             str: datastream strong
         """
-        addr = RedvyprAddress(datakey = datakey, devicename=self.name, local_hostinfo=self.redvypr.hostinfo)
+        addr = RedvyprAddress(datakey = datakey, device=self.name, local_hostinfo=self.redvypr.hostinfo)
         return addr
 
     def subscribe_address(self, address, force=False):

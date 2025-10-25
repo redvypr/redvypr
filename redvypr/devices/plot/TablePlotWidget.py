@@ -30,15 +30,15 @@ logger.setLevel(logging.INFO)
 
 class ConfigTablePlot(pydantic.BaseModel):
     type: typing.Literal['TablePlot'] = pydantic.Field(default='TablePlot')
-    datastreams: typing.List[typing.Union[RedvyprAddress]] = pydantic.Field(default=[RedvyprAddress('/k:["_redvypr"]["t"]'),
-                                                                                     RedvyprAddress('/k:["_redvypr"]["numpacket"]'),
+    datastreams: typing.List[typing.Union[RedvyprAddress]] = pydantic.Field(default=[RedvyprAddress('["_redvypr"]["t"]'),
+                                                                                     RedvyprAddress('["_redvypr"]["numpacket"]'),
                                                                                      RedvyprAddress(
-                                                                                         '/k:["_redvypr"]["packetid"]'),
-                                                                                     RedvyprAddress('/k:sine_rand')
+                                                                                         '["_redvypr"]["packetid"]'),
+                                                                                     RedvyprAddress('sine_rand')
                                                                                      ],
                                                                                  description='The realtimedata datastreams to be displayed in the table')
-    formats: typing.Dict[str, str] =  pydantic.Field(default={'/k:["_redvypr"]["t"]':'ISO8601',
-                                                            '/k:sine_rand':'{:.2f}'})
+    formats: typing.Dict[str, str] =  pydantic.Field(default={'["_redvypr"]["t"]':'ISO8601',
+                                                            'sine_rand':'{:.2f}'})
     num_packets_show: int = pydantic.Field(default=2,
                                             description='The number of columns to show')
     expansion_level: int = pydantic.Field(default=100,

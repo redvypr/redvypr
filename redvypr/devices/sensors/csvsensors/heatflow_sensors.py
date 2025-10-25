@@ -1032,8 +1032,8 @@ class DHFSWidget(QtWidgets.QWidget):
                     avg_str = str(avg_s) + 's'
                     avg_datakey = 'HF_avg_{}'.format(avg_str)
                     std_datakey = 'HF_std_{}'.format(avg_str)
-                    raddress = RedvyprAddress(datakey=avg_datakey, devicename='{DHF_SIAVG_.*}')
-                    raddress_std = RedvyprAddress(datakey=std_datakey, devicename='{DHF_SIAVG_.*}')
+                    raddress = RedvyprAddress(datakey=avg_datakey, device='{DHF_SIAVG_.*}')
+                    raddress_std = RedvyprAddress(datakey=std_datakey, device='{DHF_SIAVG_.*}')
                     address = raddress.address_str
                     address_std = raddress_std.address_str
                     #'HF_avg_10s'
@@ -1051,8 +1051,8 @@ class DHFSWidget(QtWidgets.QWidget):
                         avg_str = str(avg_s) + 's'
                         avg_datakey = 'NTC{}_avg_{}'.format(NNTC,avg_str)
                         std_datakey = 'NTC{}_std_{}'.format(NNTC,avg_str)
-                        raddress = RedvyprAddress(datakey=avg_datakey, devicename='{DHF_SIAVG_.*}')
-                        raddress_std = RedvyprAddress(datakey=std_datakey, devicename='{DHF_SIAVG_.*}')
+                        raddress = RedvyprAddress(datakey=avg_datakey, device='{DHF_SIAVG_.*}')
+                        raddress_std = RedvyprAddress(datakey=std_datakey, device='{DHF_SIAVG_.*}')
                         address = raddress.address_str
                         address_std = raddress_std.address_str
                         plot_widget_NTC_SI_AVG.add_line(address, name=address, linewidth=1, error_addr=address_std)

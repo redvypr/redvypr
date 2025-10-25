@@ -255,7 +255,7 @@ class BinarySensor(Sensor):
         for key_input in self.datakey_metadata.keys():
             flag_metadata = True
             metadata = self.datakey_metadata[key_input]
-            metadata_address = RedvyprAddress(devicename=self.name,datakey=key_input)
+            metadata_address = RedvyprAddress(device=self.name, datakey=key_input)
             #data_packet = add_metadata2datapacket(data_packet, key_input, metadict=metadata)
             data_packet = add_metadata2datapacket(data_packet, address=metadata_address, metadict=metadata)
 
@@ -267,11 +267,11 @@ class BinarySensor(Sensor):
             unit_input = calibration.unit_input
             key_result = calibration.parameter_result
             if (key_input is not None) and (unit_input is not None):
-                metadata_address = RedvyprAddress(devicename=self.name, datakey=key_input)
+                metadata_address = RedvyprAddress(device=self.name, datakey=key_input)
                 data_packet = add_metadata2datapacket(data_packet, address=metadata_address, metadata=unit_input)
                 #data_packet = add_metadata2datapacket(data_packet, key_input, metadata=unit_input)
             if (key_result is not None) and (unit is not None):
-                metadata_address = RedvyprAddress(devicename=self.name, datakey=key_result)
+                metadata_address = RedvyprAddress(device=self.name, datakey=key_result)
                 data_packet = add_metadata2datapacket(data_packet, address=metadata_address, metadata=unit)
 
 
