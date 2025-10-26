@@ -167,6 +167,8 @@ class Device(RedvyprDevice):
         print("Adding calconfig",calconfig)
         cal_object = None
         channel = sensor.channel
+        if channel is None:
+            channel = ''
         calibrationtype = sensor.calibrationtype
 
         if calibrationtype.lower() == "ntc":
@@ -192,6 +194,7 @@ class Device(RedvyprDevice):
         #newsen = str(newsen)
         if sentype == 'datastream':
             logger.debug(funcname + ' Adding datastream of sensor {}'.format(newsen))
+            print("Newsen",newsen,'Datakey',newsen.datakey)
             sensor = CalibrationSensorAndConfigData(datastream=newsen, channel=newsen.datakey, inputtype=sentype,
                                                     calibrationtype=calibrationtype, calibration_config=None)
             self.custom_config.calibrationdata.append(sensor)
@@ -225,9 +228,11 @@ class Device(RedvyprDevice):
         for i,sdata in enumerate(self.custom_config.calibrationdata):
             if sdata.inputtype == 'datastream':
                 datastream = sdata.datastream
-                if len(datastream) > 0:
+                if len(datastream.to_address_string()) > 0:
                     logger.debug(funcname + 'subscribing to {}'.format(datastream))
                     self.subscribe_address(datastream)
+                else:
+                    logger.debug(funcname + ' nothing to subscribe for {}'.format(datastream))
 
     def rem_data(self, index):
         funcname = __name__ + '.rem_data()'
@@ -429,9 +434,10 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
             daddr = None
 
         if daddr is not None:
-            if rdata in daddr:
+            if daddr(data):
                 #print('Got data to update')
-                data_tmp = rdata[daddr.datakey]
+                #data_tmp = rdata[daddr.datakey]
+                data_tmp = daddr(data)
                 data_tmp_t = rdata['t']
                 if isinstance(data_tmp, numpy.ndarray):
                     data_final = numpy.mean(data_tmp)
@@ -466,7 +472,7 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
                 header = self.horizontalHeader()
                 header.setSectionResizeMode(ncols-1, QtWidgets.QHeaderView.Stretch)
                 if self.headerlabel is None:
-                    hlabel = "{}:".format(dindex) + daddr.get_str('/k')
+                    hlabel = "{}:".format(dindex) + daddr.to_address_string('k')
                     if self.device is not None:
                         metadata = self.device.get_metadata(daddr)
                         #print("Metadata of datapaket", rdata)
@@ -656,7 +662,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         for i,sdata in enumerate(self.device.custom_config.calibrationdata):
             if sdata.inputtype == 'datastream':
                 sensorNum = QtWidgets.QLabel(str(nsensors))
-                dstr = sdata.datastream.address_str
+                dstr = sdata.datastream.to_address_string()
                 sensorDatastream = QtWidgets.QLineEdit(dstr) # The subscribed datastream
                 sensorDatastream.setReadOnly(True)
                 sensorDatastream.datastream = sdata.datastream
@@ -1771,50 +1777,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
             #print('Set pen 3')
             p.plotWidget.addItem(vLineClick, ignoreBounds=True)
 
-    def set_datastream_legacy(self,i, d, sn='', unit='', sensortype='', parameter=''):
-        """
-        Set the datastream for sensor i
-        """
-        funcname = __name__ + '.set_datastream():'
-        logger.debug(funcname)
-        #print('Set datastream!!')
-        #print('i',i,'d',d,'sn',sn,'unit',unit,'sensortype',sensortype)
-        #print('--------Set datastream!!---------')
-        p = self.plot_widgets[i]
-        if True:
-            self.device.custom_config.calibrationdata[i].datastream = d
-            self.device.custom_config.calibrationdata[i].sn = sn
-            self.device.custom_config.calibrationdata[i].unit = unit
-            self.device.custom_config.calibrationdata[i].sensor_model = sensortype
-            self.device.custom_config.calibrationdata[i].channel = parameter
-            self.allsensornames[i] = d
-            p.datastream = d
-        if isinstance(p, XYPlotWidget.XYPlotWidget):
-            p.config.lines[0].y_addr = d
-            #print('line', p.config.lines[0])
-            p.set_title(d)
-            p.apply_config()
-        if True:
-            # I dont like this, should be replaced by the SensorData definitions
-            p.sn = sn
-            p.unit = unit
-            #print('p.unit', p.unit)
-            p.sensortype = sensortype
-            # Add devicename to the column
-            daddr = redvypr.RedvyprAddress(d)
-            senstr = daddr.get_str('/d/k/')
-            col = p.datatablecolumn
-            tmp = self.allsensornames[i]
-            try:
-                self.device.custom_config.name_ref_sensor = self.allsensornames[self.device.custom_config.ind_ref_sensor]
-            except:
-                logger.debug(funcname + ' Could not set ref sensor',exc_info=True)
-            self.sensorcols[i] = senstr
-            p.sensname_header = daddr.datakey
-            #self.datacolumns[col] = senstr
-            self.update_datatable()
-            self.device.deviceinitwidget.populateSensorInputWidgets()
-
     def update_data(self, data):
         funcname = __name__ + '.update():'
         logger.debug(funcname)
@@ -1825,7 +1787,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 if caldata.inputtype == 'datastream':
                     plot_widget = caldata.__plot_widget
                     #print('Checking widget',i,plot_widget.datastream)
-                    if data in plot_widget.datastream:
+                    if plot_widget.datastream(data):
                         #logger.debug('Updating plot {:d}')
                         plot_widget.update_plot(data)
                         try:
@@ -1880,7 +1842,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                             # print('p.unit', p.unit)
                             p.sensortype = sensortype
                             # Add devicename to the column
-                            senstr = datastream.get_str('/d/k/')
+                            senstr = datastream.to_address_string('k,d')
                             col = p.datatablecolumn
                             tmp = self.allsensornames[i]
                             self.sensorcols[i] = senstr

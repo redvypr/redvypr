@@ -905,6 +905,13 @@ class RedvyprAddress:
             'i': self.packetid,
             'p': self.publisher,
             'k': self.datakey,
+            'uuid': self.uuid,
+            'address': self.addr,
+            'hostname': self.hostname,
+            'device': self.device,
+            'packetid': self.packetid,
+            'publisher': self.publisher,
+            'datakey': self.datakey,
         }
 
         #filtered_vals = {k: f"{k}:{v}" for k, v in vals.items() if v is not None}

@@ -21,7 +21,7 @@ logger.setLevel(logging.DEBUG)
 
 class CalibrationData(pydantic.BaseModel):
     sn: str = pydantic.Field(default='')
-    channel: str = pydantic.Field(default='')
+    channel: typing.Optional[str] = pydantic.Field(default='')
     sensor_model: str = pydantic.Field(default='')
     unit: str = pydantic.Field(default='')
     sensortype: str = pydantic.Field(default='')

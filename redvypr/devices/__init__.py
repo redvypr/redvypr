@@ -4,7 +4,7 @@ from . import test
 #from . import fileio
 #from . import processing
 #from . import interface
-#from . import sensors
+from . import sensors
 
 redvypr_devicemodule = True
 

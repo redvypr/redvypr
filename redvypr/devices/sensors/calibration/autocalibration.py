@@ -82,10 +82,10 @@ class Autocalwidget(QtWidgets.QWidget):
         self.parameterinput = QtWidgets.QPushButton('Parameter')
         self.parameterinput.clicked.connect(self.parameterClicked)
         self.parameterinput_edit = QtWidgets.QLineEdit()
-        self.parameterinput_edit.setText(self.config.channel.get_str())
+        self.parameterinput_edit.setText(self.config.channel.to_address_string())
 
         self.parameter_steady_edit = QtWidgets.QLineEdit()
-        self.parameter_steady_edit.setText(self.config.channel_steady.get_str())
+        self.parameter_steady_edit.setText(self.config.channel_steady.to_address_string())
         self.parameter_steady_button = QtWidgets.QPushButton('Parameter steady')
         self.parameter_steady_button.clicked.connect(self.parameterClicked)
 
@@ -394,10 +394,10 @@ class Autocalwidget(QtWidgets.QWidget):
         address = config['datastream_address']
         if self.__pydantic_config_sender__ == self.parameterinput:
             self.config.channel = address
-            self.parameterinput_edit.setText(self.config.channel.get_str())
+            self.parameterinput_edit.setText(self.config.channel.to_address_string())
         elif self.__pydantic_config_sender__ == self.parameter_steady_button:
             self.config.channel_steady = address
-            self.parameter_steady_edit.setText(self.config.channel_steady.get_str())
+            self.parameter_steady_edit.setText(self.config.channel_steady.to_address_string())
 
     def update_data(self,data):
         funcname = __name__ + '.update_data():'
