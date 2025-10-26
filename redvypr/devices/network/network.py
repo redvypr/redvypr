@@ -25,6 +25,14 @@ import redvypr.packet_statistic as packet_statistic
 from redvypr.widgets.pydanticConfigWidget import dictQTreeWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard
 
+
+yaml.add_constructor(
+    u"tag:yaml.org,2002:python/name:builtins.NoneType",
+    lambda loader, suffix: type(None),
+    Loader=yaml.CUnsafeLoader,
+)
+
+
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.network_device')
 logger.setLevel(logging.INFO)
@@ -68,7 +76,7 @@ def yaml_dump(data):
     #return yaml.dump(data,default_flow_style=False)
     return yaml.dump(data,explicit_end=True,explicit_start=True)
 
-def raw_to_packet(datab, config, safe_load=True):
+def raw_to_packet(datab, config, safe_load=False):
     """
     Packs the received raw data into a packet that can be sent via the dataqueue
 
@@ -90,7 +98,8 @@ def raw_to_packet(datab, config, safe_load=True):
     if safe_load:
         loader = yaml.SafeLoader
     else:
-        loader = yaml.CLoader
+        #loader = yaml.CLoader
+        loader = yaml.CUnsafeLoader
     if(config['serialize'] == 'yaml'):
         i0 = datab.find(b'---\n')
         i1 = datab.rfind(b'...\n')+4
@@ -102,6 +111,7 @@ def raw_to_packet(datab, config, safe_load=True):
                 data = yaml.load(databs,Loader=loader)
             except Exception as e:
                 #print('data',databs)
+                print("Loader",loader)
                 logger.info(funcname + ': Could not decode message:',exc_info=True)
                 logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(config['datakey']))
                 data = None
@@ -241,21 +251,26 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
                 metadata_tmp = devinfo_all['metadata']
                 metadata_send['_metadata'] = {}
                 raddr_tmp = redvypr_address.RedvyprAddress(metadata_packet,datakey='REMOTE')
-                raddr_tmp_str = raddr_tmp.get_fullstr()
+                raddr_tmp_str = raddr_tmp.to_address_string()
                 raddr_tmp_str = raddr_tmp_str
                 metadata_send['_metadata'][raddr_tmp_str] = metadata_tmp
-                datab = packet_to_raw(metadata_send, config)
-                q = thread_queue_dict
-                q['queue'].put(datab)
-                q['bytes_sent'] += len(datab)
-                q['packets_published'] += 1
-
+                if False:
+                    print("\n\n\n")
+                    print("Metadata data packet", metadata_packet)
+                    print("Metadata address", raddr_tmp_str)
+                    print("\n\n\n")
+                    datab = packet_to_raw(metadata_send, config)
+                    q = thread_queue_dict
+                    q['queue'].put(datab)
+                    q['bytes_sent'] += len(datab)
+                    q['packets_published'] += 1
 
         except socket.timeout:
             pass
         except:
             logger.info(funcname + ':thread start: ',exc_info=True)
-        
+
+        # Check if packets are to be sent
         while(datainqueue.empty() == False):
             try:
                 data_dict = datainqueue.get(block=False)
@@ -275,14 +290,16 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
 
                     if (command == 'info'):
                         logger.debug('Metadata command')
+                        #print("\n\n\nMETADATAMETADATA\n\n\n")
                         if packet_address.packetid == 'metadata':
                             metadata_packet = data_dict
                             metadata_update = True
+                            #continue
 
                 npackets += 1
                 # Call the send_data function to create a binary sendable datastream
                 datab = packet_to_raw(data_dict,config)
-                #print('sending data',datab)
+                #print(funcname + 'sending data',datab)
                 for q in threadqueues:
                     q['queue'].put(datab)
                     q['bytes_sent'] += len(datab)
@@ -290,8 +307,6 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
 
             except Exception as e:
                 logger.debug(funcname + ':Exception:' + str(e))
-
-
 
         # Sending a status message
         if((time.time() - tstatus) > dt_status):
@@ -315,10 +330,7 @@ def start_tcp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
             except: # If the queue is full
                 pass                
 
-            
-        
-        
-            
+
 def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info=None):
     """ TCP receiving
     """
@@ -415,7 +427,7 @@ def start_tcp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
                 #    logger.debug('Metadata command')
                 #    if p_address.packetid == 'metadata':
 
-                #print(funcname + ' publishing packet',p)
+                #print(funcname + ' publishing packet\n\n',p)
                 dataqueue.put(p)
                 npackets += 1
 
@@ -461,9 +473,9 @@ def start_udp_send(dataqueue, datainqueue, statusqueue, config=None, device_info
         # Optional: reuse port if supported (multiple processes on same port)
         try:
             client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-            print("SO_REUSEPORT enabled")
+            logger.info(funcname + " SO_REUSEPORT enabled")
         except (AttributeError, OSError):
-            print("SO_REUSEPORT not available on this system")
+            logger.info(funcname + " SO_REUSEPORT not available on this system")
         #udp_addr = ""
         udp_addr = "255.255.255.255"
     else:
@@ -543,9 +555,9 @@ def start_udp_recv(dataqueue, datainqueue, statusqueue, config=None, device_info
         # Optional: reuse port if supported (multiple processes on same port)
         try:
             client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-            print("SO_REUSEPORT enabled")
+            logger.info("SO_REUSEPORT enabled")
         except (AttributeError, OSError):
-            print("SO_REUSEPORT not available on this system")
+            logger.info("SO_REUSEPORT not available on this system")
 
         #client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1) # https://stackoverflow.com/questions/13637121/so-reuseport-is-not-defined-on-windows-7
         client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # https://stackoverflow.com/questions/13637121/so-reuseport-is-not-defined-on-windows-7
@@ -676,42 +688,6 @@ class Device(RedvyprDevice):
         self.statustimer.timeout.connect(self.get_status)  # Add to the timer another update
         self.statustimer.start(1000)
 
-    def get_metadata(self, address, mode='merge'):
-        """
-        Gets the metadata of the redvypr address
-        :param address:
-        :return:
-        """
-        funcname = __name__ + '.get_metadata({},{}):'.format(str(address), str(mode))
-        self.logger.debug(funcname)
-        # Split the metadata into a remote and a local part
-        metadata_local = {'metadata':copy.deepcopy(self.statistics['metadata'])}
-        metadata_remote = {}
-        metadata_remote_query = {}
-        # Loop over all keys, check for REMOTE__ and loop over entries
-        for metadatakey in self.statistics['metadata']:
-            metadatakey_raddr = redvypr_address.RedvyprAddress(metadatakey)
-            if 'REMOTE' in metadatakey_raddr.key():
-                mtmp = metadata_local['metadata'].pop(metadatakey)
-                #print('Mtmp',mtmp)
-                #print('Mtmp keys', mtmp.keys())
-                #print('Mtmp metadatakey', metadatakey)
-                raddr_tmp = metadatakey_raddr
-                remote_address_str = raddr_tmp.get_fullstr()
-                metadata_remote[remote_address_str] = {}
-                metadata_remote[remote_address_str]['metadata'] = mtmp
-                self.logger.debug(funcname + 'Remote query ...')
-                metadata_remote_query_tmp = packet_statistic.get_metadata_deviceinfo_all(metadata_remote[remote_address_str], address, mode=mode, publisher_strict=False)
-                #print('Remote query',metadata_remote_query)
-                metadata_remote_query.update(metadata_remote_query_tmp)
-
-        metadata = packet_statistic.get_metadata(metadata_local, address, mode=mode)
-        #print('Metadata (local)', metadata)
-        if len(metadata.keys()) > 0:
-            metadata_remote_query.update(metadata)
-
-        return metadata_remote_query
-
     def check_and_fill_config(self):
         """ Fills a config, if essential entries are missing
         """
@@ -719,7 +695,6 @@ class Device(RedvyprDevice):
             self.custom_config.address
         except:
             self.configaddress = get_ip()
-
 
         if(self.custom_config.address == None):
             self.custom_config.address = get_ip()

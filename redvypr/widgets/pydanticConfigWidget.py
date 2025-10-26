@@ -1585,8 +1585,6 @@ class dictQTreeWidget(QtWidgets.QTreeWidget):
         self.resizeColumnToContents(0)
         self.blockSignals(False)
 
-
-
     def resize_view(self):
         pass
         #self.resizeColumnToContents(0)

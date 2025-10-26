@@ -139,14 +139,23 @@ class RedvyprAddress:
                 "host": {"hostname": "h", "addr": "a", "uuid": "u"},
                 "localhost": {"hostname": "hl", "addr": "al", "uuid": "ul"},
             }
+
             for k, v in redvypr.items():
-                if k in mapping:
-                    if isinstance(mapping[k], dict):
-                        for subk, prefix in mapping[k].items():
-                            if subk in v:
-                                self.add_filter(prefix, "eq", v[subk])
-                    else:
-                        self.add_filter(mapping[k], "eq", v)
+                if k not in mapping:
+                    continue  # skip unknown keys
+
+                map_val = mapping[k]
+
+                # Nested dicts (host, localhost)
+                if isinstance(map_val, dict) and isinstance(v, dict):
+                    for subk, prefix in map_val.items():
+                        val = v.get(subk)
+                        if val not in (None, ''):  # skip empty values
+                            self.add_filter(prefix, "eq", val)
+
+                # Single values (packetid, device, publisher)
+                elif v not in (None, ''):
+                    self.add_filter(map_val, "eq", v)
 
         # String input
         elif isinstance(expr, str):
@@ -175,7 +184,8 @@ class RedvyprAddress:
             ("localhost.addr", addr_localhost),
         ]
         for red_key, val in kw_map:
-            if val is not None:
+            if val not in (None, ''):  # skip empty values
+                self.delete_filter(red_key)
                 self.add_filter(red_key, "eq", val)
 
     # -------------------------
@@ -240,6 +250,9 @@ class RedvyprAddress:
         def repl_pref_eq(m):
             key, val = m.group(1), m.group(2)
             red = self.PREFIX_MAP.get(key, key)
+            py_val = self._lit_to_python(val)
+            if py_val == '' or py_val is None:
+                return ''  # Node gar nicht einfügen
             self.filter_keys.setdefault(red, []).append("eq")
             return f"_eq({repr(red)}, {self._lit_to_python(val)})"
 
@@ -249,8 +262,11 @@ class RedvyprAddress:
 
     def _lit_to_python(self, token: str) -> str:
         t = token.strip()
+        if t == '':
+            return None          # skip empty strings
         if re.fullmatch(r'-?\d+(\.\d*)?', t):
             return t
+
         return repr(t)
 
     def _list_to_python(self, content: str) -> str:
@@ -408,7 +424,15 @@ class RedvyprAddress:
     # Filter Manipulation (AST)
     # -------------------------
     def add_filter(self, key, op, value=None, flags=""):
-        red_key = self.PREFIX_MAP.get(key, key)
+        # Always normalize to SHORT key (u,d,i,p,...)
+        if key in self.PREFIX_MAP:  # already short: u,d,i,...
+            short = key
+        elif key in self.LONGFORM_MAP:  # long → short
+            short = self.LONGFORM_TO_SHORT_MAP[key]
+        else:
+            short = key  # fallback
+
+        red_key = self.PREFIX_MAP.get(short, short)
         self.filter_keys.setdefault(red_key, []).append(op)
         if op == "eq":
             expr = f"_eq({repr(red_key)}, {repr(value)})"
@@ -435,6 +459,66 @@ class RedvyprAddress:
                 self._rhs_ast = ast.parse(f"({ast.unparse(rhs_body)}) and {expr}", mode="eval")
 
     def delete_filter(self, key):
+        """
+        Remove all RHS filter expressions that refer to the given key
+        (long or short form).
+        Works robustly with nested AND/OR ASTs.
+        """
+
+        if not self._rhs_ast:
+            return
+
+        # translate to canonical prefix version (e.g. uuid -> u)
+        red_key = self.PREFIX_MAP.get(key, key)
+
+        def _remove(node):
+            # Remove matching _eq/_in/_regex/_exists on this key
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id in (
+                "_eq", "_in", "_regex", "_exists"):
+                    # First argument is the key
+                    try:
+                        k = ast.literal_eval(node.args[0])
+                        if k == red_key:
+                            return None  # remove this leaf
+                    except Exception:
+                        pass
+                return node
+
+            # Recurse on boolean ops
+            if isinstance(node, ast.BoolOp):
+                new_vals = []
+                for v in node.values:
+                    nv = _remove(v)
+                    if nv is not None:
+                        new_vals.append(nv)
+
+                # No children left → remove node
+                if not new_vals:
+                    return None
+                # Only one child → collapse node to child
+                if len(new_vals) == 1:
+                    return new_vals[0]
+
+                # Otherwise keep same BoolOp with filtered children
+                node.values = new_vals
+                return node
+
+            return node
+
+        # apply removal on AST root
+        new_root = _remove(self._rhs_ast.body)
+
+        # update or drop the AST
+        if new_root is None:
+            self._rhs_ast = None
+        else:
+            self._rhs_ast = ast.Expression(new_root)
+
+        # and update filter_keys bookkeeping
+        self.filter_keys.pop(red_key, None)
+
+    def delete_filter_legacy(self, key):
         if not self._rhs_ast:
             return
         red_key = self.PREFIX_MAP.get(key, key)
@@ -745,46 +829,6 @@ class RedvyprAddress:
                 return node
 
         filtered_ast = prune_ast(copy.deepcopy(self._rhs_ast)) if allowed_keys_set else self._rhs_ast
-        rhs_str = self._ast_to_rhs_string(filtered_ast) if filtered_ast else ""
-
-        if self.left_expr:
-            return f"{self.left_expr} @ {rhs_str}" if rhs_str else self.left_expr
-        return f"@{rhs_str}" if rhs_str else "@"
-
-    def to_address_string_legacy(self, keys: Union[str, List[str]] = None) -> str:
-        """Lesbare Version der Adresse, optional gefiltert nach Keys"""
-        if not self._rhs_ast:
-            return f"{self.left_expr}@" if self.left_expr else "@"
-
-        allowed_keys = None
-        if keys is not None:
-            if isinstance(keys, str):
-                allowed_keys = [k.strip() for k in keys.split(",") if k.strip()]
-            else:
-                allowed_keys = keys
-
-        # AST filtern nach Keys → Kopie benutzen, damit Original nicht verändert wird
-        import copy
-        def prune_ast(node: ast.AST) -> Optional[ast.AST]:
-            if isinstance(node, ast.Expression):
-                node.body = prune_ast(node.body)
-                return node if node.body else None
-            elif isinstance(node, ast.BoolOp):
-                new_vals = [prune_ast(v) for v in node.values]
-                new_vals = [v for v in new_vals if v is not None]
-                if not new_vals:
-                    return None
-                node.values = new_vals
-                return node
-            elif isinstance(node, ast.Call):
-                key = ast.literal_eval(node.args[0])
-                if not allowed_keys or key in [self.PREFIX_MAP.get(k, k) for k in allowed_keys]:
-                    return node
-                return None
-            else:
-                return node
-
-        filtered_ast = prune_ast(copy.deepcopy(self._rhs_ast)) if allowed_keys else self._rhs_ast
         rhs_str = self._ast_to_rhs_string(filtered_ast) if filtered_ast else ""
 
         if self.left_expr:

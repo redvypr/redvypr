@@ -192,19 +192,34 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     devicename_stat = str(raddr)
                     numtag = data['_redvypr']['tag'][hostinfo['uuid']]
                     if numtag < 2:  # Check if data packet fits with addr and its not recirculated again
-                        # Do statistics
-                        try:
-                            devicedict['statistics'], status_statistics = redvypr_packet_statistic.do_data_statistics(
-                                data, devicedict['statistics'], address_data=raddr)
-                            # print('Statistic status',status_statistics)
-                        except Exception as e:
-                            logger.debug(funcname + ':Statistics:', exc_info=True)
-
                         #
                         # Check for a command packet
                         #
-                        [command, comdata] = data_packets.check_for_command(data, add_data=True)
-                        if (command == 'reply'):  # status update
+                        [command, comdata] = data_packets.check_for_command(data,
+                                                                            add_data=True)
+
+                        # Do statistics if it's not a command
+                        if command is None:
+                            try:
+                                devicedict['statistics'], status_statistics = redvypr_packet_statistic.do_data_statistics(
+                                    data, devicedict['statistics'], address_data=raddr)
+                                # print('Statistic status',status_statistics)
+                            except Exception as e:
+                                logger.debug(funcname + ':Statistics:', exc_info=True)
+                        elif (command == 'info'):  # info command, typically a deviceinfo_all packet
+                            metadata_remote = data['deviceinfo_all']['metadata']
+                            # Updating the metadata
+                            for remote_device_name,remote_device_metadata in metadata_remote.items():
+                                # Change the publisher to the local device and the uuid if its not existing
+                                for addr_metadata, metadata_tmp in remote_device_metadata.items():
+                                    raddr_metadata = redvypr_address.RedvyprAddress(addr_metadata,publisher=raddr.publisher)
+                                    if raddr_metadata.uuid is None:
+                                        raddr_metadata.add_filter(key="uuid",op="eq",value=raddr.uuid)
+                                    rstr_tmp = raddr_metadata.to_address_string()
+                                    devicedict['statistics']['metadata'][rstr_tmp] = metadata_tmp
+
+                            status_statistics['metadata_changed'] = True
+                        elif (command == 'reply'):  # status update
                             device.distribute_data_replyqueue.put_nowait(data)
                         elif (command == 'device'):  # A command for the device
                             command = 'device.' + comdata
@@ -579,8 +594,8 @@ class Redvypr(QtCore.QObject):
             dinfo = {}
             for d in self.devices:
                 dev = d['device']
-                FLAG_publishes   =   (publishes == dev.publishes) or (publishes == None)
-                FLAG_subscribes  = (subscribes == dev.subscribes) or (subscribes == None)
+                FLAG_publishes = (publishes == dev.publishes) or (publishes == None)
+                FLAG_subscribes = (subscribes == dev.subscribes) or (subscribes == None)
                 if FLAG_publishes and FLAG_subscribes:
                     dinfo[dev.name] = copy.deepcopy(dev.statistics['device_redvypr'])
 

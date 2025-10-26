@@ -1421,7 +1421,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         tnow = time.time()
         ## Create a redvypr datapacket
         #rdata = redvypr.data_packets.Datapacket(data)
-        #print(funcname + 'got data',data,tnow)
+        print(funcname + 'got data',data,tnow)
         try:
             # Check if the device is to be plotted
             # Loop over all lines
@@ -1431,8 +1431,8 @@ class XYPlotWidget(QtWidgets.QFrame):
                     line.append(data)
                     line.__newdata = True
                 except:
-                    #self.logger.debug('Could not add data',exc_info=True)
-                    pass
+                    self.logger.debug('Could not add data',exc_info=True)
+                    #pass
 
                 if True:
                     # Show the unit in the legend, if wished by the user, and we have access to the device that can give us the metainformation

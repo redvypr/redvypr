@@ -18,6 +18,7 @@ from pyqtconsole.highlighter import format
 import redvypr.widgets.redvyprSubscribeWidget
 # Import redvypr specific stuff
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget, RedvyprdevicewidgetSimple, RedvyprdevicewidgetStartonly
+from redvypr.widgets.pydanticConfigWidget import dictQTreeWidget
 #from redvypr.gui import datastreamWidget # Do we need this?
 import redvypr.gui as gui
 from redvypr.version import version
@@ -1100,6 +1101,9 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         #toolAction = QtGui.QAction("&Choose Datastreams ", self)
         #toolAction.setStatusTip('Opens a window to choose datastreams from the available devices')
         #toolAction.triggered.connect(self.show_deviceselect)
+        metadataAction = QtGui.QAction("&Show deviceinfos", self)
+        metadataAction.setStatusTip('Opens a window that displays deviceinfos (metadata)')
+        metadataAction.triggered.connect(self.show_deviceinfos)
         consoleAction = QtGui.QAction("&Open console", self)
         consoleAction.triggered.connect(self.open_console)
         consoleAction.setShortcut("Ctrl+N")
@@ -1107,6 +1111,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         #IPAction.triggered.connect(self.open_ipwidget)
         #toolMenu.addAction(toolAction)
         #toolMenu.addAction(IPAction)
+        toolMenu.addAction(metadataAction)
         toolMenu.addAction(consoleAction)
 
         # Help and About menu
@@ -1119,6 +1124,12 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
 
         self.resize(width, height)
         self.show()
+
+    def show_deviceinfos(self):
+        deviceinfo_all = self.redvypr_widget.redvypr.get_deviceinfo()
+        metadata = deviceinfo_all['metadata']
+        self.metadata_widget = dictQTreeWidget(data=deviceinfo_all,dataname='deviceinfos')
+        self.metadata_widget.show()
 
     def open_console(self):
         self.redvypr_widget.open_console()

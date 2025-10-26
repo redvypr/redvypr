@@ -75,12 +75,15 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         A_sin = 10  # Amplitude
         data_sine = float(A_sin * np.sin(f_sin * time.time()))
         data_sine_packet = {'sine_rand': data_rand + data_sine, 'count': counter, 'sine': data_sine}
-        metadata = {'unit': 'nice sine unit'}
-        data_sine_packet = redvypr.data_packets.add_metadata2datapacket(data_sine_packet, datakey='sine',
-                                                            metadict=metadata)
-        metadata = {'unit': 'nice sine unit (random)'}
-        data_sine_packet = redvypr.data_packets.add_metadata2datapacket(data_sine_packet, datakey='sine_rand',
-                                                                        metadict=metadata)
+        #if counter == 0:
+        if True:
+            # Add metadata
+            metadata = {'unit': 'nice sine unit'}
+            data_sine_packet = redvypr.data_packets.add_metadata2datapacket(data_sine_packet, datakey='sine',
+                                                                metadict=metadata)
+            metadata = {'unit': 'nice sine unit (random)'}
+            data_sine_packet = redvypr.data_packets.add_metadata2datapacket(data_sine_packet, datakey='sine_rand',
+                                                                            metadict=metadata)
         dataqueue.put(data_sine_packet)
 
         time.sleep(config['delay_s'])

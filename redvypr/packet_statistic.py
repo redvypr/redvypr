@@ -12,9 +12,11 @@ logger = logging.getLogger('redvypr.packet_statistics')
 logger.setLevel(logging.INFO)
 
 # A dictionary for the device_redvypr entry in the statistics
-device_redvypr_statdict = {'_redvypr': {},'datakeys':[],'datakeys_expanded': {},'packets_received':0,'packets_published':0,'packets_droped':0,'_metadata':{},'_deviceinfo':{},'_keyinfo':{}}
+#device_redvypr_statdict = {'_redvypr': {},'datakeys':[],'datakeys_expanded': {},'packets_received':0,'packets_published':0,'packets_droped':0,'_metadata':{},'_deviceinfo':{},'_keyinfo':{}}
+device_redvypr_statdict = {'_redvypr': {},'datakeys':[],'datakeys_expanded': {},'packets_received':0,'packets_published':0,'packets_droped':0,'_metadata':{}}
 
 data_statistics_address_format = redvypr_standard_address_filter#["i","p","d","h","u","a"]
+
 
 def treat_datadict(data, devicename, hostinfo, numpacket, tpacket, devicemodulename=''):
     """ Treats a datadict received from a device and adds additional information from redvypr as hostinfo, numpackets etc.
@@ -65,6 +67,7 @@ def treat_datadict(data, devicename, hostinfo, numpacket, tpacket, devicemodulen
         data['_redvypr']['numpacket'] = numpacket
 
     return data
+
 def create_data_statistic_dict():
     statdict = {}
     statdict['inspect'] = True
@@ -143,20 +146,20 @@ def do_data_statistics(data, statdict, address_data = None):
 
     # Get datakeys from datapacket
     datakeys = get_keys_from_data(data)
-    # Get datakeys from info (potentially)
     try:
-        datakeys_info = get_keys_from_data(data['_keyinfo'])
-    except Exception as e:
-        datakeys_info = []
-
-    try:
-        datakeys_new = list(set(statdict['device_redvypr'][address_str]['datakeys'] + datakeys + datakeys_info))
+        datakeys_new = list(set(statdict['device_redvypr'][address_str]['datakeys'] + datakeys))
     except Exception as e:
         logger.exception(e)
         datakeys_new = datakeys
 
     statdict['device_redvypr'][address_str]['_redvypr'].update(data['_redvypr'])
     statdict['device_redvypr'][address_str]['datakeys'] = datakeys_new
+
+    # Deeper check, data types and expanded data types
+    rdata = data_packets.Datapacket(data)
+    datakeys_expanded = rdata.datakeys(expand=True)
+    #print('Datakeys expanded',datakeys_expanded)
+    statdict['device_redvypr'][address_str]['datakeys_expanded'].update(datakeys_expanded)
 
     # Metadata of the datapacket
     try:
@@ -180,24 +183,6 @@ def do_data_statistics(data, statdict, address_data = None):
                 pass
     except:
         pass
-
-    # TODO (0.9.2++): On the long term it shall be replaced by _metadata
-    try:
-        statdict['device_redvypr'][address_str]['_deviceinfo'].update(data['_deviceinfo'])
-    except:
-        pass
-
-    # TODO (0.9.2++): On the long term it shall be replaced by _metadata
-    try:
-        statdict['device_redvypr'][address_str]['_keyinfo'].update(data['_keyinfo'])
-    except:
-        pass
-
-    # Deeper check, data types and expanded data types
-    rdata = data_packets.Datapacket(data)
-    datakeys_expanded = rdata.datakeys(expand=True)
-    #print('Datakeys expanded',datakeys_expanded)
-    statdict['device_redvypr'][address_str]['datakeys_expanded'].update(datakeys_expanded)
 
     return statdict, status
 

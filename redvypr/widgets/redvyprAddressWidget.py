@@ -419,7 +419,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
         if self.datakeys_expanded == False:
             self.expandlevel = 0
         else:
-            self.expandlevel = 3
+            self.expandlevel = 30
 
         self.addrentries_show_for_publishing_devices = ['h','d','i']  # The entries that are shown for the devices
         self.devicelist = QtWidgets.QTreeWidget()  # List of available devices
@@ -648,11 +648,11 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
             #    datakey_construct_new = datakey_construct + '[' + json.dumps(data_new_key) + ']'
 
             datakey_construct_new = str(data_new_key)
-            #print('Hallo',data_new_key, data_new,type(data_new))
-            #print('Datakey construct new',datakey_construct_new)
+            print('Hallo',data_new_key, data_new,type(data_new))
+            print('Datakey construct new',datakey_construct_new)
             # Check if we are at an item level that is a datakey to be used as a datastream
             if isinstance(data_new, tuple) or (expandlevel >= self.expandlevel):
-                #print('Set',data_new,self.expandlevel)
+                print('Set',data_new,self.expandlevel)
                 datakey_construct_new = data_new[0]
                 addrstr_expanded = datakey_construct_new
                 if expandlevel >= self.expandlevel:
@@ -768,6 +768,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                     # Loop over all devices that have published through this device
                     if True:
                         devs_forwarded = dev.get_device_info()
+                        print("\n\nDeviceinfo:\n{}".format(devs_forwarded))
                         devkeys = list(devs_forwarded.keys())
                         devkeys.sort()
                         for devaddress in devkeys:
