@@ -105,25 +105,15 @@ class Datapacket(dict):
         self.address = RedvyprAddress(self)
 
     def __getitem__(self, key):
-        # Check if the key is a string but is an "eval" operator
+        # Check if the key is a string but is a RedvyprAddress
         if isinstance(key,str):
-            if key.startswith('[') and key.endswith(']'):
-                evalstr = 'self' + key
-                #data = self
-                data = eval(evalstr, None)
-                return data
-            else:
-                return super().__getitem__(key)
+            addr = RedvyprAddress(key)
+            data = addr(dict(self))
+            return data
         # Check if the key is a RedvyprAddress
         elif isinstance(key, RedvyprAddress):
-            datakey = key.datakey
-            if datakey.startswith('[') and datakey.endswith(']'):
-                evalstr = 'self' + datakey
-                #data = self
-                data = eval(evalstr, None)
-                return data
-            else:
-                return super().__getitem__(datakey)
+            data = key(dict(self))
+            return data
         else:
             return super().__getitem__(key)
 
@@ -269,11 +259,12 @@ class Datapacket(dict):
 
             for k in datakeys:
                 if isinstance(k, RedvyprAddress):
-                    print('data dict ', dict(self))
-                    print('Datakey expand ',k)
-                    print('Address call ', k(dict(self)))
-                    print('Address call list', list(k(dict(self)).keys()))
-                    keys += list(k(dict(self)).keys())
+                    #print('data dict ', dict(self))
+                    #print('Datakey expand ',k)
+                    #print('Address call ', k(dict(self)))
+                    #print('Address call list', list(k(dict(self)).keys()))
+                    #keys += list(k(dict(self)).keys())
+                    keys += [k.left_expr]
 
         for key_remove in redvypr_data_keys:
             try:

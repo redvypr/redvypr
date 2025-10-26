@@ -17,6 +17,7 @@ import redvypr.data_packets
 import redvypr.gui
 import redvypr.files as files
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
+from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidget
 from redvypr.redvypr_address import RedvyprAddress
 
 _logo_file = files.logo_file
@@ -678,13 +679,29 @@ class XYPlotWidget(QtWidgets.QFrame):
         funcname = __name__ + '.pyqtgraphLineAction()'
         self.logger.debug(funcname)
         config_mode = self.sender().text()
-        if 'address' in config_mode.lower():
+        if 'x-address' in config_mode.lower():
             #print('Address')
             linename = self.sender()._linename
             lineConfig = self.sender()._line
-            self.lineConfigWidget = redvypr.widgets.redvyprAddressWidget.RedvyprAddressWidget(redvypr=self.redvypr, device=self.device)
+            addrstr = RedvyprAddress(lineConfig.x_addr).to_address_string()
+            self.lineConfigWidget = RedvyprAddressWidget(redvypr=self.redvypr,
+                                                         device=self.device,
+                                                         datastreamstring=addrstr)
+            self.lineConfigWidget.setWindowTitle('X-Address for {}'.format(linename))
+            self.lineConfigWidget.apply.connect(self.apply_config_xaddress)
+            self.lineConfigWidget._line = self.sender()._line
+            self.lineConfigWidget.show()
+
+        elif 'y-address' in config_mode.lower():
+            # print('Address')
+            linename = self.sender()._linename
+            lineConfig = self.sender()._line
+            addrstr = RedvyprAddress(lineConfig.y_addr).to_address_string()
+            self.lineConfigWidget = RedvyprAddressWidget(redvypr=self.redvypr,
+                                                         datastreamstring=addrstr,
+                                                         device=self.device)
             self.lineConfigWidget.setWindowTitle('Y-Address for {}'.format(linename))
-            self.lineConfigWidget.apply.connect(self.apply_config_address)
+            self.lineConfigWidget.apply.connect(self.apply_config_yaddress)
             self.lineConfigWidget._line = self.sender()._line
             self.lineConfigWidget.show()
 
@@ -925,8 +942,19 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.logger.debug('Labelname {}'.format(labelname))
         return labelname
 
-    def apply_config_address(self,address_dict):
-        funcname = __name__ + '.apply_config_address():'
+    def apply_config_xaddress(self, address_dict):
+        funcname = __name__ + '.apply_config_xaddress():'
+        self.logger.debug(funcname)
+        line = self.sender()._line
+        # print('Line',line,line.y_addr)
+        # line.y_addr = address_dict['datastream_str']
+        # print('Address dict',address_dict)
+        line.x_addr = address_dict['datastream_address']
+        # print('Line config',line.confg)
+        self.apply_config()
+
+    def apply_config_yaddress(self, address_dict):
+        funcname = __name__ + '.apply_config_yaddress():'
         self.logger.debug(funcname)
         line = self.sender()._line
         #print('Line',line,line.y_addr)
@@ -1118,6 +1146,13 @@ class XYPlotWidget(QtWidgets.QFrame):
                 # Create the menu to config the line
                 #lineMenuline = QtWidgets.QMenu(linename_menu,self)
                 lineMenuline = QtWidgets.QMenu(linename_menu, self.lineMenu)
+
+                lineAction = lineMenuline.addAction('X-Address')
+                lineAction._line = line
+                lineAction._iline = iline
+                lineAction._linename = linename
+                lineAction.triggered.connect(self.pyqtgraphLineAction)
+
                 lineAction = lineMenuline.addAction('Y-Address')
                 lineAction._line = line
                 lineAction._iline = iline

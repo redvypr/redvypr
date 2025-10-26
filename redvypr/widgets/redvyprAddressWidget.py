@@ -372,7 +372,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
     datakey_name_changed = QtCore.pyqtSignal(str)  # Signal notifying if the datakey has changed
 
     def __init__(self, redvypr, device=None, device_highlight=None, datakey=None, deviceonly=False,
-                 devicelock=False, subscribed_only=True, showapplybutton=True, datastreamstring=None,closeAfterApply=True,
+                 devicelock=False, subscribed_only=True, showapplybutton=True, datastreamstring=None, closeAfterApply=True,
                  filter_include=[], datakeys_expanded=True, manual_address=None):
         """
         Args:

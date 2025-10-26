@@ -88,7 +88,14 @@ class TablePlotWidget(QtWidgets.QWidget):
         item = self.table.itemAt(position)
         # Create a menu specific to the item
         menu = QtWidgets.QMenu(self)
-        datastream = item.__datastream__
+        try:
+            datastream = item.__datastream__
+        except:
+            datastream = None
+
+        resizeTable = QtGui.QAction("Resize Table", self)
+        resizeTable.triggered.connect(lambda: self.table.resizeColumnsToContents())
+        menu.addAction(resizeTable)
         if item is not None and datastream is not None:
             # Create a xyplot action
             actionXyplot = QtGui.QAction("Plot XY", self)
@@ -101,7 +108,11 @@ class TablePlotWidget(QtWidgets.QWidget):
             actionAddformat.triggered.connect(lambda: self.edit_format(item))
             menu_formats.addAction(actionAddformat)
             for fa in self.config.formats:
-                if datastream in RedvyprAddress(fa):
+                try:
+                    data_tmp = RedvyprAddress(fa)(datastream)
+                except:
+                    data_tmp = None
+                if data_tmp is not None:
                     format_tmp = self.config.formats[fa]
                     formats.append(format_tmp)
                     menu_format_datastream = menu_formats.addMenu(fa)
@@ -244,35 +255,10 @@ class TablePlotWidget(QtWidgets.QWidget):
             if not d.matches(data):
                 return
 
-        # Check if the table has to be resized
-        if False:
-            if self.col_packets_showed >= self.config.num_packets_show:
-                #print('Reset')
-                if self.table.columnCount() == 2:
-                    self.reset_table()
-                counter = self.table.item(0,0).__counter__
-                counter1 = self.table.item(0, 1).__counter__
-                if counter == counter1:
-                    self.table.removeColumn(1)
-                    self.col_packets_showed -= 1
-                    self.col_current -= 1
-
-                counter = self.table.item(self.numrows_header, 0).__counter__
-                counter1 = self.table.item(self.numrows_header, 1).__counter__
-                if counter != counter1:
-                    self.table.removeColumn(0)
-                    self.col_current -= 1
-
-                numrows_tmp = 0
-                for icol_tmp in range(self.table.columnCount()):
-                    item = self.table.item(0,icol_tmp)
-                    numrows_tmp = max(item.__numrows__,numrows_tmp)
-
-                self.table.setRowCount(numrows_tmp+self.numrows_header)
-
         if self.col_packets_showed >= self.config.num_packets_show:
             # print('Reset')
             if self.table.columnCount() == 2:
+                print("Resetting")
                 self.reset_table()
             counter = self.table.item(0, 0).__counter__
             counter1 = self.table.item(0, 1).__counter__
@@ -395,7 +381,13 @@ class TablePlotWidget(QtWidgets.QWidget):
                     format_show = '{}'
                     for format_addressstr in self.config.formats:
                         format_address = RedvyprAddress(format_addressstr)
-                        if datastream_show_tmp in format_address:
+                        #print("format_address",format_address)
+                        #print("datastream_show_tmp",datastream_show_tmp)
+                        try:
+                            data_tmp = format_address(datastream_show_tmp)
+                        except:
+                            data_tmp = None
+                        if data_tmp is not None:
                             format_show = self.config.formats[format_addressstr]
                             break
 
@@ -421,6 +413,7 @@ class TablePlotWidget(QtWidgets.QWidget):
                 item.__datakey__ = datakey_show_tmp
                 self.table.setItem(irow+self.numrows_header, icol, item)
 
+        # TODO, here should be better a user resize be possible
         self.table.resizeColumnsToContents()
 
 

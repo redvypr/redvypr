@@ -227,7 +227,7 @@ class RedvyprDeviceWidget(redvypr.widgets.standard_device_widgets.Redvyprdevicew
     def update_plot(self, data):
         for w in self.plot_widgets:
             try:
-                print('Updating',data)
+                #print('Updating',data)
                 print(w,self.plot_widgets)
                 self.plot_widgets[w].update_plot(data)
             except:
