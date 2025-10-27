@@ -404,7 +404,7 @@ class RedvyprAddress:
         except FilterFieldMissing:
             return False
 
-    def __call__(self, packet):
+    def __call__(self, packet, strict=True):
         if isinstance(packet, RedvyprAddress):
             packet = packet.to_redvypr_dict()
         if self.left_expr is None and self._rhs_ast is None:
@@ -416,7 +416,10 @@ class RedvyprAddress:
         if self.left_expr:
             top_key = self.left_expr.split("[")[0].split(".")[0]
             if top_key not in packet:
-                raise KeyError(f"Key {top_key!r} missing in packet")
+                if strict:
+                    raise KeyError(f"Key {top_key!r} missing in packet")
+                else:
+                    return None
             return eval(self.left_expr, SAFE_GLOBALS, locals_map)
         return packet
 

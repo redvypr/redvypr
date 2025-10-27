@@ -1787,7 +1787,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 if caldata.inputtype == 'datastream':
                     plot_widget = caldata.__plot_widget
                     #print('Checking widget',i,plot_widget.datastream)
-                    if plot_widget.datastream(data):
+                    if plot_widget.datastream(data, strict=False):
                         #logger.debug('Updating plot {:d}')
                         plot_widget.update_plot(data)
                         try:
