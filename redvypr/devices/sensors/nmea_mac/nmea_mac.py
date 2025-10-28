@@ -1,4 +1,5 @@
 import copy
+import numpy as np
 import datetime
 import pytz
 import logging
@@ -90,6 +91,11 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                                                                 datakey='R',
                                                                                 metakey='sn',
                                                                                 metadata=ppub['mac'])
+                            # Create a time vector that is of the same length as the parsed data
+                            dt = ppub['ts'][-1] - ppub['ts'][0]
+                            torig = ppub['t']
+                            t = np.asarray(ppub['ts']) - ppub['ts'][0] + torig - dt
+                            ppub['t'] = t.tolist()
                         dataqueue.put(ppub)
 
 
