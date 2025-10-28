@@ -412,7 +412,10 @@ class RedvyprAddress:
         SAFE_GLOBALS = {"__builtins__": None, "True": True, "False": False, "None": None}
         locals_map = dict(packet)
         if self._rhs_ast and not self.matches(packet):
-            raise FilterNoMatch("Packet did not match filter")
+            if strict:
+                raise FilterNoMatch("Packet did not match filter")
+            else:
+                return None
         if self.left_expr:
             top_key = self.left_expr.split("[")[0].split(".")[0]
             if top_key not in packet:
@@ -695,7 +698,7 @@ class RedvyprAddress:
         rest = expr[m.end():]
 
         if not rest:
-            return {top: 0}
+            return {top: True}
 
         value, depth = self._build_from_rest(rest, current_depth=1)
         return {top: value}
@@ -705,7 +708,7 @@ class RedvyprAddress:
 
         # slicing
         if re.match(r"\[\s*(-?\d*)?\s*:\s*(-?\d*)?\s*(:\s*(-?\d*)?)?\s*\]", rest):
-            return [1, 2, 3, 4, 5], current_depth + 1
+            return [True, True, True, True, True], current_depth + 1
 
         # list index
         m_index = re.match(r"\[\s*(-?\d+)\s*\]", rest)
