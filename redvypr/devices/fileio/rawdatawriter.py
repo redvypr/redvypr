@@ -262,7 +262,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 logger.debug(funcname + ':Exception:' + str(e))
                 #print(data)
 
-
 #
 #
 # The init widget

@@ -44,7 +44,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
     zlib: bool = pydantic.Field(default=True, description='Flag if zlib compression shall be used for the netCDF data')
     size_newfile:int = pydantic.Field(default=500,description='Size of object in RAM after which a new file is created')
     size_newfile_unit: typing.Literal['none','bytes','kB','MB'] = pydantic.Field(default='MB')
-    datafolder:str = pydantic.Field(default='./',description='Folder the data is saved to')
+    datafolder:str = pydantic.Field(default='.',description='Folder the data is saved to')
     fileextension:str= pydantic.Field(default='nc',description='File extension, if empty not used')
     fileprefix:str= pydantic.Field(default='redvypr',description='If empty not used')
     filepostfix:str= pydantic.Field(default='netcdflogger',description='If empty not used')
@@ -103,8 +103,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     count = 0
     if True:
         try:
-            dtneworig  = config['dt_newfile']
-            dtunit     = config['dt_newfile_unit']
+            dtneworig = config['dt_newfile']
+            dtunit = config['dt_newfile_unit']
             if(dtunit.lower() == 'seconds'):
                 dtfac = 1.0
             elif(dtunit.lower() == 'hours'):
@@ -114,14 +114,14 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             else:
                 dtfac = 0
                 
-            dtnews     = dtneworig * dtfac
+            dtnews = dtneworig * dtfac
             logger_start.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
-        except Exception as e:
-            logger.exception(e)
+        except:
+            logger.debug("Configuration incomplete",exc_info=True)
             dtnews = 0
             
         try:
-            sizeneworig  = config['size_newfile']
+            sizeneworig = config['size_newfile']
             sizeunit = config['size_newfile_unit']
             if(sizeunit.lower() == 'kb'):
                 sizefac = 1000.0
@@ -132,10 +132,10 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             else:
                 sizefac = 0
                 
-            sizenewb     = sizeneworig * sizefac # Size in bytes
+            sizenewb = sizeneworig * sizefac # Size in bytes
             logger_start.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
-        except Exception as e:
-            logger.exception(e)
+        except:
+            logger.debug("Configuration incomplete", exc_info=True)
             sizenewb = 0  # Size in bytes
             
             
@@ -206,7 +206,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                                 vars_updated = []
 
                     # Ignore some packages
-                    if data in redvypr_address.RedvyprAddress(redvypr.metadata_address):
+                    if redvypr_address.RedvyprAddress(redvypr.redvypr_address.metadata_address)(data,strict=False):
                         logger_start.debug('Ignoring metadata packet')
                         continue
 
@@ -215,22 +215,20 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 #packet_address = redvypr.RedvyprAddress(data)
                 # Check if host uuid is the same as local uuid
                 if packet_address.uuid == device_info['hostinfo']['uuid']:
-                    print('Local')
-                    print('Local')
-                    print('Local')
+                    pass
                 else:
-                    print('Packet data', data)
-                    print('Packet address', packet_address.get_fullstr())
-                    print('Packet address hostname',packet_address.hostname)
+                    #print('Packet data', data)
+                    #print('Packet address', packet_address.get_fullstr())
+                    #print('Packet address hostname',packet_address.hostname)
                     hostname = packet_address.hostname + '__UUID__' + packet_address.uuid
-                    print('Hostname',hostname)
-                    print('Remote')
-                    print('Remote')
-                    print('Remote')
-                address_format = '/h/p/d/'
-                packet_address_str = packet_address.get_str(address_format)
+                    #print('Hostname',hostname)
+                    #print('Remote')
+                    #print('Remote')
+                    #print('Remote')
+                address_format = 'h,p,d'
+                packet_address_str = packet_address.to_address_string(address_format)
                 publisher = packet_address.publisher
-                devicename = packet_address.devicename
+                devicename = packet_address.device
                 # This is the group structure
                 # Data is written to the group found in
                 # ncgroup = groups[hostname][publisher][devicename]
@@ -253,7 +251,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 except:
                     logger_start.debug('Creating device {}'.format(devicename))
                     nc_device = nc[hostname][publisher].createGroup(devicename)
-                    nc_device.redvypr_address = redvypr_address.RedvyprAddress(data).get_fullstr()
+                    nc_device.redvypr_address = redvypr_address.RedvyprAddress(data).to_address_string()
                     # Add time variable
                     logger.debug('Creating time dimension')
                     nc_device.createDimension('time',None)
@@ -265,8 +263,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     try:
                         if deviceinfo_all is not None and not (var in vars_updated):
                             raddress_tmp = redvypr_address.RedvyprAddress(data)
-                            raddress_tmp_str = raddress_tmp.get_str('/h/d/i')
-                            raddress_tmp_str_full = raddress_tmp.get_fullstr()
+                            #raddress_tmp_str = raddress_tmp.get_str('/h/d/i')
+                            #raddress_tmp_str_full = raddress_tmp.get_fullstr()
                             metadata_tmp = packet_statistics.get_metadata_deviceinfo_all(deviceinfo_all, raddress_tmp)
                             # print('Metadata tmp', raddress_tmp, metadata_tmp)
                             # device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
@@ -296,9 +294,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     # Write time
                     packets_written += 1
                     for k in datakeys:
-                        print('-----')
-                        print('Datakeys', datakeys)
-                        print('Datakey',k)
+                        #print('-----')
+                        #print('Datakeys', datakeys)
+                        #print('Datakey',k)
                         try:
                             var = nc_device.variables[k]
                         except: # Create variable
@@ -351,8 +349,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         try:
                             if deviceinfo_all is not None and not(var in vars_updated):
                                 raddress_tmp = redvypr_address.RedvyprAddress(data, datakey=k)
-                                raddress_tmp_str = raddress_tmp.get_str('/h/d/i/k')
-                                raddress_tmp_str_full = raddress_tmp.get_fullstr()
+                                #raddress_tmp_str = raddress_tmp.get_str('/h/d/i/k')
+                                #raddress_tmp_str_full = raddress_tmp.get_fullstr()
                                 metadata_tmp = packet_statistics.get_metadata_deviceinfo_all(deviceinfo_all, raddress_tmp)
                                 # print('Metadata tmp', raddress_tmp, metadata_tmp)
                                 # device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
