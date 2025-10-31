@@ -653,7 +653,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.datastreamtable.clear()
         self.datastreamtable.setRowCount(len(datastreams_subscribed))
         for i,d in enumerate(datastreams_subscribed):
-            dadr = redvypr_address(d)
+            dadr = str(redvypr_address.RedvyprAddress(d))
             item = QtWidgets.QTableWidgetItem(d)
             self.datastreamtable.setItem(i,4,item)
 

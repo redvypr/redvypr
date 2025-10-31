@@ -1073,7 +1073,7 @@ class RedvyprDevice(QtCore.QObject):
         #print(' B subscribed addresses',self.subscribed_addresses)
         for subaddr in self.subscribed_addresses:
             for addr in reversed(raddresses):
-                if subaddr in addr:
+                if addr(subaddr,strict=False):
                     subaddresses.append(addr)
                     raddresses.remove(addr)
 
