@@ -1,5 +1,5 @@
 from . import rawdatawriter
-from . import rawdatareplay
+from .rawdatawriter import rawdatareplay
 from . import fileread
 from . import csvwriter
 from . import xlsxwriter

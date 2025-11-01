@@ -1,3 +1,6 @@
+- 0.9.??:
+       - xlsxwriter bugs fixed
+       - fileio devices resorted
 - 0.9.14:
        - RedvyprAddress syntax changed
        - calibration device improved

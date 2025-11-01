@@ -265,7 +265,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             data_stat = {'_deviceinfo': {}}
             data_stat['_deviceinfo']['filename'] = filename
             data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
-            data_stat['_deviceinfo']['created'] = time.time()
+            data_stat['_deviceinfo']['created'] = tfile
             data_stat['_deviceinfo']['bytes_written'] = bytes_written
             data_stat['_deviceinfo']['packets_written'] = packets_written
             statusqueue.put(data_stat)
@@ -288,6 +288,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                     data_stat['_deviceinfo']['filename_full'] = os.path.realpath(
                         filename)
                     data_stat['_deviceinfo']['closed'] = time.time()
+                    data_stat['_deviceinfo']['created'] = tfile
                     data_stat['_deviceinfo']['bytes_written'] = bytes_written
                     data_stat['_deviceinfo']['packets_written'] = packets_written
                     statusqueue.put(data_stat)
@@ -319,7 +320,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                 data_stat = {'_deviceinfo': {}}
                 data_stat['_deviceinfo']['filename'] = filename
                 data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
-                data_stat['_deviceinfo']['created'] = time.time()
+                data_stat['_deviceinfo']['created'] = tfile
                 data_stat['_deviceinfo']['bytes_written'] = bytes_written
                 data_stat['_deviceinfo']['packets_written'] = packets_written
                 statusqueue.put(data_stat)
@@ -335,10 +336,10 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                 data_stat['_deviceinfo']['filename'] = filename
                 data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
                 data_stat['_deviceinfo']['closed'] = time.time()
+                data_stat['_deviceinfo']['created'] = tfile
                 data_stat['_deviceinfo']['bytes_written'] = bytes_written
                 data_stat['_deviceinfo']['packets_written'] = packets_written
                 statusqueue.put(data_stat)
-
 
         time.sleep(0.1)
 
@@ -652,11 +653,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.filanembtn = QtWidgets.QPushButton("Choose file")
 
         self.inlist = QtWidgets.QTableWidget()
-        self.inlist.setColumnCount(4)
         self.inlist.setRowCount(0)
         self.inlist.setSortingEnabled(True)
         
-        self.__filelistheader__ = ['Name','Size','created','Packets saved']
+        self.__filelistheader__ = ['Name','Size','Packets saved','Created','Status']
+        self.inlist.setColumnCount(len(self.__filelistheader__))
         self.inlist.setHorizontalHeaderLabels(self.__filelistheader__)
 
         layout.addWidget(self.config_widget,0,0,1,-1)
@@ -740,20 +741,35 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     self.file_statistics['filenames_created'].append(filename)
                     self.inlist.insertRow(0)
 
+                #['Name', 'Size', 'Packets saved', 'Created', 'Status']
+                # Name
                 item = QtWidgets.QTableWidgetItem(filename)  # Packets sent
                 self.inlist.setItem(irow, 0, item)
+                # Size
                 item = QtWidgets.QTableWidgetItem(
                     str(statusdata['bytes_written']))  # Packets sent
                 self.inlist.setItem(irow, 1, item)
-
+                # Packets written
+                item = QtWidgets.QTableWidgetItem(
+                    str(statusdata['packets_written']))  # Packets sent
+                self.inlist.setItem(irow, 2, item)
+                self.inlist.resizeColumnsToContents()
+                # Created
                 timestamp = datetime.fromtimestamp(statusdata['created'],
                                                    tz=timezone.utc).isoformat()
                 item = QtWidgets.QTableWidgetItem(timestamp)
-                self.inlist.setItem(irow, 2, item)
-                item = QtWidgets.QTableWidgetItem(
-                    str(statusdata['packets_written']))  # Packets sent
                 self.inlist.setItem(irow, 3, item)
-                self.inlist.resizeColumnsToContents()
+                # Status
+                try:
+                    timestamp_closed = datetime.fromtimestamp(statusdata['closed'],
+                    tz=timezone.utc).isoformat()
+                    timestamp_closed = 'closed ({})'.format(timestamp_closed)
+                except:
+                    timestamp_closed = 'open'
+
+                item = QtWidgets.QTableWidgetItem(timestamp_closed)
+                self.inlist.setItem(irow, 4, item)
+
             except:
                 logger.info('Problem',exc_info=True)
                 break

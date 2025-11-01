@@ -122,12 +122,11 @@ def write_metadata(workbook, all_worksheets, datakey, data, deviceinfo_all, devi
     funcname = 'write_metadata():'
     logger.debug(funcname)
     raddress_tmp = redvypr_address.RedvyprAddress(data, datakey=datakey)
-    raddress_tmp_str = raddress_tmp.get_str('/h/d/i/k')
-    raddress_tmp_str_full = raddress_tmp.get_fullstr()
+    raddress_tmp_str = raddress_tmp.to_address_string('h,d,i,k')
     metadata_tmp = packet_statistics.get_metadata_deviceinfo_all(deviceinfo_all, raddress_tmp)
     header_rows = [(row_host, raddress_tmp.hostname, 'hostname')]
     header_rows.append((row_uuid, raddress_tmp.uuid, 'uuid'))
-    header_rows.append((row_device, raddress_tmp.devicename, 'devicename'))
+    header_rows.append((row_device, raddress_tmp.device, 'device'))
     header_rows.append((row_publisher, raddress_tmp.publisher, 'publisher'))
     header_rows.append((row_packetid, raddress_tmp.packetid, 'packetid'))
     header_rows.append((row_datakey, datakey, 'datakey'))
@@ -191,7 +190,10 @@ def write_metadata(workbook, all_worksheets, datakey, data, deviceinfo_all, devi
 
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
-    logger.debug(funcname + ':Opening writing:')
+    logger_start = logging.getLogger('redvypr.device.xlsxwriter.thread')
+    logger_start.setLevel(logging.DEBUG)
+    funcname = __name__ + '.start()'
+    logger_start.debug(funcname + ':Opening writing:')
     #print('Config',config)
     data_write_to_file = [] # List of columns to be written to file
     count = 0
@@ -211,9 +213,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 dtfac = 0
                 
             dtnews = dtneworig * dtfac
-            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
+            logger_start.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
         except:
-            logger.warning(funcname + 'Could not start',exc_info=True)
+            logger_start.warning(funcname + 'Could not start',exc_info=True)
             dtnews = 0
             
         try:
@@ -229,9 +231,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 sizefac = 0
                 
             sizenewb = sizeneworig * sizefac # Size in bytes
-            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
-        except Exception as e:
-            logger.exception(e)
+            logger_start.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
+        except:
+            logger_start.debug("Could not open new file",exc_info=True)
             sizenewb = 0  # Size in bytes
             
     try:
@@ -284,26 +286,26 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 if (data is not None):
                     [command,comdata] = data_packets.check_for_command(data, thread_uuid=device_info['thread_uuid'], add_data=True)
                     if (command is not None):
-                        logger.debug('Command: {:s}'.format(str(command)))
+                        logger_start.debug('Command: {:s}'.format(str(command)))
                         if(command == 'stop'):
-                            logger.debug('Stop command')
+                            logger_start.debug('Stop command')
                             FLAG_RUN = False
                             break
 
                         if (command == 'info'):
-                            logger.debug('Metadata command')
+                            logger_start.debug('Metadata command')
                             if packet_address.packetid == 'metadata':
                                 deviceinfo_all = data['deviceinfo_all']
 
                 #statistics = data_packets.do_data_statistics(data,statistics)
-                address_format = '/h/p/d/'
-                packet_address_str = packet_address.get_str(address_format)
+                address_format = 'h,p,d'
+                packet_address_str = packet_address.to_address_string(address_format)
                 colindex_time = 1
                 colindex_numpacket = 0
                 coloffset = colindex_time + 1
                 # Ignore some packages
-                if data in redvypr_address.RedvyprAddress(redvypr.metadata_address):
-                    logger.debug('Ignoring metadata packet')
+                if redvypr_address.RedvyprAddress(redvypr.metadata_address)(data,strict=False):
+                    logger_start.debug('Ignoring metadata packet')
                     continue
 
                 try:
@@ -311,7 +313,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 except:
                     numworksheet += 1
                     numworksheet_offset = 2
-                    devicename = packet_address.devicename.replace('/','_').replace('[','_').replace(']','_').replace('\\','_').replace('*','_').replace(':','_')
+                    devicename = packet_address.device.replace('/','_').replace('[','_').replace(']','_').replace('\\','_').replace('*','_').replace(':','_')
                     packet_address_str_xlsx = '{:02d}_{}'.format(numworksheet,devicename)
                     if len(packet_address_str_xlsx) > 31:
                         packet_address_str_xlsx = packet_address_str_xlsx[0:31]
@@ -320,7 +322,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     worksheet_summary.write(numworksheet_offset, 1, 'worksheet')
                     worksheet_summary.write(numworksheet + numworksheet_offset, 0, packet_address_str)
                     worksheet_summary.write(numworksheet + numworksheet_offset, 1, packet_address_str_xlsx)
-                    logger.debug('Will create workbook for {}'.format(packet_address_str_xlsx))
+                    logger_start.debug('Will create workbook for {}'.format(packet_address_str_xlsx))
                     device_worksheets[packet_address_str] = workbook.add_worksheet(packet_address_str_xlsx)
                     device_worksheets_indices[packet_address_str] = {'datakeys':[],'numline':0,'colindex':{}}
                     device_worksheets_indices[packet_address_str]['worksheet'] = packet_address_str_xlsx
@@ -396,7 +398,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             device_worksheets_indices[packet_address_str]['colindex'][datakey] = colindex
                             header_rows = [(row_host,raddress_datakey.hostname,'hostname')]
                             header_rows.append((row_uuid, raddress_datakey.uuid,'uuid'))
-                            header_rows.append((row_device, raddress_datakey.devicename,'devicename'))
+                            header_rows.append((row_device, raddress_datakey.device,'device'))
                             header_rows.append((row_publisher, raddress_datakey.publisher,'publisher'))
                             header_rows.append((row_packetid, raddress_datakey.packetid,'packetid'))
                             header_rows.append((row_datakey, datakey,'datakey'))
@@ -448,7 +450,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     dataqueue.put(data_stat)
 
             except:
-                logger.debug('Could not write data',exc_info=True)
+                logger_start.debug('Could not write data',exc_info=True)
                 #logger.exception(e)
                 #logger.debug(funcname + ':Exception:' + str(e))
                 # print(data)
@@ -464,12 +466,12 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     try:
                         worksheet_summary.autofit()
                     except:
-                        logger.info(funcname + 'Could not autofit summary',exc_info=True)
+                        logger_start.info(funcname + 'Could not autofit summary',exc_info=True)
                     for w in device_worksheets:
                         try:
                             device_worksheets[w].autofit()
                         except:
-                            logger.info(funcname + 'Could not autofit {}'.format(w), exc_info=True)
+                            logger_start.info(funcname + 'Could not autofit {}'.format(w), exc_info=True)
                 # Make the Excel time column wider, autofit does not work properly here
                 #device_worksheets[w].set_column(colindex_time, colindex_time, 25)
                 workbook.close()
@@ -779,7 +781,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         #print('Deviceaddresses',raddresses)
         self.inlist.clear()
         for raddr in raddresses:
-            self.inlist.addItem(raddr.address_str)
+            self.inlist.addItem(raddr.to_address_string())
 
 
     def config_to_widgets(self):
