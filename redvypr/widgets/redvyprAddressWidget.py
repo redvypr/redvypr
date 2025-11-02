@@ -773,7 +773,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                         devkeys.sort()
                         for devaddress in devkeys:
                             datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
-                            #print('Datakeys',datakey_dict)
+                            print('Datakeys',datakey_dict)
                             devaddress_redvypr = RedvyprAddress(devaddress)
                             if self.filterWidget.filter_on:
                                 if devaddress_redvypr not in self.filterWidget.filter_address:
@@ -806,21 +806,26 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
 
     def get_addressstr_for_item(self,raddr, addrentrylist, newline=True):
         #self.addrtype_for_publishing_devices = '/{h}\n/{d}\n/{i}'  # The addrtype to show for publishin devices
-        addrformat = ''
-        if newline:
-            newlinestr = '\n'
-        else:
-            newlinestr = ''
-        for k in addrentrylist:
-            addrformat += '{' + k + '}' + newlinestr
-
-        if newline:  # remove the last newline
-            addrformat = addrformat[:-1]
-
-        print("Address test",raddr)
-        print("Address test format", addrformat)
-        devicestr = raddr.get_str_from_format(addrformat)
+        print("Entries ...:",addrentrylist)
+        devicestr = raddr.to_address_string(addrentrylist)
+        print("Devicestr", devicestr)
         return devicestr
+        if False:
+            addrformat = ''
+            if newline:
+                newlinestr = '\n'
+            else:
+                newlinestr = ''
+            for k in addrentrylist:
+                addrformat += '{' + k + '}' + newlinestr
+
+            if newline:  # remove the last newline
+                addrformat = addrformat[:-1]
+
+            print("Address test",raddr)
+            print("Address test format", addrformat)
+            devicestr = raddr.get_str_from_format(addrformat)
+            return devicestr
 
     def __update_item(self):
         try:
@@ -835,7 +840,6 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
             if check.isChecked():
                 entries.append(entry)
 
-        print('Entries',entries)
         item.addrentries = entries
         raddr = item.redvypr_address
         devicestr = self.get_addressstr_for_item(raddr,entries)
@@ -927,7 +931,7 @@ class RedvyprMultipleAddressesWidget(RedvyprAddressWidget):
         self.layout_right.removeWidget(self.address_edit)
         self.address_edit.hide()
 
-        # Create heck boxes for the format
+        # Create check boxes for the format
         check_all = QtWidgets.QWidget()
         check_all_layout = QtWidgets.QVBoxLayout(check_all)
         atmp = RedvyprAddress()
@@ -990,7 +994,7 @@ class RedvyprMultipleAddressesWidget(RedvyprAddressWidget):
         nrows = len(self.addresses_chosen)
         self.datastreamtable.setRowCount(nrows)
         self.datastreamtable.setColumnCount(1)
-        for irow,raddr in enumerate(self.addresses_chosen):
+        for irow, raddr in enumerate(self.addresses_chosen):
             addrstr = self.get_addressstr_for_item(raddr, entries, newline=False)
             item = QtWidgets.QTableWidgetItem(addrstr)
             #item.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)

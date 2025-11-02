@@ -948,12 +948,11 @@ class RedvyprDevice(QtCore.QObject):
         devaddrs = self.get_deviceaddresses(local)
         datastreams = []
         for devaddr in devaddrs:
-            dkeys = self.statistics['device_redvypr'][devaddr.address_str]['datakeys']
+            dkeys = self.statistics['device_redvypr'][devaddr.to_address_string()]['datakeys']
             for dkey in dkeys:
                 raddr = RedvyprAddress(devaddr, datakey=dkey)
                 dstr = raddr.to_address_string()
                 datastreams.append(dstr)
-
 
         return datastreams
 

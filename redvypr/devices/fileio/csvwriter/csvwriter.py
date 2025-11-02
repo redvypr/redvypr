@@ -50,7 +50,6 @@ class csv_datastream_strformat(pydantic.BaseModel):
 class csv_datastream_config(pydantic.BaseModel):
     address: str = pydantic.Field(default='*', type='redvypr_address',description='The redvypr address string of the datastream')
     address_found: str = pydantic.Field(default='', description='The redvypr address string of the datastream that is found for the column')
-    mode_address_found: typing.Literal['copy','first fit exact','first fit address format'] = pydantic.Field(default='first fit exact')
     strformat: csv_datastream_strformat = pydantic.Field(default=csv_datastream_strformat())
     comment: str= pydantic.Field(default='', description='Comment')
     unit: str = pydantic.Field(default='', description='Unit of the data')
@@ -221,7 +220,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     tupdate = time.time() # Save the time for the update timing
     FLAG_RUN = True
     while FLAG_RUN:
-        tcheck      = time.time()
+        tcheck = time.time()
         # Flush file on regular basis
         if ((time.time() - tflush) > config['dt_sync']):
             f.flush()
@@ -242,54 +241,25 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             break
                         elif (command == 'csvcolumns'):
                             logger.debug(funcname + ' Got csvcolumns command')
-                            #print('COMDATA')
-                            #print('Comdata',comdata)
-                            #csvcolumns = data['csvcolumns']
                             continue
 
 
-                #statistics = data_packets.do_data_statistics(data,statistics)
-                datastreams = data_packets.Datapacket(data).datastreams()
-                #print('Hallo data',data)
-                #print('Got datastreams',datastreams)
-                data_write = ['']*len(csvcolumns)
                 FLAG_WRITE_PACKET = False
-                if len(datastreams) > 0:
-                    #datastreams.sort() # Sort the datastreams alphabetically
-                    #print('Datastreams',datastreams)
+                if True:
                     data_time = data['_redvypr']['t']
                     data_numpacket = data['_redvypr']['numpacket']
                     # Check if the datastreams are in the list already
                     data_fill = []
-                    streamdata = None
                     for ind_dstream, dstream in enumerate(config['datastreams']):
                         data_fill.append(None)
-                        for dstr in datastreams:
-                            if dstream['address_found'] == '': # Not assigned yet
-                                #print('Trying to assign')
-                                raddr = redvypr.RedvyprAddress(dstream['address'])
-                                if dstr in raddr: # Found something
-                                    #print('Found ', dstr, 'in', raddr)
-                                    if dstream['mode_address_found'] == 'copy':
-                                        dstream['address_found'] = raddr.address_str
-                                    if dstream['mode_address_found'] == 'first fit exact':
-                                        dstream['address_found'] = dstr.address_str
-                                    else:
-                                        raise ValueError('Mode "{}" not implented yet'.format(dstream['mode_address_found']))
-                                    #print('Got an address',dstream)
-                                    streamdata = dstr.get_data(data)
-                                    data_fill[ind_dstream] = streamdata
-                                    FLAG_WRITE_PACKET = True
-                                    #print('Got streamdata',streamdata)
-                                    break
-                            else: # Get the data
-                                streamdata = redvypr.RedvyprAddress(dstream['address_found']).get_data(data) # returns None if not fitting
-                                if streamdata is not None:
-                                    #print('Adding data',streamdata)
-                                    #print('Index dstream',ind_dstream)
-                                    data_fill[ind_dstream] = streamdata
-                                    FLAG_WRITE_PACKET = True
-                                    break
+                    for ind_dstream, dstream in enumerate(config['datastreams']):
+                        dstream_raddr = redvypr_address.RedvyprAddress(dstream['address'])
+                        try:
+                            streamdata = dstream_raddr(data)
+                            data_fill[ind_dstream] = streamdata
+                            FLAG_WRITE_PACKET = True
+                        except:
+                            continue
 
                     # If data to write was found
                     if FLAG_WRITE_PACKET:
@@ -305,10 +275,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     data_stat['_deviceinfo']['packets_written'] = packets_written
                     dataqueue.put(data_stat)
 
-            except Exception as e:
-                logger.exception(e)
-                logger.debug(funcname + ':Exception:' + str(e))
-                # print(data)
+            except:
+                logger.debug(funcname + ':Exception:',exc_info=True)
 
         # Write data to file if available
         if ((time.time() - tfile) > config['dt_waitbeforewrite'])  or (FLAG_RUN == False):
@@ -421,18 +389,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     dataqueue.put(data_stat)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 class Device(RedvyprDevice):
     """
     csvlogger device
@@ -471,7 +427,7 @@ class Device(RedvyprDevice):
         funcname = __name__ + '.add_datastream():'
         logger.debug(funcname)
         datastream_addr = datastream
-        datastream_str = datastream.address_str
+        datastream_str = datastream.to_address_string()
         metadata = self.redvypr.get_metadata(datastream_addr)
         #print('Metadata', metadata)
         #print('-------')
@@ -634,10 +590,12 @@ class initDeviceWidget(QtWidgets.QWidget):
         sizelabel = QtWidgets.QLabel('New file after')
          # File change layout
         self.newfilewidget = QtWidgets.QWidget()
-        self.newfilelayout = QtWidgets.QFormLayout(self.newfilewidget)
-        self.newfilelayout.addRow(sizelabel)
-        self.newfilelayout.addRow(self.dt_newfile,self.newfiletimecombo)
-        self.newfilelayout.addRow(self.size_newfile,self.newfilesizecombo)
+        self.newfilelayout = QtWidgets.QHBoxLayout(self.newfilewidget)
+        self.newfilelayout.addWidget(sizelabel)
+        self.newfilelayout.addWidget(self.dt_newfile)
+        self.newfilelayout.addWidget(self.newfiletimecombo)
+        self.newfilelayout.addWidget(self.size_newfile)
+        self.newfilelayout.addWidget(self.newfilesizecombo)
         
         # Filenamelayout
         self.folder_text = QtWidgets.QLineEdit('')
@@ -1050,7 +1008,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         #print('Deviceaddresses',raddresses)
         self.inlist.clear()
         for raddr in raddresses:
-            self.inlist.addItem(raddr.address_str)
+            self.inlist.addItem(raddr.to_address_string())
 
 
     def config_to_widgets(self):

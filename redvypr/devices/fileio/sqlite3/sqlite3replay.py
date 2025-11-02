@@ -52,7 +52,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     replay_index = list(config['replay_index'])
     t_status = time.time()
     #dt_status = 2 # Status update
-    dt_status = .5  # Status update
+    dt_status = 1.0  # Status update
     t_sent = 0 # The time the last packets was sent
     t_packet_old = 1e12 # The time the last packet had (internally)
     try:
@@ -214,7 +214,6 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             status_thread['packets_read'] = ipacket
             status_thread['packets_num'] = npackets
             statusqueue.put(status_thread)
-
 
 
 #
