@@ -565,11 +565,6 @@ class RedvyprAddress:
     # -------------------------
     # String / Dict Conversion
     # -------------------------
-    def to_address_string_legacy(self):
-        left = self.left_expr or ""
-        right = ast.unparse(self._rhs_ast.body) if self._rhs_ast else ""
-        return f"{left}@{right}" if right else left or "@"
-
     def to_redvypr_dict(self, include_datakey=True):
         """
         Liefert ein Dict mit '_redvypr', gefüllt aus den Filtern.
@@ -779,19 +774,42 @@ class RedvyprAddress:
 
     def to_address_string(self, keys: Union[str, List[str]] = None) -> str:
         """Readable version of the address, optionally filtered by keys"""
-        if not self._rhs_ast:
-            return f"{self.left_expr}@" if self.left_expr else "@"
+
 
         # Prepare the allowed keys set
         allowed_keys_set = None
+        show_left = True
         if keys is not None:
             if isinstance(keys, str):
                 allowed_keys = [k.strip() for k in keys.split(",") if k.strip()]
             else:
                 allowed_keys = keys
-            allowed_keys_set = set(self.PREFIX_MAP.get(k, k) for k in allowed_keys)
 
-        import copy
+            # expand both PREFIX_MAP and REV_PREFIX_MAP, so both short and long keys work
+            expanded = set()
+            for k in allowed_keys:
+                if k in self.LONGFORM_MAP:  # short prefix like "p"
+                    expanded.add(self.LONGFORM_MAP[k])
+                elif k in self.PREFIX_MAP:  # short prefix like "p"
+                    expanded.add(self.PREFIX_MAP[k])
+                elif k in self.REV_PREFIX_MAP:  # long key like "publisher"
+                    expanded.add(k)
+                else:
+                    expanded.add(k)
+
+            allowed_keys_set = expanded
+            #allowed_keys_set = set(self.PREFIX_MAP.get(k, k) for k in allowed_keys)
+            if not any(k in allowed_keys for k in ("k", "datakey")):
+                show_left = False  # hide left_expr if not requested explicitly
+
+            if len(allowed_keys) == 0:
+                return "@"
+
+        if not self._rhs_ast:
+            if self.left_expr and show_left:
+                return f"{self.left_expr}@"
+            else:
+                return "@"
 
         def prune_ast(node: ast.AST) -> Optional[ast.AST]:
             if isinstance(node, ast.Expression):
@@ -837,7 +855,7 @@ class RedvyprAddress:
         filtered_ast = prune_ast(copy.deepcopy(self._rhs_ast)) if allowed_keys_set else self._rhs_ast
         rhs_str = self._ast_to_rhs_string(filtered_ast) if filtered_ast else ""
 
-        if self.left_expr:
+        if self.left_expr and show_left:
             return f"{self.left_expr} @ {rhs_str}" if rhs_str else self.left_expr
         return f"@{rhs_str}" if rhs_str else "@"
 

@@ -479,8 +479,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
         except:
             addrentries = self.addrentries_show_for_publishing_devices
 
-        print('Item', item,'Addrentries',addrentries)
-
+        #print('Item', item,'Addrentries',addrentries)
         if True:
             menu = QtWidgets.QMenu(tree)
             check_all = QtWidgets.QWidget()
@@ -806,6 +805,8 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
 
     def get_addressstr_for_item(self,raddr, addrentrylist, newline=True):
         #self.addrtype_for_publishing_devices = '/{h}\n/{d}\n/{i}'  # The addrtype to show for publishin devices
+        funcname = "get_addressstr_for_item()"
+        print(funcname)
         print("Entries ...:",addrentrylist)
         devicestr = raddr.to_address_string(addrentrylist)
         print("Devicestr", devicestr)
@@ -898,7 +899,7 @@ class RedvyprMultipleAddressesWidget(RedvyprAddressWidget):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args,**kwargs)
-        self.addrentries_for_str_format = ['h' 'd', 'i', 'k']
+        self.addrentries_for_str_format = ['h', 'd', 'i', 'k']
         self.devicelist.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
         self.datastreamtable = QtWidgets.QTableWidget()
         #self.datastreamtable.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
@@ -940,8 +941,9 @@ class RedvyprMultipleAddressesWidget(RedvyprAddressWidget):
         addrentries = self.addrentries_for_str_format
         for k in atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY.keys():
             entry_tmp = atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k]
+            #print("k test", k, entry_tmp, addrentries)
             check = QtWidgets.QCheckBox(k)
-            if entry_tmp in addrentries:
+            if (k in addrentries) or (entry_tmp in addrentries):
                 check.setChecked(True)
             check.stateChanged.connect(self.update_datastreamtable)
             check_all_layout.addWidget(check)
