@@ -7,9 +7,9 @@ redvypr: RealtimeData Viewer and PRocessor (in PYthon)
 
 Overview
 --------
-Redvypr offers a [Python](https://www.python.org/) based framework to connect sensors and devices providing digital data and the possibilities to merge, process, redistribute and save the data. See figure below for an artistic overview of the general structure of redvypr:
+Redvypr offers a [Python](https://www.python.org/) based framework to connect sensors and devices providing digital data and the possibilities to plot, merge, process, redistribute and save the data.
 
-![Artistic view of redvyprs general structure](doc/source/figures/redvypr_v02.png)
+![Schematic view of general Redvypr structure](doc/source/figures/redvypr_schema_v04.png)
 
 Introduction
 ------------
