@@ -87,11 +87,15 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 for ppub in merged_packets['merged_packets']:
                     print('Publishing')
                     print('Publishing')
-                    print('Publishing',ppub)
-
+                    #print('Publishing',ppub)
                     dataqueue.put(ppub)
 
-
+        if merged_packets['merged_tar_chain'] is not None:
+            for ppub in merged_packets['merged_tar_chain']:
+                print('Publishing merged tar chain')
+                print('Publishing merged tar chain')
+                #print('Publishing merged tar chain',ppub)
+                dataqueue.put(ppub)
 
     if False:
         packetbuffer_tar = {}  # A buffer to add split messages into one packet
@@ -250,7 +254,6 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                             except:
                                 packetbuffer_tar[mac][datatype_packet][nump] = p
 
-
                             # Check if the dataarray is ig enough
                             #if len(dataarray) < p['ntciend'] + 1:
                             try:
@@ -268,8 +271,6 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 if config['publish_raw_sensor']:
                                     dataqueue.put(ppub)
                                 flag_valid_packet = True
-
-
 
 
                     #print('Datapacket processed',data_packet_processed)
@@ -513,9 +514,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     def devicetree_plot_button_clicked(self, itemclicked):
         button = self.sender()
+        logger.info('Plot clicked')
         #print('Itemclicked',itemclicked)
         #print(self.device.redvypr.redvypr_device_scan.redvypr_devices)
-        if button.isChecked() == False:
+        if False:
             logger.debug('Closing plot')
             try:
                 self.device.redvypr.redvypr_widget.closeDevice(button.__plotdevice__)
@@ -549,12 +551,12 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 # Update the plot widget with the data in the buffer
                 for ip,p in enumerate(packets):
                     for (guiqueue, widget) in plotdevice.guiqueues:
-                        widget.update_plot(p)
+                        widget.update_data(p)
 
-                #logger.debug('Starting plot device')
-                #plotdevice.thread_start()
+                logger.debug('Starting plot device')
+                plotdevice.thread_start()
                 button.__plotdevice__ = plotdevice
-                button.setText('Close')
+                #button.setText('Close')
 
     def parameter_plot_button_clicked(self, row):
         funcname = __name__ + 'parameter_plot_button_clicked():'
@@ -566,7 +568,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         mac = button.__mac__
         datatype = button.__datatype__
         packetid = button.__packetid__
-        if button.isChecked():
+        if True:
             try:
                 button.__plotdevice__
             except:
@@ -583,12 +585,14 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 # Update the plot widget with the data in the buffer
                 for ip, p in enumerate(packets):
                     for (guiqueue, widget) in plotdevice.guiqueues:
-                        widget.update_plot(p, force_update=True)
+                        widget.update_data(p, force_update=True)
 
                 logger.debug('Starting plot device')
+                print('Starting starting starting')
                 plotdevice.thread_start()
                 button.__plotdevice__ = plotdevice
-                button.setText('Close')
+                print('Done')
+                #button.setText('Close')
         else:
             try:
                 self.device.redvypr.redvypr_widget.closeDevice(button.__plotdevice__)
@@ -654,7 +658,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             macs_tarchain = parents + [mac]
             if "raw" in packetid:
                 parentitm = self.root_raw
-            elif "TARM" in packetid:
+            elif "TARchain" in packetid:
                 parentitm = self.root_tar
             else:
                 parentitm = self.root_single
@@ -685,7 +689,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     flag_tree_update = True
                     # Button erstellen und zur Zelle hinzufügen
                     button = QtWidgets.QPushButton("Plot")
-                    button.setCheckable(True)
+                    button.setCheckable(False)
                     button.clicked.connect(lambda _, item=itm_datatype: self.devicetree_plot_button_clicked(item))
                     # Button in die dritte Spalte des TreeWidgetItems einfügen
                     self.devicetree.setItemWidget(itm_datatype, 2, button)
@@ -742,12 +746,12 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                         # And now the real data
                         for i, d in enumerate(datatar):
                             rdata = redvypr.Datapacket(data)
-                            datakey = "['{}'][{}]".format(datatype,i)
+                            datakey = "{}[{}]".format(datatype,i)
                             address = redvypr.RedvyprAddress(data, datakey = datakey)
                             datastr = "{:4f}".format(d)
                             # Button erstellen und zur Zelle hinzufügen
                             button = QtWidgets.QPushButton("Plot")
-                            button.setCheckable(True)
+                            button.setCheckable(False)
                             #button.clicked.connect(
                             #    lambda _, item=itm_datatype: self.devicetree_plot_button_clicked(item))
                             dataitem = QtWidgets.QTableWidgetItem(datastr)

@@ -69,14 +69,15 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
         try:
             #print(config["datastream"])
             rawdata = Datapacket(datapacket)[config["datastream"]]
-            #print("Rawdata",rawdata)
+            print("Rawdata",rawdata)
         except:
-            #logger.info("Could not get data",exc_info=True)
+            logger.info("Could not get data",exc_info=True)
             rawdata = None
 
         if rawdata is not None:
+            print("Processing")
             processed_packets = nmea_mac_processer.process_rawdata(rawdata)
-            if len(processed_packets['merged'])>0:
+            if len(processed_packets['merged']) > 0:
                 for ppub in processed_packets['merged']:
                         #print('Publishing',ppub)
                         if True:
@@ -185,7 +186,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 # Update the plot widget with the data in the buffer
                 for ip, p in enumerate(packets):
                     for (guiqueue, widget) in plotdevice.guiqueues:
-                        widget.update_plot(p, force_update=True)
+                        widget.update_data(p, force_update=True)
 
                 logger.debug('Starting plot device')
                 plotdevice.thread_start()

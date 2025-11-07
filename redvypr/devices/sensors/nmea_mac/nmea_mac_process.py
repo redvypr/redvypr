@@ -49,14 +49,13 @@ tarv2nmea_R_sample_test1 = b'$D8478FFFFE95CD4D,1417,88.562500:$D8478FFFFE95CA01,
 tarv2nmea_R_sample_test2 = b'$D8478FFFFE95CD4D,1418,88.625000:$D8478FFFFE95CA01,TAR_S,T_B4,85.125000,23,88.125000,23,18.7687,18.8769,18.8618,18.9755,19.0472,19.1687,19.1427,19.0838,19.0879,19.0771,18.9509,19.1021,19.0191,18.8476,18.7849,18.8357,18.6882,18.6271,18.5011,18.5870,18.4911,18.5489,18.3641,18.1963,18.4516,18.3078,18.3418,18.2432,18.3292,18.2773,18.2705,18.2169,18.4091,18.5219,18.5675,18.4544,18.6507,18.5340,18.5778,18.5965,18.5858,18.6247,18.5186,18.4259,18.5337,18.6106,18.4547,18.7297,18.5991,18.5188,18.5515,18.7406,18.5522,18.7027,18.6739,18.4644,18.6052,18.4869,18.6549,18.6938,18.6036,18.6950,18.4890,18.5668\n'
 tarv2nmea_R_test1 = b'$D8478FFFFE95CD4D,TAR,R_B4,88.125000,23,3791.505,3780.276,3783.786,3753.388,3735.459,3698.891,3713.560,3683.382,3725.874,3732.151,3738.183,3739.709,3744.310,3748.047,3752.655,3764.850,3759.181,3785.050,3776.687,3785.038,3828.752,3797.263,3797.710,3803.897,3824.091,3827.292,3829.092,3824.091,3837.073,3832.835,3796.941,3802.335,3752.142,3761.262,3754.997,3748.661,3758.782,3756.773,3764.004,3756.636,3772.050,3748.459,3745.413,3754.330,3753.191,3741.783,3730.935,3770.715,3731.245,3730.243,3753.847,3743.356,3744.942,3746.802,3766.078,3743.780,3763.622,3735.769,3750.420,3763.968,3752.762,3761.935,3727.597,3736.508\n'
 
-
 nmeamac_t_test1 = b"$FC0FE7FFFE220367,t,61168.625000,122337,1081911,61168.125,61168.188,61168.250,61168.312,61168.375,61168.375,61168.438,61168.500,61168.562"
 nmeamac_R_test1 = b"$FC0FE7FFFE220367,R,61168.625000,122337,1081911,2817.684,2819.449,2820.933,2822.143,2823.150,2823.991,2824.700,2825.248,2825.665"
 nmeamac_T_test1 = b"$FC0FE7FFFE220367,T,61168.625000,122337,1081911,26.008,25.991,25.977,25.965,25.956,25.948,25.941,25.936,25.932"
 
 config = {}
 
-# Generic tar sample
+# Fast NTC/FP07 packages
 if True:
     # t
     nmeamac_t = (
@@ -132,13 +131,14 @@ class NMEAMacProcessor():
         self.data_merged_xr_all = {}
 
     def init_sensors(self):
+        # Fast NTC/FP07
         nmeamac_T_sensor = sensor_definitions.BinarySensor(name='nmeamac_T', regex_split=nmeamac_T,
                                                              str_format=nmeamac_T_str_format,
                                                              autofindcalibration=False,
                                                              description=nmeamac_T_description,
                                                              datakey_metadata=nmeamac_T_datakey_metadata,
                                                              packetid_format=nmeamac_T_packetid_format,
-                                                             datastream=redvypr.RedvyprAddress('/k:data'))
+                                                             datastream=redvypr.RedvyprAddress('data'))
 
         nmeamac_t_sensor = sensor_definitions.BinarySensor(name='nmeamac_t', regex_split=nmeamac_t,
                                                            str_format=nmeamac_t_str_format,
@@ -146,7 +146,7 @@ class NMEAMacProcessor():
                                                            description=nmeamac_t_description,
                                                            datakey_metadata=nmeamac_t_datakey_metadata,
                                                            packetid_format=nmeamac_t_packetid_format,
-                                                           datastream=redvypr.RedvyprAddress('/k:data'))
+                                                           datastream=redvypr.RedvyprAddress('data'))
 
         nmeamac_R_sensor = sensor_definitions.BinarySensor(name='nmeamac_R', regex_split=nmeamac_R,
                                                            str_format=nmeamac_R_str_format,
@@ -154,10 +154,10 @@ class NMEAMacProcessor():
                                                            description=nmeamac_R_description,
                                                            datakey_metadata=nmeamac_R_datakey_metadata,
                                                            packetid_format=nmeamac_R_packetid_format,
-                                                           datastream=redvypr.RedvyprAddress('/k:data'))
+                                                           datastream=redvypr.RedvyprAddress('data'))
 
 
-        # Create the tar sensors
+        # Create the different sensors
         self.sensors = []
 
         self.sensors.append(nmeamac_t_sensor)
@@ -194,10 +194,9 @@ class NMEAMacProcessor():
 
                     break
 
-
         return packets
 
-    def merge_datapackets(self,data_packet_processed):
+    def merge_datapackets(self, data_packet_processed):
         """
 
         Parameters
@@ -213,14 +212,15 @@ class NMEAMacProcessor():
             # Merge by np
             npold = self.merge_by_variable["np"]
             npnew = data_packet['np']
+            mac = data_packet['mac']
 
             # Check if the next packet is newer, if yes, merge the old one
             if npnew > npold:
-                self.packetbuffer[npnew] = [data_packet] # New datapacket, merge the old one
+                self.packetbuffer[mac][npnew] = [data_packet] # New datapacket, merge the old one
                 self.merge_by_variable["np"] = npnew
 
-                if npold in self.packetbuffer.keys():
-                    data_packets_merge = self.packetbuffer.pop(npold)
+                if npold in self.packetbuffer[mac].keys():
+                    data_packets_merge = self.packetbuffer[mac].pop(npold)
 
                     for i,d in enumerate(data_packets_merge):
                         if i == 0:
@@ -238,18 +238,20 @@ class NMEAMacProcessor():
                     except:
                         logger.warning("Could not merge packet:{}".format(data_packets_merged),exc_info=True)
 
-
             else:
                 try:
-                    self.packetbuffer[npnew].append(data_packet)
+                    self.packetbuffer[mac]
                 except:
-                    self.packetbuffer[npnew] = [data_packet]
+                    self.packetbuffer[mac] = {}
+                try:
+                    self.packetbuffer[mac][npnew].append(data_packet)
+                except:
+                    self.packetbuffer[mac][npnew] = [data_packet]
                     logger.warning("Inconsistency in packetnumber")
-
 
             return data_packets_merged
 
-    def merge_dataset(self, datapacket):
+    def merge_dataset_legacy(self, datapacket):
         """
         Merges several datapackets into a large one
         Parameters

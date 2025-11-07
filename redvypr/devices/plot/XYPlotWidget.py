@@ -99,7 +99,7 @@ class configLine(pydantic.BaseModel,extra='allow'):
         err_tmp = err[ind]
         return {'x': xdata_tmp, 'y': ydata_tmp, 't': tdata_tmp, 'err': err_tmp}
 
-    def append(self, data):
+    def add_data(self, data):
         inx = self.x_addr.matches(data)
         iny = self.y_addr.matches(data)
         #print("append line", self.x_addr, self.y_addr)
@@ -1421,18 +1421,18 @@ class XYPlotWidget(QtWidgets.QFrame):
         tnow = time.time()
         ## Create a redvypr datapacket
         #rdata = redvypr.data_packets.Datapacket(data)
-        print(funcname + 'got data',data,tnow)
+        #print(funcname + 'got data',data,tnow)
         try:
             # Check if the device is to be plotted
             # Loop over all lines
             for iline, line in enumerate(self.config.lines):
                 line.__newdata = False
                 try:
-                    line.append(data)
+                    line.add_data(data)
                     line.__newdata = True
                 except:
-                    self.logger.debug('Could not add data',exc_info=True)
-                    #pass
+                    #self.logger.debug('Could not add data', exc_info=True)
+                    pass
 
                 if True:
                     # Show the unit in the legend, if wished by the user, and we have access to the device that can give us the metainformation

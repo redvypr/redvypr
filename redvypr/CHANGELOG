@@ -2,6 +2,8 @@
        - xlsxwriter bugs fixed
        - fileio devices resorted
        - new readme
+       - bug fixes and improvements in calibration
+       - tar sensor bug fix
 - 0.9.14:
        - RedvyprAddress syntax changed
        - calibration device improved

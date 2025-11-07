@@ -57,10 +57,18 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         lower_size = total_height - upper_size
         self.splitter.setSizes([upper_size, lower_size])
         # Add a start button to the menu
-        self.device.thread_started.connect(self.device_thread_started)
-        self.device.thread_stopped.connect(self.device_thread_stopped)
-        self.startAction = self.xyplot.plotWidget.plotItem.vb.menu.addAction('Start')
+        self.startAction = self.xyplot.plotWidget.plotItem.vb.menu.addAction('NA')
         self.startAction.triggered.connect(self.thread_startstop)
+        self.xyplot.plotWidget.plotItem.vb.menu.aboutToShow.connect(self.update_menu_text)
+
+
+    def update_menu_text(self):
+        """Checks if the thread is running"""
+        if self.device.thread_running():
+            self.startAction.setText("Stop")
+        else:
+            self.startAction.setText("Start")
+
 
     def thread_startstop(self):
         if 'start' in self.startAction.text().lower():
@@ -70,12 +78,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         if 'stop' in self.startAction.text().lower():
             self.device.thread_stop()
             return
-
-    def device_thread_started(self):
-        self.startAction.setText('Stop')
-
-    def device_thread_stopped(self):
-        self.startAction.setText('Start')
 
     def config_changed(self):
         funcname = __name__ + '.config_changed():'

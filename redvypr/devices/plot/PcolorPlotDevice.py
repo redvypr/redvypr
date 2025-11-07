@@ -153,7 +153,7 @@ class PcolorPlotWidget(QtWidgets.QWidget):
             self.logger.warning('Could not subscribe to address: "{}"'.format(self.config.datastream))
 
     def setTitle(self):
-        titlestr = 'Datastream: ' + self.config.datastream.get_str(self.config.datastreamformat)
+        titlestr = 'Datastream: ' + self.config.datastream.to_address_string(self.config.datastreamformat)
         self.plotwidget.setTitle(titlestr)
 
     def create_widgets(self):
@@ -174,6 +174,7 @@ class PcolorPlotWidget(QtWidgets.QWidget):
 
         self.startAction = self.plotwidget.vb.menu.addAction('Start')
         self.startAction.triggered.connect(self.thread_startstop)
+        self.plotwidget.vb.menu.aboutToShow.connect(self.update_menu_text)
 
 
 
@@ -201,6 +202,13 @@ class PcolorPlotWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.graphiclayout, 0, 0, 1, 2)
 
         addressAction._pcolor = pcmi
+
+    def update_menu_text(self):
+        """Checks if the thread is running"""
+        if self.device.thread_running():
+            self.startAction.setText("Stop")
+        else:
+            self.startAction.setText("Start")
 
     def colorlevels_changed(self):
 
@@ -328,10 +336,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetStartonly):
         try:
             #print(funcname)
             #print('Got data', data)
-            #print('Datastream', self.device.custom_config.datastream)
+            print('Datastream', self.device.custom_config.datastream)
+            print('Datastream2', self.device.custom_config.datastream(data))
             rdata = redvypr.data_packets.Datapacket(data)
-            if rdata in self.device.custom_config.datastream:
+            if self.device.custom_config.datastream(data, strict=False) is not None:
                 self.pcolorplot.update_data(rdata)
 
         except:
-            self.logger.warning(funcname + 'Could not process data',exc_info=True)
+            logger.warning(funcname + 'Could not process data',exc_info=True)
