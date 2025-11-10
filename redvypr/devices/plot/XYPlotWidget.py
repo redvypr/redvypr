@@ -1431,9 +1431,11 @@ class XYPlotWidget(QtWidgets.QFrame):
                     line.add_data(data)
                     line.__newdata = True
                 except:
+                    continue
                     #self.logger.debug('Could not add data', exc_info=True)
-                    pass
+                    #pass
 
+                print('Added data',data['t'],data['_redvypr'])
                 if True:
                     # Show the unit in the legend, if wished by the user, and we have access to the device that can give us the metainformation
                     if (self.config.show_units) and (self.device is not None):

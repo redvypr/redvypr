@@ -8,6 +8,7 @@ import qtawesome
 import time
 import yaml
 import numpy
+import numpy as np
 import logging
 import sys
 import pydantic
@@ -53,7 +54,7 @@ config['merge_tar_chain'] = True
 
 
 
-# Generic tar sample, legacy, define two, one for R and one for T
+# Generic tar sample
 if True:
     # T
     tarv2nmea_T_split = (
@@ -75,7 +76,7 @@ if True:
     tarv2nmea_T_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
                                            'np': {'unit': 'counter'}, 'T': {'unit': 'degC'}}
     tarv2nmea_T_packetid_format = '__TAR__T'
-    tarv2nmea_T_description = 'Temperature array temperaturedatapacket'
+    tarv2nmea_T_description = 'Temperature array temperature datapacket'
     # R
     tarv2nmea_R_split = (
         br'^'  # Start of the string
@@ -157,6 +158,56 @@ if True:
     tarv2nmea_R_sample_description = 'Temperature array resistance datapacket initiated by a sample command'
 
 
+# IMU
+
+if True:
+    # b'$D8478FFFFE936450,TAR,IM,11460.250,2866,47,-218,8394,185,125,62,334\n'
+    # IMU
+    tarv2nmea_IMU_split = (
+        br'^'  # Start of the string
+        b'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs (not likely but can happen)
+        b'\$(?P<mac>[0-9A-F]+),'  # The mac 
+        b'TAR,IM,'
+        b'(?P<t>[0-9.]+),'
+        b'(?P<np>[0-9]+),'
+        b'(?P<IMU>.*)\n'
+    )
+    tarv2nmea_IMU_str_format = {'mac': 'str', 't': 'float', 'np': 'int',
+                              'IMU':'array'}
+    tarv2nmea_IMU_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
+                                    'np': {'unit': 'counter'},
+                                    'IMU[0]': {'unit': 'cnt','description':'acc x'},
+                                    'IMU[1]': {'unit': 'cnt', 'description': 'acc y'},
+                                    'IMU[2]': {'unit': 'cnt', 'description': 'acc z'},
+                                      }
+    tarv2nmea_IMU_packetid_format = '__TAR__IMU'
+    tarv2nmea_IMU_description = 'Temperature array IMU raw datapacket'
+
+    # IMU
+    tarv2nmea_IMU_sample_split = (
+        br'^'  # Start of the string
+        b'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs (not likely but can happen)
+        b'\$(?P<mac>[0-9A-F]+),'  # The mac 
+        b'TAR\((?P<t>[0-9.]+),(?P<np>[0-9]+)\),'
+        b'IM,'
+        b'(?P<t_local>[0-9.]+),'
+        b'(?P<np_local>[0-9]+),'
+        b'(?P<IMU>.*)\n'
+    )
+    tarv2nmea_IMU_sample_str_format = {'mac': 'str', 't': 'float', 'np': 'int',
+                                       't_local': 'float', 'np_local': 'int',
+                                       'IMU': 'array'}
+    tarv2nmea_IMU_sample_datakey_metadata = {
+        'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
+        'np': {'unit': 'counter'},
+        'np_local': {'unit': 'counter'},
+        'IMU[0]': {'unit': 'cnt', 'description': 'acc x'},
+        'IMU[1]': {'unit': 'cnt', 'description': 'acc y'},
+        'IMU[2]': {'unit': 'cnt', 'description': 'acc z'},
+        }
+    tarv2nmea_IMU_sample_packetid_format = '__TAR__IMU'
+    tarv2nmea_IMU_sample_description = 'Temperature array IMU raw datapacket'
+
 class TarProcessor():
     def __init__(self):
         self.init_buffer()
@@ -185,7 +236,7 @@ class TarProcessor():
                                                              description=tarv2nmea_T_description,
                                                              datakey_metadata=tarv2nmea_T_datakey_metadata,
                                                              packetid_format=tarv2nmea_T_packetid_format,
-                                                             datastream=redvypr.RedvyprAddress('/k:data'))
+                                                             datastream=redvypr.RedvyprAddress('data'))
 
         tarv2nmea_R = sensor_definitions.BinarySensor(name='tarv2nmea_R', regex_split=tarv2nmea_R_split,
                                                       str_format=tarv2nmea_R_str_format,
@@ -193,7 +244,7 @@ class TarProcessor():
                                                       description=tarv2nmea_R_description,
                                                       datakey_metadata=tarv2nmea_R_datakey_metadata,
                                                       packetid_format=tarv2nmea_R_packetid_format,
-                                                      datastream=redvypr.RedvyprAddress('/k:data'))
+                                                      datastream=redvypr.RedvyprAddress('data'))
 
         tarv2nmea_T_sample = sensor_definitions.BinarySensor(name='tarv2nmea_T_sample',
                                                              regex_split=tarv2nmea_T_sample_split,
@@ -202,7 +253,7 @@ class TarProcessor():
                                                              description=tarv2nmea_T_sample_description,
                                                              datakey_metadata=tarv2nmea_T_sample_datakey_metadata,
                                                              packetid_format=tarv2nmea_T_sample_packetid_format,
-                                                             datastream=redvypr.RedvyprAddress('/k:data'))
+                                                             datastream=redvypr.RedvyprAddress('data'))
 
         tarv2nmea_R_sample = sensor_definitions.BinarySensor(name='tarv2nmea_R_sample',
                                                              regex_split=tarv2nmea_R_sample_split,
@@ -211,7 +262,27 @@ class TarProcessor():
                                                              description=tarv2nmea_R_sample_description,
                                                              datakey_metadata=tarv2nmea_R_sample_datakey_metadata,
                                                              packetid_format=tarv2nmea_R_sample_packetid_format,
-                                                             datastream=redvypr.RedvyprAddress('/k:data'))
+                                                             datastream=redvypr.RedvyprAddress('data'))
+
+        tarv2nmea_IMU = sensor_definitions.BinarySensor(name='tarv2nmea_IMU',
+                                                             regex_split=tarv2nmea_IMU_split,
+                                                             str_format=tarv2nmea_IMU_str_format,
+                                                             autofindcalibration=False,
+                                                             description=tarv2nmea_IMU_description,
+                                                             datakey_metadata=tarv2nmea_IMU_datakey_metadata,
+                                                             packetid_format=tarv2nmea_IMU_packetid_format,
+                                                             datastream=redvypr.RedvyprAddress(
+                                                                 'data'))
+
+        tarv2nmea_IMU_sample = sensor_definitions.BinarySensor(name='tarv2nmea_IMU_sample',
+                                                        regex_split=tarv2nmea_IMU_sample_split,
+                                                        str_format=tarv2nmea_IMU_sample_str_format,
+                                                        autofindcalibration=False,
+                                                        description=tarv2nmea_IMU_sample_description,
+                                                        datakey_metadata=tarv2nmea_IMU_sample_datakey_metadata,
+                                                        packetid_format=tarv2nmea_IMU_sample_packetid_format,
+                                                        datastream=redvypr.RedvyprAddress(
+                                                            'data'))
 
         # Create the tar sensors
         self.datatypes = []
@@ -225,8 +296,25 @@ class TarProcessor():
         self.datatypes.append('T')
         self.sensors.append(tarv2nmea_R_sample)
         self.datatypes.append('R')
+        self.sensors.append(tarv2nmea_IMU)
+        self.datatypes.append('IMU')
+        self.sensors.append(tarv2nmea_IMU_sample)
+        self.datatypes.append('IMU')
+
+
+    def create_metadata_packets(self):
+        metadata_packets = []
+        for sensor in self.sensors:
+            logger.debug('Creating metadata packet for sensor {}'.format(sensor.name))
+            metadata_datapacket = sensor.create_metadata_datapacket()
+            print('Metadata packet',metadata_datapacket)
+            if metadata_datapacket is not None:
+                metadata_packets.append(metadata_datapacket)
+
+        return metadata_packets
 
     def merge_datapackets(self, data_packet_processed):
+        funcname = __name__ + '.merge_datapackets():'
         merged_packets = []
         if data_packet_processed is not None:
             if len(data_packet_processed) > 0:
@@ -240,7 +328,7 @@ class TarProcessor():
                     #print('Packet with mac')
                     #print('Mactmp', mactmp)
                     mac_parsed = nmea_mac64_utils.parse_nmea_mac64_string(mactmp)
-                    #print('mac parsed', mac_parsed)
+                    print('mac parsed', mac_parsed)
                     if mac_parsed is None:  # Not a valid mac
                         continue
 
@@ -264,37 +352,12 @@ class TarProcessor():
                     mac = p['mac']
                     nump = p['np']
                     self.nump_max = max(self.nump_max,nump)
-
-                    #print('mac {} {} nump:{} packettype: {}'.format(ip, mactmp, nump, datatype_packet))
+                    print('\nMAC:{}\n'.format(mac))
+                    print('mac {} {} nump:{} packettype: {}'.format(ip, mactmp, nump, datatype_packet))
                     flag_valid_packet = False
-                    # Packets that do not need to be merged
-                    if (datatype_packet != 'T') and (datatype_packet != 'R'):
-                        pass
-                        # flag_valid_packet = True
-                    else:  # T and R needs to be merged
-                        # print('Merging packet',p)
-                        #print('Merging packet', p['ntcistart'], p['ntciend'], p['ntcnum'], p['mac'], p['parents'])
-                        self.sensors_datasizes[mac] = p['ntcnum']
-                        try:
-                            dataarray = self.packetbuffer_tar_merge[mac][datatype_packet][nump]['dataarray']
-                        except:
-                            # print('Creating array')
-                            dataarray = numpy.zeros(p['ntcnum']) * numpy.nan
-
-                        #print('Shape dataarray', numpy.shape(dataarray))
-                        #
-                        try:
-                            self.packetbuffer_tar_merge[mac]
-                        except:
-                            self.packetbuffer_tar_merge[mac] = {}
-                        try:
-                            self.packetbuffer_tar_merge[mac][datatype_packet]
-                        except:
-                            self.packetbuffer_tar_merge[mac][datatype_packet] = {}
-                        try:
-                            self.packetbuffer_tar_merge[mac][datatype_packet][nump]
-                        except:
-                            self.packetbuffer_tar_merge[mac][datatype_packet][nump] = {'dataarray':None,'nmerged':0,'ntcnum':p['ntcnum'],'packets_raw':[]}
+                    datatypes_to_merge = ['R', 'T', 'IMU']
+                    # Create buffer entries
+                    if datatype_packet in datatypes_to_merge:
                         #
                         try:
                             self.packetbuffer_nump_tar[nump]
@@ -307,7 +370,41 @@ class TarProcessor():
                         try:
                             self.packetbuffer_nump_tar[nump][datatype_packet][mac]
                         except:
-                            self.packetbuffer_nump_tar[nump][datatype_packet][mac] = None
+                            self.packetbuffer_nump_tar[nump][datatype_packet][
+                                mac] = None
+
+                    # Packets that do dont have indices and arrays do not need to be merged
+                    if (datatype_packet != 'T') and (datatype_packet != 'R'):
+                        print(funcname + 'Nothing to merge, appending original packet',datatype_packet,mac)
+                        self.packetbuffer_nump_tar[nump][datatype_packet][mac] = p
+                        #merged_packets.append(p)
+                        # flag_valid_packet = True
+                    else:  # T and R needs to be merged
+                        try:
+                            self.packetbuffer_tar_merge[mac]
+                        except:
+                            self.packetbuffer_tar_merge[mac] = {}
+                        try:
+                            self.packetbuffer_tar_merge[mac][datatype_packet]
+                        except:
+                           self.packetbuffer_tar_merge[mac][datatype_packet] = {}
+                        try:
+                            self.packetbuffer_tar_merge[mac][datatype_packet][nump]
+                        except:
+                            self.packetbuffer_tar_merge[mac][datatype_packet][nump] = {
+                                'dataarray': None, 'nmerged': 0, 'ntcnum': p['ntcnum'],
+                                'packets_raw': []}
+                        # print('Merging packet',p)
+                        #print('Merging packet', p['ntcistart'], p['ntciend'], p['ntcnum'], p['mac'], p['parents'])
+                        self.sensors_datasizes[mac] = p['ntcnum']
+
+                        dataarray = self.packetbuffer_tar_merge[mac][datatype_packet][nump]['dataarray']
+                        if dataarray is None:
+                            dataarray = numpy.zeros(p['ntcnum']) * numpy.nan
+
+                        #print('Shape dataarray', numpy.shape(dataarray))
+                        #
+
 
                         # Check if the dataarray is big enough
                         # if len(dataarray) < p['ntciend'] + 1:
@@ -331,7 +428,7 @@ class TarProcessor():
                         nmerged = self.packetbuffer_tar_merge[mac][datatype_packet][nump]['nmerged']
                         nntc = self.packetbuffer_tar_merge[mac][datatype_packet][nump]['ntcnum']
                         if nmerged == nntc:
-                            #print('Merge completed!!!')
+                            print('Merge completed!!!', datatype_packet)
                             dataarray_merged = self.packetbuffer_tar_merge[mac][datatype_packet][nump]['dataarray']
 
                             praw = self.packetbuffer_tar_merge[mac][datatype_packet][nump]['packets_raw'][0]
@@ -339,8 +436,56 @@ class TarProcessor():
                             pmerged.pop('ntcistart')
                             pmerged.pop('ntciend')
                             pmerged[datatype_packet] = dataarray_merged.tolist()
-                            merged_packets.append(pmerged)
+
+
+                            #merged_packets.append(pmerged)
                             self.packetbuffer_nump_tar[nump][datatype_packet][mac] = pmerged
+
+                    # Try to merge all datatypes of one mac/nump into one merged packet
+                    print("Trying to merge all packets with mac",mac,nump)
+                    pmerge_all = {}
+                    for dtmp in datatypes_to_merge:
+                        print("dtmp",dtmp)
+                        try:
+                            ptmp = self.packetbuffer_nump_tar[nump][dtmp][mac]
+                            pmerge_all[dtmp] = ptmp
+                        except:
+                            logger.info(funcname + "Could not find package",exc_info=True)
+                            break
+
+                    if len(pmerge_all.keys()) == len(datatypes_to_merge):
+                        print('All packets available for merging variables into one packet')
+                        # Calculate the sensor positions in IMU coordinates
+                        pmerge2 = pmerge_all['R'].copy()
+                        pmerge2['T'] = pmerge_all['T']['T']
+                        pmerge2['IMU'] = pmerge_all['IMU']['IMU']
+                        print('Pmerge pmerge')
+                        print('Pmerge pmerge',pmerge2.keys())
+                        print('Pmerge pmerge\n')
+                        ntcnum = pmerge2['ntcnum']
+                        ntcdist = pmerge2['ntcdist']
+                        xdist = numpy.arange(0,ntcnum) * ntcdist/1000
+                        print('Xdist', xdist)
+                        sensors_body = np.column_stack((xdist, np.zeros_like(xdist), np.zeros_like(xdist)))
+
+
+                        print(pmerge2['IMU'])
+                        ax = pmerge2['IMU'][0]
+                        ay = pmerge2['IMU'][1]
+                        az = pmerge2['IMU'][2]
+                        phi, theta = acc_to_roll_pitch(ay, ax, az)
+                        R = R_from_roll_pitch(phi, theta)
+                        print('a', ax, ay, az, phi, theta, R)
+                        sensors_world = (R @ sensors_body.T).T  # shape (N,3)
+                        #for i, pw in enumerate(sensors_world):
+                        #    X, Y, Z = pw
+                        #    print(f"Sensor {i}: X={X:.4f} m, Z={Z:.4f} m")
+
+                        pmerge2['pos_x'] = sensors_world[:, 0]
+                        #pmerge2['pos_y'] = sensors_world[:, 1]
+                        pmerge2['pos_z'] = sensors_world[:, 2]
+                        merged_packets.append(pmerge2)
+                        #raise(ValueError)
 
                 # print('Datapacket processed',data_packet_processed)
                 # logger.debug('Data packet processed (without calibration):{}'.format(len(data_packet_processed)))
@@ -445,8 +590,21 @@ class TarProcessor():
             print('Done with tar chain merging, returning:')
             return merged_packets
 
+    def process_datapacket(self, datapacket):
+        """
+        Processes a redvypr datapacket
+        Parameters
+        ----------
+        datapacket
+
+        Returns
+        -------
+
+        """
+        pass
     def process_rawdata(self, binary_data):
         packets = {'merged_packets':None,'merged_tar_chain':None}
+        print("\nProcessing rawdata",binary_data)
         for sensor, datatype in zip(self.sensors, self.datatypes):
             # print('Checking for sensor',sensor,datatype)
             # Check for overflow
@@ -463,15 +621,18 @@ class TarProcessor():
                 print('Could not get data')
 
             if data_packet_processed is not None:
+                print('Found datapacket of sensor\n\n',sensor,datatype)
                 break
 
+
         if data_packet_processed is not None:
+            # Merge datapackets which have only parts (T,R with NTC indices)
             merged_packets = self.merge_datapackets(data_packet_processed)
             packets['merged_packets'] = merged_packets
-            print("Merging the tar chain")
-            merged_tar_chain = self.merge_tar_chain()
-            print("Merging the tar chain done",merged_tar_chain)
-            packets['merged_tar_chain'] = merged_tar_chain
+            #print("Merging the tar chain")
+            #merged_tar_chain = self.merge_tar_chain()
+            #print("Merging the tar chain done",merged_tar_chain)
+            #packets['merged_tar_chain'] = merged_tar_chain
 
         return packets
 
@@ -488,6 +649,22 @@ class TarProcessor():
                 fname_nc = mac_final + '_' + datatype_merge + '.nc'
                 print('saving to:{}'.format(fname_nc))
                 self.data_merged_xr_all[datatype_merge].to_netcdf(fname_nc)
+
+
+# Functions for IMU processing
+def acc_to_roll_pitch(ax, ay, az):
+    phi = np.arctan2(ay, az)  # roll
+    theta = np.arctan2(-ax, np.sqrt(ay * ay + az * az))  # pitch
+    return phi, theta
+
+def R_from_roll_pitch(phi, theta):
+    Rx = np.array([[1, 0, 0],
+                   [0, np.cos(phi), -np.sin(phi)],
+                   [0, np.sin(phi), np.cos(phi)]])
+    Ry = np.array([[np.cos(theta), 0, np.sin(theta)],
+                   [0, 1, 0],
+                   [-np.sin(theta), 0, np.cos(theta)]])
+    return Ry @ Rx  # Body -> World (without yaw)
 
 
 

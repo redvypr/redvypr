@@ -218,7 +218,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     pass
                 else:
                     #print('Packet data', data)
-                    #print('Packet address', packet_address.get_fullstr())
                     #print('Packet address hostname',packet_address.hostname)
                     hostname = packet_address.hostname + '__UUID__' + packet_address.uuid
                     #print('Hostname',hostname)
@@ -264,7 +263,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         if deviceinfo_all is not None and not (var in vars_updated):
                             raddress_tmp = redvypr_address.RedvyprAddress(data)
                             #raddress_tmp_str = raddress_tmp.get_str('/h/d/i')
-                            #raddress_tmp_str_full = raddress_tmp.get_fullstr()
                             metadata_tmp = packet_statistics.get_metadata_deviceinfo_all(deviceinfo_all, raddress_tmp)
                             # print('Metadata tmp', raddress_tmp, metadata_tmp)
                             # device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
@@ -316,19 +314,19 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
                                     logger_start.debug('Creating variable {}. Dimnames {}. Datatype {}.'.format(k,dimnames,datatype_array))
                                     var = nc_device.createVariable(k, datatype_array, dimnames, zlib=flag_zlib)
-                                    setattr(var, 'redvypr_address', packet_address.get_fullstr())
+                                    setattr(var, 'redvypr_address', packet_address.to_address_string())
                                 except:
                                     logger_start.warning('Could not create variable for {}'.format(k),exc_info=True)
                             elif (typedata is str):
                                 logger_start.info('Creating string variable')
                                 # For some reason zlib does not work with str
                                 var = nc_device.createVariable(k, str, ('time'), zlib=False)
-                                setattr(var, 'redvypr_address', packet_address.get_fullstr())
+                                setattr(var, 'redvypr_address', packet_address.to_address_string())
                             else:
                                 try:
                                     logger_start.info('Creating variable with type {}'.format(typedata))
                                     var = nc_device.createVariable(k, typedata, ('time'), zlib=flag_zlib)
-                                    setattr(var, 'redvypr_address', packet_address.get_fullstr())
+                                    setattr(var, 'redvypr_address', packet_address.to_address_string())
                                 except:
                                     var = None
 
@@ -349,8 +347,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         try:
                             if deviceinfo_all is not None and not(var in vars_updated):
                                 raddress_tmp = redvypr_address.RedvyprAddress(data, datakey=k)
-                                #raddress_tmp_str = raddress_tmp.get_str('/h/d/i/k')
-                                #raddress_tmp_str_full = raddress_tmp.get_fullstr()
                                 metadata_tmp = packet_statistics.get_metadata_deviceinfo_all(deviceinfo_all, raddress_tmp)
                                 # print('Metadata tmp', raddress_tmp, metadata_tmp)
                                 # device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)

@@ -88,7 +88,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     def update_data(self, data, force_update = False):
         funcname = __name__ + '.update_data():'
-        # print(funcname)
+        #print(funcname)
+        #print("Got data",data)
         self.xyplot.update_plot(data, force_update)
 
 

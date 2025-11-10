@@ -252,13 +252,18 @@ class BinarySensor(Sensor):
         data_packet = redvypr_create_datadict(device=self.name)
 
         flag_metadata = False
+        print('self.datakey_metadata',self.datakey_metadata)
         for key_input in self.datakey_metadata.keys():
+            print('key input',key_input)
             flag_metadata = True
             metadata = self.datakey_metadata[key_input]
+            print('metadata', metadata)
             metadata_address = RedvyprAddress(device=self.name, datakey=key_input)
             #data_packet = add_metadata2datapacket(data_packet, key_input, metadict=metadata)
+            print('address', metadata_address)
             data_packet = add_metadata2datapacket(data_packet, address=metadata_address, metadict=metadata)
-
+            print('dta_packet', data_packet)
+            print('Done\n\n')
         for key_input in self.calibrations_raw.keys():
             flag_metadata = True
 
