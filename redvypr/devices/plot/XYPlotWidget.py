@@ -71,6 +71,7 @@ class configLine(pydantic.BaseModel,extra='allow'):
     linewidth: float = pydantic.Field(default=2.0, description='The linewidth')
     linestyle: typing.Literal['SolidLine','DashLine','DotLine','DashDotLine','DashDotDotLine'] = pydantic.Field(default='SolidLine', description='The linestyle, see also https://doc.qt.io/qt-6/qt.html#PenStyle-enum')
     databuffer: Databufferline = pydantic.Field(default=Databufferline(), description='The databuffer', editable=False)
+    databuffer_add_mode: typing.Literal['append', 'clear first'] = pydantic.Field(default='append', description='Behaviour off data handling with add_data()')
     plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_points'] = pydantic.Field(default='all', description='')
     last_N_s: float = pydantic.Field(default=60,
                                      description='Plots the last seconds, if plot_mode_x is set to last_N_s')
@@ -105,6 +106,8 @@ class configLine(pydantic.BaseModel,extra='allow'):
         #print("append line", self.x_addr, self.y_addr)
         #print("append line",inx,iny)
         if inx and iny:
+            if self.databuffer_add_mode == "clear first":
+                self.databuffer.clear()
             rdata = redvypr.data_packets.Datapacket(data)
             # data can be a single float or a list, if its a list add it item by item
             newt = data['t']  # Add also the time of the packet

@@ -356,6 +356,7 @@ class TarProcessor():
                     print('mac {} {} nump:{} packettype: {}'.format(ip, mactmp, nump, datatype_packet))
                     flag_valid_packet = False
                     datatypes_to_merge = ['R', 'T', 'IMU']
+
                     # Create buffer entries
                     if datatype_packet in datatypes_to_merge:
                         #
@@ -457,6 +458,7 @@ class TarProcessor():
                         print('All packets available for merging variables into one packet')
                         # Calculate the sensor positions in IMU coordinates
                         pmerge2 = pmerge_all['R'].copy()
+                        pmerge2['_redvypr']['packetid'] = pmerge2['_redvypr']['packetid'].rsplit('__',1)[0]
                         pmerge2['T'] = pmerge_all['T']['T']
                         pmerge2['IMU'] = pmerge_all['IMU']['IMU']
                         print('Pmerge pmerge')
@@ -465,32 +467,41 @@ class TarProcessor():
                         ntcnum = pmerge2['ntcnum']
                         ntcdist = pmerge2['ntcdist']
                         xdist = numpy.arange(0,ntcnum) * ntcdist/1000
-                        print('Xdist', xdist)
+                        #print('Xdist', xdist)
                         sensors_body = np.column_stack((xdist, np.zeros_like(xdist), np.zeros_like(xdist)))
 
 
-                        print(pmerge2['IMU'])
+                        #print(pmerge2['IMU'])
                         ax = pmerge2['IMU'][0]
                         ay = pmerge2['IMU'][1]
                         az = pmerge2['IMU'][2]
                         phi, theta = acc_to_roll_pitch(ay, ax, az)
                         R = R_from_roll_pitch(phi, theta)
-                        print('a', ax, ay, az, phi, theta, R)
+                        #print('a', ax, ay, az, phi, theta, R)
                         sensors_world = (R @ sensors_body.T).T  # shape (N,3)
                         #for i, pw in enumerate(sensors_world):
                         #    X, Y, Z = pw
                         #    print(f"Sensor {i}: X={X:.4f} m, Z={Z:.4f} m")
 
-                        pmerge2['pos_x'] = sensors_world[:, 0]
-                        #pmerge2['pos_y'] = sensors_world[:, 1]
-                        pmerge2['pos_z'] = sensors_world[:, 2]
+                        pmerge2['pos_x'] = sensors_world[:, 0].tolist()
+                        #pmerge2['pos_y'] = sensors_world[:, 1].tolist()
+                        pmerge2['pos_z'] = sensors_world[:, 2].tolist()
                         merged_packets.append(pmerge2)
+                        try:
+                            self.packetbuffer_nump_tar[nump]['merged']
+                        except:
+                            self.packetbuffer_nump_tar[nump]['merged'] = {}
+
+                        print("Added packet to buffer")
+                        self.packetbuffer_nump_tar[nump]['merged'][mac] = pmerge2
+                        print('MACS merged',self.packetbuffer_nump_tar[nump]['merged'].keys())
                         #raise(ValueError)
 
                 # print('Datapacket processed',data_packet_processed)
                 # logger.debug('Data packet processed (without calibration):{}'.format(len(data_packet_processed)))
                 # print('mac',mac,counter,np)
         return merged_packets
+
     def merge_tar_chain(self):
         funcname = __name__ + '.merge_tar_chain():'
         if config['merge_tar_chain'] and (self.np_processed_counter) > 2:
@@ -500,92 +511,78 @@ class TarProcessor():
             print('Numps', numps, self.num_tar_sensors_max, self.tar_setup)
             merged_packets = []
             mac_downstream = self.tar_setup[0]
-            for nump_merge in numps[:-1]:  # Dont merge the last one
-                ppub_dict = self.packetbuffer_nump_tar.pop(nump_merge)
-                for datatype_merge in ppub_dict.keys():
-                    mac_final = 'TARchain_' + mac_downstream + 'N{}'.format(
-                        len(self.tar_setup))
-                    print('Merging tar chains packet {} with datatype'.format(nump_merge, datatype_merge))
-                    ppub = ppub_dict[datatype_merge]
-                    #print('HALLO', ppub)
-                    #print('HALLO HALLO')
-                    l1 = len(ppub.keys())
-                    l2 = len(self.tar_setup)
-                    if l1 == l2:
-                        #merged_packet_work['_redvypr']['packetid'] = mac_final
-                        merged_packet_work = redvypr.RedvyprAddress(ppub[mac_downstream],packetid=mac_final).to_redvypr_dict()
-                        print("Blank merge packet",merged_packet_work)
-                        #merged_packet_work = copy.deepcopy(ppub[mac_downstream])
-                    else:
-                        print(
-                            funcname + "Not enough packets for tar chain to merge: {} instead of {}".format(
-                                l1, l2))
-                        continue
-                    # input('fds')
-                    data_merged = []
-                    t_merge = None
-                    if datatype_merge == 'T':
-                        unitstr = 'degC'
-                    elif datatype_merge == 'R':
-                        unitstr = 'Ohm'
-                    for ntar, mac_merge in enumerate(self.tar_setup): # Merge according to the sensor design
-                        try:
-                            data_merge = ppub[mac_merge][datatype_merge]
-                        except:
-                            logger.info('MAC not in buffer {}'.format(mac_merge))
-                            ntcnum = self.sensors_datasizes[mac_merge]
-                            data_merge = numpy.zeros(ntcnum) * numpy.nan
+            try:
+                for nump_merge in numps[:-1]:  # Dont merge the last one
+                    print('keys',self.packetbuffer_nump_tar[nump_merge].keys())
+                    if 'merged' in self.packetbuffer_nump_tar[nump_merge].keys():
+                        print("Merging ...")
+                        ppub_dict = self.packetbuffer_nump_tar.pop(nump_merge)
+                        #ppub_dict = self.packetbuffer_nump_tar[nump_merge]
+                        ppub = ppub_dict['merged']
 
-                        data_merged.append(data_merge)
-                        if t_merge is None:
-                            try:
-                                t_merge = ppub[mac_merge]['t']
-                            except:
-                                pass
+                        mac_final = 'TARchain_' + mac_downstream + 'N{}'.format(
+                            len(self.tar_setup))
 
-                    data_merged = numpy.hstack(data_merged)
-                    print(funcname + 'merging tar chain, data of {} merged '.format(datatype_merge))
-                    #print(data_merged)
 
-                    print(funcname + 'Done')
-                    if False: # Save as xarray
-                        coord = {'time': numpy.asarray([t_merge]),
-                                 'numntc': numpy.arange(len(data_merged))}
+                        #print('HALLO', ppub)
+                        print('HALLO HALLO\n\n\n')
+                        l1 = len(ppub.keys())
+                        l2 = len(self.tar_setup)
+                        if l1 == l2:
+                            #merged_packet_work['_redvypr']['packetid'] = mac_final
+                            merged_packet_work = redvypr.RedvyprAddress(ppub[mac_downstream],packetid=mac_final).to_redvypr_dict()
+                            print("Blank merge packet",merged_packet_work)
+                            #merged_packet_work = copy.deepcopy(ppub[mac_downstream])
+                        else:
+                            print(
+                                funcname + "Not enough packets for tar chain to merge: {} instead of {}".format(
+                                    l1, l2))
+                            continue
+                        # input('fds')
+                        for datatype_merge in ['T','R','pos_x','pos_z']:
+                            print('Merging tar chains packet {} with datatype'.format(
+                                nump_merge, datatype_merge))
+                            data_merged = []
+                            t_merge = None
+                            if datatype_merge == 'T':
+                                unitstr = 'degC'
+                            elif datatype_merge == 'R':
+                                unitstr = 'Ohm'
+                            for ntar, mac_merge in enumerate(self.tar_setup): # Merge according to the sensor design
+                                try:
+                                    data_merge = ppub[mac_merge][datatype_merge]
+                                except:
+                                    logger.info('MAC not in buffer {}'.format(mac_merge))
+                                    ntcnum = self.sensors_datasizes[mac_merge]
+                                    data_merge = numpy.zeros(ntcnum) * numpy.nan
 
-                        data_tmp = numpy.zeros((1, len(data_merged)))
-                        data_tmp[0, :] = data_merged
-                        data_merged_xr = xr.DataArray(data_tmp,
-                                                      dims=['time', 'numntc'],
-                                                      coords=coord)
 
-                        nump_xr = xr.DataArray([nump_merge],
-                                               dims=['time'],
-                                               coords={'time': numpy.asarray([t_merge])})
+                                # Add the last position onto pos x/z
+                                if "pos" in datatype_merge and len(data_merged)>0:
+                                    data_offset = data_merged[-1][-1]
+                                    data_merge = numpy.asarray(data_merge) + data_offset
+                                data_merged.append(data_merge)
+                                if t_merge is None:
+                                    try:
+                                        t_merge = ppub[mac_merge]['t']
+                                    except:
+                                        pass
 
-                        dataset_merged_xr = xr.Dataset(coords=coord)
-                        dataset_merged_xr.attrs["units"] = unitstr
-                        dataset_merged_xr[datatype_merge] = data_merged_xr
-                        dataset_merged_xr['np'] = nump_xr
+                            data_merged = numpy.hstack(data_merged)
+                            print(funcname + 'merging tar chain, data of {} merged '.format(datatype_merge))
+                            #print(data_merged)
 
-                        print('nump merge', nump_merge)
-                        # Concat to xarray
-                        try:
-                            self.data_merged_xr_all[datatype_merge]
-                        except:
-                            logger.info('Creating xarray', exc_info=True)
-                            self.data_merged_xr_all[datatype_merge] = xr.Dataset(coords=coord)
-                            # data_merged_xr_all[datatype_merge][datatype_merge].attrs["units"] = unitstr
-                            self.data_merged_xr_all[datatype_merge].attrs["mac"] = mac_final
 
-                        self.data_merged_xr_all[datatype_merge] = xr.concat(
-                            [self.data_merged_xr_all[datatype_merge], dataset_merged_xr], dim='time')
-                        self.data_merged_xr_all[datatype_merge][datatype_merge].attrs["units"] = unitstr
-                        print('data merged xr', self.data_merged_xr_all[datatype_merge])
-
-                    merged_packet_work[datatype_merge] = data_merged.tolist()
-                    merged_packet_work['mac'] = mac_final
-                    merged_packet_work['np'] = nump_merge
-                    merged_packets.append(merged_packet_work)
+                            merged_packet_work[datatype_merge] = data_merged.tolist()
+                            merged_packet_work['mac'] = mac_final
+                            merged_packet_work['np'] = nump_merge
+                        merged_packets.append(merged_packet_work)
+                        print(merged_packet_work)
+                        #raise(ValueError)
+                        print(funcname + 'Done')
+            except:
+                logger.info("Could not merge chain",exc_info=True)
+                raise (ValueError)
 
             print('Done with tar chain merging, returning:')
             return merged_packets
@@ -629,10 +626,11 @@ class TarProcessor():
             # Merge datapackets which have only parts (T,R with NTC indices)
             merged_packets = self.merge_datapackets(data_packet_processed)
             packets['merged_packets'] = merged_packets
-            #print("Merging the tar chain")
-            #merged_tar_chain = self.merge_tar_chain()
-            #print("Merging the tar chain done",merged_tar_chain)
-            #packets['merged_tar_chain'] = merged_tar_chain
+            print("\nMerging the tar chain")
+            merged_tar_chain = self.merge_tar_chain()
+            print("Merging the tar chain done",merged_tar_chain)
+            print("done merging chain\n\n")
+            packets['merged_tar_chain'] = merged_tar_chain
 
         return packets
 

@@ -167,17 +167,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         logger.info('Plot clicked')
         #print('Itemclicked',itemclicked)
         #print(self.device.redvypr.redvypr_device_scan.redvypr_devices)
-        if False:
-            logger.debug('Closing plot')
-            try:
-                self.device.redvypr.redvypr_widget.closeDevice(button.__plotdevice__)
-                delattr(button, '__plotdevice__')
-                delattr(itemclicked,'__plotdevice__')
-                button.setText('Plot')
-            except:
-                logger.debug('Could not close device',exc_info=True)
-                button.setChecked(True)
-        else:
+        if True:
             try:
                 plotdevice = itemclicked.__plotdevice__
             except:
@@ -187,25 +177,56 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 logger.debug('Creating PcolorPlotDevice')
                 mac = itemclicked.__mac__
                 datatype = itemclicked.__datatype__
-                packetid = itemclicked.__packetid__
-                datastream = redvypr.RedvyprAddress(packetid=packetid,datakey=datatype)
-                custom_config = redvypr.devices.plot.PcolorPlotDevice.DeviceCustomConfig(datastream=datastream)
-                devicemodulename = 'redvypr.devices.plot.PcolorPlotDevice'
-                plotname = 'Pcolor({})'.format(mac)
-                device_parameter = RedvyprDeviceParameter(name=plotname,autostart=True)
-                plotdevice = self.device.redvypr.add_device(devicemodulename=devicemodulename,
-                                               base_config=device_parameter, custom_config=custom_config)
-
-                itemclicked.__plotdevice__ = plotdevice
                 packets = self.packetbuffer[mac][datatype]['packets']
-                # Update the plot widget with the data in the buffer
-                for ip,p in enumerate(packets):
-                    for (guiqueue, widget) in plotdevice.guiqueues:
-                        widget.update_data(p)
+                if "pos" in datatype: # Plot the position as xy-plot
+                    print('Plotting position')
+                    address_tmp = itemclicked.__address__
+                    address_x = redvypr.RedvyprAddress(address_tmp, datakey='pos_x')
+                    address_y = redvypr.RedvyprAddress(address_tmp, datakey='pos_z')
 
-                logger.debug('Starting plot device')
-                plotdevice.thread_start()
-                button.__plotdevice__ = plotdevice
+                    devicemodulename = 'redvypr.devices.plot.XYPlotDevice'
+                    plotname = 'XYPlot_{}_{}'.format(mac, address_y.datakey)
+                    device_parameter = RedvyprDeviceParameter(name=plotname)
+                    custom_config = redvypr.devices.plot.XYPlotDevice.DeviceCustomConfig(datetick_x=False)
+                    custom_config.lines[0].databuffer_add_mode = 'clear first'
+                    custom_config.lines[0].x_addr = redvypr.RedvyprAddress(address_x)
+                    custom_config.lines[0].y_addr = redvypr.RedvyprAddress(address_y)
+                    custom_config.lines[0].label = 'pos x,z'
+                    custom_config.lines[0].label_format = '{NAME}'
+                    print('Config line',custom_config.lines[0])
+                    plotdevice = self.device.redvypr.add_device(
+                        devicemodulename=devicemodulename,
+                        base_config=device_parameter,
+                        custom_config=custom_config)
+
+                    itemclicked.__plotdevice__ = plotdevice
+                    logger.debug('Starting plot device')
+                    # Update the plot widget with the data in the buffer
+                    for ip, p in enumerate(packets):
+                        for (guiqueue, widget) in plotdevice.guiqueues:
+                            print("updating with",p)
+                            widget.update_data(p, force_update=True)
+                    plotdevice.thread_start()
+                    button.__plotdevice__ = plotdevice
+                else: # otherwise as pcolorplot
+                    packetid = itemclicked.__packetid__
+                    datastream = redvypr.RedvyprAddress(packetid=packetid,datakey=datatype)
+                    custom_config = redvypr.devices.plot.PcolorPlotDevice.DeviceCustomConfig(datastream=datastream)
+                    devicemodulename = 'redvypr.devices.plot.PcolorPlotDevice'
+                    plotname = 'Pcolor({})'.format(mac)
+                    device_parameter = RedvyprDeviceParameter(name=plotname,autostart=True)
+                    plotdevice = self.device.redvypr.add_device(devicemodulename=devicemodulename,
+                                                   base_config=device_parameter, custom_config=custom_config)
+
+                    itemclicked.__plotdevice__ = plotdevice
+                    # Update the plot widget with the data in the buffer
+                    for ip,p in enumerate(packets):
+                        for (guiqueue, widget) in plotdevice.guiqueues:
+                            widget.update_data(p)
+
+                    logger.debug('Starting plot device')
+                    plotdevice.thread_start()
+                    button.__plotdevice__ = plotdevice
                 #button.setText('Close')
 
     def parameter_plot_button_clicked(self, row):
@@ -255,7 +276,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def update_data(self, data):
         """
         """
-        print("Got data",data)
+        #print("Got data",data)
+        address_packet = redvypr.RedvyprAddress(data)
         datatypes_plot = ['T','R','IMU','pos_x','pos_y','pos_z']
         try:
             funcname = __name__ + '.update_data():'
@@ -333,6 +355,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                         itm_datatype.__mac__ = mac
                         itm_datatype.__datatype__ = datatype
                         itm_datatype.__packetid__ = packetid
+                        itm_datatype.__address__ = address_packet
                         itm.addChild(itm_datatype)
                         flag_tree_update = True
                         # Button erstellen und zur Zelle hinzufügen
