@@ -9,6 +9,7 @@ ___________
    :toctree: _autosummary
    :recursive:
 
+   redvypr.redvypr_address
    redvypr.Datapacket
 
 

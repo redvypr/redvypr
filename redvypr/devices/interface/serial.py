@@ -348,6 +348,65 @@ class Device(RedvyprDevice):
         logger.debug(funcname + ' serial devices {}'.format(self.custom_config.serial_devices))
 
 
+class serialDataWidget(QtWidgets.QWidget):
+    def __init__(self, comport):
+        super().__init__()
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.datatext = QtWidgets.QPlainTextEdit()
+        self.datatext.setReadOnly(True)
+        self.datatext.setMaximumBlockCount(10000)
+        self.datatext.setWindowIcon(QtGui.QIcon(_icon_file))
+        self.datatext.setWindowTitle(comport.device)
+
+        self.layout.addWidget(self.datatext)
+        layout = QtWidgets.QHBoxLayout()
+        self.layout.addLayout(layout)
+        self.clearbtn = QtWidgets.QPushButton('Clear')
+        self.clearbtn.clicked.connect(self.cleartext)
+        self.scrollchk = QtWidgets.QCheckBox('Scroll to end')
+        self.scrollchk.setChecked(True)
+        self.updatechk = QtWidgets.QCheckBox('Update')
+        self.updatechk.setChecked(True)
+
+        #self.text.setMaximumBlockCount(self.device.custom_config.bufsize)
+        layout.addWidget(self.scrollchk)
+        layout.addWidget(self.updatechk)
+        layout.addWidget(self.clearbtn)
+
+        # Add send widgets
+        if True:
+            layoutsend = QtWidgets.QHBoxLayout()
+            self.sendedit = QtWidgets.QLineEdit()
+            self.sendbtn = QtWidgets.QPushButton('Send')
+            self.sendbtn.clicked.connect(self.send_clicked)
+            layoutsend.addWidget(self.sendedit)
+            layoutsend.addWidget(self.sendbtn)
+            self.layout.addLayout(layoutsend)
+
+    def send_clicked(self):
+        print("Sending data ...")
+
+    def cleartext(self):
+        self.datatext.clear()
+
+    def add_data(self, data):
+        if (self.updatechk.isChecked()):
+            data_new = str(data['data'])
+            prev_cursor = self.datatext.textCursor()
+            pos = self.datatext.verticalScrollBar().value()
+            self.datatext.moveCursor(QtGui.QTextCursor.End)
+            self.datatext.insertPlainText(str(data_new) + '\n')
+            # cursor.setPosition(0)
+            # self.text.setTextCursor(prev_cursor)
+            if (self.scrollchk.isChecked()):
+                self.datatext.verticalScrollBar().setValue(
+                    self.datatext.verticalScrollBar().maximum())
+            else:
+                self.datatext.verticalScrollBar().setValue(pos)
+
+            #self.datatext.insertPlainText(str(data['data']))
+            #self.datatext.insertPlainText('\n')
+
 class initDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
@@ -459,10 +518,15 @@ class initDeviceWidget(QtWidgets.QWidget):
             serialwidgetdict['combo_databits'].addItem('6')
             serialwidgetdict['combo_databits'].addItem('5')
 
-            serialwidgetdict['button_serial_openclose'] = QtWidgets.QPushButton('Use')
-            serialwidgetdict['button_serial_openclose'].setCheckable(True)
-            serialwidgetdict['button_serial_openclose'].setChecked(serial_device.use_device)
-            serialwidgetdict['button_serial_openclose'].clicked.connect(self.use_device_clicked)
+            # Legacy
+            if False:
+                serialwidgetdict['button_serial_openclose'] = QtWidgets.QPushButton('Use')
+                serialwidgetdict['button_serial_openclose'].setCheckable(True)
+                serialwidgetdict['button_serial_openclose'].setChecked(serial_device.use_device)
+                serialwidgetdict['button_serial_openclose'].clicked.connect(self.use_device_clicked)
+            else:
+                serialwidgetdict['button_serial_openclose'] = QtWidgets.QCheckBox("Use")
+                serialwidgetdict['button_serial_openclose'].setChecked(serial_device.use_device)
 
             serialwidgetdict['button_metadata'] = QtWidgets.QPushButton('Metadata')
             serialwidgetdict['button_metadata'].clicked.connect(self.__metadata_clicked)
@@ -567,7 +631,7 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         self.__metadata_edit = metadata
         self.__metadata_address = deviceAddress
-        self.metadata_config = pydanticConfigWidget(metadata, configname=deviceAddress.address_str)
+        self.metadata_config = pydanticConfigWidget(metadata, configname=deviceAddress.to_address_string())
         self.metadata_config.config_editing_done.connect(self.__metadata_config_apply)
         self.metadata_config.setWindowTitle('redvypr, Metadata for {}'.format(devicename))
         self.metadata_config.show()
@@ -595,12 +659,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         else: # editable item
             pass
 
-    def use_device_clicked(self):
-        button = self.sender()
-        if button.isChecked():
-            button.setText('Use')
-        else:
-            button.setText('Ignore')
     def update_buttons(self):
         """ Updating all buttons depending on the thread status (if its alive, graying out things)
         """
@@ -714,10 +772,11 @@ class initDeviceWidget(QtWidgets.QWidget):
 
 
 class displayDeviceWidget(QtWidgets.QWidget):
-    def __init__(self,device=None):
+    def __init__(self,device=None, tabwidget=None):
         super(QtWidgets.QWidget, self).__init__()
         layout = QtWidgets.QGridLayout(self)
         self.device = device
+        self.tabwidget = tabwidget
         self.serialwidgets = []
         self.serialwidgetsdict = {}
         self.comporttable = QtWidgets.QTableWidget()
@@ -740,11 +799,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         for irow, comport in enumerate(comports):
             self.comports.append(comport.device)
             serialwidgetdict = {}
-            serialwidgetdict['datawidget'] = QtWidgets.QPlainTextEdit()
-            serialwidgetdict['datawidget'].setReadOnly(True)
-            serialwidgetdict['datawidget'].setMaximumBlockCount(10000)
-            serialwidgetdict['datawidget'].setWindowIcon(QtGui.QIcon(_icon_file))
-            serialwidgetdict['datawidget'].setWindowTitle(comport.device)
+            serialwidgetdict['datawidget'] = serialDataWidget(comport)
             self.serialwidgets.append(serialwidgetdict)
             self.serialwidgetsdict[comport.device] = serialwidgetdict
 
@@ -761,6 +816,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
             button = QtWidgets.QPushButton('Show')
             button.clicked.connect(self.__showdata__)
             button.displaywidget = serialwidgetdict['datawidget']
+            button.__comport__ = comport
             self.comporttable.setCellWidget(irow, 4, button)
 
         self.comporttable.resizeColumnsToContents()
@@ -770,11 +826,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
         Opens the raw data widget
         """
         button = self.sender()
-
-        button.displaywidget.show()
-        button.displaywidget.setFocus()
-        button.displaywidget.raise_()
-        button.displaywidget.activateWindow()
+        tabname = button.__comport__.device
+        self.tabwidget.addTab(button.displaywidget, tabname)
+        #button.displaywidget.show()
+        #button.displaywidget.setFocus()
+        #button.displaywidget.raise_()
+        #button.displaywidget.activateWindow()
         #try:
         #    isshowing = button.showing
         #except:
@@ -819,8 +876,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
             pass
 
         try:
-            datawidget.insertPlainText(str(data['data']))
-            datawidget.insertPlainText('\n')
+            datawidget.add_data(data)
+
         except Exception as e:
             #logger.exception(e)
             pass

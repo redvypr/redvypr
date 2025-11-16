@@ -1,5 +1,6 @@
 """
-Redvypr addresses are the base to identify and address redvypr data packets.
+Redvypr addresses are the base to identify and address redvypr data packets and their content.
+see also the documentation here: :ref:`design_addressing`.
 """
 
 import re

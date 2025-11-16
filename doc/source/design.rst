@@ -1,6 +1,10 @@
 Design
 ======
 
+.. _design_addressing:
+Addressing data packets and content with RedvyprAddress
+-------------------------------------------------------
+
 
 Dataflow and addressing
 -----------------------
