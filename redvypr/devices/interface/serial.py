@@ -392,14 +392,25 @@ class serialDataWidget(QtWidgets.QWidget):
         if True:
             layoutsend = QtWidgets.QHBoxLayout()
             self.sendedit = QtWidgets.QLineEdit()
+            self.senddelimiter = QtWidgets.QComboBox()
+            self.senddelimiter.addItem("None")
+            self.senddelimiter.addItem("LF")
+            self.senddelimiter.addItem("CR/LF")
+            self.senddelimiter.addItem("CR")
             self.sendbtn = QtWidgets.QPushButton('Send')
             self.sendbtn.clicked.connect(self.send_clicked)
             layoutsend.addWidget(self.sendedit)
+            layoutsend.addWidget(self.senddelimiter)
             layoutsend.addWidget(self.sendbtn)
             self.layout.addLayout(layoutsend)
 
     def send_clicked(self):
         data = str(self.sendedit.text()).encode('utf-8')
+        data_delimiter = self.senddelimiter.currentText()
+        if "CR" in data_delimiter:
+            data += b"\r"
+        if "LF" in data_delimiter:
+            data += b"\n"
         print("Sending data ...",data)
         data_dict = {'comport':self.comport,'data_send':data}
         self.device.thread_command('send',data_dict)
@@ -707,9 +718,9 @@ class initDeviceWidget(QtWidgets.QWidget):
             serial_device = w['serial_device']
             config = {}
             serial_name = str(w['combo_serial_devices'].text())
-            serial_device.device = serial_name
+            serial_device.comport_device = serial_name
             devicename = str(w['devicename'].text())
-            serial_device.devicename = devicename
+            serial_device.comport_devicename = devicename
             serial_baud = int(w['combo_serial_baud'].currentText())
             serial_device.baud = serial_baud
             stopbits = w['combo_stopbits'].currentText()
