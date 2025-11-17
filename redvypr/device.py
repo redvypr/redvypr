@@ -713,25 +713,25 @@ class RedvyprDevice(QtCore.QObject):
 
         return running
 
-    def thread_command(self, command, data=None):
+    def thread_command(self, command, comdata=None):
         """
         Sends a command to the device thread
         Args:
             command: string, i.e. "stop"
-            data: dictionary with additional data, the data will be incorporated into the command dict by executing command.update(data)
+            comdata: dictionary with additional data, the data will be incorporated into the command dict by executing command.update(data)
 
         Returns:
 
         """
         funcname = __name__ + '.thread_command():'
         self.logger.debug(funcname)
-        command = commandpacket(command=command, device_uuid=self.uuid, thread_uuid=self.thread_uuid,devicename=self.name,host=self.redvypr.hostinfo,devicemodulename=self.devicemodulename)
+        command = commandpacket(command=command, comdata=comdata, device_uuid=self.uuid, thread_uuid=self.thread_uuid,devicename=self.name,host=self.redvypr.hostinfo,devicemodulename=self.devicemodulename)
         # TODO, this should be done by commandpacket
-        if(data is not None):
-            if type(data) == dict:
-                command.update(data)
-            else:
-                raise TypeError('data needs to be a dictionary')
+        #if(comdata is not None):
+        #    if type(comdata) == dict:
+        #        command.update(comdata)
+        #    else:
+        #        raise TypeError('data needs to be a dictionary')
 
         if(self.thread_running()):
             #print('Sending command',command)

@@ -16,6 +16,8 @@ import threading
 import pydantic
 import typing
 import re
+
+import redvypr.data_packets
 from redvypr.data_packets import check_for_command, create_datadict
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.device import RedvyprDevice
@@ -64,8 +66,8 @@ class SerialDeviceCustomConfig(pydantic.BaseModel):
     chunksize: int = pydantic.Field(default=0, description='The maximum amount of bytes read with one chunk')
     packetdelimiter: str = pydantic.Field(default='LF', description='The delimiter to distinguish packets, leave empty to disable')
     packetstart: str = pydantic.Field(default='', description='The delimiter to distinguish packets, leave empty to disable')
-    device: str = pydantic.Field(default='')
-    devicename: str = pydantic.Field(default='')
+    comport_device: str = pydantic.Field(default='')
+    comport_devicename: str = pydantic.Field(default='', description="Devicename of the comport, can be edited")
 
 
 class DeviceCustomConfig(pydantic.BaseModel):
@@ -81,7 +83,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
     logger.debug(funcname + ':Starting reading serial data')
     devicename_redvypr = device_info['device']
     chunksize = config['chunksize']  # The maximum amount of bytes read with one chunk
-    serial_name = config['device']
+    comport = config['comport_device']
     baud = config['baud']
     parity = config['parity']
     stopbits = config['stopbits']
@@ -90,9 +92,9 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
     dt_maxwait = config['dt_maxwait']
     tnewpacket = time.time() # Time a new packet has arrived
 
-    logger.debug('Starting to read serial device {:s} with baudrate {:d}'.format(serial_name,baud))
+    logger.debug('Starting to read serial device {:s} with baudrate {:d}'.format(comport,baud))
 
-    devicename = config['devicename']
+    devicename = config['comport_devicename']
     # Get the packet end and packet start characters
     newpacket = config['packetdelimiter']
     # Check if a delimiter shall be used (\n, \r\n, etc ...)
@@ -102,7 +104,6 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
         FLAG_DELIMITER = False
     if (type(newpacket) is not bytes):
         newpacket = newpacket.encode('utf-8')
-
 
     startpacket = config['packetstart'].encode('utf-8')
 
@@ -115,9 +116,9 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
     serial_device = False
     if True:
         try:
-            serial_device = serial.Serial(serial_name, baud, parity=parity, stopbits=stopbits, bytesize=bytesize,
+            serial_device = serial.Serial(comport, baud, parity=parity, stopbits=stopbits, bytesize=bytesize,
                                           timeout=0)
-            data = create_datadict(device= devicename_redvypr,packetid=devicename)
+            data = create_datadict(device= devicename_redvypr, packetid=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['status'] = 'reading'
@@ -128,7 +129,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
             # print('Serial device 1',serial_device)
         except Exception as e:
             # print('Serial device 2',serial_device)
-            logger.debug(funcname + ': Exception open_serial_device {:s} {:d}: '.format(serial_name, baud) + str(e))
+            logger.debug(funcname + ': Exception open_serial_device {:s} {:d}: '.format(comport, baud) + str(e))
             data = create_datadict(packetid=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
@@ -145,7 +146,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
         except:
             data = None
         if (data is not None):
-            command = data
+            command = data[0]
             # logger.debug('Got a command: {:s}'.format(str(data)))
             if (command is not None):
                 if command == 'stop':
@@ -157,6 +158,10 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
                     except:
                         pass
                     return
+                elif command == 'send': # Sending data to serial device
+                    data_send = data[1]
+                    print("Sending data:{}".format(data_send))
+                    serial_device.send(data_send)
 
         time.sleep(dt_poll)
         ndata = serial_device.inWaiting()
@@ -209,7 +214,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
                             rawdata_all = rawdata_split[-1]
 
         if ((time.time() - tnewpacket) > dt_maxwait) and (dt_maxwait > 0):
-            logger.warning('Did not find valid packet on serial device {:s}'.format(serial_name))
+            logger.warning('Did not find valid packet on serial device {:s}'.format(comport))
             data = create_datadict(device=devicename_redvypr,packetid=devicename)
             data['t'] = time.time()
             data['comport'] = serial_device.name
@@ -241,22 +246,23 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     logger.debug(funcname + ':Starting reading serial data')
     logger.debug('Will open comports {:s}'.format(str(config['serial_devices'])))
 
-    serial_threads = []
-    serial_threads_datainqueues = []
+    serial_threads = {}
+    serial_threads_datainqueues = {}
     dt_poll = 0.05
     for comportconfig in config['serial_devices']:
-        logger.debug('Processing device {}'.format(comportconfig['devicename']))
+        logger.debug('Processing device {}'.format(comportconfig['comport_devicename']))
         if comportconfig['use_device'] == False:
-            logger.debug('Ignoring device {}'.format(comportconfig['devicename']))
+            logger.debug('Ignoring device {}'.format(comportconfig['comport_devicename']))
         else:
-            logger.debug('Configuring device {}'.format(comportconfig['devicename']))
+            logger.debug('Configuring device {}'.format(comportconfig['comport_devicename']))
             queuesize = 100
             config_thread = copy.deepcopy(comportconfig)
             datainqueue_thread = queue.Queue(maxsize=queuesize)
-            serial_threads_datainqueues.append(datainqueue_thread)
+            comport = comportconfig['comport_device']
+            serial_threads_datainqueues[comport] = datainqueue_thread
             args = [device_info,config_thread,dataqueue,datainqueue_thread,statusqueue]
             serial_thread = threading.Thread(target=read_serial, args=args, daemon=True)
-            serial_threads.append(serial_thread)
+            serial_threads[comport] = serial_thread
             logger.debug('Starting thread with config: {:s}'.format(str(config_thread)))
             serial_thread.start()
 
@@ -266,25 +272,29 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
         except:
             data = None
         if (data is not None):
-            command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
+            [command,comdata] = check_for_command(data, thread_uuid=device_info['thread_uuid'], add_data=True)
             # logger.debug('Got a command: {:s}'.format(str(data)))
             if (command is not None):
                 if command == 'stop':
                     sstr = funcname + ': Command is for me: {:s}'.format(str(command))
                     logger.debug(sstr)
                     # Sending stop command to the threads
-                    for datainqueue in serial_threads_datainqueues:
-                        datainqueue.put('stop')
+                    for comport, datainqueue in serial_threads_datainqueues.items():
+                        datainqueue.put(['stop'])
 
                     try:
                         statusqueue.put_nowait(sstr)
                     except:
                         pass
                     return
+                elif command == 'send':  # Something to send
+                    data_send = comdata['command_data']['data']
+                    comport = data_send['comport']
+                    print("Sending",data_send)
 
         # Check if any of the threads is running, if not stop main thread as well
         all_dead = True
-        for serial_thread in serial_threads:
+        for comport, serial_thread in serial_threads.items():
             if serial_thread.is_alive():
                 all_dead = False
                 break
@@ -325,10 +335,14 @@ class Device(RedvyprDevice):
         self.comports = []
         serial_devices_new = []
         for comport in comports:
+            logger.info(funcname + ' Testing serial device {}, SN:{},vid:{},pid:{},Manufacturer:{}'.format(comport.device, comport.serial_number, comport.vid, comport.pid,
+                  comport.manufacturer))
+            #print("Comport",comport.device, comport.serial_number, comport.vid, comport.pid,
+            #      comport.manufacturer)
             FLAG_DEVICE_EXISTS = False
             for d in self.custom_config.serial_devices:
-                if comport.device == d.device:
-                    logger.debug(funcname + ' Found new device {}'.format(d.device))
+                if comport.device == d.comport_device:
+                    logger.debug(funcname + ' Found new device {}'.format(d.comport_device))
                     FLAG_DEVICE_EXISTS = True
                     serial_devices_new.append(d)
                     self.comports.append(comport)
@@ -338,8 +352,8 @@ class Device(RedvyprDevice):
                 logger.info('Ignoring device {}'.format(comport.device))
             else:
                 if FLAG_DEVICE_EXISTS == False:
-                    devicename = comport.device.split('/')[-1]
-                    config = SerialDeviceCustomConfig(device=comport.device, devicename=devicename)
+                    comport_devicename = comport.device.split('/')[-1]
+                    config = SerialDeviceCustomConfig(comport_device=comport.device, comport_devicename=comport_devicename)
                     #self.config.serial_devices.append(config)
                     serial_devices_new.append(config)
                     self.comports.append(comport)
@@ -347,10 +361,11 @@ class Device(RedvyprDevice):
         self.custom_config.serial_devices = serial_devices_new
         logger.debug(funcname + ' serial devices {}'.format(self.custom_config.serial_devices))
 
-
 class serialDataWidget(QtWidgets.QWidget):
-    def __init__(self, comport):
+    def __init__(self, comport, device = None):
         super().__init__()
+        self.device = device
+        self.comport = comport
         self.layout = QtWidgets.QVBoxLayout(self)
         self.datatext = QtWidgets.QPlainTextEdit()
         self.datatext.setReadOnly(True)
@@ -384,7 +399,11 @@ class serialDataWidget(QtWidgets.QWidget):
             self.layout.addLayout(layoutsend)
 
     def send_clicked(self):
-        print("Sending data ...")
+        data = str(self.sendedit.text()).encode('utf-8')
+        print("Sending data ...",data)
+        data_dict = {'comport':self.comport,'data_send':data}
+        self.device.thread_command('send',data_dict)
+
 
     def cleartext(self):
         self.datatext.clear()
@@ -482,7 +501,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 baudrates.sort()
                 ibaud = baudrates.index(serial_device.baud)
 
-            serialwidgetdict['combo_serial_devices'] = QtWidgets.QLabel(serial_device.device)
+            serialwidgetdict['combo_serial_devices'] = QtWidgets.QLabel(serial_device.comport_device)
             # self._combo_serial_devices.currentIndexChanged.connect(self._serial_device_changed)
             serialwidgetdict['combo_serial_baud'] = QtWidgets.QComboBox()
             for b in baudrates:
@@ -496,7 +515,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             # setting line edit
             serialwidgetdict['combo_serial_baud'].setLineEdit(edit)
 
-            devicename = serial_device.devicename
+            devicename = serial_device.comport_devicename
             serialwidgetdict['devicename'] = QtWidgets.QLineEdit()
             serialwidgetdict['devicename'].setText(devicename)
 
@@ -799,7 +818,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         for irow, comport in enumerate(comports):
             self.comports.append(comport.device)
             serialwidgetdict = {}
-            serialwidgetdict['datawidget'] = serialDataWidget(comport)
+            serialwidgetdict['datawidget'] = serialDataWidget(comport, device=self.device)
             self.serialwidgets.append(serialwidgetdict)
             self.serialwidgetsdict[comport.device] = serialwidgetdict
 
