@@ -172,7 +172,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
             if (command is not None):
                 if command == 'stop':
                     serial_device.close()
-                    sstr = funcname + ': Command is for me ({:s}): {:s}'.format(config['device'],str(command))
+                    sstr = funcname + ': Command is for me ({:s}): {:s}'.format(config['comport_device'],str(command))
                     logger.debug(sstr)
                     try:
                         statusqueue.put_nowait(sstr)
@@ -181,8 +181,9 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
                     return
                 elif command == 'send': # Sending data to serial device
                     data_send = data[1]
-                    print("Sending data:{}".format(data_send))
-                    serial_device.send(data_send)
+                    print("Writing data data:{}".format(data_send))
+                    serial_device.write(data_send)
+                    print("Done ...")
 
         time.sleep(dt_poll)
         ndata = serial_device.inWaiting()
@@ -309,9 +310,14 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                         pass
                     return
                 elif command == 'send':  # Something to send
-                    data_send = comdata['command_data']['data']
-                    comport = data_send['comport']
+                    data_com = comdata['command_data']['data']
+                    comport = data_com['comport']
+                    data_send = data_com['data_send']
                     print("Sending",data_send)
+                    if comport in serial_threads_datainqueues.keys():
+                        serial_threads_datainqueues[comport].put(['send',data_send])
+                    else:
+                        logger.warning("comport {} not available ({})".format(comport,serial_threads_datainqueues.keys()))
 
         # Check if any of the threads is running, if not stop main thread as well
         all_dead = True
@@ -541,7 +547,7 @@ class serialDataWidget(QtWidgets.QWidget):
         if "LF" in data_delimiter:
             data += b"\n"
         print("Sending data ...",data)
-        data_dict = {'comport':self.comport,'data_send':data}
+        data_dict = {'comport':self.comport.device,'data_send':data}
         self.device.thread_command('send',data_dict)
 
 
