@@ -79,6 +79,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 logger.debug('Stop command')
                 return
 
+        print("Got data",datapacket.keys())
         try:
             # This needs to be refined with the datastreams
             datapacket['data']
@@ -87,6 +88,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
         except:
             continue
 
+        print("Processing data")
         merged_packets = tar_processor.process_rawdata(datapacket['data'])
         if merged_packets['merged_packets'] is not None:
             if config['publish_raw_sensor']:
@@ -278,7 +280,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         """
         #print("Got data",data)
         address_packet = redvypr.RedvyprAddress(data)
-        datatypes_plot = ['T','R','IMU','pos_x','pos_y','pos_z']
+        datatypes_plot = ['T','R','acc','gyro','mag','T_IMU','pos_x','pos_y','pos_z']
         try:
             funcname = __name__ + '.update_data():'
             tnow = time.time()

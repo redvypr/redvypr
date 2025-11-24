@@ -32,7 +32,7 @@ description = 'Reading data from a serial device'
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.serial')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 packet_start = ['<None>','$','custom']
@@ -63,17 +63,38 @@ class SerialDeviceCustomConfig(pydantic.BaseModel):
     bytesize: typing.Literal[serial.EIGHTBITS, serial.SEVENBITS, serial.SIXBITS] = pydantic.Field(default=serial.EIGHTBITS)
     dt_poll: float = 0.05
     dt_maxwait: float = pydantic.Field(default=-1.0,description='Wait time in s for valid data, if time without a valid packets exceeds dt_maxwait the comport is closed and the read thread is stopped')
+    recv_mode: typing.Literal["raw","redvypr_datapacket"] = pydantic.Field(default="raw",description="The mode for data reception, raw for serial data, redvypr_datapacket to read redvpyr datapackets")
+    datakey: str = pydantic.Field(default="data",
+                                    description='The datakey for the raw data')
     chunksize: int = pydantic.Field(default=0, description='The maximum amount of bytes read with one chunk')
     packetdelimiter: str = pydantic.Field(default='LF', description='The delimiter to distinguish packets, leave empty to disable')
     packetstart: str = pydantic.Field(default='', description='The delimiter to distinguish packets, leave empty to disable')
+    comport_packetid_format: str = pydantic.Field(default='{device_short}',
+                                                  description="Formatstring of the packetid of the comport, can be edited")
+    comport_packetid: str = pydantic.Field(default='', description="Packetid of the comport. Created by applying comport_packetid_format")
     comport_device: str = pydantic.Field(default='')
-    comport_devicename: str = pydantic.Field(default='', description="Devicename of the comport, can be edited")
+    comport_device_short: typing.Optional[str] = pydantic.Field(default='', description="short devicename of the comport, used in linux systems to get rid of the path")
+    serial_number:  typing.Optional[str] = pydantic.Field(default='', description="Serial number of the comport")
+    vid:  typing.Optional[str] = pydantic.Field(default='', description="vid of the comport")
+    pid:  typing.Optional[str] = pydantic.Field(default='', description="pid of the comport")
+    manufacturer:  typing.Optional[str] = pydantic.Field(default='', description="Manufacturer of the comport")
+    comport_compare: typing.Optional[
+        typing.List[typing.Literal["device","serial_number","vid","pid","manufactuer"]]] = pydantic.Field(default=["device"])
+
+    def create_packetid(self):
+        device_short = self.comport_device.split('/')[-1]
+        self.comport_packetid = self.comport_packetid_format.format(device_short=device_short, device=self.comport_device, vid=self.vid, pid=self.pid, serial_number=self.serial_number, manufacturer=self.manufacturer)
+        self.comport_device_short = device_short
 
 
 class DeviceCustomConfig(pydantic.BaseModel):
     serial_devices: typing.Optional[typing.List[SerialDeviceCustomConfig]] = pydantic.Field(default=[])
     ignore_devices: str = pydantic.Field(default='.*/ttyS[0-9][0-9]*', description='Regular expression of serial device names, that are ignored.')
     baud_standard: list = [300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200]
+    gui_show_comport: typing.Optional[
+        typing.List[typing.Literal[
+            "device", "serial_number", "vid", "pid", "manufacturer"]]] = pydantic.Field(
+        default=["device", "serial_number", "vid", "pid", "manufacturer"],description="which details of the comport to show")
 
 def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
     """ Thread to read one serial device, is started for each device/comport
@@ -94,7 +115,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
 
     logger.debug('Starting to read serial device {:s} with baudrate {:d}'.format(comport,baud))
 
-    devicename = config['comport_devicename']
+    packetid = config['comport_packetid']
     # Get the packet end and packet start characters
     newpacket = config['packetdelimiter']
     # Check if a delimiter shall be used (\n, \r\n, etc ...)
@@ -118,7 +139,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
         try:
             serial_device = serial.Serial(comport, baud, parity=parity, stopbits=stopbits, bytesize=bytesize,
                                           timeout=0)
-            data = create_datadict(device= devicename_redvypr, packetid=devicename)
+            data = create_datadict(device= devicename_redvypr, packetid=packetid)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['status'] = 'reading'
@@ -130,7 +151,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
         except Exception as e:
             # print('Serial device 2',serial_device)
             logger.debug(funcname + ': Exception open_serial_device {:s} {:d}: '.format(comport, baud) + str(e))
-            data = create_datadict(packetid=devicename)
+            data = create_datadict(packetid=packetid)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['status'] = 'could not open'
@@ -179,7 +200,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
                 #print('rawdata_all',rawdata_all)
                 FLAG_CHUNK = (len(rawdata_all)) > chunksize and (chunksize > 0)
                 if (FLAG_CHUNK):
-                    data = create_datadict(device=devicename_redvypr,packetid=devicename)
+                    data = create_datadict(device=devicename_redvypr,packetid=packetid)
                     data['t'] =  time.time()
                     data['data'] = rawdata_all
                     data['comport'] = serial_device.name
@@ -202,7 +223,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
                                     sentences_read += 1
                                     raw = rawdata_split[ind] + newpacket  # reconstruct the data
                                     # print('raw', raw)
-                                    data = create_datadict(device=devicename_redvypr,packetid=devicename)
+                                    data = create_datadict(device=devicename_redvypr, packetid=packetid)
                                     data['t' ] = tnewpacket
                                     data['data'] = raw
                                     data['comport'] = serial_device.name
@@ -215,7 +236,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
 
         if ((time.time() - tnewpacket) > dt_maxwait) and (dt_maxwait > 0):
             logger.warning('Did not find valid packet on serial device {:s}'.format(comport))
-            data = create_datadict(device=devicename_redvypr,packetid=devicename)
+            data = create_datadict(device=devicename_redvypr,packetid=packetid)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['status'] = 'timout (dt_maxwait)'
@@ -227,7 +248,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
             dbytes = bytes_read - bytes_read_old
             bytes_read_old = bytes_read
             bps = dbytes / dt_update  # bytes per second
-            data = create_datadict(device=devicename_redvypr,packetid=devicename)
+            data = create_datadict(device=devicename_redvypr,packetid=packetid)
             data['t'] = time.time()
             data['comport'] = serial_device.name
             data['bps'] = bps
@@ -250,11 +271,11 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     serial_threads_datainqueues = {}
     dt_poll = 0.05
     for comportconfig in config['serial_devices']:
-        logger.debug('Processing device {}'.format(comportconfig['comport_devicename']))
+        logger.debug('Processing device {}'.format(comportconfig['comport_packetid']))
         if comportconfig['use_device'] == False:
-            logger.debug('Ignoring device {}'.format(comportconfig['comport_devicename']))
+            logger.debug('Ignoring device {}'.format(comportconfig['comport_packetid']))
         else:
-            logger.debug('Configuring device {}'.format(comportconfig['comport_devicename']))
+            logger.debug('Configuring device {}'.format(comportconfig['comport_packetid']))
             queuesize = 100
             config_thread = copy.deepcopy(comportconfig)
             datainqueue_thread = queue.Queue(maxsize=queuesize)
@@ -341,7 +362,7 @@ class Device(RedvyprDevice):
             #      comport.manufacturer)
             FLAG_DEVICE_EXISTS = False
             for d in self.custom_config.serial_devices:
-                if comport.device == d.comport_device:
+                if comport.device == d.comport_device: # TODO, here a better comparison is needed
                     logger.debug(funcname + ' Found new device {}'.format(d.comport_device))
                     FLAG_DEVICE_EXISTS = True
                     serial_devices_new.append(d)
@@ -352,8 +373,13 @@ class Device(RedvyprDevice):
                 logger.info('Ignoring device {}'.format(comport.device))
             else:
                 if FLAG_DEVICE_EXISTS == False:
-                    comport_devicename = comport.device.split('/')[-1]
-                    config = SerialDeviceCustomConfig(comport_device=comport.device, comport_devicename=comport_devicename)
+                    config = SerialDeviceCustomConfig(comport_device=comport.device,
+                                                      pid=str(comport.pid),
+                                                      vid=str(comport.vid),
+                                                      manufacturer=str(comport.manufacturer),
+                                                      serial_number=str(comport.serial_number))
+
+                    config.create_packetid()
                     #self.config.serial_devices.append(config)
                     serial_devices_new.append(config)
                     self.comports.append(comport)
@@ -361,7 +387,110 @@ class Device(RedvyprDevice):
         self.custom_config.serial_devices = serial_devices_new
         logger.debug(funcname + ' serial devices {}'.format(self.custom_config.serial_devices))
 
+
+class serialSendConfigWidget(QtWidgets.QWidget):
+    def __init__(self, serial_device=None):
+        super().__init__()
+
+class serialRecvConfigWidget(QtWidgets.QWidget):
+    def __init__(self, serial_device=None):
+        super().__init__()
+        layout = QtWidgets.QGridLayout(self)
+        self.serial_device = serial_device
+        self.rb_raw = QtWidgets.QRadioButton("Raw data")
+        self.rb_redvypr_datapacket = QtWidgets.QRadioButton("Redvypr data packet")
+        self.rb_raw.toggled.connect(self.on_radio_change)
+        #self.rb_redvypr_datapacket.toggled.connect(self.on_radio_change)
+        if serial_device.recv_mode == 'raw':
+            self.rb_raw.setChecked(True)
+        elif serial_device.recv_mode == 'redvypr_datapacket':
+            self.rb_redvypr_datapacket.setChecked(True)
+
+        lwidth = 80  # width of the qlineedits
+        serialwidgetdict = {}
+
+        serialwidgetdict['datakey_lab'] = QtWidgets.QLabel('Datakey')
+        serialwidgetdict['datakey_edit'] = QtWidgets.QLineEdit()
+        serialwidgetdict['datakey_edit'].setText(serial_device.datakey)
+
+        # Define packet delimiter
+        packet_del = serial_device.packetdelimiter
+        serialwidgetdict['packet_ident_lab'] = QtWidgets.QLabel('Packet identification')
+        serialwidgetdict['packet_ident'] = QtWidgets.QComboBox()
+        idel_index = -1
+        for idel, d in enumerate(packet_delimiter):
+            if packet_del == d:
+                idel_index = idel
+            elif idel == len(packet_delimiter) - 1:
+                if len(packet_del) > 0 and (idel_index == -1):
+                    d = packet_del
+                    idel_index = idel
+
+            serialwidgetdict['packet_ident'].addItem(d)
+
+        if idel_index >= 0:
+            serialwidgetdict['packet_ident'].setCurrentIndex(idel_index)
+        serialwidgetdict['packet_ident'].setEditable(True)
+
+        # .currentTextChanged.connect(self.current_text_changed)
+        serialwidgetdict['packet_ident_lineedit'] = serialwidgetdict[
+            'packet_ident'].lineEdit()
+        serialwidgetdict['packet_ident_lineedit'].__combo__ = serialwidgetdict[
+            'packet_ident']
+        serialwidgetdict['packet_ident_lineedit'].textEdited.connect(
+            self.handle_delimiter_text_edited)
+        # Set the tooltip
+        desc = serial_device.model_fields['packetdelimiter'].description
+        serialwidgetdict['packet_ident'].setToolTip(desc)
+        # Max packetsize
+        serialwidgetdict['packet_size_lab'] = QtWidgets.QLabel("Maximum packet size")
+        onlyInt = QtGui.QIntValidator()
+        packet_size = str(serial_device.chunksize)
+        serialwidgetdict['packet_size'] = QtWidgets.QLineEdit()
+        serialwidgetdict['packet_size'].setValidator(onlyInt)
+        serialwidgetdict['packet_size'].setText(packet_size)
+        serialwidgetdict['packet_size'].setFixedWidth(lwidth)
+        # Set the tooltip
+        desc = serial_device.model_fields['chunksize'].description
+        serialwidgetdict['packet_size'].setToolTip(desc)
+
+        layout.addWidget(self.rb_raw, 0, 0)
+        layout.addWidget(serialwidgetdict['datakey_lab'], 0, 1)
+        layout.addWidget(serialwidgetdict['datakey_edit'], 0, 2)
+        layout.addWidget(serialwidgetdict['packet_ident_lab'], 0, 3)
+        layout.addWidget(serialwidgetdict['packet_ident'], 0, 4)
+        layout.addWidget(serialwidgetdict['packet_size_lab'], 0, 5)
+        layout.addWidget(serialwidgetdict['packet_size'], 0, 6)
+
+        layout.addWidget(self.rb_redvypr_datapacket, 1, 0)
+
+    def on_radio_change(self):
+        if self.rb_raw.isChecked():
+            self.serial_device.recv_mode = 'raw'
+
+        elif self.rb_redvypr_datapacket.isChecked():
+            self.serial_device.recv_mode = 'redvypr_datapacket'
+
+        print("Changed serial device", self.serial_device)
+
+    def handle_delimiter_text_edited(self, text):
+        comboBox = self.sender().__combo__
+        line_edit = self.sender()
+        current_index = comboBox.currentIndex()
+        nitems = comboBox.count()
+        # Check of items shall be edited?
+        #print('Hallo',current_index,nitems)
+        if current_index != (nitems -1):  # Check if last item
+            original_text = comboBox.itemText(current_index)
+            #print('Not editable',original_text)
+            line_edit.setText(original_text)
+        else: # editable item
+            pass
+
 class serialDataWidget(QtWidgets.QWidget):
+    """
+    Widget shows the data received by a serial port
+    """
     def __init__(self, comport, device = None):
         super().__init__()
         self.device = device
@@ -481,20 +610,19 @@ class initDeviceWidget(QtWidgets.QWidget):
 
     def init_serialwidgets(self):
         layout_all = self.layout_serialwidgets
-        layout_all.addWidget(QtWidgets.QLabel('Comport'), 0, 0)
-        layout_all.addWidget(QtWidgets.QLabel('Devicename'), 0, 1)
-        layout_all.addWidget(QtWidgets.QLabel('Baud'), 0, 2)
-        layout_all.addWidget(QtWidgets.QLabel('Parity'), 0, 3)
-        layout_all.addWidget(QtWidgets.QLabel('Databits'), 0, 4)
-        layout_all.addWidget(QtWidgets.QLabel('Stopbits'), 0, 5)
-        #layout_all.addWidget(QtWidgets.QLabel('Packet start'), 0, 6)
-        layout_all.addWidget(QtWidgets.QLabel('Packet delimiter'), 0, 7)
-        layout_all.addWidget(QtWidgets.QLabel('Packet size'), 0, 8)
-        layout_all.addWidget(QtWidgets.QLabel('Metadata'), 0, 9)
-        layout_all.addWidget(QtWidgets.QLabel('Use port'), 0, 10)
-        lwidth = 80 # width of the qlineedits
+        layout_all.addWidget(QtWidgets.QLabel('<b>Comport</b>'), 0, 0)
+        layout_all.addWidget(QtWidgets.QLabel('<b>Packetid (Format)</b>'), 0, 1)
+        layout_all.addWidget(QtWidgets.QLabel('<b>Packetid</b>'), 0, 2)
+        layout_all.addWidget(QtWidgets.QLabel('<b>Baud</b>'), 0, 3)
+        layout_all.addWidget(QtWidgets.QLabel('<b>Parity</b>'), 0, 4)
+        layout_all.addWidget(QtWidgets.QLabel('<b>Databits</b>'), 0, 5)
+        layout_all.addWidget(QtWidgets.QLabel('<b>Stopbits</b>'), 0, 6)
+        layout_all.addWidget(QtWidgets.QLabel('<b>Config receive</b>'), 0, 7)
+        layout_all.addWidget(QtWidgets.QLabel('<b>Config send</b>'), 0, 8)
+        layout_all.addWidget(QtWidgets.QLabel('<b>Metadata</b>'), 0, 9)
+        layout_all.addWidget(QtWidgets.QLabel('<b>Use port</b>'), 0, 10)
 
-        for irow,serial_device in enumerate(self.device.custom_config.serial_devices):
+        for irow, serial_device in enumerate(self.device.custom_config.serial_devices):
             widget = QtWidgets.QWidget()
             serialwidgetdict = {}
             serialwidgetdict['widget'] = widget
@@ -512,7 +640,30 @@ class initDeviceWidget(QtWidgets.QWidget):
                 baudrates.sort()
                 ibaud = baudrates.index(serial_device.baud)
 
-            serialwidgetdict['combo_serial_devices'] = QtWidgets.QLabel(serial_device.comport_device)
+            # The serial device
+            devicestr = ""
+            for cominfo in self.device.custom_config.gui_show_comport:
+                if "device" in str(cominfo).lower():
+                    devicestr += "device:{}\n".format(str(serial_device.comport_device))
+                    devicestr += "device_short:{}\n".format(str(serial_device.comport_device_short))
+                if "serial_number" in str(cominfo).lower():
+                    devicestr += "serial_number:{}\n".format(str(serial_device.serial_number))
+                if "manufacturer" in str(cominfo).lower():
+                    devicestr += "manufacturer:{}\n".format(str(serial_device.manufacturer))
+                if "pid" in str(cominfo).lower():
+                    devicestr += "pid:{}\n".format(str(serial_device.pid))
+                if "vid" in str(cominfo).lower():
+                    devicestr += "vid:{}\n".format(str(serial_device.vid))
+
+            #typing.List[typing.Literal[
+            #    "device", "serial_number", "vid", "pid", "manufactuer"]]] = pydantic.Field(
+            #    default=["device"])
+            #serial_device.
+
+
+            #serialwidgetdict['combo_serial_devices'] = QtWidgets.QLabel(serial_device.comport_device)
+            serialwidgetdict['combo_serial_devices'] = QtWidgets.QLabel(
+                devicestr)
             # self._combo_serial_devices.currentIndexChanged.connect(self._serial_device_changed)
             serialwidgetdict['combo_serial_baud'] = QtWidgets.QComboBox()
             for b in baudrates:
@@ -526,9 +677,19 @@ class initDeviceWidget(QtWidgets.QWidget):
             # setting line edit
             serialwidgetdict['combo_serial_baud'].setLineEdit(edit)
 
-            devicename = serial_device.comport_devicename
-            serialwidgetdict['devicename'] = QtWidgets.QLineEdit()
-            serialwidgetdict['devicename'].setText(devicename)
+            # The packetid format and the packetid
+            packetid_format = serial_device.comport_packetid_format
+            packetid_label = QtWidgets.QLabel()
+            serialwidgetdict['packetid_format_edit'] = QtWidgets.QLineEdit()
+            serialwidgetdict['packetid_format_edit'].textChanged.connect(
+                self.__packetid_format_changed)
+            serialwidgetdict['packetid_format_edit'].__custom_config = self.device.custom_config
+            serialwidgetdict['packetid_format_edit'].__serial_device = serial_device
+            serialwidgetdict['packetid_format_edit'].__packetid_label = packetid_label
+            serialwidgetdict['packetid_format_edit'].setText(packetid_format)
+            serialwidgetdict['packetid_format'] = serialwidgetdict['packetid_format_edit']
+            serialwidgetdict['packetid_label'] = packetid_label
+
 
             serialwidgetdict['combo_parity'] = QtWidgets.QComboBox()
             serialwidgetdict['combo_parity'].addItem('None')
@@ -548,108 +709,66 @@ class initDeviceWidget(QtWidgets.QWidget):
             serialwidgetdict['combo_databits'].addItem('6')
             serialwidgetdict['combo_databits'].addItem('5')
 
-            # Legacy
-            if False:
-                serialwidgetdict['button_serial_openclose'] = QtWidgets.QPushButton('Use')
-                serialwidgetdict['button_serial_openclose'].setCheckable(True)
-                serialwidgetdict['button_serial_openclose'].setChecked(serial_device.use_device)
-                serialwidgetdict['button_serial_openclose'].clicked.connect(self.use_device_clicked)
-            else:
-                serialwidgetdict['button_serial_openclose'] = QtWidgets.QCheckBox("Use")
-                serialwidgetdict['button_serial_openclose'].setChecked(serial_device.use_device)
+            serialwidgetdict['button_config_recv'] = QtWidgets.QPushButton('Receive')
+            serialwidgetdict['button_config_recv'].__index_serial = irow
+            serialwidgetdict['button_config_recv'].__serial_device = serial_device
+            serialwidgetdict['button_config_recv'].clicked.connect(self.__recv_config_clicked)
+            serialwidgetdict['button_config_send'] = QtWidgets.QPushButton('Send')
+            serialwidgetdict['button_config_send'].__index_serial = irow
+            serialwidgetdict['button_config_send'].__serial_device = serial_device
+            serialwidgetdict['button_config_send'].clicked.connect(self.__send_config_clicked)
+            serialwidgetdict['button_config_send'].setEnabled(False)
+
+            serialwidgetdict['button_serial_openclose'] = QtWidgets.QCheckBox("Use")
+            serialwidgetdict['button_serial_openclose'].setChecked(serial_device.use_device)
 
             serialwidgetdict['button_metadata'] = QtWidgets.QPushButton('Metadata')
             serialwidgetdict['button_metadata'].clicked.connect(self.__metadata_clicked)
             serialwidgetdict['button_metadata'].__index_serial = irow
 
-            # Define packet delimiter
-            packet_del = serial_device.packetdelimiter
-            serialwidgetdict['packet_ident_lab'] = QtWidgets.QLabel('Packet identification')
-            serialwidgetdict['packet_ident'] = QtWidgets.QComboBox()
-            idel_index = -1
-            for idel, d in enumerate(packet_delimiter):
-                if packet_del == d:
-                    idel_index = idel
-                elif idel == len(packet_delimiter) - 1:
-                    if len(packet_del) > 0 and (idel_index==-1):
-                        d = packet_del
-                        idel_index = idel
-
-                serialwidgetdict['packet_ident'].addItem(d)
-
-            if idel_index >=0:
-                serialwidgetdict['packet_ident'].setCurrentIndex(idel_index)
-            serialwidgetdict['packet_ident'].setEditable(True)
-
-            #.currentTextChanged.connect(self.current_text_changed)
-            serialwidgetdict['packet_ident_lineedit'] = serialwidgetdict['packet_ident'].lineEdit()
-            serialwidgetdict['packet_ident_lineedit'].__combo__ = serialwidgetdict['packet_ident']
-            serialwidgetdict['packet_ident_lineedit'].textEdited.connect(self.handle_delimiter_text_edited)
-
-            #serialwidgetdict['packet_ident'].setText(packet_del)
-            #serialwidgetdict['packet_ident'].setFixedWidth(lwidth)
-            # Set the tooltip
-            desc = serial_device.model_fields['packetdelimiter'].description
-            serialwidgetdict['packet_ident'].setToolTip(desc)
-
-            #packet_start = serial_device.packetstart
-            ## Handle new line character
-            #packet_start = packet_start.replace('\n','\\n')
-            #serialwidgetdict['packet_start_lab'] = QtWidgets.QLabel('Packet start')
-            #serialwidgetdict['packet_start'] = QtWidgets.QLineEdit()
-            #serialwidgetdict['packet_start'].setText(packet_start)
-            #serialwidgetdict['packet_start'].setFixedWidth(lwidth)
-            # Set the tooltip
-            #desc = serial_device.model_fields['packetstart'].description
-            #serialwidgetdict['packet_start'].setToolTip(desc)
-            # Max packetsize
-            serialwidgetdict['packet_size_lab'] = QtWidgets.QLabel("Maximum packet size")
-            onlyInt = QtGui.QIntValidator()
-            packet_size = str(serial_device.chunksize)
-            serialwidgetdict['packet_size'] = QtWidgets.QLineEdit()
-            serialwidgetdict['packet_size'].setValidator(onlyInt)
-            serialwidgetdict['packet_size'].setText(packet_size)
-            serialwidgetdict['packet_size'].setFixedWidth(lwidth)
-            # Set the tooltip
-            desc = serial_device.model_fields['chunksize'].description
-            serialwidgetdict['packet_size'].setToolTip(desc)
-
-            #layout.addWidget(serialwidgetdict['packet_start'], 2, 1)
-            #layout.addWidget(serialwidgetdict['packet_start_lab'], 2, 0)
-            layout.addWidget(serialwidgetdict['packet_ident'], 2, 1+2)
-            layout.addWidget(serialwidgetdict['packet_ident_lab'], 2, 0+2)
-            layout.addWidget(serialwidgetdict['packet_size_lab'], 2, 2+2)
-            layout.addWidget(serialwidgetdict['packet_size'], 2, 3+2)
-
             layout_all.addWidget(serialwidgetdict['combo_serial_devices'], irow+1, 0)
-            layout_all.addWidget(serialwidgetdict['devicename'], irow + 1, 1)
-            layout_all.addWidget(serialwidgetdict['combo_serial_baud'], irow+1, 2)
-            layout_all.addWidget(serialwidgetdict['combo_parity'], irow+1, 3)
-            layout_all.addWidget(serialwidgetdict['combo_databits'], irow+1, 4)
-            layout_all.addWidget(serialwidgetdict['combo_stopbits'], irow+1, 5)
-            #layout_all.addWidget(serialwidgetdict['packet_start'], irow + 1, 6)
-            layout_all.addWidget(serialwidgetdict['packet_ident'], irow + 1, 7)
-            layout_all.addWidget(serialwidgetdict['packet_size'], irow + 1, 8)
+            layout_all.addWidget(serialwidgetdict['packetid_format'], irow + 1, 1)
+            layout_all.addWidget(serialwidgetdict['packetid_label'], irow + 1, 2)
+            layout_all.addWidget(serialwidgetdict['combo_serial_baud'], irow+1, 3)
+            layout_all.addWidget(serialwidgetdict['combo_parity'], irow+1, 4)
+            layout_all.addWidget(serialwidgetdict['combo_databits'], irow+1, 5)
+            layout_all.addWidget(serialwidgetdict['combo_stopbits'], irow+1, 6)
+            layout_all.addWidget(serialwidgetdict['button_config_recv'], irow + 1, 7)
+            layout_all.addWidget(serialwidgetdict['button_config_send'], irow + 1, 8)
             layout_all.addWidget(serialwidgetdict['button_metadata'], irow+1, 9)
             layout_all.addWidget(serialwidgetdict['button_serial_openclose'], irow+1, 10)
 
-            #self.statustimer = QtCore.QTimer()
-            #self.statustimer.timeout.connect(self.update_buttons)
-            #self.statustimer.start(500)
-
         layout_all.setRowStretch(layout_all.rowCount(), 1)
 
+    def __send_config_clicked(self):
+        funcname = __name__ + '.__send_config_clicked():'
+        logger.debug(funcname)
+
+    def __recv_config_clicked(self):
+        funcname = __name__ + '.__recv_config_clicked():'
+        logger.debug(funcname)
+        self.recv_config_widget = serialRecvConfigWidget(serial_device=self.sender().__serial_device)
+        self.recv_config_widget.show()
+
+    def __packetid_format_changed(self):
+        funcname = __name__ + '.__packetid_format_changed():'
+        logger.debug(funcname)
+        lineedit = self.sender()
+        serial_device = lineedit.__serial_device
+        serial_device.comport_packetid_format = str(lineedit.text())
+        serial_device.create_packetid()
+        lineedit.__packetid_label.setText(serial_device.comport_packetid)
     def __metadata_clicked(self):
         funcname = __name__ + '.__metadata_clicked():'
         logger.debug(funcname)
         self.widgets_to_config()
         irow = self.sender().__index_serial
         serial_device = self.device.custom_config.serial_devices[irow]
-        devicename = serial_device.devicename
+        packetid = serial_device.packetid
         devicename_redvypr = self.device.name
 
         metadata_device = copy.deepcopy(self.device.statistics['metadata'])
-        deviceAddress = RedvyprAddress(device=self.device.name, packetid=devicename)
+        deviceAddress = RedvyprAddress(device=self.device.name, packetid=packetid)
         try:
             metadata_raw = metadata_device[deviceAddress.address_str]
         except:
@@ -663,7 +782,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.__metadata_address = deviceAddress
         self.metadata_config = pydanticConfigWidget(metadata, configname=deviceAddress.to_address_string())
         self.metadata_config.config_editing_done.connect(self.__metadata_config_apply)
-        self.metadata_config.setWindowTitle('redvypr, Metadata for {}'.format(devicename))
+        self.metadata_config.setWindowTitle('redvypr, Metadata for {}'.format(packetid))
         self.metadata_config.show()
 
     def __metadata_config_apply(self):
@@ -673,21 +792,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         #print('Metadata new', self.__metadata_edit)
         metadata = self.__metadata_edit.model_dump()
         self.device.set_metadata(self.__metadata_address, metadata)
-
-    def handle_delimiter_text_edited(self, text):
-
-        comboBox = self.sender().__combo__
-        line_edit = self.sender()
-        current_index = comboBox.currentIndex()
-        nitems = comboBox.count()
-        # Check of items shall be edited?
-        #print('Hallo',current_index,nitems)
-        if current_index != (nitems -1):  # Check if last item
-            original_text = comboBox.itemText(current_index)
-            #print('Not editable',original_text)
-            line_edit.setText(original_text)
-        else: # editable item
-            pass
 
     def update_buttons(self):
         """ Updating all buttons depending on the thread status (if its alive, graying out things)
@@ -719,8 +823,8 @@ class initDeviceWidget(QtWidgets.QWidget):
             config = {}
             serial_name = str(w['combo_serial_devices'].text())
             serial_device.comport_device = serial_name
-            devicename = str(w['devicename'].text())
-            serial_device.comport_devicename = devicename
+            #packetid = str(w['packetid_label'].text())
+            #serial_device.comport_packetid = packetid
             serial_baud = int(w['combo_serial_baud'].currentText())
             serial_device.baud = serial_baud
             stopbits = w['combo_stopbits'].currentText()

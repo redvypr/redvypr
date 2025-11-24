@@ -101,14 +101,6 @@ if True:
 
 
 if True:
-    #tarv2nmea_R_sample_split = b'\$(?P<mac>.+),TAR_S;(?P<counter>[0-9.]+);(?P<np>[0-9]+),R_(?P<ntctype>[A-c])(?P<ntcdist>[0-9]),(?P<counter_local>[0-9.]+),(?P<np_local>[0-9]+),(?P<R>.*)\n'
-    #tarv2nmea_R_sample_str_format = {'mac': 'str', 'counter': 'float', 'counter_local': 'float', 'ntctype': 'str',
-    #                                 'ntcdist': 'float', 'np': 'int', 'np_local': 'int', 'R': 'array'}
-    #tarv2nmea_R_sample_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
-    #                                       'np': {'unit': 'counter'}, 'R': {'unit': 'Ohm'}}
-    #tarv2nmea_R_sample_packetid_format = '__TAR_S__R'
-    #tarv2nmea_R_sample_description = 'Temperature array datapacket initiated by a sample command'
-
     # T
     # b'$D8478FFFFE95E740:$D8478FFFFE95CA01:$D8478FFFFE960155:$D8478FFFFE95CD4D,TAR(42708.062,10678),64B4,T32-63,42709.125,10680,19.913,19.773,19.743,19.721,19.583,19.543,19.434,19.431,19.267,19.387,19.369,19.262,19.226,19.274,19.309,18.989,19.224,19.191,18.978,19.017,18.970,18.928,18.770,18.901,18.742,18.922,18.805,18.702,18.770,18.701,18.938,18.872\n'
     # Non working datastring
@@ -161,7 +153,7 @@ if True:
 # IMU
 
 if True:
-    # b'$D8478FFFFE936450,TAR,IM,11460.250,2866,47,-218,8394,185,125,62,334\n'
+    #b'$FC0FE7FFFEDE51A2:$FC0FE7FFFEDEA929,TAR(0.500,1),IM,0.500,1,a,0.020,0.122,1.012,g,0.27,-2.92,-0.85,m,-26.00,14.00,538.00,T,22.96\n'
     # IMU
     tarv2nmea_IMU_split = (
         br'^'  # Start of the string
@@ -170,20 +162,24 @@ if True:
         b'TAR,IM,'
         b'(?P<t>[0-9.]+),'
         b'(?P<np>[0-9]+),'
-        b'(?P<IMU>.*)\n'
+        b'a,(?P<acc>.*),'
+        b'g,(?P<gyro>.*),'
+        b'm,(?P<mag>.*),'
+        b'T,(?P<T>.*)\n'
     )
     tarv2nmea_IMU_str_format = {'mac': 'str', 't': 'float', 'np': 'int',
-                              'IMU':'array'}
+                              'acc':'array','gyro':'array','mag':'array','T':'float'}
     tarv2nmea_IMU_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
                                     'np': {'unit': 'counter'},
-                                    'IMU[0]': {'unit': 'cnt','description':'acc x'},
-                                    'IMU[1]': {'unit': 'cnt', 'description': 'acc y'},
-                                    'IMU[2]': {'unit': 'cnt', 'description': 'acc z'},
+                                    'acc': {'unit': '9.81 x m/s**2','description':'Acceleration'},
+                                    'gyro': {'unit': 'deg/s', 'description': 'Gyro'},
+                                    'mag': {'unit': 'Tsla', 'description': 'Magnetometer'},
+                                    'T': {'unit': 'degC', 'description': 'Temperature'},
                                       }
     tarv2nmea_IMU_packetid_format = '__TAR__IMU'
     tarv2nmea_IMU_description = 'Temperature array IMU raw datapacket'
 
-    # IMU
+    # IMU packet of a sample command
     tarv2nmea_IMU_sample_split = (
         br'^'  # Start of the string
         b'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs (not likely but can happen)
@@ -192,18 +188,23 @@ if True:
         b'IM,'
         b'(?P<t_local>[0-9.]+),'
         b'(?P<np_local>[0-9]+),'
-        b'(?P<IMU>.*)\n'
+        b'a,(?P<acc>.*),'
+        b'g,(?P<gyro>.*),'
+        b'm,(?P<mag>.*),'
+        b'T,(?P<T>.*)\n'
     )
     tarv2nmea_IMU_sample_str_format = {'mac': 'str', 't': 'float', 'np': 'int',
                                        't_local': 'float', 'np_local': 'int',
-                                       'IMU': 'array'}
+                                       'acc': 'array', 'gyro': 'array', 'mag': 'array',
+                                       'T': 'float'}
     tarv2nmea_IMU_sample_datakey_metadata = {
         'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
         'np': {'unit': 'counter'},
         'np_local': {'unit': 'counter'},
-        'IMU[0]': {'unit': 'cnt', 'description': 'acc x'},
-        'IMU[1]': {'unit': 'cnt', 'description': 'acc y'},
-        'IMU[2]': {'unit': 'cnt', 'description': 'acc z'},
+        'acc': {'unit': '9.81 x m/s**2', 'description': 'Acceleration'},
+        'gyro': {'unit': 'deg/s', 'description': 'Gyro'},
+        'mag': {'unit': 'Tsla', 'description': 'Magnetometer'},
+        'T': {'unit': 'degC', 'description': 'Temperature'},
         }
     tarv2nmea_IMU_sample_packetid_format = '__TAR__IMU'
     tarv2nmea_IMU_sample_description = 'Temperature array IMU raw datapacket'
@@ -456,11 +457,15 @@ class TarProcessor():
 
                     if len(pmerge_all.keys()) == len(datatypes_to_merge):
                         print('All packets available for merging variables into one packet')
+                        print("Keys",pmerge_all['IMU'].keys())
                         # Calculate the sensor positions in IMU coordinates
                         pmerge2 = pmerge_all['R'].copy()
                         pmerge2['_redvypr']['packetid'] = pmerge2['_redvypr']['packetid'].rsplit('__',1)[0]
                         pmerge2['T'] = pmerge_all['T']['T']
-                        pmerge2['IMU'] = pmerge_all['IMU']['IMU']
+                        pmerge2['acc'] = pmerge_all['IMU']['acc']
+                        pmerge2['gyro'] = pmerge_all['IMU']['gyro']
+                        pmerge2['mag'] = pmerge_all['IMU']['mag']
+                        pmerge2['T_IMU'] = [pmerge_all['IMU']['T']]
                         print('Pmerge pmerge')
                         print('Pmerge pmerge',pmerge2.keys())
                         print('Pmerge pmerge\n')
@@ -472,9 +477,9 @@ class TarProcessor():
 
 
                         #print(pmerge2['IMU'])
-                        ax = pmerge2['IMU'][0]
-                        ay = pmerge2['IMU'][1]
-                        az = pmerge2['IMU'][2]
+                        ax = pmerge2['acc'][0]
+                        ay = pmerge2['acc'][1]
+                        az = pmerge2['acc'][2]
                         phi, theta = acc_to_roll_pitch(ay, ax, az)
                         R = R_from_roll_pitch(phi, theta)
                         #print('a', ax, ay, az, phi, theta, R)
@@ -539,7 +544,7 @@ class TarProcessor():
                                     l1, l2))
                             continue
                         # input('fds')
-                        for datatype_merge in ['T','R','pos_x','pos_z']:
+                        for datatype_merge in ['T','R','acc','mag','T_IMU','pos_x','pos_z']:
                             print('Merging tar chains packet {} with datatype'.format(
                                 nump_merge, datatype_merge))
                             data_merged = []
