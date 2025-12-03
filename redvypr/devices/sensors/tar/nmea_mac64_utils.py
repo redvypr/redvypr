@@ -43,18 +43,32 @@ def parse_nmea_mac64_string(macstr):
     result = {}
     macs = []
     stripped_string = ''
-    splits = macstr.split(':')
-    for i,s in enumerate(splits):
-        if len(s) >= 16:  # Add a dollar, if not present
-            if s[0] != '$':
-                s = '$' + s
+    if '<' in macstr:
+        #print("numparents in string")
+        downstream_mac = macstr.split("<")[0].replace("$","")
+        mac = macstr.split(">")[1].replace("$","")
+        #print("downstream mac",downstream_mac)
+        numdownstreammacs = int(macstr.split("<")[1].split(">")[0])
+        #print("mac", mac,numdownstreammacs)
+        for i in range(numdownstreammacs):
+            macs.append(None)
 
-        if len(s) >= 17:
-            if (calc_macsum(s[1:17]) is not None) and (s[0] == '$'):
-                #print('Found mac',s)
-                macs.append(s[1:17])
-                # Add the subsequent string as extra data, this will be done to get the last valid string
-                stripped_string = ':'.join(splits[i:])
+        macs.append(mac)
+        macs[0] = downstream_mac
+        stripped_string = None
+    else:
+        splits = macstr.split(':')
+        for i,s in enumerate(splits):
+            if len(s) >= 16:  # Add a dollar, if not present
+                if s[0] != '$':
+                    s = '$' + s
+
+            if len(s) >= 17:
+                if (calc_macsum(s[1:17]) is not None) and (s[0] == '$'):
+                    #print('Found mac',s)
+                    macs.append(s[1:17])
+                    # Add the subsequent string as extra data, this will be done to get the last valid string
+                    stripped_string = ':'.join(splits[i:])
 
     if len(macs)==0:
         result = None
@@ -65,6 +79,7 @@ def parse_nmea_mac64_string(macstr):
         if len(macs) > 1:
             result['parents'] = macs[0:-1]
 
+    print("result",result)
     return result
 
 def strip_first_macs(datad):

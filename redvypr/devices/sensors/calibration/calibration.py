@@ -438,7 +438,8 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
                 #print('Got data to update')
                 #data_tmp = rdata[daddr.datakey]
                 data_tmp = daddr(data)
-                data_tmp_t = rdata['t']
+                #data_tmp_t = rdata['t']
+                data_tmp_t = data['_redvypr']['t']  # use the redvypr time
                 if isinstance(data_tmp, numpy.ndarray):
                     data_final = numpy.mean(data_tmp)
                     data_final_t = numpy.mean(data_tmp_t)

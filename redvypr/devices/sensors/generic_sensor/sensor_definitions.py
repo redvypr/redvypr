@@ -212,8 +212,8 @@ class BinarySensor(Sensor):
     binary_format: typing.Dict[str, str] = pydantic.Field(default={}, description='https://docs.python.org/3/library/struct.html, for example for 16bit signed data {"adc_data":"<h"}')
     str_format: typing.Dict[str, str] = pydantic.Field(default={})
     packetid_format: typing.Optional[str] = pydantic.Field(default=None,description='Format of the packetid of the datapacket')
-    #packetid_format: typing.Union[float,str, None] = pydantic.Field(default=3.0,
-    #                                                       description='Format of the packetid of the datapacket')
+    device_format: typing.Optional[str] = pydantic.Field(default=None,
+                                                           description='Format of the device of the datapacket')
     datakey_metadata: typing.Dict[str, typing.Dict] = pydantic.Field(default={})
     calibrations_raw: typing.Dict[str, typing.Annotated[typing.Union[CalibrationLinearFactor, CalibrationPoly], pydantic.Field(
         discriminator='calibration_type')]] = pydantic.Field(default={})
@@ -343,8 +343,8 @@ class BinarySensor(Sensor):
         for rematch in rematches:
             data_packet = redvypr_create_datadict(device=self.name)
             flag_data = False
-            #print('Processing match', rematch)
-            #print('Variables found', rematch.groupdict())
+            print('Processing match', rematch)
+            print('Variables found', rematch.groupdict())
             redict = rematch.groupdict()
             if self._flag_binary_keys:
                 for keyname in redict:
@@ -427,6 +427,16 @@ class BinarySensor(Sensor):
             else:
                 packetidstr = self.name
                 data_packet['_redvypr']['packetid'] = packetidstr
+
+            # Change the device str of the packet, if wished
+            if self.device_format is not None:
+                try:
+                    devicestr = self.device_format.format(**data_packet,
+                                                              **datapacket_orig_dict)
+                    data_packet['_redvypr']['device'] = devicestr
+                except:
+                    logger.warning('Could not create an devicestr:', exc_info=True)
+
 
             #print('Test flag data',flag_data)
             if flag_data:

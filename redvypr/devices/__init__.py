@@ -5,6 +5,7 @@ from . import fileio
 from . import processing
 from . import interface
 from . import sensors
+from . import db
 
 redvypr_devicemodule = True
 

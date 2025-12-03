@@ -55,6 +55,7 @@ config['merge_tar_chain'] = True
 
 
 # Generic tar sample
+tarv2nmea_device_format = 'tar_{mac}'
 if True:
     # T
     tarv2nmea_T_split = (
@@ -75,7 +76,7 @@ if True:
                               'ntcdist': 'float', 'np': 'int', 'T': 'array'}
     tarv2nmea_T_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
                                            'np': {'unit': 'counter'}, 'T': {'unit': 'degC'}}
-    tarv2nmea_T_packetid_format = '__TAR__T'
+    tarv2nmea_T_packetid_format = 'T_{mac}'
     tarv2nmea_T_description = 'Temperature array temperature datapacket'
     # R
     tarv2nmea_R_split = (
@@ -96,19 +97,22 @@ if True:
                               'ntcdist': 'float', 'np': 'int', 'R': 'array'}
     tarv2nmea_R_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
                                     'np': {'unit': 'counter'}, 'R': {'unit': 'Ohm'}}
-    tarv2nmea_R_packetid_format = '__TAR__R'
+    tarv2nmea_R_packetid_format = 'R_{mac}'
     tarv2nmea_R_description = 'Temperature array resistance datapacket'
 
 
 if True:
     # T
     # b'$D8478FFFFE95E740:$D8478FFFFE95CA01:$D8478FFFFE960155:$D8478FFFFE95CD4D,TAR(42708.062,10678),64B4,T32-63,42709.125,10680,19.913,19.773,19.743,19.721,19.583,19.543,19.434,19.431,19.267,19.387,19.369,19.262,19.226,19.274,19.309,18.989,19.224,19.191,18.978,19.017,18.970,18.928,18.770,18.901,18.742,18.922,18.805,18.702,18.770,18.701,18.938,18.872\n'
+    # or this here
+    # b'$D8478FFFFE95E740<2>$D8478FFFFE95CD4D,TAR(42708.062,10678),64B4,T32-63,42709.125,10680,19.913,19.773,19.743,19.721,19.583,19.543,19.434,19.431,19.267,19.387,19.369,19.262,19.226,19.274,19.309,18.989,19.224,19.191,18.978,19.017,18.970,18.928,18.770,18.901,18.742,18.922,18.805,18.702,18.770,18.701,18.938,18.872\n'
+
     # Non working datastring
     # b'$D8478FFFF.553,41:$D8478FFFFE95E740:$D8478FFFFE960155:$D8478FFFFE95CD4D,TAR(172.062,44),64B4,T0-31,172.062,45,46.358,46.873,47.110,46.911,47.266,47.559,47.617,47.432,47.335,47.218,46.552,45.761,45.958,45.724,45.483,45.408,45.385,44.839,44.621,44.592,45.320,45.118,42.553,45.257,45.214,45.834,45.449,44.843,45.244,45.435,45.606,46.310\n'
     tarv2nmea_T_sample_split = (
         br'^'  # Start of the string
-        b'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs
-        b'\$(?P<mac>[0-9A-F]+),'  # The mac 
+        b'^(?P<macparents>(?:\\$[0-9A-F]+(?:\\:|\\<(?P<maccount>[+-]?[0-9]+)\\>))*)\\$'
+        b'(?P<mac>[0-9A-F]+),'  # The mac 
         b'TAR\((?P<t>[0-9.]+),(?P<np>[0-9]+)\),'
         b'(?P<ntcnum>[0-9]+)'
         b'(?P<ntctype>[A-C])'
@@ -124,13 +128,13 @@ if True:
                                      'ntcdist': 'float', 'np': 'int', 'np_local': 'int', 'T': 'array'}
     tarv2nmea_T_sample_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
                                            'np': {'unit': 'counter'}, 'T': {'unit': 'degC'}}
-    tarv2nmea_T_sample_packetid_format = '__TAR_S__T'
+    tarv2nmea_T_sample_packetid_format = 'T_{mac}'
     tarv2nmea_T_sample_description = 'Temperature array datapacket initiated by a sample command'
     # R
     tarv2nmea_R_sample_split = (
         br'^'  # Start of the string
-        b'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs
-        b'\$(?P<mac>[0-9A-F]+),'  # The mac 
+        b'(?P<macparents>(?:\\$[0-9A-F]+(?:\\:|\\<(?P<maccount>[+-]?[0-9]+)\\>))*)\\$'
+        b'(?P<mac>[0-9A-F]+),'  # The mac 
         b'TAR\((?P<t>[0-9.]+),(?P<np>[0-9]+)\),'
         b'(?P<ntcnum>[0-9]+)'
         b'(?P<ntctype>[A-C])'
@@ -146,7 +150,7 @@ if True:
                                      'ntcdist': 'float', 'np': 'int', 'np_local': 'int', 'R': 'array'}
     tarv2nmea_R_sample_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
                                            'np': {'unit': 'counter'}, 'R': {'unit': 'Ohm'}}
-    tarv2nmea_R_sample_packetid_format = '__TAR_S__R'
+    tarv2nmea_R_sample_packetid_format = 'R_{mac}'
     tarv2nmea_R_sample_description = 'Temperature array resistance datapacket initiated by a sample command'
 
 
@@ -157,8 +161,8 @@ if True:
     # IMU
     tarv2nmea_IMU_split = (
         br'^'  # Start of the string
-        b'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs (not likely but can happen)
-        b'\$(?P<mac>[0-9A-F]+),'  # The mac 
+        b'(?P<macparents>(?:\\$[0-9A-F]+(?:\\:|\\<(?P<maccount>[+-]?[0-9]+)\\>))*)\\$'
+        b'(?P<mac>[0-9A-F]+),'  # The mac 
         b'TAR,IM,'
         b'(?P<t>[0-9.]+),'
         b'(?P<np>[0-9]+),'
@@ -176,14 +180,14 @@ if True:
                                     'mag': {'unit': 'Tsla', 'description': 'Magnetometer'},
                                     'T': {'unit': 'degC', 'description': 'Temperature'},
                                       }
-    tarv2nmea_IMU_packetid_format = '__TAR__IMU'
+    tarv2nmea_IMU_packetid_format = 'IMU_{mac}'
     tarv2nmea_IMU_description = 'Temperature array IMU raw datapacket'
 
     # IMU packet of a sample command
     tarv2nmea_IMU_sample_split = (
         br'^'  # Start of the string
-        b'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs (not likely but can happen)
-        b'\$(?P<mac>[0-9A-F]+),'  # The mac 
+        b'(?P<macparents>(?:\\$[0-9A-F]+(?:\\:|\\<(?P<maccount>[+-]?[0-9]+)\\>))*)\\$'
+        b'(?P<mac>[0-9A-F]+),'  # The mac 
         b'TAR\((?P<t>[0-9.]+),(?P<np>[0-9]+)\),'
         b'IM,'
         b'(?P<t_local>[0-9.]+),'
@@ -206,7 +210,7 @@ if True:
         'mag': {'unit': 'Tsla', 'description': 'Magnetometer'},
         'T': {'unit': 'degC', 'description': 'Temperature'},
         }
-    tarv2nmea_IMU_sample_packetid_format = '__TAR__IMU'
+    tarv2nmea_IMU_sample_packetid_format = 'IMU_{mac}'
     tarv2nmea_IMU_sample_description = 'Temperature array IMU raw datapacket'
 
 class TarProcessor():
@@ -237,6 +241,7 @@ class TarProcessor():
                                                              description=tarv2nmea_T_description,
                                                              datakey_metadata=tarv2nmea_T_datakey_metadata,
                                                              packetid_format=tarv2nmea_T_packetid_format,
+                                                             device_format=tarv2nmea_device_format,
                                                              datastream=redvypr.RedvyprAddress('data'))
 
         tarv2nmea_R = sensor_definitions.BinarySensor(name='tarv2nmea_R', regex_split=tarv2nmea_R_split,
@@ -245,6 +250,7 @@ class TarProcessor():
                                                       description=tarv2nmea_R_description,
                                                       datakey_metadata=tarv2nmea_R_datakey_metadata,
                                                       packetid_format=tarv2nmea_R_packetid_format,
+                                                      device_format=tarv2nmea_device_format,
                                                       datastream=redvypr.RedvyprAddress('data'))
 
         tarv2nmea_T_sample = sensor_definitions.BinarySensor(name='tarv2nmea_T_sample',
@@ -254,6 +260,7 @@ class TarProcessor():
                                                              description=tarv2nmea_T_sample_description,
                                                              datakey_metadata=tarv2nmea_T_sample_datakey_metadata,
                                                              packetid_format=tarv2nmea_T_sample_packetid_format,
+                                                             device_format=tarv2nmea_device_format,
                                                              datastream=redvypr.RedvyprAddress('data'))
 
         tarv2nmea_R_sample = sensor_definitions.BinarySensor(name='tarv2nmea_R_sample',
@@ -263,6 +270,7 @@ class TarProcessor():
                                                              description=tarv2nmea_R_sample_description,
                                                              datakey_metadata=tarv2nmea_R_sample_datakey_metadata,
                                                              packetid_format=tarv2nmea_R_sample_packetid_format,
+                                                             device_format=tarv2nmea_device_format,
                                                              datastream=redvypr.RedvyprAddress('data'))
 
         tarv2nmea_IMU = sensor_definitions.BinarySensor(name='tarv2nmea_IMU',
@@ -272,6 +280,7 @@ class TarProcessor():
                                                              description=tarv2nmea_IMU_description,
                                                              datakey_metadata=tarv2nmea_IMU_datakey_metadata,
                                                              packetid_format=tarv2nmea_IMU_packetid_format,
+                                                             device_format=tarv2nmea_device_format,
                                                              datastream=redvypr.RedvyprAddress(
                                                                  'data'))
 
@@ -282,6 +291,7 @@ class TarProcessor():
                                                         description=tarv2nmea_IMU_sample_description,
                                                         datakey_metadata=tarv2nmea_IMU_sample_datakey_metadata,
                                                         packetid_format=tarv2nmea_IMU_sample_packetid_format,
+                                                        device_format=tarv2nmea_device_format,
                                                         datastream=redvypr.RedvyprAddress(
                                                             'data'))
 
@@ -326,8 +336,8 @@ class TarProcessor():
                         mactmp = p['mac']
 
                     #print('Packet', p)
-                    #print('Packet with mac')
-                    #print('Mactmp', mactmp)
+                    print('Packet with mac')
+                    print('Mactmp', mactmp)
                     mac_parsed = nmea_mac64_utils.parse_nmea_mac64_string(mactmp)
                     print('mac parsed', mac_parsed)
                     if mac_parsed is None:  # Not a valid mac
@@ -347,8 +357,8 @@ class TarProcessor():
                     # except:
                     #    p['parents']=[]
 
-                    packetid = p['mac'] + p['_redvypr']['packetid']
-                    datatype_packet = packetid.split('__')[-1]
+                    packetid = p['_redvypr']['packetid']
+                    datatype_packet = packetid.split('_')[0]
                     p['_redvypr']['packetid'] = packetid
                     mac = p['mac']
                     nump = p['np']
@@ -376,6 +386,7 @@ class TarProcessor():
                                 mac] = None
 
                     # Packets that do dont have indices and arrays do not need to be merged
+                    print("datatype_packet",datatype_packet)
                     if (datatype_packet != 'T') and (datatype_packet != 'R'):
                         print(funcname + 'Nothing to merge, appending original packet',datatype_packet,mac)
                         self.packetbuffer_nump_tar[nump][datatype_packet][mac] = p
@@ -460,7 +471,8 @@ class TarProcessor():
                         print("Keys",pmerge_all['IMU'].keys())
                         # Calculate the sensor positions in IMU coordinates
                         pmerge2 = pmerge_all['R'].copy()
-                        pmerge2['_redvypr']['packetid'] = pmerge2['_redvypr']['packetid'].rsplit('__',1)[0]
+                        pmerge2['_redvypr']['packetid'] = 'merged_' + pmerge2['mac']
+                        pmerge2['_redvypr']['device'] = 'tar_' + pmerge2['mac']
                         pmerge2['T'] = pmerge_all['T']['T']
                         pmerge2['acc'] = pmerge_all['IMU']['acc']
                         pmerge2['gyro'] = pmerge_all['IMU']['gyro']
@@ -525,17 +537,18 @@ class TarProcessor():
                         #ppub_dict = self.packetbuffer_nump_tar[nump_merge]
                         ppub = ppub_dict['merged']
 
-                        mac_final = 'TARchain_' + mac_downstream + 'N{}'.format(
+                        mac_final = 'tar_chain_' + mac_downstream + 'N{}'.format(
                             len(self.tar_setup))
 
-
+                        packetid_chain = "merged_" + mac_downstream + 'N{}'.format(
+                            len(self.tar_setup))
                         #print('HALLO', ppub)
                         print('HALLO HALLO\n\n\n')
                         l1 = len(ppub.keys())
                         l2 = len(self.tar_setup)
                         if l1 == l2:
                             #merged_packet_work['_redvypr']['packetid'] = mac_final
-                            merged_packet_work = redvypr.RedvyprAddress(ppub[mac_downstream],packetid=mac_final).to_redvypr_dict()
+                            merged_packet_work = redvypr.RedvyprAddress(ppub[mac_downstream],device=mac_final,packetid=packetid_chain).to_redvypr_dict()
                             print("Blank merge packet",merged_packet_work)
                             #merged_packet_work = copy.deepcopy(ppub[mac_downstream])
                         else:
@@ -623,7 +636,7 @@ class TarProcessor():
                 print('Could not get data')
 
             if data_packet_processed is not None:
-                print('Found datapacket of sensor\n\n',sensor,datatype)
+                print('Found datapacket of sensor {}\nDatatype:{}\n'.format(sensor.name,datatype))
                 break
 
 

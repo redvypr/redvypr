@@ -39,7 +39,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
     gui_tablabel_display: str = 'Temperature array (TAR)'
 
 class DeviceCustomConfig(pydantic.BaseModel):
-    merge_tar_chain: bool = pydantic.Field(default=True, description='Merges a chain of TAR sensors into one packet')
+    merge_tar_chain: bool = pydantic.Field(default=False, description='Merges a chain of TAR sensors into one packet')
     publish_single_sensor_sentence: bool = pydantic.Field(default=False, description='Publishes the very raw data, not merged, just parsed')
     publish_raw_sensor: bool = True
     size_packetbuffer: int = 10

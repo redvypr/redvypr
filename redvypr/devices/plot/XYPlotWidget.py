@@ -110,7 +110,8 @@ class configLine(pydantic.BaseModel,extra='allow'):
                 self.databuffer.clear()
             rdata = redvypr.data_packets.Datapacket(data)
             # data can be a single float or a list, if its a list add it item by item
-            newt = data['t']  # Add also the time of the packet
+            #newt = data['t']  # Add also the time of the packet
+            newt = data['_redvypr']['t']  # Add also the time of the packet
             newx = self.x_addr(rdata)
             newy = self.y_addr(rdata)
 

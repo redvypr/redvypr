@@ -29,6 +29,7 @@ dependencies = ['pyaml',
 	     'xarray',
 	     'reportlab',
 	     'pytz',
+	     'psycopg2',
 	     'pytest',
 	     ]
 requires-python = ">=3.7"
