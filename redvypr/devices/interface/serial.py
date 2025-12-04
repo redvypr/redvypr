@@ -113,12 +113,16 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
     dt_maxwait = config['dt_maxwait']
     tnewpacket = time.time() # Time a new packet has arrived
 
-    print("Config",config)
-    logger.debug('Starting to read serial device {:s} with baudrate {:d}'.format(comport,baud))
-
+    #print("Config",config)
     packetid = config['comport_packetid']
     # Get the packet end and packet start characters
     newpacket = config['packetdelimiter']
+    newpacket = newpacket.replace('CR/LF','\r\n')
+    newpacket = newpacket.replace('LF','\n')
+    newpacket = newpacket.replace('None','')
+    logger.debug(
+        'Starting to read serial device {:s} with baudrate {:d}'.format(comport, baud))
+    logger.debug('Newpacket: {:s}'.format(newpacket))
     # Check if a delimiter shall be used (\n, \r\n, etc ...)
     if (len(newpacket) > 0):
         FLAG_DELIMITER = True
@@ -191,8 +195,8 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
         try:
             rawdata_tmp = serial_device.read(ndata)
         except Exception as e:
-            print(e)
-            # print('rawdata_tmp', rawdata_tmp)
+            logger.warning("Could not read from serial port",exc_info=True)
+            return
 
         nread = len(rawdata_tmp)
         if True:
@@ -488,7 +492,6 @@ class serialRecvConfigWidget(QtWidgets.QWidget):
         current_index = comboBox.currentIndex()
         nitems = comboBox.count()
         # Check of items shall be edited?
-        #print('Hallo',current_index,nitems)
         if current_index != (nitems -1):  # Check if last item
             original_text = comboBox.itemText(current_index)
             #print('Not editable',original_text)
@@ -501,13 +504,7 @@ class serialRecvConfigWidget(QtWidgets.QWidget):
         w = self.serialwidgetdict
         serial_device.chunksize = int(w['packet_size'].text())
         serial_device.packetdelimiter = w[
-            'packet_ident'].currentText()  # .replace('\\n', '\n').replace('\\r', '\r')
-        serial_device.packetdelimiter = serial_device.packetdelimiter.replace('CR/LF',
-                                                                              '\r\n')
-        serial_device.packetdelimiter = serial_device.packetdelimiter.replace('LF',
-                                                                              '\n')
-        serial_device.packetdelimiter = serial_device.packetdelimiter.replace('None',
-                                                                              '')
+            'packet_ident'].currentText()  # will be replaced by \n etc in read_serial
 
     def closeEvent(self, event: QtGui.QCloseEvent):
         print("Closing")
@@ -905,11 +902,23 @@ class initDeviceWidget(QtWidgets.QWidget):
         if (thread_status):
             self.startbutton.setText('Stop')
             self.startbutton.setChecked(True)
+            for w in self.serialwidgets:
+                for i,k in w.items():
+                    try:
+                        k.setEnabled(False)
+                    except:
+                        pass
             #for w in self.config_widgets:
             #    w.setEnabled(False)
         # Not running
         else:
             self.startbutton.setText('Start')
+            for w in self.serialwidgets:
+                for i, k in w.items():
+                    try:
+                        k.setEnabled(True)
+                    except:
+                        pass
             #for w in self.config_widgets:
             #    w.setEnabled(True)
 
