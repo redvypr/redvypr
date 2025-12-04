@@ -845,16 +845,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.widgets_to_config()'
         logger.debug(funcname)
-        # print('hallo',len(self.serialwidgets))
-        configs = []
         for w in self.serialwidgets:
             serial_device = w['serial_device']
-            config = {}
             serial_name = str(w['combo_serial_devices'].text())
-            print("Serial device, serial device",serial_device)
-            #serial_device.comport_device = serial_name
-            #packetid = str(w['packetid_label'].text())
-            #serial_device.comport_packetid = packetid
+            #print("Serial device, serial device",serial_device)
             serial_baud = int(w['combo_serial_baud'].currentText())
             serial_device.baud = serial_baud
             stopbits = w['combo_stopbits'].currentText()
