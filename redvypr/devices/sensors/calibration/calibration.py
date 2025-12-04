@@ -517,6 +517,14 @@ class PlotCanvas(FigureCanvas):
 # Init
 #
 #
+iColType = 0
+iColName = 1
+iColChoose = 2
+iColRem = 3
+iColPlottye = 4
+iColCaltype = 5
+iColCalconfig = 6
+iColRef = 7
 class initDeviceWidget(QtWidgets.QWidget):
     connect = QtCore.pyqtSignal(
         RedvyprDevice)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
@@ -532,6 +540,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         super().__init__()
         self.layout = QtWidgets.QGridLayout(self)
+        self.calconfig_widget_tmp = {} # Configuration for the calibration type widget
         self.config_widgets = []
         self.device = device
         self.tabwidget = tabwidget
@@ -600,7 +609,6 @@ class initDeviceWidget(QtWidgets.QWidget):
                 #widget.close()
 
 
-
         self.sensoradd = QtWidgets.QPushButton('Add sensor')  # Add a sensor
         self.sensoradd.clicked.connect(self.sensorAddClicked)
         self.sensorsadd = QtWidgets.QPushButton('Add sensors')  # Add several sensor by choosing a list of datastreams
@@ -619,7 +627,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         calidx = 0
         for itmp, c in enumerate(calibration_types):
             self.caltype.addItem(c)
-            if c == calibrationtype:
+            if c.lower() == calibrationtype.lower():
                 calidx = itmp
 
         self.caltype.setCurrentIndex(calidx)
@@ -630,6 +638,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.calibration_config_widget_layout = QtWidgets.QVBoxLayout(self.calibration_config_widget)
         # Change the calibation widget
         self.__replace_calibration_config_widget__()
+        # Call gives self.calibration_config_widget_custom
+        cal_config = self.calibration_config_widget_custom.get_config()
 
         # Widget to show all the sensor widgets
         self.butwidget = QtWidgets.QWidget()
@@ -646,18 +656,14 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.sensorsConfig_layout.addWidget(self.butwidget)
         # Add the table
         self.sensorsConfigTable = QtWidgets.QTableWidget()
+        self.sensorsConfigTable.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.sensorsConfigTable.customContextMenuRequested.connect(
+            self._show_context_menu)
         self.__headerlabels = ['Type', 'Name', 'Change Address', 'Remove',
                                'Plot type', 'Caltype', 'Calibration config',
                                'Reference']
 
-        iColType = 0
-        iColName = 1
-        iColChoose = 2
-        iColRem = 3
-        iColPlottye = 4
-        iColCaltype = 5
-        iColCalconfig = 6
-        iColRef = 7
+
 
         self.sensorsConfigTable.setColumnCount(len(self.__headerlabels))
         self.sensorsConfigTable.setHorizontalHeaderLabels(self.__headerlabels)
@@ -672,6 +678,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         for i,sdata in enumerate(self.device.custom_config.calibrationdata):
             if True:
                 item = QtWidgets.QTableWidgetItem(str(sdata.inputtype))
+                item.listindex = i
                 self.sensorsConfigTable.setItem(i, iColType, item)
                 sensorNum = QtWidgets.QLabel(str(nsensors))
                 dstr = sdata.datastream.to_address_string()
@@ -744,7 +751,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 sensorCalibrationConfig = QtWidgets.QWidget()
                 sensorCalibrationConfigLayout = QtWidgets.QGridLayout(sensorCalibrationConfig)
                 self.device.custom_config.calibrationdata[i].__sensorCalibrationConfigLayout__ = sensorCalibrationConfigLayout
-                self.__change_calibration_config_widget_for_sensor__(i)
+                self.__change_calibration_config_widget_for_sensor__(i, config = cal_config)
                 self.sensorsConfigTable.setCellWidget(i, iColCalconfig,
                                                       sensorCalibrationConfig)
 
@@ -778,201 +785,66 @@ class initDeviceWidget(QtWidgets.QWidget):
             refbutton.setChecked(True)
             self.__update_refsensor_widgets__(ind_ref_sensor)
 
-    def populateSensorInputWidgets_legacy(self):
+    def _show_context_menu(self, point: QtCore.QPoint):
+        """
+        Erstellt, befüllt und zeigt das Kontextmenü an der von der Maus
+        angeforderten Position (Point) an.
+        """
+        # Erstellen des Menü-Objekts
+        menu = QtWidgets.QMenu(self)
 
-        # Clear all widgets and draw them again
-        layout = self.sensorsConfig_layout
-        while layout.count():
-            item = layout.takeAt(0)
-            # item.close()
-            widget = item.widget()
-            widget.deleteLater()
-            #widget.close()
+        # Hinzufügen der Aktionen
+        action_remove = QtGui.QAction("Sensoren entfernen", self)
+        action_remove.triggered.connect(self._sensors_remove_handler)
+        # Optional: Nur anzeigen, wenn eine oder mehrere Zeilen ausgewählt sind
+        if not self.sensorsConfigTable.selectedItems():
+            action_remove.setEnabled(False)
 
-        self.sensoradd = QtWidgets.QPushButton('Add sensor')  # Add a sensor
-        self.sensoradd.clicked.connect(self.sensorAddClicked)
-        self.sensorsadd = QtWidgets.QPushButton('Add sensors')  # Add several sensor by choosing a list of datastreams
-        self.sensorsadd.clicked.connect(self.sensorsAddClicked)
-        self.mansensoradd = QtWidgets.QPushButton('Add manual sensor')  # Add a manual sensor
-        self.mansensoradd.clicked.connect(self.sensorAddClicked)
-        self.autocalbtn = QtWidgets.QPushButton('Autocalibration')  # Add an autocalibration
-        autocalibration = self.device.custom_config.autocal
-        self.autocalbtn.setCheckable(True)  #
-        self.autocalbtn.setChecked(autocalibration) # Set the checked state, the action is done in the displaywidget.__init__
-        self.autocalbtn.clicked.connect(self.sensorAutocalClicked)
+        action_change_cal = QtGui.QAction("Kalibrierungstyp ändern", self)
+        action_change_cal.triggered.connect(self._change_calibration_types_handle)
 
+        # Aktionen zum Menü hinzufügen
+        menu.addAction(action_remove)
+        menu.addAction(action_change_cal)
 
-        self.caltype = QtWidgets.QComboBox()  # Calibration type of sensor
-        calibrationtype = self.device.custom_config.calibrationtype_default.lower()
-        calidx = 0
-        for itmp, c in enumerate(calibration_types):
-            self.caltype.addItem(c)
-            if c == calibrationtype:
-                calidx = itmp
+        # Menü an der globalen Mausposition anzeigen
+        # mapToGlobal(point) übersetzt die lokalen Koordinaten der Tabelle in globale Bildschirmkoordinaten
+        menu.exec(self.sensorsConfigTable.mapToGlobal(point))
 
-        self.caltype.setCurrentIndex(calidx)
-        self.caltype.currentIndexChanged.connect(self.__replace_calibration_config_widget__)
-        # Add a custom calibration widget, defined for each calibration type
-        calibration_config_widget = calibration_types_config_widgets[calibrationtype]
-        self.calibration_config_widget = QtWidgets.QWidget()
-        self.calibration_config_widget_layout = QtWidgets.QVBoxLayout(self.calibration_config_widget)
-        # Change the calibation widget
-        self.__replace_calibration_config_widget__()
+    def _sensors_remove_handler(self):
+        """Remove sensor handler of the context menu"""
+        selected_rows = sorted(
+            list(set(item.row() for item in self.sensorsConfigTable.selectedItems())),
+            reverse=True)
+        if selected_rows:
+            listindices = []
+            for row in selected_rows:
+                item = self.sensorsConfigTable.item(row,iColType)
+                sensortype = item.text()
+                listindices.append((item.listindex,sensortype))
+                print("Removing sensor",item.listindex,sensortype)
 
-        # Widget to show all the sensor widgets
-        self.butwidget = QtWidgets.QWidget()
-        self.butlayout = QtWidgets.QHBoxLayout(self.butwidget)
-        self.butlayout.addWidget(self.sensoradd)
-        self.butlayout.addWidget(self.sensorsadd)
-        self.butlayout.addWidget(self.mansensoradd)
-        self.butlayout.addWidget(self.autocalbtn)
-        self.butlayout.addWidget(QtWidgets.QLabel('Calibration Type'))
-        self.butlayout.addWidget(self.caltype)
-        self.butlayout.addWidget(QtWidgets.QLabel('Calibration Config'))
-        self.butlayout.addWidget(self.calibration_config_widget)
-        # Sensorswidget with scrollarea
-        self.sensorsConfig_datastream = QtWidgets.QWidget()
-        self.sensorsConfig_datastream_scroll = QtWidgets.QScrollArea()
-        self.sensorsConfig_datastream_scroll.setWidgetResizable(True)
-        self.sensorsConfig_datastream_scroll.setWidget(self.sensorsConfig_datastream)
-        # The layout for the individual sensors
-        self.sensorsConfig_datastream_layout = QtWidgets.QGridLayout(self.sensorsConfig_datastream)
-        self.sensorsConfig_manual = QtWidgets.QWidget()
-        self.sensorsConfig_manual_layout = QtWidgets.QGridLayout(self.sensorsConfig_manual)
-        self.sensorsConfig_manual_scroll = QtWidgets.QScrollArea()
-        self.sensorsConfig_manual_scroll.setWidgetResizable(True)
-        self.sensorsConfig_manual_scroll.setWidget(self.sensorsConfig_manual)
-        self.sensorsConfig_layout.addWidget(self.butwidget)
-        self.sensorsConfig_layout.addWidget(QtWidgets.QLabel('Datastreams'))
-        self.sensorsConfig_layout.addWidget(self.sensorsConfig_datastream_scroll)
-        self.sensorsConfig_layout.addWidget(QtWidgets.QLabel('Manual sensors'))
-        self.sensorsConfig_layout.addWidget(self.sensorsConfig_manual_scroll)
-        ref_group=QtWidgets.QButtonGroup() # Number group
-        nsensors = 0
-        sensors = []
-        buttons = []
-        for i,sdata in enumerate(self.device.custom_config.calibrationdata):
-            if sdata.inputtype == 'datastream':
-                sensorNum = QtWidgets.QLabel(str(nsensors))
-                dstr = sdata.datastream.to_address_string()
-                sensorDatastream = QtWidgets.QLineEdit(dstr) # The subscribed datastream
-                sensorDatastream.setReadOnly(True)
-                sensorDatastream.datastream = sdata.datastream
-                sensorChoose = QtWidgets.QPushButton('Choose')  # Choose a datastream
-                sensorChoose.clicked.connect(self.chooseDatastream)
-                sensorChoose.lineEditDatastream_addr = sensorDatastream
-                sensorChoose.listindex = i
-                sensorRem = QtWidgets.QPushButton('Remove')  # Choose a datastream
-                sensorRem.clicked.connect(self.sensorRemClicked)
-                sensorRem.listindex = i
-                sensorRem.sensortype = 'datastream'
-                # The realtime plot type
-                sensorPlotType = QtWidgets.QComboBox()  # Choose a datastream
-                sensorPlotType.addItem('Table')
-                sensorPlotType.addItem('XY Plot')
-                sensorPlotType.listindex = i
-                sensorPlotType.sensortype = 'datastream'
-                if 'XY' in sdata.realtimeplottype:
-                    sensorPlotType.setCurrentIndex(1)  # XY
-                else:
-                    sensorPlotType.setCurrentIndex(0)  # Table
-                sensorPlotType.currentIndexChanged.connect(self.__realtime_plot_changed__)
+            self._sensors_remove(listindices)
+        else:
+            self.status_label.setText("Aktion: Keine Zeilen zum Entfernen ausgewählt.")
 
-                # Calibration type
-                sensorCalibrationType = QtWidgets.QComboBox()  # Choose a datastream
-                sensorCalibrationType.listindex = i
-                sensorCalibrationType.sensortype = 'datastream'
-                idx_cal = 0
-                for idx,c in enumerate(calibration_types):
-                    sensorCalibrationType.addItem(c)
-                    if c.lower() == sdata.calibrationtype.lower():
-                        idx_cal = idx
+    def _change_calibration_types_handle(self):
+        """Handler für die Aktion 'Kalibrierungstyp ändern'."""
+        # Platzhalter-Logik: Gibt die ID der ersten ausgewählten Zelle aus
+        selected_rows = sorted(
+            list(set(item.row() for item in self.sensorsConfigTable.selectedItems())),
+            reverse=True)
+        if selected_rows:
+            listindices = []
+            for row in selected_rows:
+                caltype_new = self.caltype.currentText()
+                item = self.sensorsConfigTable.item(row, iColType)
+                listindices.append((row,caltype_new))
+                print("Changing calibration for sensor",item.listindex,caltype_new)
 
-                sensorCalibrationType.setCurrentIndex(idx_cal)
-                sensorCalibrationType.currentIndexChanged.connect(self.__calibration_type_changed__)
-                self.device.custom_config.calibrationdata[i].__calibration_type_widget__ = sensorCalibrationType
-
-
-                # Calibration config
-                sensorCalibrationConfig = QtWidgets.QWidget()
-                sensorCalibrationConfigLayout = QtWidgets.QGridLayout(sensorCalibrationConfig)
-                self.device.custom_config.calibrationdata[i].__sensorCalibrationConfigLayout__ = sensorCalibrationConfigLayout
-                self.__change_calibration_config_widget_for_sensor__(i)
-
-                # Reference index
-                refbutton = QtWidgets.QRadioButton("Reference")
-                refbutton.refindex = i
-                refbutton.toggled.connect(self.__refsensor_changed__)
-                buttons.append(refbutton)
-                ref_group.addButton(refbutton,id=nsensors)
-                sensors.append({'sensorDatastream':sensorDatastream})
-                self.sensorsConfig_datastream_layout.addWidget(sensorNum, nsensors, 0)
-                self.sensorsConfig_datastream_layout.addWidget(sensorDatastream, nsensors, 1)
-                self.sensorsConfig_datastream_layout.addWidget(sensorChoose, nsensors, 3)
-                self.sensorsConfig_datastream_layout.addWidget(sensorRem, nsensors, 4)
-                self.sensorsConfig_datastream_layout.addWidget(sensorPlotType, nsensors, 5)
-                self.sensorsConfig_datastream_layout.addWidget(sensorCalibrationType, nsensors, 6)
-                self.sensorsConfig_datastream_layout.addWidget(sensorCalibrationConfig, nsensors, 7)
-                self.sensorsConfig_datastream_layout.addWidget(refbutton, nsensors, 8)
-                nsensors += 1
-                if i == int(self.device.custom_config.ind_ref_sensor):
-                    refbutton.setChecked(True)
-            else:
-                mansensorNum = QtWidgets.QLabel(str(nsensors))
-                mansensorName = QtWidgets.QLineEdit(sdata.sn)  # The name of the sensor
-                mansensorName.editingFinished.connect(self.manualSensorChanged)
-                mansensorName.listindex = i
-                mansensorRem = QtWidgets.QPushButton('Remove')  # Choose a datastream
-                # Calibration type
-                manCalibrationType = QtWidgets.QComboBox()  # Choose a datastream
-                manCalibrationType.listindex = i
-                manCalibrationType.sensortype = 'datastream'
-                idx_cal = 0
-                for idx,c in enumerate(calibration_types):
-                    manCalibrationType.addItem(c)
-                    if c.lower() == sdata.calibrationtype.lower():
-                        idx_cal = idx
-
-                manCalibrationType.setCurrentIndex(idx_cal)
-                manCalibrationType.currentIndexChanged.connect(self.__calibration_type_changed__)
-
-                # Calibration config
-                manCalibrationConfig = QtWidgets.QWidget()
-                manCalibrationConfigLayout = QtWidgets.QGridLayout(manCalibrationConfig)
-                self.device.custom_config.calibrationdata[i].__sensorCalibrationConfigLayout__ = manCalibrationConfigLayout
-                self.__change_calibration_config_widget_for_sensor__(i)
-
-                self.device.custom_config.calibrationdata[i].__calibration_type_widget__ = manCalibrationType
-                # Reference
-                manrefbutton = QtWidgets.QRadioButton("Reference")
-                manrefbutton.refindex = i
-                manrefbutton.toggled.connect(self.__refsensor_changed__)
-                buttons.append(manrefbutton)
-                ref_group.addButton(manrefbutton,id=nsensors)
-                mansensorRem.clicked.connect(self.sensorRemClicked)
-                mansensorRem.listindex = i
-                mansensorRem.sensortype = 'manual'
-                sensors.append({'mansensorName':mansensorName})
-                self.sensorsConfig_manual_layout.addWidget(mansensorNum, nsensors, 0)
-                self.sensorsConfig_manual_layout.addWidget(mansensorName, nsensors, 1)
-                self.sensorsConfig_manual_layout.addWidget(mansensorRem, nsensors, 2)
-                self.sensorsConfig_manual_layout.addWidget(manCalibrationType, nsensors, 3)
-                self.sensorsConfig_manual_layout.addWidget(manCalibrationConfig, nsensors, 4)
-                self.sensorsConfig_manual_layout.addWidget(manrefbutton, nsensors, 5)
-                if i == int(self.device.custom_config.ind_ref_sensor):
-                    manrefbutton.setChecked(True)
-
-                nsensors += 1
-
-        ref_group.setExclusive(True)
-        self.ref_group = ref_group
-        self.sensors = sensors
-        ind_ref_sensor = self.device.custom_config.ind_ref_sensor
-        # Set the reference sensor
-        if ind_ref_sensor>=0:
-            refbutton = buttons[ind_ref_sensor]
-            refbutton.setChecked(True)
-            self.__update_refsensor_widgets__(ind_ref_sensor)
+            self.__calibration_types_changed__(listindices)
+        else:
+            pass
 
     def __replace_calibration_config_widget__(self):
         """
@@ -986,11 +858,24 @@ class initDeviceWidget(QtWidgets.QWidget):
                 widget.deleteLater()
 
         calibrationtype = self.caltype.currentText().lower()
+        self.device.custom_config.calibrationtype_default = calibrationtype
+        #print("Config",self.device.custom_config)
         # Add a custom calibration widget, defined for each calibration type
         calibration_config_widget = calibration_types_config_widgets[calibrationtype]
-        self.calibration_config_widget_custom = calibration_config_widget()
+        caltype = self.caltype.currentText()
+        try:
+            config = self.calconfig_widget_tmp[caltype]
+        except:
+            config = None
+
+        self.calibration_config_widget_custom = calibration_config_widget(config=config)
+        self.calibration_config_widget_custom.config_changed.connect(self.__calibration_coeff_config_changed)
         self.calibration_config_widget_layout.addWidget(self.calibration_config_widget_custom)
 
+    def __calibration_coeff_config_changed(self, config):
+        print("Config changed",config)
+        caltype = self.caltype.currentText()
+        self.calconfig_widget_tmp[caltype] = config
     def sensorAutocalClicked(self):
         checked = self.autocalbtn.isChecked()
         self.device.devicedisplaywidget.showAutocalWidget(checked)
@@ -1010,7 +895,38 @@ class initDeviceWidget(QtWidgets.QWidget):
         #print('Sensor config', self.device.custom_config.calibrationdata[indexsensor])
         self.updateDisplayWidget()
 
-    def __change_calibration_config_widget_for_sensor__(self, indexsensor):
+    def __calibration_types_changed__(self, index_types):
+        """
+        Called when the calibration type of several sensor is changed (by the menu)
+        """
+        funcname = __name__ + '.__calibration_types_changed__():'
+
+        for row,caltype_new in index_types:
+            print(funcname + ' row:{} caltype_new:{}'.format(row,caltype_new))
+            indexsensor = self.sensorsConfigTable.item(row,iColType).listindex
+            calibrationTypeCombo = self.sensorsConfigTable.cellWidget(row, iColCaltype)
+            calibrationConfigWidget = self.sensorsConfigTable.cellWidget(row, iColCalconfig)
+            print("calcombo",calibrationTypeCombo,row,iColType)
+            calibrationtype = calibrationTypeCombo.currentText()
+            if caltype_new.lower() == calibrationtype.lower():
+                print("\n Calibration types are the same, doing nothing")
+                continue
+            else:
+                #calibrationTypeCombo.blockSignals(True)
+                calibrationTypeCombo.currentIndexChanged.disconnect(
+                    self.__calibration_type_changed__)
+                idx_new = calibration_types.index(caltype_new)
+                print("\n New calibration type Index new type",idx_new)
+                self.device.custom_config.calibrationdata[
+                    indexsensor].calibrationtype = caltype_new
+                calibrationTypeCombo.setCurrentIndex(idx_new)
+                calibrationTypeCombo.currentIndexChanged.connect(
+                    self.__calibration_type_changed__)
+                #calibrationTypeCombo.blockSignals(False)
+
+        self.updateDisplayWidget()
+
+    def __change_calibration_config_widget_for_sensor__(self, indexsensor, config):
         # Change the calibration config widget
         calibrationtype = self.device.custom_config.calibrationdata[indexsensor].calibrationtype.lower()
         layout = self.device.custom_config.calibrationdata[indexsensor].__sensorCalibrationConfigLayout__
@@ -1021,7 +937,8 @@ class initDeviceWidget(QtWidgets.QWidget):
                 widget.deleteLater()
 
         # Add a custom calibration widget, defined for each calibration type
-        calibration_config_widget = calibration_types_config_widgets[calibrationtype]()
+        print("Creating config widget with", config)
+        calibration_config_widget = calibration_types_config_widgets[calibrationtype](config=config)
         calibration_config_widget.listindex = indexsensor
         calibration_config_widget.config_changed.connect(self.__calibration_config_for_sensor_changed__)
         calibration_config_widget.config_changed.emit(calibration_config_widget.get_config())
@@ -1029,14 +946,13 @@ class initDeviceWidget(QtWidgets.QWidget):
 
     def __calibration_config_for_sensor_changed__(self, config):
         print("Config changed", config)
-        # TODO
         configwidget = self.sender()
         indexsensor = configwidget.listindex
         sensor = self.device.custom_config.calibrationdata[indexsensor]
-        print("SEnsor", sensor)
+        print("Sensor", sensor)
         print("Indexsensor",indexsensor)
         self.device.add_sensor_calibration_config(sensor,config)
-        print("SEnsor again", self.device.custom_config.calibrationdata[indexsensor])
+        print("Sensor again", self.device.custom_config.calibrationdata[indexsensor])
 
     def __realtime_plot_changed__(self, index):
         """
@@ -1103,11 +1019,6 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         self.updateDisplayWidget()
         self.device.subscribe_to_sensors()
-
-    def caltype_combobox_changed_legacy(self, value):
-        logger.debug("combobox changed {}".format(value))
-        self.device.custom_config.calibrationtype_default = value.lower()
-        self.device.devicedisplaywidget.create_calibration_widget()
 
     def manualSensorChanged(self):
         funcname = __name__ + '.manualsSensorChanged():'
@@ -1199,6 +1110,31 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.populateSensorInputWidgets()
         self.updateDisplayWidget()
 
+    def _sensors_remove(self, listindices):
+        """
+        Remove multiple sensors
+        Returns
+        -------
+
+        """
+        funcname = __name__ + '._sensor_remove():'
+        logger.debug(funcname)
+        layout = self.sensorsConfig_layout
+        while layout.count():
+            item = layout.takeAt(0)
+            # item.close()
+            widget = item.widget()
+            widget.deleteLater()
+
+        # print('Config', self.device.custom_config)
+        # print('Index',sensorRem.listindex)
+        for listindex,sensortype in listindices:
+            print("Removing",listindex,sensortype)
+            self.device.rem_sensor(listindex, sensortype)
+
+        self.populateSensorInputWidgets()
+        self.updateDisplayWidget()
+
     def updateDisplayWidget(self):
         funcname = __name__ + '.updateDisplayWidget():'
         logger.debug(funcname)
@@ -1207,13 +1143,6 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.device.devicedisplaywidget.create_widgets()
     def config_changed(self):
         """
-
-
-        Args:
-            config:
-
-        Returns:
-
         """
         funcname = __name__ + '.config_changed():'
         logger.debug(funcname)

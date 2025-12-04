@@ -29,19 +29,26 @@ logger.setLevel(logging.DEBUG)
 # Widgets to configure the individual calibration types
 class ConfigWidgetInitNTC(QtWidgets.QWidget):
     config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, config=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.config = config
+        if self.config is None:
+            self.config = {}
+            self.config["caltype"] = 'ntc'
+            self.config["poly_degree"] = 3
+            self.config["Toff"] = 273.15  # Offset between K and degC
         layout = QtWidgets.QHBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel('Order of NTC fit'))
         self.spinbox_poly = QtWidgets.QSpinBox(self)
-        self.spinbox_poly.setValue(3)
+        self.spinbox_poly.setValue(self.config["poly_degree"])
         layout.addWidget(self.spinbox_poly)
         self.spinbox_poly.valueChanged.connect(self.emit_config_changed)
 
     def get_config(self):
         config = {}
+        config["caltype"] = 'ntc'
         config["poly_degree"] = self.spinbox_poly.value()
-        config["Toff"] = 273.15  # Offset between K and degC
+        config["Toff"] = self.config["Toff"]  # Offset between K and degC
         return config
 
     def emit_config_changed(self):
@@ -51,17 +58,23 @@ class ConfigWidgetInitNTC(QtWidgets.QWidget):
 # Widgets to configure the individual calibration types
 class ConfigWidgetInitPolynom(QtWidgets.QWidget):
     config_changed = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, config=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.config = config
+        if self.config is None:
+            self.config = {}
+            self.config["caltype"] = 'polynom'
+            self.config["poly_degree"] = 3
         layout = QtWidgets.QHBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel('Order of polynomial fit'))
         self.spinbox_poly = QtWidgets.QSpinBox(self)
-        self.spinbox_poly.setValue(3)
+        self.spinbox_poly.setValue(self.config["poly_degree"])
         layout.addWidget(self.spinbox_poly)
         self.spinbox_poly.valueChanged.connect(self.emit_config_changed)
 
     def get_config(self):
         config = {}
+        config["caltype"] = 'polynom'
         config["poly_degree"] = self.spinbox_poly.value()
         return config
 

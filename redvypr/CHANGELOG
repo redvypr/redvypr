@@ -4,6 +4,9 @@
        - new readme
        - bug fixes and improvements in calibration
        - tar sensor bug fix
+       - timescaledb support added
+       - sqlite3 raw data file format added
+       - calibration device improved
 - 0.9.14:
        - RedvyprAddress syntax changed
        - calibration device improved
