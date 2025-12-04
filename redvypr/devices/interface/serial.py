@@ -113,6 +113,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
     dt_maxwait = config['dt_maxwait']
     tnewpacket = time.time() # Time a new packet has arrived
 
+    print("Config",config)
     logger.debug('Starting to read serial device {:s} with baudrate {:d}'.format(comport,baud))
 
     packetid = config['comport_packetid']
@@ -134,7 +135,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
     sentences_read = 0
     bytes_read_old = 0  # To calculate the amount of bytes read per second
     t_update = time.time()
-    serial_device = False
+    #serial_device = None
     if True:
         try:
             serial_device = serial.Serial(comport, baud, parity=parity, stopbits=stopbits, bytesize=bytesize,
@@ -280,6 +281,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             queuesize = 100
             config_thread = copy.deepcopy(comportconfig)
             datainqueue_thread = queue.Queue(maxsize=queuesize)
+            print("\n\nComportconfig",comportconfig)
             comport = comportconfig['comport_device']
             serial_threads_datainqueues[comport] = datainqueue_thread
             args = [device_info,config_thread,dataqueue,datainqueue_thread,statusqueue]
@@ -414,6 +416,7 @@ class serialRecvConfigWidget(QtWidgets.QWidget):
 
         lwidth = 80  # width of the qlineedits
         serialwidgetdict = {}
+        self.serialwidgetdict = serialwidgetdict
 
         serialwidgetdict['datakey_lab'] = QtWidgets.QLabel('Datakey')
         serialwidgetdict['datakey_edit'] = QtWidgets.QLineEdit()
@@ -492,6 +495,26 @@ class serialRecvConfigWidget(QtWidgets.QWidget):
             line_edit.setText(original_text)
         else: # editable item
             pass
+
+    def widget_to_config(self):
+        serial_device = self.serial_device
+        w = self.serialwidgetdict
+        serial_device.chunksize = int(w['packet_size'].text())
+        serial_device.packetdelimiter = w[
+            'packet_ident'].currentText()  # .replace('\\n', '\n').replace('\\r', '\r')
+        serial_device.packetdelimiter = serial_device.packetdelimiter.replace('CR/LF',
+                                                                              '\r\n')
+        serial_device.packetdelimiter = serial_device.packetdelimiter.replace('LF',
+                                                                              '\n')
+        serial_device.packetdelimiter = serial_device.packetdelimiter.replace('None',
+                                                                              '')
+
+    def closeEvent(self, event: QtGui.QCloseEvent):
+        print("Closing")
+        self.widget_to_config()
+        print("serial device",self.serial_device)
+        event.accept()
+
 
 class serialDataWidget(QtWidgets.QWidget):
     """
@@ -828,7 +851,8 @@ class initDeviceWidget(QtWidgets.QWidget):
             serial_device = w['serial_device']
             config = {}
             serial_name = str(w['combo_serial_devices'].text())
-            serial_device.comport_device = serial_name
+            print("Serial device, serial device",serial_device)
+            #serial_device.comport_device = serial_name
             #packetid = str(w['packetid_label'].text())
             #serial_device.comport_packetid = packetid
             serial_baud = int(w['combo_serial_baud'].currentText())
@@ -857,12 +881,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 serial_device.parity = serial.PARITY_SPACE
 
             #
-            serial_device.chunksize = int(w['packet_size'].text())
-            serial_device.packetdelimiter = w['packet_ident'].currentText()#.replace('\\n', '\n').replace('\\r', '\r')
-            serial_device.packetdelimiter = serial_device.packetdelimiter.replace('CR/LF','\r\n')
-            serial_device.packetdelimiter = serial_device.packetdelimiter.replace('LF', '\n')
-            serial_device.packetdelimiter = serial_device.packetdelimiter.replace('None', '')
-            print(funcname + 'Test',w['packet_ident'].currentText())
+
             #serial_device.packetstart = w['packet_start'].text()
             if w['button_serial_openclose'].isChecked():
                 serial_device.use_device = True
@@ -872,6 +891,10 @@ class initDeviceWidget(QtWidgets.QWidget):
     def start_clicked(self):
         button = self.sender()
         if ('Start' in button.text()):
+            try:
+                self.recv_config_widget.close()
+            except:
+                pass
             self.widgets_to_config()
             self.device.thread_start()
             button.setText('Stop')
