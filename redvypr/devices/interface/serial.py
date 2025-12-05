@@ -63,6 +63,10 @@ class SerialDeviceCustomConfig(pydantic.BaseModel):
     bytesize: typing.Literal[serial.EIGHTBITS, serial.SEVENBITS, serial.SIXBITS] = pydantic.Field(default=serial.EIGHTBITS)
     dt_poll: float = 0.05
     dt_maxwait: float = pydantic.Field(default=-1.0,description='Wait time in s for valid data, if time without a valid packets exceeds dt_maxwait the comport is closed and the read thread is stopped')
+    send_mode: typing.Literal["raw", "redvypr_datapacket"] = pydantic.Field(
+        default="raw",
+        description="The mode for data sending, raw for , redvypr_datapacket to send redvpyr datapackets")
+    send_serializer: typing.Literal["utf-8", "redvypr_datapacket"] = pydantic.Field(default="utf-8",description="Mode of data conversion to bindary format")
     recv_mode: typing.Literal["raw","redvypr_datapacket"] = pydantic.Field(default="raw",description="The mode for data reception, raw for serial data, redvypr_datapacket to read redvpyr datapackets")
     datakey: str = pydantic.Field(default="data",
                                     description='The datakey for the raw data')
