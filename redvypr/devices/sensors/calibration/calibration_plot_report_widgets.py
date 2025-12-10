@@ -112,7 +112,9 @@ def write_report_pdf(calibrations, filename):
     else:
         calibrations = [calibrations]
 
-    for calibration in calibrations:
+    for ical,calibration in enumerate(calibrations):
+        if ical > 0:
+            elements.append(PageBreak())  # New page from second calibration onwards
         # Get the data ready
         try:
             refchannel = calibration.calibration_reference_data.channel.datakey

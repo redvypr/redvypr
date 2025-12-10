@@ -55,6 +55,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     logger_thread.setLevel(logging.DEBUG)
     logger_thread.debug(funcname)
     tar_processor = tar_process.TarProcessor()
+    metadata_dict = {} # Store the metadata
 
     metadata_packets = tar_processor.create_metadata_packets()
     for p in metadata_packets:
@@ -90,12 +91,21 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
         print("Processing data")
         merged_packets = tar_processor.process_rawdata(datapacket['data'])
+        if merged_packets['metadata'] is not None:
+            for ppub in merged_packets['metadata']:
+                # Publish the data
+                dataqueue.put(ppub)
         if merged_packets['merged_packets'] is not None:
             if config['publish_raw_sensor']:
                 for ppub in merged_packets['merged_packets']:
-                    #print('Publishing')
-                    #print('Publishing')
-                    #print('Publishing',ppub)
+                    atmp = redvypr.RedvyprAddress(ppub)
+                    pkid = atmp.packetid
+                    print("Atmp",atmp)
+                    # Metadata
+                    if pkid not in metadata_dict.keys():
+                        print("New metadata")
+
+                    # Publish the data
                     dataqueue.put(ppub)
 
         if merged_packets['merged_tar_chain'] is not None:

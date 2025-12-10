@@ -808,7 +808,7 @@ class RedvyprAddress:
 
         if not self._rhs_ast:
             if self.left_expr and show_left:
-                return f"{self.left_expr}@"
+                return f"{self.left_expr}"
             else:
                 return "@"
 

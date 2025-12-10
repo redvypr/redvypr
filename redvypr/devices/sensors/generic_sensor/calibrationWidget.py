@@ -43,6 +43,8 @@ class CalibrationsSaveWidget(QtWidgets.QWidget):
             calibrations = CalibrationList(calibrations)
 
         self.calibrations = calibrations
+        print("Calibrations:",calibrations)
+        print("done")
 
         # Add some extras to the calibrations
         for cal in calibrations:
@@ -133,6 +135,8 @@ class CalibrationsSaveWidget(QtWidgets.QWidget):
     def __update_filenames_in_calibrations__(self):
         print('Updating filenames of the calibrations')
         calfiles = self.calibrations.create_filenames_save(self.filename, document_type="calibration")
+        print("Calfiles",calfiles)
+        print("Calfiles done\n")
         calfiles_report = self.calibrations.create_filenames_save(self.filename, document_type="report")
         if True:
             for cal,filename,filename_report in zip(self.calibrations,calfiles, calfiles_report):
@@ -143,21 +147,25 @@ class CalibrationsSaveWidget(QtWidgets.QWidget):
     def __populate_calibration_table__(self):
         colheader = ["Save","SN","Filename"]
         if self.save_report:
-            colheader = ["Save", "SN", "Filename calibration", "Filename report"]
+            colheader = ["Save", "SN", "Channel", "Filename calibration", "Filename report"]
         self.calibration_table.clear()
         icol_save = 0
         icol_sn = 1
-        icol_filename = 2
-        icol_filename_report = 3
+        icol_ch = 2
+        icol_filename = 3
+        icol_filename_report = 4
         self.calibration_table.setColumnCount(len(colheader))
         self.calibration_table.setHorizontalHeaderLabels(colheader)
         self.__update_filenames_in_calibrations__() # update the filenames to save
         nrows = 0
         i = 0
-        for cal in self.calibrations:
+        print("len calibration",len(self.calibrations))
+        for ical,cal in enumerate(self.calibrations):
+            print("Cal", ical,cal is None)
             if cal is not None:
-                nrows = +1
+                nrows += 1
                 self.calibration_table.setRowCount(nrows)
+                print("nrows",nrows)
                 # Save flag
                 checked = cal.__save__
                 item_checkbox = QtWidgets.QCheckBox()
@@ -169,6 +177,10 @@ class CalibrationsSaveWidget(QtWidgets.QWidget):
                 item = QtWidgets.QTableWidgetItem(cal.sn)
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
                 self.calibration_table.setItem(nrows-1, icol_sn, item)
+                # Channel
+                item = QtWidgets.QTableWidgetItem(cal.channel.to_address_string())
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                self.calibration_table.setItem(nrows - 1, icol_ch, item)
                 # Filename calibration
                 filename = cal.__filename__
                 item = QtWidgets.QTableWidgetItem(filename)
@@ -255,6 +267,8 @@ class CalibrationsTable(QtWidgets.QTableWidget):
         funcname = __name__ + '__init__()'
         super().__init__(*args)
         self.datefmt = '%Y-%m-%d %H:%M:%S'
+        if calibrations is None:
+            calibrations = []
         self.calibrations = calibrations
         self.show_columns = show_columns
         if hide_columns is None:
@@ -268,19 +282,19 @@ class CalibrationsTable(QtWidgets.QTableWidget):
         self.columns['choose'] = 2
         self.columns['show'] = 3
         self.columns['sn'] = 4
-        self.columns['parameter'] = 5
+        self.columns['channel'] = 5
         self.columns['date'] = 6
         self.columns['id'] = 7
         self.columns['uuid'] = 8
         self.columns['comment'] = 9
         self.columns['coeffs'] = 10
 
-        self.column_names = {'datastream': 'Sensor Parameter'}
+        self.column_names = {'datastream': 'Sensor Channel'}
         self.column_names['caltype'] = 'Calibration Type'
         self.column_names['choose'] = 'Choose Calibration'
         self.column_names['show'] = 'Show Calibration'
         self.column_names['sn'] = 'Serial number'
-        self.column_names['parameter'] = 'Parameter'
+        self.column_names['channel'] = 'Channel'
         self.column_names['date'] = 'Calibration Date'
         self.column_names['id'] = 'Calibration ID'
         self.column_names['uuid'] = 'Calibration UUID'
@@ -330,11 +344,12 @@ class CalibrationsTable(QtWidgets.QTableWidget):
         logger.debug(funcname)
         if calibrations is not None:
             self.calibrations = calibrations
+
         self.clear()
         nRows = len(self.calibrations)
 
         if isinstance(self.calibrations, list):
-            logger.debug('Will not show the parameter')
+            logger.debug('Will not show the channel')
             self.hideColumn(self.columns['datastream'])
 
         self.setRowCount(nRows)
@@ -380,10 +395,10 @@ class CalibrationsTable(QtWidgets.QTableWidget):
                 # SN
                 item = QtWidgets.QTableWidgetItem(calibration.sn)
                 self.setItem(i, self.columns['sn'], item)
-                # Parameter
-                parameterstr = str(calibration.parameter)
-                item = QtWidgets.QTableWidgetItem(parameterstr)
-                self.setItem(i, self.columns['parameter'], item)
+                # Channel
+                channelstr = str(calibration.channel)
+                item = QtWidgets.QTableWidgetItem(channelstr)
+                self.setItem(i, self.columns['channel'], item)
                 # Date
                 datestr = calibration.date.strftime(self.datefmt)
                 item = QtWidgets.QTableWidgetItem(datestr)
@@ -524,8 +539,6 @@ class GenericSensorCalibrationWidget(QtWidgets.QWidget):
         self.calibrationsTab.addTab(self.calibrations_allWidget, 'All Calibrations')
         self.layout = QtWidgets.QGridLayout(self)
         self.layout.addWidget(self.calibrationsTab, 0, 0)
-        #self.layout.addWidget(self.configWidget, 0, 0)
-        #self.layout.addWidget(self.parameterWidget,0,1)
 
     def update_sensor_info(self,sensorinfo):
         funcname = __name__ + '.update_sensorinfo():'
@@ -580,16 +593,16 @@ class GenericSensorCalibrationWidget(QtWidgets.QWidget):
             else:
                 raise ValueError('Calibrations need to be a dictionary')
 
-            parameter = cal_key
+            channel = cal_key
             try:
                 sn = self.sensorinfo['sn']
             except:
                 sn = None
             calibration_candidates = redvypr.devices.sensors.calibration.calibration_models.find_calibration_for_channel(
-                channel=parameter, calibrations=calibrations, sn=sn)
+                channel=channel, calibrations=calibrations, sn=sn)
 
-            print('Finding calibration for parameter {} with sn {}'.format(parameter,sn))
-            #print('Calibration candidates for parameter',calibration_candidates)
+            print('Finding calibration for channel {} with sn {}'.format(channel,sn))
+            #print('Calibration candidates for channel',calibration_candidates)
             if len(calibration_candidates) > 0:
                 print('Found {} calibrations:'.format(len(calibration_candidates)))
                 for icand, ctmp in enumerate(calibration_candidates):
@@ -921,9 +934,9 @@ class sensorCalibrationsWidget(QtWidgets.QWidget):
             pass
 
         self.sensorCoeffWidget_list.setSortingEnabled(False)
-        colheaders = ['SN', 'Calibration type', 'Parameter', 'Calibration date']
+        colheaders = ['SN', 'Calibration type', 'Channel', 'Calibration date']
         icol_sn = colheaders.index('SN')
-        icol_para = colheaders.index('Parameter')
+        icol_para = colheaders.index('Channel')
         icol_date = colheaders.index('Calibration date')
         icol_caltype = colheaders.index('Calibration type')
         self.sensorCoeffWidget_list.setColumnCount(len(colheaders))
@@ -948,15 +961,15 @@ class sensorCalibrationsWidget(QtWidgets.QWidget):
             item = QtWidgets.QTableWidgetItem(cal.calibration_type)
             item.setData(role, cal)
             self.sensorCoeffWidget_list.setItem(i, icol_caltype, item)
-            # Parameter
+            # Channel
             icol_caltype = colheaders.index('Calibration type')
             # Distinguish between RedvyprAddress and str
             try:
-                parameter_str = cal.channel.address_str
+                channel_str = cal.channel.address_str
             except:
-                parameter_str = cal.channel
+                channel_str = cal.channel
 
-            item = QtWidgets.QTableWidgetItem(parameter_str)
+            item = QtWidgets.QTableWidgetItem(channel_str)
             item.setData(role, cal)
             self.sensorCoeffWidget_list.setItem(i, icol_para, item)
             # Caldate

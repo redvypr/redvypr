@@ -203,7 +203,11 @@ class CalibrationPoly(CalibrationGeneric):
     comment: typing.Optional[str] = None
 
     def raw2data(self, raw_data):
+        print("Raw2data")
+        print("raw_data", raw_data)
+        print("coeff", self.coeff)
         data = np.polyval(self.coeff,raw_data)
+        print("data", data)
         return data
 
 
@@ -224,8 +228,22 @@ class CalibrationPoly(CalibrationGeneric):
 
         refdata = np.asarray(self.calibration_reference_data.data)
         caldata = np.asarray(self.calibration_data.data)
-        fitdata = np.polyfit(refdata, caldata, self.poly_degree)
+        fitdata = np.polyfit(caldata, refdata, self.poly_degree)
         self.coeff = fitdata.tolist()
+
+    def get_formula(self):
+        """
+        Returns the formula in latex for the calculation of the converted value
+        Returns
+        -------
+
+        """
+        #T_1 = np.polyval(P_R, np.log(data))
+        #T = 1 / T_1 - Toff
+        channelname = self.channel.datakey
+        calc_str = "$y = c_0 + c_1\\times \\text{{{}}} + c_2\\times \\text{{{}}}^2 ... $".format(channelname,channelname)
+        #print("calc str",calc_str)
+        return calc_str
 
 class CalibrationHeatFlow(CalibrationGeneric):
     """

@@ -298,7 +298,7 @@ class dhf_sensor():
         return commands
 
 
-    def create_read_commands(self,addr,nbytes):
+    def create_read_commands(self, addr, nbytes):
         commands = []
         macstr = self.macstr
         macsum_str = self.macsum_str
@@ -427,14 +427,24 @@ def readwrite(serial_device, inqueue, outqs):
     logger_thread.setLevel(logging.DEBUG)
     logger_thread.debug(funcname)
     while True:
-        # print('Hallo ...')
+        #print('Hallo ...')
         try:
+            dt_sleep = None
             indata = inqueue.get_nowait()
             if type(indata) == dict:
                 logger_thread.info('Closing')
                 break
+            elif type(indata) == list:
+                indata_tmp = indata[0]
+                dt_sleep = indata[1]
+                indata = indata_tmp
+
             logger_thread.debug('Sending data {:}'.format(indata))
+            print('Sending data {:}'.format(indata))
             serial_device.write(indata)
+            if dt_sleep:
+                print("Sleeping",dt_sleep)
+                time.sleep(dt_sleep)
         except:
             pass
 
@@ -582,7 +592,7 @@ class dhf_flasher():
         logger_thread.setLevel(logging.DEBUG)
         logger_thread.debug(funcname)
         while True:
-            # print('Hallo ...')
+            #print('Hallo ...')
             try:
                 indata = inqueue.get_nowait()
                 if type(indata) == dict:

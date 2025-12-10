@@ -244,26 +244,29 @@ class BinarySensor(Sensor):
                 self._str_functions[key] = array
                 self._str_functions_invalid_data[key] = None
 
-    def create_metadata_datapacket(self):
+    def create_metadata_datapacket(self, device=None, packetid=None):
         """
         Creates a datapacket with the metadata information
         :return:
         """
-        data_packet = redvypr_create_datadict(device=self.name)
+        funcname = __name__ + '.create_metadata_datapacket():'
+        if device is None:
+            device = self.name
 
+        data_packet = redvypr_create_datadict(device=device, packetid=packetid)
         flag_metadata = False
-        print('self.datakey_metadata',self.datakey_metadata)
+        #print('self.datakey_metadata',self.datakey_metadata)
         for key_input in self.datakey_metadata.keys():
-            print('key input',key_input)
+            #print('key input',key_input)
             flag_metadata = True
             metadata = self.datakey_metadata[key_input]
-            print('metadata', metadata)
-            metadata_address = RedvyprAddress(device=self.name, datakey=key_input)
+            #print('metadata', metadata)
+            metadata_address = RedvyprAddress(device=device, packetid=packetid, datakey=key_input)
             #data_packet = add_metadata2datapacket(data_packet, key_input, metadict=metadata)
-            print('address', metadata_address)
+            #print('address', metadata_address)
             data_packet = add_metadata2datapacket(data_packet, address=metadata_address, metadict=metadata)
-            print('dta_packet', data_packet)
-            print('Done\n\n')
+            #print('dta_packet', data_packet)
+            #print('Done\n\n')
         for key_input in self.calibrations_raw.keys():
             flag_metadata = True
 
@@ -272,11 +275,11 @@ class BinarySensor(Sensor):
             unit_input = calibration.unit_input
             key_result = calibration.parameter_result
             if (key_input is not None) and (unit_input is not None):
-                metadata_address = RedvyprAddress(device=self.name, datakey=key_input)
+                metadata_address = RedvyprAddress(device=device, datakey=key_input)
                 data_packet = add_metadata2datapacket(data_packet, address=metadata_address, metadata=unit_input)
                 #data_packet = add_metadata2datapacket(data_packet, key_input, metadata=unit_input)
             if (key_result is not None) and (unit is not None):
-                metadata_address = RedvyprAddress(device=self.name, datakey=key_result)
+                metadata_address = RedvyprAddress(device=device, datakey=key_result)
                 data_packet = add_metadata2datapacket(data_packet, address=metadata_address, metadata=unit)
 
 

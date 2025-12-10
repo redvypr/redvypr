@@ -18,6 +18,7 @@ import redvypr.devices.sensors.generic_sensor.sensor_definitions as sensor_defin
 import redvypr.devices.sensors.calibration.calibration_models as calibration_models
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.devices.sensors.tar import nmea_mac64_utils
+from redvypr.data_packets import create_datadict as redvypr_create_datadict, add_metadata2datapacket, Datapacket
 
 
 logging.basicConfig(stream=sys.stderr)
@@ -222,6 +223,7 @@ class TarProcessor():
         self.packetbuffer_nump_tar = {}  # A packetbuffer to add split messages into one packet
         # packetbuffer = {-1000:None} # Add a dummy key
         self.packetbuffer = {}
+        self.metadata = {} # metadata per MAC
         self.np_lastpublished = -1000
         self.csv_save_data = {}
         self.sensors_datasizes = {}
@@ -314,10 +316,17 @@ class TarProcessor():
 
 
     def create_metadata_packets(self):
+        """
+        TODO: This can be improved by using regex for packetid and device
+        Returns
+        -------
+
+        """
         metadata_packets = []
         for sensor in self.sensors:
             logger.debug('Creating metadata packet for sensor {}'.format(sensor.name))
             metadata_datapacket = sensor.create_metadata_datapacket()
+            #self.metadata
             print('Metadata packet',metadata_datapacket)
             if metadata_datapacket is not None:
                 metadata_packets.append(metadata_datapacket)
@@ -574,7 +583,6 @@ class TarProcessor():
                                     ntcnum = self.sensors_datasizes[mac_merge]
                                     data_merge = numpy.zeros(ntcnum) * numpy.nan
 
-
                                 # Add the last position onto pos x/z
                                 if "pos" in datatype_merge and len(data_merged)>0:
                                     data_offset = data_merged[-1][-1]
@@ -618,7 +626,7 @@ class TarProcessor():
         """
         pass
     def process_rawdata(self, binary_data):
-        packets = {'merged_packets':None,'merged_tar_chain':None}
+        packets = {'merged_packets':None,'merged_tar_chain':None,'metadata':None}
         print("\nProcessing rawdata",binary_data)
         for sensor, datatype in zip(self.sensors, self.datatypes):
             # print('Checking for sensor',sensor,datatype)
@@ -628,21 +636,51 @@ class TarProcessor():
             datapacket['t'] = time.time()
             try:
                 if b'..\n' in binary_data:
-                    data_packet_processed = None
+                    data_packets_processed = None
                 else:
-                    data_packet_processed = sensor.datapacket_process(datapacket, datakey='data')
+                    data_packets_processed = sensor.datapacket_process(datapacket, datakey='data')
             except:
                 logger.debug('Could not process data', exc_info=True)
                 print('Could not get data')
 
-            if data_packet_processed is not None:
-                print('Found datapacket of sensor {}\nDatatype:{}\n'.format(sensor.name,datatype))
+            if data_packets_processed is not None:
+                for data_packet_processed in data_packets_processed:
+                    print('Found datapacket of sensor {}\nDatatype:{}\n'.format(sensor.name,datatype))
+                    print(data_packet_processed)
+                    mac = data_packet_processed['mac']
+                    try:
+                        self.metadata[mac]
+                    except:
+                        self.metadata[mac] = {'_sensors':[]}
+
+                    # Check if the sensor has not been processed for metadata
+                    if sensor not in self.metadata[mac]['_sensors']:
+                        print("Updating metadata")
+                        addr_tmp = redvypr.RedvyprAddress(data_packet_processed)
+                        device_tmp = addr_tmp.device
+                        # Test first the generic metadata for device only
+                        metadata_address_generic = redvypr.RedvyprAddress(device=device_tmp)
+                        data_packet = redvypr_create_datadict(device=device_tmp)
+                        # print('address', metadata_address)
+                        data_packet = add_metadata2datapacket(data_packet,
+                                                              address=metadata_address_generic,
+                                                              metadict={'sn':mac})
+                        packets['metadata'] = [data_packet]
+                        meta_packet = sensor.create_metadata_datapacket(device=addr_tmp.device,
+                                                          packetid=addr_tmp.packetid)
+
+                        packets['metadata'].append(meta_packet)
+                        metadata = meta_packet['_metadata']
+                        self.metadata[mac].update(metadata)
+                        print('self.metadata',self.metadata)
+
+                    print("Metadata: ",sensor.create_metadata_datapacket())
+
                 break
 
-
-        if data_packet_processed is not None:
+        if data_packets_processed is not None:
             # Merge datapackets which have only parts (T,R with NTC indices)
-            merged_packets = self.merge_datapackets(data_packet_processed)
+            merged_packets = self.merge_datapackets(data_packets_processed)
             packets['merged_packets'] = merged_packets
             print("\nMerging the tar chain")
             merged_tar_chain = self.merge_tar_chain()

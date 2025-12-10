@@ -53,14 +53,17 @@ class DeviceBaseConfig(pydantic.BaseModel):
 
 
 def get_uuid():
-    return 'CAL_' + str(uuid.uuid4())
+    #return 'CAL_' + str(uuid.uuid4())
+    uuid_str = uuid.uuid4().hex
+    short_uuid = "CAL" + uuid_str[:28]
+    return short_uuid
 
 
 class CalibrationSensorAndConfigData(CalibrationData):
     rawdata: list = pydantic.Field(default=[])
     time_rawdata: list = pydantic.Field(default=[])
     realtimeplottype: typing.Literal['Table', 'XY-Plot'] = pydantic.Field(default='Table', description='Type of realtimedataplot')
-    calibrationtype: typing.Literal['polynom', 'ntc'] = pydantic.Field(default='polynom')
+    calibrationtype: typing.Literal['polynom', 'ntc','Polynom', 'NTC'] = pydantic.Field(default='polynom')
     order_coeff: int = pydantic.Field(default=0,description='Order coefficient for polynom used for fit')
     calibration_config: None | CalibrationPoly | CalibrationNTC = pydantic.Field(default=None,description='Calibration configuration')
 

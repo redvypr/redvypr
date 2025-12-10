@@ -10,7 +10,10 @@ import serial
 import serial.tools.list_ports
 import logging
 import sys
+import os
+from pathlib import Path
 import copy
+import re
 import threading
 import pydantic
 import redvypr
@@ -45,6 +48,204 @@ class DeviceCustomConfig(pydantic.BaseModel):
 redvypr_devicemodule = True
 
 
+class TarCfg():
+    """
+    ntc calibration
+    struct tar_ntc_calibration{
+	uint8_t format;
+	uint8_t uuid[32];
+	char id[64];
+	struct calcoeff calibrations[TARV21_NNTC];
+	char date[32];
+	char comment[256];
+	};
+
+    """
+    def __init__(self):
+        self.commands = {}
+        self.commands['savecal'] = {'wait':20}
+        self.commands['set cal ntc'] = {'wait':0.25}
+        self.commands['set calid'] = {'wait': 0.25}
+        self.commands['set caluuid'] = {'wait': 0.25}
+        self.commands['set calcomment'] = {'wait': 0.25}
+        self.commands['set caldate'] = {'wait': 0.25}
+
+    def get_printcal_command(self, mac="*", addmeta=1, i0=None, i1=None):
+        macstr = mac
+        command = "${:s}!,printcal ntc {} {} {}\n".format(macstr, addmeta,
+                                                          i0, i1)
+
+        return command
+    def get_savecal_command(self, mac="*"):
+        savecalcmd = "${:s}!,savecal\n".format(mac)
+        return savecalcmd
+
+    def get_calcomment_command(self, comment, mac="*" ):
+        maxlen = 256
+        macstr = mac
+        if len(comment) >= maxlen:
+            comment = comment[:maxlen-3] + '..'
+        comstr = "set calcomment {}".format(comment)
+        devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+        return devicecommand
+
+    def get_caldate_str(self, date):
+        if isinstance(date, datetime.datetime):
+            datemod = date.replace(microsecond=0)
+            datestr = datetime.datetime.isoformat(datemod)
+        else:
+            datestr = str(date)
+
+        return datestr
+    def get_caldate_command(self, date, mac="*"):
+        maxlen = 32
+        macstr = mac
+        tmpstr = self.get_caldate_str(date)
+        if len(tmpstr) >= maxlen:
+            tmpstr = tmpstr[:maxlen-3] + '..'
+        comstr = "set caldate {}".format(tmpstr)
+        devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+        return devicecommand
+
+    def get_caluuid_command(self, uuid, mac="*"):
+        macstr = mac
+        maxlen = 32
+        tmpstr = str(uuid)
+        if len(tmpstr) >= maxlen:
+            tmpstr = tmpstr[:maxlen-3] + '..'
+        comstr = "set caluuid {}".format(tmpstr)
+        devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+        return devicecommand
+
+    def get_calid_command(self, id, mac="*"):
+        macstr = mac
+        maxlen = 64
+        tmpstr = str(id)
+        if len(tmpstr) >= maxlen:
+            tmpstr = tmpstr[:maxlen-3] + '..'
+        comstr = "set calid {}".format(tmpstr)
+        devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+        return devicecommand
+
+    def create_calibration_commands(self, calibrations, calibration_id=None, calibration_uuid=None, comment=None, date=None, savecal=True, mac="*"):
+        """
+        Creates commands to set the calibrations of the sensor
+        The structure is similar to this here:
+        $D8478FFFFE95CA01,set calid <id>\n
+        $D8478FFFFE95CA01,set caluuid <uuid>\n
+        $D8478FFFFE95CA01,set calcomment <comment>\n
+        $D8478FFFFE95CA01,set caldate <datestr in ISO8190 format (max 31 Bytes)>\n
+        $D8478FFFFE95CA01,set cal ntc21 4 1.128271e-03 3.289026e-04 -1.530210e-05 1.131836e-06 0.000000e+00\n
+
+        Parameters
+        ----------
+        calibrations
+        calibration_id
+        calibration_uuid
+        comment
+
+        Returns
+        -------
+
+        """
+        maxlen = 20
+        macstr = mac
+
+        commands = []
+
+        if calibration_id is not None:
+            tmpstr = str(calibration_id)
+            if len(tmpstr) > maxlen:
+                tmpstr = tmpstr[:maxlen]
+            comstr = "set calid {}".format(tmpstr)
+            devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+            commands.append(devicecommand)
+        if calibration_uuid is not None:
+            tmpstr = str(calibration_uuid)
+            if len(tmpstr) > maxlen:
+                tmpstr = tmpstr[:maxlen]
+            comstr = "set caluuid {}".format(tmpstr)
+            devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+            commands.append(devicecommand)
+        if date is not None:
+            if isinstance(date,datetime.datetime):
+                datestr = datetime.datetime.isoformat(date)
+            else:
+                datestr = str(date)
+            tmpstr = datestr
+            if len(tmpstr) > 31:
+                tmpstr = tmpstr[:maxlen]
+            comstr = "set caldate {}".format(tmpstr)
+            devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+            commands.append(devicecommand)
+        if comment is not None:
+            tmpstr = str(comment)
+            if len(tmpstr) > maxlen:
+                tmpstr = tmpstr[:maxlen]
+            comstr = "set calcomment {}".format(tmpstr)
+            devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+            commands.append(devicecommand)
+        for i, cal_key in enumerate(calibrations):
+            # Check if dictionary or list, if dictionary, parameter is dict_key
+            if isinstance(calibrations, dict):
+                calibration = calibrations[cal_key]
+                parameter = str(cal_key)
+            elif isinstance(calibrations, list):
+                calibration = cal_key
+                parameter = str(calibration.channel.datakey)
+
+            #print('Parameter',parameter)
+            if calibration.calibration_type == 'ntc':
+                self.logger.debug('NTC calibration')
+                # Find index in parameter that looks like this: '''R["63"]''')
+                indices = re.findall(r'\d+', str(parameter))
+                if len(indices) == 1:  # Should be only one
+                    index = indices[0]
+                    caltype = 4
+                    coeff = calibration.coeff
+                    coeff_write = []
+                    for icoeff in range(5):
+                        try:
+                            #coeff_write.append(coeff[icoeff])
+                            # Send the reverse entries
+                            itmp = - icoeff - 1
+                            coeff_write.append(coeff[itmp])
+                        except:
+                            coeff_write.append(0.0)
+
+                    comstr = "set cal ntc{index} {caltype} {c0} {c1} {c2} {c3} {c4}".format(index=index,caltype=caltype,c0=coeff_write[0],c1=coeff_write[1],c2=coeff_write[2],c3=coeff_write[3],c4=coeff_write[4])
+                    devicecommand = "${:s}!,{:s}\n".format(macstr, comstr)
+                    commands.append(devicecommand)
+        if savecal:
+            devicecommand = "${:s}!,savecal\n".format(macstr)
+            commands.append(devicecommand)
+
+        return commands
+
+    def get_wait_time_for_command(self, com):
+        """
+        Returns a rough time that the device needs to process the command
+        Parameters
+        ----------
+        com
+
+        Returns
+        -------
+        dt_sleep: Time in seconds
+        """
+        dt_sleep = 0.5
+        for k in self.commands.keys():
+            if isinstance(com, bytes):
+                ktest = k.encode('utf-8')
+            else:
+                ktest = k
+            if ktest in com:
+                dt_sleep = self.commands[k]['wait']
+                break
+
+        return dt_sleep
+
+
 class HexSpinBox(QtWidgets.QSpinBox):
     def __init__(self, *args):
         super().__init__(*args)
@@ -71,6 +272,7 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         self.initlayout = QtWidgets.QVBoxLayout(self.initwidget)
         self.tabwidget = QtWidgets.QTabWidget()
         self.calibration = FirmwareCalibrationsWidget(comqueue=self.__comqueue)
+        self.calibration_simple = TarCalibrationsWidget()
         self.tabwidget.addTab(self.calibration,'Calibration coefficients')
         self.hexflasher = HexflashWidget(comqueue=self.__comqueue)
         self.device = device
@@ -98,6 +300,7 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         self.tabwidget.addTab(self.initwidget, 'Serial setup')
         self.tabwidget.addTab(self.hexflasher, 'Flashing Firmware')
         self.tabwidget.addTab(self.calibration, 'Calibration coefficients')
+        self.tabwidget.addTab(self.calibration_simple, 'Calibration simple')
         #layout.addWidget(self.startbtn)
         #layout.addWidget(self.stopbtn)
 
@@ -433,6 +636,7 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
             logger.debug('Starting calibration')
 
             self.calibration.start(self.dhffl, statuswidget=self.statuswidget)
+            self.calibration_simple.add_device(self.dhffl, statuswidget=self.statuswidget)
             self.tabwidget.addTab(self.statuswidget, 'Serial status')
             self.commandwidget.setEnabled(True)
             button.setText('Close')
@@ -618,13 +822,9 @@ class CalibrationsWriteToSensorWidget(QtWidgets.QWidget):
         if self.dhffl is not None and self.macobject is not None:
             macstr = self.macobject.macstr
             thread_args = (self.calcommands, None, self.__comqueue)
-
             writethread = threading.Thread(target=self.dhffl.write_calibrations, args=thread_args)
             self.logger.info('Starting write calibration thread')
             writethread.start()
-
-
-
 
 class FirmwareCalibrationsWidget(QtWidgets.QWidget):
     def __init__(self, dhffl=None, sensor = None, comqueue=None):
@@ -1230,3 +1430,327 @@ class HexflashWidget(QtWidgets.QWidget):
 
             for b in self.flash_buttons_enable:
                 b.setEnabled(False)
+
+
+class TarCalibrationsWidget(QtWidgets.QWidget):
+    def __init__(self,calibrations = None):
+        super(QtWidgets.QWidget, self).__init__()
+        self.tarcfg = TarCfg()
+        self.dhffl = None
+        # Take care of the calibration list
+        if calibrations is None:
+            self.calibrations = redvypr.devices.sensors.calibration.calibration_models.CalibrationList()
+        else:
+            self.calibrations = redvypr.devices.sensors.calibration.calibration_models.CalibrationList(
+                calibrations)
+
+
+        layout = QtWidgets.QFormLayout(self)
+        self.caltable = CalibrationsTable(calibrations=self.calibrations)
+        layout.addRow(self.caltable)
+        self.loadCalibrationButton = QtWidgets.QPushButton('Load Calibration(s)')
+        self.loadCalibrationButton.clicked.connect(self.chooseCalibrationFiles)
+
+        self.loadCalibrationsfSubFolder = QtWidgets.QCheckBox(
+            'Load all calibrations in folder and subfolders')
+        self.loadCalibrationsfSubFolder.setChecked(True)
+        layout.addRow(self.loadCalibrationButton, self.loadCalibrationsfSubFolder)
+
+        self.uuidcheck = QtWidgets.QCheckBox("Use UUID")
+        self.uuidcheck.setChecked(True)
+        self.uuidedit = QtWidgets.QLineEdit()
+        layout.addRow(self.uuidcheck,self.uuidedit)
+
+        self.idcheck = QtWidgets.QCheckBox("Use ID")
+        self.idcheck.setChecked(True)
+        self.idedit = QtWidgets.QLineEdit()
+        layout.addRow(self.idcheck,self.idedit)
+
+        self.datecheck = QtWidgets.QCheckBox("Use Date")
+        self.datecheck.setChecked(True)
+        self.dateedit = QtWidgets.QLineEdit()
+        layout.addRow(self.datecheck,self.dateedit)
+
+        self.commentcheck = QtWidgets.QCheckBox("Use Comment")
+        self.commentcheck.setChecked(True)
+        self.commentedit = QtWidgets.QLineEdit()
+        layout.addRow(self.commentcheck,self.commentedit)
+
+        self.savecalcheck = QtWidgets.QCheckBox("Add save to flash command")
+        self.savecalcheck.setChecked(True)
+
+        self.createCalibrationCommandButton = QtWidgets.QPushButton('Send calibration commands')
+        self.createCalibrationCommandButton.clicked.connect(self.send_commands_clicked)
+        layout.addRow(self.createCalibrationCommandButton, self.savecalcheck)
+
+    def add_device(self, dhffl, statuswidget):
+        """
+        Adds a config device to talk to the sensors
+        Parameters
+        ----------
+        dhffl
+        statuswidget
+
+        Returns
+        -------
+
+        """
+        logger.info('Starting tar calibrationswidget')
+        self.dhffl = dhffl
+        # self.create_statuswidget()  # This will be done with a button later
+        self.statuswidget = statuswidget
+
+    def chooseCalibrationFiles(self):
+        """
+
+        """
+        funcname = __name__ + '.chooseCalibrationFiles():'
+        logger.debug(funcname)
+        # fileName = QtWidgets.QFileDialog.getLoadFileName(self, 'Load Calibration', '',
+        #                                                 "Yaml Files (*.yaml);;All Files (*)")
+
+        if self.loadCalibrationsfSubFolder.isChecked():
+            fileNames = QtWidgets.QFileDialog.getExistingDirectory(self)
+            fileNames = ([fileNames], None)
+        else:
+            fileNames = QtWidgets.QFileDialog.getOpenFileNames(self, 'Load Calibration', '',
+                                                               "Yaml Files (*.yaml);;All Files (*)")
+
+        # print('Filenames',fileNames)
+        for fileName in fileNames[0]:
+            # self.device.read_calibration_file(fileName)
+            # print('Adding file ...', fileName)
+            if os.path.isdir(fileName):
+                print('Path', Path(fileName))
+                coefffiles = list(Path(fileName).rglob("*.[yY][aA][mM][lL]"))
+                print('Coeffiles', coefffiles)
+                for coefffile in coefffiles:
+                    print('Coefffile to open', coefffile, str(coefffile))
+                    self.calibrations.add_calibration_file(str(coefffile))
+            else:
+                self.calibrations.add_calibration_file(fileName)
+
+        # Fill the list with sn
+        if len(fileNames[0]) > 0:
+            logger.debug(funcname + ' Updating the calibration table')
+            self.caltable.update_table(self.calibrations)
+            self.update_calmetadata()
+
+    def update_calmetadata(self):
+        """
+        Update of the calibration metadata
+        Returns
+        -------
+
+        """
+        cal = self.calibrations[0]
+        uuid = cal.calibration_uuid
+        date = self.tarcfg.get_caldate_str(cal.date)
+        comment = cal.comment
+        id = cal.calibration_id
+        self.uuidedit.setText(uuid)
+        self.idedit.setText(id)
+        self.commentedit.setText(comment)
+        self.dateedit.setText(date)
+
+    def create_command_string(self):
+        """
+        Creates command string for the calibrations
+        Returns
+        -------
+
+        """
+        commands = []
+        savecalcmds = {}
+        for cal in self.calibrations:
+            #print("calibration",cal)
+            mac = cal.sn.split("_")[1]
+            savecalcmds[mac] = self.tarcfg.get_savecal_command(mac)
+            tar_cfg = sensor_firmware_config.dhf_sensor(mac)
+            if 'ntc' in cal.calibration_type.lower():
+                com = tar_cfg.create_calibration_commands(calibrations=[cal], calibration_id=None,
+                                            calibration_uuid=None, comment=None, date=None,
+                                            savecal=False)
+                commands.append(com[0])
+
+
+        #for com in commands:
+        #    print(com)
+        # Loop over all macs and add extra commands (savecal, comment, uuid etc.)
+        for mac,com in savecalcmds.items():
+            if self.commentcheck.isChecked():
+                comment = self.commentedit.text()
+                if len(comment) > 0:
+                    print("Adding comment")
+                    c = self.tarcfg.get_calcomment_command(comment, mac=mac)
+                    commands.append(c)
+            if self.datecheck.isChecked():
+                comment = self.dateedit.text()
+                if len(comment) > 0:
+                    print("Adding date")
+                    c = self.tarcfg.get_caldate_command(comment, mac=mac)
+                    commands.append(c)
+            if self.uuidcheck.isChecked():
+                comment = self.uuidedit.text()
+                if len(comment) > 0:
+                    print("Adding uuid")
+                    c = self.tarcfg.get_caluuid_command(comment, mac=mac)
+                    commands.append(c)
+            if self.idcheck.isChecked():
+                comment = self.idedit.text()
+                if len(comment) > 0:
+                    print("Adding id")
+                    c = self.tarcfg.get_calid_command(comment, mac=mac)
+                    commands.append(c)
+
+            if self.savecalcheck.isChecked():
+                commands.append(com)
+
+        return commands
+
+    def send_commands_clicked(self):
+        commands = self.create_command_string()
+        self._sendWidget = SensorSendCommandWidget(commands=commands, dhffl = self.dhffl)
+        self._sendWidget.show()
+
+
+
+
+class SensorSendCommandWidget(QtWidgets.QWidget):
+    """
+    Widget that shows and sends commands to a sensor
+    """
+    def __init__(self,commands = None, dhffl = None):
+        super(QtWidgets.QWidget, self).__init__()
+        self.tarcfg = TarCfg()
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.dhffl = dhffl
+        if commands is None:
+            self.commands = []
+        else:
+            self.commands = commands
+
+        for i, c in enumerate(self.commands):
+            self.commands[i] = c.encode('utf-8')
+
+        self._commands_send = []
+
+        self._commands_state = []
+        self._commands_checks = []
+        self.iColCom = 2
+        self.iColCheck = 1
+        self.iColSend = 0
+        self.command_table = QtWidgets.QTableWidget()
+        self.layout.addWidget(self.command_table)
+        self.check_send_all = QtWidgets.QCheckBox("Send")
+        self.check_send_all.setChecked(True)
+        self.check_send_all.toggled.connect(self._commands_to_send_changed)
+        self.layout.addWidget(self.check_send_all)
+        self.button_send_all = QtWidgets.QPushButton("Send")
+        #self.button_send_all.__commands = self.commands
+        self.button_send_all.clicked.connect(self._send_commands)
+        if self.dhffl is None:
+            self.button_send_all.setEnabled(False)
+        self.layout.addWidget(self.button_send_all)
+        self._populate_command_table()
+        self.button_send_all.__commands = []
+        for i, ccheck in enumerate(self._commands_checks):
+            self.button_send_all.__commands.append(
+                (self.commands[i], ccheck))
+
+    def _populate_command_table(self):
+        print("Populating table")
+        self._commands_state = []
+        self._commands_checks = []
+        self.command_table.clear()
+        self._tableheader = ["Send","Send (yes/no)","Command"]
+        self.command_table.setColumnCount(len(self._tableheader))
+        self.command_table.setHorizontalHeaderLabels(self._tableheader)
+        self.command_table.setRowCount(len(self.commands))
+        for iRow,c in enumerate(self.commands):
+            cstr = c
+            item = QtWidgets.QTableWidgetItem(str(cstr))
+            self.command_table.setItem(iRow,self.iColCom,item)
+            check_send = QtWidgets.QCheckBox("Send")
+            send_state = True
+            check_send.setChecked(send_state)
+            check_send.__iRow = iRow
+            check_send.toggled.connect(self._commands_to_send_changed)
+            self._commands_state.append(send_state)
+            self._commands_checks.append(check_send)
+            self.command_table.setCellWidget(iRow, self.iColCheck, check_send)
+            button_send = QtWidgets.QPushButton("Send")
+            button_send.__iRow = iRow
+            button_send.__commands = [(cstr,check_send)]
+            button_send.clicked.connect(self._send_commands)
+            if self.dhffl is None:
+                button_send.setEnabled(False)
+            self.command_table.setCellWidget(iRow, self.iColSend, button_send)
+
+        self.command_table.resizeColumnsToContents()
+
+    def add_commands(self, commands):
+        self.commands.append(commands)
+        self._populate_command_table()
+
+    def _commands_to_send_changed(self):
+        self.button_send_all.__commands = []
+        if self.sender() == self.check_send_all:
+            if self.check_send_all.isChecked():
+                for i, ccheck in enumerate(self._commands_checks):
+                        self.button_send_all.__commands.append(
+                            (self.commands[i], ccheck))
+                #self.button_send_all.__commands = self.commands
+            else:
+                self.button_send_all.__commands = []
+
+            for ccheck in self._commands_checks:
+                ccheck.setChecked(self.check_send_all.isChecked())
+
+        else:
+            for i,ccheck in enumerate(self._commands_checks):
+                if ccheck.isChecked():
+                    self.button_send_all.__commands.append((self.commands[i],ccheck))
+
+    def _send_commands(self):
+        commands = self.sender().__commands
+        print("Sending commands",commands)
+        if len(self._commands_send) > 0:
+            self.button_send_all.setText("Send")
+            self._commands_send = []
+            return
+        self._commands_send = []
+        if self.dhffl is not None:
+            print('commands',commands)
+            for com,check in commands:
+                dt_sleep = self.tarcfg.get_wait_time_for_command(com)
+
+
+                print("Sending now",com)
+                self._commands_send.append([com,check,dt_sleep])
+
+            self._send_commands_timer()
+
+        else:
+            logger.warning("No device connected")
+
+    def _send_commands_timer(self):
+        print('_send_commands_timer():')
+        if len(self._commands_send) == 0:
+            self.button_send_all.setText("Send")
+        if len(self._commands_send) > 0:
+            self.button_send_all.setText("Stop sending ({})".format(len(self._commands_send)))
+            data_tmp = self._commands_send.pop(0)
+            timeout = int(data_tmp[2] * 1000)
+            print(timeout)
+            check = data_tmp[1]
+            data_send = data_tmp[0]
+            # Send the data to the device
+            print("data send",data_send)
+            self.dhffl.serial_queue_write.put(data_send)
+            check.setChecked(False)
+            self.timer = QtCore.QTimer()
+            self.timer.setSingleShot(True)
+            self.timer.setInterval(timeout)
+            self.timer.timeout.connect(self._send_commands_timer)
+            self.timer.start()
