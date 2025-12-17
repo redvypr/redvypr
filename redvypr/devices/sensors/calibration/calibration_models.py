@@ -9,6 +9,7 @@ import dateutil
 import numpy as np
 import pydantic
 import pytz
+import hashlib
 
 import redvypr
 from redvypr.redvypr_address import RedvyprAddress
@@ -134,15 +135,20 @@ def get_date_from_calibration(calibration, channel, return_str = False, strforma
         return td
 
 
+
+
+
 class CalibrationGeneric(pydantic.BaseModel):
     """
     Generic calibration model
     """
+    _content_id: typing.Optional[str] = pydantic.PrivateAttr(default=None)
+
     structure_version: str = '1.1'
     calibration_type: typing.Literal['generic'] = 'generic'
-    channel: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''),
+    channel: RedvyprAddress = pydantic.Field(default=RedvyprAddress('@'),
                                              description='The address of calibrated channel in the datapacket',
-                                             editable=False)
+                                             editable=True)
     channel_apply: typing.Optional[RedvyprAddress] = pydantic.Field(default=None,
                                                                     description='The address of the channel the calibration should '
                                                           'be applied to. This is optional, if the calibrated '
@@ -176,6 +182,35 @@ class CalibrationGeneric(pydantic.BaseModel):
         """
         data = raw_data
         return data
+
+    def calc_content_id(self) -> str:
+        """
+        Calculates the deterministic content ID based on the calibration data
+        and sets the internal _content_id field.
+
+        Returns: The calculated content ID string.
+        """
+        # 1. Prepare Data for Hashing (Normalization)
+        normalized_string_bytes = self.model_dump_json(
+            # Pass the exclusions directly to model_dump_json
+            exclude={
+                '_content_id',
+                # Include 'model_uuid' here if it were still present:
+                # 'model_uuid',
+                # Add other non-content-defining fields here
+            },
+            exclude_none=True,
+            # Ensure output is a byte sequence for hashing
+        ).encode('utf-8')
+
+
+        # 3. Hashing (SHA-256)
+        hash_object = hashlib.sha256(normalized_string_bytes)
+        hash_hex = hash_object.hexdigest()
+
+        object.__setattr__(self, '_content_id', hash_hex)
+
+        return hash_hex
 
 
 class CalibrationLinearFactor(CalibrationGeneric):
@@ -397,8 +432,51 @@ class CalibrationList(list):
         # print(self.calibration['sn'].keys())
         # self.logger_autocalibration()
 
-
     def add_calibration(self, calibration):
+        """
+        Adds a calibration to the calibration list, checking for duplicates using
+        the deterministic _content_id for high-speed uniqueness verification.
+
+        calibration: calibration model (must have the .calc_content_id() method).
+        """
+
+        # 1. Calculate the deterministic Content ID for the new object
+        # This also sets the _content_id field within the 'calibration' object itself.
+        try:
+            new_content_id = calibration.calc_content_id()
+        except AttributeError:
+            # Fallback if calc_content_id is missing, though this shouldn't happen
+            # if the CalibrationGeneric model is correctly implemented.
+            logger.error(
+                "Incoming calibration object is missing the required .calc_content_id() method.")
+            return False
+
+        # 2. Iterate through the list and compare only the Content IDs
+        for cal_old in self:
+            # IMPORTANT: The _content_id of the existing object MUST have been
+            # set previously (e.g., during list loading).
+            old_content_id = getattr(cal_old, '_content_id', None)
+
+            if old_content_id is None:
+                # This indicates a historical issue: the object was added before
+                # the content ID logic was implemented. You may need a fallback
+                # to calculate it here if necessary, but it slows things down.
+                logger.warning(
+                    "Existing calibration object is missing _content_id. Skipping check for this item.")
+                continue
+
+            if new_content_id == old_content_id:
+                logger.warning(
+                    f'Calibration content already exists (ID: {new_content_id})')
+                return False  # Duplicate found, exit immediately
+
+        # 3. Append the new object, as no duplicate content was found.
+        # The _content_id and model_uuid are already set on the 'calibration' object.
+        self.append(calibration)
+        # logger.debug(f'New calibration added (ID: {new_content_id})')
+        return True
+
+    def add_calibration_legacy(self, calibration):
         """
         Adds a calibration to the calibration list, checks before, if the calibration exists
         calibration: calibration model
@@ -411,7 +489,7 @@ class CalibrationList(list):
                 break
 
         if flag_new_calibration:
-            logger.debug('New calibration')
+            #logger.debug('New calibration')
             self.append(calibration)
             return True
         else:
@@ -451,7 +529,7 @@ class CalibrationList(list):
             calibrations = []
             for data in calibrations_raw:
                 if 'structure_version' in data.keys():  # Calibration model
-                    logger.debug(funcname + ' Version {} pydantic calibration model dump'.format(data['structure_version']))
+                    #logger.debug(funcname + ' Version {} pydantic calibration model dump'.format(data['structure_version']))
                     for calmodel in calibration_models:  # Loop over all calibration models definded in sensor_calibrations.py
                         try:
                             calibration = calmodel.model_validate(data)
@@ -581,7 +659,15 @@ class CalibrationList(list):
         return calfiles
 
 
-
-
+CalibrationModel = typing.Annotated[
+    typing.Union[CalibrationLinearFactor, CalibrationPoly, CalibrationNTC, CalibrationGeneric],
+    pydantic.Field(discriminator='calibration_type')
+]
+class CalibrationWrapper(pydantic.RootModel):
+    """
+    This class acts as a wrapper to apply Pydantic's validation methods
+    (like model_validate_json) to the CalibrationModel Union type.
+    """
+    root: CalibrationModel
 
 

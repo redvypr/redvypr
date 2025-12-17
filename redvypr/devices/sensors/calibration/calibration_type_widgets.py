@@ -17,7 +17,7 @@ from redvypr.redvypr_address import RedvyprAddress
 import redvypr.files as redvypr_files
 from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly, CalibrationData
 from .calibration_plot_report_widgets import plot_calibration, write_report_pdf, figsize_report_plot
-from redvypr.devices.sensors.generic_sensor.calibrationWidget import CalibrationsSaveWidget
+from redvypr.devices.sensors.generic_sensor.calibrationWidget import CalibrationsSaveWidget, CalibrationManagerWidget
 _logo_file = redvypr_files.logo_file
 _icon_file = redvypr_files.icon_file
 
@@ -223,7 +223,7 @@ class CalibrationCalculationWidget(QtWidgets.QWidget):
         self.calibration_widgets = {}
         self.calibration_widgets['widget'] = QtWidgets.QWidget()
         layout.addWidget(self.calibration_widgets['widget'])
-        self.calibration_widgets['layout'] = QtWidgets.QFormLayout(self.calibration_widgets['widget'])
+        self.calibration_widgets['layout'] = QtWidgets.QVBoxLayout(self.calibration_widgets['widget'])
         self.calibration_widgets['refcombo'] = QtWidgets.QComboBox()
         #self.calibration_widgets['plotbutton'] = QtWidgets.QPushButton('Plot')
         #self.calibration_widgets['plotbutton'].clicked.connect(self.plot_data)
@@ -231,6 +231,14 @@ class CalibrationCalculationWidget(QtWidgets.QWidget):
         self.calibration_widgets['calcbutton'].clicked.connect(self.calc_coeffs_clicked)
         self.calibration_widgets['savecalibbutton'] = QtWidgets.QPushButton('Save Calibration')
         self.calibration_widgets['savecalibbutton'].clicked.connect(self.save_calibration)
+        self.calibration_widgets['managecalibbutton'] = QtWidgets.QPushButton(
+            'Manage Calibrations')
+        self.calibration_widgets['managecalibbutton'].clicked.connect(
+            self.manage_calibrations_clicked)
+        self.calibration_widgets['buttonlayout1'] = QtWidgets.QHBoxLayout()
+        self.calibration_widgets['buttonlayout1'].addWidget(self.calibration_widgets['savecalibbutton'],2)
+        self.calibration_widgets['buttonlayout1'].addWidget(
+            self.calibration_widgets['managecalibbutton'],1)
         self.calibration_widgets['coefftable'] = QtWidgets.QTableWidget()
 
         if True:
@@ -240,14 +248,17 @@ class CalibrationCalculationWidget(QtWidgets.QWidget):
             # label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
             label.setAlignment(QtCore.Qt.AlignCenter)
             reflabel = QtWidgets.QLabel('Reference Sensor')
-            self.calibration_widgets['layout'].addRow(label)
-            self.calibration_widgets['layout'].addRow(self.calibration_widgets['coefftable'])
-            self.calibration_widgets['layout'].addRow(self.calibration_widgets['calcbutton'])
+            self.calibration_widgets['layout'].addWidget(label)
+            self.calibration_widgets['layout'].addWidget(self.calibration_widgets['coefftable'])
+            self.calibration_widgets['layout'].addWidget(self.calibration_widgets['calcbutton'])
             #self.calibration_widgets['layout'].addRow(self.calibration_widgets['plotbutton'])
-            self.calibration_widgets['layout'].addRow(self.calibration_widgets['savecalibbutton'])
+            self.calibration_widgets['layout'].addLayout(self.calibration_widgets['buttonlayout1'])
             # self.calibration_ntc['layout'].setStretch(0, 1)
             # self.calibration_ntc['layout'].setStretch(1, 10)
 
+    def manage_calibrations_clicked(self):
+        self._calmanage = CalibrationManagerWidget()
+        self._calmanage.show()
     def calc_coeffs_clicked(self):
         """
         Calculate the coefficients

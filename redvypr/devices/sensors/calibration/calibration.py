@@ -1279,7 +1279,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.calibrationdata_widget = QtWidgets.QWidget()
         self.calibrationdata_widget_layout = QtWidgets.QGridLayout(self.calibrationdata_widget)
         self.calibrationdata_table = QtWidgets.QTableWidget()
-
+        self.calibrationdata_table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.calibrationdata_table.customContextMenuRequested.connect(
+            self.show_calibration_data_context_menu)
         self.addLineButton = QtWidgets.QPushButton('Add empty row')
         self.addLineButton.clicked.connect(self.addBlankCalibrationData)
         self.remLineButton = QtWidgets.QPushButton('Rem row(s)')
@@ -1367,6 +1369,142 @@ class displayDeviceWidget(QtWidgets.QWidget):
         # This needs to be done after the tab, as it changes text of the tab
         self.create_calibration_widget()  # Is adding a widget to self.calibration_widget
         #self.order_tabs()
+
+    def show_calibration_data_context_menu(self,pos):
+        """
+        Menu for the calibrationdatatable
+
+        Parameters
+        ----------
+        pos
+
+        Returns
+        -------
+
+        """
+        # Die Zelle unter dem Mausklick-Punkt ermitteln
+        item = self.calibrationdata_table.itemAt(pos)
+        print("Show rawdata",item)
+        if item:
+            if hasattr(item, '__calibrationdata__'):
+                if hasattr(item, '__dindex__'):
+                    # Menü erstellen
+                    context_menu = QtWidgets.QMenu(self.calibrationdata_table)
+
+                    # Aktion hinzufügen
+                    rawdata_action = context_menu.addAction("Show rawdata")
+
+                    # Menü an der Position 'pos' anzeigen und auf Auswahl warten
+                    action = context_menu.exec(self.calibrationdata_table.mapToGlobal(pos))
+
+                    # Wenn die 'Show rawdata'-Aktion ausgewählt wurde
+                    if action == rawdata_action:
+                        if hasattr(item, '__calibrationdata__'):
+                            sdata = item.__calibrationdata__
+                            dindex = item.__dindex__
+                            print("sdata",sdata)
+                            print("sdata data", sdata.data[dindex])
+                            print("sdata time data", sdata.time_rawdata[dindex])
+                            print("sdata rawdata", sdata.rawdata[dindex])
+                            self.show_rawdata_dialog(sdata, dindex)
+
+    def show_rawdata_dialog(self, sdata, dindex):
+        """
+        Creates and displays a dialog to edit the raw data and associated
+        timestamps for the given dindex.
+        """
+
+        # Retrieve the specific data arrays for this index
+        time_data = sdata.time_rawdata[dindex]
+        raw_data = sdata.rawdata[dindex]
+
+        if np.isnan(raw_data):
+            raw_data = np.asarray([np.nan])
+        if np.isnan(time_data):
+            time_data = np.asarray([np.nan])
+
+        # Critical check: Ensure data is valid and lengths match
+        if not (hasattr(time_data, '__len__') and hasattr(raw_data, '__len__') and len(
+                time_data) == len(raw_data)):
+            QtWidgets.QMessageBox.critical(self, "Error",
+                                           "Raw data or time data is invalid or lengths do not match.")
+            return
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(f"Raw Data Editor (Index: {dindex})")
+
+        main_layout = QtWidgets.QVBoxLayout(dialog)
+
+        # --- 1. Table for Raw Data ---
+        raw_data_table = QtWidgets.QTableWidget()
+        raw_data_table.setColumnCount(2)
+        raw_data_table.setHorizontalHeaderLabels(["Time (seconds)", "Raw Value"])
+        raw_data_table.setRowCount(len(raw_data))
+
+        # Populate the table with data
+        for i in range(len(raw_data)):
+            # Column 1: Timestamp (Read-Only)
+            # Using a fixed-point format for better readability of large timestamps
+            time_item = QtWidgets.QTableWidgetItem(f"{time_data[i]:.6f}")
+            # Make the time column non-editable
+            time_item.setFlags(time_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            raw_data_table.setItem(i, 0, time_item)
+
+            # Column 2: Raw Value (Editable)
+            raw_item = QtWidgets.QTableWidgetItem(str(raw_data[i]))
+            raw_item.setFlags(raw_item.flags() | QtCore.Qt.ItemIsEditable)
+            raw_data_table.setItem(i, 1, raw_item)
+
+        raw_data_table.resizeColumnsToContents()
+        raw_data_table.horizontalHeader().setStretchLastSection(True)
+        main_layout.addWidget(raw_data_table)
+
+        # --- 2. Button Box ---
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Apply | QtWidgets.QDialogButtonBox.Cancel
+        )
+
+        # Connect the buttons: 'Apply' uses dialog.accept(), 'Cancel' uses dialog.reject()
+        button_box.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(
+            dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+
+        main_layout.addWidget(button_box)
+
+        # --- 3. Execute Dialog and Save Data ---
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            try:
+                new_raw_data = []
+
+                # Read data back from the table
+                for row in range(raw_data_table.rowCount()):
+                    item = raw_data_table.item(row, 1)  # Item in Column 1 (Raw Value)
+                    if item is None:
+                        raise ValueError(f"Missing value in row {row + 1}")
+
+                    # Attempt to convert the string back to a numeric type (float)
+                    value = float(item.text())
+                    new_raw_data.append(value)
+
+                # Save the new data back into the sdata object
+                # Assuming sdata.rawdata[dindex] is a NumPy array, we ensure the
+                # assigned list is converted back to an array of the original dtype.
+                sdata.rawdata[dindex] = np.array(new_raw_data, dtype=raw_data.dtype)
+
+                QtWidgets.QMessageBox.information(self, "Success",
+                                                  "Raw data saved successfully.")
+
+                # Calculate the new mean from the rawdata
+                #print("Recalculating the mean from",sdata.rawdata[dindex])
+                #print("Mean:", np.mean(sdata.rawdata[dindex]))
+                #print("Before",sdata.data[dindex],type(sdata.data[dindex]))
+                sdata.data[dindex] = float(np.mean(sdata.rawdata[dindex]))
+                #print("After", sdata.data[dindex],type(sdata.data[dindex]))
+                self.update_datatable()
+            except ValueError as e:
+                QtWidgets.QMessageBox.critical(self, "Save Error",
+                                               f"Error converting data: {e}. Please check the entries in the 'Raw Value' column.")
+
 
     def update_custom_config_from_widgets(self):
         funcname = __name__ + '.update_custom_config_from_widgets():'
@@ -1819,7 +1957,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     #print('isensor',isensor,'idata',idata)
                     itemdata = sdata.data[idata]
                     #print('Data',itemdata)
-                    if type(itemdata) == float:
+                    if isinstance(itemdata, (float, np.float64)):
                         try:
                             itemdatastr = "{:f}".format(itemdata)
                         except:
@@ -1829,14 +1967,14 @@ class displayDeviceWidget(QtWidgets.QWidget):
                         strFormat = '[ ' + len(itemdata) * '{:f} ' + ']'
                         itemdatastr = strFormat.format(*itemdata)
                     else:
-                        itemdatastr = 'NaN'
+                        itemdatastr = 'NaN (datatype)'
                     #sdata['time_data'][idata]
                     item = QtWidgets.QTableWidgetItem(itemdatastr)
                     item.__calibrationdata__ = sdata
+                    item.__dindex__ = idata
                     self.calibrationdata_table.setItem(self.irowdatastart + idata, col, item)
                     if sdata.inputtype == 'manual':
                         item.__parent__ = sdata.data
-                        item.__dindex__  = idata
 
         self.calibrationdata_table.resizeColumnsToContents()
         self.calibrationdata_table.itemChanged.connect(self.__datatable_item_changed__)

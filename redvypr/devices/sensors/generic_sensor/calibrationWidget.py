@@ -11,9 +11,10 @@ import typing
 import pydantic
 import numpy
 import qtawesome
+import uuid
 from typing import Union, Optional
 import redvypr.devices.sensors.calibration.calibration_models
-from redvypr.devices.sensors.calibration.calibration_models import CalibrationList
+from redvypr.devices.sensors.calibration.calibration_models import CalibrationList, CalibrationWrapper
 from redvypr.devices.sensors.calibration.calibration_plot_report_widgets import write_report_pdf
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from PyQt6 import QtWidgets, QtCore, QtGui
@@ -306,11 +307,70 @@ class CalibrationsTable(QtWidgets.QTableWidget):
             self.header_labels.append(self.column_names[lab])
 
         self.nCols = len(self.columns.keys())
+        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.__show_context_menu__)
 
         # Populate the table
         self.update_table()
 
+    def __show_context_menu__(self, pos):
+        """Öffnet ein Kontextmenü beim Rechtsklick."""
+        menu = QtWidgets.QMenu(self)
+        delete_action = menu.addAction("Delete Calibration(s)")
+        action = menu.exec_(self.viewport().mapToGlobal(pos))
+        if action == delete_action:
+            self.__delete_selected_calibrations__()
+
+    def __delete_selected_calibrations__(self):
+        """Löscht die ausgewählten Kalibrierungen."""
+        #print("deleting ...")
+        selected_rows = set()
+        selection_model = self.selectionModel()
+        selected_indexes = selection_model.selectedRows()  # Nur Zeilenauswahl
+        for index in selected_indexes:
+            selected_rows.add(index.row())
+        #print("Ausgewählte Zeilen:", selected_rows)
+        #print("rows",selected_rows)
+        # Entferne die ausgewählten Kalibrierungen aus der Liste/Dictionary
+        if isinstance(self.calibrations, list):
+            #print("list")
+            # Sortiere die Indizes absteigend, um Probleme beim Löschen zu vermeiden
+            for row in sorted(selected_rows, reverse=True):
+                if row < len(self.calibrations):
+                    #print("deleting",row)
+                    del self.calibrations[row]
+        elif isinstance(self.calibrations, dict):
+            # Für Dictionaries: Schlüssel der ausgewählten Reihen entfernen
+            keys_to_delete = []
+            for row in selected_rows:
+                if row < len(self.__calibrations_list__):
+                    cal_key = list(self.calibrations.keys())[row]
+                    keys_to_delete.append(cal_key)
+            for key in keys_to_delete:
+                del self.calibrations[key]
+        else:
+            print("Cannot delete calibrations",type(self.calibrations))
+
+        # Aktualisiere die Tabelle
+        self.update_table()
+
     def get_selected_calibrations(self):
+        """
+
+        Returns
+        -------
+        List of calibrations of selected rows
+        """
+
+        calibrations = []
+        for index in self.selectionModel().selectedRows():
+            row = index.row()
+            if row < len(self.__calibrations_list__):
+                calibrations.append(self.__calibrations_list__[row])
+        return calibrations
+
+    def get_selected_calibrations_legacy(self):
         """
 
         Returns
@@ -1028,4 +1088,649 @@ class sensorCalibrationsWidget(QtWidgets.QWidget):
                     self.calibrationConfigWidget.close()
                 except:
                     pass
+
+
+#
+# calibrationsManagerWidget
+#
+# ==============================================================================
+# 1. THE MODEL (Data Handling)
+# ==============================================================================
+
+class CalibrationListModel(QtCore.QAbstractListModel):
+    """
+    Qt Model implementation for the CalibrationList object.
+    Handles data representation, counting, and providing necessary info
+    for the QListView. Also supports drag-and-drop data packaging (MIME).
+    """
+
+    def __init__(self, calibration_list: CalibrationList, parent=None):
+        super().__init__(parent)
+        self._list = calibration_list
+        self.list_id = uuid.uuid4().hex  # Unique ID for DND source identification
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        """Returns the number of calibrations in the list."""
+        if parent.isValid(): return 0
+        return len(self._list)
+
+    def data(self, index, role=QtCore.Qt.ItemDataRole.DisplayRole):
+        """Returns the data to be displayed in the list view for a given index and role."""
+        if not index.isValid() or not (0 <= index.row() < len(self._list)):
+            return None
+
+        calibration = self._list[index.row()]
+
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            # Format the display string for the list item
+            date_str = getattr(calibration, 'date', datetime.datetime.min).strftime(
+                '%Y-%m-%d')
+            channel_str = str(getattr(calibration, 'channel', 'N/A'))
+            sn_str = getattr(calibration, 'sn', 'N/A')
+            model_str = getattr(calibration, 'sensor_model', 'N/A')
+
+            return f"{channel_str} | {sn_str} | {model_str} | {date_str}"
+
+        elif role == QtCore.Qt.ItemDataRole.ToolTipRole:
+            # Display detailed info on mouse hover
+            return (f"Content ID: {getattr(calibration, '_content_id', 'N/A')}\n"
+                    f"Channel: {getattr(calibration, 'channel', 'N/A')}\n"
+                    f"Model: {getattr(calibration, 'sensor_model', 'N/A')}")
+
+        return None
+
+    def flags(self, index):
+        """Defines item flags, enabling drag for valid items and drop for the view area."""
+        if not index.isValid():
+            # Allow dropping onto the view area (empty space)
+            return QtCore.Qt.ItemFlag.ItemIsDropEnabled
+
+        flags = (
+                QtCore.Qt.ItemFlag.ItemIsEnabled |
+                QtCore.Qt.ItemFlag.ItemIsSelectable |
+                QtCore.Qt.ItemFlag.ItemIsDragEnabled  # Enable dragging of items
+        )
+        return flags
+
+    def mimeData(self, indexes):
+        """Packages selected calibration items into QMimeData for drag-and-drop or clipboard operations."""
+        mime_data = QtCore.QMimeData()
+        serialized_calibrations = []
+
+        for i in indexes:
+            if i.isValid():
+                row = i.row()
+                if 0 <= row < len(self._list):
+                    calibration = self._list[row]
+
+                    try:
+                        # Use Pydantic's serialization method
+                        cal_json = calibration.model_dump_json()
+                        serialized_calibrations.append(cal_json)
+                    except AttributeError:
+                        logger.error(
+                            "DND_MIME: Calibration object lacks 'model_dump_json()'. Cannot serialize.")
+                        return QtCore.QMimeData()
+
+                        # Include source list ID to prevent dropping onto itself
+        drag_data = {
+            "source_list_id": self.list_id,
+            "calibrations": serialized_calibrations
+        }
+
+        json_data = json.dumps(drag_data).encode('utf-8')
+
+        mime_type = "application/x-calibration-uuids"
+        mime_data.setData(mime_type, QtCore.QByteArray(json_data))
+
+        return mime_data
+
+    def add_calibration_safe(self, calibration):
+        """Inserts a calibration object into the list model safely, emitting signals."""
+        new_row_idx = len(self._list)
+        self.beginInsertRows(QtCore.QModelIndex(), new_row_idx, new_row_idx)
+        # Assuming CalibrationList.add_calibration handles duplicate checks
+        success = self._list.add_calibration(calibration)
+        self.endInsertRows()
+        return success
+
+    def remove_by_content_id(self, content_id_str):
+        """Removes the first calibration found with the matching content ID."""
+        for i, cal in enumerate(self._list):
+            if getattr(cal, '_content_id', None) == content_id_str:
+                self.beginRemoveRows(QtCore.QModelIndex(), i, i)
+                self._list.pop(i)
+                self.endRemoveRows()
+                return True
+        return False
+
+    def sort_list(self, key_attr):
+        """Sorts the underlying data list and emits signals to update the view."""
+        self.layoutAboutToBeChanged.emit()
+        try:
+            # Case-insensitive sorting using object attributes
+            self._list.sort(key=lambda x: str(getattr(x, key_attr, "")).lower())
+        except Exception as e:
+            logger.error(f"Error sorting by {key_attr}: {e}")
+        self.layoutChanged.emit()
+
+
+# ==============================================================================
+# 2. THE VIEW (List Display and Drag/Drop Handler)
+# ==============================================================================
+class CalibrationListView(QtWidgets.QListView):
+    """
+    Custom QListView to display the CalibrationListModel.
+    Implements context menu actions (Copy/Cut/Paste/Sort) and drag-and-drop logic (dropEvent).
+    """
+
+    def __init__(self, model, manager_ref, parent=None):
+        super().__init__(parent)
+        self.setModel(model)
+        self._manager_ref = manager_ref
+
+        self.doubleClicked.connect(
+            lambda index: self._manager_ref.show_calibration_details(index,
+                                                                     self.model())
+        )
+
+        self.setAlternatingRowColors(True)
+        self.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+
+        # Drag and Drop Setup
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragDrop)
+
+        # Context Menu Setup
+        self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.open_context_menu)
+
+    def open_context_menu(self, position: QtCore.QPoint):
+        """Builds and executes the context menu for the list view."""
+        menu = QtWidgets.QMenu()
+
+        # --- Copy/Cut/Paste Actions ---
+        action_copy = QtGui.QAction("Copy", self)
+        action_copy.triggered.connect(self.copy_selected)
+        menu.addAction(action_copy)
+
+        action_cut = QtGui.QAction("Cut", self)
+        action_cut.triggered.connect(self.cut_selected)
+        menu.addAction(action_cut)
+
+        action_paste = QtGui.QAction("Paste", self)
+        if self._manager_ref:
+            action_paste.triggered.connect(
+                lambda: self._manager_ref.paste_to_active_list(self.model()))
+            clipboard = QtWidgets.QApplication.clipboard()
+            # Only enable paste if clipboard contains our custom MIME data
+            action_paste.setEnabled(
+                clipboard.mimeData().hasFormat("application/x-calibration-uuids"))
+        else:
+            action_paste.setEnabled(False)
+        menu.addAction(action_paste)
+
+        menu.addSeparator()
+
+        # --- Sort Actions ---
+        sort_menu = menu.addMenu("Sort by...")
+        sort_options = {
+            "Channel": "channel", "Serial Number": "sn", "Sensor Model": "sensor_model",
+            "Date": "date", "Content ID": "_content_id",
+        }
+        for label, attr in sort_options.items():
+            action = QtGui.QAction(label, self)
+            action.triggered.connect(lambda checked, a=attr: self.model().sort_list(a))
+            sort_menu.addAction(action)
+
+        menu.exec(self.mapToGlobal(position))
+
+    def copy_selected(self):
+        """Copies the selected items to the system clipboard."""
+        selected_indexes = self.selectionModel().selectedRows()
+        if not selected_indexes: return
+        mime_data = self.model().mimeData(selected_indexes)
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setMimeData(mime_data)
+
+    def cut_selected(self):
+        """Copies the selected items to the clipboard and then removes them from the model."""
+        selected_indexes = self.selectionModel().selectedRows()
+        if not selected_indexes: return
+
+        self.copy_selected()
+
+        # Collect IDs before removing, as index changes during removal
+        content_ids_to_remove = []
+        for index in selected_indexes:
+            if index.isValid():
+                cal = self.model()._list[index.row()]
+                content_ids_to_remove.append(getattr(cal, '_content_id'))
+
+        for content_id_str in content_ids_to_remove:
+            self.model().remove_by_content_id(content_id_str)
+
+    def dragEnterEvent(self, event):
+        """Checks if the dragged data is in the correct format."""
+        expected_mime = "application/x-calibration-uuids"
+        if event.mimeData().hasFormat(expected_mime):
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        """Sets the drop action for Move."""
+        if event.mimeData().hasFormat("application/x-calibration-uuids"):
+            event.setDropAction(QtCore.Qt.DropAction.MoveAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        """Handles the dropping of data from one CalibrationListView to another."""
+        expected_mime = "application/x-calibration-uuids"
+
+        if event.mimeData().hasFormat(expected_mime):
+
+            data_bytes = event.mimeData().data(expected_mime)
+            try:
+                data_json = json.loads(data_bytes.data().decode('utf-8'))
+                source_id = data_json['source_list_id']
+                serialized_calibrations = data_json.get('calibrations', [])
+            except Exception as e:
+                logger.error(f"DND_DROP: Failed to parse MIME data: {e}", exc_info=True)
+                event.ignore()
+                return
+
+            manager = self._manager_ref
+            if not manager:
+                event.ignore()
+                return
+
+            source_model = manager.get_model(source_id)
+            target_model = self.model()
+
+            # Prevent dropping onto the source list itself
+            if not source_model or source_model == target_model:
+                event.ignore()
+                return
+
+            moved_content_ids = []
+
+            # Deserialize and add to target model
+            for cal_json_str in serialized_calibrations:
+                try:
+                    # Recreate object from JSON using Pydantic's validation
+                    print("Validating",cal_json_str)
+                    cal_wrapper = CalibrationWrapper.model_validate_json(cal_json_str)
+                    cal_copy = cal_wrapper.root
+                    print("Type",type(cal_copy))
+                    cal_copy.calc_content_id()
+                    cid = getattr(cal_copy, '_content_id')
+
+                    if target_model.add_calibration_safe(cal_copy):
+                        moved_content_ids.append(cid)
+
+                except Exception as e:
+                    logger.error(
+                        f"DND_DROP: Error during deserialization or addition: {e}",
+                        exc_info=True)
+                    continue
+
+            # If the drop action was Move, remove successful transfers from source
+            if event.dropAction() == QtCore.Qt.DropAction.MoveAction:
+                for content_id_str in moved_content_ids:
+                    source_model.remove_by_content_id(content_id_str)
+
+            event.setDropAction(QtCore.Qt.DropAction.MoveAction)
+            event.accept()
+        else:
+            super().dropEvent(event)
+
+
+# ==============================================================================
+# 3. THE MANAGER (Main Widget and Load/Save Logic)
+# ==============================================================================
+class CalibrationManagerWidget(QtWidgets.QWidget):
+    """
+    The main widget that manages multiple CalibrationLists side-by-side.
+    It orchestrates the creation, loading, saving, and deletion of lists.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Calibration Manager")
+        self.setObjectName("CalibrationManagerWidget")
+
+        # Layouts
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.controls_layout = QtWidgets.QHBoxLayout()
+        self.lists_layout = QtWidgets.QHBoxLayout()
+
+        # Control Buttons
+        self.btn_new_list = QtWidgets.QPushButton("Create New List")
+        self.btn_new_list.clicked.connect(self.create_new_list)
+
+        self.btn_new_list_from_files = QtWidgets.QPushButton("Create List from File(s)")
+        self.btn_new_list_from_files.clicked.connect(self.create_list_from_files)
+
+        self.btn_save_all = QtWidgets.QPushButton("Save All Lists")
+        self.btn_save_all.clicked.connect(self.save_all)
+
+        # Build control panel
+        self.controls_layout.addWidget(self.btn_new_list)
+        self.controls_layout.addWidget(self.btn_new_list_from_files)
+        self.controls_layout.addWidget(self.btn_save_all)
+        self.controls_layout.addStretch()
+
+        # Assemble main layout
+        self.main_layout.addLayout(self.controls_layout)
+        self.main_layout.addLayout(self.lists_layout)
+
+        # Dictionary to hold all active models, keyed by list_id
+        self.models = {}
+
+    def _refresh_single_item(self, index: QtCore.QModelIndex):
+        """Helper to emit dataChanged signal for the given index."""
+        # Das Model muss den View dazu zwingen, die Daten für diesen Index neu zu laden
+        model = self._item_config_widget_model_ref  # Das Model speichern wir unten
+        if model and index.isValid():
+            logger.debug(f"Emitting dataChanged for row {index.row()}.")
+            model.dataChanged.emit(index, index)
+
+        # Cleanup der Referenzen
+        self._item_config_widget = None
+        self._item_config_widget_model_ref = None
+
+    def show_calibration_details(self, index: QtCore.QModelIndex,
+                                 model: 'CalibrationListModel'):
+        """
+        Retrieves the calibration object corresponding to the double-clicked index
+        and prints its details to the console.
+
+        :param index: The QModelIndex of the double-clicked item.
+        :param model: The CalibrationListModel that holds the data.
+        """
+        if not index.isValid():
+            logger.warning("Double-click on invalid index.")
+            return
+
+        try:
+            row = index.row()
+            # Access the underlying data list directly via the model
+            calibration_entry = model._list[row]
+
+            self._item_config_widget = pydanticConfigWidget(config = calibration_entry)
+            self._item_config_widget_index_ref = index
+            self._item_config_widget_model_ref = model
+
+            # --- NEU: Signal-Verbindung ---
+            # Wenn das Config-Widget die Daten anwendet/speichert, rufen wir die Refresh-Methode auf.
+            self._item_config_widget.config_editing_done.connect(
+                lambda: self._refresh_single_item(self._item_config_widget_index_ref)
+            )
+            self._item_config_widget.show()
+            if True:
+                # Use model_dump_json() for a structured string representation (assuming Pydantic model)
+                details_json_string = calibration_entry.model_dump_json(indent=2)
+
+                # Get the list name for context
+                try:
+                    target_name = model.parent().findChild(QtWidgets.QLabel).text().strip(
+                        '<b></b>')
+                except:
+                    target_name = model.list_id
+
+                logger.info(
+                    f"--- Calibration Details (List: {target_name}, Row: {row}) ---")
+                print(details_json_string)
+                print("------------------------------------------------------------------")
+
+        except IndexError:
+            logger.error(f"IndexError: Row {row} out of bounds for model data.")
+        except Exception as e:
+            logger.error(f"Error accessing calibration details: {e}", exc_info=True)
+
+    # ---------------------------------------------
+
+    def add_calibration_list(self, calibration_list, name="Calibrations"):
+        """Adds a visual column for a calibration list (Model + View + Controls)."""
+        model = CalibrationListModel(calibration_list)
+        self.models[model.list_id] = model
+
+        # Container widget for the list column
+        container = QtWidgets.QWidget()
+        container.setProperty("list_id", model.list_id)
+        container.setMinimumWidth(250)
+        vbox = QtWidgets.QVBoxLayout(container)
+        vbox.setContentsMargins(4, 4, 4, 4)
+
+        # Title Label
+        lbl_title = QtWidgets.QLabel(f"<b>{name}</b>")
+        lbl_title.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        vbox.addWidget(lbl_title)
+
+        # The List View
+        view = CalibrationListView(model, manager_ref=self)
+        vbox.addWidget(view)
+
+        # List-specific control buttons (Load/Save/Delete)
+        btn_layout = QtWidgets.QHBoxLayout()
+
+        btn_load = QtWidgets.QPushButton("Load")
+        btn_load.setToolTip(f"Load calibrations from file into '{name}'")
+        btn_load.clicked.connect(lambda checked, m=model: self.load_file_to_list(m))
+
+        btn_save = QtWidgets.QPushButton("Save")
+        btn_save.setToolTip(f"Save '{name}' to file")
+        btn_save.clicked.connect(lambda checked, m=model: self.save_single_list(m))
+
+        # Delete List Button with qtawesome icon
+        iconname = "mdi6.delete"
+        delete_icon = qtawesome.icon(iconname)
+        btn_delete = QtWidgets.QPushButton()
+        btn_delete.setIcon(delete_icon)
+
+        # Connect delete button to remove the container
+        btn_delete.clicked.connect(
+            lambda checked, c=container,
+                   list_id=model.list_id: self.delete_list_container(c, list_id, name)
+        )
+
+        btn_layout.addWidget(btn_load)
+        btn_layout.addWidget(btn_save)
+        btn_layout.addWidget(btn_delete)
+
+        vbox.addLayout(btn_layout)
+        self.lists_layout.addWidget(container)
+
+    def delete_list_container(self, container: QtWidgets.QWidget, list_id: str,
+                              list_name: str):
+        """Removes the visual column and the associated data model."""
+
+        # Confirmation Dialog
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            'Confirm Deletion',
+            f"Are you sure you want to delete the list '<b>{list_name}</b>'?\n"
+            "This action cannot be undone.",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No
+        )
+
+        if reply == QtWidgets.QMessageBox.StandardButton.No:
+            return
+
+        # 1. Remove from Layout
+        self.lists_layout.removeWidget(container)
+
+        # 2. Remove from Model dictionary
+        if list_id in self.models:
+            del self.models[list_id]
+            logger.info(f"Deleted model (ID: {list_id}) from manager.")
+
+        # 3. Clean up the widget
+        container.deleteLater()
+
+        QtWidgets.QMessageBox.information(self, "List Deleted",
+                                          f"The list '<b>{list_name}</b>' has been deleted.")
+
+    def create_list_from_files(self):
+        """Opens a file dialog to select multiple files and combines their calibrations into a new list."""
+        file_filter = "Calibration Files (*.yaml *.json *.txt);;All Files (*)"
+
+        fnames, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self,
+            "Create New List from File(s)",
+            "",
+            file_filter
+        )
+
+        if not fnames: return
+
+        name, ok = QtWidgets.QInputDialog.getText(self, "New List Name",
+                                                  "Enter name for the combined list:")
+        if not ok or not name:
+            name = f"Combined List ({len(fnames)} files)"
+
+        new_list = CalibrationList()
+        total_loaded = 0
+        total_duplicates = 0
+
+        for fname in fnames:
+            try:
+                temp_list = CalibrationList()
+                # Assuming read_calibration_file loads data into temp_list
+                calibrations_loaded = temp_list.read_calibration_file(fname)
+
+                if not calibrations_loaded: continue
+
+                # Add loaded calibrations to the new list, duplicates are handled by CalibrationList
+                for cal in calibrations_loaded:
+                    cal_copy = copy.deepcopy(cal)
+                    cal_copy.calc_content_id()
+
+                    if new_list.add_calibration(cal_copy):
+                        total_loaded += 1
+                    else:
+                        total_duplicates += 1
+
+            except Exception as e:
+                logger.error(f"Error loading file {fname}: {e}")
+
+        if total_loaded > 0:
+            self.add_calibration_list(new_list, name)
+
+            summary = (f"Successfully created list '{name}'.\n"
+                       f"Total calibrations loaded: {total_loaded}\n"
+                       f"Duplicates skipped (in combined list): {total_duplicates}")
+            QtWidgets.QMessageBox.information(self, "Success", summary)
+        else:
+            QtWidgets.QMessageBox.warning(self, "Info",
+                                          "No valid calibrations were loaded from the selected files.")
+
+    def load_file_to_list(self, model: CalibrationListModel):
+        """Opens a file dialog and imports calibrations into an EXISTING list."""
+        fname, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Open Calibration File",
+            "",
+            "Calibration Files (*.yaml *.json *.txt);;All Files (*)"
+        )
+
+        if fname:
+            try:
+                temp_list = CalibrationList()
+                # Assuming read_calibration_file loads data into temp_list
+                calibrations_loaded = temp_list.read_calibration_file(fname)
+
+                if not calibrations_loaded: return
+
+                count = 0
+                for cal in calibrations_loaded:
+                    cal_copy = copy.deepcopy(cal)
+                    cal_copy.calc_content_id()
+
+                    if model.add_calibration_safe(cal_copy):
+                        count += 1
+
+                QtWidgets.QMessageBox.information(self, "Load Success",
+                                                  f"Successfully loaded {count} calibrations.")
+
+            except Exception as e:
+                logger.error(f"Error loading file: {e}")
+                QtWidgets.QMessageBox.critical(self, "Load Error",
+                                               f"Could not load file:\n{e}")
+
+    def create_new_list(self):
+        """Prompts for a name and creates an empty new calibration list."""
+        name, ok = QtWidgets.QInputDialog.getText(self, "New List", "Enter list name:")
+        if ok and name:
+            new_list = CalibrationList()
+            self.add_calibration_list(new_list, name)
+
+    def get_model(self, list_id):
+        """Retrieves a model instance by its unique ID."""
+        return self.models.get(list_id)
+
+    def paste_to_active_list(self, target_model: CalibrationListModel):
+        """Pastes serialized objects from the clipboard into the target model."""
+        clipboard = QtWidgets.QApplication.clipboard()
+        mime_data = clipboard.mimeData()
+        expected_mime = "application/x-calibration-uuids"
+
+        if not mime_data.hasFormat(expected_mime):
+            QtWidgets.QMessageBox.warning(self, "Paste Error",
+                                          "Clipboard does not contain valid calibration data.")
+            return
+
+        data_bytes = mime_data.data(expected_mime)
+        try:
+            data_json = json.loads(data_bytes.data().decode('utf-8'))
+            serialized_calibrations = data_json.get('calibrations', [])
+        except Exception as e:
+            logger.error(f"Paste: Failed to parse MIME data: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(self, "Paste Error",
+                                           f"Error parsing data: {e}")
+            return
+
+        if not serialized_calibrations:
+            QtWidgets.QMessageBox.warning(self, "Paste Error",
+                                          "Clipboard is empty or invalid.")
+            return
+
+        count = 0
+        for cal_json_str in serialized_calibrations:
+            try:
+                cal_copy = CalibrationWrapper.model_validate_json(cal_json_str)
+
+                if target_model.add_calibration_safe(cal_copy):
+                    count += 1
+            except Exception as e:
+                logger.error(f"Paste: Failed to create object from JSON: {e}",
+                             exc_info=True)
+                continue
+
+        QtWidgets.QMessageBox.information(self, "Paste Success",
+                                          f"Successfully pasted {count} calibrations.")
+
+    def save_single_list(self, model):
+        """Saves a single list using the CalibrationsSaveWidget."""
+        cal_list = model._list
+        if not cal_list:
+            QtWidgets.QMessageBox.warning(self, "Info", "List is empty.")
+            return
+
+        # Use the dedicated Save Widget for saving functionality
+        self._cal_save_widget = CalibrationsSaveWidget(calibrations=cal_list)
+        self._cal_save_widget.show()
+
+    def save_all(self):
+        """Attempts to save all non-empty lists managed by the widget."""
+        for model in self.models.values():
+            if len(model._list) > 0:
+                self.save_single_list(model)
 
