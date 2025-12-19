@@ -79,7 +79,6 @@ def parse_nmea_mac64_string(macstr):
         if len(macs) > 1:
             result['parents'] = macs[0:-1]
 
-    print("result",result)
     return result
 
 def strip_first_macs(datad):

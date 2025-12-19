@@ -80,7 +80,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 logger.debug('Stop command')
                 return
 
-        print("Got data",datapacket.keys())
+        #print("Got data",datapacket.keys())
         try:
             # This needs to be refined with the datastreams
             datapacket['data']
@@ -89,7 +89,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
         except:
             continue
 
-        print("Processing data")
+        #print("Processing data")
         merged_packets = tar_processor.process_rawdata(datapacket['data'])
         if merged_packets['metadata'] is not None:
             for ppub in merged_packets['metadata']:
@@ -100,10 +100,11 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 for ppub in merged_packets['merged_packets']:
                     atmp = redvypr.RedvyprAddress(ppub)
                     pkid = atmp.packetid
-                    print("Atmp",atmp)
+                    #print("Atmp",atmp)
                     # Metadata
                     if pkid not in metadata_dict.keys():
-                        print("New metadata")
+                        pass
+                        #print("New metadata")
 
                     # Publish the data
                     dataqueue.put(ppub)
@@ -337,10 +338,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 except:
                     parents = []
 
+                #print("packetid",data['_redvypr']['packetid'],'parents',parents)
                 macs_tarchain = parents + [mac]
                 if "raw" in packetid:
                     parentitm = self.root_raw
-                elif "TARchain" in packetid:
+                elif "tar_chain" in packetid:
                     parentitm = self.root_tar
                 else:
                     parentitm = self.root_single

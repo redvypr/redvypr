@@ -344,11 +344,12 @@ class TarProcessor():
                     except:
                         mactmp = p['mac']
 
+                    #print("mactmp",mactmp)
                     #print('Packet', p)
-                    print('Packet with mac')
-                    print('Mactmp', mactmp)
+                    #print('Packet with mac')
+                    #print('Mactmp', mactmp)
                     mac_parsed = nmea_mac64_utils.parse_nmea_mac64_string(mactmp)
-                    print('mac parsed', mac_parsed)
+                    #print('mac parsed', mac_parsed)
                     if mac_parsed is None:  # Not a valid mac
                         continue
 
@@ -356,15 +357,20 @@ class TarProcessor():
                     p['mac'] = mac_parsed['mac']
                     p['parents'] = mac_parsed['parents']
 
+                    #print("Merging packet with parents:", p['mac'], p['parents'])
+                    # Updating the tar chain setup
                     num_tar_sensors = len(p['parents']) + 1
+                    tar_setup_tmp = p['parents'] + [p['mac']]
                     if self.num_tar_sensors_max < num_tar_sensors:
                         self.num_tar_sensors_max = num_tar_sensors
-                        self.tar_setup = p['parents'] + [p['mac']]
-                    # try:
-                    #    print('p',p['macparents'])
-                    #    p['parents'] = p['macparents'].split(':')
-                    # except:
-                    #    p['parents']=[]
+                        self.tar_setup.extend([None] * (len(tar_setup_tmp) - len(self.tar_setup)))
+                        #print("tar setup",self.tar_setup,tar_setup_tmp)
+                        self.tar_setup[-1] = tar_setup_tmp[-1]
+                        self.tar_setup[0] = tar_setup_tmp[0]
+                    if self.tar_setup[num_tar_sensors-1] is None:
+                        #print("None")
+                        #print("tar setup", self.tar_setup, tar_setup_tmp)
+                        self.tar_setup[num_tar_sensors-1] = tar_setup_tmp[num_tar_sensors-1]
 
                     packetid = p['_redvypr']['packetid']
                     datatype_packet = packetid.split('_')[0]
@@ -372,8 +378,8 @@ class TarProcessor():
                     mac = p['mac']
                     nump = p['np']
                     self.nump_max = max(self.nump_max,nump)
-                    print('\nMAC:{}\n'.format(mac))
-                    print('mac {} {} nump:{} packettype: {}'.format(ip, mactmp, nump, datatype_packet))
+                    #print('\nMAC:{}\n'.format(mac))
+                    #print('mac {} {} nump:{} packettype: {}'.format(ip, mactmp, nump, datatype_packet))
                     flag_valid_packet = False
                     datatypes_to_merge = ['R', 'T', 'IMU']
 
@@ -395,9 +401,9 @@ class TarProcessor():
                                 mac] = None
 
                     # Packets that do dont have indices and arrays do not need to be merged
-                    print("datatype_packet",datatype_packet)
+                    #print("datatype_packet",datatype_packet)
                     if (datatype_packet != 'T') and (datatype_packet != 'R'):
-                        print(funcname + 'Nothing to merge, appending original packet',datatype_packet,mac)
+                        #print(funcname + 'Nothing to merge, appending original packet',datatype_packet,mac)
                         self.packetbuffer_nump_tar[nump][datatype_packet][mac] = p
                         #merged_packets.append(p)
                         # flag_valid_packet = True
@@ -450,7 +456,7 @@ class TarProcessor():
                         nmerged = self.packetbuffer_tar_merge[mac][datatype_packet][nump]['nmerged']
                         nntc = self.packetbuffer_tar_merge[mac][datatype_packet][nump]['ntcnum']
                         if nmerged == nntc:
-                            print('Merge completed!!!', datatype_packet)
+                            #print('Merge completed!!!', datatype_packet)
                             dataarray_merged = self.packetbuffer_tar_merge[mac][datatype_packet][nump]['dataarray']
 
                             praw = self.packetbuffer_tar_merge[mac][datatype_packet][nump]['packets_raw'][0]
@@ -464,20 +470,21 @@ class TarProcessor():
                             self.packetbuffer_nump_tar[nump][datatype_packet][mac] = pmerged
 
                     # Try to merge all datatypes of one mac/nump into one merged packet
-                    print("Trying to merge all packets with mac",mac,nump)
+                    #print("Trying to merge all packets with mac",mac,nump)
                     pmerge_all = {}
                     for dtmp in datatypes_to_merge:
-                        print("dtmp",dtmp)
+                        #print("dtmp",dtmp)
                         try:
                             ptmp = self.packetbuffer_nump_tar[nump][dtmp][mac]
-                            pmerge_all[dtmp] = ptmp
+                            if ptmp is not None:
+                                pmerge_all[dtmp] = ptmp
                         except:
-                            logger.info(funcname + "Could not find package",exc_info=True)
+                            #logger.info(funcname + "Could not find package",exc_info=True)
                             break
 
                     if len(pmerge_all.keys()) == len(datatypes_to_merge):
-                        print('All packets available for merging variables into one packet')
-                        print("Keys",pmerge_all['IMU'].keys())
+                        #print('All packets available for merging variables into one packet')
+                        #print("Keys",pmerge_all['IMU'].keys())
                         # Calculate the sensor positions in IMU coordinates
                         pmerge2 = pmerge_all['R'].copy()
                         pmerge2['_redvypr']['packetid'] = 'merged_' + pmerge2['mac']
@@ -487,9 +494,14 @@ class TarProcessor():
                         pmerge2['gyro'] = pmerge_all['IMU']['gyro']
                         pmerge2['mag'] = pmerge_all['IMU']['mag']
                         pmerge2['T_IMU'] = [pmerge_all['IMU']['T']]
-                        print('Pmerge pmerge')
-                        print('Pmerge pmerge',pmerge2.keys())
-                        print('Pmerge pmerge\n')
+                        nparents = len(pmerge2['parents'])
+                        pmerge2['parents'][0:nparents] = self.tar_setup[0:nparents]
+                        #print('Pmerge pmerge')
+                        #print('Pmerge pmerge',pmerge2.keys())
+                        #print('Pmerge mac',pmerge2['mac'])
+                        #print('Pmerge parents', pmerge2['parents'])
+                        #print('Pmerge tar setup', self.tar_setup)
+                        #print('Pmerge pmerge\n')
                         ntcnum = pmerge2['ntcnum']
                         ntcdist = pmerge2['ntcdist']
                         xdist = numpy.arange(0,ntcnum) * ntcdist/1000
@@ -518,9 +530,9 @@ class TarProcessor():
                         except:
                             self.packetbuffer_nump_tar[nump]['merged'] = {}
 
-                        print("Added packet to buffer")
+                        #print("Added packet to buffer")
                         self.packetbuffer_nump_tar[nump]['merged'][mac] = pmerge2
-                        print('MACS merged',self.packetbuffer_nump_tar[nump]['merged'].keys())
+                        #print('MACS merged',self.packetbuffer_nump_tar[nump]['merged'].keys())
                         #raise(ValueError)
 
                 # print('Datapacket processed',data_packet_processed)
@@ -539,9 +551,9 @@ class TarProcessor():
             mac_downstream = self.tar_setup[0]
             try:
                 for nump_merge in numps[:-1]:  # Dont merge the last one
-                    print('keys',self.packetbuffer_nump_tar[nump_merge].keys())
+                    #print('keys',self.packetbuffer_nump_tar[nump_merge].keys())
                     if 'merged' in self.packetbuffer_nump_tar[nump_merge].keys():
-                        print("Merging ...")
+                        #print("Merging ...")
                         ppub_dict = self.packetbuffer_nump_tar.pop(nump_merge)
                         #ppub_dict = self.packetbuffer_nump_tar[nump_merge]
                         ppub = ppub_dict['merged']
@@ -552,13 +564,13 @@ class TarProcessor():
                         packetid_chain = "merged_" + mac_downstream + 'N{}'.format(
                             len(self.tar_setup))
                         #print('HALLO', ppub)
-                        print('HALLO HALLO\n\n\n')
+                        #print('HALLO HALLO\n\n\n')
                         l1 = len(ppub.keys())
                         l2 = len(self.tar_setup)
                         if l1 == l2:
                             #merged_packet_work['_redvypr']['packetid'] = mac_final
                             merged_packet_work = redvypr.RedvyprAddress(ppub[mac_downstream],device=mac_final,packetid=packetid_chain).to_redvypr_dict()
-                            print("Blank merge packet",merged_packet_work)
+                            #print("Blank merge packet",merged_packet_work)
                             #merged_packet_work = copy.deepcopy(ppub[mac_downstream])
                         else:
                             print(
@@ -567,8 +579,8 @@ class TarProcessor():
                             continue
                         # input('fds')
                         for datatype_merge in ['T','R','acc','mag','T_IMU','pos_x','pos_z']:
-                            print('Merging tar chains packet {} with datatype'.format(
-                                nump_merge, datatype_merge))
+                            #print('Merging tar chains packet {} with datatype'.format(
+                            #    nump_merge, datatype_merge))
                             data_merged = []
                             t_merge = None
                             if datatype_merge == 'T':
@@ -603,7 +615,7 @@ class TarProcessor():
                             merged_packet_work['mac'] = mac_final
                             merged_packet_work['np'] = nump_merge
                         merged_packets.append(merged_packet_work)
-                        print(merged_packet_work)
+                        #print(merged_packet_work)
                         #raise(ValueError)
                         print(funcname + 'Done')
             except:
@@ -627,7 +639,7 @@ class TarProcessor():
         pass
     def process_rawdata(self, binary_data):
         packets = {'merged_packets':None,'merged_tar_chain':None,'metadata':None}
-        print("\nProcessing rawdata",binary_data)
+        #print("\nProcessing rawdata",binary_data)
         for sensor, datatype in zip(self.sensors, self.datatypes):
             # print('Checking for sensor',sensor,datatype)
             # Check for overflow
@@ -645,8 +657,8 @@ class TarProcessor():
 
             if data_packets_processed is not None:
                 for data_packet_processed in data_packets_processed:
-                    print('Found datapacket of sensor {}\nDatatype:{}\n'.format(sensor.name,datatype))
-                    print(data_packet_processed)
+                    #print('Found datapacket of sensor {}\nDatatype:{}\n'.format(sensor.name,datatype))
+                    #print(data_packet_processed)
                     mac = data_packet_processed['mac']
                     try:
                         self.metadata[mac]
@@ -654,8 +666,9 @@ class TarProcessor():
                         self.metadata[mac] = {'_sensors':[]}
 
                     # Check if the sensor has not been processed for metadata
-                    if sensor not in self.metadata[mac]['_sensors']:
-                        print("Updating metadata")
+                    if False:
+                    #if sensor not in self.metadata[mac]['_sensors']:
+                        #print("Updating metadata")
                         addr_tmp = redvypr.RedvyprAddress(data_packet_processed)
                         device_tmp = addr_tmp.device
                         # Test first the generic metadata for device only
@@ -672,9 +685,9 @@ class TarProcessor():
                         packets['metadata'].append(meta_packet)
                         metadata = meta_packet['_metadata']
                         self.metadata[mac].update(metadata)
-                        print('self.metadata',self.metadata)
+                        #print('self.metadata',self.metadata)
 
-                    print("Metadata: ",sensor.create_metadata_datapacket())
+                    #print("Metadata: ",sensor.create_metadata_datapacket())
 
                 break
 
@@ -682,11 +695,11 @@ class TarProcessor():
             # Merge datapackets which have only parts (T,R with NTC indices)
             merged_packets = self.merge_datapackets(data_packets_processed)
             packets['merged_packets'] = merged_packets
-            print("\nMerging the tar chain")
-            merged_tar_chain = self.merge_tar_chain()
-            print("Merging the tar chain done",merged_tar_chain)
-            print("done merging chain\n\n")
-            packets['merged_tar_chain'] = merged_tar_chain
+            #print("\nMerging the tar chain")
+            #merged_tar_chain = self.merge_tar_chain()
+            #print("Merging the tar chain done",merged_tar_chain)
+            #print("done merging chain\n\n")
+            #packets['merged_tar_chain'] = merged_tar_chain
 
         return packets
 

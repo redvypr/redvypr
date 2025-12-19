@@ -346,8 +346,8 @@ class BinarySensor(Sensor):
         for rematch in rematches:
             data_packet = redvypr_create_datadict(device=self.name)
             flag_data = False
-            print('Processing match', rematch)
-            print('Variables found', rematch.groupdict())
+            #print('Processing match', rematch)
+            #print('Variables found', rematch.groupdict())
             redict = rematch.groupdict()
             if self._flag_binary_keys:
                 for keyname in redict:
