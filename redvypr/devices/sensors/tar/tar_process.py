@@ -68,15 +68,15 @@ if True:
         b'(?P<ntctype>[A-C])'
         b'(?P<ntcdist>[0-9]),'
         b'T(?P<ntcistart>[0-9]+)-(?P<ntciend>[0-9]+),'
-        b'(?P<t>[0-9.]+),'
+        b'(?P<counter>[0-9.]+),'
         b'(?P<np>[0-9]+),'
         b'(?P<T>.*)\n'
     )
-    tarv2nmea_T_str_format = {'mac': 'str', 't': 'float', 'ntctype': 'str',
+    tarv2nmea_T_str_format = {'mac': 'str', 'counter': 'float', 'ntctype': 'str',
                               'ntcistart':'int','ntciend':'int','ntcnum':'int',
                               'ntcdist': 'float', 'np': 'int', 'T': 'array'}
     tarv2nmea_T_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
-                                           'np': {'unit': 'counter'}, 'T': {'unit': 'degC'}}
+                                           'np': {'unit': 'counter'},'counter': {'unit': 's'}, 'T': {'unit': 'degC'}}
     tarv2nmea_T_packetid_format = 'T_{mac}'
     tarv2nmea_T_description = 'Temperature array temperature datapacket'
     # R
@@ -89,15 +89,15 @@ if True:
         b'(?P<ntctype>[A-C])'
         b'(?P<ntcdist>[0-9]),'
         b'R(?P<ntcistart>[0-9]+)-(?P<ntciend>[0-9]+),'
-        b'(?P<t>[0-9.]+),'
+        b'(?P<counter>[0-9.]+),'
         b'(?P<np>[0-9]+),'
         b'(?P<R>.*)\n'
     )
-    tarv2nmea_R_str_format = {'mac': 'str', 't': 'float', 'ntctype': 'str',
+    tarv2nmea_R_str_format = {'mac': 'str', 'counter': 'float', 'ntctype': 'str',
                               'ntcistart': 'int', 'ntciend': 'int', 'ntcnum': 'int',
                               'ntcdist': 'float', 'np': 'int', 'R': 'array'}
     tarv2nmea_R_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
-                                    'np': {'unit': 'counter'}, 'R': {'unit': 'Ohm'}}
+                                    'np': {'unit': 'counter'}, 'R': {'unit': 'Ohm'},'counter': {'unit': 's'}}
     tarv2nmea_R_packetid_format = 'R_{mac}'
     tarv2nmea_R_description = 'Temperature array resistance datapacket'
 
@@ -114,7 +114,7 @@ if True:
         br'^'  # Start of the string
         b'^(?P<macparents>(?:\\$[0-9A-F]+(?:\\:|\\<(?P<maccount>[+-]?[0-9]+)\\>))*)\\$'
         b'(?P<mac>[0-9A-F]+),'  # The mac 
-        b'TAR\((?P<t>[0-9.]+),(?P<np>[0-9]+)\),'
+        b'TAR\((?P<counter>[0-9.]+),(?P<np>[0-9]+)\),'
         b'(?P<ntcnum>[0-9]+)'
         b'(?P<ntctype>[A-C])'
         b'(?P<ntcdist>[0-9]),'
@@ -123,12 +123,13 @@ if True:
         b'(?P<np_local>[0-9]+),'
         b'(?P<T>.*)\n'
     )
-    tarv2nmea_T_sample_str_format = {'mac': 'str', 't': 'float', 'counter_local': 'float',
+    tarv2nmea_T_sample_str_format = {'mac': 'str', 'counter': 'float', 'counter_local': 'float',
                                      'macparents': 'str', 'ntctype': 'str',
                                      'ntcistart': 'int', 'ntciend': 'int', 'ntcnum': 'int',
                                      'ntcdist': 'float', 'np': 'int', 'np_local': 'int', 'T': 'array'}
     tarv2nmea_T_sample_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
-                                           'np': {'unit': 'counter'}, 'T': {'unit': 'degC'}}
+                                           'np': {'unit': 'counter'}, 'T': {'unit': 'degC'},
+                                           'counter': {'unit': 's'},'counter_local': {'unit': 's'}}
     tarv2nmea_T_sample_packetid_format = 'T_{mac}'
     tarv2nmea_T_sample_description = 'Temperature array datapacket initiated by a sample command'
     # R
@@ -136,7 +137,7 @@ if True:
         br'^'  # Start of the string
         b'(?P<macparents>(?:\\$[0-9A-F]+(?:\\:|\\<(?P<maccount>[+-]?[0-9]+)\\>))*)\\$'
         b'(?P<mac>[0-9A-F]+),'  # The mac 
-        b'TAR\((?P<t>[0-9.]+),(?P<np>[0-9]+)\),'
+        b'TAR\((?P<counter>[0-9.]+),(?P<np>[0-9]+)\),'
         b'(?P<ntcnum>[0-9]+)'
         b'(?P<ntctype>[A-C])'
         b'(?P<ntcdist>[0-9]),'
@@ -145,12 +146,13 @@ if True:
         b'(?P<np_local>[0-9]+),'
         b'(?P<R>.*)\n'
     )
-    tarv2nmea_R_sample_str_format = {'mac': 'str', 't': 'float', 'counter_local': 'float',
+    tarv2nmea_R_sample_str_format = {'mac': 'str', 'counter': 'float', 'counter_local': 'float',
                                      'macparents': 'str', 'ntctype': 'str',
                                      'ntcistart': 'int', 'ntciend': 'int', 'ntcnum': 'int',
                                      'ntcdist': 'float', 'np': 'int', 'np_local': 'int', 'R': 'array'}
     tarv2nmea_R_sample_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
-                                           'np': {'unit': 'counter'}, 'R': {'unit': 'Ohm'}}
+                                           'np': {'unit': 'counter'}, 'R': {'unit': 'Ohm'},
+                                           'counter': {'unit': 's'},'counter_local': {'unit': 's'}}
     tarv2nmea_R_sample_packetid_format = 'R_{mac}'
     tarv2nmea_R_sample_description = 'Temperature array resistance datapacket initiated by a sample command'
 
@@ -165,14 +167,14 @@ if True:
         b'(?P<macparents>(?:\\$[0-9A-F]+(?:\\:|\\<(?P<maccount>[+-]?[0-9]+)\\>))*)\\$'
         b'(?P<mac>[0-9A-F]+),'  # The mac 
         b'TAR,IM,'
-        b'(?P<t>[0-9.]+),'
+        b'(?P<counter>[0-9.]+),'
         b'(?P<np>[0-9]+),'
         b'a,(?P<acc>.*),'
         b'g,(?P<gyro>.*),'
         b'm,(?P<mag>.*),'
         b'T,(?P<T>.*)\n'
     )
-    tarv2nmea_IMU_str_format = {'mac': 'str', 't': 'float', 'np': 'int',
+    tarv2nmea_IMU_str_format = {'mac': 'str', 'counter': 'float', 'np': 'int',
                               'acc':'array','gyro':'array','mag':'array','T':'float'}
     tarv2nmea_IMU_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
                                     'np': {'unit': 'counter'},
@@ -180,6 +182,7 @@ if True:
                                     'gyro': {'unit': 'deg/s', 'description': 'Gyro'},
                                     'mag': {'unit': 'Tsla', 'description': 'Magnetometer'},
                                     'T': {'unit': 'degC', 'description': 'Temperature'},
+                                    'counter': {'unit': 's'}
                                       }
     tarv2nmea_IMU_packetid_format = 'IMU_{mac}'
     tarv2nmea_IMU_description = 'Temperature array IMU raw datapacket'
@@ -191,15 +194,15 @@ if True:
         b'(?P<mac>[0-9A-F]+),'  # The mac 
         b'TAR\((?P<t>[0-9.]+),(?P<np>[0-9]+)\),'
         b'IM,'
-        b'(?P<t_local>[0-9.]+),'
+        b'(?P<counter_local>[0-9.]+),'
         b'(?P<np_local>[0-9]+),'
         b'a,(?P<acc>.*),'
         b'g,(?P<gyro>.*),'
         b'm,(?P<mag>.*),'
         b'T,(?P<T>.*)\n'
     )
-    tarv2nmea_IMU_sample_str_format = {'mac': 'str', 't': 'float', 'np': 'int',
-                                       't_local': 'float', 'np_local': 'int',
+    tarv2nmea_IMU_sample_str_format = {'mac': 'str', 'counter': 'float', 'np': 'int',
+                                       'counter_local': 'float', 'np_local': 'int',
                                        'acc': 'array', 'gyro': 'array', 'mag': 'array',
                                        'T': 'float'}
     tarv2nmea_IMU_sample_datakey_metadata = {
@@ -210,7 +213,9 @@ if True:
         'gyro': {'unit': 'deg/s', 'description': 'Gyro'},
         'mag': {'unit': 'Tsla', 'description': 'Magnetometer'},
         'T': {'unit': 'degC', 'description': 'Temperature'},
-        }
+        'counter': {'unit': 's'},
+        'counter_local': {'unit': 's'}
+    }
     tarv2nmea_IMU_sample_packetid_format = 'IMU_{mac}'
     tarv2nmea_IMU_sample_description = 'Temperature array IMU raw datapacket'
 
