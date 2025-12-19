@@ -4,7 +4,7 @@ import sqlite3
 import logging
 import sys
 from datetime import datetime, timezone
-import psycopg2
+import psycopg
 from typing import Iterator, Optional, Any, Dict
 from contextlib import contextmanager
 from redvypr.redvypr_address import RedvyprAddress
@@ -32,18 +32,18 @@ class RedvyprTimescaleDb:
                 'host': host,
                 'port': port
             }
-
+            self.conn_str = f"dbname={dbname} user={user} password={password} host={host} port={port}"
             self.add_raddstr_column()
 
         @contextmanager
-        def _get_connection(self) -> Iterator[psycopg2.extensions.connection]:
+        def _get_connection(self) -> Iterator[psycopg.Connection]:
             """Establishes a secure connection to the database and ensures it is automatically closed."""
             conn = None
             try:
                 # Connect to the PostgreSQL/TimescaleDB database
-                conn = psycopg2.connect(**self.conn_params)
+                conn = psycopg.connect(self.conn_str)
                 yield conn
-            except psycopg2.Error as e:
+            except psycopg.Error as e:
                 print(f"❌ Database Connection Error: {e}")
                 raise  # Re-raise exception for proper error handling
             finally:
