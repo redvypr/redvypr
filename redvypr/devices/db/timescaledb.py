@@ -33,6 +33,7 @@ class RedvyprTimescaleDb:
                 'port': port
             }
             self.conn_str = f"dbname={dbname} user={user} password={password} host={host} port={port}"
+            print("Conn parameter",self.conn_params)
             self.add_raddstr_column()
 
         @contextmanager
@@ -41,7 +42,7 @@ class RedvyprTimescaleDb:
             conn = None
             try:
                 # Connect to the PostgreSQL/TimescaleDB database
-                conn = psycopg.connect(self.conn_str)
+                conn = psycopg.connect(**self.conn_params)
                 yield conn
             except psycopg.Error as e:
                 print(f"❌ Database Connection Error: {e}")

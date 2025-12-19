@@ -246,3 +246,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.layout.addWidget(
             QtWidgets.QLabel("--- Device Live Data/Control Panel ---"))
         self.layout.addStretch(1)  # Push the DB widget to the top
+
+    def start_clicked(self):
+        self.device.custom_config = self.db_config_widget.get_config()
+        super().start_clicked()
