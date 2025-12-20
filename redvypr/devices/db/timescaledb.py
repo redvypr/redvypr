@@ -34,7 +34,11 @@ class RedvyprTimescaleDb:
             }
             self.conn_str = f"dbname={dbname} user={user} password={password} host={host} port={port}"
             print("Conn parameter",self.conn_params)
-            self.add_raddstr_column()
+            self.add_raddstr_column(column_name='raddstr')
+            self.add_raddstr_column(column_name='packetid')
+            self.add_raddstr_column(column_name='publisher')
+            self.add_raddstr_column(column_name='host')
+            self.add_raddstr_column(column_name='device')
 
         @contextmanager
         def _get_connection(self) -> Iterator[psycopg.Connection]:
@@ -187,9 +191,13 @@ class RedvyprTimescaleDb:
             Args:
                 data_dict: A Python dictionary to be stored as JSONB.
             """
+            #insert_sql = f"""
+            #    INSERT INTO {table_name} (timestamp, data, raddstr)
+            #    VALUES (%s, %s, %s);
+            #"""
             insert_sql = f"""
-                INSERT INTO {table_name} (timestamp, data, raddstr)
-                VALUES (%s, %s, %s);
+               INSERT INTO {table_name} (timestamp, data, raddstr, host, publisher, device, packetid)
+               VALUES (%s, %s, %s, %s, %s, %s, %s);
             """
 
             # Convert the Python dictionary to a JSON string for the JSONB column
@@ -198,6 +206,10 @@ class RedvyprTimescaleDb:
                 timestamp_value = data_dict['t']
                 raddr = RedvyprAddress(data_dict)
                 raddrstr = raddr.to_address_string()
+                host = raddr.hostname
+                device = raddr.device
+                packetid = raddr.packetid
+                publisher = raddr.publisher
             except Exception as e:
                 print(f"❌ Data is not compatible for inserting: {e}")
                 return
@@ -206,7 +218,7 @@ class RedvyprTimescaleDb:
             try:
                 with self._get_connection() as conn:
                     with conn.cursor() as cur:
-                        data_insert = (timestamp_utc, json_data, raddrstr)
+                        data_insert = (timestamp_utc, json_data, raddrstr, host, publisher, device, packetid)
                         print("data insert",data_insert)
                         print("insert sql",insert_sql)
                         # Execute the INSERT command, passing parameters safely
