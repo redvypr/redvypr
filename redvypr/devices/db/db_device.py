@@ -10,6 +10,7 @@ import time
 import logging
 import sys
 import pydantic
+import typing
 import redvypr
 from redvypr.data_packets import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
@@ -47,17 +48,30 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     logger_thread = logging.getLogger('redvypr.device.db_device.start')
     logger_thread.setLevel(logging.DEBUG)
     logger_thread.debug(funcname)
-    print("Config",config)
+    dt_update = 1  # Update interval in seconds
+    packet_inserted = 0
+    packet_inserted_failure = 0
+    t_update = time.time() - dt_update
+    #print("Config",config)
     pconfig = DeviceCustomConfig(**config)
-    print("Opening database")
-    db = RedvyprTimescaleDb(dbname = pconfig.dbname,
-                            user= pconfig.user,
-                            password=pconfig.password,
-                            host=pconfig.host,
-                            port=pconfig.port)
+    logger_thread.info("Opening database")
+    try:
+        db = RedvyprTimescaleDb(dbname = pconfig.dbname,
+                                user= pconfig.user,
+                                password=pconfig.password,
+                                host=pconfig.host,
+                                port=pconfig.port)
+    except:
+        logger_thread.exception("Could not connect to database")
+        return
 
+    try:
+        db.create_hypertable()
+    except:
+        print("Could not connect to database")
+        return
 
-    db.create_hypertable()
+    statistics = {}
 
     while True:
         datapacket = datainqueue.get()
@@ -70,8 +84,29 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 logger.debug('Stop command')
                 return
         else: # Only save real data
-            print('Inserting datapacket',datapacket)
-            db.insert_packet_data(datapacket)
+            #print('Inserting datapacket',datapacket)
+            addrstr = RedvyprAddress(datapacket).to_address_string()
+            try:
+                statistics[addrstr]
+            except:
+                statistics[addrstr] = {'packet_inserted':0,'packet_inserted_failure':0}
+            try:
+                db.insert_packet_data(datapacket)
+                packet_inserted += 1
+                statistics[addrstr]['packet_inserted'] += 1
+            except:
+                packet_inserted_failure += 1
+                statistics[addrstr]['packet_inserted_failure'] += 1
+
+        if ((time.time() - t_update) > dt_update):
+            t_update = time.time()
+            print("Updating")
+            data = {}
+            data['t'] = time.time()
+            data['packet_inserted'] = packet_inserted
+            data['packet_inserted_failure'] = packet_inserted_failure
+            data['statistics'] = statistics
+            statusqueue.put(data)
 
 
 def get_database_info(config):
@@ -92,7 +127,7 @@ class DBConfigWidget(QtWidgets.QWidget):
     def __init__(self, initial_config: DeviceCustomConfig, parent=None):
         super().__init__(parent)
         self.initial_config = initial_config
-        self.input_fields: Dict[str, QtWidgets.QLineEdit] = {}
+        self.input_fields: typing.Dict[str, QtWidgets.QLineEdit] = {}
         self.test_result_label: QtWidgets.QLabel = None
         self.setup_ui()
 
@@ -233,20 +268,86 @@ class DBConfigWidget(QtWidgets.QWidget):
 class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
-
+        self.statistics = {}
+        self._statistics_items = {}
         initial_config = self.device.custom_config
         # 2. Create the new DBConfigWidget
         self.db_config_widget = DBConfigWidget(initial_config=initial_config)
+        self.statustable = QtWidgets.QTableWidget()
+        self.statustable.setRowCount(1)
+        self._statustableheader = ['Packets','Num stored','Num stored error']
+        self.statustable.setColumnCount(len(self._statustableheader))
+        self.statustable.setHorizontalHeaderLabels(self._statustableheader)
+        item = QtWidgets.QTableWidgetItem("All")
+        self.statustable.setItem(0, 0, item)
+        self.statustable.resizeColumnsToContents()
 
         # 3. Add the DBConfigWidget to the main content area (self.layout)
         # We add it at the top of the 'self.widget' (main content area)
         self.layout.addWidget(self.db_config_widget)
-
-        # Optional: Add a placeholder label for the main device content
-        self.layout.addWidget(
-            QtWidgets.QLabel("--- Device Live Data/Control Panel ---"))
+        self.layout.addWidget(self.statustable)
         self.layout.addStretch(1)  # Push the DB widget to the top
+
+        self.statustimer_db = QtCore.QTimer()
+        self.statustimer_db.timeout.connect(self.update_status)
+
+
+    def update_status(self):
+        status = self.device.get_thread_status()
+        thread_status = status['thread_running']
+        # Running
+        if (thread_status):
+            pass
+        # Not running
+        else:
+            #print("Thread not running anymore, stopping timer")
+            self.statustimer_db.stop()
+
+        try:
+            data = self.device.statusqueue.get(block=False)
+            #print("data", data)
+        except:
+            data = None
+
+        if data is not None:
+            try:
+                item_inserted = QtWidgets.QTableWidgetItem(str(data['packet_inserted']))
+                item_inserted_failure = QtWidgets.QTableWidgetItem(
+                    str(data['packet_inserted_failure']))
+                self.statistics.update(data['statistics'])
+                #print("Statistics",self.statistics)
+                self.statustable.setItem(0,1,item_inserted)
+                self.statustable.setItem(0, 2, item_inserted_failure)
+                for row,(k, i) in enumerate(self.statistics.items()):
+                    #print("k",k)
+                    #print("i", i)
+                    k_mod = RedvyprAddress(k).to_address_string(["i","p","h","d"])
+                    try:
+                        item_inserted = self._statistics_items[k][1]
+                        item_inserted_failure = self._statistics_items[k][2]
+                        istr = str(i['packet_inserted'])
+                        item_inserted.setText(istr)
+                    except:
+                        logger.info("Could not get data",exc_info=True)
+                        item_addr = QtWidgets.QTableWidgetItem(k_mod)
+                        item_inserted = QtWidgets.QTableWidgetItem(str(i['packet_inserted']))
+                        item_inserted_failure = QtWidgets.QTableWidgetItem(
+                            str(i['packet_inserted_failure']))
+                        self._statistics_items[k] = (item_addr,item_inserted,item_inserted_failure)
+                        nrows = self.statustable.rowCount()
+                        self.statustable.setRowCount(nrows + 1)
+                        self.statustable.setItem(nrows, 0, item_addr)
+                        self.statustable.setItem(nrows, 1, item_inserted)
+                        self.statustable.setItem(nrows, 2, item_inserted_failure)
+
+                    #item = self._statistics_items[k]
+
+                self.statustable.resizeColumnsToContents()
+            except:
+                logger.info("Could not update data",exc_info=True)
+
 
     def start_clicked(self):
         self.device.custom_config = self.db_config_widget.get_config()
+        self.statustimer_db.start(500)
         super().start_clicked()

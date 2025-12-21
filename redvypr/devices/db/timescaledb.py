@@ -34,11 +34,13 @@ class RedvyprTimescaleDb:
             }
             self.conn_str = f"dbname={dbname} user={user} password={password} host={host} port={port}"
             print("Conn parameter",self.conn_params)
-            self.add_raddstr_column(column_name='raddstr')
-            self.add_raddstr_column(column_name='packetid')
-            self.add_raddstr_column(column_name='publisher')
-            self.add_raddstr_column(column_name='host')
-            self.add_raddstr_column(column_name='device')
+            self.add_custom_column(table_name='redvypr_packets',column_name='raddstr')
+            self.add_custom_column(table_name='redvypr_packets',column_name='packetid')
+            self.add_custom_column(table_name='redvypr_packets',column_name='publisher')
+            self.add_custom_column(table_name='redvypr_packets',column_name='host')
+            self.add_custom_column(table_name='redvypr_packets',column_name='device')
+            self.add_custom_column(table_name='redvypr_packets',column_name='numpacket')
+            self.add_custom_column(table_name='redvypr_packets', column_name='timestamp_packet', column_type='TIMESTAMPTZ')
 
         @contextmanager
         def _get_connection(self) -> Iterator[psycopg.Connection]:
@@ -98,11 +100,47 @@ class RedvyprTimescaleDb:
                         print(
                             f"✅ Hypertable '{table_name}' successfully created and configured.")
             except Exception as e:
-                print(f"❌ Error during Hypertable creation: {e}")
+                raise ConnectionError("Could not connect to the TimescaleDB instance.")
+                #print(f"❌ Error during Hypertable creation: {e}")
+
+        def add_custom_column(self, table_name: str, column_name: str,
+                              column_type: str = 'TEXT'):
+            """
+            Safely adds a missing column with a specific data type (e.g., TIMESTAMPTZ or TEXT)
+            to the existing table using a DO block for idempotency.
+            """
+            alter_sql = f"""
+                DO $$
+                BEGIN
+                    -- Check if the column already exists
+                    IF NOT EXISTS (
+                        SELECT 1 
+                        FROM information_schema.columns 
+                        WHERE table_name = '{table_name}' AND column_name = '{column_name}'
+                    ) THEN
+                        -- Dynamically inject the column name and type
+                        EXECUTE 'ALTER TABLE {table_name} ADD COLUMN {column_name} ' || '{column_type}';
+                        RAISE NOTICE 'Column % (%) was successfully added to table %.', '{column_name}', '{column_type}', '{table_name}';
+                    ELSE
+                        RAISE NOTICE 'Column % already exists in table %.', '{column_name}', '{table_name}';
+                    END IF;
+                END
+                $$;
+            """
+            try:
+                with self._get_connection() as conn:
+                    with conn.cursor() as cur:
+                        print(
+                            f"Checking for column '{column_name}' ({column_type}) in '{table_name}'...")
+                        cur.execute(alter_sql)
+                        conn.commit()
+                        print(f"✅ Schema check for '{column_name}' complete.")
+            except Exception as e:
+                print(f"❌ Error adding column '{column_name}': {e}")
 
         # --- NEW METHOD TO ADD MISSING COLUMN ---
-        def add_raddstr_column(self, table_name: str = 'redvypr_packets',
-                               column_name: str = 'raddstr'):
+        def add_custom_column_legacy(self, table_name: str = 'redvypr_packets',
+                              column_name: str = 'raddstr'):
             """
             Safely adds a missing column (raddstr) to the existing table using a DO block for idempotency.
             """
@@ -196,14 +234,16 @@ class RedvyprTimescaleDb:
             #    VALUES (%s, %s, %s);
             #"""
             insert_sql = f"""
-               INSERT INTO {table_name} (timestamp, data, raddstr, host, publisher, device, packetid)
-               VALUES (%s, %s, %s, %s, %s, %s, %s);
+               INSERT INTO {table_name} (timestamp, data, raddstr, host, publisher, device, packetid, numpacket, timestamp_packet)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
             """
 
             # Convert the Python dictionary to a JSON string for the JSONB column
             json_data = json_safe_dumps(data_dict)
             try:
                 timestamp_value = data_dict['t']
+                timestamp_packet_value = data_dict['_redvypr']['t']
+                numpacket = data_dict['_redvypr']['numpacket']
                 raddr = RedvyprAddress(data_dict)
                 raddrstr = raddr.to_address_string()
                 host = raddr.hostname
@@ -215,12 +255,14 @@ class RedvyprTimescaleDb:
                 return
             if isinstance(timestamp_value, (int, float)):
                 timestamp_utc = datetime.fromtimestamp(timestamp_value, tz=timezone.utc)
+            if isinstance(timestamp_packet_value, (int, float)):
+                timestamp_packet_utc = datetime.fromtimestamp(timestamp_packet_value, tz=timezone.utc)
             try:
                 with self._get_connection() as conn:
                     with conn.cursor() as cur:
-                        data_insert = (timestamp_utc, json_data, raddrstr, host, publisher, device, packetid)
-                        print("data insert",data_insert)
-                        print("insert sql",insert_sql)
+                        data_insert = (timestamp_utc, json_data, raddrstr, host, publisher, device, packetid, numpacket, timestamp_packet_utc)
+                        #print("data insert",data_insert)
+                        #print("insert sql",insert_sql)
                         # Execute the INSERT command, passing parameters safely
                         cur.execute(insert_sql, data_insert)
                         conn.commit()
