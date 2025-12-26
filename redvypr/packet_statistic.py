@@ -6,6 +6,8 @@ import redvypr.data_packets as data_packets
 import time
 import json
 import deepdiff
+import typing
+from datetime import datetime
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.packet_statistics')
@@ -113,15 +115,131 @@ def rem_device_from_statistics(deviceaddress, statdict):
     return keys_removed
 
 
+def do_metadata(data, metadatadict):
+    funcname = __name__ + '.do_metadata():'
+    status = {'metadata_changed': False}
+    # Remove entries
+    if '_metadata_remove' in data.keys():
+        print("Removing data")
+        for address_str, removedata in data['_metadata_remove'].items():
+            remove_keys = removedata['keys']
+            constraint_entries = removedata['constraints']
+            if constraint_entries is not None:
+                if len(constraint_entries) == 0:
+                    print("Removing constraints for", address_str)
+                    try:
+                        metadatadict['metadata'][address_str].pop('_constraints')
+                        status['metadata_changed'] = True
+                    except (KeyError, IndexError):
+                        pass  # Expected
+                    except Exception as e:
+                        logger.debug(f"Unexpected error during removal: {e}")
+                else:
+                    for i in sorted(constraint_entries,reverse=True):
+                        try:
+                            metadatadict['metadata'][address_str]['_constraints'].pop(i)
+                            status['metadata_changed'] = True
+                        except (KeyError, IndexError):
+                            pass  # Expected
+                        except Exception as e:
+                            logger.debug(f"Unexpected error during removal: {e}")
+
+                    # Remove constraints entry, if empty
+                    try:
+                        lencon = len(metadatadict['metadata'][address_str]['_constraints'])
+                        if lencon == 0:
+                            metadatadict['metadata'][address_str].pop('_constraints')
+                    except:
+                        pass
+
+
+            if remove_keys is not None:
+                if len(remove_keys) == 0:
+                    try:
+                        print("Removing key", address_str)
+                        metadatadict['metadata'].pop(address_str)
+                        status['metadata_changed'] = True
+                    except (KeyError, IndexError):
+                        pass  # Expected
+                    except Exception as e:
+                        logger.debug(f"Unexpected error during removal: {e}")
+
+                else:
+                    for k in remove_keys:
+                        try:
+                            metadatadict['metadata'][address_str].pop(k)
+                            status['metadata_changed'] = True
+                        except (KeyError, IndexError):
+                            pass  # Expected
+                        except Exception as e:
+                            logger.debug(f"Unexpected error during removal: {e}")
+
+            # Remove whole entry if empty
+            try:
+                lenkeys = len(metadatadict['metadata'][address_str].keys())
+                if lenkeys == 0:
+                    metadatadict['metadata'].pop(address_str)
+            except:
+                pass
+
+
+    # Add entry
+    if '_metadata' in data.keys():
+        try:
+            for address_str in data['_metadata'].keys():
+                new_metadata = data['_metadata'][address_str]
+
+                # Ensure the address exists in our storage
+                if address_str not in metadatadict['metadata']:
+                    metadatadict['metadata'][address_str] = {}
+
+                target = metadatadict['metadata'][address_str]
+
+                # 1. Handle standard key-value pairs (everything except _constraints)
+                for key, value in new_metadata.items():
+                    if key == '_constraints':
+                        continue
+
+                    # Compare value before updating to set changed flag
+                    if target.get(key) != value:
+                        target[key] = value
+                        status['metadata_changed'] = True
+
+                # 2. Handle _constraints list merging
+                if '_constraints' in new_metadata:
+                    if '_constraints' not in target:
+                        target['_constraints'] = []
+
+                    for new_rule in new_metadata['_constraints']:
+                        # Use DeepHash to check if this specific rule already exists
+                        new_rule_hash = deepdiff.DeepHash(new_rule)[new_rule]
+
+                        is_duplicate = False
+                        for existing_rule in target['_constraints']:
+                            existing_hash = deepdiff.DeepHash(existing_rule)[existing_rule]
+                            if new_rule_hash == existing_hash:
+                                is_duplicate = True
+                                break
+
+                        if not is_duplicate:
+                            target['_constraints'].append(new_rule)
+                            status['metadata_changed'] = True
+                            print(f"Added new unique constraint to {address_str}")
+
+        except Exception:
+            logger.info(funcname + " Could not update metadata", exc_info=True)
+
+    return metadatadict, status
+
+
 def do_data_statistics(data, statdict, address_data = None):
     """
     Fills in the statistics dictionary with the data packet information
     :param data:
     :param statdict:
     :param address_data:
-    :return: statdict, status
+    :return: statdict
     """
-    status = {'metadata_changed':False}
     if address_data is None:
         raddr = RedvyprAddress(data)
     else:
@@ -161,30 +279,8 @@ def do_data_statistics(data, statdict, address_data = None):
     #print('Datakeys expanded',datakeys_expanded)
     statdict['device_redvypr'][address_str]['datakeys_expanded'].update(datakeys_expanded)
 
-    # Metadata of the datapacket
-    try:
-        for address_str_metadata in data['_metadata'].keys():
-            metadata = data['_metadata'][address_str_metadata]
-            deephash = deepdiff.DeepHash(metadata)[metadata]
-            try:
-                metadata_orig = statdict['metadata'][address_str_metadata]
-            except:
-                statdict['metadata'][address_str_metadata] = {}
-                metadata_orig = statdict['metadata'][address_str_metadata]
 
-            deephash_orig = deepdiff.DeepHash(metadata_orig)[metadata_orig]
-            # Check if there is a difference, if yes, update
-            if deephash != deephash_orig:
-                #print('Updating metadata')
-                statdict['metadata'][address_str_metadata].update(metadata)
-                status['metadata_changed'] = True
-            else:
-                #print('Same metadata, doing nothing')
-                pass
-    except:
-        pass
-
-    return statdict, status
+    return statdict
 
 
 
@@ -211,57 +307,29 @@ def get_keys_from_data(data):
 
     return keys
 
-def get_metadata_deviceinfo_all(statistics, address, publisher_strict=True,  mode='merge'):
-    """
-    Gets the metadata from a deviceinfo_all dict retreived with
-    redvypr.get_deviceinfo()
 
-    :param statistics:
-    :param address:
-    :param publisher_strict:
-    :param mode:
-    :return:
-    """
-    funcname = __name__ + '.get_metadata_deviceinfo_all():'
-    logger.debug(funcname + '{}'.format(address))
-    metadata = {}
-    raddress = RedvyprAddress(address)
-    if publisher_strict:
-        publisher_key = raddress.publisher
-        #print('Publisher key',publisher_key)
-        try:
-            #mdata_device = statistics['metadata'][publisher_key]
-            mdata_device = {'metadata': statistics['metadata'][publisher_key]}
-            mdata = get_metadata(mdata_device, address, mode)
-            metadata.update(mdata)
-        except:
-            logger.debug('Could not find publisher for address {}'.format(raddress),exc_info=True)
-    else:
-        #print('Statistics keys',statistics.keys())
-        for dev in statistics['metadata'].keys():
-            mdata_device = {'metadata': statistics['metadata'][dev]}
-            mdata = get_metadata(mdata_device, address, mode)
-            metadata.update(mdata)
-
-    return metadata
-
-def get_metadata(statistics, address, mode='merge'):
+#def get_metadata(statistics, address=None, mode='expanded'):
+def get_metadata(statistics,
+    address: None | str | RedvyprAddress = None,
+    mode: typing.Literal["merge", "expanded"] = "expanded"):
     """
     Gets the metadata of the redvypr address
     :param statistics:
     :param address:
-    :param mode: merge or dict
+    :param mode: merge or expanded
     :return:
     """
 
     funcname = __name__ + '.get_metadata():'
     logger.debug(funcname)
-    if mode == 'merge':
-        metadata_return = {}
+    metadata_return = {}
+    if address is None:
+        raddress = RedvyprAddress("@") # Everything
     else:
-        metadata_return = {}
-    raddress = RedvyprAddress(address)
+        raddress = RedvyprAddress(address)
 
+    if mode == 'merge':
+        metadata_return[raddress.to_address_string()] = {}
     # Sort the datakeys by the number of the datakey indices.
     # This allows to have the longest entries latest such that the most
     # specific one is overwriting a less specific one
@@ -272,20 +340,97 @@ def get_metadata(statistics, address, mode='merge'):
     #print('Metadaty_keys_sorted',metadata_keys_sorted)
     #for astr in statistics['metadata'].keys():
     for astr in metadata_keys_sorted:
+        #print("Astr",astr,mode,raddress)
         raddr = RedvyprAddress(astr)
-        try:
-            retdata = raddr(raddress)
-        except:
-            continue
-        if True:
+        #print("Test address,",raddr,raddress)
+        #print("Test address result,", raddr(raddress))
+        #print("Test matches", raddress.matches(raddr))
+        #try:
+        #    retdata = raddr(raddress)
+        #except:
+        #    continue
+
+        if raddress.matches(raddr):
             #print("Match of {}({}".format(raddr,raddress))
             if True:
                 metadata = statistics['metadata'][astr]
-                #print('Metadata', metadata)
-                if mode == 'merge':
-                    metadata_return.update(metadata)
+                #print('Found metadata', metadata)
+                if mode == 'merge': # Put everything into the addressstring key
+                    metadata_return[raddress.to_address_string()].update(metadata)
                 else:
-                    metadata_return[astr] = metadata
+                    #print("Expanded",astr)
+                    try:
+                        metadata_return[astr].update(metadata)
+                    except:
+                        metadata_return[astr] = metadata
+
+                    #print("Expanded", metadata_return)
 
     return metadata_return
+
+
+def get_metadata_in_range(
+        statistics: dict,
+        address: None | str | RedvyprAddress = None,
+        t1: datetime | None = None,
+        t2: datetime | None = None,
+        mode: typing.Literal["merge", "expanded"] = "expanded",
+        constraint_mode: typing.Literal["merge", "expanded"] = "expanded"
+):
+    """
+    Retrieves metadata within a time range.
+    :param mode: Controls the spatial hierarchy (Address merging).
+    :param constraint_mode: Controls the temporal hierarchy (Constraint merging).
+    """
+    # 1. Get the base metadata (Spatial Merge/Expanded)
+    # Using your existing hierarchical logic
+    def _is_rule_active_in_range(rule, t1, t2):
+        """ Helper to check time overlap """
+        if not t1 and not t2: return True  # No range specified, show all
+
+        r_start = None
+        r_end = None
+        for cond in rule.get('conditions', []):
+            if cond['field'] == 't':
+                if cond['op'] in ['>', '>=']:
+                    r_start = datetime.fromisoformat(cond['value']) if isinstance(
+                        cond['value'], str) else cond['value']
+                if cond['op'] in ['<', '<=']:
+                    r_end = datetime.fromisoformat(cond['value']) if isinstance(
+                        cond['value'], str) else cond['value']
+
+        # Overlap logic: (RuleStart <= QueryEnd) AND (RuleEnd >= QueryStart)
+        if r_start and t2 and r_start > t2: return False
+        if r_end and t1 and r_end < t1: return False
+        return True
+
+    base_data = get_metadata(statistics, address, mode=mode)
+
+    results = {}
+
+    for addr_str, content in base_data.items():
+        final_content = content.copy()
+        constraints = final_content.pop('_constraints', [])
+
+        # Filter constraints that overlap with [t1, t2]
+        active_rules = []
+        for rule in constraints:
+            if _is_rule_active_in_range(rule, t1, t2):
+                active_rules.append(rule)
+
+        if constraint_mode == 'merge':
+            # TEMPORAL MERGE: Flatten rules into the main dictionary
+            # Note: Later rules in the list overwrite earlier ones (Priority)
+            for rule in active_rules:
+                final_content.update(rule.get('values', {}))
+        else:
+            # TEMPORAL EXPANDED: Keep the rules as a list
+            final_content['_constraints'] = active_rules
+
+        results[addr_str] = final_content
+
+    return results
+
+
+
 

@@ -1499,10 +1499,10 @@ class dictQTreeWidget(QtWidgets.QTreeWidget):
             item       = QtWidgets.QTreeWidgetItem([str(index), str(data_value),typestr])
             #item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)  # editable
             item.__data__ = data
-            item.__dataparent__   = parent.__data__ # can be used to reference the data (and change it)
-            item.__dataindex__    = index
-            item.__datatypestr__  = typestr
-            item.__parent__       = parent
+            item.__dataparent__ = parent.__data__ # can be used to reference the data (and change it)
+            item.__dataindex__ = index
+            item.__datatypestr__ = typestr
+            item.__parent__  = parent
             # Add the item to the data
             #print('data',data)
             #print('data',type(data))
@@ -1579,7 +1579,7 @@ class dictQTreeWidget(QtWidgets.QTreeWidget):
         logger.debug(funcname)
         self.blockSignals(True)
         if True:
-            self.create_item(self.dataname,self.data,self.root)
+            self.create_item(self.dataname, self.data, self.root)
 
         self.dataitem = self.root.child(0)
         self.resizeColumnToContents(0)

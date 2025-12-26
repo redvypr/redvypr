@@ -335,7 +335,7 @@ class RedvyprAddress:
     # -------------------------
     def matches(self, packet: Union[dict, "RedvyprAddress"], soft_missing: bool = True):
         """
-        Check whether a packet matches this address.
+        Check whether a packet or RedvyprAddress matches this address.
 
         soft_missing:
             - True: missing keys for _eq/_in/_regex are treated as True (soft matching)

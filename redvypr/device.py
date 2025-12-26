@@ -119,7 +119,6 @@ def device_start_standard(device_info, config=None, dataqueue=None, datainqueue=
             dataqueue.put(data)
 
 
-
 logging.basicConfig(stream=sys.stderr)
 
 
@@ -1168,63 +1167,6 @@ class RedvyprDevice(QtCore.QObject):
         else:
             return datakeyinfo
 
-    def get_datakeyinfo_legacy(self,datastream):
-        """
-        Returns the datakeyinfo for the datastream
-
-        Args:
-            datastream:
-            first_match:
-
-        Returns:
-
-        """
-        funcname = self.__class__.__name__ + '.get_datakeyinfo()'
-        self.logger.debug(funcname)
-        daddr = redvypr.RedvyprAddress(datastream)
-        #d = copy.deepcopy(self.statistics['device_redvypr'])
-        devinfo_all = copy.deepcopy(self.redvypr.deviceinfo_all)
-        #print('Datastream',datastream,daddr)
-        datakeyinfo = {}
-        for hostdevice in devinfo_all:
-            d = devinfo_all[hostdevice]
-            for device in d:
-                for dkey in d[device]['_keyinfo'].keys():
-                    dstreamaddr_info = redvypr.RedvyprAddress(device, datakey = dkey)
-                    #print('dstreamddr_info',dstreamaddr_info)
-                    if daddr in dstreamaddr_info:
-                        try:
-                            datakeyinfo[dstreamaddr_info.get_str()].update(d[device]['_keyinfo'][dkey])
-                        except:
-                            datakeyinfo[dstreamaddr_info.get_str()] = d[device]['_keyinfo'][dkey]
-
-        return datakeyinfo
-
-    def get_datastream_keyinfo_legacy(self, datastream):
-        """
-        Returns the datakeyinfo for the datastream
-
-        Args:
-            datastream:
-            first_match:
-
-        Returns:
-
-        """
-        funcname = self.__class__.__name__ + '.get_datastream_keyinfo()'
-        self.logger.debug(funcname)
-        daddr = redvypr.RedvyprAddress(datastream)
-        d = copy.deepcopy(self.statistics['device_redvypr'])
-        # print('Datastream',datastream,daddr)
-        for device in d:
-            for dkey in d[device]['_keyinfo'].keys():
-                dstreamaddr_info = redvypr.RedvyprAddress(device, datakey=dkey)
-                # print('dstreamddr_info',dstreamaddr_info)
-                if daddr in dstreamaddr_info:
-                    return d[device]['_keyinfo'][dkey]
-
-        return None
-
     def get_config(self):
         """
         Returns a RedvyprDeviceConfig of the device
@@ -1264,7 +1206,7 @@ class RedvyprDevice(QtCore.QObject):
         return info_dict
 
 
-    def get_metadata(self, address, mode='merge', local_statistics_only=False):
+    def get_metadata(self, address, mode='merge'):
         """
         Gets the metadata of the redvypr address
 
@@ -1272,7 +1214,6 @@ class RedvyprDevice(QtCore.QObject):
         ----------
         address: RedvyprAddress
         mode: "merge": If the redvypr address fits with several metadata entries, the metadata is merged, otherwise all metadata entries are provided as separate key
-        local_statistics_only: If true use the local statistics of the datastreams only, otherwise ue the global statistics of redvypr
 
         Returns
         -------
@@ -1282,10 +1223,7 @@ class RedvyprDevice(QtCore.QObject):
 
         funcname = __name__ + '.get_metadata({},{}):'.format(str(address),str(mode))
         self.logger.debug(funcname)
-        if local_statistics_only:
-            metadata = redvypr.packet_statistic.get_metadata(self.statistics,address,mode=mode)
-        else:
-            metadata = self.redvypr.get_metadata(address, mode=mode)
+        metadata = self.redvypr.get_metadata(address, mode=mode)
 
         return metadata
 
