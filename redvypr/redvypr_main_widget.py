@@ -157,7 +157,8 @@ class redvyprWidget(QtWidgets.QWidget):
                                        redvypr_device_scan=redvypr_device_scan,
                                        loglevel=loglevel)
         self.redvypr.device_path_changed.connect(self.__populate_devicepathlistWidget)
-        self.redvypr.device_added.connect(self._add_device_gui)
+        #self.redvypr.device_added.connect(self._add_device_gui)
+
         # Fill the layout
         self.devicetabs = QtWidgets.QTabWidget()
         self.devicetabs.setMovable(True)
@@ -422,8 +423,10 @@ class redvyprWidget(QtWidgets.QWidget):
             if ('redvypr' in initargs_parameters.keys()):
                 initdict['redvypr'] = self.redvypr
 
+
             device.redvyprdevicewidget = redvyprdevicewidget(**initdict)
             devicelayout.addWidget(device.redvyprdevicewidget)
+
             self.redvypr.devices[ind_devices]['guiqueues'][0][1] = device.redvyprdevicewidget
             self.redvypr.devices[ind_devices]['displaywidget'] = device.redvyprdevicewidget
             self.redvypr.devices[ind_devices]['initwidget'] = device.redvyprdevicewidget
@@ -543,12 +546,14 @@ class redvyprWidget(QtWidgets.QWidget):
                 self.redvypr.devices[ind_devices]['guiqueues'][0][1] = devicedisplaywidget_called
                 self.redvypr.devices[ind_devices]['displaywidget'] = devicedisplaywidget_called
                 self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
+
             else:
                 self.redvypr.devices[ind_devices]['initwidget'] = deviceinitwidget
                 self.redvypr.devices[ind_devices]['displaywidget'] = None
 
 
         self.redvypr.devices[ind_devices]['widget'] = devicewidget  # This is the displaywidget
+
         #
         # Add the devicelistentry to the widget, this gives the full information to the device
         #
@@ -560,6 +565,7 @@ class redvyprWidget(QtWidgets.QWidget):
                 self.redvypr.devices[ind_devices]['guiqueues'][0][1].redvyprdevicelistentry = self.redvypr.devices[ind_devices]
                 self.redvypr.devices[ind_devices]['guiqueues'][0][1].redvypr = self.redvypr
 
+
         # Get an icon for the device
         try:
             iconname = device.device_parameter.gui_icon
@@ -567,9 +573,11 @@ class redvyprWidget(QtWidgets.QWidget):
             logger.debug(funcname + 'Found icon for device')
         except:
             device_icon = None
+
         # Add the widget to the devicetab, or as a sole window or hide
         widgetname = device.name
         widgetloc = device.device_parameter.gui_dock
+
         if widgetloc == 'Window':
             devicewidget.setParent(None)
             devicewidget.setWindowTitle(widgetname)

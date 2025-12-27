@@ -738,7 +738,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                         continue
                     # Check for filter from filter widget
                     if self.filterWidget.filter_on:
-                        test_filter = not(self.filterWidget.filter_address).matches(dev.address)
+                        test_filter = not(self.filterWidget.filter_address).matches_filter(dev.address)
                         test_filter_sub = True
                         if test_filter == True:
                             # Test all devices of publisher in brute force and check if one of them fits
@@ -747,7 +747,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                                 datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
                                 #print('Datakeys', datakey_dict)
                                 devaddress_redvypr = RedvyprAddress(devaddress)
-                                if self.filterWidget.filter_address.matches(devaddress_redvypr):
+                                if self.filterWidget.filter_address.matches_filter(devaddress_redvypr):
                                     test_filter_sub = False
                                     #print('Filter match for ', devaddress_redvypr)
                                     continue

@@ -149,8 +149,8 @@ class SubscribeWidget(QtWidgets.QWidget):
         else:
             addr_format = 'p'
 
-        print('addr_format',addr_format)
-        print('address',self.subscribe_edit.redvypr_address)
+        #print('addr_format',addr_format)
+        #print('address',self.subscribe_edit.redvypr_address)
         devstr = self.subscribe_edit.redvypr_address.to_address_string(addr_format)
         self.subscribe_edit.setText(devstr)
 
@@ -223,11 +223,10 @@ class SubscribeWidget(QtWidgets.QWidget):
 
                     # Check if the device is already subscribed
                     subscribed = False
-                    print('dev',dev.name,dev.redvypr.hostinfo)
+                    #print('dev',dev.name,dev.redvypr.hostinfo)
                     for a in self.device.subscribed_addresses:
-                        print("Checking a",a)
-                        #subscribed = a in dev.address
-                        subscribed = a.matches(dev.address)
+                        #print("Checking a",a)
+                        subscribed = a.matches_filter(dev.address)
                         if subscribed:
                             break
 
@@ -251,9 +250,9 @@ class SubscribeWidget(QtWidgets.QWidget):
                             devaddress_redvypr = RedvyprAddress(devaddress)
                             subscribed = False
                             for a in self.device.subscribed_addresses:
-                                subscribed = a.matches(devaddress_redvypr)
+                                subscribed = a.matches_filter(devaddress_redvypr)
                                 if subscribed:
-                                    print('Subscribed',a,devaddress_redvypr)
+                                    #print('Subscribed',a,devaddress_redvypr)
                                     break
 
                             devaddress_str = devaddress_redvypr.to_address_string('a,h,p,i,d')

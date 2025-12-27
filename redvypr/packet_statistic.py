@@ -229,7 +229,7 @@ def do_metadata(data, metadatadict):
         except Exception:
             logger.info(funcname + " Could not update metadata", exc_info=True)
 
-    return metadatadict, status
+    return status
 
 
 def do_data_statistics(data, statdict, address_data = None):
@@ -280,7 +280,7 @@ def do_data_statistics(data, statdict, address_data = None):
     statdict['device_redvypr'][address_str]['datakeys_expanded'].update(datakeys_expanded)
 
 
-    return statdict
+    #return statdict
 
 
 
@@ -337,20 +337,22 @@ def get_metadata(statistics,
     decorated = [(len(RedvyprAddress(astr).get_datakeyentries()),astr) for astr in statistics['metadata'].keys()]
     decorated.sort()
     metadata_keys_sorted = [astr for nentries,astr in decorated]
-    #print('Metadaty_keys_sorted',metadata_keys_sorted)
+    print('Metadaty_keys_sorted',metadata_keys_sorted)
     #for astr in statistics['metadata'].keys():
     for astr in metadata_keys_sorted:
-        #print("Astr",astr,mode,raddress)
+        print("Astr",astr,mode,raddress)
         raddr = RedvyprAddress(astr)
         #print("Test address,",raddr,raddress)
         #print("Test address result,", raddr(raddress))
-        #print("Test matches", raddress.matches(raddr))
+        print("Test matches", raddress.matches_filter(raddr, soft_missing=False), raddr.matches_filter(raddress, soft_missing=False))
+        print("Test address result2,", RedvyprAddress(astr))
+        print("\n")
         #try:
         #    retdata = raddr(raddress)
         #except:
         #    continue
 
-        if raddress.matches(raddr):
+        if raddr.matches(raddress):
             #print("Match of {}({}".format(raddr,raddress))
             if True:
                 metadata = statistics['metadata'][astr]

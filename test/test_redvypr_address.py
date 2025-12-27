@@ -112,7 +112,7 @@ for addr_str, pkt, expected in addresses_test:
 
     # matches prüfen (nur, wenn expected != "KeyError")
     if expected != "KeyError":
-        match_result = addr.matches(pkt)
+        match_result = addr.matches_filter(pkt)
         # Für bool-Werte expected True/False prüfen, sonst match_result ignorieren
         if isinstance(expected, bool):
             assert match_result == expected, f"Expected matches={expected} for {addr_str}"
@@ -181,11 +181,11 @@ if True:
     testaddr = RedvyprAddress("@d:test_device and p:test_device and i:blabla")
     print("dictionary devaddr",devaddr.to_redvypr_dict())
     print("dictionary testaddr",testaddr.to_redvypr_dict())
-    print("1",testaddr.matches(devaddr),devaddr.matches(testaddr))
+    print("1", testaddr.matches_filter(devaddr), devaddr.matches_filter(testaddr))
 
-    print("apkt1 matches devaddr",apkt1.matches(devaddr))
-    print("devaddr matches apkt1",devaddr.matches(apkt1))
-    print("apkt1_strict:{}\n matches devaddr:{}".format(apkt1_strict,apkt1_strict.matches(devaddr)))
+    print("apkt1 matches devaddr", apkt1.matches_filter(devaddr))
+    print("devaddr matches apkt1", devaddr.matches_filter(apkt1))
+    print("apkt1_strict:{}\n matches devaddr:{}".format(apkt1_strict, apkt1_strict.matches_filter(devaddr)))
 
 # Test packet payload creation
 for addr_str, pkt, expected in addresses_test:

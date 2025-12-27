@@ -145,13 +145,14 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 redvyprdata = redvyprqueue.get(block=False) # Data from the main thread
             except Exception as e:
                 redvyprdata = None
+
             # Process data from the main thread
             if redvyprdata is not None:
                 print("Got data",redvyprdata)
                 if "_metadata" in redvyprdata.keys() or "_metadata_remove" in redvyprdata.keys():
                     print("Adding/remove metadata")
                     try:
-                        [tmp, status_statistics] = redvypr_packet_statistic.do_metadata(
+                        status_statistics = redvypr_packet_statistic.do_metadata(
                             redvyprdata, deviceinfo_all)
                         print("Deviceinfo all",deviceinfo_all)
                     except:
@@ -180,6 +181,10 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
 
             # Loop over all devices and process data
             for devicedict in devices:
+                #print("devicedict", devicedict)
+                #print("\n\n")
+                #print("devicedict statistics", devicedict['statistics'])
+                #print("\n\n")
                 device = devicedict['device']
                 data_all = []
                 tread = time.time()
@@ -187,22 +192,22 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 while True:
                     try:
                         data = device.dataqueue.get(block=False)
-                        print("Got data", data)
                         if not (isinstance(data, dict)): # If data is not a dictionary, convert it to one
                             data = {'data':data}
 
-                        devicedict['statistics']['packets_published'] += 1 # The total number of packets published by the device
+
+                        devicedict['statistics']['packets_published'] += 1  # The total number of packets published by the device
                         packets_processed += 1 # Counter for the statistics
                         packet_counter += 1 # Global counter of packets received by the redvypr instance
                         data_all.append([data,packet_counter])
                     except queue.Empty:
-                        pass
+                        break
                     except:
                         logger_dist.info("Error processing data",exc_info=True)
+                        return
                         break
                 # Process read packets
                 for data_list in data_all:
-                    print("Processing data")
                     data_packets_fan_out = []
                     data = data_list[0]
                     numpacket = data_list[1]
@@ -212,7 +217,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     raddr = redvypr_address.RedvyprAddress(data)
                     devicename_stat = str(raddr)
                     numtag = data['_redvypr']['tag'][hostinfo['uuid']]
-                    print("Processing",data)
+                    #print("Processing",data)
                     if numtag < 2:  # Check if data packet fits with addr and its not recirculated again
                         #
                         # Check for a command packet
@@ -220,21 +225,20 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         [command, comdata] = data_packets.check_for_command(data,
                                                                             add_data=True)
 
-                        print("command",command)
+
                         # Do statistics if it's not a command
                         if command is None:
-                            print("Standard data packet")
+                            #print("Standard data packet")
                             try:
-                                devicedict['statistics'] = redvypr_packet_statistic.do_data_statistics(
+                                redvypr_packet_statistic.do_data_statistics(
                                     data, devicedict['statistics'], address_data=raddr)
                                 # print('Statistic status',status_statistics)
                             except:
                                 logger_dist.debug(funcname + ':Statistics:', exc_info=True)
                             try:
-                                devicedict[
-                                    'statistics'], status_statistics = redvypr_packet_statistic.do_metadata(
+                                status_statistics = redvypr_packet_statistic.do_metadata(
                                     data, deviceinfo_all)
-                                print(funcname + 'Metadata done')
+                                #print(funcname + 'Metadata done')
                             except:
                                 logger_dist.debug(funcname + ':Metadata:', exc_info=True)
                         elif (command == 'info'):  # info command, typically a deviceinfo_all packet
@@ -310,7 +314,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                                 # redvypr_address using "in"
                                 numtag_packet = data['_redvypr']['tag'][hostinfo['uuid']]
                                 #print('Testing packet',redvypr_address.RedvyprAddress(data_packet),numtag_packet,(data_packet in addr))
-                                if addr.matches(data_packet) and (numtag_packet < 2): # Check if data packet fits with addr and if its not recirculated again
+                                if addr.matches_filter(data_packet) and (numtag_packet < 2): # Check if data packet fits with addr and if its not recirculated again
                                     try:
                                         #print(funcname + 'data to be sent',data)
                                         devicesub.datainqueue.put_nowait(data_packet) # These are the datainqueues of the subscribing devices
@@ -343,11 +347,12 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
             dt_avg += dt_dist
             navg += 1
             # Time to sleep, remove processing time
-            dt_sleep = max([0, dt - dt_dist])
+            dt_sleep = max([dt/4, dt - dt_dist])
+            #print("dt_sleep",dt_sleep)
             if ((tstop - tinfo) > dt_info):
                 tinfo = tstop
                 info_dict = {'type':'dt_avg','dt_avg': dt_avg / navg,'packets_processed': packets_processed,'packets_counter':packet_counter,'thread_start':thread_start}
-                print("sending ingo",info_dict)
+                #print("sending info",info_dict)
                 packets_processed = 0
                 # print(info_dict)
                 try:

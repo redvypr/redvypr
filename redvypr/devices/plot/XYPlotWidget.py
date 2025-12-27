@@ -101,8 +101,8 @@ class configLine(pydantic.BaseModel,extra='allow'):
         return {'x': xdata_tmp, 'y': ydata_tmp, 't': tdata_tmp, 'err': err_tmp}
 
     def add_data(self, data):
-        inx = self.x_addr.matches(data)
-        iny = self.y_addr.matches(data)
+        inx = self.x_addr.matches_filter(data)
+        iny = self.y_addr.matches_filter(data)
         #print("append line", self.x_addr, self.y_addr)
         #print("append line",inx,iny)
         if inx and iny:

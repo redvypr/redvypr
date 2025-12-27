@@ -144,7 +144,7 @@ class MetadataWidget(QtWidgets.QWidget):
 
     def get_metadata_clicked(self):
         address = self.address_get.text()
-
+        print(f"Getting metadata for {address=}")
         if self.time_constrain_checkbox_get.isChecked():
             # Extract Python datetime from QDateTime
             t1 = self.t1_edit_get.dateTime().toPython()
@@ -156,6 +156,7 @@ class MetadataWidget(QtWidgets.QWidget):
         else:
             metadata_new = self.redvypr.get_metadata(address, mode='expand')
 
+        print(f"Metadata new:{metadata_new}")
         # Clear previous widget if exists
         for i in reversed(range(self.metaeshowwidget_layout_update.count())):
             self.metaeshowwidget_layout_update.itemAt(i).widget().setParent(None)

@@ -852,7 +852,7 @@ class RedvyprDevice(QtCore.QObject):
                         # Sending metadata
                         compacket = self.redvypr.get_metadata_commandpacket()
                         for addr in self.subscribed_addresses:
-                            if addr.matches(compacket):
+                            if addr.matches_filter(compacket):
                                 self.datainqueue.put(compacket)
 
                         info_dict = {}

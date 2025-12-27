@@ -119,7 +119,7 @@ class RedvyprAddress:
                  addr_localhost: Optional[Any] = None):
         self.left_expr: Optional[str] = None
         self._rhs_ast: Optional[ast.Expression] = None
-        self.filter_keys: Dict[str, list] = {}
+        self.filter_keys: typing.Dict[str, list] = {}
 
         if expr == "":
             expr = None
@@ -333,9 +333,9 @@ class RedvyprAddress:
     # -------------------------
     # Matching & LHS
     # -------------------------
-    def matches(self, packet: Union[dict, "RedvyprAddress"], soft_missing: bool = True):
+    def matches_filter(self, packet: Union[dict, "RedvyprAddress"], soft_missing: bool = True):
         """
-        Check whether a packet or RedvyprAddress matches this address.
+        Check whether a packet or RedvyprAddress matches with the filter part of this address.
 
         soft_missing:
             - True: missing keys for _eq/_in/_regex are treated as True (soft matching)
@@ -393,17 +393,80 @@ class RedvyprAddress:
             return False
 
 
-    def matches_legacy(self, packet: Union[dict, "RedvyprAddress"]):
-        if isinstance(packet, RedvyprAddress):
-            packet = packet.to_redvypr_dict()
-        if not self._rhs_ast:
-            return True
-        SAFE_GLOBALS = {"__builtins__": None, "True": True, "False": False, "None": None}
-        try:
-            return bool(eval(compile(self._rhs_ast, filename="<ast>", mode="eval"),
-                             SAFE_GLOBALS, self._build_eval_locals(packet)))
-        except FilterFieldMissing:
-            return False
+    def matches(self, packet: Union[dict, "RedvyprAddress"], soft_missing: bool = True):
+        """
+        Determines if this Address (the Subject/Filter) matches the provided
+        packet or Address (the Target).
+
+        The logic is based on Hierarchical Subsumption. It follows these rules:
+
+        1. Filter Consistency:
+           The Host, Device, and Publisher must match. If filter fails,
+           the result is False immediately.
+
+        2. Wildcard Logic (Broad Filter vs. Specific Data):
+           A filter with no specific datakey acts as a wildcard for that device.
+           Example:
+           >>> a0 = RedvyprAddress("@d:test_device")
+           >>> atest2 = RedvyprAddress("sine[0]")
+           >>> a0.matches(atest2) # True (Device match is enough for a0)
+
+        3. Parent-Child Compatibility:
+           A filter for a parent key matches a target that is a specific child/index.
+           Example:
+           >>> a1 = RedvyprAddress("sine@d:test_device")
+           >>> atest2 = RedvyprAddress("sine[0]")
+           >>> a1.matches(atest2) # True (sine[0] is part of sine)
+
+        4. Specificity Constraint (Specific Filter vs. Broad Data):
+           A filter that is 'more specific' than the target will fail if the
+           target cannot satisfy the structural requirement.
+           Example:
+           >>> atest0 = RedvyprAddress("sine@d:test_device")
+           >>> a2 = RedvyprAddress("sine[0]@d:test_device")
+           >>> atest0.matches(a2) # False (atest0 wants 'sine', but a2 only provides 'sine[0]')
+
+        Test Matrix Summary:
+        --------------------
+        - atest0.matches(a0) -> True  (atest0: 'sine@dev' finds a0: '@dev' via filter)
+        - atest0.matches(a1) -> True  (Exact match: 'sine' vs 'sine')
+        - atest0.matches(a2) -> False (atest0: 'sine' is too broad for target a2: 'sine[0]')
+        - a0.matches(atest2) -> True  (a0: '@dev' is a wildcard for any key on dev)
+        - a1.matches(atest2) -> True  (a1: 'sine' subsumes target 'sine[0]')
+        - a2.matches(atest2) -> True  (Exact index match)
+
+        Parameters
+        ----------
+        packet : dict or RedvyprAddress
+            The data packet or address to test against.
+        soft_missing : bool
+            If True, missing keys in evaluation return False instead of raising.
+
+        Returns
+        -------
+        bool
+            True if the Subject filter matches the Target.
+        """
+
+        if isinstance(packet, dict):
+            address = RedvyprAddress(dict)
+        else:
+            address = packet
+
+        match_filter = self.matches_filter(packet)
+        if match_filter == False:
+            return match_filter
+        else:
+            # Return true if packet has no datakey and it matches
+            if address.datakey is None:
+                return True
+            # Try if datakey(s) match, here also more complex datapackets are treated properly
+            else:
+                try:
+                    self.__call__(packet)
+                    return True
+                except:
+                    return False
 
     def __call__(self, packet, strict=True):
         if isinstance(packet, RedvyprAddress):
@@ -412,7 +475,7 @@ class RedvyprAddress:
             return packet
         SAFE_GLOBALS = {"__builtins__": None, "True": True, "False": False, "None": None}
         locals_map = dict(packet)
-        if self._rhs_ast and not self.matches(packet):
+        if self._rhs_ast and not self.matches_filter(packet):
             if strict:
                 raise FilterNoMatch("Packet did not match filter")
             else:

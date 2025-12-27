@@ -1,4 +1,8 @@
-- 0.9.??:
+- 0.9.15:
+       - metadata simplified (gloabal, not device specific) and improved (metadata widget)
+       - former RedvyprAddress.match renamed to .match_filter
+       - RedvyprAddress.match re-implemented with new logic that is also looking at the datakeys
+       - timescaledb implemented
        - xlsxwriter bugs fixed
        - fileio devices resorted
        - new readme

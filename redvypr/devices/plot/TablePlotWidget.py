@@ -252,7 +252,7 @@ class TablePlotWidget(QtWidgets.QWidget):
 
         # Check if everything is found in the data packet
         for d in self.config.datastreams:
-            if not d.matches(data):
+            if not d.matches_filter(data):
                 return
 
         if self.col_packets_showed >= self.config.num_packets_show:
@@ -285,7 +285,7 @@ class TablePlotWidget(QtWidgets.QWidget):
         data_table_keys_new = []
         data_table_datastreams_new = []
         for d in self.config.datastreams:
-            if not d.matches(data):
+            if not d.matches_filter(data):
                 return
             else:
                 #print('d in data',d)
