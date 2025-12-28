@@ -61,16 +61,29 @@ class MetadataWidget(QtWidgets.QWidget):
         self.time_constrain_checkbox_get.toggled.connect(self.toggle_time_inputs_get)
         self.toggle_time_inputs_get(False)
 
+        # Mode explicit/merge
+        self.radio_expanded = QtWidgets.QRadioButton("Mode: Expanded")
+        self.radio_merge = QtWidgets.QRadioButton("Mode: Merge")
+        # Standardwert setzen
+        self.radio_expanded.setChecked(True)
+        self.radio_merge.toggled.connect(self.get_metadata_clicked)
+        # Create group
+        self.metadata_group = QtWidgets.QButtonGroup(self)
+        self.metadata_group.addButton(self.radio_expanded)
+        self.metadata_group.addButton(self.radio_merge)
+
         self.metaeshowwidget_layout_get = QtWidgets.QGridLayout()
         self.metaeshowwidget_layout_get.addWidget(self.address_get, 0, 0)
         self.metaeshowwidget_layout_get.addWidget(self.choose_address_button, 0, 1)
         self.metaeshowwidget_layout_get.addWidget(self.apply_get_button, 0, 2)
-        self.metaeshowwidget_layout_get.addWidget(self.time_constrain_checkbox_get, 1, 0)
-        self.metaeshowwidget_layout_get.addWidget(self.time_constrain_checkbox_show_timeline, 1, 1)
-        self.metaeshowwidget_layout_get.addWidget(self.t1_label_get, 2, 0)
-        self.metaeshowwidget_layout_get.addWidget(self.t1_edit_get, 2, 1, 1, 2)
-        self.metaeshowwidget_layout_get.addWidget(self.t2_label_get, 3, 0)
-        self.metaeshowwidget_layout_get.addWidget(self.t2_edit_get, 3, 1, 1, 2)
+        self.metaeshowwidget_layout_get.addWidget(self.radio_merge, 1, 0)
+        self.metaeshowwidget_layout_get.addWidget(self.radio_expanded, 1, 1)
+        self.metaeshowwidget_layout_get.addWidget(self.time_constrain_checkbox_get, 2, 0)
+        self.metaeshowwidget_layout_get.addWidget(self.time_constrain_checkbox_show_timeline, 2, 1)
+        self.metaeshowwidget_layout_get.addWidget(self.t1_label_get, 3, 0)
+        self.metaeshowwidget_layout_get.addWidget(self.t1_edit_get, 3, 1, 1, 2)
+        self.metaeshowwidget_layout_get.addWidget(self.t2_label_get, 4, 0)
+        self.metaeshowwidget_layout_get.addWidget(self.t2_edit_get, 4, 1, 1, 2)
 
         self.metaeshowwidget_layout.addLayout(self.metaeshowwidget_layout_get, 0)
         self.metaeshowwidget_layout.addLayout(self.metaeshowwidget_layout_update, 1)
@@ -144,7 +157,11 @@ class MetadataWidget(QtWidgets.QWidget):
 
     def get_metadata_clicked(self):
         address = self.address_get.text()
-        print(f"Getting metadata for {address=}")
+        if self.radio_expanded.isChecked():
+            mode="expanded"
+        else:
+            mode="merge"
+        print(f"Getting metadata for {address=} with {mode=}")
         if self.time_constrain_checkbox_get.isChecked():
             # Extract Python datetime from QDateTime
             t1 = self.t1_edit_get.dateTime().toPython()
@@ -152,9 +169,9 @@ class MetadataWidget(QtWidgets.QWidget):
 
             print(f"Getting time-constrained metadata: [{t1} to {t2}]")
             metadata_new = self.redvypr.get_metadata_in_range(address=address,
-                                                       t1=t1, t2=t2, mode='expand')
+                                                       t1=t1, t2=t2, mode=mode)
         else:
-            metadata_new = self.redvypr.get_metadata(address, mode='expand')
+            metadata_new = self.redvypr.get_metadata(address, mode=mode)
 
         print(f"Metadata new:{metadata_new}")
         # Clear previous widget if exists
@@ -167,7 +184,7 @@ class MetadataWidget(QtWidgets.QWidget):
             self.metaeshowwidget_layout_update.addWidget(self.timeconstraints)
 
         self.metadata_widget = EditableDictQTreeWidget(data=metadata_new,
-                                               dataname=f'Metadata for {address}')
+                                               dataname=f'Metadata for {address}', mode=mode)
 
         self.metadata_widget.deleteRequested.connect(self.delete_entry)
         self.metadata_widget.expandAll()
@@ -386,8 +403,9 @@ class EditableDictQTreeWidget(dictQTreeWidget):
     # Signal, das (Adresse, Key/Index-Liste, Constraint-Index-Liste) sendet
     deleteRequested = QtCore.Signal(str, dict)
 
-    def __init__(self, data={}, dataname='data', show_datatype=True, address=""):
+    def __init__(self, data={}, dataname='data', show_datatype=True, address="", mode="expanded"):
         super().__init__(data, dataname, show_datatype)
+        self.mode = mode
         self.address = address  # Wir merken uns, zu welcher Adresse die Daten gehören
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
@@ -398,15 +416,24 @@ class EditableDictQTreeWidget(dictQTreeWidget):
             return
 
         menu = QtWidgets.QMenu(self)
-        delete_action = menu.addAction("Delete entry")
+        if self.mode == "expanded":
+            delete_action = menu.addAction("Delete entry")
 
-        # delete icon
-        delete_action.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TrashIcon))
+            # delete icon
+            delete_action.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TrashIcon))
 
-        action = menu.exec(self.mapToGlobal(pos))
+            action = menu.exec(self.mapToGlobal(pos))
 
-        if action == delete_action:
-            self.handle_delete(item)
+            if action == delete_action:
+                self.handle_delete(item)
+
+        else:
+            delete_action = menu.addAction('Delete entry (disabled in "merge" mode)')
+
+            # delete icon
+            delete_action.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TrashIcon))
+            delete_action.setEnabled(False)
+            action = menu.exec(self.mapToGlobal(pos))
 
     def handle_delete(self, item):
         # Wir müssen herausfinden, was gelöscht werden soll

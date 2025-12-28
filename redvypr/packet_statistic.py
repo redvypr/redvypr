@@ -115,7 +115,7 @@ def rem_device_from_statistics(deviceaddress, statdict):
     return keys_removed
 
 
-def do_metadata(data, metadatadict):
+def do_metadata(data, metadatadict, auto_add_packetfilter=True):
     funcname = __name__ + '.do_metadata():'
     status = {'metadata_changed': False}
     # Remove entries
@@ -186,8 +186,35 @@ def do_metadata(data, metadatadict):
     # Add entry
     if '_metadata' in data.keys():
         try:
-            for address_str in data['_metadata'].keys():
-                new_metadata = data['_metadata'][address_str]
+            for address_str_work in data['_metadata'].keys():
+                raddress = RedvyprAddress(address_str_work)
+                raddress_data = RedvyprAddress(data)
+
+                if auto_add_packetfilter:
+                    uuid = None
+                    device = None
+                    packetid = None
+                    # Add uuid
+                    if (raddress.uuid is None) and (raddress_data.uuid is not None):
+                        #print("Adding uuid")
+                        uuid = raddress_data.uuid
+                    # Add device
+                    if (raddress.device is None) and (raddress_data.device is not None):
+                        #print("Adding device")
+                        device = raddress_data.device
+                    # Add packetid
+                    if (raddress.device is None) and (raddress_data.device is not None):
+                        #print("Adding packetid")
+                        packetid = raddress_data.packetid
+
+                    raddress_final = RedvyprAddress(raddress, uuid=uuid, device=device, packetid=packetid)
+                    address_str = raddress_final.to_address_string()
+                    #print(f"Address string: {address_str_work=}")
+                    #print(f"Address string: {address_str=}")
+                else:
+                    address_str = address_str_work
+
+                new_metadata = data['_metadata'][address_str_work]
 
                 # Ensure the address exists in our storage
                 if address_str not in metadatadict['metadata']:
@@ -204,6 +231,8 @@ def do_metadata(data, metadatadict):
                     if target.get(key) != value:
                         target[key] = value
                         status['metadata_changed'] = True
+                        logger.debug(f"New metadata for {address_str=}:\n")
+                        logger.debug(f"{key=}:{value=}")
 
                 # 2. Handle _constraints list merging
                 if '_constraints' in new_metadata:
@@ -224,7 +253,9 @@ def do_metadata(data, metadatadict):
                         if not is_duplicate:
                             target['_constraints'].append(new_rule)
                             status['metadata_changed'] = True
-                            print(f"Added new unique constraint to {address_str}")
+                            #print(f"Added new unique constraint to {address_str}")
+                            logger.debug(f"New contrained metadata for {address_str=}:\n")
+                            logger.debug(f"{new_rule=}")
 
         except Exception:
             logger.info(funcname + " Could not update metadata", exc_info=True)

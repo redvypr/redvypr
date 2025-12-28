@@ -113,6 +113,26 @@ class RedvyprSaveFileDialog(QtWidgets.QDialog):
 class TabGroupButton(QtWidgets.QPushButton):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
+
+class RedvyprInitWidget(QtWidgets.QWidget):
+    def __init__(self, *args, hostname, **kwargs):
+        super().__init__(*args, **kwargs)
+        # 1. Page: Setup
+        self.setup_layout = QtWidgets.QFormLayout(self)
+
+        self.hostname_input = QtWidgets.QLineEdit(hostname)
+        self.metadata_input = QtWidgets.QLineEdit("Default Metadata")  # Beispiel
+        self.start_button = QtWidgets.QPushButton("Start Redvypr")
+
+        self.setup_layout.addRow("Hostname:", self.hostname_input)
+        self.setup_layout.addRow("Metadata:", self.metadata_input)
+        self.setup_layout.addRow(self.start_button)
+
+
+    def get_config(self):
+        config_init = {}
+        config_init["hostname"] = self.hostname_input.text()
+        return config_init
 #
 #
 #
@@ -127,11 +147,6 @@ class redvyprWidget(QtWidgets.QWidget):
     """
 
     def __init__(self, width=None, height=None, config=None, hostname='redvypr', loglevel=None, redvypr_device_scan=None):
-        """ Args:
-            width:
-            height:
-            config: Either a string containing a path of a yaml file, or a list with strings of yaml files
-        """
         super(redvyprWidget, self).__init__()
         self.setGeometry(50, 50, 500, 300)
         # global loglevel
@@ -151,16 +166,73 @@ class redvyprWidget(QtWidgets.QWidget):
         else:
             config_tmp_obj = config
 
+        self.__init_params__ = {
+            'width': width, 'height': height,
+            'config_without_devices': config_tmp_obj,
+            'config_full': config,
+            'hostname': hostname, 'loglevel': loglevel,
+            'redvypr_device_scan': redvypr_device_scan
+        }
+
+        # Main-Container: QStackedWidget
+        self.stack = QtWidgets.QStackedWidget(self)
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.addWidget(self.stack)
+
+        # 1. Page: Setup
+        self.setup_page = RedvyprInitWidget(hostname=hostname)
+        self.setup_page.start_button.clicked.connect(self.start_main_application)
+
+        # 2. Page: The redvypr UI
+        self.main_app_page = QtWidgets.QWidget()
+        self.main_app_layout = QtWidgets.QVBoxLayout(self.main_app_page)
+        self.devicetabs = QtWidgets.QTabWidget()
+        self.main_app_layout.addWidget(self.devicetabs)
+
+        # Add to layout
+        self.stack.addWidget(self.setup_page)
+        self.stack.addWidget(self.main_app_page)
+
+        # Start on first (setup) page
+        self.stack.setCurrentIndex(0)
+
+        if width and height:
+            self.resize(int(width), int(height))
+        if ((width is not None) and (height is not None)):
+            self.resize(int(width), int(height))
+
+        #self.initialize_redvypr(hostname)
+
+    def start_main_application(self):
+        """Function is called when the user has configured redvypr"""
+        # Get values
+        config_init = self.setup_page.get_config()
+        new_hostname = config_init["hostname"]
+
+        # Initialize redvypr
+        self.initialize_redvypr(new_hostname)
+
+        # Switch to main window
+        self.stack.setCurrentIndex(1)
+
+    def initialize_redvypr(self, hostname):
+        """ Args:
+            width:
+            height:
+            config: Either a string containing a path of a yaml file, or a list with strings of yaml files
+        """
+
+        c = self.__init_params__
         # Configuration comes later after all widgets are initialized
         self.redvypr = redvypr.Redvypr(hostname=hostname,
-                                       config=config_tmp_obj,
-                                       redvypr_device_scan=redvypr_device_scan,
-                                       loglevel=loglevel)
+                                       config=c["config_without_devices"],
+                                       redvypr_device_scan=c["redvypr_device_scan"],
+                                       loglevel=c["loglevel"])
         self.redvypr.device_path_changed.connect(self.__populate_devicepathlistWidget)
-        #self.redvypr.device_added.connect(self._add_device_gui)
+        self.redvypr.device_added.connect(self._add_device_gui)
 
         # Fill the layout
-        self.devicetabs = QtWidgets.QTabWidget()
+        #self.devicetabs = QtWidgets.QTabWidget()
         self.devicetabs.setMovable(True)
         self.devicetabs.setTabsClosable(True)
         self.devicetabs.tabCloseRequested.connect(self.closeTab)
@@ -184,13 +256,13 @@ class redvyprWidget(QtWidgets.QWidget):
         self.devicereadtimer.timeout.connect(self.readguiqueue)
         self.devicereadtimer.start(100)
         # self.devicereadtimer.start(500)
-        self.layout = QtWidgets.QVBoxLayout(self)
-        self.layout.addWidget(self.devicetabs)
-        if ((width is not None) and (height is not None)):
-            self.resize(int(width), int(height))
+
+        #self.layout = QtWidgets.QVBoxLayout(self)
+        #self.layout.addWidget(self.devicetabs)
+
 
         # Add the devices
-        self.redvypr.add_devices_from_config(config, rename_if_exists=False)
+        self.redvypr.add_devices_from_config(c["config_full"], rename_if_exists=False)
         # Update hostinformation widgets
         self.__update_hostinfo_widget__()
         self.__populate_devicepathlistWidget()
@@ -1011,18 +1083,19 @@ class redvyprWidget(QtWidgets.QWidget):
         except:
             pass
 
-        for sendict in self.redvypr.devices:
-            logger.debug(funcname + ' Stopping {:s}'.format(sendict['device'].name))
-            sendict['device'].thread_stop()
+        if hasattr(self,"redvypr"):
+            for sendict in self.redvypr.devices:
+                logger.debug(funcname + ' Stopping {:s}'.format(sendict['device'].name))
+                sendict['device'].thread_stop()
 
-        time.sleep(1)
-        for sendict in self.redvypr.devices:
-            try:
-                sendict['device'].thread.kill()
-            except:
-                pass
+            time.sleep(1)
+            for sendict in self.redvypr.devices:
+                try:
+                    sendict['device'].thread.kill()
+                except:
+                    pass
 
-        logger.info('All stopped, sys.exit()')
+            logger.info('All stopped, sys.exit()')
         # sys.exit()
         os._exit(1)
 

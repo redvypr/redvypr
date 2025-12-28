@@ -1,5 +1,7 @@
+- 0.9.16?:
+       -
 - 0.9.15:
-       - metadata simplified (gloabal, not device specific) and improved (metadata widget)
+       - metadata simplified (global, not device specific) and improved (metadata widget)
        - former RedvyprAddress.match renamed to .match_filter
        - RedvyprAddress.match re-implemented with new logic that is also looking at the datakeys
        - timescaledb implemented

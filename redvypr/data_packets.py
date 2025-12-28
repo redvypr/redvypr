@@ -370,7 +370,8 @@ def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None
     return datadict
 
 
-def add_metadata2datapacket(datapacket, address=None, datakey=None, metakey=None, metadata=None, metadict=None):
+def add_metadata2datapacket(datapacket, address=None, datakey=None,
+                            metakey=None, metadata=None, metadict=None):
     """
 
     Args:add_metad

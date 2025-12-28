@@ -93,7 +93,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         if counter == 0:
             # Add metadata
 
-            metadata = {'unit': 'baseunit'}
+            metadata = {'unit': 'baseunit','location':'another room'}
             data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_list_list',
                                                                 metadict=metadata)
 
