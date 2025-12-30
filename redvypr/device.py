@@ -850,10 +850,12 @@ class RedvyprDevice(QtCore.QObject):
 
                         self.thread_uuid = thread_uuid
                         # Sending metadata
-                        compacket = self.redvypr.get_metadata_commandpacket()
-                        for addr in self.subscribed_addresses:
-                            if addr.matches_filter(compacket):
-                                self.datainqueue.put(compacket)
+                        print("METADATA!!!")
+                        compacket = self.redvypr.get_metadata_commandpacket(device=self.name)
+                        self.datainqueue.put(compacket)
+                        #for addr in self.subscribed_addresses:
+                        #    if addr.matches_filter(compacket):
+                        #        self.datainqueue.put(compacket)
 
                         info_dict = {}
                         info_dict['uuid'] = self.uuid

@@ -36,7 +36,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress("data"))
     dbname: str = pydantic.Field(default="postgres")
     user: str = pydantic.Field(default="postgres")
-    password: str = pydantic.Field(default="passworD")
+    password: str = pydantic.Field(default="password")
     host: str = pydantic.Field(default="pi5server1")
     port: int = pydantic.Field(default=5433)
 
@@ -52,7 +52,9 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     packet_inserted = 0
     packet_inserted_failure = 0
     t_update = time.time() - dt_update
-    #print("Config",config)
+    print("Config",config)
+    print("device_info", device_info)
+
     pconfig = DeviceCustomConfig(**config)
     logger_thread.info("Opening database")
     try:
@@ -75,14 +77,35 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
     while True:
         datapacket = datainqueue.get()
+        #print("Got data",datapacket)
         [command, comdata] = check_for_command(datapacket, thread_uuid=device_info['thread_uuid'],
                                                add_data=True)
         if command is not None:
-            logger.debug('Command is for me: {:s}'.format(str(command)))
+            paddr = RedvyprAddress(datapacket)
+            packetid = paddr.packetid
+            publisher = paddr.publisher
+            device = paddr.device
+            logger.debug('Command is for me: {:s}. Packetid: {}, device: {}, publisher: {}'.format(str(command),packetid, device, publisher))
             if command == 'stop':
                 logger.info(funcname + 'received command:' + str(datapacket) + ' stopping now')
                 logger.debug('Stop command')
                 return
+            elif command == 'info' and packetid=='metadata':
+                print("Info command",datapacket.keys())
+                metadata = datapacket["deviceinfo_all"]["metadata"]
+                print("Metadata",metadata)
+                #add_metadata(self, address: str, uuid: str, metadata_dict: dict,mode: str = "merge"):
+                for metadata_address_str,metadata_content in metadata.items():
+                    print("Adding metadata",metadata_address_str)
+                    metadata_address = RedvyprAddress(metadata_address_str)
+                    try:
+                        uuid = metadata_address.uuid
+                    except:
+                        print("Could not get uuid from metadata, get from host")
+                        uuid = device_info["hostinfo"]["uuid"]
+
+                    db.add_metadata(address=metadata_address_str,uuid=uuid, metadata_dict=metadata_content)
+
         else: # Only save real data
             #print('Inserting datapacket',datapacket)
             addrstr = RedvyprAddress(datapacket).to_address_string()
@@ -100,7 +123,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
         if ((time.time() - t_update) > dt_update):
             t_update = time.time()
-            print("Updating")
+            #print("Updating")
             data = {}
             data['t'] = time.time()
             data['packet_inserted'] = packet_inserted

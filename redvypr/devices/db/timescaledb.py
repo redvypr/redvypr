@@ -12,7 +12,7 @@ from redvypr.redvypr_address import RedvyprAddress
 import numpy as np
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.device.sqlite3db')
+logger = logging.getLogger('redvypr.device.timescaledb')
 logger.setLevel(logging.DEBUG)
 
 
@@ -34,13 +34,15 @@ class RedvyprTimescaleDb:
             }
             self.conn_str = f"dbname={dbname} user={user} password={password} host={host} port={port}"
             print("Conn parameter",self.conn_params)
-            self.add_custom_column(table_name='redvypr_packets',column_name='raddstr')
-            self.add_custom_column(table_name='redvypr_packets',column_name='packetid')
-            self.add_custom_column(table_name='redvypr_packets',column_name='publisher')
-            self.add_custom_column(table_name='redvypr_packets',column_name='host')
-            self.add_custom_column(table_name='redvypr_packets',column_name='device')
-            self.add_custom_column(table_name='redvypr_packets',column_name='numpacket')
-            self.add_custom_column(table_name='redvypr_packets', column_name='timestamp_packet', column_type='TIMESTAMPTZ')
+            #self.add_custom_column(table_name='redvypr_packets',column_name='redvypr_address')
+            #self.add_custom_column(table_name='redvypr_packets',column_name='packetid')
+            #self.add_custom_column(table_name='redvypr_packets',column_name='publisher')
+            #self.add_custom_column(table_name='redvypr_packets',column_name='host')
+            #self.add_custom_column(table_name='redvypr_packets',column_name='device')
+            #self.add_custom_column(table_name='redvypr_packets', column_name='uuid')
+            #self.add_custom_column(table_name='redvypr_packets',column_name='numpacket')
+            #self.add_custom_column(table_name='redvypr_packets', column_name='timestamp_packet', column_type='TIMESTAMPTZ')
+            self.create_metadata_table()
 
         @contextmanager
         def _get_connection(self) -> Iterator[psycopg.Connection]:
@@ -73,8 +75,15 @@ class RedvyprTimescaleDb:
                 CREATE TABLE IF NOT EXISTS {table_name} (
                     id SERIAL,
                     {time_column} TIMESTAMPTZ NOT NULL,
-                    data JSONB NOT NULL,
                     redvypr_address TEXT NOT NULL,
+                    packetid TEXT NOT NULL,
+                    publisher TEXT NOT NULL,
+                    device TEXT NOT NULL,
+                    host TEXT NOT NULL,
+                    numpacket TEXT NOT NULL,
+                    uuid TEXT NOT NULL,
+                    timestamp_packet TIMESTAMPTZ NOT NULL,
+                    data JSONB NOT NULL,
                     -- Primary Key must include the time column for partitioning
                     PRIMARY KEY (id, {time_column})
                 );
@@ -102,6 +111,70 @@ class RedvyprTimescaleDb:
             except Exception as e:
                 raise ConnectionError("Could not connect to the TimescaleDB instance.")
                 #print(f"❌ Error during Hypertable creation: {e}")
+
+        def create_hypertable_legacy(self, table_name: str = 'redvypr_packets',
+                                     time_column: str = 'timestamp'):
+            """
+            Creates the standard table and converts it into a TimescaleDB Hypertable.
+            """
+
+            # SQL statements for creation (CREATE) and conversion (create_hypertable)
+            sql_statements = [
+                # 1. Enable the TimescaleDB extension
+                "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;",
+
+                # 2. Create the standard table using TIMESTAMPTZ and JSONB
+                f"""
+                CREATE TABLE IF NOT EXISTS {table_name} (
+                    id SERIAL,
+                    {time_column} TIMESTAMPTZ NOT NULL,
+                    data JSONB NOT NULL,
+                    -- Primary Key must include the time column for partitioning
+                    PRIMARY KEY (id, {time_column})
+                );
+                """,
+
+                # 3. Convert to Hypertable, chunking by time_column (e.g., daily)
+                f"""
+                SELECT create_hypertable(
+                    '{table_name}', 
+                    by_range('{time_column}', INTERVAL '1 day'), 
+                    if_not_exists => TRUE
+                );
+                """
+            ]
+
+            try:
+                with self._get_connection() as conn:
+                    with conn.cursor() as cur:
+                        print(f"Starting creation of Hypertable '{table_name}'...")
+                        for statement in sql_statements:
+                            cur.execute(statement)
+                        conn.commit()
+                        print(
+                            f"✅ Hypertable '{table_name}' successfully created and configured.")
+            except Exception as e:
+                raise ConnectionError("Could not connect to the TimescaleDB instance.")
+                # print(f"❌ Error during Hypertable creation: {e}")
+
+        def create_metadata_table(self):
+            """Creates a metadata-table."""
+            sql = """
+            CREATE TABLE IF NOT EXISTS redvypr_metadata (
+                redvypr_address TEXT NOT NULL,
+                uuid TEXT NOT NULL,
+                metadata JSONB NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                PRIMARY KEY (redvypr_address, uuid)
+            );
+            """
+            try:
+                with self._get_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(sql)
+                    conn.commit()
+            except Exception as e:
+                print(f"❌ Error: {e}")
 
         def add_custom_column(self, table_name: str, column_name: str,
                               column_type: str = 'TEXT'):
@@ -138,42 +211,6 @@ class RedvyprTimescaleDb:
             except Exception as e:
                 print(f"❌ Error adding column '{column_name}': {e}")
 
-        # --- NEW METHOD TO ADD MISSING COLUMN ---
-        def add_custom_column_legacy(self, table_name: str = 'redvypr_packets',
-                              column_name: str = 'raddstr'):
-            """
-            Safely adds a missing column (raddstr) to the existing table using a DO block for idempotency.
-            """
-            # Note: The column is added as NULL-able to avoid issues with existing data.
-            alter_sql = f"""
-                DO $$
-                BEGIN
-                    -- Check if the column already exists in the information_schema
-                    IF NOT EXISTS (
-                        SELECT 1 
-                        FROM information_schema.columns 
-                        WHERE table_name = '{table_name}' AND column_name = '{column_name}'
-                    ) THEN
-                        -- If it does not exist, add the column as TEXT
-                        ALTER TABLE {table_name} ADD COLUMN {column_name} TEXT;
-                        RAISE NOTICE 'Column % was successfully added to table %.', '{column_name}', '{table_name}';
-                    ELSE
-                        RAISE NOTICE 'Column % already exists in table %.', '{column_name}', '{table_name}';
-                    END IF;
-                END
-                $$;
-            """
-            try:
-                with self._get_connection() as conn:
-                    with conn.cursor() as cur:
-                        print(
-                            f"Checking for and adding column '{column_name}' to '{table_name}'...")
-                        cur.execute(alter_sql)
-                        conn.commit()
-                        print("✅ Schema check/update complete.")
-            except Exception as e:
-                print(f"❌ Error adding column '{column_name}': {e}")
-        # ----------------------------------------
 
         def get_database_info(self, table_name: str = 'redvypr_packets') -> \
         Optional[Dict[str, Any]]:
@@ -234,8 +271,8 @@ class RedvyprTimescaleDb:
             #    VALUES (%s, %s, %s);
             #"""
             insert_sql = f"""
-               INSERT INTO {table_name} (timestamp, data, raddstr, host, publisher, device, packetid, numpacket, timestamp_packet)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+               INSERT INTO {table_name} (timestamp, data, redvypr_address, host, publisher, device, packetid, numpacket, timestamp_packet, uuid)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
             """
 
             # Convert the Python dictionary to a JSON string for the JSONB column
@@ -247,6 +284,7 @@ class RedvyprTimescaleDb:
                 raddr = RedvyprAddress(data_dict)
                 raddrstr = raddr.to_address_string()
                 host = raddr.hostname
+                uuid = raddr.uuid
                 device = raddr.device
                 packetid = raddr.packetid
                 publisher = raddr.publisher
@@ -260,7 +298,7 @@ class RedvyprTimescaleDb:
             try:
                 with self._get_connection() as conn:
                     with conn.cursor() as cur:
-                        data_insert = (timestamp_utc, json_data, raddrstr, host, publisher, device, packetid, numpacket, timestamp_packet_utc)
+                        data_insert = (timestamp_utc, json_data, raddrstr, host, publisher, device, packetid, numpacket, timestamp_packet_utc, uuid)
                         #print("data insert",data_insert)
                         #print("insert sql",insert_sql)
                         # Execute the INSERT command, passing parameters safely
@@ -268,6 +306,47 @@ class RedvyprTimescaleDb:
                         conn.commit()
             except Exception as e:
                 print(f"❌ Error inserting data: {e}")
+
+        def add_metadata(self, address: str, uuid: str, metadata_dict: dict,
+                         mode: str = "merge"):
+            """
+            Stores metadata for a specific address and UUID.
+
+            Args:
+                address (str): The Redvypr address.
+                uuid (str): The unique identifier for the configuration session.
+                metadata_dict (dict): Dictionary containing the metadata.
+                mode (str): 'merge' to combine with existing JSON, 'explicit' to overwrite.
+            """
+            if mode == "merge":
+                # Uses the PostgreSQL || operator to merge existing JSONB data with new data
+                sql = """
+                INSERT INTO redvypr_metadata (redvypr_address, uuid, metadata, created_at)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (redvypr_address, uuid) 
+                DO UPDATE SET 
+                    metadata = redvypr_metadata.metadata || EXCLUDED.metadata;
+                """
+            else:  # explicit mode
+                # Overwrites the existing JSONB data completely
+                sql = """
+                INSERT INTO redvypr_metadata (redvypr_address, uuid, metadata, created_at)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (redvypr_address, uuid) 
+                DO UPDATE SET 
+                    metadata = EXCLUDED.metadata;
+                """
+
+            try:
+                with self._get_connection() as conn:
+                    with conn.cursor() as cur:
+                        # Convert the dict to a safe JSON string
+                        json_data = json_safe_dumps(metadata_dict)
+                        cur.execute(sql, (address, uuid, json_data))
+                    conn.commit()
+                    # print(f"✅ Metadata for {address} (UUID: {uuid}) stored successfully.")
+            except Exception as e:
+                print(f"❌ Error adding metadata for {address}: {e}")
 
 
 

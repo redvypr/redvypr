@@ -171,11 +171,11 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         'devices_removed': devices_removed,'change':'devrem','device_changed':redvyprdata['device']}
                         infoqueue.put_nowait(devinfo_send)
                         # Send a deviceinfo update with the changed metadata
-                        compacket = data_packets.commandpacket('info', host=hostinfo, devicename='', packetid='device_removed',
+                        compacket = data_packets.commandpacket('info', host=hostinfo, devicename='distribute_data', packetid='device_removed',
                                                                publisher='')
                         compacket['deviceinfo_all'] = copy.deepcopy(deviceinfo_all)
                         compacket['devices_removed'] = devices_removed
-                        redvypr_packet_statistic.treat_datadict(compacket, '', hostinfo, 0, tread,
+                        redvypr_packet_statistic.treat_datadict(compacket, 'distribute_data', hostinfo, 0, tread,
                                                                 'distribute_data')
                         data_packets_fan_out.append(compacket)
 
@@ -291,7 +291,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                     # Update metadata
                     if status_statistics['metadata_changed']:
                         # Send a deviceinfo update with the changed metadata
-                        compacket = data_packets.commandpacket('info',host=hostinfo,devicename='',packetid='metadata',publisher='')
+                        compacket = data_packets.commandpacket('info',host=hostinfo, devicename='distribute_data', packetid='metadata')
                         compacket['deviceinfo_all'] = copy.deepcopy(deviceinfo_all)
                         redvypr_packet_statistic.treat_datadict(compacket, '', hostinfo, 0, tread,
                                                                 'distribute_data')
@@ -1308,11 +1308,11 @@ class Redvypr(QtCore.QObject):
 
         return results
 
-    def get_metadata_commandpacket(self):
+    def get_metadata_commandpacket(self, device=''):
         funcname = __name__ + 'get_metadata_commandpacket():'
         logger.debug(funcname)
         deviceinfo_all = self.get_deviceinfo()
-        compacket = data_packets.commandpacket('info', host=self.hostinfo, devicename='', packetid='metadata', publisher='')
+        compacket = data_packets.commandpacket('info', host=self.hostinfo, devicename=device, packetid='metadata')
         compacket['deviceinfo_all'] = copy.deepcopy(deviceinfo_all)
         tread = time.time()
         redvypr_packet_statistic.treat_datadict(compacket, '', self.hostinfo, 0, tread,
