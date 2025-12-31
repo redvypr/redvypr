@@ -20,13 +20,13 @@ from redvypr.data_packets import Datapacket
 from .timescaledb import RedvyprTimescaleDb
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.device.db.db_device')
+logger = logging.getLogger('redvypr.device.db.db_writer')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
 
 class DeviceBaseConfig(pydantic.BaseModel):
-    publishes: bool = True
+    publishes: bool = False
     subscribes: bool = True
     description: str = 'Writes data into a database'
     gui_tablabel_display: str = 'database status'
@@ -45,7 +45,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
     """
     funcname = __name__ + '.start()'
-    logger_thread = logging.getLogger('redvypr.device.db_device.start')
+    logger_thread = logging.getLogger('redvypr.device.db_writer.start')
     logger_thread.setLevel(logging.DEBUG)
     logger_thread.debug(funcname)
     dt_update = 1  # Update interval in seconds
@@ -369,7 +369,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             except:
                 logger.info("Could not update data",exc_info=True)
 
-
+    # This is bad style, needs to be changed to thread_started signal and continous update of configuration
     def start_clicked(self):
         self.device.custom_config = self.db_config_widget.get_config()
         self.statustimer_db.start(500)

@@ -112,51 +112,6 @@ class RedvyprTimescaleDb:
                 raise ConnectionError("Could not connect to the TimescaleDB instance.")
                 #print(f"❌ Error during Hypertable creation: {e}")
 
-        def create_hypertable_legacy(self, table_name: str = 'redvypr_packets',
-                                     time_column: str = 'timestamp'):
-            """
-            Creates the standard table and converts it into a TimescaleDB Hypertable.
-            """
-
-            # SQL statements for creation (CREATE) and conversion (create_hypertable)
-            sql_statements = [
-                # 1. Enable the TimescaleDB extension
-                "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;",
-
-                # 2. Create the standard table using TIMESTAMPTZ and JSONB
-                f"""
-                CREATE TABLE IF NOT EXISTS {table_name} (
-                    id SERIAL,
-                    {time_column} TIMESTAMPTZ NOT NULL,
-                    data JSONB NOT NULL,
-                    -- Primary Key must include the time column for partitioning
-                    PRIMARY KEY (id, {time_column})
-                );
-                """,
-
-                # 3. Convert to Hypertable, chunking by time_column (e.g., daily)
-                f"""
-                SELECT create_hypertable(
-                    '{table_name}', 
-                    by_range('{time_column}', INTERVAL '1 day'), 
-                    if_not_exists => TRUE
-                );
-                """
-            ]
-
-            try:
-                with self._get_connection() as conn:
-                    with conn.cursor() as cur:
-                        print(f"Starting creation of Hypertable '{table_name}'...")
-                        for statement in sql_statements:
-                            cur.execute(statement)
-                        conn.commit()
-                        print(
-                            f"✅ Hypertable '{table_name}' successfully created and configured.")
-            except Exception as e:
-                raise ConnectionError("Could not connect to the TimescaleDB instance.")
-                # print(f"❌ Error during Hypertable creation: {e}")
-
         def create_metadata_table(self):
             """Creates a metadata-table."""
             sql = """
@@ -347,6 +302,103 @@ class RedvyprTimescaleDb:
                     # print(f"✅ Metadata for {address} (UUID: {uuid}) stored successfully.")
             except Exception as e:
                 print(f"❌ Error adding metadata for {address}: {e}")
+
+        def get_metadata(self, address: str, uuid: str = None):
+            """
+            Retrieves metadata for a specific address and optionally a specific UUID.
+
+            Args:
+                address (str): The Redvypr address.
+                uuid (str, optional): The unique identifier. If None, the most recent entry
+                                      for the address is returned based on created_at.
+
+            Returns:
+                dict: The metadata dictionary, or None if no entry was found.
+            """
+            # Determine the correct placeholder for the SQL query
+            placeholder = "?" if self.db_type == "sqlite" else "%s"
+
+            if uuid:
+                # Fetch a specific configuration session
+                sql = f"""
+                SELECT metadata FROM redvypr_metadata 
+                WHERE redvypr_address = {placeholder} AND uuid = {placeholder}
+                """
+                params = (address, uuid)
+            else:
+                # Fallback: Fetch the latest known metadata for this address
+                sql = f"""
+                SELECT metadata FROM redvypr_metadata 
+                WHERE redvypr_address = {placeholder} 
+                ORDER BY created_at DESC LIMIT 1
+                """
+                params = (address,)
+
+            try:
+                with self._get_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(sql, params)
+                        row = cur.fetchone()
+
+                        if row:
+                            raw_data = row[0]
+                            # If the DB returns a string (SQLite), parse it into a dict
+                            if isinstance(raw_data, str):
+                                import json
+                                return json.loads(raw_data)
+                            # PostgreSQL/psycopg2 usually returns a dict directly for JSONB
+                            return raw_data
+
+                        return None
+            except Exception as e:
+                print(f"❌ Error retrieving metadata for {address}: {e}")
+                return None
+
+        def get_packets_range(self, start_index: int, count: int):
+            """
+            Returns a list of packets starting from start_index.
+
+            Example:
+                get_packets_range(0, 10) -> returns the first 10 packets.
+                get_packets_range(20, 5) -> returns packets 21 to 25.
+
+            Args:
+                start_index (int): The 0-based offset (e.g., 0 for the very first packet).
+                count (int): How many packets to retrieve.
+
+            Returns:
+                list[dict]: A list of dictionaries, each structured as follows:
+                {
+                     "id": int,              # The primary key/sequence ID
+                     "timestamp": datetime,   # TIMESTAMPTZ object from DB
+                     "data": dict            # The JSONB payload as a Python dictionary
+                }
+                Returns an empty list if no packets are found or an error occurs.
+            """
+            sql = """
+                SELECT id, timestamp, data
+                FROM redvypr_packets
+                ORDER BY id ASC
+                LIMIT %s OFFSET %s
+            """
+
+            try:
+                with self._get_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(sql, (count, start_index))
+                        rows = cur.fetchall()
+
+                        packets = []
+                        for row in rows:
+                            packets.append({
+                                "id": row[0],
+                                "timestamp": row[1],
+                                "data": row[2]  # JSONB is already a dict
+                            })
+                        return packets
+            except Exception as e:
+                print(f"❌ Error retrieving packet range: {e}")
+                return []
 
 
 
