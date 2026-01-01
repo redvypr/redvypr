@@ -300,141 +300,31 @@ class DBQueryDialog(QtWidgets.QDialog):
                     item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
                 table.setItem(row_idx, col_idx, item)
 
+        #table.resizeColumnsToContents()
+        #table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        # 1. Disable the forced stretch on the header to allow horizontal overflow
+        header = table.horizontalHeader()
+        header.setStretchLastSection(False)
+
+        # 2. Initially resize columns to fit the data we just loaded
         table.resizeColumnsToContents()
-        table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
 
-class DBQueryDialog_legacy(QtWidgets.QDialog):
-    """
-    A dialog that fetches and displays a summary of unique data combinations
-    from the database, including packet counts and time ranges.
-    """
+        # 2. CAP the first column (Address) if it exceeds a reasonable limit
+        # Adjust 300 to your preferred maximum width in pixels
+        if table.columnWidth(0) > 300:
+            table.setColumnWidth(0, 300)
 
-    def __init__(self, db_instance, parent=None):
-        super().__init__(parent)
-        self.db = db_instance
-        self.setWindowTitle("Database Inventory Browser")
-        self.resize(1000, 600)
+        # 3. Set all columns to 'Interactive' so the user can resize them manually
+        for i in range(table.columnCount()):
+            header.setSectionResizeMode(i, QtWidgets.QHeaderView.Interactive)
 
-        self.setup_ui()
-        # Initial data load
-        self.refresh_data()
+        # 4. Ensure the horizontal scrollbar is enabled
+        table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
 
-    def setup_ui(self):
-        """Creates the table and control layout."""
-        layout = QtWidgets.QVBoxLayout(self)
-
-        # --- Top Toolbar ---
-        toolbar = QtWidgets.QHBoxLayout()
-
-        self.info_label = QtWidgets.QLabel(
-            "Showing unique data streams found in the database:")
-        self.info_label.setStyleSheet("font-weight: bold; color: #2D3748;")
-        toolbar.addWidget(self.info_label)
-
-        toolbar.addStretch()
-
-        # Refresh Button
-        self.refresh_button = QtWidgets.QPushButton(" Refresh")
-        self.refresh_button.setIcon(qtawesome.icon('fa5s.sync-alt'))
-        self.refresh_button.clicked.connect(self.refresh_data)
-        toolbar.addWidget(self.refresh_button)
-
-        layout.addLayout(toolbar)
-
-        # --- Table Widget ---
-        self.table = QtWidgets.QTableWidget()
-        self.headers = [
-            "Address", "Packet ID", "Device",
-            "Host", "Count", "First Seen", "Last Seen"
-        ]
-        self.table.setColumnCount(len(self.headers))
-        self.table.setHorizontalHeaderLabels(self.headers)
-
-        # UI Polish: Stretch headers to fill space
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
-        header.setSectionResizeMode(0,
-                                    QtWidgets.QHeaderView.Stretch)  # Address gets most space
-
-        # Alternating row colors for readability
-        self.table.setAlternatingRowColors(True)
-        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-
-        layout.addWidget(self.table)
-
-        # --- Footer ---
-        footer = QtWidgets.QHBoxLayout()
-        self.status_label = QtWidgets.QLabel("Status: Ready")
-        footer.addWidget(self.status_label)
-
-        footer.addStretch()
-
-        close_btn = QtWidgets.QPushButton("Close")
-        close_btn.setFixedWidth(100)
-        close_btn.clicked.connect(self.accept)
-        footer.addWidget(close_btn)
-
-        layout.addLayout(footer)
-
-    def refresh_data(self):
-        """Fetches data from the DB using a context manager and updates the table."""
-        self.status_label.setText("Fetching data...")
-        self.status_label.setStyleSheet("color: #3182CE;")
-        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-
-        keys = ["redvypr_address", "packetid", "device", "host"]
-
-        try:
-            # We open the connection specifically for the query
-            with self.db as connected_db:
-                stats = connected_db.get_unique_combination_stats(keys=keys)
-
-            self.update_table_content(stats)
-            self.status_label.setText(f"Success: Found {len(stats)} unique streams.")
-            self.status_label.setStyleSheet("color: #38A169;")
-
-        except Exception as e:
-            logger.error(f"Failed to refresh DB dialog: {e}")
-            self.status_label.setText("Error: Could not connect to database.")
-            self.status_label.setStyleSheet("color: #E53E3E;")
-            QtWidgets.QMessageBox.critical(self, "Database Error",
-                                           f"Failed to fetch inventory:\n{str(e)}")
-
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
-
-    def update_table_content(self, stats: List[Dict[str, Any]]):
-        """Populates the QTableWidget with the returned statistical data."""
-        self.table.setRowCount(0)  # Clear existing
-        self.table.setRowCount(len(stats))
-
-        for row_idx, entry in enumerate(stats):
-            # Map dictionary keys to column indices
-            display_values = [
-                entry.get('redvypr_address', '-'),
-                entry.get('packetid', '-'),
-                entry.get('device', '-'),
-                entry.get('host', '-'),
-                str(entry.get('count', 0)),
-                entry.get('first_seen', 'N/A'),
-                entry.get('last_seen', 'N/A')
-            ]
-
-            for col_idx, value in enumerate(display_values):
-                item = QtWidgets.QTableWidgetItem(value)
-
-                # Right-align the 'Count' column
-                if col_idx == 4:
-                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-
-                self.table.setItem(row_idx, col_idx, item)
-
-        # Resize columns to content after filling
-        self.table.resizeColumnsToContents()
-        # Ensure address still stretches
-        self.table.horizontalHeader().setSectionResizeMode(0,
-                                                           QtWidgets.QHeaderView.Stretch)
+        # Optional: Add a bit of padding to the columns for better readability
+        for i in range(table.columnCount()):
+            current_width = table.columnWidth(i)
+            table.setColumnWidth(i, current_width + 20)
 
 
 class DBConfigWidget(QtWidgets.QWidget):

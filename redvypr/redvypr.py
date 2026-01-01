@@ -112,8 +112,8 @@ def create_hostinfo(hostname='redvypr'):
     funcname = __name__ + '.create_hostinfo()'
     logger.debug(funcname)
     randstr = '{:03d}'.format(random.randrange(2 ** 8))
-    #redvyprid = datetime.datetime.now().strftime('%Y%m%d%H%M%S.%f-') + str(uuid.getnode()) + '-' + randstr
-    redvyprid = str(uuid.getnode()) + '-' + randstr
+    redvyprid = str(uuid.getnode()) + '-' + datetime.datetime.now().strftime('%Y%m%d%H%M%S.%f') + '-' + randstr
+    #redvyprid = str(uuid.getnode()) + '-' + randstr
     hostinfo = {'hostname': hostname, 'tstart': time.time(), 'addr': get_ip(), 'uuid': redvyprid}
     return hostinfo
 
