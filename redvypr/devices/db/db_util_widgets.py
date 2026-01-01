@@ -1,0 +1,501 @@
+import typing
+
+import pydantic
+import qtawesome
+from PyQt6 import QtWidgets, QtCore, QtGui
+from qtpy import QtWidgets
+from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, TimescaleConfig, SqliteConfig
+
+
+class TimescaleDbConfigWidget(QtWidgets.QWidget):
+    """
+    A dedicated widget for configuring and testing
+    database connection settings based on a Pydantic model.
+    """
+
+    def __init__(self, initial_config: TimescaleConfig, parent=None):
+        super().__init__(parent)
+        self.initial_config = initial_config
+        self.input_fields: typing.Dict[str, QtWidgets.QLineEdit] = {}
+        self.setup_ui()
+
+    def setup_ui(self):
+        """Creates a form layout for the DB fields and adds the Test button/label."""
+
+        # Main layout for the entire widget (Vertical arrangement)
+        main_layout = QtWidgets.QVBoxLayout(self)
+
+        # 1. Form for input fields
+        form_layout = QtWidgets.QFormLayout()
+        form_layout.setLabelAlignment(QtCore.Qt.AlignLeft)
+
+        db_fields = ['dbname', 'user', 'password', 'host', 'port']
+
+        for field_name in db_fields:
+            field_value = getattr(self.initial_config, field_name)
+            line_edit = QtWidgets.QLineEdit(str(field_value))
+
+            if field_name == 'password':
+                # --- NEW: Password field with toggle button ---
+                line_edit.setEchoMode(QtWidgets.QLineEdit.Password)
+
+                # Container for password field and button
+                password_container = QtWidgets.QWidget()
+                h_layout = QtWidgets.QHBoxLayout(password_container)
+                h_layout.setContentsMargins(0, 0, 0, 0)
+                h_layout.addWidget(line_edit)
+
+                show_button = QtWidgets.QPushButton("Show")
+                show_button.setCheckable(True)
+                show_button.setToolTip("Toggle password visibility")
+                # Connect the button's checked state to the toggle function
+                show_button.clicked.connect(
+                    lambda checked, le=line_edit: self.toggle_password_visibility(le,
+                                                                                  checked))
+                h_layout.addWidget(show_button)
+
+                self.input_fields[field_name] = line_edit
+                form_layout.addRow(f"{field_name.capitalize()}:", password_container)
+
+            elif field_name == 'port':
+                # Use QIntValidator from QtGui
+                line_edit.setValidator(QtGui.QIntValidator(1, 65535, self))
+                self.input_fields[field_name] = line_edit
+                form_layout.addRow(f"{field_name.capitalize()}:", line_edit)
+            else:
+                self.input_fields[field_name] = line_edit
+                form_layout.addRow(f"{field_name.capitalize()}:", line_edit)
+
+        main_layout.addLayout(form_layout)
+
+        # 2. Test/Query Buttons
+        self.test_button = QtWidgets.QPushButton("Test DB Connection")
+        # Placeholder icon from qtawesome stub
+        icon = qtawesome.icon('mdi6.database-outline')
+        self.test_button.setIcon(icon)
+        self.query_button = QtWidgets.QPushButton("Query DB")
+        icon = qtawesome.icon('mdi6.database-search-outline')
+        self.query_button.setIcon(icon)
+        self.button_layout = QtWidgets.QHBoxLayout()
+        self.button_layout.addWidget(self.test_button)
+        self.button_layout.addWidget(self.query_button)
+
+        self.test_button.clicked.connect(self.test_connection_clicked)
+        self.query_button.clicked.connect(self.query_db_clicked)
+        main_layout.addLayout(self.button_layout)
+
+
+    def toggle_password_visibility(self, line_edit: QtWidgets.QLineEdit, checked: bool):
+        """Toggles the echo mode of the password field based on the button state."""
+        if checked:
+            line_edit.setEchoMode(QtWidgets.QLineEdit.Normal)
+        else:
+            line_edit.setEchoMode(QtWidgets.QLineEdit.Password)
+
+    def get_config(self) -> TimescaleConfig:
+        """
+        Retrieves current values from QLineEdits and creates a new
+        TimescaleConfig instance, ensuring proper type conversion.
+        """
+
+        # 1. Start with base configuration data (incl. default values for unexposed fields)
+        config_data = self.initial_config.model_dump()
+
+        # 2. Overwrite exposed DB fields with current UI values
+        for field_name, line_edit in self.input_fields.items():
+            value = line_edit.text()
+
+            # Type conversion back to Pydantic model
+            if field_name == 'port':
+                try:
+                    config_data[field_name] = int(value)
+                except ValueError:
+                    # Fallback to default value on invalid input
+                    config_data[field_name] = self.initial_config.port
+            else:
+                config_data[field_name] = value
+
+        # 3. Create and validate the new Pydantic instance
+        try:
+            return TimescaleConfig(**config_data)
+        except pydantic.ValidationError as e:
+            print(f"Configuration Validation Error: {e}")
+            return self.initial_config
+
+    def query_db_clicked(self):
+        config = self.get_config()
+        db = RedvyprTimescaleDb(dbname=config.dbname,
+                                user=config.user,
+                                password=config.password,
+                                host=config.host,
+                                port=config.port)
+
+        self.query_widdget = DBQueryDialog(db_instance=db)
+        self.query_widdget.show()
+
+    def test_connection_clicked(self):
+        # pconfig is an instance of TimescaleConfig
+        pconfig = self.get_config()
+
+        try:
+            # Factory: Select class based on Pydantic model 'dbtype'
+            print("pconfig",pconfig)
+            if pconfig.dbtype == "timescaledb":
+                db_class = RedvyprTimescaleDb
+            elif pconfig.dbtype == "sqlite":  # For future expansion
+                #db_class = RedvyprSqliteDb
+                pass
+            else:
+                raise ValueError(f"Unsupported database type: {pconfig.dbtype}")
+
+            # Instantiate the correct class
+            db = db_class(
+                dbname=pconfig.dbname,
+                user=pconfig.user,
+                password=pconfig.password,
+                host=pconfig.host,
+                port=pconfig.port
+            )
+
+            # Pass the DB instance to the Dialog.
+            # The dialog will handle 'with db:' internally to keep it alive.
+            diag = DBStatusDialog(db, self)
+            diag.exec_()
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Connection Error",
+                                           f"Failed: {str(e)}")
+
+
+
+class DBStatusDialog(QtWidgets.QDialog):
+    """
+    A Database Status and Management Dialog.
+    Allows users to verify connection health and manually initialize the schema.
+    """
+
+    def __init__(self, db_instance, parent=None):
+        super().__init__(parent)
+        self.db = db_instance
+
+        # Default state ensures dictionary is always subscriptable
+        self.status = {
+            'engine': 'Unknown',
+            'connected': False,
+            'tables_exist': False,
+            'can_write': False,
+            'is_timescale': False
+        }
+
+        # Step 1: Perform observational checks
+        self.refresh_db_status()
+
+        # Step 2: Configure Dialog window
+        self.setWindowTitle(f"Database Status: {self.status.get('engine')}")
+        self.setMinimumWidth(480)
+        self.setup_ui()
+
+    def refresh_db_status(self):
+        """
+        Connects to the database to identify engine type and health parameters.
+        No structural changes (schema) are made here.
+        """
+        try:
+            with self.db:
+                # Discovers engine type and SQL placeholders
+                self.db.identify_and_setup()
+
+                # Queries system tables (information_schema) to check health
+                health = self.db.check_health()
+                if isinstance(health, dict):
+                    self.status.update(health)
+                    self.status['connected'] = True
+        except Exception as e:
+            self.status['connected'] = False
+            self.status['error'] = str(e)
+            self.status['engine'] = "Discovery Failed"
+
+    def setup_ui(self):
+        """Creates a modern, icon-driven interface."""
+        # Clean up existing layout if this is a refresh
+        if self.layout():
+            QtWidgets.QWidget().setLayout(self.layout())
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(25, 25, 25, 25)
+        layout.setSpacing(18)
+
+        # --- Section 1: Header ---
+        header_layout = QtWidgets.QHBoxLayout()
+        is_connected = self.status.get('connected', False)
+
+        # Large status icon
+        main_icon = 'mdi6.database-check' if is_connected else 'mdi6.database-off'
+        icon_color = "#38A169" if is_connected else "#E53E3E"
+
+        icon_lbl = QtWidgets.QLabel()
+        icon_lbl.setPixmap(qtawesome.icon(main_icon, color=icon_color).pixmap(54, 54))
+
+        title_vbox = QtWidgets.QVBoxLayout()
+        title_lbl = QtWidgets.QLabel(
+            f"<span style='font-size: 18px; font-weight: bold;'>{self.status.get('engine')}</span>")
+        subtitle = "TimescaleDB Optimized" if self.status.get(
+            'is_timescale') else "Standard SQL Engine"
+        subtitle_lbl = QtWidgets.QLabel(subtitle)
+        subtitle_lbl.setStyleSheet("color: #718096;")
+
+        title_vbox.addWidget(title_lbl)
+        title_vbox.addWidget(subtitle_lbl)
+
+        header_layout.addWidget(icon_lbl)
+        header_layout.addLayout(title_vbox)
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+
+        # Horizontal separator
+        line = QtWidgets.QFrame()
+        line.setFrameShape(QtWidgets.QFrame.HLine)
+        line.setStyleSheet("background-color: #E2E8F0;")
+        layout.addWidget(line)
+
+        # --- Section 2: Error Feedback ---
+        error_msg = self.status.get('error')
+        if error_msg:
+            err_panel = QtWidgets.QLabel(f"<b>Connection Error:</b><br>{error_msg}")
+            err_panel.setWordWrap(True)
+            err_panel.setStyleSheet("""
+                background-color: #FFF5F5; color: #C53030; padding: 12px; 
+                border: 1px solid #FEB2B2; border-radius: 6px; font-family: monospace;
+            """)
+            layout.addWidget(err_panel)
+
+        # --- Section 3: Status Grid ---
+        grid = QtWidgets.QGridLayout()
+        grid.setVerticalSpacing(14)
+        grid.setColumnStretch(1, 1)
+
+        def add_status_row(row, label, key, icon_name):
+            active = self.status.get(key, False)
+            color = "#38A169" if active else "#E53E3E"
+
+            ico = QtWidgets.QLabel()
+            ico.setPixmap(qtawesome.icon(icon_name, color=color).pixmap(22, 22))
+
+            txt_label = QtWidgets.QLabel(f"<b>{label}</b>")
+
+            status_text = "Verified / Ready" if active else "Missing / Denied"
+            val_lbl = QtWidgets.QLabel(status_text)
+            val_lbl.setStyleSheet(f"color: {color}; font-weight: bold;")
+
+            grid.addWidget(ico, row, 0)
+            grid.addWidget(txt_label, row, 1)
+            grid.addWidget(val_lbl, row, 2)
+
+        add_status_row(0, "Network Link", "connected", 'fa5s.network-wired')
+        add_status_row(1, "Tables (Schema)", "tables_exist", 'fa5s.table')
+        add_status_row(2, "Write Access", "can_write", 'fa5s.file-signature')
+
+        layout.addLayout(grid)
+        layout.addSpacing(10)
+
+        # --- Section 4: Action Button ---
+        self.init_btn = QtWidgets.QPushButton(" Initialize Database Schema")
+        self.init_btn.setIcon(qtawesome.icon('fa5s.magic'))
+        self.init_btn.setFixedHeight(42)
+
+        # User Choice Logic: Enable only if tables are missing and write is allowed
+        missing_tables = not self.status.get('tables_exist', False)
+        can_write = self.status.get('can_write', False)
+
+        if is_connected and missing_tables and can_write:
+            self.init_btn.setEnabled(True)
+            self.init_btn.setStyleSheet("""
+                QPushButton { background-color: #3182CE; color: white; border-radius: 6px; font-weight: bold; }
+                QPushButton:hover { background-color: #2B6CB0; }
+            """)
+        else:
+            self.init_btn.setEnabled(False)
+            self.init_btn.setToolTip(
+                "Initialization unavailable: Connection issues, tables already exist, or read-only access.")
+
+        self.init_btn.clicked.connect(self.run_manual_init)
+        layout.addWidget(self.init_btn)
+
+        # --- Section 5: Dialog Controls ---
+        btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
+    def run_manual_init(self):
+        """Executes the setup_schema script upon explicit user confirmation."""
+        msg = ("Do you want to create the database tables and metadata schema now?\n\n"
+               "This will execute the 'setup_schema' script on the target server.")
+
+        choice = QtWidgets.QMessageBox.question(
+            self, "Confirm Schema Setup", msg,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if choice == QtWidgets.QMessageBox.Yes:
+            try:
+                # Explicitly call the write operation
+                with self.db:
+                    self.db.setup_schema()
+
+                QtWidgets.QMessageBox.information(self, "Success",
+                                                  "Database schema initialized successfully.")
+
+                # Refresh data and UI to show the new green state
+                self.refresh_db_status()
+                self.setup_ui()
+
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Setup Failed",
+                                               f"Could not initialize schema:\n{str(e)}")
+
+
+class DBQueryDialog(QtWidgets.QDialog):
+    """
+    Dialog to browse both Packet and Metadata inventory using Tabs.
+    """
+
+    def __init__(self, db_instance, parent=None):
+        super().__init__(parent)
+        self.db = db_instance
+        self.setWindowTitle("Database Inventory Browser")
+        self.resize(1100, 700)
+
+        self.setup_ui()
+        self.refresh_data()
+
+    def setup_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # --- Header with Refresh ---
+        header = QtWidgets.QHBoxLayout()
+        header.addWidget(QtWidgets.QLabel("Database Inventory Overview"))
+        header.addStretch()
+
+        self.refresh_button = QtWidgets.QPushButton(" Refresh All")
+        self.refresh_button.setIcon(qtawesome.icon('fa5s.sync-alt'))
+        self.refresh_button.clicked.connect(self.refresh_data)
+        header.addWidget(self.refresh_button)
+        layout.addLayout(header)
+
+        # --- Tabs ---
+        self.tabs = QtWidgets.QTabWidget()
+
+        # Tab 1: Packets
+        self.packet_table = self._create_table_widget()
+        self.tabs.addTab(self.packet_table, qtawesome.icon('fa5s.box'), "Packets")
+
+        # Tab 2: Metadata
+        self.meta_table = self._create_table_widget()
+        self.tabs.addTab(self.meta_table, qtawesome.icon('fa5s.info-circle'),
+                         "Metadata")
+
+        layout.addWidget(self.tabs)
+
+        # --- Footer ---
+        footer = QtWidgets.QHBoxLayout()
+        self.status_label = QtWidgets.QLabel("Ready")
+        footer.addWidget(self.status_label)
+        footer.addStretch()
+
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        footer.addWidget(close_btn)
+        layout.addLayout(footer)
+
+    def _create_table_widget(self) -> QtWidgets.QTableWidget:
+        """Helper to create a standardized table."""
+        table = QtWidgets.QTableWidget()
+        headers = ["Address", "Packet ID / UUID", "Device", "Host", "Count",
+                   "First Seen", "Last Seen"]
+        table.setColumnCount(len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        return table
+
+    def refresh_data(self):
+        """Fetches data for both tables."""
+        self.status_label.setText("Fetching data...")
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+
+        try:
+            with self.db as connected_db:
+                # 1. Fetch Packet Stats
+                packet_stats = connected_db.get_unique_combination_stats(
+                    keys=["redvypr_address", "packetid", "device", "host"]
+                )
+
+                # 2. Fetch Metadata Stats (using the new info method)
+                # We use uuid instead of packetid here for the second column
+                meta_stats = connected_db.get_metadata_info(
+                    keys=["redvypr_address", "uuid", "device", "host"]
+                )
+
+            self._fill_table(self.packet_table, packet_stats, "packetid")
+            self._fill_table(self.meta_table, meta_stats, "uuid")
+
+            self.status_label.setText(
+                f"Updated: {len(packet_stats)} packet streams, {len(meta_stats)} metadata entries.")
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error", f"Fetch failed: {e}")
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+    def _fill_table(self, table: QtWidgets.QTableWidget, stats: list, id_key: str):
+        """Generic logic to fill a table with stats."""
+        table.setRowCount(0)
+        table.setRowCount(len(stats))
+
+        for row_idx, entry in enumerate(stats):
+            # We map the dictionary keys to the columns
+            items = [
+                entry.get('redvypr_address', '-'),
+                entry.get(id_key, '-'),  # Either packetid or uuid
+                entry.get('device', '-'),
+                entry.get('host', '-'),
+                str(entry.get('count', 0)),
+                entry.get('first_seen', 'N/A'),
+                entry.get('last_seen', 'N/A')
+            ]
+
+            for col_idx, text in enumerate(items):
+                item = QtWidgets.QTableWidgetItem(text)
+                if col_idx == 4:  # Count column right-aligned
+                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                table.setItem(row_idx, col_idx, item)
+
+        #table.resizeColumnsToContents()
+        #table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        # 1. Disable the forced stretch on the header to allow horizontal overflow
+        header = table.horizontalHeader()
+        header.setStretchLastSection(False)
+
+        # 2. Initially resize columns to fit the data we just loaded
+        table.resizeColumnsToContents()
+
+        # 2. CAP the first column (Address) if it exceeds a reasonable limit
+        # Adjust 300 to your preferred maximum width in pixels
+        if table.columnWidth(0) > 300:
+            table.setColumnWidth(0, 300)
+
+        # 3. Set all columns to 'Interactive' so the user can resize them manually
+        for i in range(table.columnCount()):
+            header.setSectionResizeMode(i, QtWidgets.QHeaderView.Interactive)
+
+        # 4. Ensure the horizontal scrollbar is enabled
+        table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+
+        # Optional: Add a bit of padding to the columns for better readability
+        for i in range(table.columnCount()):
+            current_width = table.columnWidth(i)
+            table.setColumnWidth(i, current_width + 20)
+
+

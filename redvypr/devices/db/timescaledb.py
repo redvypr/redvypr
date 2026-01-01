@@ -3,6 +3,8 @@ import os
 import sqlite3
 import logging
 import sys
+import pydantic
+import typing
 from datetime import datetime, timezone
 import psycopg
 from abc import ABC, abstractmethod
@@ -36,6 +38,23 @@ from typing import Any, Dict, List, Optional, Iterator
 # --- Setup Logging ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("RedvyprDB")
+
+
+
+class TimescaleConfig(pydantic.BaseModel):
+    dbtype: typing.Literal["timescaledb"] = "timescaledb"
+    dbname: str = "postgres"
+    user: str = "postgres"
+    password: str = "password"
+    host: str = "pi5server1"
+    port: int = 5433
+
+class SqliteConfig(pydantic.BaseModel):
+    dbtype: typing.Literal["sqlite"] = "sqlite"
+    filepath: str = "data.db"
+
+# Das 'Union' erlaubt entweder das eine oder das andere Modell
+DatabaseConfig = typing.Union[TimescaleConfig, SqliteConfig]
 
 
 class AbstractDatabase(ABC):
@@ -98,8 +117,9 @@ class AbstractDatabase(ABC):
         pass
 
     @abstractmethod
-    def get_packets_range(self, start_index: int, count: int) -> List[Dict[str, Any]]:
-        """Returns a list of packets for a given range."""
+    def get_packets_range(self, start_index: int, count: int,
+                          filters: List[Dict[str, str]] = None,
+                          time_range: Dict[str, Any] = None) -> List[Dict]:
         pass
 
     @abstractmethod
@@ -278,6 +298,58 @@ class AbstractDatabase(ABC):
             table_name='redvypr_metadata',
             time_col='created_at'
         )
+
+    @abstractmethod
+    def get_packet_count(self,
+                         filters: Optional[List[Dict[str, str]]] = None,
+                         time_range: Optional[Dict[str, Any]] = None,
+                         table_name: str = 'redvypr_packets') -> int:
+        """
+        Calculates the total number of records matching specific criteria.
+
+        This method is essential for initializing progress bars, determining loop
+        boundaries for paginated data retrieval, and performing high-level
+        database audits without fetching actual data payloads.
+
+        :param filters: A list of dictionaries representing filter groups.
+            Each dictionary in the list is treated as an **AND** group, while the
+            list itself combines these groups via **OR**.
+            Example: ``[{"host": "A"}, {"device": "B"}]`` translates to
+            *(host == 'A' OR device == 'B')*.
+        :type filters: List[Dict[str, str]], optional
+
+        :param time_range: A dictionary defining the temporal boundaries.
+            Expected keys are ``tstart`` and ``tend``, containing
+            ``datetime.datetime`` objects.
+        :type time_range: Dict[str, Any], optional
+
+        :param table_name: The name of the database table to query.
+            Defaults to 'redvypr_packets'.
+        :type table_name: str
+
+        :return: The total count of matching records.
+        :rtype: int
+
+        .. rubric:: Example
+
+        .. code-block:: python
+
+            # Count all 'telemetry' packets from a specific host in a time window
+            filters = [{"host": "gate_01", "packetid": "telemetry"}]
+            time_range = {
+                "tstart": datetime(2025, 1, 1, tzinfo=timezone.utc),
+                "tend": datetime(2025, 1, 2, tzinfo=timezone.utc)
+            }
+
+            total = db.get_packet_count(filters=filters, time_range=time_range)
+            print(f"Found {total} matching packets.")
+
+        .. note::
+            For SQL-based implementations, this method should utilize optimized
+            ``COUNT(*)`` queries and leverage database indexes on the
+            filtered columns to ensure high performance even with large datasets.
+        """
+        pass
 
 
 
@@ -466,7 +538,58 @@ class RedvyprTimescaleDb(AbstractDatabase):
         except Exception as e:
             logger.error(f"❌ Metadata storage failed: {e}")
 
-    def get_packets_range(self, start_index: int, count: int) -> List[Dict]:
+    def get_packets_range(self, start_index: int, count: int,
+                          filters: List[Dict[str, str]] = None,
+                          time_range: Dict[str, Any] = None) -> List[Dict]:
+
+        where_clauses = []
+        params = []
+
+        # 1. Zeitfenster (tstart, tend)
+        if time_range:
+            if "tstart" in time_range:
+                where_clauses.append(f"timestamp >= {self.placeholder}")
+                params.append(time_range["tstart"])
+            if "tend" in time_range:
+                where_clauses.append(f"timestamp <= {self.placeholder}")
+                params.append(time_range["tend"])
+
+        # 2. Kombinations-Filter (Liste von Dicts)
+        if filters:
+            sub_clauses = []
+            for group in filters:
+                # Erstellt für jedes Dict eine AND-Kette: (host='A' AND device='B')
+                group_conditions = []
+                for key, value in group.items():
+                    group_conditions.append(f"{key} = {self.placeholder}")
+                    params.append(value)
+                sub_clauses.append(f"({' AND '.join(group_conditions)})")
+
+            # Verbindet die Gruppen mit OR
+            where_clauses.append(f"({' OR '.join(sub_clauses)})")
+
+        where_stmt = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        # Das eigentliche SQL
+        sql = f"""
+            SELECT id, timestamp, data 
+            FROM redvypr_packets 
+            {where_stmt} 
+            ORDER BY timestamp ASC 
+            LIMIT {self.placeholder} OFFSET {self.placeholder}
+        """
+
+        params.extend([count, start_index])
+
+        try:
+            with self._connection.cursor() as cur:
+                cur.execute(sql, params)
+                return [{"id": r[0], "timestamp": r[1], "data": r[2]} for r in
+                        cur.fetchall()]
+        except Exception as e:
+            logger.error(f"❌ Filtered range retrieval failed: {e}")
+            return []
+    def get_packets_range_legacy(self, start_index: int, count: int) -> List[Dict]:
         """Returns a list of packet dictionaries."""
         sql = f"SELECT id, timestamp, data FROM redvypr_packets ORDER BY id ASC LIMIT {self.placeholder} OFFSET {self.placeholder}"
         try:
@@ -601,6 +724,44 @@ class RedvyprTimescaleDb(AbstractDatabase):
         except Exception as e:
             logger.error(f"❌ Metadata retrieval failed: {e}")
             return []
+
+    def get_packet_count(self, filters: List[Dict[str, str]] = None,
+                         time_range: Dict[str, Any] = None,
+                         table_name: str = 'redvypr_packets') -> int:
+        """
+        Returns the number of packets matching specific filters and time ranges.
+        """
+        where_clauses = []
+        params = []
+
+        # 1. Time Range
+        if time_range:
+            if "tstart" in time_range:
+                where_clauses.append(f"timestamp >= {self.placeholder}")
+                params.append(time_range["tstart"])
+            if "tend" in time_range:
+                where_clauses.append(f"timestamp <= {self.placeholder}")
+                params.append(time_range["tend"])
+
+        # 2. Key Combination Filters
+        if filters:
+            sub_clauses = []
+            for group in filters:
+                group_conditions = [f"{k} = {self.placeholder}" for k in group.keys()]
+                params.extend(group.values())
+                sub_clauses.append(f"({' AND '.join(group_conditions)})")
+            where_clauses.append(f"({' OR '.join(sub_clauses)})")
+
+        where_stmt = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+        sql = f"SELECT COUNT(*) FROM {table_name} {where_stmt}"
+
+        try:
+            with self._connection.cursor() as cur:
+                cur.execute(sql, params)
+                return cur.fetchone()[0]
+        except Exception as e:
+            logger.error(f"❌ Failed to get packet count: {e}")
+            return 0
 
 
 
