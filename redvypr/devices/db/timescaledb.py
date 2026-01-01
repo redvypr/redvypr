@@ -102,6 +102,57 @@ class AbstractDatabase(ABC):
         """Returns a list of packets for a given range."""
         pass
 
+    @abstractmethod
+    def get_unique_combination_stats(self, keys: List[str],
+                                     filters: Dict[str, str] = None,
+                                     table_name: str = 'redvypr_packets') -> List[
+        Dict[str, Any]]:
+        """
+        Groups database records by a custom list of identity columns and returns aggregated
+        packet counts along with the time range for each combination.
+
+        This method allows for dynamic "drilling down" into your data. For example, you can
+        get a list of all active hosts, or a breakdown of which devices are publishing
+        to specific addresses, including when they were first and last active.
+
+        Args:
+            keys (List[str]): The columns used for grouping the results.
+                Allowed keys: 'redvypr_address', 'packetid', 'device', 'host', 'publisher', 'uuid'.
+                The order of keys in the list defines the structure of the returned dictionaries.
+
+            filters (Dict[str, str], optional): A dictionary to narrow down the search
+                before grouping.
+                - Exact Match: {"host": "pi-lab-01"}
+                - Pattern Match: {"redvypr_address": "sensor/%"} (matches any address starting with 'sensor/')
+                - Any string containing '%' or '_' will trigger a SQL 'LIKE' search.
+
+            table_name (str): The name of the table to query. Defaults to 'redvypr_packets'.
+
+        Returns:
+            List[Dict[str, Any]]: A list of dictionaries. Each dictionary contains:
+                - The requested 'keys' (e.g., 'host': 'pi-01').
+                - 'count' (int): The number of packets found in this group.
+                - 'first_seen' (str): ISO timestamp of the oldest packet in this group.
+                - 'last_seen' (str): ISO timestamp of the newest packet in this group.
+                The list is sorted by 'last_seen' in descending order (newest activity first).
+
+        Example Usage:
+            # 1. Get a list of all unique hosts with their packet counts and activity range:
+            db.get_unique_combination_stats(keys=["host"])
+            # Result: [
+            #   {"host": "pi-01", "count": 120, "first_seen": "2024-01-01T10:00:00", "last_seen": "2024-01-02T15:30:00"},
+            #   {"host": "server-01", "count": 500, "first_seen": "2023-12-01T08:00:00", "last_seen": "2023-12-05T12:00:00"}
+            # ]
+
+            # 2. Find specific devices on a host to check if they are still online:
+            db.get_unique_combination_stats(keys=["host", "device"], filters={"host": "pi-01"})
+            # Result: [
+            #   {"host": "pi-01", "device": "DHT22", "count": 100, "first_seen": "...", "last_seen": "..."},
+            #   {"host": "pi-01", "device": "SHT31", "count": 20, "first_seen": "...", "last_seen": "..."}
+            # ]
+        """
+        pass
+
     def identify_and_setup(self):
         """Probes the database to identify engine type and set placeholders."""
         if not self._connection:
@@ -364,6 +415,122 @@ class RedvyprTimescaleDb(AbstractDatabase):
             if self._connection:
                 self._connection.rollback()
         return None
+
+    def get_unique_combination_stats(self, keys: List[str],
+                                     filters: Dict[str, str] = None,
+                                     table_name: str = 'redvypr_packets') -> List[
+        Dict[str, Any]]:
+        """
+                                PostgreSQL Implementation of statistics retrieval.
+
+                                .. SeeAlso:: :meth:`.AbstractDatabase.get_unique_combination_stats`
+        """
+        valid_columns = ["redvypr_address", "packetid", "device", "host", "publisher",
+                         "uuid"]
+        safe_keys = [k for k in keys if k in valid_columns]
+
+        if not safe_keys:
+            return []
+
+        col_string = ", ".join(safe_keys)
+        where_clauses = []
+        params = []
+
+        if filters:
+            for key, value in filters.items():
+                if key in valid_columns:
+                    op = "LIKE" if isinstance(value, str) and "%" in value else "="
+                    where_clauses.append(f"{key} {op} {self.placeholder}")
+                    params.append(value)
+
+        where_stmt = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        # Wir fügen MIN und MAX für den Zeitstempel hinzu
+        sql = f"""
+            SELECT {col_string}, 
+                   COUNT(*) as packet_count, 
+                   MIN(timestamp) as first_seen, 
+                   MAX(timestamp) as last_seen
+            FROM {table_name} 
+            {where_stmt} 
+            GROUP BY {col_string} 
+            ORDER BY last_seen DESC
+        """
+
+        try:
+            with self._connection.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+                results = []
+                for r in rows:
+                    # Die ersten N Elemente sind unsere Keys
+                    d = dict(zip(safe_keys, r[:len(safe_keys)]))
+                    # Die letzten 3 Elemente sind count, min, max
+                    d["count"] = r[-3]
+                    d["first_seen"] = r[-2].isoformat() if hasattr(r[-2],
+                                                                   'isoformat') else r[
+                        -2]
+                    d["last_seen"] = r[-1].isoformat() if hasattr(r[-1],
+                                                                  'isoformat') else r[
+                        -1]
+                    results.append(d)
+                return results
+        except Exception as e:
+            logger.error(f"❌ Detailed stats failed: {e}")
+            if self._connection: self._connection.rollback()
+            return []
+
+    def get_unique_combination_stats_legacy(self, keys: List[str],
+                                     filters: Dict[str, str] = None,
+                                     table_name: str = 'redvypr_packets') -> List[
+        Dict[str, Any]]:
+
+        """
+                        PostgreSQL Implementation of statistics retrieval.
+
+                        .. SeeAlso:: :meth:`.AbstractDatabase.get_unique_combination_stats`
+        """
+
+        # Security: Only allow valid columns to prevent SQL injection
+        valid_columns = ["redvypr_address", "packetid", "device", "host", "publisher",
+                         "uuid"]
+        safe_keys = [k for k in keys if k in valid_columns]
+
+        if not safe_keys:
+            logger.error("No valid keys provided for grouping.")
+            return []
+
+        col_string = ", ".join(safe_keys)
+        where_clauses = []
+        params = []
+
+        if filters:
+            for key, value in filters.items():
+                if key in valid_columns:
+                    op = "LIKE" if isinstance(value, str) and "%" in value else "="
+                    where_clauses.append(f"{key} {op} {self.placeholder}")
+                    params.append(value)
+
+        where_stmt = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        sql = f"""
+            SELECT {col_string}, COUNT(*) as packet_count 
+            FROM {table_name} 
+            {where_stmt} 
+            GROUP BY {col_string} 
+            ORDER BY packet_count DESC
+        """
+
+        try:
+            with self._connection.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+                return [{**dict(zip(safe_keys, r[:-1])), "count": r[-1]} for r in rows]
+        except Exception as e:
+            logger.error(f"❌ Custom stats failed: {e}")
+            if self._connection: self._connection.rollback()
+            return []
 
 
 class RedvyprTimescaleDb_legacy:

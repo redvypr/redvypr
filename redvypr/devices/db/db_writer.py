@@ -174,6 +174,9 @@ def get_database_info(config):
         print(f"Write:   {'✅ Permitted' if status['can_write'] else '❌ Denied'}")
         print(f"-----------------------------")
 
+        stats = db.get_unique_combination_stats(keys=['uuid'])
+        print("Stats",stats)
+
         info = db.get_database_info()
         return info
 
