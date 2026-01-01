@@ -184,6 +184,127 @@ def get_database_info(config):
 
 class DBQueryDialog(QtWidgets.QDialog):
     """
+    Dialog to browse both Packet and Metadata inventory using Tabs.
+    """
+
+    def __init__(self, db_instance, parent=None):
+        super().__init__(parent)
+        self.db = db_instance
+        self.setWindowTitle("Database Inventory Browser")
+        self.resize(1100, 700)
+
+        self.setup_ui()
+        self.refresh_data()
+
+    def setup_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # --- Header with Refresh ---
+        header = QtWidgets.QHBoxLayout()
+        header.addWidget(QtWidgets.QLabel("Database Inventory Overview"))
+        header.addStretch()
+
+        self.refresh_button = QtWidgets.QPushButton(" Refresh All")
+        self.refresh_button.setIcon(qtawesome.icon('fa5s.sync-alt'))
+        self.refresh_button.clicked.connect(self.refresh_data)
+        header.addWidget(self.refresh_button)
+        layout.addLayout(header)
+
+        # --- Tabs ---
+        self.tabs = QtWidgets.QTabWidget()
+
+        # Tab 1: Packets
+        self.packet_table = self._create_table_widget()
+        self.tabs.addTab(self.packet_table, qtawesome.icon('fa5s.box'), "Packets")
+
+        # Tab 2: Metadata
+        self.meta_table = self._create_table_widget()
+        self.tabs.addTab(self.meta_table, qtawesome.icon('fa5s.info-circle'),
+                         "Metadata")
+
+        layout.addWidget(self.tabs)
+
+        # --- Footer ---
+        footer = QtWidgets.QHBoxLayout()
+        self.status_label = QtWidgets.QLabel("Ready")
+        footer.addWidget(self.status_label)
+        footer.addStretch()
+
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        footer.addWidget(close_btn)
+        layout.addLayout(footer)
+
+    def _create_table_widget(self) -> QtWidgets.QTableWidget:
+        """Helper to create a standardized table."""
+        table = QtWidgets.QTableWidget()
+        headers = ["Address", "Packet ID / UUID", "Device", "Host", "Count",
+                   "First Seen", "Last Seen"]
+        table.setColumnCount(len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        return table
+
+    def refresh_data(self):
+        """Fetches data for both tables."""
+        self.status_label.setText("Fetching data...")
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+
+        try:
+            with self.db as connected_db:
+                # 1. Fetch Packet Stats
+                packet_stats = connected_db.get_unique_combination_stats(
+                    keys=["redvypr_address", "packetid", "device", "host"]
+                )
+
+                # 2. Fetch Metadata Stats (using the new info method)
+                # We use uuid instead of packetid here for the second column
+                meta_stats = connected_db.get_metadata_info(
+                    keys=["redvypr_address", "uuid", "device", "host"]
+                )
+
+            self._fill_table(self.packet_table, packet_stats, "packetid")
+            self._fill_table(self.meta_table, meta_stats, "uuid")
+
+            self.status_label.setText(
+                f"Updated: {len(packet_stats)} packet streams, {len(meta_stats)} metadata entries.")
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error", f"Fetch failed: {e}")
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+    def _fill_table(self, table: QtWidgets.QTableWidget, stats: list, id_key: str):
+        """Generic logic to fill a table with stats."""
+        table.setRowCount(0)
+        table.setRowCount(len(stats))
+
+        for row_idx, entry in enumerate(stats):
+            # We map the dictionary keys to the columns
+            items = [
+                entry.get('redvypr_address', '-'),
+                entry.get(id_key, '-'),  # Either packetid or uuid
+                entry.get('device', '-'),
+                entry.get('host', '-'),
+                str(entry.get('count', 0)),
+                entry.get('first_seen', 'N/A'),
+                entry.get('last_seen', 'N/A')
+            ]
+
+            for col_idx, text in enumerate(items):
+                item = QtWidgets.QTableWidgetItem(text)
+                if col_idx == 4:  # Count column right-aligned
+                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                table.setItem(row_idx, col_idx, item)
+
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+
+class DBQueryDialog_legacy(QtWidgets.QDialog):
+    """
     A dialog that fetches and displays a summary of unique data combinations
     from the database, including packet counts and time ranges.
     """
