@@ -11,6 +11,7 @@ import logging
 import sys
 import pydantic
 import typing
+from typing import List, Dict, Any
 import redvypr
 from redvypr.data_packets import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
@@ -180,15 +181,141 @@ def get_database_info(config):
         info = db.get_database_info()
         return info
 
-def get_database_info_legacy(config):
-    db = RedvyprTimescaleDb(dbname=config.dbname,
-                            user=config.user,
-                            password=config.password,
-                            host=config.host,
-                            port=config.port)
 
-    info = db.get_database_info()
-    return info
+class DBQueryDialog(QtWidgets.QDialog):
+    """
+    A dialog that fetches and displays a summary of unique data combinations
+    from the database, including packet counts and time ranges.
+    """
+
+    def __init__(self, db_instance, parent=None):
+        super().__init__(parent)
+        self.db = db_instance
+        self.setWindowTitle("Database Inventory Browser")
+        self.resize(1000, 600)
+
+        self.setup_ui()
+        # Initial data load
+        self.refresh_data()
+
+    def setup_ui(self):
+        """Creates the table and control layout."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # --- Top Toolbar ---
+        toolbar = QtWidgets.QHBoxLayout()
+
+        self.info_label = QtWidgets.QLabel(
+            "Showing unique data streams found in the database:")
+        self.info_label.setStyleSheet("font-weight: bold; color: #2D3748;")
+        toolbar.addWidget(self.info_label)
+
+        toolbar.addStretch()
+
+        # Refresh Button
+        self.refresh_button = QtWidgets.QPushButton(" Refresh")
+        self.refresh_button.setIcon(qtawesome.icon('fa5s.sync-alt'))
+        self.refresh_button.clicked.connect(self.refresh_data)
+        toolbar.addWidget(self.refresh_button)
+
+        layout.addLayout(toolbar)
+
+        # --- Table Widget ---
+        self.table = QtWidgets.QTableWidget()
+        self.headers = [
+            "Address", "Packet ID", "Device",
+            "Host", "Count", "First Seen", "Last Seen"
+        ]
+        self.table.setColumnCount(len(self.headers))
+        self.table.setHorizontalHeaderLabels(self.headers)
+
+        # UI Polish: Stretch headers to fill space
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        header.setSectionResizeMode(0,
+                                    QtWidgets.QHeaderView.Stretch)  # Address gets most space
+
+        # Alternating row colors for readability
+        self.table.setAlternatingRowColors(True)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+
+        layout.addWidget(self.table)
+
+        # --- Footer ---
+        footer = QtWidgets.QHBoxLayout()
+        self.status_label = QtWidgets.QLabel("Status: Ready")
+        footer.addWidget(self.status_label)
+
+        footer.addStretch()
+
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.setFixedWidth(100)
+        close_btn.clicked.connect(self.accept)
+        footer.addWidget(close_btn)
+
+        layout.addLayout(footer)
+
+    def refresh_data(self):
+        """Fetches data from the DB using a context manager and updates the table."""
+        self.status_label.setText("Fetching data...")
+        self.status_label.setStyleSheet("color: #3182CE;")
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+
+        keys = ["redvypr_address", "packetid", "device", "host"]
+
+        try:
+            # We open the connection specifically for the query
+            with self.db as connected_db:
+                stats = connected_db.get_unique_combination_stats(keys=keys)
+
+            self.update_table_content(stats)
+            self.status_label.setText(f"Success: Found {len(stats)} unique streams.")
+            self.status_label.setStyleSheet("color: #38A169;")
+
+        except Exception as e:
+            logger.error(f"Failed to refresh DB dialog: {e}")
+            self.status_label.setText("Error: Could not connect to database.")
+            self.status_label.setStyleSheet("color: #E53E3E;")
+            QtWidgets.QMessageBox.critical(self, "Database Error",
+                                           f"Failed to fetch inventory:\n{str(e)}")
+
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+    def update_table_content(self, stats: List[Dict[str, Any]]):
+        """Populates the QTableWidget with the returned statistical data."""
+        self.table.setRowCount(0)  # Clear existing
+        self.table.setRowCount(len(stats))
+
+        for row_idx, entry in enumerate(stats):
+            # Map dictionary keys to column indices
+            display_values = [
+                entry.get('redvypr_address', '-'),
+                entry.get('packetid', '-'),
+                entry.get('device', '-'),
+                entry.get('host', '-'),
+                str(entry.get('count', 0)),
+                entry.get('first_seen', 'N/A'),
+                entry.get('last_seen', 'N/A')
+            ]
+
+            for col_idx, value in enumerate(display_values):
+                item = QtWidgets.QTableWidgetItem(value)
+
+                # Right-align the 'Count' column
+                if col_idx == 4:
+                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+
+                self.table.setItem(row_idx, col_idx, item)
+
+        # Resize columns to content after filling
+        self.table.resizeColumnsToContents()
+        # Ensure address still stretches
+        self.table.horizontalHeader().setSectionResizeMode(0,
+                                                           QtWidgets.QHeaderView.Stretch)
+
+
 class DBConfigWidget(QtWidgets.QWidget):
     """
     A dedicated widget for configuring and testing
@@ -251,13 +378,21 @@ class DBConfigWidget(QtWidgets.QWidget):
 
         main_layout.addLayout(form_layout)
 
-        # 2. Test Button
+        # 2. Test/Query Buttons
         self.test_button = QtWidgets.QPushButton("Test DB Connection")
         # Placeholder icon from qtawesome stub
-        icon = qtawesome.icon('fa5s.database')
+        icon = qtawesome.icon('mdi6.database-outline')
         self.test_button.setIcon(icon)
+        self.query_button = QtWidgets.QPushButton("Query DB")
+        icon = qtawesome.icon('mdi6.database-search-outline')
+        self.query_button.setIcon(icon)
+        self.button_layout = QtWidgets.QHBoxLayout()
+        self.button_layout.addWidget(self.test_button)
+        self.button_layout.addWidget(self.query_button)
+
         self.test_button.clicked.connect(self.test_connection_clicked)
-        main_layout.addWidget(self.test_button)
+        self.query_button.clicked.connect(self.query_db_clicked)
+        main_layout.addLayout(self.button_layout)
 
         # 3. Result Label
         self.test_result_label = QtWidgets.QLabel("Ready to test DB connection.")
@@ -302,6 +437,17 @@ class DBConfigWidget(QtWidgets.QWidget):
         except pydantic.ValidationError as e:
             print(f"Configuration Validation Error: {e}")
             return self.initial_config
+
+    def query_db_clicked(self):
+        config = self.get_config()
+        db = RedvyprTimescaleDb(dbname=config.dbname,
+                                user=config.user,
+                                password=config.password,
+                                host=config.host,
+                                port=config.port)
+
+        self.query_widdget = DBQueryDialog(db_instance=db)
+        self.query_widdget.show()
 
     def test_connection_clicked(self):
         """Tests the current configuration against a simulated database connection and displays results."""
