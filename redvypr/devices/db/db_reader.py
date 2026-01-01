@@ -64,110 +64,123 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 password=pconfig.password,
                                 host=pconfig.host,
                                 port=pconfig.port)
+
+        with db:
+            print("Opened")
+            # 1. Setup (gentle approach)
+            db.identify_and_setup()
+            status = db.check_health()
+
+            print(f"--- Database Health Check ---")
+            print(f"Engine:  {status['engine']} (Timescale: {status['is_timescale']})")
+            print(f"Tables:  {'✅ Found' if status['tables_exist'] else '❌ Missing'}")
+            print(f"Write:   {'✅ Permitted' if status['can_write'] else '❌ Denied'}")
+            print(f"-----------------------------")
+
+            db_info = db.get_database_info()
+            statistics = {}
+            packets_read_buffer = []
+            print("Number of measurements", db_info["measurement_count"])
+            ntotal = db_info["measurement_count"]
+            nchunk = 100
+            ind_read = 0
+            t_packet_old = 0  # Time of the last sent packet
+            t_packet = 0  # Time of the last sent packet
+            t_thread_sent = 0  # Time of the last sent packet
+            t_thread_now = 0  # Time of the last sent packet
+            data_send = None
+
+            while True:
+                try:
+                    datapacket = datainqueue.get(block=False)
+                except:
+                    datapacket = None
+                    time.sleep(0.5)
+                # print("Got data",datapacket)
+                if datapacket is not None:
+                    [command, comdata] = check_for_command(datapacket,
+                                                           thread_uuid=device_info[
+                                                               'thread_uuid'],
+                                                           add_data=True)
+                    if command is not None:
+                        paddr = RedvyprAddress(datapacket)
+                        packetid = paddr.packetid
+                        publisher = paddr.publisher
+                        device = paddr.device
+                        logger.debug(
+                            'Command is for me: {:s}. Packetid: {}, device: {}, publisher: {}'.format(
+                                str(command), packetid, device, publisher))
+                        if command == 'stop':
+                            logger.info(funcname + 'received command:' + str(
+                                datapacket) + ' stopping now')
+                            logger.debug('Stop command')
+                            return
+                        elif command == 'info' and packetid == 'metadata':
+                            print("Info command", datapacket.keys())
+                else:
+                    # Check if we have to fill the packetbuffer again
+                    if len(packets_read_buffer) < int(nchunk / 10):
+                        print("Reading packets")
+                        if (ind_read + nchunk) < ntotal:
+                            nread = nchunk
+                        elif ind_read < (ntotal - 1):
+                            nread = ntotal - ind_read
+                        else:
+                            print("All read")
+                            return
+
+                        print("Reading #{} packets from {}".format(nread, ind_read))
+                        data = db.get_packets_range(ind_read, nread)
+                        packets_read += len(data)
+                        ind_read += nread
+                        packets_read_buffer.extend(data)
+
+                    if len(packets_read_buffer) > 1:
+                        # t_packet_old = 0  # Time of the last sent packet
+                        # t_packet = 0  # Time of the last sent packet
+                        # t_thread_sent = 0  # Time of the last sent packet
+                        # t_thread_now = 0  # Time of the last sent packet
+                        if data_send is None:
+                            data_send = packets_read_buffer.pop(0)
+                            # print("Data send",data_send)
+                            id_send = data_send["id"]
+                            t_packet = data_send["timestamp"]
+                            t_packet_unix = t_packet.timestamp()
+                            packet_send = data_send["data"]
+
+                        t_thread_now = time.time()
+                        dt_packet = t_packet_unix - t_packet_old
+                        dt_thread = t_thread_now - t_thread_sent
+                        # print("dt", dt_packet, dt_thread)
+                        if dt_thread >= dt_packet:
+                            print("Sending", id_send, t_packet)
+                            packets_published += 1
+                            t_thread_sent = t_thread_now
+                            t_packet_old = t_packet_unix
+                            dataqueue.put(packet_send)
+                            data_send = None
+
+                if ((time.time() - t_update) > dt_update):
+                    t_update = time.time()
+                    print("Updating", packets_read, packets_published)
+                    data = {}
+                    data['t'] = time.time()
+                    data['packets_read'] = packets_read
+                    data['packets_published'] = packets_published
+                    data['statistics'] = statistics
+                    statusqueue.put(data)
     except:
         logger_thread.exception("Could not connect to database")
         return
-
-    statistics = {}
-    packets_read_buffer = []
-    db_info = db.get_database_info()
-    print("Number of measurements",db_info["measurement_count"])
-    ntotal = db_info["measurement_count"]
-    nchunk = 100
-    ind_read = 0
-    t_packet_old = 0 # Time of the last sent packet
-    t_packet = 0  # Time of the last sent packet
-    t_thread_sent = 0  # Time of the last sent packet
-    t_thread_now = 0  # Time of the last sent packet
-    data_send = None
-
-    while True:
-        try:
-            datapacket = datainqueue.get(block=False)
-        except:
-            datapacket=None
-            time.sleep(0.5)
-        #print("Got data",datapacket)
-        if datapacket is not None:
-            [command, comdata] = check_for_command(datapacket, thread_uuid=device_info['thread_uuid'],
-                                                   add_data=True)
-            if command is not None:
-                paddr = RedvyprAddress(datapacket)
-                packetid = paddr.packetid
-                publisher = paddr.publisher
-                device = paddr.device
-                logger.debug('Command is for me: {:s}. Packetid: {}, device: {}, publisher: {}'.format(str(command),packetid, device, publisher))
-                if command == 'stop':
-                    logger.info(funcname + 'received command:' + str(datapacket) + ' stopping now')
-                    logger.debug('Stop command')
-                    return
-                elif command == 'info' and packetid=='metadata':
-                    print("Info command",datapacket.keys())
-        else:
-            # Check if we have to fill the packetbuffer again
-            if len(packets_read_buffer) < int(nchunk/10):
-                print("Reading packets")
-                if (ind_read + nchunk) < ntotal:
-                    nread = nchunk
-                elif ind_read < (ntotal -1):
-                    nread = ntotal - ind_read
-                else:
-                    print("All read")
-                    return
-
-                print("Reading #{} packets from {}".format(nread, ind_read))
-                data = db.get_packets_range(ind_read, nread)
-                packets_read += len(data)
-                ind_read += nread
-                packets_read_buffer.extend(data)
-
-            if len(packets_read_buffer) > 1:
-                #t_packet_old = 0  # Time of the last sent packet
-                #t_packet = 0  # Time of the last sent packet
-                #t_thread_sent = 0  # Time of the last sent packet
-                #t_thread_now = 0  # Time of the last sent packet
-                if data_send is None:
-                    data_send = packets_read_buffer.pop(0)
-                    # print("Data send",data_send)
-                    id_send = data_send["id"]
-                    t_packet = data_send["timestamp"]
-                    t_packet_unix = t_packet.timestamp()
-                    packet_send = data_send["data"]
-
-                t_thread_now = time.time()
-                dt_packet = t_packet_unix - t_packet_old
-                dt_thread = t_thread_now - t_thread_sent
-                #print("dt", dt_packet, dt_thread)
-                if dt_thread >= dt_packet:
-                    print("Sending",id_send,t_packet)
-                    packets_published += 1
-                    t_thread_sent = t_thread_now
-                    t_packet_old = t_packet_unix
-                    dataqueue.put(packet_send)
-                    data_send = None
+    finally:
+        logger_thread.info("Thread shutting down, connection cleaned up.")
 
 
 
-        if ((time.time() - t_update) > dt_update):
-            t_update = time.time()
-            print("Updating",packets_read, packets_published)
-            data = {}
-            data['t'] = time.time()
-            data['packets_read'] = packets_read
-            data['packets_published'] = packets_published
-            data['statistics'] = statistics
-            statusqueue.put(data)
 
 
-def get_database_info(config):
-    db = RedvyprTimescaleDb(dbname=config.dbname,
-                            user=config.user,
-                            password=config.password,
-                            host=config.host,
-                            port=config.port)
 
-    info = db.get_database_info()
-    return info
+
 
 
 

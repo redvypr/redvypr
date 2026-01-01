@@ -63,76 +63,121 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 password=pconfig.password,
                                 host=pconfig.host,
                                 port=pconfig.port)
+
+        with db:
+            print("Opened")
+            # 1. Setup (gentle approach)
+            db.identify_and_setup()
+            status = db.check_health()
+
+            print(f"--- Database Health Check ---")
+            print(f"Engine:  {status['engine']} (Timescale: {status['is_timescale']})")
+            print(f"Tables:  {'✅ Found' if status['tables_exist'] else '❌ Missing'}")
+            print(f"Write:   {'✅ Permitted' if status['can_write'] else '❌ Denied'}")
+            print(f"-----------------------------")
+            db_info = db.get_database_info()
+            if status['tables_exist'] and status['can_write']:
+                statistics = {}
+                while True:
+                    datapacket = datainqueue.get()
+                    # print("Got data",datapacket)
+                    [command, comdata] = check_for_command(datapacket,
+                                                           thread_uuid=device_info[
+                                                               'thread_uuid'],
+                                                           add_data=True)
+                    if command is not None:
+                        paddr = RedvyprAddress(datapacket)
+                        packetid = paddr.packetid
+                        publisher = paddr.publisher
+                        device = paddr.device
+                        logger.debug(
+                            'Command is for me: {:s}. Packetid: {}, device: {}, publisher: {}'.format(
+                                str(command), packetid, device, publisher))
+                        if command == 'stop':
+                            logger.info(funcname + 'received command:' + str(
+                                datapacket) + ' stopping now')
+                            logger.debug('Stop command')
+                            return
+                        elif command == 'info' and packetid == 'metadata':
+                            print("Info command", datapacket.keys())
+                            metadata = datapacket["deviceinfo_all"]["metadata"]
+                            print("Metadata", metadata)
+                            # add_metadata(self, address: str, uuid: str, metadata_dict: dict,mode: str = "merge"):
+                            for metadata_address_str, metadata_content in metadata.items():
+                                print("Adding metadata", metadata_address_str)
+                                metadata_address = RedvyprAddress(metadata_address_str)
+                                try:
+                                    uuid = metadata_address.uuid
+                                except:
+                                    print(
+                                        "Could not get uuid from metadata, get from host")
+                                    uuid = device_info["hostinfo"]["uuid"]
+
+                                try:
+                                    db.add_metadata(address=metadata_address_str, uuid=uuid,
+                                                    metadata_dict=metadata_content)
+                                except:
+                                    logger_thread.info("Could not add metadata",exc_info=True)
+
+                    else:  # Only save real data
+                        # print('Inserting datapacket',datapacket)
+                        addrstr = RedvyprAddress(datapacket).to_address_string()
+                        try:
+                            statistics[addrstr]
+                        except:
+                            statistics[addrstr] = {'packet_inserted': 0,
+                                                   'packet_inserted_failure': 0}
+                        try:
+                            db.insert_packet(datapacket)
+                            packet_inserted += 1
+                            statistics[addrstr]['packet_inserted'] += 1
+                        except:
+                            logger_thread.info("Could not add data",exc_info=True)
+                            packet_inserted_failure += 1
+                            statistics[addrstr]['packet_inserted_failure'] += 1
+
+                    if ((time.time() - t_update) > dt_update):
+                        t_update = time.time()
+                        # print("Updating")
+                        data = {}
+                        data['t'] = time.time()
+                        data['packet_inserted'] = packet_inserted
+                        data['packet_inserted_failure'] = packet_inserted_failure
+                        data['statistics'] = statistics
+                        statusqueue.put(data)
+
     except:
         logger_thread.exception("Could not connect to database")
         return
 
-    try:
-        db.create_hypertable()
-    except:
-        print("Could not connect to database")
-        return
 
-    statistics = {}
 
-    while True:
-        datapacket = datainqueue.get()
-        #print("Got data",datapacket)
-        [command, comdata] = check_for_command(datapacket, thread_uuid=device_info['thread_uuid'],
-                                               add_data=True)
-        if command is not None:
-            paddr = RedvyprAddress(datapacket)
-            packetid = paddr.packetid
-            publisher = paddr.publisher
-            device = paddr.device
-            logger.debug('Command is for me: {:s}. Packetid: {}, device: {}, publisher: {}'.format(str(command),packetid, device, publisher))
-            if command == 'stop':
-                logger.info(funcname + 'received command:' + str(datapacket) + ' stopping now')
-                logger.debug('Stop command')
-                return
-            elif command == 'info' and packetid=='metadata':
-                print("Info command",datapacket.keys())
-                metadata = datapacket["deviceinfo_all"]["metadata"]
-                print("Metadata",metadata)
-                #add_metadata(self, address: str, uuid: str, metadata_dict: dict,mode: str = "merge"):
-                for metadata_address_str,metadata_content in metadata.items():
-                    print("Adding metadata",metadata_address_str)
-                    metadata_address = RedvyprAddress(metadata_address_str)
-                    try:
-                        uuid = metadata_address.uuid
-                    except:
-                        print("Could not get uuid from metadata, get from host")
-                        uuid = device_info["hostinfo"]["uuid"]
-
-                    db.add_metadata(address=metadata_address_str,uuid=uuid, metadata_dict=metadata_content)
-
-        else: # Only save real data
-            #print('Inserting datapacket',datapacket)
-            addrstr = RedvyprAddress(datapacket).to_address_string()
-            try:
-                statistics[addrstr]
-            except:
-                statistics[addrstr] = {'packet_inserted':0,'packet_inserted_failure':0}
-            try:
-                db.insert_packet_data(datapacket)
-                packet_inserted += 1
-                statistics[addrstr]['packet_inserted'] += 1
-            except:
-                packet_inserted_failure += 1
-                statistics[addrstr]['packet_inserted_failure'] += 1
-
-        if ((time.time() - t_update) > dt_update):
-            t_update = time.time()
-            #print("Updating")
-            data = {}
-            data['t'] = time.time()
-            data['packet_inserted'] = packet_inserted
-            data['packet_inserted_failure'] = packet_inserted_failure
-            data['statistics'] = statistics
-            statusqueue.put(data)
 
 
 def get_database_info(config):
+    db = RedvyprTimescaleDb(dbname=config.dbname,
+                            user=config.user,
+                            password=config.password,
+                            host=config.host,
+                            port=config.port)
+
+    print("Opening with config",config)
+    with db:
+        print("Opened")
+        # 1. Setup (gentle approach)
+        db.identify_and_setup()
+        status = db.check_health()
+
+        print(f"--- Database Health Check ---")
+        print(f"Engine:  {status['engine']} (Timescale: {status['is_timescale']})")
+        print(f"Tables:  {'✅ Found' if status['tables_exist'] else '❌ Missing'}")
+        print(f"Write:   {'✅ Permitted' if status['can_write'] else '❌ Denied'}")
+        print(f"-----------------------------")
+
+        info = db.get_database_info()
+        return info
+
+def get_database_info_legacy(config):
     db = RedvyprTimescaleDb(dbname=config.dbname,
                             user=config.user,
                             password=config.password,

@@ -5,6 +5,7 @@ import logging
 import sys
 from datetime import datetime, timezone
 import psycopg
+from abc import ABC, abstractmethod
 from typing import Iterator, Optional, Any, Dict
 from contextlib import contextmanager
 from redvypr.redvypr_address import RedvyprAddress
@@ -15,9 +16,357 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.timescaledb')
 logger.setLevel(logging.DEBUG)
 
+from abc import ABC, abstractmethod
+import logging
+from typing import Any, Dict, List, Optional
+
+import json
+import logging
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional
+
+import json
+import logging
+import psycopg
+from abc import ABC, abstractmethod
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Iterator
+
+# --- Setup Logging ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("RedvyprDB")
 
 
-class RedvyprTimescaleDb:
+class AbstractDatabase(ABC):
+    """
+    Abstract Base Class for Redvypr Database Connectors.
+    Implements the Context Manager Protocol and shared SQL logic.
+    """
+
+    def __init__(self):
+        self.engine_type = "unknown"
+        self.placeholder = "%s"
+        self.is_timescale = False
+        self._connection = None
+
+    @abstractmethod
+    def connect(self):
+        """Establish the physical connection to the database."""
+        pass
+
+    def __enter__(self):
+        """Allows usage: with DatabaseInstance as db:"""
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Ensures the connection is closed when exiting the 'with' block."""
+        self.disconnect()
+
+    def disconnect(self):
+        """Closes the connection safely."""
+        if self._connection:
+            try:
+                self._connection.close()
+            except Exception as e:
+                logger.error(f"Error during disconnect: {e}")
+            finally:
+                self._connection = None
+
+    @abstractmethod
+    def setup_schema(self):
+        """Creates necessary tables and extensions."""
+        pass
+
+    @abstractmethod
+    def insert_packet(self, data_dict: Dict[str, Any],
+                      table_name: str = 'redvypr_packets'):
+        """Inserts a single data packet into the database."""
+        pass
+
+    @abstractmethod
+    def add_metadata(self, address: str, uuid: str, metadata_dict: dict,
+                     mode: str = "merge"):
+        """Upserts metadata for a specific device/session."""
+        pass
+
+    @abstractmethod
+    def get_latest_packet(self, table_name: str = 'redvypr_packets') -> Optional[
+        Dict[str, Any]]:
+        """Returns the most recent packet."""
+        pass
+
+    @abstractmethod
+    def get_packets_range(self, start_index: int, count: int) -> List[Dict[str, Any]]:
+        """Returns a list of packets for a given range."""
+        pass
+
+    def identify_and_setup(self):
+        """Probes the database to identify engine type and set placeholders."""
+        if not self._connection:
+            return
+
+        # 1. Probe for SQLite
+        try:
+            with self._connection.cursor() as cur:
+                cur.execute("SELECT sqlite_version();")
+                self.engine_type = "sqlite"
+                self.placeholder = "?"
+                return
+        except Exception:
+            self._connection.rollback()  # Wichtig: Transaktion nach Fehler heilen
+
+        # 2. Probe for PostgreSQL
+        try:
+            with self._connection.cursor() as cur:
+                cur.execute("SELECT version();")
+                version_str = cur.fetchone()[0].lower()
+                if "postgresql" in version_str:
+                    self.engine_type = "postgresql"
+                    self.placeholder = "%s"
+
+                    # Check for TimescaleDB
+                    try:
+                        cur.execute(
+                            "SELECT 1 FROM pg_extension WHERE extname = 'timescaledb';")
+                        self.is_timescale = bool(cur.fetchone())
+                    except Exception:
+                        self._connection.rollback()
+
+                    self._connection.commit()  # Alles okay, Transaktion abschließen
+                    return
+        except Exception:
+            self._connection.rollback()
+
+        self.engine_type = "unknown"
+
+    def get_database_info(self, table_name: str = 'redvypr_packets') -> Optional[
+        Dict[str, Any]]:
+        """Retrieves row count and time range from a table."""
+        sql = f"SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM {table_name}"
+        try:
+            with self._connection.cursor() as cur:
+                cur.execute(sql)
+                result = cur.fetchone()
+                if result and result[0] > 0:
+                    return {
+                        "measurement_count": result[0],
+                        "min_time": result[1].isoformat() if hasattr(result[1],
+                                                                     'isoformat') else str(
+                            result[1]),
+                        "max_time": result[2].isoformat() if hasattr(result[2],
+                                                                     'isoformat') else str(
+                            result[2])
+                    }
+        except Exception as e:
+            logger.error(f"Failed to get info for {table_name}: {e}")
+        return None
+
+    def check_health(self) -> Dict[str, Any]:
+        """
+        Checks engine type, table existence, and write permissions.
+        """
+        health = {
+            "engine": self.engine_type,
+            "is_timescale": self.is_timescale,
+            "tables_exist": False,
+            "can_write": False
+        }
+
+        if not self._connection:
+            return health
+
+        self._connection.rollback()
+
+        try:
+            with self._connection.cursor() as cur:
+                # 1. Check if main tables exist
+                if self.engine_type == "sqlite":
+                    cur.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='redvypr_packets';")
+                else:  # Postgres / MariaDB
+                    cur.execute(
+                        "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'redvypr_packets');")
+
+                health["tables_exist"] = bool(cur.fetchone()[0])
+
+                # 2. Check for Write Permissions (Try to create a temporary test table)
+                try:
+                    cur.execute("CREATE TEMPORARY TABLE _write_test (id int);")
+                    cur.execute("DROP TABLE _write_test;")
+                    health["can_write"] = True
+                except Exception:
+                    health["can_write"] = False
+                    self._connection.rollback()  # Reset transaction after failed write test
+
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+
+        return health
+
+
+class RedvyprTimescaleDb(AbstractDatabase):
+    """
+    Concrete implementation for TimescaleDB using the elegant API.
+    """
+
+    def __init__(self, dbname: str, user: str, password: str,
+                 host: str = 'localhost', port: str = '5432'):
+        super().__init__()
+        self.conn_params = {
+            'dbname': dbname, 'user': user, 'password': password,
+            'host': host, 'port': port
+        }
+
+    def connect(self):
+        """Implementation of the abstract connect method."""
+        print("Connecting")
+        if not self._connection:
+            try:
+                self._connection = psycopg.connect(**self.conn_params)
+                print("Could connect to database")
+            except psycopg.Error as e:
+                logger.error(f"❌ Connection failed: {e}")
+                raise
+        return self._connection
+
+    def setup_schema(self, table_name: str = 'redvypr_packets'):
+        """Initializes tables and metadata."""
+        sql_statements = [
+            "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;",
+            f"""
+            CREATE TABLE IF NOT EXISTS {table_name} (
+                id SERIAL,
+                timestamp TIMESTAMPTZ NOT NULL,
+                redvypr_address TEXT NOT NULL,
+                packetid TEXT NOT NULL,
+                publisher TEXT NOT NULL,
+                device TEXT NOT NULL,
+                host TEXT NOT NULL,
+                numpacket TEXT NOT NULL,
+                uuid TEXT NOT NULL,
+                timestamp_packet TIMESTAMPTZ NOT NULL,
+                data JSONB NOT NULL,
+                PRIMARY KEY (id, timestamp)
+            );
+            """,
+            f"SELECT create_hypertable('{table_name}', 'timestamp', if_not_exists => TRUE);",
+            """
+            CREATE TABLE IF NOT EXISTS redvypr_metadata (
+                redvypr_address TEXT NOT NULL,
+                uuid TEXT NOT NULL,
+                metadata JSONB NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                PRIMARY KEY (redvypr_address, uuid)
+            );
+            """
+        ]
+        try:
+            with self._connection.cursor() as cur:
+                for statement in sql_statements:
+                    cur.execute(statement)
+            self._connection.commit()
+            logger.info("✅ Schema verified and tables ready.")
+        except Exception as e:
+            logger.error(f"❌ Schema setup failed: {e}")
+
+    def insert_packet(self, data_dict: Dict[str, Any],
+                      table_name: str = 'redvypr_packets'):
+        """Inserts a single packet using internal data extraction logic."""
+        sql = f"""
+            INSERT INTO {table_name} (timestamp, data, redvypr_address, host, publisher, device, packetid, numpacket, timestamp_packet, uuid)
+            VALUES ({self.placeholder}, {self.placeholder}, {self.placeholder}, {self.placeholder}, {self.placeholder}, 
+                    {self.placeholder}, {self.placeholder}, {self.placeholder}, {self.placeholder}, {self.placeholder});
+        """
+        try:
+            # Assuming data_dict structure: 't' for timestamp, '_redvypr' for metadata
+            ts_utc = datetime.fromtimestamp(data_dict['t'], tz=timezone.utc)
+            ts_pkt_utc = datetime.fromtimestamp(data_dict['_redvypr']['t'],
+                                                tz=timezone.utc)
+
+            # Here you would normally use your RedvyprAddress helper class
+            # For this example, we assume it's pre-parsed or manual:
+            raddr_data = RedvyprAddress(data_dict)
+            numpacket = data_dict['_redvypr']['numpacket']
+            raddr = RedvyprAddress(data_dict)
+            raddrstr = raddr.to_address_string()
+            host = raddr.hostname
+            uuid = raddr.uuid
+            device = raddr.device
+            packetid = raddr.packetid
+            publisher = raddr.publisher
+
+            values = (
+                ts_utc, json_safe_dumps(data_dict), raddrstr,
+                host, publisher, device, packetid,
+                numpacket, ts_pkt_utc, uuid)
+
+            with self._connection.cursor() as cur:
+                cur.execute(sql, values)
+            self._connection.commit()
+        except:
+            logger.warning(f"❌ Insert failed",exc_info=True)
+            print("data dict",data_dict)
+            json.dumps(data_dict)
+
+    def add_metadata(self, address: str, uuid: str, metadata_dict: dict,
+                     mode: str = "merge"):
+        """Upsert metadata with merge or overwrite logic."""
+        conflict_action = "metadata = redvypr_metadata.metadata || EXCLUDED.metadata" if mode == "merge" else "metadata = EXCLUDED.metadata"
+
+        sql = f"""
+            INSERT INTO redvypr_metadata (redvypr_address, uuid, metadata)
+            VALUES ({self.placeholder}, {self.placeholder}, {self.placeholder})
+            ON CONFLICT (redvypr_address, uuid) DO UPDATE SET {conflict_action};
+        """
+        try:
+            with self._connection.cursor() as cur:
+                cur.execute(sql, (address, uuid, json.dumps(metadata_dict)))
+            self._connection.commit()
+        except Exception as e:
+            logger.error(f"❌ Metadata storage failed: {e}")
+
+    def get_packets_range(self, start_index: int, count: int) -> List[Dict]:
+        """Returns a list of packet dictionaries."""
+        sql = f"SELECT id, timestamp, data FROM redvypr_packets ORDER BY id ASC LIMIT {self.placeholder} OFFSET {self.placeholder}"
+        try:
+            with self._connection.cursor() as cur:
+                cur.execute(sql, (count, start_index))
+                return [{"id": r[0], "timestamp": r[1], "data": r[2]} for r in
+                        cur.fetchall()]
+        except Exception as e:
+            logger.error(f"❌ Range retrieval failed: {e}")
+            return []
+
+    def get_latest_packet(self, table_name: str = 'redvypr_packets') -> Optional[
+        Dict[str, Any]]:
+        """
+        Fetches the most recent packet from the database.
+        Returns None if the table is empty.
+        """
+        # We sort by 'timestamp' (TimescaleDB primary dimension) or 'id'
+        sql = f"SELECT id, timestamp, data FROM {table_name} ORDER BY timestamp DESC LIMIT 1"
+
+        try:
+            with self._connection.cursor() as cur:
+                cur.execute(sql)
+                row = cur.fetchone()
+
+                if row:
+                    return {
+                        "id": row[0],
+                        "timestamp": row[1],
+                        "data": row[2]  # Automatically a dict thanks to JSONB
+                    }
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch latest packet: {e}")
+            if self._connection:
+                self._connection.rollback()
+        return None
+
+
+class RedvyprTimescaleDb_legacy:
         """
         Class for managing the connection and interaction with a TimescaleDB instance.
         """
@@ -212,6 +561,43 @@ class RedvyprTimescaleDb:
                 print(f"❌ Error fetching database information: {e}")
                 return None
         # -------------------------------------
+
+        def check_db_capabilities(self) -> Dict[str, Any]:
+            """
+            Checks if the connected database is a TimescaleDB and if the user
+            has permissions to create tables.
+            """
+            status = {
+                "is_timescale": False,
+                "can_create_tables": False,
+                "extension_version": None,
+                "error": None
+            }
+
+            try:
+                with self._get_connection() as conn:
+                    with conn.cursor() as cur:
+                        # 1. Check for TimescaleDB extension
+                        cur.execute("""
+                            SELECT extname, extversion 
+                            FROM pg_extension 
+                            WHERE extname = 'timescaledb';
+                        """)
+                        ts_ext = cur.fetchone()
+                        if ts_ext:
+                            status["is_timescale"] = True
+                            status["extension_version"] = ts_ext[1]
+
+                        # 2. Check for CREATE permissions on the current schema (usually 'public')
+                        cur.execute("""
+                            SELECT has_schema_privilege(current_user, current_schema(), 'CREATE');
+                        """)
+                        status["can_create_tables"] = cur.fetchone()[0]
+
+                return status
+            except Exception as e:
+                status["error"] = str(e)
+                return status
 
         def insert_packet_data(self, data_dict: Dict[str, Any],
                                table_name: str = 'redvypr_packets'):
