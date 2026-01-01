@@ -6,6 +6,109 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 from qtpy import QtWidgets
 from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, TimescaleConfig, SqliteConfig
 
+from qtpy import QtWidgets, QtCore
+import typing
+
+
+class DBConfigWidget(QtWidgets.QWidget):
+    """
+    A container widget that switches between TimescaleDbConfigWidget
+    and SqliteConfigWidget based on the selected dbtype.
+    """
+
+    def __init__(self, initial_config: DatabaseConfig, parent=None):
+        super().__init__(parent)
+        self.current_config = initial_config
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # --- 1. Selection Header ---
+        header_layout = QtWidgets.QHBoxLayout()
+        header_layout.addWidget(QtWidgets.QLabel("<b>Database Engine:</b>"))
+
+        self.type_combo = QtWidgets.QComboBox()
+        self.type_combo.addItems(["timescaledb", "sqlite"])
+
+        # Set initial selection from config
+        index = self.type_combo.findText(self.current_config.dbtype)
+        if index >= 0:
+            self.type_combo.setCurrentIndex(index)
+
+        header_layout.addWidget(self.type_combo)
+        self.main_layout.addLayout(header_layout)
+
+        # --- 2. The Stacked Area ---
+        self.stack = QtWidgets.QStackedWidget()
+
+        # Instantiate specific widgets
+        # We pass dummy defaults if the initial type doesn't match
+        self.timescale_ui = TimescaleDbConfigWidget(
+            initial_config=self.current_config if isinstance(self.current_config,
+                                                             TimescaleConfig) else TimescaleConfig()
+        )
+        self.sqlite_ui = SqliteConfigWidget(
+            initial_config=self.current_config if isinstance(self.current_config,
+                                                             SqliteConfig) else SqliteConfig()
+        )
+
+        self.stack.addWidget(self.timescale_ui)  # Index 0
+        self.stack.addWidget(self.sqlite_ui)  # Index 1
+
+        self.main_layout.addWidget(self.stack)
+
+        # Connect signals
+        self.type_combo.currentTextChanged.connect(self.switch_view)
+
+        # Set initial view
+        self.switch_view(self.current_config.dbtype)
+
+    def switch_view(self, dbtype: str):
+        """Swaps the visible configuration form."""
+        if dbtype == "timescaledb":
+            self.stack.setCurrentWidget(self.timescale_ui)
+        elif dbtype == "sqlite":
+            self.stack.setCurrentWidget(self.sqlite_ui)
+
+    def get_config(self) -> DatabaseConfig:
+        """Returns the specific Pydantic model from the active sub-widget."""
+        if self.type_combo.currentText() == "timescaledb":
+            return self.timescale_ui.get_config()
+        else:
+            return self.sqlite_ui.get_config()
+
+
+class SqliteConfigWidget(QtWidgets.QWidget):
+    def __init__(self, initial_config: SqliteConfig, parent=None):
+        super().__init__(parent)
+        self.config = initial_config
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QtWidgets.QFormLayout(self)
+
+        self.path_edit = QtWidgets.QLineEdit(self.config.filepath)
+        self.browse_btn = QtWidgets.QPushButton("Browse...")
+        self.browse_btn.clicked.connect(self.handle_browse)
+
+        file_layout = QtWidgets.QHBoxLayout()
+        file_layout.addWidget(self.path_edit)
+        file_layout.addWidget(self.browse_btn)
+
+        layout.addRow("Database File:", file_layout)
+
+    def handle_browse(self):
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Select SQLite Database", "",
+            "DB Files (*.db *.sqlite);;All Files (*)"
+        )
+        if path:
+            self.path_edit.setText(path)
+
+    def get_config(self) -> SqliteConfig:
+        return SqliteConfig(dbtype="sqlite", filepath=self.path_edit.text())
 
 class TimescaleDbConfigWidget(QtWidgets.QWidget):
     """

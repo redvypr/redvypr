@@ -17,7 +17,7 @@ from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import Datapacket
-from .db_writer import TimescaleDbConfigWidget
+from .db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget
 from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, TimescaleConfig, SqliteConfig
 
 logging.basicConfig(stream=sys.stderr)
@@ -296,7 +296,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.settings_button.clicked.connect(self.open_settings)
 
         # 2. Create the new DBConfigWidget
-        self.db_config_widget = TimescaleDbConfigWidget(initial_config=initial_config.database)
+        self.db_config_widget = DBConfigWidget(
+            initial_config=initial_config.database)
+        #self.db_config_widget = TimescaleDbConfigWidget(initial_config=initial_config.database)
         self.statustable = QtWidgets.QTableWidget()
         self.statustable.setRowCount(1)
         self._statustableheader = ['Packets','Packets read','Packets published']
