@@ -106,7 +106,7 @@ def get_ip():
 # The hostinfo, to distinguish between different redvypr instances
 # redvyprid = str(uuid.uuid1()) # Old
 
-hostinfo_blank = {'hostname':None, 'tstart': 0,'addr':None, 'uuid':None}
+hostinfo_blank = {'host':None, 'tstart': 0,'addr':None, 'uuid':None}
 
 def create_hostinfo(hostname='redvypr'):
     funcname = __name__ + '.create_hostinfo()'
@@ -114,7 +114,7 @@ def create_hostinfo(hostname='redvypr'):
     randstr = '{:03d}'.format(random.randrange(2 ** 8))
     redvyprid = str(uuid.getnode()) + '-' + datetime.datetime.now().strftime('%Y%m%d%H%M%S.%f') + '-' + randstr
     #redvyprid = str(uuid.getnode()) + '-' + randstr
-    hostinfo = {'hostname': hostname, 'tstart': time.time(), 'addr': get_ip(), 'uuid': redvyprid}
+    hostinfo = {'host': hostname, 'tstart': time.time(), 'addr': get_ip(), 'uuid': redvyprid}
     return hostinfo
 
 def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, redvyprreplyqueue, dt=0.01):
@@ -497,7 +497,7 @@ class Redvypr(QtCore.QObject):
             devices.append(device_config_tmp)
 
         loglevel_tmp = logging.getLevelName(logger.getEffectiveLevel())
-        config = RedvyprConfig(hostname=self.hostinfo['hostname'], metadata=self.metadata,
+        config = RedvyprConfig(hostname=self.hostinfo['host'], metadata=self.metadata,
                                devicepaths=self.device_paths, loglevel=loglevel_tmp,
                                redvyp_version=version, date_created=str(datetime.datetime.utcnow()),
                                devices=devices)
@@ -676,7 +676,7 @@ class Redvypr(QtCore.QObject):
         """ Creates a statusstr of the devices
         """
         tstr = str(datetime.datetime.now())
-        statusstr = "{:s}, {:s}, num devices {:d}".format(tstr, self.hostinfo['hostname'], len(self.devices))
+        statusstr = "{:s}, {:s}, num devices {:d}".format(tstr, self.hostinfo['host'], len(self.devices))
 
         for sendict in self.devices:
             status = sendict['device'].get_thread_status()

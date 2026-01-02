@@ -9,7 +9,7 @@ from redvypr.data_packets import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.redvypr_address import RedvyprAddress
 from .db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget
-from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, TimescaleConfig, SqliteConfig
+from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.db.db_writer')
@@ -45,11 +45,13 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     dbconfig = device_config.database
     logger_thread.info("Opening database")
     try:
-        db = RedvyprTimescaleDb(dbname = dbconfig.dbname,
-                                user= dbconfig.user,
-                                password=dbconfig.password,
-                                host=dbconfig.host,
-                                port=dbconfig.port)
+
+        db = RedvyprDBFactory.create(dbconfig)
+        #db = RedvyprTimescaleDb(dbname = dbconfig.dbname,
+        #                        user= dbconfig.user,
+        #                        password=dbconfig.password,
+        #                        host=dbconfig.host,
+        #                        port=dbconfig.port)
 
         with db:
             print("Opened")
@@ -67,7 +69,9 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 statistics = {}
                 while True:
                     datapacket = datainqueue.get()
-                    # print("Got data",datapacket)
+                    #print("Got data",datapacket)
+                    addrstr = RedvyprAddress(datapacket).to_address_string()
+                    #print("Addstr",addrstr)
                     [command, comdata] = check_for_command(datapacket,
                                                            thread_uuid=device_info[
                                                                'thread_uuid'],
@@ -107,8 +111,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                     logger_thread.info("Could not add metadata",exc_info=True)
 
                     else:  # Only save real data
-                        # print('Inserting datapacket',datapacket)
-                        addrstr = RedvyprAddress(datapacket).to_address_string()
+                        #print('Inserting datapacket',datapacket)
                         try:
                             statistics[addrstr]
                         except:
@@ -142,11 +145,12 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
 
 def get_database_info(config):
-    db = RedvyprTimescaleDb(dbname=config.dbname,
-                            user=config.user,
-                            password=config.password,
-                            host=config.host,
-                            port=config.port)
+    db = RedvyprDBFactory.create(config)
+    #db = RedvyprTimescaleDb(dbname=config.dbname,
+    #                        user=config.user,
+    #                        password=config.password,
+    #                        host=config.host,
+    #                        port=config.port)
 
     print("Opening with config",config)
     with db:
@@ -176,10 +180,13 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.statistics = {}
         self._statistics_items = {}
         initial_config = self.device.custom_config
+        # Connect thread signals
+        self.device.thread_started.connect(self.thread_start_signal)
         # 2. Create the new DBConfigWidget
         self.db_config_widget = DBConfigWidget(
             initial_config=initial_config.database)
-        #self.db_config_widget = TimescaleDbConfigWidget(initial_config=initial_config.database)
+        self.db_config_widget.db_type_changed.connect(self.update_config_from_widgets)
+        self.db_config_widget.db_config_changed.connect(self.update_config_from_widgets)
         self.statustable = QtWidgets.QTableWidget()
         self.statustable.setRowCount(1)
         self._statustableheader = ['Packets','Num stored','Num stored error']
@@ -198,6 +205,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.statustimer_db = QtCore.QTimer()
         self.statustimer_db.timeout.connect(self.update_status)
 
+    def update_config_from_widgets(self, config_new):
+        print(f"Got new config from widgets:{config_new}")
+        db_config = DatabaseSettings(config_new).root
+        print(f"Got new config from widgets:{db_config}")
+        self.device.custom_config.database = db_config
 
     def update_status(self):
         status = self.device.get_thread_status()
@@ -253,8 +265,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             except:
                 logger.info("Could not update data",exc_info=True)
 
-    # This is bad style, needs to be changed to thread_started signal and continous update of configuration
-    def start_clicked(self):
-        self.device.custom_config.database = self.db_config_widget.get_config()
+    def thread_start_signal(self):
+        print("Thread started, starting statustimer")
         self.statustimer_db.start(500)
-        super().start_clicked()

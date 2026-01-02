@@ -766,7 +766,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__hostname_line = QtWidgets.QLabel('')
         self.__hostname_line.setAlignment(QtCore.Qt.AlignRight)
         self.__hostname_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.__hostname_line.setText(self.redvypr.hostinfo['hostname'])
+        self.__hostname_line.setText(self.redvypr.hostinfo['host'])
         # UUID
         self.__uuid_label = QtWidgets.QLabel('UUID:')
         self.__uuid_line = QtWidgets.QLabel('')
@@ -828,7 +828,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__hostname_line = QtWidgets.QLabel('')
         self.__hostname_line.setAlignment(QtCore.Qt.AlignRight)
         self.__hostname_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.__hostname_line.setText(self.redvypr.hostinfo['hostname'])
+        self.__hostname_line.setText(self.redvypr.hostinfo['host'])
         # UUID
         self.__uuid_label = QtWidgets.QLabel('UUID:')
         self.__uuid_line = QtWidgets.QLabel('')

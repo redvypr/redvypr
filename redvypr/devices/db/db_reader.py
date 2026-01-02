@@ -18,7 +18,7 @@ from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import Datapacket
 from .db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget, DBQueryDialog
-from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, TimescaleConfig, SqliteConfig
+from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.db.db_reader')
@@ -86,11 +86,12 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     print(f"Packet filters:{packet_filters}")
     print(f"Packet time range:{packet_time_range}")
     try:
-        db = RedvyprTimescaleDb(dbname = dbconfig.dbname,
-                                user= dbconfig.user,
-                                password=dbconfig.password,
-                                host=dbconfig.host,
-                                port=dbconfig.port)
+        db = RedvyprDBFactory.create(dbconfig)
+        #db = RedvyprTimescaleDb(dbname = dbconfig.dbname,
+        #                        user= dbconfig.user,
+        #                        password=dbconfig.password,
+        #                        host=dbconfig.host,
+        #                        port=dbconfig.port)
 
         with db:
             # 1. Setup (gentle approach)
@@ -326,11 +327,12 @@ class ReplaySettingsDialog(QtWidgets.QDialog):
         """Opens the DB Inventory and imports selection."""
         dbconfig = self.config.database
         try:
-            self.db = RedvyprTimescaleDb(dbname=dbconfig.dbname,
-                                    user=dbconfig.user,
-                                    password=dbconfig.password,
-                                    host=dbconfig.host,
-                                    port=dbconfig.port)
+            self.db = RedvyprDBFactory.create(dbconfig)
+            #self.db = RedvyprTimescaleDb(dbname=dbconfig.dbname,
+            #                        user=dbconfig.user,
+            #                        password=dbconfig.password,
+            #                        host=dbconfig.host,
+            #                        port=dbconfig.port)
 
             with self.db:
                 # 1. Setup (gentle approach)
@@ -428,6 +430,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         super().__init__(*args,**kwargs)
         self.statistics = {}
         self._statistics_items = {}
+        self.device.thread_started.connect(self.thread_start_signal)
         initial_config = self.device.custom_config
         # 1. Create Settings Button
         self.settings_button = QtWidgets.QPushButton(" Replay Settings")
@@ -437,7 +440,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         # 2. Create the new DBConfigWidget
         self.db_config_widget = DBConfigWidget(
             initial_config=initial_config.database)
-        #self.db_config_widget = TimescaleDbConfigWidget(initial_config=initial_config.database)
+        self.db_config_widget.db_type_changed.connect(self.update_config_from_widgets)
+        self.db_config_widget.db_config_changed.connect(self.update_config_from_widgets)
         self.statustable = QtWidgets.QTableWidget()
         self.statustable.setRowCount(1)
         self._statustableheader = ['Packets','Packets read','Packets published']
@@ -458,8 +462,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.statustimer_db = QtCore.QTimer()
         self.statustimer_db.timeout.connect(self.update_status)
 
-
-
+    def update_config_from_widgets(self, config_new):
+        print(f"Got new config from widgets:{config_new}")
+        db_config = DatabaseSettings(config_new).root
+        print(f"Got new config from widgets:{db_config}")
+        self.device.custom_config.database = db_config
 
 
     def open_settings(self):
@@ -530,22 +537,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             except:
                 logger.info("Could not update data",exc_info=True)
 
-    # This is bad style, needs to be changed to thread_started signal and continous update of configuration
-    def start_clicked(self):
-        # Ensure we sync the connection params (host, user, etc.) from the sub-widget
-        # before starting the thread
-        db_params = self.db_config_widget.get_config()
-        current_cfg = self.device.custom_config
-
-        # Merge them
-        current_cfg.database.host = db_params.host
-        current_cfg.database.user = db_params.user
-        current_cfg.database.password = db_params.password
-        current_cfg.database.dbname = db_params.dbname
-        current_cfg.database.port = db_params.port
-
-        self.device.custom_config = current_cfg
-
+    def thread_start_signal(self):
+        print("Thread started, starting statustimer")
         self.statustimer_db.start(500)
-        super().start_clicked()
+
 

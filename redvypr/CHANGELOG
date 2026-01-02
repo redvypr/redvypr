@@ -115,7 +115,7 @@
 - 0.8.1:
         - API renaming, changed class names to CapWord style according to PEP08, cleanup of configuration
 - 0.8.0:
-        - complete rewrite of configuration for a fill pydantic version
+        - complete rewrite of configuration for a full pydantic version
 - 0.7.9:
         - complete split of redvypr, redvypr_widget and redvypr_main
 - 0.7.8:
@@ -288,7 +288,7 @@
 - 0.1.7:
         - Added deviceinfowidget, a sumarywdiget that allows to control all devices (remove, rename, connections)
 - 0.1.6:
-        - replaced nomencalture "sensor" with "device", to make it more general
+        - replaced nomenclature "sensor" with "device", to make it more general
 - 0.1.5:
         - nogui option
 - 0.1.4:

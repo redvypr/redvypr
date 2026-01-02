@@ -4,7 +4,7 @@ import pydantic
 import qtawesome
 from PyQt6 import QtWidgets, QtCore, QtGui
 from qtpy import QtWidgets
-from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, TimescaleConfig, SqliteConfig
+from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, TimescaleConfig, SqliteConfig, RedvyprDBFactory
 
 from qtpy import QtWidgets, QtCore
 import typing
@@ -15,7 +15,8 @@ class DBConfigWidget(QtWidgets.QWidget):
     A container widget that switches between TimescaleDbConfigWidget
     and SqliteConfigWidget based on the selected dbtype.
     """
-
+    db_type_changed = QtCore.Signal(dict)
+    db_config_changed = QtCore.Signal(dict)
     def __init__(self, initial_config: DatabaseConfig, parent=None):
         super().__init__(parent)
         self.current_config = initial_config
@@ -49,11 +50,12 @@ class DBConfigWidget(QtWidgets.QWidget):
             initial_config=self.current_config if isinstance(self.current_config,
                                                              TimescaleConfig) else TimescaleConfig()
         )
+
         self.sqlite_ui = SqliteConfigWidget(
             initial_config=self.current_config if isinstance(self.current_config,
                                                              SqliteConfig) else SqliteConfig()
         )
-
+        self.sqlite_ui.db_config_changed.connect(self.db_widget_config_changed)
         self.stack.addWidget(self.timescale_ui)  # Index 0
         self.stack.addWidget(self.sqlite_ui)  # Index 1
 
@@ -65,13 +67,19 @@ class DBConfigWidget(QtWidgets.QWidget):
         # Set initial view
         self.switch_view(self.current_config.dbtype)
 
+    def db_widget_config_changed(self, db_config: dict):
+        self.db_config_changed.emit(db_config)
     def switch_view(self, dbtype: str):
         """Swaps the visible configuration form."""
         if dbtype == "timescaledb":
             self.stack.setCurrentWidget(self.timescale_ui)
+            config = self.timescale_ui.get_config()
         elif dbtype == "sqlite":
             self.stack.setCurrentWidget(self.sqlite_ui)
+            config = self.sqlite_ui.get_config()
 
+        print(f"DB type changed:{config}")
+        self.db_type_changed.emit(config.model_dump())
     def get_config(self) -> DatabaseConfig:
         """Returns the specific Pydantic model from the active sub-widget."""
         if self.type_combo.currentText() == "timescaledb":
@@ -81,15 +89,18 @@ class DBConfigWidget(QtWidgets.QWidget):
 
 
 class SqliteConfigWidget(QtWidgets.QWidget):
+    db_config_changed = QtCore.Signal(dict)
     def __init__(self, initial_config: SqliteConfig, parent=None):
         super().__init__(parent)
         self.config = initial_config
         self.setup_ui()
 
     def setup_ui(self):
-        layout = QtWidgets.QFormLayout(self)
+        main_layout = QtWidgets.QVBoxLayout(self)
+        layout = QtWidgets.QFormLayout()
 
         self.path_edit = QtWidgets.QLineEdit(self.config.filepath)
+        self.path_edit.textChanged.connect(self.config_changed)
         self.browse_btn = QtWidgets.QPushButton("Browse...")
         self.browse_btn.clicked.connect(self.handle_browse)
 
@@ -98,6 +109,28 @@ class SqliteConfigWidget(QtWidgets.QWidget):
         file_layout.addWidget(self.browse_btn)
 
         layout.addRow("Database File:", file_layout)
+
+        # 2. Test/Query Buttons
+        self.test_button = QtWidgets.QPushButton("Test DB Connection")
+        # Placeholder icon from qtawesome stub
+        icon = qtawesome.icon('mdi6.database-outline')
+        self.test_button.setIcon(icon)
+        self.query_button = QtWidgets.QPushButton("Query DB")
+        icon = qtawesome.icon('mdi6.database-search-outline')
+        self.query_button.setIcon(icon)
+        self.button_layout = QtWidgets.QHBoxLayout()
+        self.button_layout.addWidget(self.test_button)
+        self.button_layout.addWidget(self.query_button)
+
+        self.test_button.clicked.connect(self.test_connection_clicked)
+        self.query_button.clicked.connect(self.query_db_clicked)
+        main_layout.addLayout(layout)
+        main_layout.addLayout(self.button_layout)
+
+    def config_changed(self):
+        config = self.get_config()
+        print(f"Sqlite config changed:{config}")
+        self.db_config_changed.emit(config.model_dump())
 
     def handle_browse(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -110,12 +143,37 @@ class SqliteConfigWidget(QtWidgets.QWidget):
     def get_config(self) -> SqliteConfig:
         return SqliteConfig(dbtype="sqlite", filepath=self.path_edit.text())
 
+
+    def query_db_clicked(self):
+        config = self.get_config()
+        db = RedvyprDBFactory.create(config)
+        self.query_widdget = DBQueryDialog(db_instance=db)
+        self.query_widdget.show()
+
+    def test_connection_clicked(self):
+        # pconfig is an instance of TimescaleConfig
+        pconfig = self.get_config()
+        print("Testing connection")
+        try:
+            # Instantiate the correct class
+            db = RedvyprDBFactory.create(pconfig)
+            print("DB",db)
+
+            # Pass the DB instance to the Dialog.
+            # The dialog will handle 'with db:' internally to keep it alive.
+            diag = DBStatusDialog(db, self)
+            diag.exec_()
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Connection Error",
+                                           f"Failed: {str(e)}")
+
 class TimescaleDbConfigWidget(QtWidgets.QWidget):
     """
     A dedicated widget for configuring and testing
     database connection settings based on a Pydantic model.
     """
-
+    db_config_changed = QtCore.Signal(dict)
     def __init__(self, initial_config: TimescaleConfig, parent=None):
         super().__init__(parent)
         self.initial_config = initial_config
@@ -169,6 +227,7 @@ class TimescaleDbConfigWidget(QtWidgets.QWidget):
                 self.input_fields[field_name] = line_edit
                 form_layout.addRow(f"{field_name.capitalize()}:", line_edit)
 
+            line_edit.textChanged.connect(self.config_changed)
         main_layout.addLayout(form_layout)
 
         # 2. Test/Query Buttons
@@ -187,6 +246,10 @@ class TimescaleDbConfigWidget(QtWidgets.QWidget):
         self.query_button.clicked.connect(self.query_db_clicked)
         main_layout.addLayout(self.button_layout)
 
+    def config_changed(self):
+        config = self.get_config()
+        print(f"TimescaleDb config changed:{config}")
+        self.db_config_changed.emit(config.model_dump())
 
     def toggle_password_visibility(self, line_edit: QtWidgets.QLineEdit, checked: bool):
         """Toggles the echo mode of the password field based on the button state."""
@@ -227,6 +290,29 @@ class TimescaleDbConfigWidget(QtWidgets.QWidget):
 
     def query_db_clicked(self):
         config = self.get_config()
+        db = RedvyprDBFactory.create(config)
+        self.query_widdget = DBQueryDialog(db_instance=db)
+        self.query_widdget.show()
+
+    def test_connection_clicked(self):
+        # pconfig is an instance of TimescaleConfig
+        pconfig = self.get_config()
+
+        try:
+            # Instantiate the correct class
+            db = RedvyprDBFactory.create(pconfig)
+
+            # Pass the DB instance to the Dialog.
+            # The dialog will handle 'with db:' internally to keep it alive.
+            diag = DBStatusDialog(db, self)
+            diag.exec_()
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Connection Error",
+                                           f"Failed: {str(e)}")
+
+    def query_db_clicked_legacy(self):
+        config = self.get_config()
         db = RedvyprTimescaleDb(dbname=config.dbname,
                                 user=config.user,
                                 password=config.password,
@@ -236,7 +322,7 @@ class TimescaleDbConfigWidget(QtWidgets.QWidget):
         self.query_widdget = DBQueryDialog(db_instance=db)
         self.query_widdget.show()
 
-    def test_connection_clicked(self):
+    def test_connection_clicked_legacy(self):
         # pconfig is an instance of TimescaleConfig
         pconfig = self.get_config()
 
@@ -479,9 +565,27 @@ class DBQueryDialog(QtWidgets.QDialog):
     def setup_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
 
-        # --- Header with Refresh ---
+        ## --- Header with Refresh ---
+        #header = QtWidgets.QHBoxLayout()
+        #header.addWidget(QtWidgets.QLabel("Database Inventory Overview"))
+        #header.addStretch()
+
+        # --- Header with Info and Refresh ---
         header = QtWidgets.QHBoxLayout()
-        header.addWidget(QtWidgets.QLabel("Database Inventory Overview"))
+
+        # Titel und DB-Info Container
+        title_vbox = QtWidgets.QVBoxLayout()
+        title_label = QtWidgets.QLabel("<b>Database Inventory Overview</b>")
+        title_label.setStyleSheet("font-size: 14px;")
+
+        # Das neue Label für die DB-Details
+        self.db_info_label = QtWidgets.QLabel("Connecting...")
+        self.db_info_label.setStyleSheet("color: #666; font-size: 11px;")
+
+        title_vbox.addWidget(title_label)
+        title_vbox.addWidget(self.db_info_label)
+        header.addLayout(title_vbox)
+
         header.addStretch()
 
         self.refresh_button = QtWidgets.QPushButton(" Refresh All")
@@ -556,6 +660,49 @@ class DBQueryDialog(QtWidgets.QDialog):
         return table
 
     def refresh_data(self):
+        """Fetches data and updates connection info."""
+        self.status_label.setText("Fetching data...")
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+
+        try:
+            with self.db as connected_db:
+                # --- DB Info Label aktualisieren ---
+                connected_db.identify_and_setup()
+                engine = connected_db.engine_type.upper()
+
+                # Wir versuchen an die Adresse/Datei zu kommen
+                # Je nachdem, ob es SQLite (filepath) oder Postgres (host) ist
+                if engine == "SQLITE":
+                    # Falls du das Config-Objekt in der DB-Klasse speicherst:
+                    source = getattr(self.db, 'filepath', 'local file')
+                else:
+                    host = self.db.conn_params['host']
+                    port = self.db.conn_params['port']
+                    source = f"{host}:{port}" if port else host
+
+                self.db_info_label.setText(
+                    f"Connected to: <b>{engine}</b> | Source: <i>{source}</i>")
+
+                # --- Daten fetchen ---
+                packet_stats = connected_db.get_unique_combination_stats(
+                    keys=["redvypr_address", "packetid", "device", "host"]
+                )
+                meta_stats = connected_db.get_metadata_info(
+                    keys=["redvypr_address", "uuid", "device", "host"]
+                )
+
+            self._fill_table(self.packet_table, packet_stats, "packetid")
+            self._fill_table(self.meta_table, meta_stats, "uuid")
+
+            self.status_label.setText(
+                f"Updated: {len(packet_stats)} packet streams, {len(meta_stats)} metadata entries.")
+
+        except Exception as e:
+            self.db_info_label.setText("Connection failed.")
+            QtWidgets.QMessageBox.critical(self, "Error", f"Fetch failed: {e}")
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+    def refresh_data_legacy(self):
         """Fetches data for both tables."""
         self.status_label.setText("Fetching data...")
         QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
