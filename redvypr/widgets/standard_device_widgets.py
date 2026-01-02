@@ -270,13 +270,14 @@ class RedvyprdevicewidgetSimple(QtWidgets.QWidget):
         self.configure_button.clicked.connect(self.configure_clicked)
         # self.conbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         self.config_widgets.append(self.configure_button)
-        # subscribe button
-        self.subscribe_button = QtWidgets.QPushButton("Subscribe")
-        self.subscribe_button.clicked.connect(self.subscribe_clicked)
-        #self.conbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
-        self.config_widgets.append(self.subscribe_button)
-        #self.layout.addWidget(self.config_widget, 0, 0, 1, 4)
-        self.layout_buttons.addWidget(self.subscribe_button, 2, 0, 1, 2)
+        if device:
+            if device.subscribes:
+                # subscribe button
+                self.subscribe_button = QtWidgets.QPushButton("Subscribe")
+                self.subscribe_button.clicked.connect(self.subscribe_clicked)
+                #self.conbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+                self.config_widgets.append(self.subscribe_button)
+                self.layout_buttons.addWidget(self.subscribe_button, 2, 0, 1, 2)
         self.layout_buttons.addWidget(self.configure_button, 2, 2, 1, 2)
         if (self.device.mp == 'multiprocess')  or (self.device.mp == 'qthread'):
             self.layout_buttons.addWidget(self.startbutton, 3, 0, 1, 3)

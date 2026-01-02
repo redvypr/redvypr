@@ -521,23 +521,6 @@ class RedvyprTimescaleDb(AbstractDatabase):
             if self._connection:
                 self._connection.rollback()
 
-    def add_metadata_legacy(self, address: str, uuid: str, metadata_dict: dict,
-                     mode: str = "merge"):
-        """Upsert metadata with merge or overwrite logic."""
-        conflict_action = "metadata = redvypr_metadata.metadata || EXCLUDED.metadata" if mode == "merge" else "metadata = EXCLUDED.metadata"
-
-        sql = f"""
-            INSERT INTO redvypr_metadata (redvypr_address, uuid, metadata)
-            VALUES ({self.placeholder}, {self.placeholder}, {self.placeholder})
-            ON CONFLICT (redvypr_address, uuid) DO UPDATE SET {conflict_action};
-        """
-        try:
-            with self._connection.cursor() as cur:
-                cur.execute(sql, (address, uuid, json.dumps(metadata_dict)))
-            self._connection.commit()
-        except Exception as e:
-            logger.error(f"❌ Metadata storage failed: {e}")
-
     def get_packets_range(self, start_index: int, count: int,
                           filters: List[Dict[str, str]] = None,
                           time_range: Dict[str, Any] = None) -> List[Dict]:
@@ -588,17 +571,6 @@ class RedvyprTimescaleDb(AbstractDatabase):
                         cur.fetchall()]
         except Exception as e:
             logger.error(f"❌ Filtered range retrieval failed: {e}")
-            return []
-    def get_packets_range_legacy(self, start_index: int, count: int) -> List[Dict]:
-        """Returns a list of packet dictionaries."""
-        sql = f"SELECT id, timestamp, data FROM redvypr_packets ORDER BY id ASC LIMIT {self.placeholder} OFFSET {self.placeholder}"
-        try:
-            with self._connection.cursor() as cur:
-                cur.execute(sql, (count, start_index))
-                return [{"id": r[0], "timestamp": r[1], "data": r[2]} for r in
-                        cur.fetchall()]
-        except Exception as e:
-            logger.error(f"❌ Range retrieval failed: {e}")
             return []
 
     def get_latest_packet(self, table_name: str = 'redvypr_packets') -> Optional[

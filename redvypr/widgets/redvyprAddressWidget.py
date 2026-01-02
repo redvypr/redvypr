@@ -332,7 +332,7 @@ class AddressFilterwidget(QtWidgets.QWidget):
         publisher = self.line_publishingdevicefilter.text()
         self.filter_address = RedvyprAddress(datakey=datakey,
                                              packetid=packetid,
-                                             hostname=host,
+                                             host=host,
                                              device=device,
                                              publisher=publisher)
         #print('Update filteraddress',self.filter_address.get_str())

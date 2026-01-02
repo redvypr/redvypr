@@ -461,11 +461,16 @@ class DBQueryDialog(QtWidgets.QDialog):
     """
     Dialog to browse both Packet and Metadata inventory using Tabs.
     """
-
-    def __init__(self, db_instance, parent=None):
+    items_chosen = QtCore.Signal(list)
+    def __init__(self, db_instance, parent=None, select_mode=False):
         super().__init__(parent)
         self.db = db_instance
-        self.setWindowTitle("Database Inventory Browser")
+        self.select_mode = select_mode # New flag
+        self.selected_data = None # Storage for result
+        if self.select_mode:
+            self.setWindowTitle("Select Stream from Inventory")
+        else:
+            self.setWindowTitle("Database Inventory Browser")
         self.resize(1100, 700)
 
         self.setup_ui()
@@ -510,6 +515,26 @@ class DBQueryDialog(QtWidgets.QDialog):
         footer.addWidget(close_btn)
         layout.addLayout(footer)
 
+    def get_selection(self):
+        """Returns the address and time range of the selected row."""
+        table = self.tabs.currentWidget()
+        selected_items = table.selectedItems()
+        if not selected_items:
+            return None
+
+        row = selected_items[0].row()
+        # Mapping based on your table columns:
+        # 0: Address, 5: First Seen, 6: Last Seen
+        address = table.item(row, 0).text()
+        first_seen = table.item(row, 5).text()
+        last_seen = table.item(row, 6).text()
+
+        return {
+            "address": address,
+            "tstart": first_seen,
+            "tend": last_seen
+        }
+
     def _create_table_widget(self) -> QtWidgets.QTableWidget:
         """Helper to create a standardized table."""
         table = QtWidgets.QTableWidget()
@@ -521,6 +546,13 @@ class DBQueryDialog(QtWidgets.QDialog):
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        if self.select_mode:
+            # Enable Custom Context Menu
+            table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+            table.customContextMenuRequested.connect(self.show_context_menu)
+            table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+            table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+
         return table
 
     def refresh_data(self):
@@ -600,5 +632,44 @@ class DBQueryDialog(QtWidgets.QDialog):
         for i in range(table.columnCount()):
             current_width = table.columnWidth(i)
             table.setColumnWidth(i, current_width + 20)
+
+    def show_context_menu(self, position):
+        """Creates and shows the right-click menu."""
+        table = self.sender() # Get the table that was clicked
+        selected_rows = self._get_unique_selected_rows(table)
+        if not selected_rows:
+            return
+
+        menu = QtWidgets.QMenu()
+        count = len(selected_rows)
+        action_text = f"Add {count} selected item(s) to Replay" if self.select_mode else "Copy Selection"
+
+        select_action = menu.addAction(qtawesome.icon('fa5s.plus-circle'), action_text)
+        action = menu.exec_(table.viewport().mapToGlobal(position))
+
+        if action == select_action:
+            self.emit_selected_items(table, selected_rows)
+
+    def _get_unique_selected_rows(self, table):
+        """Gibt eine sortierte Liste der eindeutigen Zeilen-Indizes zurück."""
+        return sorted(list(set(index.row() for index in table.selectedIndexes())))
+
+    def emit_selected_items(self, table, rows):
+        """Extrahiert Daten aus allen gewählten Zeilen und sendet sie als Liste."""
+        results = []
+        for row in rows:
+            data = {
+                "address": table.item(row, 0).text(),
+                "id": table.item(row, 1).text(),
+                "tstart": table.item(row, 5).text(),
+                "tend": table.item(row, 6).text()
+            }
+            results.append(data)
+
+        if results:
+            self.items_chosen.emit(results)
+            self.status_label.setText(f"Added {len(results)} items to settings.")
+
+
 
 

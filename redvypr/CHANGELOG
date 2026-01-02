@@ -1,5 +1,6 @@
 - 0.9.16?:
-       -
+       - renamed hostname to host and hostname_localhost to host_local in redvypr_address
+       - major improvements for metadata and database functionality
 - 0.9.15:
        - metadata simplified (global, not device specific) and improved (metadata widget)
        - former RedvyprAddress.match renamed to .match_filter

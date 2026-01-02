@@ -17,7 +17,7 @@ from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import Datapacket
-from .db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget
+from .db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget, DBQueryDialog
 from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, TimescaleConfig, SqliteConfig
 
 logging.basicConfig(stream=sys.stderr)
@@ -34,7 +34,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
 
 class DeviceCustomConfig(pydantic.BaseModel):
     size_packetbuffer: int = 10
-    packet_filter: typing.List[RedvyprAddress] = pydantic.Field(default=[RedvyprAddress("@")])
+    packet_filter: typing.List[RedvyprAddress] = pydantic.Field(default=[])
     tstart: typing.Optional[datetime.datetime] = pydantic.Field(default=None)
     tend: typing.Optional[datetime.datetime] = pydantic.Field(default=None)
     speedup: float = pydantic.Field(default=1.0,
@@ -62,6 +62,29 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     device_config = DeviceCustomConfig(**config)
     dbconfig = device_config.database
     logger_thread.info("Opening database")
+    # Get the filters from the redvypr addresses
+    packet_filters = None
+    packet_time_range = None
+    if len(device_config.packet_filter):
+        packet_filters = []
+        filter_keys = ["host","device","packetid","uuid"]
+        for addr in device_config.packet_filter:
+            filter_dict = {}
+            for filter_key in filter_keys:
+                if getattr(addr,filter_key):
+                    print("Setting filter")
+                    filter_dict[filter_key] = getattr(addr,filter_key)
+
+            if len(filter_dict.keys()):
+                packet_filters.append(filter_dict)
+
+        packet_time_range = {
+            "tstart": device_config.tstart,
+            "tend": device_config.tend
+        }
+
+    print(f"Packet filters:{packet_filters}")
+    print(f"Packet time range:{packet_time_range}")
     try:
         db = RedvyprTimescaleDb(dbname = dbconfig.dbname,
                                 user= dbconfig.user,
@@ -83,8 +106,14 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             db_info = db.get_database_info()
             statistics = {}
             packets_read_buffer = []
-            print("Number of measurements", db_info["measurement_count"])
-            ntotal = db_info["measurement_count"]
+            print(f"Number of total measurements in db:{db_info["measurement_count"]}")
+            if packet_filters is None:
+                ntotal = db_info["measurement_count"]
+            else:
+                ntotal = db.get_packet_count(filters=packet_filters,
+                                                     time_range=packet_time_range)
+
+            print(f"Number of measurements (with filter):{ntotal}")
             nchunk = 100
             ind_read = 0
             t_packet_old = 0  # Time of the last sent packet
@@ -133,7 +162,15 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                             return
 
                         print("Reading #{} packets from {}".format(nread, ind_read))
-                        data = db.get_packets_range(ind_read, nread)
+                        if packet_filters is None:
+                            data = db.get_packets_range(ind_read, nread)
+                        else:
+                            data = db.get_packets_range(
+                                start_index=ind_read,
+                                count=nread,
+                                filters=packet_filters,
+                                time_range=packet_time_range
+                            )
                         packets_read += len(data)
                         ind_read += nread
                         packets_read_buffer.extend(data)
@@ -156,12 +193,22 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                         dt_thread = t_thread_now - t_thread_sent
                         # print("dt", dt_packet, dt_thread)
                         if dt_thread >= dt_packet:
-                            print("Sending", id_send, t_packet)
+                            #print("Sending", id_send, t_packet)
                             packets_published += 1
                             t_thread_sent = t_thread_now
                             t_packet_old = t_packet_unix
                             dataqueue.put(packet_send)
                             data_send = None
+                            # Update statistics
+                            raddr_packet = RedvyprAddress(packet_send).to_address_string()
+                            try:
+                                statistics[raddr_packet]
+                            except:
+                                statistics[raddr_packet] = {'packets_read':0, 'packets_published':0}
+
+                            statistics[raddr_packet]['packets_read'] += 1
+                            statistics[raddr_packet]['packets_published'] += 1
+                            #print(f"statistics:{statistics}")
 
                 if ((time.time() - t_update) > dt_update):
                     t_update = time.time()
@@ -194,9 +241,18 @@ class ReplaySettingsDialog(QtWidgets.QDialog):
     def setup_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
 
+        self.browse_db_btn = QtWidgets.QPushButton(" Choose Datastreams/Times from DB")
+        icon = qtawesome.icon('mdi6.database-search-outline')
+        self.browse_db_btn.setIcon(icon)
+        #self.browse_db_btn.setMinimumHeight(40)
+        #self.browse_db_btn.setStyleSheet("background-color: #ebf8ff; font-weight: bold; border: 1px solid #bee3f8;")
+        self.browse_db_btn.clicked.connect(self.on_browse_db)
+        layout.addWidget(self.browse_db_btn)
         # --- 1. Address Filter List ---
-        filter_group = QtWidgets.QGroupBox("Packet Filter (Addresses)")
-        filter_layout = QtWidgets.QVBoxLayout(filter_group)
+        self.filter_group = QtWidgets.QGroupBox("Packet Filter (Addresses)")
+        self.filter_group.setCheckable(True)  # Adds checkbox to title
+        self.filter_group.setChecked(len(self.config.packet_filter) > 0)
+        filter_layout = QtWidgets.QVBoxLayout(self.filter_group)
 
         self.address_list = QtWidgets.QListWidget()
         for addr in self.config.packet_filter:
@@ -210,24 +266,29 @@ class ReplaySettingsDialog(QtWidgets.QDialog):
 
         filter_layout.addWidget(self.address_list)
         filter_layout.addLayout(btn_layout)
-        layout.addWidget(filter_group)
+        layout.addWidget(self.filter_group)
 
         # --- 2. Time Range ---
-        time_group = QtWidgets.QGroupBox("Time Range (Optional)")
-        time_layout = QtWidgets.QFormLayout(time_group)
+        self.time_group = QtWidgets.QGroupBox("Time Range (Optional)")
+        self.time_group.setCheckable(True)
+        self.time_group.setChecked(False)
+        time_layout = QtWidgets.QFormLayout(self.time_group)
 
+        datetime_format = "yyyy-MM-dd HH:mm:ss"
         self.tstart_edit = QtWidgets.QDateTimeEdit(calendarPopup=True)
+        self.tstart_edit.setDisplayFormat(datetime_format)
         self.tstart_edit.setDateTime(
             self.config.tstart if self.config.tstart else QtCore.QDateTime.currentDateTime().addDays(
                 -1))
 
         self.tend_edit = QtWidgets.QDateTimeEdit(calendarPopup=True)
+        self.tend_edit.setDisplayFormat(datetime_format)
         self.tend_edit.setDateTime(
             self.config.tend if self.config.tend else QtCore.QDateTime.currentDateTime())
 
         time_layout.addRow("Start Time:", self.tstart_edit)
         time_layout.addRow("End Time:", self.tend_edit)
-        layout.addWidget(time_group)
+        layout.addWidget(self.time_group)
 
         # --- 3. Mode & Speed ---
         mode_group = QtWidgets.QGroupBox("Replay Mode")
@@ -261,6 +322,67 @@ class ReplaySettingsDialog(QtWidgets.QDialog):
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
 
+    def on_browse_db(self):
+        """Opens the DB Inventory and imports selection."""
+        dbconfig = self.config.database
+        try:
+            self.db = RedvyprTimescaleDb(dbname=dbconfig.dbname,
+                                    user=dbconfig.user,
+                                    password=dbconfig.password,
+                                    host=dbconfig.host,
+                                    port=dbconfig.port)
+
+            with self.db:
+                # 1. Setup (gentle approach)
+                self.db.identify_and_setup()
+                status = self.db.check_health()
+
+                self.browser = DBQueryDialog(self.db, parent=self, select_mode=True)
+                self.browser.items_chosen.connect(self.handle_incoming_items)
+                self.browser.show()
+
+        except Exception as e:
+            print(f"Could not open databse: {e}")
+
+    def handle_incoming_items(self, items_list: list):
+        """Slot für das Signal 'items_chosen(list)'."""
+        if not items_list:
+            return
+
+        all_starts = []
+        all_ends = []
+        fmt = "%Y-%m-%d %H:%M:%S"
+
+        for item in items_list:
+            #print("Processing item",item)
+            # 1. Adresse zur Liste hinzufügen (Duplikate vermeiden)
+            addr_str = item["address"]
+            existing = [self.address_list.item(i).text() for i in
+                        range(self.address_list.count())]
+            if addr_str not in existing:
+                self.address_list.addItem(addr_str)
+
+            # 2. Collect time data
+            try:
+                # fromisoformat handles strings of the format "2026-01-01T16:13:38.566638+00:00"
+                t_start = datetime.fromisoformat(item["tstart"])
+                t_end = datetime.fromisoformat(item["tend"])
+
+                all_starts.append(t_start)
+                all_ends.append(t_end)
+            except:
+                continue
+
+        # 3. Optional: Zeit-Editor auf das Gesamt-Intervall aller gewählten Items setzen
+        if all_starts and all_ends:
+            #print("All starts",all_starts)
+            #print("All ends", all_ends)
+            min_start = min(all_starts)
+            max_end = max(all_ends)
+
+            self.tstart_edit.setDateTime(QtCore.QDateTime(min_start))
+            self.tend_edit.setDateTime(QtCore.QDateTime(max_end))
+
     def add_address(self):
         text, ok = QtWidgets.QInputDialog.getText(self, "Add Address",
                                                   "Redvypr Address:")
@@ -273,13 +395,30 @@ class ReplaySettingsDialog(QtWidgets.QDialog):
 
     def get_updated_config(self):
         # Update the pydantic model with data from UI
-        self.config.packet_filter = [RedvyprAddress(self.address_list.item(i).text())
-                                     for i in range(self.address_list.count())]
-        self.config.tstart = self.tstart_edit.dateTime().toPyDateTime()
-        self.config.tend = self.tend_edit.dateTime().toPyDateTime()
+        # 1. Handle Addresses
+        if self.filter_group.isChecked():
+            self.config.packet_filter = [
+                RedvyprAddress(self.address_list.item(i).text())
+                for i in range(self.address_list.count())
+            ]
+        else:
+            # If disabled, maybe default to "all"
+            self.config.packet_filter = []
+
+        # 2. Handle Time Range
+        if self.time_group.isChecked():
+            self.config.tstart = self.tstart_edit.dateTime().toPyDateTime()
+            self.config.tend = self.tend_edit.dateTime().toPyDateTime()
+        else:
+            # If disabled, set to None so the DB query doesn't use a WHERE clause for time
+            self.config.tstart = None
+            self.config.tend = None
+
+        # 3. Handle Replay Params
         self.config.replay_mode = self.mode_combo.currentText()
         self.config.speedup = self.speedup_spin.value()
         self.config.constant_dt = self.dt_spin.value()
+
         return self.config
 
 
@@ -348,7 +487,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
         try:
             data = self.device.statusqueue.get(block=False)
-            print(" Got status data", data)
+            #print(" Got status data", data)
         except:
             data = None
 
@@ -370,6 +509,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                         item_published = self._statistics_items[k][2]
                         istr = str(i['packets_read'])
                         item_read.setText(istr)
+                        istr = str(i['packets_published'])
+                        item_published.setText(istr)
                     except:
                         logger.info("Could not get data",exc_info=True)
                         item_addr = QtWidgets.QTableWidgetItem(k_mod)
