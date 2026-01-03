@@ -1407,13 +1407,26 @@ class Redvypr(QtCore.QObject):
         data = self.redvyprreplyqueue.get()
         logger.debug(funcname + 'Metadata sent')
 
-    def rem_metadata(self, address: str | RedvyprAddress, metadata_keys: list | None = None, constraint_entries: list | None = None):
+    def rem_metadata(self, address: str | RedvyprAddress, metadata_keys: list | None = None, constraint_entries: list | None = None, mode="exact"):
+        """
+
+        Parameters
+        ----------
+        address
+        metadata_keys
+        constraint_entries
+        mode: "exact" or "matches"
+
+        Returns
+        -------
+
+        """
         funcname = __name__ + '.rem_metadata():'
         logger.debug(funcname)
         address_str = str(redvypr.RedvyprAddress(address))
         datapacket = redvypr.data_packets.commandpacket(command='reply') # Arbitrary
         datapacket['_metadata_remove'] = {}
-        datapacket['_metadata_remove'][address_str] = {'keys':metadata_keys,'constraints':constraint_entries}
+        datapacket['_metadata_remove'][address_str] = {'keys':metadata_keys,'constraints':constraint_entries,'mode':mode}
         self.redvyprqueue.put(datapacket)
         # Wait for the response
         data = self.redvyprreplyqueue.get()

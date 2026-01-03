@@ -128,8 +128,26 @@ def do_metadata(data, metadatadict, auto_add_packetfilter=True):
     if '_metadata_remove' in data.keys():
         print("Removing data")
         for address_str, removedata in data['_metadata_remove'].items():
+            raddress_str = RedvyprAddress(address_str)
             remove_keys = removedata['keys']
             constraint_entries = removedata['constraints']
+            try:
+                remove_mode = removedata['mode'] # Can be "exact" or "matches"
+            except:
+                remove_mode = "exact"
+
+            # Check which addresses shall be treated
+            if remove_mode == "exact":
+                address_strings = [address_str]
+            else:
+                address_strings = []
+                potential_address_strings = metadatadict['metadata'].keys()
+                for addr_test in potential_address_strings:
+                    raddr_test = RedvyprAddress(addr_test)
+                    if raddress_str.matches(raddr_test):
+                        address_strings.append(addr_test)
+
+            print(f"Removing entries from addresses:{address_strings}")
             if constraint_entries is not None:
                 if len(constraint_entries) == 0:
                     print("Removing constraints for", address_str)
@@ -141,53 +159,57 @@ def do_metadata(data, metadatadict, auto_add_packetfilter=True):
                     except Exception as e:
                         logger.debug(f"Unexpected error during removal: {e}")
                 else:
-                    for i in sorted(constraint_entries,reverse=True):
-                        try:
-                            metadatadict['metadata'][address_str]['_constraints'].pop(i)
-                            status['metadata_changed'] = True
-                        except (KeyError, IndexError):
-                            pass  # Expected
-                        except Exception as e:
-                            logger.debug(f"Unexpected error during removal: {e}")
+                    for i in sorted(constraint_entries, reverse=True):
+                        for address_str in address_strings:
+                            try:
+                                metadatadict['metadata'][address_str]['_constraints'].pop(i)
+                                status['metadata_changed'] = True
+                            except (KeyError, IndexError):
+                                pass  # Expected
+                            except Exception as e:
+                                logger.debug(f"Unexpected error during removal: {e}")
 
                     # Remove constraints entry, if empty
-                    try:
-                        lencon = len(metadatadict['metadata'][address_str]['_constraints'])
-                        if lencon == 0:
-                            metadatadict['metadata'][address_str].pop('_constraints')
-                    except:
-                        pass
+                    for address_str in address_strings:
+                        try:
+                            lencon = len(metadatadict['metadata'][address_str]['_constraints'])
+                            if lencon == 0:
+                                metadatadict['metadata'][address_str].pop('_constraints')
+                        except:
+                            pass
 
 
             if remove_keys is not None:
                 if len(remove_keys) == 0:
-                    try:
-                        print("Removing key", address_str)
-                        metadatadict['metadata'].pop(address_str)
-                        status['metadata_changed'] = True
-                    except (KeyError, IndexError):
-                        pass  # Expected
-                    except Exception as e:
-                        logger.debug(f"Unexpected error during removal: {e}")
-
-                else:
-                    for k in remove_keys:
+                    for address_str in address_strings:
                         try:
-                            metadatadict['metadata'][address_str].pop(k)
+                            print("Removing key", address_str)
+                            metadatadict['metadata'].pop(address_str)
                             status['metadata_changed'] = True
                         except (KeyError, IndexError):
                             pass  # Expected
                         except Exception as e:
                             logger.debug(f"Unexpected error during removal: {e}")
 
-            # Remove whole entry if empty
-            try:
-                lenkeys = len(metadatadict['metadata'][address_str].keys())
-                if lenkeys == 0:
-                    metadatadict['metadata'].pop(address_str)
-            except:
-                pass
+                else:
+                    for address_str in address_strings:
+                        for k in remove_keys:
+                            try:
+                                metadatadict['metadata'][address_str].pop(k)
+                                status['metadata_changed'] = True
+                            except (KeyError, IndexError):
+                                pass  # Expected
+                            except Exception as e:
+                                logger.debug(f"Unexpected error during removal: {e}")
 
+            # Remove whole entry if empty
+            for address_str in address_strings:
+                try:
+                    lenkeys = len(metadatadict['metadata'][address_str].keys())
+                    if lenkeys == 0:
+                        metadatadict['metadata'].pop(address_str)
+                except:
+                    pass
 
     # Add entry
     if '_metadata' in data.keys():

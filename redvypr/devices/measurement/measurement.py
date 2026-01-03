@@ -118,6 +118,8 @@ class Device(RedvyprDevice):
         metadata = measurement.model_dump()
         print("Adding metadata",metadata)
         self.redvypr.set_metadata(meta_address_str, metadata=metadata)
+        # Try to remove the measurement metadata entries in all datastreams
+        self.redvypr.rem_metadata("@", metadata_keys=[meta_address_str], mode="matches")
         for addr_datastream, metadata_datastream in metadata["datastreams"].items():
             print(f"Adding metadata to datastream {addr_datastream}")
             print("Metadata",metadata_datastream)

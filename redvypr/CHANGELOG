@@ -1,6 +1,7 @@
 - 0.9.17?:
        - measurement device with measurement metadata support
        - bugfixes and improvements in redvyprAddressWidget
+       - added remove mode to redvypr.rem_metadata(), with "matches" keys can be removed from all address entries that match, useful with "@" address, removing a key from all entries
 - 0.9.16:
        - renamed hostname to host and hostname_localhost to host_local in redvypr_address
        - major improvements for metadata and database functionality
