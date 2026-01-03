@@ -1,3 +1,5 @@
+- 0.9.17?:
+       - measurement device with measurement metadata support
 - 0.9.16:
        - renamed hostname to host and hostname_localhost to host_local in redvypr_address
        - major improvements for metadata and database functionality

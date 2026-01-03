@@ -6,6 +6,7 @@ from . import processing
 from . import interface
 from . import sensors
 from . import db
+from . import measurement
 
 redvypr_devicemodule = True
 

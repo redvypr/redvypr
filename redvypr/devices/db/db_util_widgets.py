@@ -548,6 +548,202 @@ class DBQueryDialog(QtWidgets.QDialog):
     Dialog to browse both Packet and Metadata inventory using Tabs.
     """
     items_chosen = QtCore.Signal(list)
+
+    def __init__(self, db_instance, parent=None, select_mode=False):
+        super().__init__(parent)
+        self.db = db_instance
+        self.select_mode = select_mode
+        self.selected_data = None
+
+        if self.select_mode:
+            self.setWindowTitle("Select Stream from Inventory")
+        else:
+            self.setWindowTitle("Database Inventory Browser")
+
+        self.resize(1200, 700)  # Etwas breiter wegen der zusätzlichen UUID Spalte
+        self.setup_ui()
+        self.refresh_data()
+
+    def setup_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # --- Header with Info and Refresh ---
+        header = QtWidgets.QHBoxLayout()
+        title_vbox = QtWidgets.QVBoxLayout()
+        title_label = QtWidgets.QLabel("<b>Database Inventory Overview</b>")
+        title_label.setStyleSheet("font-size: 14px;")
+
+        self.db_info_label = QtWidgets.QLabel("Connecting...")
+        self.db_info_label.setStyleSheet("color: #666; font-size: 11px;")
+
+        title_vbox.addWidget(title_label)
+        title_vbox.addWidget(self.db_info_label)
+        header.addLayout(title_vbox)
+        header.addStretch()
+
+        self.refresh_button = QtWidgets.QPushButton(" Refresh All")
+        self.refresh_button.setIcon(qtawesome.icon('fa5s.sync-alt'))
+        self.refresh_button.clicked.connect(self.refresh_data)
+        header.addWidget(self.refresh_button)
+        layout.addLayout(header)
+
+        # --- Tabs ---
+        self.tabs = QtWidgets.QTabWidget()
+        self.packet_table = self._create_table_widget()
+        self.tabs.addTab(self.packet_table, qtawesome.icon('fa5s.box'), "Packets")
+        self.meta_table = self._create_table_widget()
+        self.tabs.addTab(self.meta_table, qtawesome.icon('fa5s.info-circle'),
+                         "Metadata")
+        layout.addWidget(self.tabs)
+
+        # --- Footer ---
+        footer = QtWidgets.QHBoxLayout()
+        self.status_label = QtWidgets.QLabel("Ready")
+        footer.addWidget(self.status_label)
+        footer.addStretch()
+
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        footer.addWidget(close_btn)
+        layout.addLayout(footer)
+
+    def _create_table_widget(self) -> QtWidgets.QTableWidget:
+        """Helper to create a standardized table with the new header order."""
+        table = QtWidgets.QTableWidget()
+        headers = ["Address", "Packet ID", "Device", "Host", "UUID", "Count",
+                   "First Seen", "Last Seen"]
+        table.setColumnCount(len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+
+        if self.select_mode:
+            table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+            table.customContextMenuRequested.connect(self.show_context_menu)
+            table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+
+        return table
+
+    def refresh_data(self):
+        """Fetches data and updates connection info labels."""
+        self.status_label.setText("Fetching data...")
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+
+        try:
+            with self.db as connected_db:
+                # 1. Update DB Meta Info
+                connected_db.identify_and_setup()
+                engine = connected_db.engine_type.upper()
+
+                # Dynamic source string based on engine
+                if engine == "SQLITE":
+                    source = getattr(self.db, 'filepath', 'local db')
+                else:
+                    params = getattr(self.db, 'conn_params', {})
+                    source = f"{params.get('host', 'unknown')}:{params.get('port', '')}"
+
+                self.db_info_label.setText(
+                    f"Connected to: <b>{engine}</b> | Source: <i>{source}</i>")
+
+                # 2. Fetch Stats with common keys for both tables
+                common_keys = ["redvypr_address", "packetid", "device", "host", "uuid"]
+                packet_stats = connected_db.get_unique_combination_stats(
+                    keys=common_keys)
+                meta_stats = connected_db.get_metadata_info(keys=common_keys)
+
+            # 3. Fill tables
+            self._fill_table(self.packet_table, packet_stats)
+            self._fill_table(self.meta_table, meta_stats)
+
+            self.status_label.setText(
+                f"Updated: {len(packet_stats)} packet streams, {len(meta_stats)} metadata entries.")
+
+        except Exception as e:
+            self.db_info_label.setText("Connection failed.")
+            QtWidgets.QMessageBox.critical(self, "Error", f"Fetch failed: {e}")
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+    def _fill_table(self, table: QtWidgets.QTableWidget, stats: list):
+        """Fills the table according to the new header index mapping."""
+        table.setRowCount(0)
+        table.setRowCount(len(stats))
+
+        for row_idx, entry in enumerate(stats):
+            # Mapping strictly following your header order
+            items = [
+                entry.get('redvypr_address', '-'),  # 0
+                entry.get('packetid', '-'),  # 1
+                entry.get('device', '-'),  # 2
+                entry.get('host', '-'),  # 3
+                entry.get('uuid', '-'),  # 4
+                str(entry.get('count', 0)),  # 5
+                entry.get('first_seen', 'N/A'),  # 6
+                entry.get('last_seen', 'N/A')  # 7
+            ]
+
+            for col_idx, text in enumerate(items):
+                item = QtWidgets.QTableWidgetItem(text)
+                if col_idx == 5:  # Count column
+                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                table.setItem(row_idx, col_idx, item)
+
+        # Style & Resizing
+        header = table.horizontalHeader()
+        table.resizeColumnsToContents()
+        header.setStretchLastSection(False)
+
+        # Cap width for long strings
+        for i in [0, 1, 4]:  # Address, Packet ID, UUID
+            if table.columnWidth(i) > 250:
+                table.setColumnWidth(i, 250)
+
+        for i in range(table.columnCount()):
+            header.setSectionResizeMode(i, QtWidgets.QHeaderView.Interactive)
+
+        table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+
+    def show_context_menu(self, position):
+        table = self.sender()
+        selected_rows = sorted(
+            list(set(index.row() for index in table.selectedIndexes())))
+        if not selected_rows:
+            return
+
+        menu = QtWidgets.QMenu()
+        action_text = f"Add {len(selected_rows)} selected item(s) to Replay"
+        select_action = menu.addAction(qtawesome.icon('fa5s.plus-circle'), action_text)
+
+        action = menu.exec_(table.viewport().mapToGlobal(position))
+        if action == select_action:
+            self.emit_selected_items(table, selected_rows)
+
+    def emit_selected_items(self, table, rows):
+        """Extracts data with updated index mapping for Replay."""
+        results = []
+        for row in rows:
+            results.append({
+                "address": table.item(row, 0).text(),
+                "packetid": table.item(row, 1).text(),
+                "uuid": table.item(row, 4).text(),
+                "tstart": table.item(row, 6).text(),
+                "tend": table.item(row, 7).text()
+            })
+
+        if results:
+            self.items_chosen.emit(results)
+            self.status_label.setText(
+                f"Sent {len(results)} items to Replay controller.")
+
+
+
+
+class DBQueryDialog_legacy(QtWidgets.QDialog):
+    """
+    Dialog to browse both Packet and Metadata inventory using Tabs.
+    """
+    items_chosen = QtCore.Signal(list)
     def __init__(self, db_instance, parent=None, select_mode=False):
         super().__init__(parent)
         self.db = db_instance
@@ -642,8 +838,9 @@ class DBQueryDialog(QtWidgets.QDialog):
     def _create_table_widget(self) -> QtWidgets.QTableWidget:
         """Helper to create a standardized table."""
         table = QtWidgets.QTableWidget()
-        headers = ["Address", "Packet ID / UUID", "Device", "Host", "Count",
+        headers = ["Address", "Packet ID", "UUID", "Device", "Host", "Count",
                    "First Seen", "Last Seen"]
+
         table.setColumnCount(len(headers))
         table.setHorizontalHeaderLabels(headers)
         table.setAlternatingRowColors(True)
@@ -699,34 +896,6 @@ class DBQueryDialog(QtWidgets.QDialog):
 
         except Exception as e:
             self.db_info_label.setText("Connection failed.")
-            QtWidgets.QMessageBox.critical(self, "Error", f"Fetch failed: {e}")
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
-    def refresh_data_legacy(self):
-        """Fetches data for both tables."""
-        self.status_label.setText("Fetching data...")
-        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-
-        try:
-            with self.db as connected_db:
-                # 1. Fetch Packet Stats
-                packet_stats = connected_db.get_unique_combination_stats(
-                    keys=["redvypr_address", "packetid", "device", "host"]
-                )
-
-                # 2. Fetch Metadata Stats (using the new info method)
-                # We use uuid instead of packetid here for the second column
-                meta_stats = connected_db.get_metadata_info(
-                    keys=["redvypr_address", "uuid", "device", "host"]
-                )
-
-            self._fill_table(self.packet_table, packet_stats, "packetid")
-            self._fill_table(self.meta_table, meta_stats, "uuid")
-
-            self.status_label.setText(
-                f"Updated: {len(packet_stats)} packet streams, {len(meta_stats)} metadata entries.")
-
-        except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", f"Fetch failed: {e}")
         finally:
             QtWidgets.QApplication.restoreOverrideCursor()

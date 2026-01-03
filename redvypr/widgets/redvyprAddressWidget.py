@@ -226,7 +226,7 @@ class AddressFilterwidget(QtWidgets.QWidget):
         self.btn_publishingdevicefilter = QtWidgets.QPushButton('Publishing device')
         self.line_publishingdevicefilter = QtWidgets.QLineEdit(self.filter_address.publisher)
         self.btn_hostfilter = QtWidgets.QPushButton('Redvypr host')
-        self.line_hostfilter = QtWidgets.QLineEdit(self.filter_address.hostname)
+        self.line_hostfilter = QtWidgets.QLineEdit(self.filter_address.host)
 
         buttons = [self.btn_datakeyfilter, self.btn_packetidfilter,
                    self.btn_devicefilter, self.btn_publishingdevicefilter,
@@ -803,30 +803,14 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
             self.devicelist.expandAll()
             self.devicelist.resizeColumnToContents(0)
 
-    def get_addressstr_for_item(self,raddr, addrentrylist, newline=True):
+    def get_addressstr_for_item(self,raddr, addrentrylist):
         #self.addrtype_for_publishing_devices = '/{h}\n/{d}\n/{i}'  # The addrtype to show for publishin devices
         funcname = "get_addressstr_for_item()"
-        print(funcname)
-        print("Entries ...:",addrentrylist)
+        #print(funcname)
+        #print("Entries ...:",addrentrylist)
         devicestr = raddr.to_address_string(addrentrylist)
-        print("Devicestr", devicestr)
+        #print("Devicestr", devicestr)
         return devicestr
-        if False:
-            addrformat = ''
-            if newline:
-                newlinestr = '\n'
-            else:
-                newlinestr = ''
-            for k in addrentrylist:
-                addrformat += '{' + k + '}' + newlinestr
-
-            if newline:  # remove the last newline
-                addrformat = addrformat[:-1]
-
-            print("Address test",raddr)
-            print("Address test format", addrformat)
-            devicestr = raddr.get_str_from_format(addrformat)
-            return devicestr
 
     def __update_item(self):
         try:
@@ -973,7 +957,7 @@ class RedvyprMultipleAddressesWidget(RedvyprAddressWidget):
                 entries.append(entry)
 
         for irow, raddr in enumerate(self.addresses_chosen):
-            addrstr = self.get_addressstr_for_item(raddr, entries, newline=False)
+            addrstr = self.get_addressstr_for_item(raddr, entries)
             addresses_choosen.append(RedvyprAddress(addrstr))
             addresses_str_choosen.append(addrstr)
 
@@ -997,7 +981,7 @@ class RedvyprMultipleAddressesWidget(RedvyprAddressWidget):
         self.datastreamtable.setRowCount(nrows)
         self.datastreamtable.setColumnCount(1)
         for irow, raddr in enumerate(self.addresses_chosen):
-            addrstr = self.get_addressstr_for_item(raddr, entries, newline=False)
+            addrstr = self.get_addressstr_for_item(raddr, entries)
             item = QtWidgets.QTableWidgetItem(addrstr)
             #item.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             item.datakey_address = raddr
