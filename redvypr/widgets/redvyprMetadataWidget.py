@@ -135,6 +135,8 @@ class MetadataWidget(QtWidgets.QWidget):
         layout.addItem(QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Minimum,
                                              QtWidgets.QSizePolicy.Expanding), 9, 0)
 
+        # Fill the table with all metadata
+        self.get_metadata_clicked()
     def choose_address_clicked(self):
         self.addresswidget = RedvyprAddressWidget(redvypr=self.redvypr)
         self.addresswidget.apply.connect(self.address_choosen)

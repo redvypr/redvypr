@@ -115,7 +115,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         data['data_list'] = [counter,data_sine,data_rand]
         data['data_list_list'] = [[counter, data_sine, data_rand],[counter, data_sine]]
         data['data_list_poly'] = [counter, counter + data_rand, 2 * counter + data_rand, -10 * counter + data_rand+ 3, 0.1 * counter**2 + 2 * counter + data_rand+ 3]
-        data['data_dict_list'] = {'temp':[data_rand, 2*data_rand-10],'pressure':10+data_rand}
+        data['data_dict_list'] = {'temp':[data_rand, 2*data_rand-10],'pressure':10+data_rand, 'info':{'location':'House','sn':123,'operator':{'name':'Joe','age':89}}}
         data['data_ndarray_1d'] = np.zeros((5,)) + counter
         data['data_ndarray_2d'] = np.zeros((6,7)) + counter
         data['data_ndarray_2d_int'] = np.zeros((3,2),dtype=int) + int(counter)
