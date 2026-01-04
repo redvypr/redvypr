@@ -24,6 +24,7 @@ from redvypr.widgets.redvyprMetadataWidget import MetadataWidget
 import redvypr.gui as gui
 from redvypr.version import version
 import redvypr.files as files
+from redvypr.redvypr_address import RedvyprAddress
 import redvypr
 import faulthandler
 
@@ -283,161 +284,6 @@ class RedvyprInitWidget(QtWidgets.QWidget):
                 config_init["extra_attributes"][key_item.text()] = value_item.text()
         return config_init
 
-class RedvyprInitWidget_legacy2(QtWidgets.QWidget):
-    """A PyQt widget for initializing the Redvypr application with configurable attributes.
-
-    This widget provides a user interface for setting up the Redvypr application,
-    including basic inputs (hostname, location, description), a dynamic table for
-    custom key-value attributes, and a countdown timer for auto-start. The attributes
-    will be used as metadata for the redvypr instance.
-
-    Attributes:
-        hostname_input (QtWidgets.QLineEdit): Input field for the hostname.
-        location_input (QtWidgets.QLineEdit): Input field for the location.
-        description_input (QtWidgets.QLineEdit): Input field for the description.
-        extra_table (QtWidgets.QTableWidget): Table for dynamic key-value pairs.
-        start_button (QtWidgets.QPushButton): Button to start Redvypr.
-        timer (QtCore.QTimer): Timer for the auto-start countdown.
-    """
-
-    start_application = QtCore.Signal()  #
-
-    def __init__(self, *args, hostname: str, **kwargs):
-        """Initialize the RedvyprInitWidget.
-
-        Args:
-            hostname (str): The default hostname to display.
-            *args: Variable length argument list for QWidget.
-            **kwargs: Arbitrary keyword arguments for QWidget.
-        """
-        super().__init__(*args, **kwargs)
-        # Main Layout
-        self.setup_layout = QtWidgets.QVBoxLayout(self)
-
-        # Input Fields
-        self.hostname_input = QtWidgets.QLineEdit(hostname)
-        self.location_input = QtWidgets.QLineEdit()
-        self.description_input = QtWidgets.QLineEdit()
-        self.start_button = QtWidgets.QPushButton("Start Redvypr (10)")
-
-        # Form Layout for basic inputs
-        form_layout = QtWidgets.QFormLayout()
-        form_layout.addRow("Hostname:", self.hostname_input)
-        form_layout.addRow("Location:", self.location_input)
-        form_layout.addRow("Description:", self.description_input)
-        self.setup_layout.addLayout(form_layout)
-
-        # Extra Attributes Section
-        self.extra_group = QtWidgets.QGroupBox("Extra Attributes")
-        self.extra_group.setCheckable(True)
-        self.extra_group.setChecked(False)
-        extra_lay = QtWidgets.QVBoxLayout(self.extra_group)
-
-        # Table for Key-Value pairs
-        self.extra_table = QtWidgets.QTableWidget(0, 2)
-        self.extra_table.setHorizontalHeaderLabels(["Key", "Value"])
-        self.extra_table.horizontalHeader().setSectionResizeMode(
-            QtWidgets.QHeaderView.Stretch)
-        extra_lay.addWidget(self.extra_table)
-
-        # Buttons for adding/removing rows
-        ex_btns = QtWidgets.QHBoxLayout()
-        self.add_extra_btn = QtWidgets.QPushButton(" Add")
-        self.remove_extra_btn = QtWidgets.QPushButton(" Remove")
-        ex_btns.addWidget(self.add_extra_btn)
-        ex_btns.addWidget(self.remove_extra_btn)
-        extra_lay.addLayout(ex_btns)
-        self.setup_layout.addWidget(self.extra_group)
-
-        # Start Button
-        self.setup_layout.addWidget(self.start_button)
-
-        # Timer setup
-        self.timer = QtCore.QTimer(self)
-        self.timer.timeout.connect(self.update_timer)
-        self.time_left = 10
-        self.timer.start(1000)  # Update every second
-
-        # Connect signals
-        self.hostname_input.textChanged.connect(self.stop_timer)
-        self.location_input.textChanged.connect(self.stop_timer)
-        self.description_input.textChanged.connect(self.stop_timer)
-        self.add_extra_btn.clicked.connect(self.add_extra_row)
-        self.remove_extra_btn.clicked.connect(self.remove_extra_row)
-        self.start_button.clicked.connect(self.on_start_clicked)
-
-    def add_extra_row(self):
-        """Add a new empty row to the extra attributes table."""
-        row = self.extra_table.rowCount()
-        self.extra_table.insertRow(row)
-
-    def remove_extra_row(self):
-        """Remove the selected row from the extra attributes table."""
-        if self.extra_table.currentRow() >= 0:
-            self.extra_table.removeRow(self.extra_table.currentRow())
-
-    def update_timer(self):
-        """Update the timer display on the button and trigger auto-start if time is up."""
-        self.time_left -= 1
-        self.start_button.setText(f"Start Redvypr ({self.time_left})")
-        if self.time_left <= 0:
-            self.timer.stop()
-            self.on_start_clicked()
-
-    def stop_timer(self):
-        """Stop the timer if any input is changed."""
-        if self.timer.isActive():
-            self.timer.stop()
-            self.start_button.setText("Start Redvypr")
-
-    def on_start_clicked(self):
-        """Handle the start button click (or auto-start)."""
-        self.timer.stop()
-        print("Starting Redvypr...")
-        self.start_application.emit()
-        #self.close()
-
-    def get_config(self) -> dict:
-        """Return the current configuration as a dictionary.
-
-        Returns:
-            dict: A dictionary containing all configured attributes, including extra key-value pairs.
-        """
-        config_init = {
-            "hostname": self.hostname_input.text(),
-            "location": self.location_input.text(),
-            "description": self.description_input.text(),
-            "extra_attributes": {}
-        }
-        # Add extra attributes from the table
-        for row in range(self.extra_table.rowCount()):
-            key_item = self.extra_table.item(row, 0)
-            value_item = self.extra_table.item(row, 1)
-            if key_item and value_item:
-                config_init["extra_attributes"][key_item.text()] = value_item.text()
-        return config_init
-
-
-
-class RedvyprInitWidget_legacy(QtWidgets.QWidget):
-    def __init__(self, *args, hostname, **kwargs):
-        super().__init__(*args, **kwargs)
-        # 1. Page: Setup
-        self.setup_layout = QtWidgets.QFormLayout(self)
-
-        self.hostname_input = QtWidgets.QLineEdit(hostname)
-        self.metadata_input = QtWidgets.QLineEdit("Default Metadata")  # Beispiel
-        self.start_button = QtWidgets.QPushButton("Start Redvypr")
-
-        self.setup_layout.addRow("Hostname:", self.hostname_input)
-        self.setup_layout.addRow("Metadata:", self.metadata_input)
-        self.setup_layout.addRow(self.start_button)
-
-
-    def get_config(self):
-        config_init = {}
-        config_init["hostname"] = self.hostname_input.text()
-        return config_init
 #
 #
 #
@@ -512,10 +358,26 @@ class redvyprWidget(QtWidgets.QWidget):
         """Function is called when the user has configured redvypr"""
         # Get values
         config_init = self.setup_page.get_config()
-        new_hostname = config_init["hostname"]
+        new_hostname = config_init.pop("hostname")
 
         # Initialize redvypr
         self.initialize_redvypr(new_hostname)
+
+        # Add the metadata (if existing)
+        metadata = {}
+        extra_attributes = config_init.pop("extra_attributes")
+        for k,content in config_init.items():
+            if len(content) > 0:
+                metadata[k] = content
+
+        for k, content in extra_attributes.items():
+            if len(content) > 0:
+                metadata[k] = content
+
+        raddress = RedvyprAddress(host=new_hostname,uuid=self.redvypr.hostinfo["uuid"])
+        print(f"Address:{raddress}")
+        print(f"Adding global metadata: {metadata}")
+        self.redvypr.set_metadata(raddress, metadata=metadata)
 
         # Switch to main window
         self.stack.setCurrentIndex(1)
