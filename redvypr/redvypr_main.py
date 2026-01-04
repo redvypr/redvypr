@@ -7,6 +7,7 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 import multiprocessing
 import argparse
 import signal
+import socket
 # Import redvypr specific stuff
 import redvypr
 import redvypr.files as files
@@ -268,7 +269,9 @@ def redvypr_main():
     if (args.hostname is not None):
         hostname = args.hostname
     else:
-        hostname = 'redvypr'
+        #hostname = 'redvypr'
+        socket_hostname = socket.gethostname()
+        hostname = f'redvypr_{socket_hostname}'
 
     # Add metadata
     if (args.metadata is not None):

@@ -123,7 +123,9 @@ class Device(RedvyprDevice):
         for addr_datastream, metadata_datastream in metadata["datastreams"].items():
             print(f"Adding metadata to datastream {addr_datastream}")
             print("Metadata",metadata_datastream)
-            metadata_datastream_submit = {meta_address_str:metadata_datastream}
+            #metadata_datastream_submit = {meta_address_str:metadata_datastream}
+            # Do not send the whole metadata, but a link to the metadata
+            metadata_datastream_submit = {meta_address_str:f'["datastreams"][{addr_datastream}]'}
             print("Adding",metadata_datastream_submit)
             self.redvypr.set_metadata(addr_datastream,metadata=metadata_datastream_submit)
 
