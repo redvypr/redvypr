@@ -574,7 +574,7 @@ class DBQueryDialog(QtWidgets.QDialog):
         title_label.setStyleSheet("font-size: 14px;")
 
         self.db_info_label = QtWidgets.QLabel("Connecting...")
-        self.db_info_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.db_info_label.setStyleSheet("color: #444; font-size: 11px;")
 
         title_vbox.addWidget(title_label)
         title_vbox.addWidget(self.db_info_label)

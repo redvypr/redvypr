@@ -126,7 +126,7 @@ def do_metadata(data, metadatadict, auto_add_packetfilter=True):
     status = {'metadata_changed': False}
     # Remove entries
     if '_metadata_remove' in data.keys():
-        print("Removing data")
+        #print("Removing data",data)
         for address_str, removedata in data['_metadata_remove'].items():
             raddress_str = RedvyprAddress(address_str)
             remove_keys = removedata['keys']
@@ -147,7 +147,7 @@ def do_metadata(data, metadatadict, auto_add_packetfilter=True):
                     if raddress_str.matches(raddr_test):
                         address_strings.append(addr_test)
 
-            print(f"Removing entries from addresses:{address_strings}")
+            print(f"Try to remove entries from addresses:{address_strings}")
             if constraint_entries is not None:
                 if len(constraint_entries) == 0:
                     print("Removing constraints for", address_str)
@@ -183,9 +183,9 @@ def do_metadata(data, metadatadict, auto_add_packetfilter=True):
                 if len(remove_keys) == 0:
                     for address_str in address_strings:
                         try:
-                            print("Removing key", address_str)
                             metadatadict['metadata'].pop(address_str)
                             status['metadata_changed'] = True
+                            print(f"Removed whole address:{address_str}")
                         except (KeyError, IndexError):
                             pass  # Expected
                         except Exception as e:
@@ -197,6 +197,7 @@ def do_metadata(data, metadatadict, auto_add_packetfilter=True):
                             try:
                                 metadatadict['metadata'][address_str].pop(k)
                                 status['metadata_changed'] = True
+                                print(f"Removed key:{k} of {address_str}")
                             except (KeyError, IndexError):
                                 pass  # Expected
                             except Exception as e:

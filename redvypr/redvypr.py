@@ -71,15 +71,11 @@ logger.setLevel(logging.INFO)
 
 
 # Pydantic
-class RedvyprMetadata(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra="allow")
-    description: str = pydantic.Field(default='')
-    lon: float = pydantic.Field(default=-9999)
-    lat: float = pydantic.Field(default=-9999)
+
 class RedvyprConfig(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="allow")
     hostname: typing.Optional[str] = pydantic.Field(default=None)
-    metadata: typing.Optional[RedvyprMetadata] = pydantic.Field(default=None)
+    metadata: typing.Optional[dict] = pydantic.Field(default=None)
     #devices: list = pydantic.Field(default=[])
     #devices: typing.List[RedvyprDeviceConfig] = pydantic.Field(default=[])
     devices: typing.List[typing.Annotated[typing.Union[RedvyprDeviceConfig], pydantic.Field(discriminator='config_type')]] = pydantic.Field(default=[])
@@ -117,7 +113,298 @@ def create_hostinfo(hostname='redvypr'):
     hostinfo = {'host': hostname, 'tstart': time.time(), 'addr': get_ip(), 'uuid': redvyprid}
     return hostinfo
 
+def send_packets_to_devices(devicedict, devices, data_packets_fan_out, logger_dist, hostinfo):
+    funcname = __name__ + '.send_packets_to_devices()'
+    device = devicedict['device']
+    for devicedict_sub in devices:
+        devicesub = devicedict_sub['device']
+        if (devicesub == device):  # Not to itself
+            continue
+
+        for data_packet in data_packets_fan_out:
+            raddr = redvypr_address.RedvyprAddress(data_packet)
+            devicename_stat = str(raddr)
+            for addr in devicesub.subscribed_addresses:  # Loop over all subscribed redvypr_addresses
+                try:
+                    numtag_packet = data_packet['_redvypr']['tag'][hostinfo['uuid']]
+                except:
+                    numtag_packet = 0
+                # This is the main functionality for distribution, comparing a datapacket with a
+                # print('Testing packet',redvypr_address.RedvyprAddress(data_packet),numtag_packet,(data_packet in addr))
+                if addr.matches_filter(data_packet) and (
+                        numtag_packet < 2):  # Check if data packet fits with addr and if its not recirculated again
+                    try:
+                        # print(funcname + 'data to be sent',data)
+                        devicesub.datainqueue.put_nowait(
+                            data_packet)  # These are the datainqueues of the subscribing devices
+                        devicedict_sub['statistics']['packets_received'] += 1
+                        # print(devicedict_sub['statistics']['packets_received'])
+                        try:
+                            devicedict_sub['statistics']['packets'][devicename_stat]
+                        except:
+                            devicedict_sub['statistics']['packets'][devicename_stat] = {
+                                'received': 0, 'published': 0}
+                        devicedict_sub['statistics']['packets'][devicename_stat][
+                            'received'] += 1
+                        # print('Sent data to',devicename_stat,devicedict_sub['packets_received'])
+                        break
+                    except:
+                        thread_status = devicesub.get_thread_status()
+                        if thread_status['thread_running']:
+                            devicedict['statistics']['packets_dropped'] += 1
+                        logger_dist.warning(funcname + ':dataout of :' + devicedict_sub[
+                            'device'].name, exc_info=True)
+
 def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, redvyprreplyqueue, dt=0.01):
+    """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
+    """
+    funcname = __name__ + '.distribute_data()'
+    logger_dist = logging.getLogger('redvypr.distribute_data')
+    logger_dist.setLevel(logging.DEBUG)
+    dt_info = 5.0  # The time interval information will be sent
+    dt_avg = 0  # Averaging of the distribution time needed
+    navg = 0
+    packets_processed = 0 # For statistics, count packets
+    packet_counter = 0 # Global counter of packets received by the redvypr instance
+    tinfo = time.time()
+    tstop = time.time()
+    thread_start = time.time()
+    dt_sleep = dt
+
+    # Create a bogus main redvypr device
+    devicedict_main = {}
+    devicedict_main['statistics'] = redvypr.packet_statistic.device_redvypr_statdict
+    devicedict_main['device'] = None
+    while True:
+        try:
+            time.sleep(dt_sleep)
+            tstart = time.time()
+            FLAG_device_status_changed = False
+            devices_changed = []
+            devices_removed = []
+            # Read data from the main thread
+            try:
+                tread = time.time()
+                redvyprdata = redvyprqueue.get(block=False) # Data from the main thread
+            except queue.Empty:
+                redvyprdata = None
+                #logger_dist.info("Error processing data",exc_info=True)
+            except:
+                logger_dist.info("Error processing data",exc_info=True)
+                redvyprdata = None
+
+
+            # Process data from the main thread
+            if redvyprdata is not None:
+                print("Got data from redvyprqueue",redvyprdata)
+                if "_metadata" in redvyprdata.keys() or "_metadata_remove" in redvyprdata.keys():
+                    print("Adding/remove metadata from redvyrqueue")
+                    try:
+                        status_statistics = redvypr_packet_statistic.do_metadata(
+                            redvyprdata, deviceinfo_all)
+                        #print("Deviceinfo all",deviceinfo_all)
+                        print("Status statistics",status_statistics)
+                    except:
+                        print("Problem")
+                        logger_dist.info(funcname + ':Metadata:', exc_info=True)
+
+                    # Update metadata
+                    if status_statistics['metadata_changed']:
+                        # Send a deviceinfo update with the changed metadata
+                        compacket = data_packets.commandpacket('info',
+                                                               host=hostinfo,
+                                                               devicename='distribute_data',
+                                                               packetid='metadata')
+                        compacket['deviceinfo_all'] = copy.deepcopy(deviceinfo_all)
+                        redvypr_packet_statistic.treat_datadict(compacket, '',
+                                                                hostinfo, 0, tread,
+                                                                'distribute_data')
+                        infoqueue.put_nowait(compacket)
+                        print("send to devices new metadata ...")
+                        send_packets_to_devices(devicedict_main, devices, data_packets_fan_out=[compacket],
+                                        logger_dist=logger_dist, hostinfo=hostinfo)
+                    # Send the packet back to notify function that it was processed
+                    redvyprreplyqueue.put_nowait(redvyprdata)
+
+                elif "type" in redvyprdata.keys():
+                    if(redvyprdata['type'] == 'device_removed'):
+                        logger_dist.debug(funcname + 'Device removed {}'.format(redvyprdata))
+                        FLAG_device_status_changed = True
+                        devices_removed.append(redvyprdata['device'])
+                        devinfo_rem = deviceinfo_all['device_redvypr'].pop(redvyprdata['device'])
+                        devinfo_send = {'type':'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all), 'devices_changed': list(set(devices_changed)),
+                        'devices_removed': devices_removed,'change':'devrem','device_changed':redvyprdata['device']}
+                        infoqueue.put_nowait(devinfo_send)
+                        # Send a deviceinfo update with the changed metadata
+                        compacket = data_packets.commandpacket('info', host=hostinfo, devicename='distribute_data', packetid='device_removed',
+                                                               publisher='')
+                        compacket['deviceinfo_all'] = copy.deepcopy(deviceinfo_all)
+                        compacket['devices_removed'] = devices_removed
+                        redvypr_packet_statistic.treat_datadict(compacket, 'distribute_data', hostinfo, 0, tread,
+                                                                'distribute_data')
+                        data_packets_fan_out.append(compacket)
+
+            # Loop over all devices and process data
+            for devicedict in devices:
+                #print("devicedict", devicedict)
+                #print("\n\n")
+                #print("devicedict statistics", devicedict['statistics'])
+                #print("\n\n")
+                device = devicedict['device']
+                data_all = []
+                tread = time.time()
+                # Read all packets in a bunch
+                while True:
+                    try:
+                        data = device.dataqueue.get(block=False)
+                        if not (isinstance(data, dict)): # If data is not a dictionary, convert it to one
+                            data = {'data':data}
+
+
+                        devicedict['statistics']['packets_published'] += 1  # The total number of packets published by the device
+                        packets_processed += 1 # Counter for the statistics
+                        packet_counter += 1 # Global counter of packets received by the redvypr instance
+                        data_all.append([data,packet_counter])
+                    except queue.Empty:
+                        break
+                    except:
+                        logger_dist.info("Error processing data",exc_info=True)
+                        return
+                        break
+                # Process read packets
+                for data_list in data_all:
+                    data_packets_fan_out = []
+                    data = data_list[0]
+                    numpacket = data_list[1]
+                    # Add additional information, if not present yet
+                    redvypr_packet_statistic.treat_datadict(data, device.name, hostinfo, numpacket, tread,devicedict['devicemodulename'])
+                    # Get the devicename
+                    raddr = redvypr_address.RedvyprAddress(data)
+                    devicename_stat = str(raddr)
+                    numtag = data['_redvypr']['tag'][hostinfo['uuid']]
+                    #print("Processing",data)
+                    if numtag < 2:  # Check if data packet fits with addr and its not recirculated again
+                        #
+                        # Check for a command packet
+                        #
+                        [command, comdata] = data_packets.check_for_command(data,
+                                                                            add_data=True)
+
+                        status_statistics = {'metadata_changed': False}
+                        # Do statistics if it's not a command
+                        if command is None:
+                            #print("Standard data packet")
+                            try:
+                                redvypr_packet_statistic.do_data_statistics(
+                                    data, devicedict['statistics'], address_data=raddr)
+                                # print('Statistic status',status_statistics)
+                            except:
+                                logger_dist.debug(funcname + ':Statistics:', exc_info=True)
+                            try:
+                                status_statistics = redvypr_packet_statistic.do_metadata(
+                                    data, deviceinfo_all)
+                                #print(funcname + 'Metadata done')
+                            except:
+                                logger_dist.debug(funcname + ':Metadata:', exc_info=True)
+                        elif (command == 'info'):  # info command, typically a deviceinfo_all packet
+                            metadata_remote = data['deviceinfo_all']['metadata']
+                            # Updating the metadata
+                            for remote_device_name,remote_device_metadata in metadata_remote.items():
+                                # Change the publisher to the local device and the uuid if its not existing
+                                for addr_metadata, metadata_tmp in remote_device_metadata.items():
+                                    raddr_metadata = redvypr_address.RedvyprAddress(addr_metadata,publisher=raddr.publisher)
+                                    if raddr_metadata.uuid is None:
+                                        raddr_metadata.add_filter(key="uuid",op="eq",value=raddr.uuid)
+                                    rstr_tmp = raddr_metadata.to_address_string()
+                                    deviceinfo_all['metadata'][rstr_tmp] = metadata_tmp
+
+                            status_statistics['metadata_changed'] = True
+                        elif (command == 'reply'):  # status update
+                            device.distribute_data_replyqueue.put_nowait(data)
+                        elif (command == 'device'):  # A command for the device
+                            command = 'device.' + comdata
+                            print('Got a command',command)
+                        elif (command == 'device_status'):  # status update
+                            try:
+                                devaddr = comdata['data']['deviceaddr']
+                                devstatus = comdata['data']['devicestatus']
+                            except:
+                                devaddr = None
+                                devstatus = None
+
+                            devices_changed.append(device.name) # LEGACY ...
+                            if(devaddr is not None):
+                                try: # Update the device
+                                    devicedict['statistics']['device_redvypr'][devaddr]['_redvypr'].update(devstatus)
+                                except:
+                                    logger_dist.warning('Could not update status ',exc_info=True)
+
+                            # Send an information about the change, that will trigger a pyqt signal in the main thread
+                            devinfo_send = {'type': 'deviceinfo_all', 'deviceinfo_all': copy.deepcopy(deviceinfo_all),
+                                            'devices_changed': list(set(devices_changed)), 'device_changed':device.name,
+                                            'devices_removed': devices_removed, 'change': 'device_status command','comdata':comdata}
+                            infoqueue.put_nowait(devinfo_send)
+
+                    #
+                    # Collect the individual dictionaries into one global deviceinfo
+                    #
+                    try:
+                        deviceinfo_all['device_redvypr'][device.name].update(devicedict['statistics']['device_redvypr'])
+                    except:
+                        deviceinfo_all['device_redvypr'][device.name] = devicedict['statistics']['device_redvypr']
+
+                    # Update metadata
+                    if status_statistics['metadata_changed']:
+                        # Send a deviceinfo update with the changed metadata
+                        compacket = data_packets.commandpacket('info',host=hostinfo, devicename='distribute_data', packetid='metadata')
+                        compacket['deviceinfo_all'] = copy.deepcopy(deviceinfo_all)
+                        redvypr_packet_statistic.treat_datadict(compacket, '', hostinfo, 0, tread,
+                                                                'distribute_data')
+                        infoqueue.put_nowait(compacket)
+                        data_packets_fan_out.append(compacket)
+
+
+                    #print('Data ready to send',data)
+                    #
+                    # And finally: Distribute the data
+                    #
+                    data_packets_fan_out.append(data)
+                    # And now send it to all devices
+                    send_packets_to_devices(devicedict, devices, data_packets_fan_out, logger_dist, hostinfo=hostinfo)
+
+
+                    # Fan out the datapacket into the guiqueues of the device
+                    for (guiqueue, widget) in devicedict['guiqueues']:  # Put data into the guiqueue, this queue does always exist
+                        try:
+                            guiqueue.put_nowait(data)
+                        except Exception as e:
+                            pass
+                            # logger.debug(funcname + ':guiqueue of :' + devicedict['device'].name + ' full')
+
+            # Calculate the sleeping time
+            tstop = time.time()
+            dt_dist = tstop - tstart  # The time for all the looping
+            dt_avg += dt_dist
+            navg += 1
+            # Time to sleep, remove processing time
+            dt_sleep = max([dt/4, dt - dt_dist])
+            #print("dt_sleep",dt_sleep)
+            if ((tstop - tinfo) > dt_info):
+                tinfo = tstop
+                info_dict = {'type':'dt_avg','dt_avg': dt_avg / navg,'packets_processed': packets_processed,'packets_counter':packet_counter,'thread_start':thread_start}
+                #print("sending info",info_dict)
+                packets_processed = 0
+                # print(info_dict)
+                try:
+                    infoqueue.put_nowait(info_dict)
+                except:
+                    pass
+        except:
+            logger_dist.warning(funcname + 'Could not distribute packets:', exc_info=True)
+
+
+
+def distribute_data_legacy(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, redvyprreplyqueue, dt=0.01):
     """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
     """
     funcname = __name__ + '.distribute_data()'
@@ -148,13 +435,13 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
 
             # Process data from the main thread
             if redvyprdata is not None:
-                print("Got data",redvyprdata)
+                #print("Got data",redvyprdata)
                 if "_metadata" in redvyprdata.keys() or "_metadata_remove" in redvyprdata.keys():
-                    print("Adding/remove metadata")
+                    #print("Adding/remove metadata")
                     try:
                         status_statistics = redvypr_packet_statistic.do_metadata(
                             redvyprdata, deviceinfo_all)
-                        print("Deviceinfo all",deviceinfo_all)
+                        #print("Deviceinfo all",deviceinfo_all)
                     except:
                         logger_dist.info(funcname + ':Metadata:', exc_info=True)
 
@@ -225,7 +512,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         [command, comdata] = data_packets.check_for_command(data,
                                                                             add_data=True)
 
-
+                        status_statistics = {'metadata_changed': False}
                         # Do statistics if it's not a command
                         if command is None:
                             #print("Standard data packet")
@@ -295,7 +582,9 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         compacket['deviceinfo_all'] = copy.deepcopy(deviceinfo_all)
                         redvypr_packet_statistic.treat_datadict(compacket, '', hostinfo, 0, tread,
                                                                 'distribute_data')
+                        infoqueue.put_nowait(compacket)
                         data_packets_fan_out.append(compacket)
+
 
                     #print('Data ready to send',data)
                     #
@@ -310,9 +599,11 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
 
                         for data_packet in data_packets_fan_out:
                             for addr in devicesub.subscribed_addresses: # Loop over all subscribed redvypr_addresses
+                                try:
+                                    numtag_packet = data['_redvypr']['tag'][hostinfo['uuid']]
+                                except:
+                                    numtag_packet = 0
                                 # This is the main functionality for distribution, comparing a datapacket with a
-                                # redvypr_address using "in"
-                                numtag_packet = data['_redvypr']['tag'][hostinfo['uuid']]
                                 #print('Testing packet',redvypr_address.RedvyprAddress(data_packet),numtag_packet,(data_packet in addr))
                                 if addr.matches_filter(data_packet) and (numtag_packet < 2): # Check if data packet fits with addr and if its not recirculated again
                                     try:
@@ -374,6 +665,7 @@ class Redvypr(QtCore.QObject):
     devices_connected = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
     devices_disconnected = QtCore.pyqtSignal(str, str)  # Signal notifying if two devices were connected
     status_update_signal = QtCore.pyqtSignal()  # Signal notifying if the status of redvypr has been changed
+    metadata_changed_signal = QtCore.pyqtSignal()  # Signal notifying if the status of redvypr has been changed
     device_status_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
     hostconfig_changed_signal = QtCore.pyqtSignal()  # Signal notifying if the configuration of the host changed (hostname, hostinfo_opt)
 
@@ -470,7 +762,8 @@ class Redvypr(QtCore.QObject):
             self.statustimer.timeout.connect(self.print_status)
             self.statustimer.start(5000)
 
-    def apply_config(self, config):
+    def apply_config(self, config, use_metadata=True,
+                    use_loglevel=False, use_devices=True):
         """
         Applies a redvypr config from a filename
         Returns
@@ -478,7 +771,11 @@ class Redvypr(QtCore.QObject):
 
         """
         redvypr_config = merge_configuration(config)
-        self.add_devices_from_config(redvypr_config, rename_if_exists=False)
+        if use_devices:
+            self.add_devices_from_config(redvypr_config, rename_if_exists=False)
+        if use_metadata:
+            print("Using metadata",redvypr_config.metadata)
+            self.set_metadata_from_dict(redvypr_config.metadata)
 
     def get_config(self):
         """
@@ -489,6 +786,7 @@ class Redvypr(QtCore.QObject):
 
         """
         funcname = __name__ + '.get_config():'
+        logger.debug(funcname)
         # Devices
         devices = []
         for devicedict in self.devices:
@@ -503,6 +801,38 @@ class Redvypr(QtCore.QObject):
                                devices=devices)
 
         return config
+
+    def load_config(self, fname, use_metadata=False,
+                    use_loglevel=False, use_devices=True):
+        funcname = __name__ + '.load_config():'
+        logger.debug(funcname)
+        self.apply_config(config=[fname], use_metadata=use_metadata, use_loglevel=use_loglevel, use_devices=use_devices)
+
+    def save_config(self, fname=None, autostart=False, add_metadata=False, set_loglevel:typing.Optional[typing.Literal["DEBUG","INFO","WARNING"]]=None):
+        config = self.get_config()
+        data_save = config.model_dump()
+        print('Data save',data_save)
+        if not(fname):
+            tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
+            fname = 'config_' + self.hostinfo[
+                'host'] + '_' + tstr + '.yaml'
+        if set_loglevel:
+            data_save['loglevel'] = set_loglevel
+
+            for d in data_save['devices']:
+                d['base_config']['autostart'] = autostart
+                if set_loglevel:
+                    d['base_config']['loglevel'] = set_loglevel
+
+        if add_metadata:
+            metadata = self.get_metadata()
+            data_save['metadata'] = metadata
+
+        if fname:
+            logger.debug('Saving to file {:s}'.format(fname))
+            with open(fname, 'w') as fyaml:
+                yaml.dump(data_save, fyaml)
+
 
 
     def get_devicemodulename_from_str(self, devicename):
@@ -646,21 +976,30 @@ class Redvypr(QtCore.QObject):
         while True:
             try: # Reading data coming from distribute_data thread
                 data = self.datadistinfoqueue.get(block=False)
-                #print('Got data',data)
+                raddress = redvypr_address.RedvyprAddress(data)
+                #print('Got data with address',raddress)
                 try:
-                    if('dt_avg' in data['type']):
-                        self.dt_avg_datadist   = data['dt_avg']
-                        self.packets_processed = data['packets_processed']
-                        self.packets_counter = data['packets_counter']
-                        self.t_thread_start = data['thread_start']
-                        self.status_update_signal.emit()
-                    elif ('deviceinfo_all' in data['type']):
-                        data.pop('type')  # Remove the type key
-                        # Store the data of the changed devices
-                        self.__device_status_changed_data__ = data
+                    if "type" in data.keys():
+                        if('dt_avg' in data['type']):
+                            self.dt_avg_datadist   = data['dt_avg']
+                            self.packets_processed = data['packets_processed']
+                            self.packets_counter = data['packets_counter']
+                            self.t_thread_start = data['thread_start']
+                            self.status_update_signal.emit()
+                        elif ('deviceinfo_all' in data['type']):
+                            data.pop('type')  # Remove the type key
+                            # Store the data of the changed devices
+                            self.__device_status_changed_data__ = data
 
-                        #print('datastreams changed', data)
-                        self.device_status_changed_signal.emit()
+                            #print('datastreams changed', data)
+
+                            self.device_status_changed_signal.emit()
+                    elif raddress.packetid == 'metadata':
+                        logger.debug(funcname + "Got metadata, emitting signal")
+                        metadata_new = data["deviceinfo_all"]["metadata"]
+                        self.metadata_changed_signal.emit()
+
+
                 except:
                     logger.info(funcname + 'Error',exc_info=True)
 
@@ -1337,19 +1676,39 @@ class Redvypr(QtCore.QObject):
         data = self.redvyprreplyqueue.get()
         logger.debug(funcname + 'Metadata sent')
 
-    import logging
-    from datetime import datetime
-    import typing
+    def set_metadata_from_dict(self, metadata: dict):
+        """
+        Sets the metadata of address.
+        :param metadata: metadata dict, keys must be valid RedvyprAddress strings and data must be dictionaries
+        :return:
+        """
+        funcname = __name__ + '.set_metadata_from_dict():'
+        logger.debug(funcname)
+        datapacket = redvypr.data_packets.commandpacket(command='reply')  # Arbitrary
+        datapacket['_metadata'] = {}
 
-    # Assuming RedvyprAddress and redvypr modules are available in your environment
-    logger = logging.getLogger(__name__)
+        for address,metadata_address in metadata.items():
+            try:
+                address_str = str(redvypr.RedvyprAddress(address))
+            except:
+                raise ValueError("The keys of the metadata dictionary must be a valid RedvyprAddress string")
+
+            if isinstance(metadata_address,dict):
+                datapacket['_metadata'][address_str] = metadata_address
+            else:
+                raise ValueError(
+                    "The data of the metadata dictionary must be a dictionary")
+        self.redvyprqueue.put(datapacket)
+        # Wait for the response
+        data = self.redvyprreplyqueue.get()
+        logger.debug(funcname + 'Metadata sent')
 
     def add_metadata_time_constrained(
             self,
             address: str | RedvyprAddress,
             metadata: dict,
-            t1: datetime | str | None = None,
-            t2: datetime | str | None = None
+            t1: datetime.datetime | str | None = None,
+            t2: datetime.datetime | str | None = None
     ):
         """
         Adds metadata that is only valid within the time range [t1, t2].
@@ -1482,6 +1841,30 @@ class Redvypr(QtCore.QObject):
         return FLAG_REMOVED
 
 
+def load_config_file(fname):
+    funcname = __name__ + '.load_config_file()'
+    if (os.path.exists(fname)):
+        fconfig = open(fname)
+        try:
+            config_tmp = yaml.load(fconfig, Loader=yaml.SafeLoader)
+        except:
+            logger.warning(funcname + 'Could not load yaml file with safe loader')
+            fconfig.close()
+            fconfig = open(fconfig)
+            try:
+                config_tmp = yaml.load(fconfig, Loader=yaml.CLoader)
+                logger.debug('Config tmp {}'.format(config_tmp))
+            except:
+                logger.warning(funcname + ' Could not load yaml file with x loader')
+                return None
+
+        config_tmp = redvypr.RedvyprConfig(**config_tmp)
+        return config_tmp
+    else:
+        logger.warning(funcname + 'Yaml file: ' + str(fname) + ' does not exist!')
+        return None
+
+
 def merge_configuration(redvypr_config=None):
     """
     Merges a list of configurations
@@ -1510,24 +1893,8 @@ def merge_configuration(redvypr_config=None):
             config_tmp = configraw
         elif (type(configraw) == str):
             logger.info(funcname + 'Opening yaml file: ' + str(configraw))
-            if (os.path.exists(configraw)):
-                fconfig = open(configraw)
-                try:
-                    config_tmp = yaml.load(fconfig, Loader=yaml.SafeLoader)
-                except:
-                    logger.warning(funcname + 'Could not load yaml file with safe loader')
-                    fconfig.close()
-                    fconfig = open(configraw)
-                    try:
-                        config_tmp = yaml.load(fconfig, Loader=yaml.CLoader)
-                        logger.debug('Config tmp {}'.format(config_tmp))
-                    except:
-                        logger.warning(funcname + ' Could not load yaml file with x loader')
-                        continue
-
-                config_tmp = redvypr.RedvyprConfig(**config_tmp)
-            else:
-                logger.warning(funcname + 'Yaml file: ' + str(configraw) + ' does not exist!')
+            config_tmp = load_config_file(configraw)
+            if not(config_tmp): # If None, dont care
                 continue
         elif (type(configraw) == dict):
             logger.debug(funcname + 'Opening dictionary')

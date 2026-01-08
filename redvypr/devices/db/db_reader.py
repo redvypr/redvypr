@@ -33,7 +33,8 @@ class DeviceBaseConfig(pydantic.BaseModel):
     gui_tablabel_display: str = 'db reader'
 
 class DeviceCustomConfig(pydantic.BaseModel):
-    size_packetbuffer: int = 10
+    size_packetbuffer: int = 100
+    read_metadata: bool = pydantic.Field(default=True, description="Read metadata from the database and publish it")
     packet_filter: typing.List[RedvyprAddress] = pydantic.Field(default=[])
     tstart: typing.Optional[datetime.datetime] = pydantic.Field(default=None)
     tend: typing.Optional[datetime.datetime] = pydantic.Field(default=None)
@@ -104,7 +105,37 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             print(f"Write:   {'✅ Permitted' if status['can_write'] else '❌ Denied'}")
             print(f"-----------------------------")
 
+
+
+            if device_config.read_metadata:
+                logger_thread.info("Reading db-metadata")
+                # Read metadata first
+                metainfo = db.get_metadata_info()
+                count_all = 0
+                for m in metainfo:
+                    count_all += m['count']
+
+                print("Metadata stat",metainfo)
+                print("Count all", count_all)
+                metadata = db.get_metadata(0,count_all)
+                print("Metadata",metadata)
+                metadata_packet = redvypr.data_packets.create_datadict(device='db_reader',
+                                                            packetid='metadata')
+                if len(metadata) > 0:
+                    for m in metadata:
+                        print("2", m['metadata'])
+                        print("1",m['address'])
+                        redvypr.data_packets.add_metadata2datapacket(metadata_packet,
+                                                                     address=m['address'],
+                                                                     metadict=m['metadata'])
+                    dataqueue.put(metadata_packet)
+                else:
+                    logger_thread.info("No metadata found")
+
             db_info = db.get_database_info()
+            if db_info is None:
+                logger.info("No valid data information returned from database, exiting")
+                return
             statistics = {}
             packets_read_buffer = []
             print(f"Number of total measurements in db:{db_info["measurement_count"]}")
@@ -115,7 +146,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                                      time_range=packet_time_range)
 
             print(f"Number of measurements (with filter):{ntotal}")
-            nchunk = 100
+            nchunk = device_config.size_packetbuffer
             ind_read = 0
             t_packet_old = 0  # Time of the last sent packet
             t_packet = 0  # Time of the last sent packet

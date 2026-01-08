@@ -111,22 +111,22 @@ class Device(RedvyprDevice):
     def add_measurement_to_metadata(self, measurement):
         funcname = __name__ + '.add_measurement_to_metadata()'
         print(f"{funcname}")
-        print(f"Measurement:{measurement}")
+        #print(f"Measurement:{measurement}")
         address_str = self.create_address_string_from_measurement(measurement)
         meta_address = RedvyprAddress(address_str)
         meta_address_str = meta_address.to_address_string()
         metadata = measurement.model_dump()
-        print("Adding metadata",metadata)
+        #print("Adding metadata",metadata)
         self.redvypr.set_metadata(meta_address_str, metadata=metadata)
         # Try to remove the measurement metadata entries in all datastreams
         self.redvypr.rem_metadata("@", metadata_keys=[meta_address_str], mode="matches")
         for addr_datastream, metadata_datastream in metadata["datastreams"].items():
             print(f"Adding metadata to datastream {addr_datastream}")
-            print("Metadata",metadata_datastream)
+            #print("Metadata",metadata_datastream)
             #metadata_datastream_submit = {meta_address_str:metadata_datastream}
             # Do not send the whole metadata, but a link to the metadata
             metadata_datastream_submit = {meta_address_str:f'["datastreams"][{addr_datastream}]'}
-            print("Adding",metadata_datastream_submit)
+            #print("Adding",metadata_datastream_submit)
             self.redvypr.set_metadata(addr_datastream,metadata=metadata_datastream_submit)
 
     def rem_measurement_from_metadata(self, measurement):
@@ -218,7 +218,6 @@ class ContactEditWidget(QtWidgets.QWidget):
 #
 
 
-
 class MeasurementConfigEditor(QtWidgets.QWidget):
     """
     Recursive Editor for MeasurementConfig and MeasurementDatastreamConfig.
@@ -258,11 +257,51 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
         group.toggled.connect(content_widget.setVisible)
         return group, content_widget
 
+    def _create_time_control_widget(self, dt_edit):
+        """Helper to wrap QDateTimeEdit with delta controls and 'Now' button."""
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        spin = QtWidgets.QDoubleSpinBox()
+        spin.setRange(0, 9999)
+        spin.setFixedWidth(60)
+
+        unit_combo = QtWidgets.QComboBox()
+        unit_combo.addItems(["s", "min", "h", "days"])
+
+        btn_sub = QtWidgets.QPushButton("-")
+        btn_add = QtWidgets.QPushButton("+")
+        for b in [btn_sub, btn_add]: b.setFixedWidth(25)
+
+        btn_now = QtWidgets.QPushButton("Now")
+
+        layout.addWidget(spin)
+        layout.addWidget(unit_combo)
+        layout.addWidget(btn_sub)
+        layout.addWidget(btn_add)
+        layout.addWidget(dt_edit)
+        layout.addWidget(btn_now)
+
+        def adjust_time(multiplier):
+            mapping = {"s": 1, "min": 60, "h": 3600, "days": 86400}
+            delta_seconds = spin.value() * mapping[
+                unit_combo.currentText()] * multiplier
+            dt_edit.setDateTime(dt_edit.dateTime().addSecs(int(delta_seconds)))
+
+        btn_now.clicked.connect(
+            lambda: dt_edit.setDateTime(QtCore.QDateTime.currentDateTime()))
+        btn_add.clicked.connect(lambda: adjust_time(1))
+        btn_sub.clicked.connect(lambda: adjust_time(-1))
+
+        return container
+
     def setup_ui(self):
         self.main_layout = QtWidgets.QVBoxLayout(self)
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 
-        # --- LEFT SIDE: Datastreams (Only for Main Config) ---
+        # --- LEFT SIDE: Datastreams ---
         self.ds_container = QtWidgets.QWidget()
         ds_layout = QtWidgets.QVBoxLayout(self.ds_container)
         self.ds_group = QtWidgets.QGroupBox("Datastreams")
@@ -270,10 +309,8 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
 
         self.ds_list = QtWidgets.QListWidget()
         self.ds_list.setToolTip("Right-click an item to edit specific metadata")
-        # Context Menu Setup
         self.ds_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.ds_list.customContextMenuRequested.connect(self.on_ds_context_menu)
-
         ds_group_layout.addWidget(self.ds_list)
 
         ds_btns = QtWidgets.QHBoxLayout()
@@ -290,7 +327,6 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
         ds_group_layout.addLayout(ds_btns)
         ds_layout.addWidget(self.ds_group)
 
-        # Hide left side if we are editing a sub-datastream
         if self.is_subconfig:
             self.ds_container.hide()
 
@@ -307,16 +343,13 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
         id_form = QtWidgets.QFormLayout(id_content)
         self.name_edit = QtWidgets.QLineEdit()
         id_form.addRow("Name:", self.name_edit)
-
-        # UUID only exists in main MeasurementConfig
         if not self.is_subconfig:
             self.uuid_edit = QtWidgets.QLineEdit()
             self.uuid_edit.setEnabled(False)
             id_form.addRow("UUID:", self.uuid_edit)
-
         self.meta_layout.addWidget(self.id_group)
 
-        # 2. General Info
+        # 2. General Information
         self.basic_group, basic_content = self.create_section("General Information",
                                                               checked=True)
         basic_form = QtWidgets.QFormLayout(basic_content)
@@ -324,21 +357,22 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
         self.location_edit = QtWidgets.QLineEdit()
         self.description_edit = QtWidgets.QPlainTextEdit()
         self.description_edit.setMaximumHeight(80)
-
         basic_form.addRow("Version:", self.version_label)
         basic_form.addRow("Location:", self.location_edit)
         basic_form.addRow("Description:", self.description_edit)
         self.meta_layout.addWidget(self.basic_group)
 
-        # 3. Time Range
+        # 3. Time Range (Complex with Validation)
         self.time_group, time_content = self.create_section("Time Range", checked=False)
         time_form = QtWidgets.QFormLayout(time_content)
         self.start_dt = QtWidgets.QDateTimeEdit(calendarPopup=True)
         self.end_dt = QtWidgets.QDateTimeEdit(calendarPopup=True)
-        self.start_dt.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
-        self.end_dt.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
-        time_form.addRow("Start:", self.start_dt)
-        time_form.addRow("End:", self.end_dt)
+        for dt in [self.start_dt, self.end_dt]:
+            dt.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+            dt.dateTimeChanged.connect(self.on_time_changed)
+
+        time_form.addRow("Start:", self._create_time_control_widget(self.start_dt))
+        time_form.addRow("End:", self._create_time_control_widget(self.end_dt))
         self.meta_layout.addWidget(self.time_group)
 
         # 4. Coordinates
@@ -364,7 +398,6 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
         self.contact_table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.Stretch)
         contact_lay.addWidget(self.contact_table)
-
         c_btns = QtWidgets.QHBoxLayout()
         self.add_contact_btn = QtWidgets.QPushButton(" Add")
         self.remove_contact_btn = QtWidgets.QPushButton(" Remove")
@@ -382,7 +415,6 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
         self.extra_table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.Stretch)
         extra_lay.addWidget(self.extra_table)
-
         ex_btns = QtWidgets.QHBoxLayout()
         self.add_extra_btn = QtWidgets.QPushButton(" Add")
         self.remove_extra_btn = QtWidgets.QPushButton(" Remove")
@@ -423,17 +455,28 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
         self.save_btn.clicked.connect(self.save_and_emit)
         self.discard_btn.clicked.connect(self.request_close.emit)
 
+    def on_time_changed(self):
+        """Auto-fix: Ensures start_dt <= end_dt."""
+        start = self.start_dt.dateTime()
+        end = self.end_dt.dateTime()
+        if start > end:
+            self.start_dt.blockSignals(True)
+            self.end_dt.blockSignals(True)
+            if self.sender() == self.start_dt:
+                self.end_dt.setDateTime(start.addSecs(60))
+            else:
+                self.start_dt.setDateTime(end.addSecs(-60))
+            self.start_dt.blockSignals(False)
+            self.end_dt.blockSignals(False)
+
     def load_config_into_ui(self):
         self.name_edit.setText(self.config.name or "")
         if not self.is_subconfig:
             self.uuid_edit.setText(self.config.uuid or "")
-
         self.location_edit.setText(self.config.location or "")
         self.description_edit.setPlainText(self.config.description or "")
-
         if self.config.tstart: self.start_dt.setDateTime(self.config.tstart)
         if self.config.tend: self.end_dt.setDateTime(self.config.tend)
-
         self.lon_spin.setValue(
             self.config.lon if self.config.lon is not None else self.lon_spin.minimum())
         self.lat_spin.setValue(
@@ -448,7 +491,6 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
         self.ds_list.clear()
         for address, sub_cfg in self.config.datastreams.items():
             item = QtWidgets.QListWidgetItem(address)
-            # Visual hint if datastream has custom location/description
             if sub_cfg.location or (
                     sub_cfg.description and "specific" not in sub_cfg.description):
                 item.setIcon(qtawesome.icon('fa5s.info-circle', color='orange'))
@@ -457,23 +499,19 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
     def on_ds_context_menu(self, pos):
         item = self.ds_list.itemAt(pos)
         if not item: return
-
         menu = QtWidgets.QMenu()
         edit_meta = menu.addAction(qtawesome.icon('fa5s.edit'),
                                    "Edit Datastream Metadata...")
         action = menu.exec_(self.ds_list.mapToGlobal(pos))
-
         if action == edit_meta:
             self.open_sub_editor(item.text())
 
     def open_sub_editor(self, address: str):
         sub_cfg = self.config.datastreams[address]
-
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle(f"Metadata: {address}")
         dialog.setMinimumSize(700, 500)
         lay = QtWidgets.QVBoxLayout(dialog)
-
         sub_editor = MeasurementConfigEditor(config=sub_cfg, device=self.device,
                                              is_subconfig=True)
         lay.addWidget(sub_editor)
@@ -505,25 +543,19 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Warning",
                                           "No active device connection available.")
 
-
     def add_datastreams_from_widget(self, datastreams):
         for address in datastreams.get('addresses', []):
-            print(f"Address:{address}")
-            print(type(address))
             address_str = address.to_address_string()
             if address_str not in self.config.datastreams:
-                self.config.datastreams[address_str] = MeasurementDatastreamConfig(name=address_str)
-
+                self.config.datastreams[address_str] = MeasurementDatastreamConfig(
+                    name=address_str)
         self.refresh_datastream_list()
-
 
     def on_remove_datastream(self):
         item = self.ds_list.currentItem()
         if item:
             self.config.datastreams.pop(item.text())
             self.refresh_datastream_list()
-
-    # --- Standard Table Helpers (Contacts/Extras) ---
 
     def refresh_contact_table(self):
         self.contact_table.setRowCount(0)
@@ -535,10 +567,24 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
             self.contact_table.setItem(r, 2, QtWidgets.QTableWidgetItem(p.email or ""))
 
     def on_add_contact(self):
-        dialog = ContactEditWidget(parent=self)
-        dialog.contact_applied.connect(
-            lambda p: [self.config.contacts.append(p), self.refresh_contact_table()])
-        dialog.exec_()
+        # Wir speichern die Referenz an self, damit das Fenster offen bleibt
+        self.contact_dialog = ContactEditWidget(
+            parent=None)  # parent=None für ein separates Fenster
+
+        # Fenster-Flags setzen: Pop-up Style & immer im Vordergrund
+        self.contact_dialog.setWindowFlags(
+            QtCore.Qt.Window | QtCore.Qt.WindowStaysOnTopHint)
+        self.contact_dialog.setWindowTitle("Add New Contact")
+
+        # Signale verbinden
+        self.contact_dialog.data_changed.connect(
+            lambda p: [self.config.contacts.append(p), self.refresh_contact_table()]
+        )
+
+        # Fenster schließen, wenn das Widget fertig ist
+        self.contact_dialog.request_close.connect(self.contact_dialog.close)
+
+        self.contact_dialog.show()
 
     def on_remove_contact(self):
         row = self.contact_table.currentRow()
@@ -558,13 +604,19 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
     def on_add_extra_attribute(self):
         r = self.extra_table.rowCount()
         self.extra_table.insertRow(r)
-        self.extra_table.setItem(r, 0, QtWidgets.QTableWidgetItem("key"))
+        self.extra_table.setItem(r, 0, QtWidgets.QTableWidgetItem(""))
 
     def on_remove_extra_attribute(self):
         row = self.extra_table.currentRow()
         if row >= 0: self.extra_table.removeRow(row)
 
     def save_and_emit(self):
+        # Final safety check for time
+        if self.start_dt.dateTime() > self.end_dt.dateTime():
+            QtWidgets.QMessageBox.warning(self, "Time Error",
+                                          "Start time must be before or equal to End time.")
+            return
+
         try:
             self.config.name = self.name_edit.text()
             self.config.location = self.location_edit.text()
@@ -574,15 +626,15 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
             self.config.lon = self.lon_spin.value() if self.lon_spin.value() != self.lon_spin.minimum() else None
             self.config.lat = self.lat_spin.value() if self.lat_spin.value() != self.lat_spin.minimum() else None
 
-            # Handle Extra Fields
+            # Collect Extra Attributes, ignoring rows with empty keys
             all_data = self.config.model_dump()
             for r in range(self.extra_table.rowCount()):
-                k = self.extra_table.item(r, 0).text() if self.extra_table.item(r,
-                                                                                0) else None
-                v = self.extra_table.item(r, 1).text() if self.extra_table.item(r,
-                                                                                1) else ""
-                if k: all_data[k] = v
+                k_item = self.extra_table.item(r, 0)
+                v_item = self.extra_table.item(r, 1)
+                if k_item and k_item.text().strip():
+                    all_data[k_item.text().strip()] = v_item.text() if v_item else ""
 
+            # Re-Validate via Pydantic
             ModelClass = MeasurementDatastreamConfig if self.is_subconfig else MeasurementConfig
             self.config = ModelClass.model_validate(all_data)
 
@@ -591,348 +643,6 @@ class MeasurementConfigEditor(QtWidgets.QWidget):
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", str(e))
 
-
-
-
-
-class MeasurementConfigEditor_legacy(QtWidgets.QWidget):
-    """
-    Complete Editor for MeasurementConfig.
-    Features:
-    - Splitter layout (Datastreams left, Metadata right)
-    - Collapsible sections that hide content when unchecked
-    - Support for dynamic Extra Attributes via Pydantic model_extra
-    - UUID generation and Name-to-Tab synchronization support
-    """
-    config_updated = QtCore.Signal(object)
-    request_close = QtCore.Signal()
-
-    def __init__(self, config: 'MeasurementConfig', parent=None, device=None):
-        super().__init__(parent)
-        self.device = device
-        # Work on a copy to allow discarding changes
-        self.config = config.model_copy()
-
-        self.setup_ui()
-        self.load_config_into_ui()
-
-    def create_section(self, title: str, checked: bool = False):
-        """Helper to create a checkable QGroupBox that hides content and collapses spacing."""
-        group = QtWidgets.QGroupBox(title)
-        group.setCheckable(True)
-        group.setChecked(checked)
-
-        group_layout = QtWidgets.QVBoxLayout(group)
-        group_layout.setContentsMargins(5, 15, 5, 5)
-        group_layout.setSpacing(0)
-
-        content_widget = QtWidgets.QWidget()
-        content_widget.setVisible(checked)
-        group_layout.addWidget(content_widget)
-
-        # Toggle visibility to collapse the section entirely
-        group.toggled.connect(content_widget.setVisible)
-
-        return group, content_widget
-
-    def setup_ui(self):
-        self.main_layout = QtWidgets.QVBoxLayout(self)
-        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-
-        # --- LEFT SIDE: Datastreams ---
-        self.ds_container = QtWidgets.QWidget()
-        ds_layout = QtWidgets.QVBoxLayout(self.ds_container)
-        self.ds_group = QtWidgets.QGroupBox("Datastreams")
-        ds_group_layout = QtWidgets.QVBoxLayout(self.ds_group)
-        self.ds_list = QtWidgets.QListWidget()
-        ds_group_layout.addWidget(self.ds_list)
-
-        ds_btns = QtWidgets.QHBoxLayout()
-        self.add_ds_btn = QtWidgets.QPushButton(" Add")
-        self.add_ds_btn.setIcon(qtawesome.icon('fa5s.plus'))
-
-        self.choose_ds_btn = QtWidgets.QPushButton(" Choose")
-        self.choose_ds_btn.setIcon(qtawesome.icon('fa5s.search-plus'))
-
-        self.remove_ds_btn = QtWidgets.QPushButton(" Remove")
-        self.remove_ds_btn.setIcon(qtawesome.icon('fa5s.trash-alt'))
-
-        ds_btns.addWidget(self.add_ds_btn)
-        ds_btns.addWidget(self.choose_ds_btn)
-        ds_btns.addWidget(self.remove_ds_btn)
-        ds_group_layout.addLayout(ds_btns)
-        ds_layout.addWidget(self.ds_group)
-
-        # --- RIGHT SIDE: Details (Scrollable) ---
-        self.meta_scroll = QtWidgets.QScrollArea()
-        self.meta_scroll.setWidgetResizable(True)
-        self.meta_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.meta_content = QtWidgets.QWidget()
-        self.meta_layout = QtWidgets.QVBoxLayout(self.meta_content)
-        self.meta_layout.setSpacing(2)
-
-        # 1. Identification (Checked)
-        self.id_group, id_content = self.create_section("Identification", checked=True)
-        id_form = QtWidgets.QFormLayout(id_content)
-        self.name_edit = QtWidgets.QLineEdit()
-        self.uuid_edit = QtWidgets.QLineEdit()
-        self.uuid_edit.setEnabled(False)
-        #self.regen_uuid_btn = QtWidgets.QPushButton(icon=qtawesome.icon('fa5s.sync'))
-
-        uuid_lay = QtWidgets.QHBoxLayout()
-        uuid_lay.addWidget(self.uuid_edit)
-        #uuid_lay.addWidget(self.regen_uuid_btn)
-
-        id_form.addRow("Measurement Name:", self.name_edit)
-        id_form.addRow("UUID:", uuid_lay)
-        self.meta_layout.addWidget(self.id_group)
-
-        # 2. General Information (Checked)
-        self.basic_group, basic_content = self.create_section("General Information",
-                                                              checked=True)
-        basic_form = QtWidgets.QFormLayout(basic_content)
-        self.version_label = QtWidgets.QLabel(f"<b>{self.config.version}</b>")
-        self.location_edit = QtWidgets.QLineEdit()
-        self.description_edit = QtWidgets.QPlainTextEdit()
-        self.description_edit.setMaximumHeight(80)
-
-        basic_form.addRow("Config Version:", self.version_label)
-        basic_form.addRow("Location:", self.location_edit)
-        basic_form.addRow("Description:", self.description_edit)
-        self.meta_layout.addWidget(self.basic_group)
-
-        # 3. Time Range (Unchecked)
-        self.time_group, time_content = self.create_section("Time Range", checked=False)
-        time_form = QtWidgets.QFormLayout(time_content)
-        self.start_dt = QtWidgets.QDateTimeEdit(calendarPopup=True)
-        self.end_dt = QtWidgets.QDateTimeEdit(calendarPopup=True)
-        self.start_dt.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
-        self.end_dt.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
-        time_form.addRow("Start Time:", self.start_dt)
-        time_form.addRow("End Time:", self.end_dt)
-        self.meta_layout.addWidget(self.time_group)
-
-        # 4. Coordinates (Unchecked)
-        self.coord_group, coord_content = self.create_section("Fixed Coordinates",
-                                                              checked=False)
-        coord_form = QtWidgets.QFormLayout(coord_content)
-        self.lon_spin = QtWidgets.QDoubleSpinBox()
-        self.lat_spin = QtWidgets.QDoubleSpinBox()
-        for s in [self.lon_spin, self.lat_spin]:
-            s.setRange(-180, 180)
-            s.setDecimals(6)
-            s.setSpecialValueText("Not set")
-        coord_form.addRow("Longitude:", self.lon_spin)
-        coord_form.addRow("Latitude:", self.lat_spin)
-        self.meta_layout.addWidget(self.coord_group)
-
-        # 5. Contacts (Unchecked)
-        self.contacts_group, contact_content = self.create_section("Involved Contacts",
-                                                                   checked=False)
-        contact_lay = QtWidgets.QVBoxLayout(contact_content)
-        self.contact_table = QtWidgets.QTableWidget(0, 3)
-        self.contact_table.setHorizontalHeaderLabels(["Name", "Role", "Email"])
-        self.contact_table.horizontalHeader().setSectionResizeMode(
-            QtWidgets.QHeaderView.Stretch)
-        contact_lay.addWidget(self.contact_table)
-
-        c_btns = QtWidgets.QHBoxLayout()
-        self.add_contact_btn = QtWidgets.QPushButton(" Add Contact")
-        self.remove_contact_btn = QtWidgets.QPushButton(" Remove Contact")
-        c_btns.addWidget(self.add_contact_btn)
-        c_btns.addWidget(self.remove_contact_btn)
-        contact_lay.addLayout(c_btns)
-        self.meta_layout.addWidget(self.contacts_group)
-
-        # 6. Extra Attributes (Unchecked)
-        self.extra_group, extra_content = self.create_section("Extra Attributes",
-                                                              checked=False)
-        extra_lay = QtWidgets.QVBoxLayout(extra_content)
-        self.extra_table = QtWidgets.QTableWidget(0, 2)
-        self.extra_table.setHorizontalHeaderLabels(["Key", "Value (Text)"])
-        self.extra_table.horizontalHeader().setSectionResizeMode(
-            QtWidgets.QHeaderView.Stretch)
-        extra_lay.addWidget(self.extra_table)
-
-        ex_btns = QtWidgets.QHBoxLayout()
-        self.add_extra_btn = QtWidgets.QPushButton(" Add Attribute")
-        self.remove_extra_btn = QtWidgets.QPushButton(" Remove Attribute")
-        ex_btns.addWidget(self.add_extra_btn)
-        ex_btns.addWidget(self.remove_extra_btn)
-        extra_lay.addLayout(ex_btns)
-        self.meta_layout.addWidget(self.extra_group)
-
-        self.meta_layout.addStretch()
-
-        # Assembly
-        self.meta_scroll.setWidget(self.meta_content)
-        self.splitter.addWidget(self.ds_container)
-        self.splitter.addWidget(self.meta_scroll)
-        self.splitter.setStretchFactor(1, 2)
-        self.main_layout.addWidget(self.splitter)
-
-        # Bottom Buttons
-        bottom_btns = QtWidgets.QHBoxLayout()
-        self.discard_btn = QtWidgets.QPushButton(" Discard")
-        self.save_btn = QtWidgets.QPushButton(" Save Configuration")
-        self.save_btn.setStyleSheet(
-            "background-color: #2c3e50; color: white; font-weight: bold; padding: 10px;")
-        bottom_btns.addStretch()
-        bottom_btns.addWidget(self.discard_btn)
-        bottom_btns.addWidget(self.save_btn)
-        self.main_layout.addLayout(bottom_btns)
-
-        # Signal Connections
-        #self.regen_uuid_btn.clicked.connect(self.generate_new_uuid)
-        self.add_ds_btn.clicked.connect(self.on_add_datastream)
-        self.choose_ds_btn.clicked.connect(self.on_choose_datastream)
-        self.remove_ds_btn.clicked.connect(self.on_remove_datastream)
-        self.add_contact_btn.clicked.connect(self.on_add_contact)
-        self.remove_contact_btn.clicked.connect(self.on_remove_contact)
-        self.add_extra_btn.clicked.connect(self.on_add_extra_attribute)
-        self.remove_extra_btn.clicked.connect(self.on_remove_extra_attribute)
-        self.save_btn.clicked.connect(self.save_and_emit)
-        self.discard_btn.clicked.connect(self.request_close.emit)
-
-    def load_config_into_ui(self):
-        """Populates UI elements from the internal config object."""
-        self.name_edit.setText(self.config.name or "")
-        self.uuid_edit.setText(self.config.uuid or "")
-        self.location_edit.setText(self.config.location or "")
-        self.description_edit.setPlainText(self.config.description or "")
-
-        if self.config.tstart: self.start_dt.setDateTime(self.config.tstart)
-        if self.config.tend: self.end_dt.setDateTime(self.config.tend)
-
-        self.lon_spin.setValue(
-            self.config.lon if self.config.lon is not None else self.lon_spin.minimum())
-        self.lat_spin.setValue(
-            self.config.lat if self.config.lat is not None else self.lat_spin.minimum())
-
-        self.refresh_contact_table()
-        self.refresh_datastream_list()
-        self.refresh_extra_table()
-
-    def generate_new_uuid(self):
-        self.uuid_edit.setText(str(uuid.uuid4()))
-
-    def refresh_contact_table(self):
-        self.contact_table.setRowCount(0)
-        for person in self.config.contacts:
-            row = self.contact_table.rowCount()
-            self.contact_table.insertRow(row)
-            self.contact_table.setItem(row, 0,
-                                       QtWidgets.QTableWidgetItem(person.full_name))
-            self.contact_table.setItem(row, 1,
-                                       QtWidgets.QTableWidgetItem(person.role or "-"))
-            self.contact_table.setItem(row, 2,
-                                       QtWidgets.QTableWidgetItem(person.email or "-"))
-
-    def refresh_datastream_list(self):
-        self.ds_list.clear()
-        for ds in self.config.datastreams:
-            self.ds_list.addItem(str(ds))
-
-    def refresh_extra_table(self):
-        self.extra_table.setRowCount(0)
-        extras = self.config.model_extra or {}
-        for key, value in extras.items():
-            row = self.extra_table.rowCount()
-            self.extra_table.insertRow(row)
-            self.extra_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(key)))
-            self.extra_table.setItem(row, 1, QtWidgets.QTableWidgetItem(str(value)))
-
-    def on_add_datastream(self):
-        text, ok = QtWidgets.QInputDialog.getText(self, "Add Address",
-                                                  "Address String:")
-        if ok and text:
-            # Note: Ensure RedvyprAddress is imported correctly
-            self.config.datastreams.append(RedvyprAddress(address=text))
-            self.refresh_datastream_list()
-
-    def on_choose_datastream(self):
-        if self.device and hasattr(self.device, 'redvypr'):
-            self.choose_ds_widget = RedvyprMultipleAddressesWidget(
-                redvypr=self.device.redvypr)
-            self.choose_ds_widget.apply.connect(self.add_datastreams_from_widget)
-            self.choose_ds_widget.show()
-        else:
-            QtWidgets.QMessageBox.warning(self, "Warning",
-                                          "No active device connection available.")
-
-    def add_datastreams_from_widget(self, datastreams):
-        for address in datastreams.get('addresses', []):
-            self.config.datastreams.append(RedvyprAddress(address))
-        self.refresh_datastream_list()
-
-    def on_remove_datastream(self):
-        row = self.ds_list.currentRow()
-        if row >= 0:
-            self.config.datastreams.pop(row)
-            self.refresh_datastream_list()
-
-    def on_add_contact(self):
-        dialog = ContactEditWidget(parent=self)
-        dialog.contact_applied.connect(self.add_person_to_list)
-        dialog.exec_()
-
-    def add_person_to_list(self, person):
-        self.config.contacts.append(person)
-        self.refresh_contact_table()
-
-    def on_remove_contact(self):
-        row = self.contact_table.currentRow()
-        if row >= 0:
-            self.config.contacts.pop(row)
-            self.refresh_contact_table()
-
-    def on_add_extra_attribute(self):
-        row = self.extra_table.rowCount()
-        self.extra_table.insertRow(row)
-        self.extra_table.setItem(row, 0, QtWidgets.QTableWidgetItem("new_key"))
-        self.extra_table.setItem(row, 1, QtWidgets.QTableWidgetItem(""))
-
-    def on_remove_extra_attribute(self):
-        row = self.extra_table.currentRow()
-        if row >= 0:
-            self.extra_table.removeRow(row)
-
-    def save_and_emit(self):
-        """Validates input, updates local config, and notifies the parent."""
-        try:
-            # 1. Update Standard Fields
-            self.config.name = self.name_edit.text().strip()
-            self.config.uuid = self.uuid_edit.text().strip()
-            self.config.location = self.location_edit.text().strip()
-            self.config.description = self.description_edit.toPlainText().strip()
-            self.config.tstart = self.start_dt.dateTime().toPyDateTime()
-            self.config.tend = self.end_dt.dateTime().toPyDateTime()
-
-            self.config.lon = self.lon_spin.value() if self.lon_spin.value() != self.lon_spin.minimum() else None
-            self.config.lat = self.lat_spin.value() if self.lat_spin.value() != self.lat_spin.minimum() else None
-
-            # 2. Update Extra Fields
-            all_data = self.config.model_dump()
-            for row in range(self.extra_table.rowCount()):
-                key_item = self.extra_table.item(row, 0)
-                val_item = self.extra_table.item(row, 1)
-                if key_item:
-                    k = key_item.text().strip()
-                    v = val_item.text() if val_item else ""
-                    if k: all_data[k] = v
-
-            # 3. Re-validate to sync Extra fields
-            self.config = MeasurementConfig.model_validate(all_data)
-
-            # 4. Notify parent (will update Tab text and Dashboard list)
-            self.config_updated.emit(self.config)
-            self.request_close.emit()
-
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Validation Error",
-                                           f"Could not save: {e}")
-
-
 #
 #
 #
@@ -940,8 +650,6 @@ class MeasurementConfigEditor_legacy(QtWidgets.QWidget):
 #
 #
 #
-
-
 class RedvyprDeviceWidget(RedvyprdevicewidgetStartonly):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -970,6 +678,31 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetStartonly):
         self.setup_contact_dashboard()  # Permanent Tab 1
 
         self.refresh_dashboard_lists()
+        self.redvypr.metadata_changed_signal.connect(self.check_for_remote_measurements)
+
+    def check_for_remote_measurements(self):
+        print("\nGot new metadata, check for new measurements\n")
+        metadata = self.redvypr.get_metadata("@d:measurement_metadata")
+        print("Metadata", metadata)
+        if len(metadata.keys()) > 0:
+            print("Found a measurement")
+            for measurement_address, measurement_config_dict in metadata.items():
+                #print("measurement_config_dict",measurement_config_dict)
+
+                mcfg = MeasurementConfig.model_validate(measurement_config_dict)
+                # Check if the uuid is different, if yes, add it, if not, leave it
+                #mcfg.uuid
+                print("meas",self.device.custom_config.measurements)
+                uuids = [u.uuid for u in self.device.custom_config.measurements]
+                print("uuids",uuids)
+                print("new uuid", mcfg.uuid)
+                if mcfg.uuid in uuids:
+                    print("uuid is existing, ignoring")
+                else:
+                    print("Adding to measurements")
+                    self.device.custom_config.measurements.append(mcfg)
+
+            self.refresh_dashboard_lists()
 
     def setup_measurement_dashboard(self):
         """Creates the main Measurement Management tab (Tab 0)."""

@@ -37,6 +37,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     dt_update = 1  # Update interval in seconds
     packet_inserted = 0
     packet_inserted_failure = 0
+    metadata_address_inserted = 0
     t_update = time.time() - dt_update
     print("Config",config)
     print("device_info", device_info)
@@ -69,9 +70,9 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 statistics = {}
                 while True:
                     datapacket = datainqueue.get()
-                    #print("Got data",datapacket)
+                    print("Got data",datapacket)
                     addrstr = RedvyprAddress(datapacket).to_address_string()
-                    #print("Addstr",addrstr)
+                    print("Addstr",addrstr)
                     [command, comdata] = check_for_command(datapacket,
                                                            thread_uuid=device_info[
                                                                'thread_uuid'],
@@ -100,13 +101,16 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 try:
                                     uuid = metadata_address.uuid
                                 except:
-                                    print(
-                                        "Could not get uuid from metadata, get from host")
+                                    uuid = None
+
+                                if uuid is None:
+                                    print("Could not get uuid from metadata, get from host")
                                     uuid = device_info["hostinfo"]["uuid"]
 
                                 try:
                                     db.add_metadata(address=metadata_address_str, uuid=uuid,
                                                     metadata_dict=metadata_content)
+                                    metadata_address_inserted += 1
                                 except:
                                     logger_thread.info("Could not add metadata",exc_info=True)
 
@@ -133,6 +137,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                         data['t'] = time.time()
                         data['packet_inserted'] = packet_inserted
                         data['packet_inserted_failure'] = packet_inserted_failure
+                        data['metadata_address_inserted'] = metadata_address_inserted
                         data['statistics'] = statistics
                         statusqueue.put(data)
 
@@ -188,12 +193,14 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.db_config_widget.db_type_changed.connect(self.update_config_from_widgets)
         self.db_config_widget.db_config_changed.connect(self.update_config_from_widgets)
         self.statustable = QtWidgets.QTableWidget()
-        self.statustable.setRowCount(1)
+        self.statustable.setRowCount(2) # First all packets, second metadata packets
         self._statustableheader = ['Packets','Num stored','Num stored error']
         self.statustable.setColumnCount(len(self._statustableheader))
         self.statustable.setHorizontalHeaderLabels(self._statustableheader)
         item = QtWidgets.QTableWidgetItem("All")
         self.statustable.setItem(0, 0, item)
+        item = QtWidgets.QTableWidgetItem("Metadata address inserted")
+        self.statustable.setItem(1, 0, item)
         self.statustable.resizeColumnsToContents()
 
         # 3. Add the DBConfigWidget to the main content area (self.layout)
@@ -233,10 +240,13 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 item_inserted = QtWidgets.QTableWidgetItem(str(data['packet_inserted']))
                 item_inserted_failure = QtWidgets.QTableWidgetItem(
                     str(data['packet_inserted_failure']))
+
+                item_meta_inserted = QtWidgets.QTableWidgetItem(str(data['metadata_address_inserted']))
                 self.statistics.update(data['statistics'])
                 #print("Statistics",self.statistics)
                 self.statustable.setItem(0,1,item_inserted)
                 self.statustable.setItem(0, 2, item_inserted_failure)
+                self.statustable.setItem(1, 1, item_meta_inserted)
                 for row,(k, i) in enumerate(self.statistics.items()):
                     #print("k",k)
                     #print("i", i)

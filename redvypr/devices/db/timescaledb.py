@@ -26,6 +26,85 @@ logger.setLevel(logging.DEBUG)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("RedvyprDB")
 
+def json_safe_dumps(obj):
+    """
+    Convert complex Redvypr packets into JSON-safe text.
+    Adds a '__dt__:' prefix to datetime objects to ensure safe restoration.
+    """
+
+    def default(o):
+        # numpy arrays → convert to Python lists
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+
+        # numpy scalar values (e.g. np.int64, np.float64)
+        if isinstance(o, (np.generic,)):
+            return o.item()
+
+        # Handle Python 'type' objects
+        if isinstance(o, type):
+            return str(o)
+
+        # Handle datetime with specific prefix marker
+        if isinstance(o, datetime):
+            return f"__dt__:{o.isoformat()}"
+
+        # Handle other unknown types
+        return str(o)
+
+    return json.dumps(obj, default=default, ensure_ascii=False)
+
+
+def restore_datetimes(data):
+    """
+    Recursively traverses dictionaries and lists to find strings
+    starting with '__dt__:' and converts them back to datetime objects.
+    """
+    if isinstance(data, dict):
+        return {k: restore_datetimes(v) for k, v in data.items()}
+
+    elif isinstance(data, list):
+        return [restore_datetimes(item) for item in data]
+
+    elif isinstance(data, str) and data.startswith("__dt__:"):
+        try:
+            # Strip prefix and convert to datetime
+            iso_str = data.replace("__dt__:", "", 1)
+            return datetime.fromisoformat(iso_str)
+        except (ValueError, TypeError):
+            # If conversion fails, return the string as is
+            return data
+
+    return data
+
+
+def json_safe_loads(json_str):
+    """
+    Parses a JSON string and automatically restores datetime objects
+    hidden in dictionaries or lists.
+    """
+    raw_data = json.loads(json_str)
+    return restore_datetimes(raw_data)
+
+def json_safe_dumps_legacy(obj):
+    """Convert complex Redvypr packets into JSON-safe text."""
+    def default(o):
+        # numpy arrays → convert to Python lists
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        # numpy scalar values (e.g. np.int64, np.float64)
+        if isinstance(o, (np.generic,)):
+            return o.item()
+        # Handle Python 'type' objects (e.g., <class 'float'>)
+        if isinstance(o, type):
+            return str(o)
+        # Handle datetime
+        if isinstance(o, datetime):
+            return o.isoformat()
+        # Handle other unknown types
+        return str(o)
+    return json.dumps(obj, default=default, ensure_ascii=False)
+
 
 
 class TimescaleConfig(pydantic.BaseModel):
@@ -617,8 +696,8 @@ class RedvyprTimescaleDb(AbstractDatabase):
             self._connection.commit()
         except:
             logger.warning(f"❌ Insert failed",exc_info=True)
-            print("data dict",data_dict)
-            json.dumps(data_dict)
+            #print("data dict",data_dict)
+            #json.dumps(data_dict)
 
     def add_metadata(self, address: str, uuid: str, metadata_dict: dict,
                      mode: str = "merge"):
@@ -668,11 +747,10 @@ class RedvyprTimescaleDb(AbstractDatabase):
             )
             ON CONFLICT (redvypr_address, uuid) DO UPDATE SET {update_logic};
         """
-
         try:
             with self._connection.cursor() as cur:
                 cur.execute(sql, (
-                    address, uuid, packetid, device, host, json.dumps(metadata_dict)
+                    address, uuid, packetid, device, host, json_safe_dumps(metadata_dict)
                 ))
             self._connection.commit()
             logger.info(f"✅ Metadata for {address} stored.")
@@ -727,7 +805,7 @@ class RedvyprTimescaleDb(AbstractDatabase):
         try:
             with self._connection.cursor() as cur:
                 cur.execute(sql, params)
-                return [{"id": r[0], "timestamp": r[1], "data": r[2]} for r in
+                return [{"id": r[0], "timestamp": r[1], "data": restore_datetimes(r[2])} for r in
                         cur.fetchall()]
         except Exception as e:
             logger.error(f"❌ Filtered range retrieval failed: {e}")
@@ -751,7 +829,7 @@ class RedvyprTimescaleDb(AbstractDatabase):
                     return {
                         "id": row[0],
                         "timestamp": row[1],
-                        "data": row[2]  # Automatically a dict thanks to JSONB
+                        "data": restore_datetimes(row[2])  # Automatically a dict thanks to JSONB
                     }
         except Exception as e:
             logger.error(f"❌ Failed to fetch latest packet: {e}")
@@ -898,24 +976,7 @@ class RedvyprTimescaleDb(AbstractDatabase):
 
 
 
-def json_safe_dumps(obj):
-    """Convert complex Redvypr packets into JSON-safe text."""
-    def default(o):
-        # numpy arrays → convert to Python lists
-        if isinstance(o, np.ndarray):
-            return o.tolist()
-        # numpy scalar values (e.g. np.int64, np.float64)
-        if isinstance(o, (np.generic,)):
-            return o.item()
-        # Handle Python 'type' objects (e.g., <class 'float'>)
-        if isinstance(o, type):
-            return str(o)
-        # Handle datetime
-        if isinstance(o, datetime):
-            return o.isoformat()
-        # Handle other unknown types
-        return str(o)
-    return json.dumps(obj, default=default, ensure_ascii=False)
+
 
 
 class RedvyprDBFactory:
@@ -1054,7 +1115,7 @@ class RedvyprSqliteDb(AbstractDatabase):
                     metadata = excluded.metadata,
                     created_at = CURRENT_TIMESTAMP;
             """
-            cur.execute(sql, (address, uuid, json.dumps(metadata_dict)))
+            cur.execute(sql, (address, uuid, json_safe_dumps(metadata_dict)))
             self._connection.commit()
         finally:
             cur.close()
@@ -1067,7 +1128,7 @@ class RedvyprSqliteDb(AbstractDatabase):
                 f"SELECT id, timestamp, data FROM {table_name} ORDER BY timestamp DESC LIMIT 1")
             row = cur.fetchone()
             if row:
-                return {"id": row[0], "timestamp": row[1], "data": json.loads(row[2])}
+                return {"id": row[0], "timestamp": row[1], "data": json_safe_loads(row[2])}
             return None
         finally:
             cur.close()
@@ -1079,7 +1140,7 @@ class RedvyprSqliteDb(AbstractDatabase):
             cur.execute(
                 "SELECT redvypr_address, uuid, metadata FROM redvypr_metadata LIMIT ? OFFSET ?",
                 (count, start_index))
-            return [{"address": r[0], "uuid": r[1], "metadata": json.loads(r[2])} for r
+            return [{"address": r[0], "uuid": r[1], "metadata": json_safe_loads(r[2])} for r
                     in cur.fetchall()]
         finally:
             cur.close()
@@ -1113,7 +1174,7 @@ class RedvyprSqliteDb(AbstractDatabase):
                     # ersetzt Z durch +00:00 für Kompatibilität mit < 3.11
                     tdatetime = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
 
-                data_return.append({"id": r[0], "timestamp": tdatetime, "data": json.loads(r[2])})
+                data_return.append({"id": r[0], "timestamp": tdatetime, "data": json_safe_loads(r[2])})
             return data_return
         finally:
             cur.close()

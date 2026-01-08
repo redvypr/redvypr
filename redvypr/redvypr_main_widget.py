@@ -74,16 +74,20 @@ class RedvyprSaveFileDialog(QtWidgets.QDialog):
 
         # Label, Textfeld und Checkbox
         self.label = QtWidgets.QLabel("Device options", self)
-        self.custom_checkbox = QtWidgets.QCheckBox("Autostart", self)
+        self.autostart_checkbox = QtWidgets.QCheckBox("Autostart", self)
         self.loglevel_combobox = QtWidgets.QComboBox(self)
         self.loglevel_combobox.addItem('INFO')
         self.loglevel_combobox.addItem('DEBUG')
         self.loglevel_combobox.addItem('WARNING')
 
+        self.metadata_checkbox = QtWidgets.QCheckBox("Save metadata", self)
+        self.metadata_checkbox.setChecked(True)
+
         custom_layout.addWidget(self.label,0,0)
-        custom_layout.addWidget(self.custom_checkbox,1,0)
-        custom_layout.addWidget(self.loglevel_combobox,1,1)
+        custom_layout.addWidget(self.autostart_checkbox, 1, 0)
+        custom_layout.addWidget(self.loglevel_combobox,1, 1)
         custom_layout.addWidget(QtWidgets.QLabel('Debug level'),1,2)
+        custom_layout.addWidget(self.metadata_checkbox, 1, 3)
 
         self.file_dialog.setWindowFlags(self.file_dialog.windowFlags() & ~QtCore.Qt.Dialog)
         main_layout.addWidget(self.custom_widget)
@@ -108,7 +112,9 @@ class RedvyprSaveFileDialog(QtWidgets.QDialog):
 
     def get_custom_option(self):
         """Rückgabe der zusätzlichen Optionen."""
-        return {'autostart':self.custom_checkbox.isChecked(),'loglevel':self.loglevel_combobox.currentText()}
+        return {'autostart':self.autostart_checkbox.isChecked(),
+                'save_metadata': self.metadata_checkbox.isChecked(),
+                'loglevel':self.loglevel_combobox.currentText()}
 
 
 class TabGroupButton(QtWidgets.QPushButton):
@@ -375,9 +381,12 @@ class redvyprWidget(QtWidgets.QWidget):
                 metadata[k] = content
 
         raddress = RedvyprAddress(host=new_hostname,uuid=self.redvypr.hostinfo["uuid"])
-        print(f"Address:{raddress}")
-        print(f"Adding global metadata: {metadata}")
-        self.redvypr.set_metadata(raddress, metadata=metadata)
+
+        if len(metadata.keys())>0:
+            logger.info(f"Adding global metadata: {metadata}")
+            self.redvypr.set_metadata(raddress, metadata=metadata)
+        else:
+            logger.info(f"No global metadata")
 
         # Switch to main window
         self.stack.setCurrentIndex(1)
@@ -585,25 +594,39 @@ class redvyprWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.save_config():'
         logger.debug(funcname)
-        config = self.redvypr.get_config()
-        data_save = config.model_dump()
-        #print('Data save',data_save)
-        if True:
-            tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
-            fname_suggestion = 'config_' + self.redvypr.hostinfo['hostname'] + '_' + tstr + '.yaml'
-            dialog = RedvyprSaveFileDialog(self,default_file=fname_suggestion)
-            if dialog.exec():
-                fname_full = dialog.selectedFiles()
-                options = dialog.get_custom_option()
-                data_save['loglevel'] = options['loglevel']
-                for d in data_save['devices']:
-                    d['base_config']['autostart'] = options['autostart']
-                    d['base_config']['loglevel'] = options['loglevel']
+        tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
+        fname_suggestion = 'config_' + self.redvypr.hostinfo[
+            'host'] + '_' + tstr + '.yaml'
+        dialog = RedvyprSaveFileDialog(self, default_file=fname_suggestion)
+        if dialog.exec():
+            fname_full = dialog.selectedFiles()
+            options = dialog.get_custom_option()
+            loglevel_save = options['loglevel']
+            save_metadata = options['save_metadata']  # Check if metadata shall be saved
 
-            if fname_full:
-                logger.debug('Saving to file {:s}'.format(fname_full))
-                with open(fname_full, 'w') as fyaml:
-                    yaml.dump(data_save, fyaml)
+
+        self.redvypr.save_config(fname=fname_full, add_metadata=save_metadata, set_loglevel=loglevel_save)
+        if False: # Old legacy approach
+            config = self.redvypr.get_config()
+            data_save = config.model_dump()
+            #print('Data save',data_save)
+            if True:
+                tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
+                fname_suggestion = 'config_' + self.redvypr.hostinfo['host'] + '_' + tstr + '.yaml'
+                dialog = RedvyprSaveFileDialog(self,default_file=fname_suggestion)
+                if dialog.exec():
+                    fname_full = dialog.selectedFiles()
+                    options = dialog.get_custom_option()
+                    data_save['loglevel'] = options['loglevel']
+                    save_metadata = options['save_metadata'] # Check if metadata shall be saved
+                    for d in data_save['devices']:
+                        d['base_config']['autostart'] = options['autostart']
+                        d['base_config']['loglevel'] = options['loglevel']
+
+                if fname_full:
+                    logger.debug('Saving to file {:s}'.format(fname_full))
+                    with open(fname_full, 'w') as fyaml:
+                        yaml.dump(data_save, fyaml)
 
     def open_add_device_widget(self):
         """
@@ -875,7 +898,7 @@ class redvyprWidget(QtWidgets.QWidget):
     def __hostname_changed_click(self):
         hostname, ok = QtWidgets.QInputDialog.getText(self, 'redvypr hostname', 'Enter new hostname:')
         if ok:
-            self.redvypr.hostinfo['hostname'] = hostname
+            self.redvypr.hostinfo['host'] = hostname
             self.__hostname_line.setText(hostname)
 
     def __update_hostinfo_widget__(self):
