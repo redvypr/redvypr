@@ -524,6 +524,35 @@ class AbstractDatabase(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_metadata_by_ids(self, record_ids: List[int]) -> List[Dict[str, Any]]:
+        """
+        Retrieve multiple metadata records using a list of unique integer IDs.
+
+        This method uses the SQL 'IN' clause to fetch all requested records in a
+        single database round-trip. It is optimized for scenarios where a group
+        of specific packets needs to be inspected in detail.
+
+        :param record_ids: A list of unique technical identifiers (Primary Keys).
+        :type record_ids: list[int]
+
+        :return: A list of dictionaries, each containing the full record data.
+                 Returns an empty list if no IDs match or the input list is empty.
+                 The dictionaries include:
+
+                 - **id**: The integer record ID.
+                 - **redvypr_address**: The associated address.
+                 - **uuid**: The record UUID.
+                 - **metadata**: The parsed JSON content of the metadata.
+                 - **created_at**: The ISO-formatted timestamp.
+
+        :rtype: list[dict[str, Any]]
+
+        .. seealso:: :meth:`get_unique_combination_stats` for obtaining the ID lists.
+        """
+        pass
+
+
     def get_metadata_info(self, keys: List[str] = None) -> List[Dict[str, Any]]:
         """
         Returns an overview of stored metadata.
@@ -640,6 +669,7 @@ class RedvyprTimescaleDb(AbstractDatabase):
             f"SELECT create_hypertable('{table_name}', 'timestamp', if_not_exists => TRUE);",
             """
             CREATE TABLE IF NOT EXISTS redvypr_metadata (
+                id SERIAL PRIMARY KEY,
                 redvypr_address TEXT NOT NULL,
                 uuid TEXT NOT NULL,
                 packetid TEXT,
@@ -647,7 +677,7 @@ class RedvyprTimescaleDb(AbstractDatabase):
                 host TEXT,
                 metadata JSONB NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
-                PRIMARY KEY (redvypr_address, uuid)
+                UNIQUE (redvypr_address, uuid)
             );
             """
         ]
@@ -843,6 +873,81 @@ class RedvyprTimescaleDb(AbstractDatabase):
                                      time_col: str = 'timestamp') -> List[
         Dict[str, Any]]:
         """
+        PostgreSQL Implementation of statistics retrieval including ID list.
+        """
+        valid_columns = ["redvypr_address", "packetid", "device", "host", "publisher",
+                         "uuid"]
+        safe_keys = [k for k in keys if k in valid_columns]
+
+        if not safe_keys:
+            return []
+
+        col_string = ", ".join(safe_keys)
+        where_clauses = []
+        params = []
+
+        if filters:
+            for key, value in filters.items():
+                if key in valid_columns:
+                    op = "LIKE" if isinstance(value, str) and "%" in value else "="
+                    where_clauses.append(f"{key} {op} {self.placeholder}")
+                    params.append(value)
+
+        where_stmt = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+        #print("time col",time_col)
+        # Added array_agg(id) to collect all IDs for the group
+        sql = f"""
+                SELECT {col_string}, 
+                       COUNT(*) as packet_count, 
+                       MIN({time_col}) as first_seen, 
+                       MAX({time_col}) as last_seen,
+                       array_agg(id ORDER BY {time_col} ASC) as ids
+                FROM {table_name} 
+                {where_stmt} 
+                GROUP BY {col_string} 
+                ORDER BY last_seen DESC
+                """
+
+        try:
+            with self._connection.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+                results = []
+                for r in rows:
+                    # The first N elements are our safe_keys
+                    d = dict(zip(safe_keys, r[:len(safe_keys)]))
+
+                    # Column mapping from the end of the result row:
+                    # r[-4] = count
+                    # r[-3] = first_seen
+                    # r[-2] = last_seen
+                    # r[-1] = ids (list)
+
+                    d["count"] = r[-4]
+                    d["first_seen"] = r[-3].isoformat() if hasattr(r[-3],
+                                                                   'isoformat') else r[
+                        -3]
+                    d["last_seen"] = r[-2].isoformat() if hasattr(r[-2],
+                                                                  'isoformat') else r[
+                        -2]
+                    d["ids"] = r[
+                        -1]  # psycopg2 automatically converts this to a Python list
+
+                    results.append(d)
+                return results
+        except Exception as e:
+            logger.error(f"❌ Detailed stats failed: {e}")
+            if self._connection:
+                self._connection.rollback()
+            return []
+
+    def get_unique_combination_stats_legacy(self, keys: List[str],
+                                     filters: Dict[str, str] = None,
+                                     table_name: str = 'redvypr_packets',
+                                     time_col: str = 'timestamp') -> List[
+        Dict[str, Any]]:
+        """
                                 PostgreSQL Implementation of statistics retrieval.
 
                                 .. SeeAlso:: :meth:`.AbstractDatabase.get_unique_combination_stats`
@@ -903,6 +1008,42 @@ class RedvyprTimescaleDb(AbstractDatabase):
             if self._connection: self._connection.rollback()
             return []
 
+    def get_metadata_by_ids(self, record_ids: List[int]) -> List[Dict[str, Any]]:
+        if not record_ids:
+            return []
+
+        # Create placeholders for the IN clause: e.g., (%s, %s, %s)
+        placeholders = ", ".join([self.placeholder] * len(record_ids))
+
+        sql = f"""
+            SELECT id, redvypr_address, uuid, metadata, created_at, packetid, device, host
+            FROM redvypr_metadata 
+            WHERE id IN ({placeholders})
+            ORDER BY created_at DESC
+        """
+        try:
+            with self._connection.cursor() as cur:
+                cur.execute(sql, tuple(record_ids))
+                rows = cur.fetchall()
+
+                return [
+                    {
+                        "id": r[0],
+                        "redvypr_address": r[1],
+                        "uuid": r[2],
+                        "metadata": r[3],
+                        "created_at": r[4].isoformat() if hasattr(r[4],
+                                                                  'isoformat') else r[
+                            4],
+                        "packetid": r[5],
+                        "device": r[6],
+                        "host": r[7]
+                    } for r in rows
+                ]
+        except Exception as e:
+            logger.error(f"❌ Bulk metadata retrieval failed: {e}")
+            return []
+
     def get_metadata(self, start_index: int = 0, count: int = 100) -> List[
         Dict[str, Any]]:
         """
@@ -934,6 +1075,8 @@ class RedvyprTimescaleDb(AbstractDatabase):
         except Exception as e:
             logger.error(f"❌ Metadata retrieval failed: {e}")
             return []
+
+
 
     def get_packet_count(self, filters: List[Dict[str, str]] = None,
                          time_range: Dict[str, Any] = None,
@@ -1068,6 +1211,7 @@ class RedvyprSqliteDb(AbstractDatabase):
                 f"CREATE INDEX IF NOT EXISTS idx_ts_{table_name} ON {table_name} (timestamp);")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS redvypr_metadata (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, -- Eindeutiger Integer-Index
                     redvypr_address TEXT NOT NULL,
                     uuid TEXT NOT NULL,
                     packetid TEXT,
@@ -1075,7 +1219,8 @@ class RedvyprSqliteDb(AbstractDatabase):
                     host TEXT,
                     metadata TEXT NOT NULL,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (redvypr_address, uuid)
+                    -- Stellt sicher, dass die Kombi aus Adresse und UUID trotzdem einzigartig bleibt:
+                    UNIQUE (redvypr_address, uuid) 
                 );
             """)
             self._connection.commit()
@@ -1145,6 +1290,59 @@ class RedvyprSqliteDb(AbstractDatabase):
         finally:
             cur.close()
 
+    def get_metadata_by_ids(self, record_ids: List[int]) -> List[Dict[str, Any]]:
+        """
+        SQLite implementation of bulk metadata retrieval.
+        Fixed: Removed context manager from cursor.
+        """
+        if not record_ids:
+            return []
+
+        placeholders = ", ".join([self.placeholder] * len(record_ids))
+
+        sql = f"""
+            SELECT id, redvypr_address, uuid, metadata, created_at, packetid, device, host
+            FROM redvypr_metadata 
+            WHERE id IN ({placeholders})
+            ORDER BY created_at DESC
+        """
+
+        cur = None
+        try:
+            # In SQLite, the connection is the context manager, not the cursor
+            cur = self._connection.cursor()
+            cur.execute(sql, tuple(record_ids))
+            rows = cur.fetchall()
+
+            results = []
+            for r in rows:
+                try:
+                    # SQLite stores JSON as string
+                    meta_dict = json.loads(r[3]) if isinstance(r[3], str) else r[3]
+                except (json.JSONDecodeError, TypeError):
+                    meta_dict = r[3]
+
+                results.append({
+                    "id": r[0],
+                    "redvypr_address": r[1],
+                    "uuid": r[2],
+                    "metadata": meta_dict,
+                    "created_at": r[4].isoformat() if hasattr(r[4], 'isoformat') else r[
+                        4],
+                    "packetid": r[5],
+                    "device": r[6],
+                    "host": r[7]
+                })
+            return results
+        except Exception as e:
+            logger.error(f"❌ SQLite bulk metadata retrieval failed: {e}")
+            return []
+        finally:
+            if cur:
+                cur.close()
+
+
+
     def get_packets_range(self, start_index: int, count: int, filters=None,
                           time_range=None) -> List[Dict]:
         where_clauses, params = [], []
@@ -1198,6 +1396,49 @@ class RedvyprSqliteDb(AbstractDatabase):
             cur.close()
 
     def get_unique_combination_stats(self, keys: List[str], filters=None,
+                                            table_name='redvypr_packets',
+                                            time_col='timestamp') -> List[
+        Dict[str, Any]]:
+        col_string = ", ".join(keys)
+
+        # In SQLite we use group_concat(column)
+        sql = f"""
+            SELECT 
+                {col_string}, 
+                COUNT(*) as count, 
+                MIN({time_col}) as first_seen, 
+                MAX({time_col}) as last_seen,
+                group_concat(id) as ids
+            FROM {table_name} 
+            GROUP BY {col_string}
+        """
+
+        cur = self._connection.cursor()
+        try:
+            cur.execute(sql)
+            results = []
+            for r in cur.fetchall():
+                d = dict(zip(keys, r[:len(keys)]))
+
+                # Since group_concat returns a string "1,2,3",
+                # we need to split it into a Python list and convert to int
+                raw_ids = r[-1]
+                id_list = [int(i) for i in raw_ids.split(",")] if raw_ids else []
+
+                d.update({
+                    "count": r[-4],
+                    "first_seen": r[-3],
+                    "last_seen": r[-2],
+                    "ids": id_list
+                })
+                results.append(d)
+            return results
+        finally:
+            cur.close()
+
+
+
+    def get_unique_combination_stats_legacy(self, keys: List[str], filters=None,
                                      table_name='redvypr_packets',
                                      time_col='timestamp') -> List[Dict[str, Any]]:
         # Basis-Implementierung für die UI-Statistik

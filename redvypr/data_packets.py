@@ -340,7 +340,119 @@ class Datapacket(dict):
         return self.address.to_address_string(addrformat)
 
 
-def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None, publisher=None, hostinfo=None):
+import time
+from typing import Any, Dict, Optional, Union
+
+
+def create_datadict(
+        data: Optional[Any] = None,
+        datakey: Optional[str] = None,
+        packetid: Optional[Union[str, int]] = None,
+        tu: Optional[float] = None,
+        device: Optional[str] = None,
+        publisher: Optional[str] = None,
+        hostinfo: Optional[Dict[str, Any]] = None,
+        random_host: Optional[bool] = None
+) -> Dict[str, Any]:
+    """
+    Creates a datadict dictionary used as the internal data structure in redvypr.
+
+    This function wraps payload data and adds a standardized metadata header
+    under the ``_redvypr`` key. If no timestamp is provided, the current
+    system time is used.
+
+    :param data: The actual payload data to be stored.
+                 If provided, it is stored under the key specified by ``datakey``.
+    :type data: Any, optional
+
+    :param datakey: The dictionary key used for the payload data.
+                    Defaults to 'data' if ``data`` is present but ``datakey`` is None.
+    :type datakey: str, optional
+
+    :param packetid: Unique identifier for the packet.
+                     Defaults to the value of ``device`` if None.
+    :type packetid: str or int, optional
+
+    :param tu: Unix timestamp (time units) for the packet.
+               Defaults to ``time.time()`` if None.
+    :type tu: float, optional
+
+    :param device: Identifier of the source device.
+    :type device: str, optional
+
+    :param publisher: Identifier of the publishing entity.
+    :type publisher: str, optional
+
+    :param hostinfo: Dictionary containing host-related information.
+                     Uses ``redvypr.hostinfo_blank`` if None.
+    :type hostinfo: dict, optional
+
+    :param random_host: If True, generates a randomized host information
+                        using ``redvypr.create_hostinfo``.
+    :type random_host: bool, optional
+
+    :return: A dictionary containing the ``_redvypr`` metadata header and
+             the optional payload data.
+    :rtype: dict[str, Any]
+
+    .. note::
+       The resulting dictionary structure is:
+
+       .. code-block:: python
+
+          {
+              '_redvypr': {
+                  't': float,
+                  'device': str,
+                  'packetid': str,
+                  'publisher': str,
+                  'host': dict
+              },
+              'datakey_name': data_payload  # optional
+          }
+    """
+    if tu is None:
+        tu = time.time()
+
+    # Initialize the metadata structure
+    datadict: Dict[str, Any] = {'_redvypr': {'t': tu}}
+
+    # Set device and packetid logic
+    datadict['_redvypr']['device'] = device
+    if packetid is None:
+        datadict['_redvypr']['packetid'] = device
+    else:
+        datadict['_redvypr']['packetid'] = packetid
+
+    datadict['_redvypr']['publisher'] = publisher
+
+    # Handle host information
+    if hostinfo is not None:
+        datadict['_redvypr']['host'] = hostinfo
+    else:
+        # Assuming redvypr is available in the namespace
+        datadict['_redvypr']['host'] = redvypr.hostinfo_blank
+
+    if random_host is not None:
+        datadict['_redvypr']['host'] = redvypr.create_hostinfo(random_host)
+
+    # Insert payload data if present
+    if data is not None:
+        if datakey is None:
+            datakey = 'data'
+        datadict[datakey] = data
+
+    return datadict
+
+
+def create_datadict_legacy(data=None,
+                    datakey=None,
+                    packetid=None,
+                    tu=None,
+                    device=None,
+                    publisher=None,
+                    hostinfo=None,
+                    random_host=None):
     """ Creates a datadict dictionary used as internal datastructure in redvypr
     """
     if(tu == None):
@@ -355,12 +467,11 @@ def create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None
 
     datadict['_redvypr']['publisher'] = publisher
     if (hostinfo is not None):
-        if hostinfo == 'random':
-            redvypr.create_hostinfo('random')
-        else:
-            datadict['_redvypr']['host'] = hostinfo
+        datadict['_redvypr']['host'] = hostinfo
     else:
         datadict['_redvypr']['host'] = redvypr.hostinfo_blank
+    if random_host is not None:
+        datadict['_redvypr']['host'] = redvypr.create_hostinfo(random_host)
 
     if(data is not None):
         if (datakey == None):

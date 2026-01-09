@@ -4,7 +4,7 @@ import pydantic
 import qtawesome
 from PyQt6 import QtWidgets, QtCore, QtGui
 from qtpy import QtWidgets
-from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, TimescaleConfig, SqliteConfig, RedvyprDBFactory
+from .db_engines import RedvyprTimescaleDb, DatabaseConfig, TimescaleConfig, SqliteConfig, RedvyprDBFactory
 
 from qtpy import QtWidgets, QtCore
 import typing
@@ -31,7 +31,7 @@ class DBConfigWidget(QtWidgets.QWidget):
         header_layout.addWidget(QtWidgets.QLabel("<b>Database Engine:</b>"))
 
         self.type_combo = QtWidgets.QComboBox()
-        self.type_combo.addItems(["timescaledb", "sqlite"])
+        self.type_combo.addItems(["sqlite", "timescaledb"])
 
         # Set initial selection from config
         index = self.type_combo.findText(self.current_config.dbtype)
@@ -589,9 +589,9 @@ class DBQueryDialog(QtWidgets.QDialog):
 
         # --- Tabs ---
         self.tabs = QtWidgets.QTabWidget()
-        self.packet_table = self._create_table_widget()
+        self.packet_table = self._create_table_widget(tabletype="datastream")
         self.tabs.addTab(self.packet_table, qtawesome.icon('fa5s.box'), "Packets")
-        self.meta_table = self._create_table_widget()
+        self.meta_table = self._create_table_widget(tabletype="metadata")
         self.tabs.addTab(self.meta_table, qtawesome.icon('fa5s.info-circle'),
                          "Metadata")
         layout.addWidget(self.tabs)
@@ -607,9 +607,11 @@ class DBQueryDialog(QtWidgets.QDialog):
         footer.addWidget(close_btn)
         layout.addLayout(footer)
 
-    def _create_table_widget(self) -> QtWidgets.QTableWidget:
+    def _create_table_widget(self, tabletype: typing.Literal["datastream","metadata"]="datastream") -> QtWidgets.QTableWidget:
         """Helper to create a standardized table with the new header order."""
+        #print(f"Creating table: {tabletype}")
         table = QtWidgets.QTableWidget()
+        table.__tabletype = tabletype
         headers = ["Address", "Packet ID", "Device", "Host", "UUID", "Count",
                    "First Seen", "Last Seen"]
         table.setColumnCount(len(headers))
@@ -617,6 +619,11 @@ class DBQueryDialog(QtWidgets.QDialog):
         table.setAlternatingRowColors(True)
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+
+        if table.__tabletype == "metadata":
+            table.setColumnHidden(1, True) # Packet id
+            table.setColumnHidden(2, True)  # device
+            table.setColumnHidden(3, True)  # host
 
         if self.select_mode:
             table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -652,6 +659,7 @@ class DBQueryDialog(QtWidgets.QDialog):
                     keys=common_keys)
                 meta_stats = connected_db.get_metadata_info(keys=common_keys)
 
+
             # 3. Fill tables
             self._fill_table(self.packet_table, packet_stats)
             self._fill_table(self.meta_table, meta_stats)
@@ -685,6 +693,10 @@ class DBQueryDialog(QtWidgets.QDialog):
 
             for col_idx, text in enumerate(items):
                 item = QtWidgets.QTableWidgetItem(text)
+                # Add id to be able to get the entry for later query of db
+                if table.__tabletype == "metadata":
+                    item.__ids__ = entry.get('ids', [])  # 7
+
                 if col_idx == 5:  # Count column
                     item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
                 table.setItem(row_idx, col_idx, item)
@@ -711,9 +723,15 @@ class DBQueryDialog(QtWidgets.QDialog):
         if not selected_rows:
             return
 
-        menu = QtWidgets.QMenu()
-        action_text = f"Add {len(selected_rows)} selected item(s) to Replay"
-        select_action = menu.addAction(qtawesome.icon('fa5s.plus-circle'), action_text)
+        if table.__tabletype == "datastream":
+            menu = QtWidgets.QMenu()
+            action_text = f"Add {len(selected_rows)} selected item(s) to Replay"
+            select_action = menu.addAction(qtawesome.icon('fa5s.plus-circle'), action_text)
+        else:
+            menu = QtWidgets.QMenu()
+            action_text = f"Get metadata from {len(selected_rows)} selected item(s) for Replay"
+            select_action = menu.addAction(qtawesome.icon('fa5s.plus-circle'),
+                                           action_text)
 
         action = menu.exec_(table.viewport().mapToGlobal(position))
         if action == select_action:
@@ -722,269 +740,25 @@ class DBQueryDialog(QtWidgets.QDialog):
     def emit_selected_items(self, table, rows):
         """Extracts data with updated index mapping for Replay."""
         results = []
-        for row in rows:
-            results.append({
-                "address": table.item(row, 0).text(),
-                "packetid": table.item(row, 1).text(),
-                "uuid": table.item(row, 4).text(),
-                "tstart": table.item(row, 6).text(),
-                "tend": table.item(row, 7).text()
-            })
-
+        if table.__tabletype == "datastream":
+            for row in rows:
+                results.append({
+                    "address": table.item(row, 0).text(),
+                    "packetid": table.item(row, 1).text(),
+                    "uuid": table.item(row, 4).text(),
+                    "tstart": table.item(row, 6).text(),
+                    "tend": table.item(row, 7).text()
+                })
+        else: # Look at the metadata and interprete it
+            with self.db as connected_db:
+                for row in rows:
+                    ids = table.item(row, 0).__ids__
+                    metadatalist = connected_db.get_metadata_by_ids(ids)
+                    print("Metadatalist",metadatalist)
         if results:
             self.items_chosen.emit(results)
             self.status_label.setText(
                 f"Sent {len(results)} items to Replay controller.")
-
-
-
-
-class DBQueryDialog_legacy(QtWidgets.QDialog):
-    """
-    Dialog to browse both Packet and Metadata inventory using Tabs.
-    """
-    items_chosen = QtCore.Signal(list)
-    def __init__(self, db_instance, parent=None, select_mode=False):
-        super().__init__(parent)
-        self.db = db_instance
-        self.select_mode = select_mode # New flag
-        self.selected_data = None # Storage for result
-        if self.select_mode:
-            self.setWindowTitle("Select Stream from Inventory")
-        else:
-            self.setWindowTitle("Database Inventory Browser")
-        self.resize(1100, 700)
-
-        self.setup_ui()
-        self.refresh_data()
-
-    def setup_ui(self):
-        layout = QtWidgets.QVBoxLayout(self)
-
-        ## --- Header with Refresh ---
-        #header = QtWidgets.QHBoxLayout()
-        #header.addWidget(QtWidgets.QLabel("Database Inventory Overview"))
-        #header.addStretch()
-
-        # --- Header with Info and Refresh ---
-        header = QtWidgets.QHBoxLayout()
-
-        # Titel und DB-Info Container
-        title_vbox = QtWidgets.QVBoxLayout()
-        title_label = QtWidgets.QLabel("<b>Database Inventory Overview</b>")
-        title_label.setStyleSheet("font-size: 14px;")
-
-        # Das neue Label für die DB-Details
-        self.db_info_label = QtWidgets.QLabel("Connecting...")
-        self.db_info_label.setStyleSheet("color: #666; font-size: 11px;")
-
-        title_vbox.addWidget(title_label)
-        title_vbox.addWidget(self.db_info_label)
-        header.addLayout(title_vbox)
-
-        header.addStretch()
-
-        self.refresh_button = QtWidgets.QPushButton(" Refresh All")
-        self.refresh_button.setIcon(qtawesome.icon('fa5s.sync-alt'))
-        self.refresh_button.clicked.connect(self.refresh_data)
-        header.addWidget(self.refresh_button)
-        layout.addLayout(header)
-
-        # --- Tabs ---
-        self.tabs = QtWidgets.QTabWidget()
-
-        # Tab 1: Packets
-        self.packet_table = self._create_table_widget()
-        self.tabs.addTab(self.packet_table, qtawesome.icon('fa5s.box'), "Packets")
-
-        # Tab 2: Metadata
-        self.meta_table = self._create_table_widget()
-        self.tabs.addTab(self.meta_table, qtawesome.icon('fa5s.info-circle'),
-                         "Metadata")
-
-        layout.addWidget(self.tabs)
-
-        # --- Footer ---
-        footer = QtWidgets.QHBoxLayout()
-        self.status_label = QtWidgets.QLabel("Ready")
-        footer.addWidget(self.status_label)
-        footer.addStretch()
-
-        close_btn = QtWidgets.QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-        footer.addWidget(close_btn)
-        layout.addLayout(footer)
-
-    def get_selection(self):
-        """Returns the address and time range of the selected row."""
-        table = self.tabs.currentWidget()
-        selected_items = table.selectedItems()
-        if not selected_items:
-            return None
-
-        row = selected_items[0].row()
-        # Mapping based on your table columns:
-        # 0: Address, 5: First Seen, 6: Last Seen
-        address = table.item(row, 0).text()
-        first_seen = table.item(row, 5).text()
-        last_seen = table.item(row, 6).text()
-
-        return {
-            "address": address,
-            "tstart": first_seen,
-            "tend": last_seen
-        }
-
-    def _create_table_widget(self) -> QtWidgets.QTableWidget:
-        """Helper to create a standardized table."""
-        table = QtWidgets.QTableWidget()
-        headers = ["Address", "Packet ID", "UUID", "Device", "Host", "Count",
-                   "First Seen", "Last Seen"]
-
-        table.setColumnCount(len(headers))
-        table.setHorizontalHeaderLabels(headers)
-        table.setAlternatingRowColors(True)
-        table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        if self.select_mode:
-            # Enable Custom Context Menu
-            table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-            table.customContextMenuRequested.connect(self.show_context_menu)
-            table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-            table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-
-        return table
-
-    def refresh_data(self):
-        """Fetches data and updates connection info."""
-        self.status_label.setText("Fetching data...")
-        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-
-        try:
-            with self.db as connected_db:
-                # --- DB Info Label aktualisieren ---
-                connected_db.identify_and_setup()
-                engine = connected_db.engine_type.upper()
-
-                # Wir versuchen an die Adresse/Datei zu kommen
-                # Je nachdem, ob es SQLite (filepath) oder Postgres (host) ist
-                if engine == "SQLITE":
-                    # Falls du das Config-Objekt in der DB-Klasse speicherst:
-                    source = getattr(self.db, 'filepath', 'local file')
-                else:
-                    host = self.db.conn_params['host']
-                    port = self.db.conn_params['port']
-                    source = f"{host}:{port}" if port else host
-
-                self.db_info_label.setText(
-                    f"Connected to: <b>{engine}</b> | Source: <i>{source}</i>")
-
-                # --- Daten fetchen ---
-                packet_stats = connected_db.get_unique_combination_stats(
-                    keys=["redvypr_address", "packetid", "device", "host"]
-                )
-                meta_stats = connected_db.get_metadata_info(
-                    keys=["redvypr_address", "uuid", "device", "host"]
-                )
-
-            self._fill_table(self.packet_table, packet_stats, "packetid")
-            self._fill_table(self.meta_table, meta_stats, "uuid")
-
-            self.status_label.setText(
-                f"Updated: {len(packet_stats)} packet streams, {len(meta_stats)} metadata entries.")
-
-        except Exception as e:
-            self.db_info_label.setText("Connection failed.")
-            QtWidgets.QMessageBox.critical(self, "Error", f"Fetch failed: {e}")
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
-
-    def _fill_table(self, table: QtWidgets.QTableWidget, stats: list, id_key: str):
-        """Generic logic to fill a table with stats."""
-        table.setRowCount(0)
-        table.setRowCount(len(stats))
-
-        for row_idx, entry in enumerate(stats):
-            # We map the dictionary keys to the columns
-            items = [
-                entry.get('redvypr_address', '-'),
-                entry.get(id_key, '-'),  # Either packetid or uuid
-                entry.get('device', '-'),
-                entry.get('host', '-'),
-                str(entry.get('count', 0)),
-                entry.get('first_seen', 'N/A'),
-                entry.get('last_seen', 'N/A')
-            ]
-
-            for col_idx, text in enumerate(items):
-                item = QtWidgets.QTableWidgetItem(text)
-                if col_idx == 4:  # Count column right-aligned
-                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-                table.setItem(row_idx, col_idx, item)
-
-        #table.resizeColumnsToContents()
-        #table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-        # 1. Disable the forced stretch on the header to allow horizontal overflow
-        header = table.horizontalHeader()
-        header.setStretchLastSection(False)
-
-        # 2. Initially resize columns to fit the data we just loaded
-        table.resizeColumnsToContents()
-
-        # 2. CAP the first column (Address) if it exceeds a reasonable limit
-        # Adjust 300 to your preferred maximum width in pixels
-        if table.columnWidth(0) > 300:
-            table.setColumnWidth(0, 300)
-
-        # 3. Set all columns to 'Interactive' so the user can resize them manually
-        for i in range(table.columnCount()):
-            header.setSectionResizeMode(i, QtWidgets.QHeaderView.Interactive)
-
-        # 4. Ensure the horizontal scrollbar is enabled
-        table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-
-        # Optional: Add a bit of padding to the columns for better readability
-        for i in range(table.columnCount()):
-            current_width = table.columnWidth(i)
-            table.setColumnWidth(i, current_width + 20)
-
-    def show_context_menu(self, position):
-        """Creates and shows the right-click menu."""
-        table = self.sender() # Get the table that was clicked
-        selected_rows = self._get_unique_selected_rows(table)
-        if not selected_rows:
-            return
-
-        menu = QtWidgets.QMenu()
-        count = len(selected_rows)
-        action_text = f"Add {count} selected item(s) to Replay" if self.select_mode else "Copy Selection"
-
-        select_action = menu.addAction(qtawesome.icon('fa5s.plus-circle'), action_text)
-        action = menu.exec_(table.viewport().mapToGlobal(position))
-
-        if action == select_action:
-            self.emit_selected_items(table, selected_rows)
-
-    def _get_unique_selected_rows(self, table):
-        """Gibt eine sortierte Liste der eindeutigen Zeilen-Indizes zurück."""
-        return sorted(list(set(index.row() for index in table.selectedIndexes())))
-
-    def emit_selected_items(self, table, rows):
-        """Extrahiert Daten aus allen gewählten Zeilen und sendet sie als Liste."""
-        results = []
-        for row in rows:
-            data = {
-                "address": table.item(row, 0).text(),
-                "id": table.item(row, 1).text(),
-                "tstart": table.item(row, 5).text(),
-                "tend": table.item(row, 6).text()
-            }
-            results.append(data)
-
-        if results:
-            self.items_chosen.emit(results)
-            self.status_label.setText(f"Added {len(results)} items to settings.")
 
 
 

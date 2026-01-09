@@ -682,17 +682,16 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetStartonly):
 
     def check_for_remote_measurements(self):
         print("\nGot new metadata, check for new measurements\n")
-        metadata = self.redvypr.get_metadata("@d:measurement_metadata")
+        metadata = self.redvypr.get_metadata("!@d:measurement_metadata")
         print("Metadata", metadata)
         if len(metadata.keys()) > 0:
             print("Found a measurement")
             for measurement_address, measurement_config_dict in metadata.items():
-                #print("measurement_config_dict",measurement_config_dict)
-
+                print(f"measurement_config_dict:{measurement_config_dict}")
                 mcfg = MeasurementConfig.model_validate(measurement_config_dict)
                 # Check if the uuid is different, if yes, add it, if not, leave it
                 #mcfg.uuid
-                print("meas",self.device.custom_config.measurements)
+                #print("meas",self.device.custom_config.measurements)
                 uuids = [u.uuid for u in self.device.custom_config.measurements]
                 print("uuids",uuids)
                 print("new uuid", mcfg.uuid)

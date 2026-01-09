@@ -120,6 +120,7 @@ class RedvyprAddress:
         self.left_expr: Optional[str] = None
         self._rhs_ast: Optional[ast.Expression] = None
         self.filter_keys: typing.Dict[str, list] = {}
+        self.strict_no_datakey = False
 
         if expr == "":
             expr = None
@@ -453,20 +454,33 @@ class RedvyprAddress:
         else:
             address = packet
 
+        # 1. RHS Filter check
         match_filter = self.matches_filter(packet)
         if match_filter == False:
-            return match_filter
-        else:
-            # Return true if packet has no datakey and it matches
-            if address.datakey is None:
+            return False
+
+        # 2. Handle the "Explicit No Data" case (!)
+        if self.left_expr == "!":
+            # We need to check if the target actually HAS data
+            # If it has a key like 'data', this must return False
+            try:
+                self.__call__(packet, strict=True)
                 return True
-            # Try if datakey(s) match, here also more complex datapackets are treated properly
-            else:
-                try:
-                    self.__call__(packet)
-                    return True
-                except:
-                    return False
+            except (KeyError, FilterNoMatch):
+                return False
+
+        # 3. Wildcard logic: If I don't care about the key, any key matches
+        # (provided the filter above matched)
+        if address.datakey is None:
+            return True
+
+        # 4. Specific key or Subsumption logic,
+        # try if datakey(s) match, here also more complex datapackets are treated properly
+        try:
+            self.__call__(packet)
+            return True
+        except:
+            return False
 
     def __call__(self, packet, strict=True):
         if isinstance(packet, RedvyprAddress):
@@ -481,6 +495,17 @@ class RedvyprAddress:
             else:
                 return None
         if self.left_expr:
+            if self.left_expr == "!":
+                # We check if the packet contains any data keys other than metadata.
+                # In your system, 'no datakey' typically means that only
+                # the metadata (_redvypr) is present.
+                data_keys = [k for k in packet.keys() if k != "_redvypr"]
+                if len(data_keys) > 0:
+                    if strict:
+                        raise KeyError(
+                            "Found datakeys '!' (no-data) was requested")
+                    return None
+                return packet  # Empty
             top_key = self.left_expr.split("[")[0].split(".")[0]
             if top_key not in packet:
                 if strict:

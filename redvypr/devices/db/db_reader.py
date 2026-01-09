@@ -18,7 +18,7 @@ from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import Datapacket
 from .db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget, DBQueryDialog
-from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
+from .db_engines import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.db.db_reader')
@@ -43,7 +43,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
     constant_dt: float = pydantic.Field(default=.1,
                                     description='Constant time between to packets in constant mode')
     replay_mode: typing.Literal["realtime","constant"] = pydantic.Field(default="realtime")
-    database: DatabaseConfig = pydantic.Field(default_factory=TimescaleConfig, discriminator='dbtype')
+    database: DatabaseConfig = pydantic.Field(default_factory=SqliteConfig, discriminator='dbtype')
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
     """

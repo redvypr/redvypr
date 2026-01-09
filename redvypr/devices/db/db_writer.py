@@ -9,7 +9,7 @@ from redvypr.data_packets import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.redvypr_address import RedvyprAddress
 from .db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget
-from .timescaledb import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
+from .db_engines import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.db.db_writer')
@@ -24,7 +24,8 @@ class DeviceBaseConfig(pydantic.BaseModel):
     gui_tablabel_display: str = 'database status'
 
 class DeviceCustomConfig(pydantic.BaseModel):
-    database: DatabaseConfig = pydantic.Field(default_factory=TimescaleConfig, discriminator='dbtype')
+    auto_create_table: bool = pydantic.Field(default=True, description="Create redvypr tables automatically at start, if not existing")
+    database: DatabaseConfig = pydantic.Field(default_factory=SqliteConfig, discriminator='dbtype')
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
     """
@@ -66,13 +67,20 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             print(f"Write:   {'✅ Permitted' if status['can_write'] else '❌ Denied'}")
             print(f"-----------------------------")
             db_info = db.get_database_info()
+            # Check if tables are there
+            if not(status['tables_exist']) and status['can_write']:
+                if device_config.auto_create_table:
+                    print("Creating tables")
+                    db.setup_schema()
+                    status = db.check_health()
+
             if status['tables_exist'] and status['can_write']:
                 statistics = {}
                 while True:
                     datapacket = datainqueue.get()
-                    print("Got data",datapacket)
+                    #print("Got data",datapacket)
                     addrstr = RedvyprAddress(datapacket).to_address_string()
-                    print("Addstr",addrstr)
+                    #print("Addstr",addrstr)
                     [command, comdata] = check_for_command(datapacket,
                                                            thread_uuid=device_info[
                                                                'thread_uuid'],
