@@ -747,7 +747,8 @@ class DBQueryDialog(QtWidgets.QDialog):
                     "packetid": table.item(row, 1).text(),
                     "uuid": table.item(row, 4).text(),
                     "tstart": table.item(row, 6).text(),
-                    "tend": table.item(row, 7).text()
+                    "tend": table.item(row, 7).text(),
+                    "metadata":None
                 })
         else: # Look at the metadata and interprete it
             with self.db as connected_db:
@@ -755,6 +756,14 @@ class DBQueryDialog(QtWidgets.QDialog):
                     ids = table.item(row, 0).__ids__
                     metadatalist = connected_db.get_metadata_by_ids(ids)
                     print("Metadatalist",metadatalist)
+                    results.append({
+                        "address": table.item(row, 0).text(),
+                        "packetid": table.item(row, 1).text(),
+                        "uuid": table.item(row, 4).text(),
+                        "tstart": table.item(row, 6).text(),
+                        "tend": table.item(row, 7).text(),
+                        "metadata": metadatalist
+                    })
         if results:
             self.items_chosen.emit(results)
             self.status_label.setText(

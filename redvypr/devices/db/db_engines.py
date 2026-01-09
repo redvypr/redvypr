@@ -942,71 +942,6 @@ class RedvyprTimescaleDb(AbstractDatabase):
                 self._connection.rollback()
             return []
 
-    def get_unique_combination_stats_legacy(self, keys: List[str],
-                                     filters: Dict[str, str] = None,
-                                     table_name: str = 'redvypr_packets',
-                                     time_col: str = 'timestamp') -> List[
-        Dict[str, Any]]:
-        """
-                                PostgreSQL Implementation of statistics retrieval.
-
-                                .. SeeAlso:: :meth:`.AbstractDatabase.get_unique_combination_stats`
-        """
-        valid_columns = ["redvypr_address", "packetid", "device", "host", "publisher",
-                         "uuid"]
-        safe_keys = [k for k in keys if k in valid_columns]
-
-        if not safe_keys:
-            return []
-
-        col_string = ", ".join(safe_keys)
-        where_clauses = []
-        params = []
-
-        if filters:
-            for key, value in filters.items():
-                if key in valid_columns:
-                    op = "LIKE" if isinstance(value, str) and "%" in value else "="
-                    where_clauses.append(f"{key} {op} {self.placeholder}")
-                    params.append(value)
-
-        where_stmt = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-
-        # The sql query
-        sql = f"""
-                    SELECT {col_string}, 
-                           COUNT(*) as packet_count, 
-                           MIN({time_col}) as first_seen, 
-                           MAX({time_col}) as last_seen
-                    FROM {table_name} 
-                    {where_stmt} 
-                    GROUP BY {col_string} 
-                    ORDER BY last_seen DESC
-        """
-
-        try:
-            with self._connection.cursor() as cur:
-                cur.execute(sql, params)
-                rows = cur.fetchall()
-
-                results = []
-                for r in rows:
-                    # Die ersten N Elemente sind unsere Keys
-                    d = dict(zip(safe_keys, r[:len(safe_keys)]))
-                    # Die letzten 3 Elemente sind count, min, max
-                    d["count"] = r[-3]
-                    d["first_seen"] = r[-2].isoformat() if hasattr(r[-2],
-                                                                   'isoformat') else r[
-                        -2]
-                    d["last_seen"] = r[-1].isoformat() if hasattr(r[-1],
-                                                                  'isoformat') else r[
-                        -1]
-                    results.append(d)
-                return results
-        except Exception as e:
-            logger.error(f"❌ Detailed stats failed: {e}")
-            if self._connection: self._connection.rollback()
-            return []
 
     def get_metadata_by_ids(self, record_ids: List[int]) -> List[Dict[str, Any]]:
         if not record_ids:
@@ -1031,7 +966,7 @@ class RedvyprTimescaleDb(AbstractDatabase):
                         "id": r[0],
                         "redvypr_address": r[1],
                         "uuid": r[2],
-                        "metadata": r[3],
+                        "metadata": restore_datetimes(r[3]),
                         "created_at": r[4].isoformat() if hasattr(r[4],
                                                                   'isoformat') else r[
                             4],
@@ -1318,7 +1253,7 @@ class RedvyprSqliteDb(AbstractDatabase):
             for r in rows:
                 try:
                     # SQLite stores JSON as string
-                    meta_dict = json.loads(r[3]) if isinstance(r[3], str) else r[3]
+                    meta_dict = json_safe_loads(r[3]) if isinstance(r[3], str) else r[3]
                 except (json.JSONDecodeError, TypeError):
                     meta_dict = r[3]
 

@@ -388,23 +388,52 @@ class ReplaySettingsDialog(QtWidgets.QDialog):
 
         for item in items_list:
             #print("Processing item",item)
-            # 1. Adresse zur Liste hinzufügen (Duplikate vermeiden)
-            addr_str = item["address"]
-            existing = [self.address_list.item(i).text() for i in
-                        range(self.address_list.count())]
-            if addr_str not in existing:
-                self.address_list.addItem(addr_str)
+            metadata = item["metadata"]
+            if metadata is None:
+                print("Got a standard address")
+                # 1. Adresse zur Liste hinzufügen (Duplikate vermeiden)
+                addr_str = item["address"]
+                existing = [self.address_list.item(i).text() for i in
+                            range(self.address_list.count())]
+                if addr_str not in existing:
+                    self.address_list.addItem(addr_str)
 
-            # 2. Collect time data
-            try:
-                # fromisoformat handles strings of the format "2026-01-01T16:13:38.566638+00:00"
-                t_start = datetime.fromisoformat(item["tstart"])
-                t_end = datetime.fromisoformat(item["tend"])
+                # 2. Collect time data
+                try:
+                    # fromisoformat handles strings of the format "2026-01-01T16:13:38.566638+00:00"
+                    t_start = datetime.fromisoformat(item["tstart"])
+                    t_end = datetime.fromisoformat(item["tend"])
 
-                all_starts.append(t_start)
-                all_ends.append(t_end)
-            except:
-                continue
+                    all_starts.append(t_start)
+                    all_ends.append(t_end)
+                except:
+                    continue
+            else:
+                print("Got a metadata entry")
+                for m in metadata:
+                    print(f"Metadata:{m}")
+                    m_work = m["metadata"]
+                    d_streams = m_work["datastreams"]
+                    # Adding datastreams
+                    for d_addr,d_meta in d_streams.items():
+                        addr_str = d_addr
+                        existing = [self.address_list.item(i).text() for i in
+                                    range(self.address_list.count())]
+                        if addr_str not in existing:
+                            self.address_list.addItem(addr_str)
+                    t_start = m_work["tstart"]
+                    t_end = m_work["tend"]
+                    if t_start:
+                        all_starts.append(t_start)
+                    if t_end:
+                        all_ends.append(t_end)
+                    meas_name = m_work["name"]
+                    print(f"datastreams:{d_streams.keys()}")
+                    print(f"t_start:{t_start}")
+                    print(f"t_end:{t_end}")
+                    print(f"name:{meas_name}")
+                    #for ds,ds_key in m["datastreams"].items:
+                    #    print("Datastream:{ds}")
 
         # 3. Optional: Zeit-Editor auf das Gesamt-Intervall aller gewählten Items setzen
         if all_starts and all_ends:
