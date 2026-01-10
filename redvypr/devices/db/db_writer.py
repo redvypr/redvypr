@@ -36,10 +36,12 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     logger_thread.setLevel(logging.DEBUG)
     logger_thread.debug(funcname)
     dt_update = 1  # Update interval in seconds
+    dt_update_db = 10  # Update interval in seconds
     packet_inserted = 0
     packet_inserted_failure = 0
     metadata_address_inserted = 0
     t_update = time.time() - dt_update
+    t_update_db = time.time() - dt_update_db
     print("Config",config)
     print("device_info", device_info)
 
@@ -148,6 +150,12 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                         data['metadata_address_inserted'] = metadata_address_inserted
                         data['statistics'] = statistics
                         statusqueue.put(data)
+                    if ((time.time() - t_update_db) > dt_update_db):
+                        t_update_db = time.time()
+                        print("Status")
+                        db_status = db.get_status()
+                        statusqueue.put(db_status)
+                        #print("Db Status",db_status)
 
     except:
         logger_thread.exception("Could not connect to database")
@@ -186,6 +194,151 @@ def get_database_info(config):
 
 
 
+class DisplayDbStatusWidget(QtWidgets.QGroupBox):
+    def __init__(self, title="Database Status", parent=None):
+        super().__init__(title, parent)
+        # Set a reasonable maximum width so it doesn't push the splitter too far
+        self.setMinimumWidth(250)
+        self.setup_ui()
+
+    def setup_ui(self):
+        # 1. Main Layout for the GroupBox
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+
+        # 2. Create the Scroll Area
+        self.scroll_area = QtWidgets.QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)  # Clean look
+        self.scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+
+        # 3. Create a Container Widget for the FormLayout
+        self.content_widget = QtWidgets.QWidget()
+        self.grid = QtWidgets.QFormLayout(self.content_widget)
+        self.grid.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+
+        # Set the content widget to the scroll area
+        self.scroll_area.setWidget(self.content_widget)
+
+        # 4. Add the Scroll Area to the Main Layout
+        self.main_layout.addWidget(self.scroll_area)
+
+        # Update timestamp at the bottom (outside the scroll area)
+        self.last_update_label = QtWidgets.QLabel("Last update: Never")
+        self.last_update_label.setStyleSheet("font-size: 10px; color: gray;")
+        self.main_layout.addWidget(self.last_update_label,
+                                   alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+
+    def update_status(self, status_dict: dict):
+        """Clears and redraws the status rows."""
+        # Clear rows
+        while self.grid.count():
+            child = self.grid.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        for key, value in status_dict.items():
+            display_key = key.replace("_", " ").title() + ":"
+            val_label = QtWidgets.QLabel()
+
+            # Logic for formatting (same as before)
+            if key == "connection":
+                val_label.setText(f"● {value}")
+                color = "#27ae60" if "connected" in str(value).lower() else "#c0392b"
+                val_label.setStyleSheet(f"font-weight: bold; color: {color};")
+            else:
+                val_label.setText(str(value))
+                val_label.setStyleSheet("font-weight: bold; color: #2c3e50;")
+
+            # Make text selectable in case users want to copy a path
+            val_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+
+            self.grid.addRow(display_key, val_label)
+
+        now = QtCore.QDateTime.currentDateTime().toString("hh:mm:ss")
+        self.last_update_label.setText(f"Last update: {now}")
+
+
+class DisplayDbStatusWidget_legacy(QtWidgets.QGroupBox):
+    """
+    A reusable widget to display database status dictionaries.
+    Automatically handles formatting and color-coding for different DB engines.
+    """
+
+    def __init__(self, title="Database Status", parent=None):
+        super().__init__(title, parent)
+        self.setup_ui()
+
+    def setup_ui(self):
+        # Main layout for the GroupBox
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+
+        # Container widget and FormLayout for the data rows
+        self.data_container = QtWidgets.QWidget()
+        self.grid = QtWidgets.QFormLayout(self.data_container)
+
+        # Styling the layout
+        self.grid.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        self.grid.setSpacing(10)
+
+        self.main_layout.addWidget(self.data_container)
+
+        # Optional: Add a small timestamp label at the bottom
+        self.last_update_label = QtWidgets.QLabel("Last update: Never")
+        self.last_update_label.setStyleSheet("font-size: 10px; color: gray;")
+        self.main_layout.addWidget(self.last_update_label,
+                                   alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+
+    def update_status(self, status_dict: dict):
+        """
+        Clears the current view and redraws based on the provided dictionary.
+        """
+        # 1. Clear existing rows
+        while self.grid.count():
+            child = self.grid.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        # 2. Iterate through dictionary and create rows
+        for key, value in status_dict.items():
+            # Format the Key: "table_size_pretty" -> "Table Size Pretty"
+            display_key = key.replace("_", " ").title() + ":"
+
+            # Create the Value Label
+            val_label = QtWidgets.QLabel()
+
+            # --- Styling Logic ---
+            is_connected = status_dict.get("connection", "").lower().startswith(
+                "connected")
+
+            if key == "connection":
+                dot = "● "
+                val_label.setText(f"{dot}{value}")
+                color = "#27ae60" if is_connected else "#c0392b"  # Green / Red
+                val_label.setStyleSheet(f"font-weight: bold; color: {color};")
+
+            elif key == "total_packets":
+                # Format numbers with thousands separators (e.g., 1,234,567)
+                if isinstance(value, (int, float)) and value >= 0:
+                    val_label.setText(f"{int(value):,}")
+                else:
+                    val_label.setText("N/A" if value == -1 else str(value))
+                val_label.setStyleSheet("font-weight: bold; color: #2c3e50;")
+
+            elif "size" in key or "ratio" in key:
+                val_label.setText(str(value))
+                val_label.setStyleSheet("font-weight: bold; color: #2980b9;")  # Blue
+
+            else:
+                val_label.setText(str(value))
+                val_label.setStyleSheet("color: #2c3e50;")
+
+            # Add to the grid
+            self.grid.addRow(display_key, val_label)
+
+        # Update timestamp
+        now = QtCore.QDateTime.currentDateTime().toString("hh:mm:ss")
+        self.last_update_label.setText(f"Last update: {now}")
+
 
 class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def __init__(self,*args,**kwargs):
@@ -200,6 +353,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             initial_config=initial_config.database)
         self.db_config_widget.db_type_changed.connect(self.update_config_from_widgets)
         self.db_config_widget.db_config_changed.connect(self.update_config_from_widgets)
+        self.dbstatus = DisplayDbStatusWidget()
         self.statustable = QtWidgets.QTableWidget()
         self.statustable.setRowCount(2) # First all packets, second metadata packets
         self._statustableheader = ['Packets','Num stored','Num stored error']
@@ -211,10 +365,22 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.statustable.setItem(1, 0, item)
         self.statustable.resizeColumnsToContents()
 
+        # 1. Create the Splitter instance (Horizontal)
+        self.statussplitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        self.statussplitter.addWidget(self.dbstatus)
+        self.statussplitter.addWidget(self.statustable)
+
+        self.statussplitter.setSizes([300, 700])
+
+        self.statuslayout = QtWidgets.QHBoxLayout()
+        self.statuslayout.addWidget(self.dbstatus)
+        self.statuslayout.addWidget(self.statustable)
         # 3. Add the DBConfigWidget to the main content area (self.layout)
         # We add it at the top of the 'self.widget' (main content area)
+
         self.layout.addWidget(self.db_config_widget)
-        self.layout.addWidget(self.statustable)
+        self.layout.addStretch(1)  # Push the DB config widget to the top
+        self.layout.addWidget(self.statussplitter)
         self.layout.addStretch(1)  # Push the DB widget to the top
 
         self.statustimer_db = QtCore.QTimer()
@@ -244,6 +410,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             data = None
 
         if data is not None:
+            if "type" in data.keys():
+                if "status" in data["type"]:
+                    self.dbstatus.update_status(data)
             try:
                 item_inserted = QtWidgets.QTableWidgetItem(str(data['packet_inserted']))
                 item_inserted_failure = QtWidgets.QTableWidgetItem(
@@ -265,7 +434,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                         istr = str(i['packet_inserted'])
                         item_inserted.setText(istr)
                     except:
-                        logger.info("Could not get data",exc_info=True)
+                        logger.info(f"Unknown datastream: {k}, adding",exc_info=False)
                         item_addr = QtWidgets.QTableWidgetItem(k_mod)
                         item_inserted = QtWidgets.QTableWidgetItem(str(i['packet_inserted']))
                         item_inserted_failure = QtWidgets.QTableWidgetItem(

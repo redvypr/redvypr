@@ -3,6 +3,7 @@ import os
 import sqlite3
 import logging
 import sys
+import os
 import pydantic
 import typing
 from datetime import datetime, timezone
@@ -115,10 +116,28 @@ class TimescaleConfig(pydantic.BaseModel):
     host: str = "pi5server1"
     port: int = 5433
 
-class SqliteConfig(pydantic.BaseModel):
-    dbtype: typing.Literal["sqlite"] = "sqlite"
-    filepath: str = "data.db"
 
+class SqliteConfig(pydantic.BaseModel):
+    dbtype: typing.Literal["sqlite"] = pydantic.Field(
+        default="sqlite",
+        description="The type of the database engine."
+    )
+    filepath: str = pydantic.Field(
+        default="data.db",
+        description="The base filename or path for the SQLite database."
+    )
+    max_file_size_mb: typing.Optional[float] = pydantic.Field(
+        default=None,
+        description="Maximum file size in MB before rotating. If None, rotation is disabled."
+    )
+    size_check_interval: int = pydantic.Field(
+        default=100,
+        description="Number of packets to wait between file size checks."
+    )
+    file_format: str = pydantic.Field(
+        default="{name}_{filecount}_{filedate}.db",
+        description="Naming template for rotated files. Placeholders: {name}, {filecount}, {filedate}."
+    )
 # Das 'Union' erlaubt entweder das eine oder das andere Modell
 DatabaseConfig = typing.Union[TimescaleConfig, SqliteConfig]
 class DatabaseSettings(pydantic.RootModel):
@@ -292,27 +311,6 @@ class AbstractDatabase(ABC):
 
         self.engine_type = "unknown"
 
-    def get_database_info_legacy(self, table_name: str = 'redvypr_packets') -> Optional[
-        Dict[str, Any]]:
-        """Retrieves row count and time range from a table."""
-        sql = f"SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM {table_name}"
-        try:
-            with self._connection.cursor() as cur:
-                cur.execute(sql)
-                result = cur.fetchone()
-                if result and result[0] > 0:
-                    return {
-                        "measurement_count": result[0],
-                        "min_time": result[1].isoformat() if hasattr(result[1],
-                                                                     'isoformat') else str(
-                            result[1]),
-                        "max_time": result[2].isoformat() if hasattr(result[2],
-                                                                     'isoformat') else str(
-                            result[2])
-                    }
-        except Exception as e:
-            logger.error(f"Failed to get info for {table_name}: {e}")
-        return None
 
     def get_database_info(self, table_name: str = 'redvypr_packets') -> Optional[
         Dict[str, Any]]:
@@ -412,107 +410,6 @@ class AbstractDatabase(ABC):
             logger.error(f"❌ Health check failed: {e}")
         finally:
             cur.close()
-
-        return health
-
-    def check_health_legacy2(self) -> Dict[str, Any]:
-        """
-        Prüft den Datenbank-Typ, die Existenz der Tabellen und Schreibrechte.
-        Diese Version ist robust gegenüber verschiedenen Python-Versionen und DB-Engines.
-        """
-        health = {
-            "engine": self.engine_type,
-            "is_timescale": self.is_timescale,
-            "tables_exist": False,
-            "can_write": False
-        }
-
-        if not self._connection:
-            return health
-
-        # Sicherstellen, dass keine alte Transaktion den Check blockiert
-        try:
-            self._connection.rollback()
-        except Exception:
-            pass
-
-        cur = self._connection.cursor()
-        try:
-            # 1. Existenz der Haupttabelle prüfen
-            if self.engine_type == "sqlite":
-                cur.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='redvypr_packets';"
-                )
-                res = cur.fetchone()
-                health["tables_exist"] = bool(res)
-            else:  # PostgreSQL / TimescaleDB
-                cur.execute(
-                    "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'redvypr_packets');"
-                )
-                res = cur.fetchone()
-                health["tables_exist"] = bool(res[0]) if res else False
-
-            # 2. Schreibrechte prüfen (Temporäre Tabelle erstellen)
-            try:
-                # In SQLite heißt es TEMP oder TEMPORARY, beides funktioniert.
-                cur.execute("CREATE TEMPORARY TABLE _health_write_test (id int);")
-                cur.execute("DROP TABLE _health_write_test;")
-                health["can_write"] = True
-                self._connection.commit()  # Test-Aktion abschließen
-            except Exception:
-                health["can_write"] = False
-                try:
-                    self._connection.rollback()
-                except Exception:
-                    pass
-
-        except Exception as e:
-            logger.error(f"❌ Health check failed: {e}")
-        finally:
-            # Wichtig: Cursor immer explizit schließen für SQLite-Kompatibilität < 3.12
-            cur.close()
-
-        return health
-
-    def check_health_legacy(self) -> Dict[str, Any]:
-        """
-        Checks engine type, table existence, and write permissions.
-        """
-        health = {
-            "engine": self.engine_type,
-            "is_timescale": self.is_timescale,
-            "tables_exist": False,
-            "can_write": False
-        }
-
-        if not self._connection:
-            return health
-
-        self._connection.rollback()
-
-        try:
-            with self._connection.cursor() as cur:
-                # 1. Check if main tables exist
-                if self.engine_type == "sqlite":
-                    cur.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name='redvypr_packets';")
-                else:  # Postgres / MariaDB
-                    cur.execute(
-                        "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'redvypr_packets');")
-
-                health["tables_exist"] = bool(cur.fetchone()[0])
-
-                # 2. Check for Write Permissions (Try to create a temporary test table)
-                try:
-                    cur.execute("CREATE TEMPORARY TABLE _write_test (id int);")
-                    cur.execute("DROP TABLE _write_test;")
-                    health["can_write"] = True
-                except Exception:
-                    health["can_write"] = False
-                    self._connection.rollback()  # Reset transaction after failed write test
-
-        except Exception as e:
-            logger.error(f"Health check failed: {e}")
 
         return health
 
@@ -636,11 +533,11 @@ class RedvyprTimescaleDb(AbstractDatabase):
 
     def connect(self):
         """Implementation of the abstract connect method."""
-        print("Connecting")
+        #print("Connecting")
         if not self._connection:
             try:
                 self._connection = psycopg.connect(**self.conn_params)
-                print("Could connect to database")
+                #print("Could connect to database")
             except psycopg.Error as e:
                 logger.error(f"❌ Connection failed: {e}")
                 raise
@@ -1051,6 +948,215 @@ class RedvyprTimescaleDb(AbstractDatabase):
             logger.error(f"❌ Failed to get packet count: {e}")
             return 0
 
+    def get_status(self, fast_count: bool = True) -> Dict[str, Any]:
+        """
+        Returns a dictionary with comprehensive TimescaleDB status information.
+        Uses robust error handling to prevent transaction aborts.
+
+        Args:
+            fast_count (bool): If True, uses planner statistics for the packet count (fast).
+                               If False, performs a full SELECT COUNT(*) (accurate but slow).
+        """
+        is_connected = self._connection is not None
+
+        # Default status structure
+        status = {
+            "type": "dbstatus",
+            "engine": "TimescaleDB",
+            "connection": "Connected" if is_connected else "Disconnected",
+            "host": self.conn_params.get("host", "unknown"),
+            "database": self.conn_params.get("dbname", "unknown"),
+            "total_packets": 0,
+            "is_estimate": fast_count,
+            "table_size_pretty": "0.00 MB",
+            "db_total_size_pretty": "0.00 MB",
+            "chunks_count": 0,
+            "compression_ratio": "N/A"
+        }
+
+        if is_connected:
+            cur = None
+            try:
+                cur = self._connection.cursor()
+                # 1. Packet Count (Estimate vs Exact)
+                if fast_count:
+                    cur.execute("SELECT MAX(id) FROM redvypr_packets")
+                    res = cur.fetchone()
+                    status["total_packets"] = res[0] if res[0] is not None else 0
+                else:
+                    # Accurate count (slow on large tables)
+                    cur.execute("SELECT COUNT(*) FROM redvypr_packets")
+                    status["total_packets"] = cur.fetchone()[0]
+
+                # 2. Hypertable size (Specific table data + indexes)
+                # We use a try-block here in case the table hasn't been created yet
+                try:
+                    cur.execute("SELECT hypertable_size('redvypr_packets')")
+                    size_res = cur.fetchone()
+                    if size_res:
+                        status[
+                            "table_size_pretty"] = f"{size_res[0] / (1024 * 1024):.2f} MB"
+                except Exception:
+                    status["table_size_pretty"] = "Table not found"
+                    # Need a sub-rollback here if this specific query failed
+                    self._connection.rollback()
+                    cur = self._connection.cursor()
+
+                    # 3. Overall Database size (Full DB on disk)
+                cur.execute("SELECT pg_database_size(%s)",
+                            (self.conn_params["dbname"],))
+                db_bytes = cur.fetchone()[0]
+                status["db_total_size_pretty"] = f"{db_bytes / (1024 * 1024):.2f} MB"
+
+                # 4. Chunks count
+                cur.execute(
+                    "SELECT count(*) FROM timescaledb_information.chunks WHERE hypertable_name = 'redvypr_packets'"
+                )
+                status["chunks_count"] = cur.fetchone()[0]
+
+                # 5. Compression Stats
+                try:
+                    cur.execute(
+                        "SELECT uncompressed_total_bytes, compressed_total_bytes "
+                        "FROM hypertable_compression_stats('redvypr_packets')")
+                    comp_stats = cur.fetchone()
+                    if comp_stats and comp_stats[0] and comp_stats[0] > 0:
+                        uncompressed, compressed = comp_stats
+                        savings = (1 - (compressed / uncompressed)) * 100
+                        status["compression_ratio"] = f"{savings:.1f}% saved"
+                except Exception:
+                    status["compression_ratio"] = "Not enabled"
+
+                # Finish transaction block cleanly
+                self._connection.commit()
+
+            except Exception as e:
+                # THIS IS THE CRITICAL PART:
+                # If any command failed, we MUST rollback to "clean" the connection
+                if self._connection:
+                    self._connection.rollback()
+                status["connection"] = f"Error: {str(e)}"
+                # Log the error so you know WHY it failed
+                logger.error(f"❌ TimescaleDB Status Check failed: {e}")
+            finally:
+                if cur:
+                    cur.close()
+
+        return status
+    def get_status_legacy2(self, fast_count: bool = False) -> Dict[str, Any]:
+        """
+        Returns a dictionary with TimescaleDB status information.
+
+        Args:
+            fast_count (bool): If True, uses database statistics for a near-instant estimate.
+                               If False, performs a full 'SELECT COUNT(*)' (expensive).
+        """
+        is_connected = self._connection is not None
+
+        status = {
+            "engine": "TimescaleDB",
+            "connection": "Connected" if is_connected else "Disconnected",
+            "host": self.conn_params["host"],
+            "database": self.conn_params["dbname"],
+            "total_packets": 0,
+            "is_estimate": fast_count,
+            "table_size_pretty": "0.00 MB",
+            "db_total_size_pretty": "0.00 MB",
+            "chunks_count": 0,
+            "compression_ratio": "N/A"
+        }
+
+        if is_connected:
+            try:
+                cur = self._connection.cursor()
+
+                # 1. Packet Count (Fast Estimate vs. Exact Count)
+                if fast_count:
+                    # Query the planner statistics (instant even with billions of rows)
+                    cur.execute(
+                        "SELECT reltuples::bigint FROM pg_class WHERE relname = 'redvypr_packets'")
+                    res = cur.fetchone()
+                    status["total_packets"] = res[0] if res else 0
+                else:
+                    # Full scan (accurate but slow)
+                    cur.execute("SELECT COUNT(*) FROM redvypr_packets")
+                    status["total_packets"] = cur.fetchone()[0]
+
+                # 2. Hypertable size
+                cur.execute("SELECT hypertable_size('redvypr_packets')")
+                size_bytes = cur.fetchone()[0]
+                status["table_size_pretty"] = f"{size_bytes / (1024 * 1024):.2f} MB"
+
+                # 3. Overall Database size
+                cur.execute("SELECT pg_database_size(%s)",
+                            (self.conn_params["dbname"],))
+                db_bytes = cur.fetchone()[0]
+                status["db_total_size_pretty"] = f"{db_bytes / (1024 * 1024):.2f} MB"
+
+                # 4. Chunks count
+                cur.execute(
+                    "SELECT count(*) FROM timescaledb_information.chunks WHERE hypertable_name = 'redvypr_packets'"
+                )
+                status["chunks_count"] = cur.fetchone()[0]
+
+                # 5. Compression Stats
+                try:
+                    cur.execute(
+                        "SELECT uncompressed_total_bytes, compressed_total_bytes "
+                        "FROM hypertable_compression_stats('redvypr_packets')")
+                    comp_stats = cur.fetchone()
+                    if comp_stats and comp_stats[0] and comp_stats[0] > 0:
+                        uncompressed, compressed = comp_stats
+                        savings = (1 - (compressed / uncompressed)) * 100
+                        status["compression_ratio"] = f"{savings:.1f}% saved"
+                except Exception:
+                    status["compression_ratio"] = "Not enabled"
+
+                cur.close()
+            except Exception as e:
+                status["connection"] = f"Error: {str(e)}"
+
+        return status
+
+    def get_status_legacy(self) -> Dict[str, Any]:
+        """Returns a dictionary with current TimescaleDB status information."""
+        is_connected = self._connection is not None
+        #self.conn_params = {
+        #    'dbname': dbname, 'user': user, 'password': password,
+        #    'host': host, 'port': port
+        #}
+        status = {
+            "engine": "TimescaleDB",
+            "connection": "Connected" if is_connected else "Disconnected",
+            "host": self.conn_params["host"],
+            "database": self.conn_params["dbname"],
+            "total_packets": 0,
+            "table_size_pretty": "0 bytes",
+            "chunks_count": 0
+        }
+
+        if is_connected:
+            try:
+                cur = self._connection.cursor()
+                # 1. Anzahl Pakete
+                cur.execute("SELECT COUNT(*) FROM redvypr_packets")
+                status["total_packets"] = cur.fetchone()[0]
+
+                # 2. Hypertable Größe (TimescaleDB spezifisch)
+                cur.execute("SELECT hypertable_size('redvypr_packets')")
+                size_bytes = cur.fetchone()[0]
+                status["table_size_pretty"] = f"{size_bytes / (1024 * 1024):.2f} MB"
+
+                # 3. Anzahl der Chunks
+                cur.execute(
+                    "SELECT count(*) FROM timescaledb_information.chunks WHERE hypertable_name = 'redvypr_packets'")
+                status["chunks_count"] = cur.fetchone()[0]
+                cur.close()
+            except Exception as e:
+                status["connection"] = f"Error: {str(e)}"
+
+        return status
+
 
 
 
@@ -1079,8 +1185,12 @@ class RedvyprDBFactory:
 
         # Handling SQLite
         elif isinstance(db_config, SqliteConfig):
+            #print(f"db config for sqlite:{db_config}")
             return RedvyprSqliteDb(
-                filepath=db_config.filepath
+                base_name=db_config.filepath,
+                max_file_size_mb=db_config.max_file_size_mb,
+                size_check_interval=db_config.size_check_interval,
+                file_format=db_config.file_format
             )
 
         # Fallback for dict-based configs (e.g. if loaded from JSON without Pydantic parsing)
@@ -1095,17 +1205,105 @@ class RedvyprDBFactory:
         raise ValueError(f"Unsupported database configuration type: {type(db_config)}")
 
 
+
 class RedvyprSqliteDb(AbstractDatabase):
     """
     Vollständige SQLite Implementierung, die alle abstrakten Methoden
     der AbstractDatabase erfüllt.
     """
 
-    def __init__(self, filepath: str = "data.db"):
+    def __init__(self,
+                 base_name: str = "redvypr",
+                 max_file_size_mb: Optional[float] = None,
+                 size_check_interval: int = 100,
+                 file_format: str = "{name}_{filecount}_{filedate}.db"):
         super().__init__()
-        self.filepath = filepath
+        self.base_name = base_name
+        self.max_file_size_mb = max_file_size_mb
+        self.size_check_interval = size_check_interval
+        self.file_format = file_format
+        print(f"self.max_file_size_mb:{self.max_file_size_mb}")
+        print(f"self.size_check_interval:{self.size_check_interval}")
+        # Initialisierung der Zähler
+        self._packet_counter = 0
+        self._file_index = 0
+
+        # Den aktuellen Pfad setzen (entweder formatiert oder statisch)
+        self.filepath = self.generate_new_filename()
+        print(f"self.filepath:{self.filepath}")
         self.placeholder = "?"
         self.engine_type = "sqlite"
+
+    def generate_new_filename(self) -> str:
+        self._file_index += 1
+        return self.format_filename(
+            base_name=self.base_name,
+            file_format=self.file_format,
+            file_index=self._file_index,
+            max_file_size_mb=self.max_file_size_mb
+        )
+
+    @staticmethod
+    def format_filename(base_name: str, file_format: str, file_index: int,
+                        max_file_size_mb: Optional[float]) -> str:
+        """
+        Pure logic to generate the filename.
+        Used by both the Database class and the UI Widget.
+        """
+        directory = os.path.dirname(base_name)
+        filename = os.path.basename(base_name)
+        clean_name, extension = os.path.splitext(filename)
+
+        if max_file_size_mb is None:
+            return base_name
+
+        # Most users put '.db' in the format field, so we clean the template-extension too
+        format_base, _ = os.path.splitext(file_format)
+        now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        try:
+            new_filename_base = format_base.format(
+                name=clean_name,
+                filecount=f"{file_index:03d}",
+                filedate=now_str
+            )
+        except KeyError:
+            # Simple fallback if template is broken
+            new_filename_base = f"{clean_name}_{file_index:03d}_{now_str}"
+
+        return os.path.join(directory, f"{new_filename_base}{extension}")
+
+    def _check_rotation(self):
+        """Prüft Intervall und Dateigröße."""
+        #print("Checking")
+        if self.max_file_size_mb is None:
+            return
+
+        self._packet_counter += 1
+        if self._packet_counter >= self.size_check_interval:
+            self._packet_counter = 0
+
+            if os.path.exists(self.filepath):
+                file_size_mb = os.path.getsize(self.filepath) / (1024 * 1024)
+                print("File size",file_size_mb)
+                if file_size_mb >= self.max_file_size_mb:
+                    print("Rotating")
+                    logger.info(
+                        f"🔄 Limit {self.max_file_size_mb}MB erreicht. Rotiere...")
+                    self.rotate_database()
+
+    def rotate_database(self):
+        """Schließt aktuelle DB und öffnet die nächste im Namensschema."""
+        if self._connection:
+            self._connection.close()
+            self._connection = None
+
+        # Wir erzeugen einfach einen neuen Namen (der Index erhöht sich intern)
+        self.filepath = self.generate_new_filename()
+        print("Opening new file:{self.filepath}")
+        # Neu verbinden und Schema in der frischen Datei anlegen
+        self.connect()
+        self.setup_schema()
 
     def connect(self):
         if not self._connection:
@@ -1116,9 +1314,11 @@ class RedvyprSqliteDb(AbstractDatabase):
                     check_same_thread=False
                 )
                 self._connection.row_factory = sqlite3.Row
-                logger.info(f"✅ Connected to SQLite: {self.filepath}")
+                # WICHTIG: Immer Schema sicherstellen
+                self.setup_schema()
+                logger.info(f"✅ Connected to: {self.filepath}")
             except Exception as e:
-                logger.error(f"❌ SQLite connection failed: {e}")
+                logger.error(f"❌ Connection failed: {e}")
                 raise
         return self._connection
 
@@ -1164,21 +1364,58 @@ class RedvyprSqliteDb(AbstractDatabase):
 
     def insert_packet(self, data_dict: Dict[str, Any],
                       table_name: str = 'redvypr_packets'):
-        sql = f"INSERT INTO {table_name} (timestamp, data, redvypr_address, host, publisher, device, packetid, numpacket, timestamp_packet, uuid) VALUES (?,?,?,?,?,?,?,?,?,?)"
-        cur = self._connection.cursor()
-        try:
-            raddr = RedvyprAddress(data_dict)
-            ts_utc = datetime.fromtimestamp(data_dict['t'], tz=timezone.utc)
-            ts_pkt_utc = datetime.fromtimestamp(data_dict['_redvypr']['t'],
-                                                tz=timezone.utc)
+        """
+        Inserts a data packet into the SQLite database.
+        Triggers a file rotation check before insertion if configured.
+        """
+        # 1. Check if the database needs to rotate based on file size and packet interval
+        self._check_rotation()
 
+        # 2. Ensure we have an active connection (especially after rotation)
+        conn = self.connect()
+        cur = conn.cursor()
+
+        try:
+            # 3. Extract addressing and timing information
+            raddr = RedvyprAddress(data_dict)
+
+            # Use 't' from the main dict for the entry timestamp
+            ts_utc = datetime.fromtimestamp(
+                data_dict.get('t', datetime.now().timestamp()), tz=timezone.utc)
+
+            # Extract internal redvypr metadata
+            rv_meta = data_dict.get('_redvypr', {})
+            ts_pkt_utc = datetime.fromtimestamp(rv_meta.get('t', 0), tz=timezone.utc)
+
+            # 4. Prepare data for SQL
             data_dict_json = json_safe_dumps(data_dict)
+
+            sql = f"""
+                INSERT INTO {table_name} 
+                (timestamp, data, redvypr_address, host, publisher, device, packetid, numpacket, timestamp_packet, uuid) 
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+            """
+
             cur.execute(sql, (
-                ts_utc, data_dict_json, raddr.to_address_string(),
-                raddr.host, raddr.publisher, raddr.device, raddr.packetid,
-                data_dict['_redvypr']['numpacket'], ts_pkt_utc, raddr.uuid
+                ts_utc,
+                data_dict_json,
+                raddr.to_address_string(),
+                raddr.host,
+                raddr.publisher,
+                raddr.device,
+                raddr.packetid,
+                rv_meta.get('numpacket', '0'),
+                ts_pkt_utc,
+                raddr.uuid
             ))
-            self._connection.commit()
+
+            # 5. Commit to save changes and update file size on disk
+            conn.commit()
+
+        except Exception as e:
+            logger.error(f"❌ Failed to insert packet into SQLite: {e}")
+            conn.rollback()
+            raise
         finally:
             cur.close()
 
@@ -1371,22 +1608,29 @@ class RedvyprSqliteDb(AbstractDatabase):
         finally:
             cur.close()
 
+    def get_status(self) -> Dict[str, Any]:
+        """Returns a dictionary with current SQLite status information."""
+        file_exists = os.path.exists(self.filepath)
+        size_mb = 0.0
+        if file_exists:
+            size_mb = os.path.getsize(self.filepath) / (1024 * 1024)
+
+        status = {
+            "type": "dbstatus",
+            "engine": "SQLite",
+            "connection": "Connected" if self._connection else "Disconnected",
+            "active_file": os.path.basename(self.filepath),
+            "file_path": self.filepath,
+            "file_size_mb": round(size_mb, 2),
+            "total_packets": self.get_packet_count(),
+            "rotation_enabled": self.max_file_size_mb is not None,
+        }
+
+        if self.max_file_size_mb:
+            status["usage_percent"] = round((size_mb / self.max_file_size_mb) * 100, 1)
+            status["limit_mb"] = self.max_file_size_mb
+
+        return status
 
 
-    def get_unique_combination_stats_legacy(self, keys: List[str], filters=None,
-                                     table_name='redvypr_packets',
-                                     time_col='timestamp') -> List[Dict[str, Any]]:
-        # Basis-Implementierung für die UI-Statistik
-        col_string = ", ".join(keys)
-        sql = f"SELECT {col_string}, COUNT(*) as count, MIN({time_col}), MAX({time_col}) FROM {table_name} GROUP BY {col_string}"
-        cur = self._connection.cursor()
-        try:
-            cur.execute(sql)
-            results = []
-            for r in cur.fetchall():
-                d = dict(zip(keys, r[:len(keys)]))
-                d.update({"count": r[-3], "first_seen": r[-2], "last_seen": r[-1]})
-                results.append(d)
-            return results
-        finally:
-            cur.close()
+

@@ -1,10 +1,11 @@
 import typing
-
+import os
+from datetime import datetime
 import pydantic
 import qtawesome
 from PyQt6 import QtWidgets, QtCore, QtGui
 from qtpy import QtWidgets
-from .db_engines import RedvyprTimescaleDb, DatabaseConfig, TimescaleConfig, SqliteConfig, RedvyprDBFactory
+from .db_engines import RedvyprTimescaleDb, DatabaseConfig, TimescaleConfig, SqliteConfig, RedvyprDBFactory, RedvyprSqliteDb
 
 from qtpy import QtWidgets, QtCore
 import typing
@@ -89,6 +90,173 @@ class DBConfigWidget(QtWidgets.QWidget):
 
 
 class SqliteConfigWidget(QtWidgets.QWidget):
+    db_config_changed = QtCore.Signal(dict)
+
+    def __init__(self, initial_config: SqliteConfig, parent=None):
+        super().__init__(parent)
+        self.config = initial_config
+        self.setup_ui()
+
+    def setup_ui(self):
+        main_layout = QtWidgets.QVBoxLayout(self)
+        layout = QtWidgets.QFormLayout()
+
+        # 1. Base File Path
+        self.path_edit = QtWidgets.QLineEdit(self.config.filepath)
+        self.path_edit.textChanged.connect(self.config_changed)
+        self.browse_btn = QtWidgets.QPushButton("Browse...")
+        self.browse_btn.clicked.connect(self.handle_browse)
+
+        file_layout = QtWidgets.QHBoxLayout()
+        file_layout.addWidget(self.path_edit)
+        file_layout.addWidget(self.browse_btn)
+        layout.addRow("Database Name/Path:", file_layout)
+
+        # 2. Rotation Toggle
+        self.rotate_cb = QtWidgets.QCheckBox("Enable File Rotation (Limit Size)")
+        self.rotate_cb.setChecked(self.config.max_file_size_mb is not None)
+        self.rotate_cb.stateChanged.connect(self.toggle_rotation_ui)
+        self.rotate_cb.stateChanged.connect(self.config_changed)
+        layout.addRow(self.rotate_cb)
+
+        # 3. Max Size (MB)
+        self.size_spin = QtWidgets.QDoubleSpinBox()
+        self.size_spin.setRange(0.1, 9999.0)
+        self.size_spin.setSuffix(" MB")
+        self.size_spin.setValue(self.config.max_file_size_mb or 100.0)
+        self.size_spin.valueChanged.connect(self.config_changed)
+        layout.addRow("Max File Size:", self.size_spin)
+
+        # 4. Check Interval (Packets)
+        self.interval_spin = QtWidgets.QSpinBox()
+        self.interval_spin.setRange(1, 10000)
+        self.interval_spin.setValue(self.config.size_check_interval)
+        self.interval_spin.setSuffix(" Packets")
+        self.interval_spin.valueChanged.connect(self.config_changed)
+        layout.addRow("Check Interval:", self.interval_spin)
+
+        # 5. Naming Format
+        self.format_edit = QtWidgets.QLineEdit(self.config.file_format)
+        self.format_edit.textChanged.connect(self.config_changed)
+        layout.addRow("File Naming Format:", self.format_edit)
+
+        # 6. Live Preview Label
+        self.preview_label = QtWidgets.QLabel()
+        self.preview_label.setStyleSheet(
+            "color: gray; font-style: italic; font-size: 11px;")
+        self.preview_label.setWordWrap(True)
+        layout.addRow("Filename Preview:", self.preview_label)
+
+        # --- Test/Query Buttons ---
+        self.test_button = QtWidgets.QPushButton("Test DB Connection")
+        self.test_button.setIcon(qtawesome.icon('mdi6.database-outline'))
+
+        self.query_button = QtWidgets.QPushButton("Query DB")
+        self.query_button.setIcon(qtawesome.icon('mdi6.database-search-outline'))
+
+        self.button_layout = QtWidgets.QHBoxLayout()
+        self.button_layout.addWidget(self.test_button)
+        self.button_layout.addWidget(self.query_button)
+
+        self.test_button.clicked.connect(self.test_connection_clicked)
+        self.query_button.clicked.connect(self.query_db_clicked)
+
+        # UI Initialization
+        self.toggle_rotation_ui()
+        self.update_preview()
+
+        main_layout.addLayout(layout)
+        main_layout.addLayout(self.button_layout)
+
+    def update_preview(self):
+        """Updates the UI preview using the shared logic from the DB class."""
+        config = self.get_config()
+
+        # We simulate the preview for the first file (index 1)
+        preview_path = RedvyprSqliteDb.format_filename(
+            base_name=config.filepath,
+            file_format=config.file_format,
+            file_index=1,
+            max_file_size_mb=config.max_file_size_mb
+        )
+
+        # Optional: Display only the filename in the preview for better readability
+        self.preview_label.setText(os.path.basename(preview_path))
+
+    def update_preview_legacy(self):
+        """Updates the filename preview based on the format and base name."""
+        # Extract base name without extension for the {name} placeholder
+        base = os.path.basename(self.path_edit.text())
+        name_part, _ = os.path.splitext(base)
+        if not name_part:
+            name_part = "data"
+
+        fmt = self.format_edit.text()
+        try:
+            example = fmt.format(
+                name=name_part,
+                filecount="001",
+                filedate=datetime.now().strftime("%Y%m%d_%H%M%S")
+            )
+            self.preview_label.setText(example)
+        except (KeyError, ValueError, IndexError):
+            self.preview_label.setText(
+                "Invalid format! Use {name}, {filecount}, {filedate}")
+
+    def toggle_rotation_ui(self):
+        """Enables/Disables sub-settings based on the rotation checkbox."""
+        enabled = self.rotate_cb.isChecked()
+        self.size_spin.setEnabled(enabled)
+        self.interval_spin.setEnabled(enabled)
+        self.format_edit.setEnabled(enabled)
+        self.preview_label.setVisible(enabled)
+
+    def get_config(self) -> SqliteConfig:
+        """Returns a valid SqliteConfig object based on UI state."""
+        max_size = self.size_spin.value() if self.rotate_cb.isChecked() else None
+
+        return SqliteConfig(
+            dbtype="sqlite",
+            filepath=self.path_edit.text(),
+            max_file_size_mb=max_size,
+            size_check_interval=self.interval_spin.value(),
+            file_format=self.format_edit.text()
+        )
+
+    def config_changed(self):
+        """Triggers preview update and emits the changed config."""
+        self.update_preview()
+        config = self.get_config()
+        # Logging to console as in your original script
+        # print(f"Sqlite config changed: {config}")
+        self.db_config_changed.emit(config.model_dump())
+
+    def handle_browse(self):
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Select SQLite Database", "",
+            "DB Files (*.db *.sqlite);;All Files (*)"
+        )
+        if path:
+            self.path_edit.setText(path)
+
+    def query_db_clicked(self):
+        config = self.get_config()
+        db = RedvyprDBFactory.create(config)
+        self.query_widdget = DBQueryDialog(db_instance=db)
+        self.query_widdget.show()
+
+    def test_connection_clicked(self):
+        pconfig = self.get_config()
+        try:
+            db = RedvyprDBFactory.create(pconfig)
+            diag = DBStatusDialog(db, self)
+            diag.exec_()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Connection Error",
+                                           f"Failed: {str(e)}")
+
+
+class SqliteConfigWidget_legacy(QtWidgets.QWidget):
     db_config_changed = QtCore.Signal(dict)
     def __init__(self, initial_config: SqliteConfig, parent=None):
         super().__init__(parent)

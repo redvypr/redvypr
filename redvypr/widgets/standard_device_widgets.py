@@ -383,6 +383,10 @@ class RedvyprdevicewidgetSimple(QtWidgets.QWidget):
         #self.subscribed.emit(self.device)
 
 
+
+
+
+
 class RedvyprdevicewidgetStartonly(QtWidgets.QWidget):
     subscribed = QtCore.pyqtSignal(
         RedvyprDevice)  # Signal displaying a subscription
@@ -477,7 +481,5 @@ class RedvyprdevicewidgetStartonly(QtWidgets.QWidget):
             if (self.startbutton.isChecked()):
                 self.startbutton.setChecked(False)
             # self.conbtn.setEnabled(True)
-
-
 
 

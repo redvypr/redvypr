@@ -15,13 +15,15 @@ redvypr changelog
 - Metadata changed signal implemented `metadata_changed_signal` in `Redvypr`
 - `RedvyprAddress` can now have the datakey `!`, which means that the datakey must be strictly empty
 - `data_packets.create_datadict` new parameter `random_host="somehostname"` to create a test packet
+- Added maximum size and automatic new file creation to `RedvyprSqliteDb`
 
 ### Changed
 - Improved the first page of redvypr, which is now with a timer that starts redvypr after 10 seconds.
 - Bugfixes and improvements in `redvyprAddressWidget`.
 - Bugfixes and improvements in `distribute_data`, metata is now properly distributed
 - Improved database structure of `db` device with id as primary key for all tables (including metadata)
-- Renamed timescaledb.py in db_engines.py to account for more database connections 
+- Renamed timescaledb.py in db_engines.py to account for more database connections
+- Improved status gui of db_writer
 
 ---
 
