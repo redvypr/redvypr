@@ -212,6 +212,14 @@ class CalibrationGeneric(pydantic.BaseModel):
 
         return hash_hex
 
+    def create_redvypr_address(self) -> 'RedvyprAddress':
+        caldate = self.date.isoformat()
+        astr = f"@calibration_type=='{self.calibration_type}' and calibration_date==dt({caldate}) and manufacturer_sn=='{self.manufacturer_sn}'"
+        if len(self.sensor_model) > 0 and self.sensor_model != 'NA':
+            astr += f" and sensor_model=='{self.sensor_model}'"
+        raddr = RedvyprAddress(astr)
+        return raddr
+
 
 class CalibrationLinearFactor(CalibrationGeneric):
     """

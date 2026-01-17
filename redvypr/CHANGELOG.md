@@ -14,8 +14,10 @@ redvypr changelog
 - First draft of measurement device able to add measurement metadata info to instance.
 - Metadata changed signal implemented `metadata_changed_signal` in `Redvypr`
 - `RedvyprAddress` can now have the datakey `!`, which means that the datakey must be strictly empty
+- `RedvyprAddress` can compare datetimes `RedvyprAddress("@calibration_date <= dt(2026-01-14T16:15:15)")`
 - `data_packets.create_datadict` new parameter `random_host="somehostname"` to create a test packet
 - Added maximum size and automatic new file creation to `RedvyprSqliteDb`
+
 
 ### Changed
 - Improved the first page of redvypr, which is now with a timer that starts redvypr after 10 seconds.

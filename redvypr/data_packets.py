@@ -108,7 +108,7 @@ class Datapacket(dict):
         # Check if the key is a string but is a RedvyprAddress
         if isinstance(key,str):
             addr = RedvyprAddress(key)
-            data = addr(dict(self))
+            data = addr(dict(self),strict=False)
             return data
         # Check if the key is a RedvyprAddress
         elif isinstance(key, RedvyprAddress):

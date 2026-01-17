@@ -12,6 +12,7 @@ import yaml
 import pydantic
 import pydantic_core
 import typing
+from datetime import datetime
 from typing import Any, List, Tuple, Optional, Union
 from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_core import SchemaSerializer, core_schema
@@ -198,6 +199,19 @@ class RedvyprAddress:
         if not s:
             return None
 
+        # dt("ISO") literal
+
+        def repl_dt(m):
+            iso = m.group(1)
+            return f"_dt({repr(iso)})"
+
+        # allow dt(2026-01-14T16:15:15) and dt("2026-01-14T16:15:15")
+        rhs = re.sub(
+            r"dt\(\s*(?:['\"])?([0-9T:\-\.]+)(?:['\"])?\s*\)",
+            repl_dt,
+            rhs,
+        )
+
         # Existenzprüfung
         def replace_exists(match):
             key = match.group(1)
@@ -278,10 +292,66 @@ class RedvyprAddress:
     # -------------------------
     # Eval helpers
     # -------------------------
+
+    def _coerce_datetime(self, v):
+        if hasattr(v, "year") and hasattr(v, "month") and hasattr(v, "day"):
+            return v
+        if isinstance(v, str):
+            # cheap ISO-datetime heuristic
+            # YYYY-MM-DD or YYYY-MM-DDTHH:MM
+            if len(v) < 10 or v[4] != "-" or v[7] != "-":
+                return v
+
+            if "T" not in v and ":" not in v:
+                return v
+            try:
+                return datetime.fromisoformat(v)
+            except Exception:
+                pass
+        return v
+
     def _build_eval_locals(self, packet: dict):
         locals_map = {}
-        def _eq(k, v): return self._get_val(packet, k) == v
-        def _in(k, l): return self._get_val(packet, k) in l
+
+        # -------------------------
+        # Datetime helper
+        # -------------------------
+        def _dt(iso):
+            from datetime import datetime
+            return datetime.fromisoformat(iso)
+
+        def _cmp(op, k, v):
+            lv = self._get_val(packet, k)
+            rv = self._coerce_datetime(v)
+            return op(lv, rv)
+
+        # -------------------------
+        # Comparison operators
+        # -------------------------
+        def _eq(k, v):
+            return _cmp(lambda a, b: a == b, k, v)
+
+        def _ne(k, v):
+            return _cmp(lambda a, b: a != b, k, v)
+
+        def _gt(k, v):
+            return _cmp(lambda a, b: a > b, k, v)
+
+        def _ge(k, v):
+            return _cmp(lambda a, b: a >= b, k, v)
+
+        def _lt(k, v):
+            return _cmp(lambda a, b: a < b, k, v)
+
+        def _le(k, v):
+            return _cmp(lambda a, b: a <= b, k, v)
+
+        # -------------------------
+        # UNVERÄNDERT: in / regex / exists
+        # -------------------------
+        def _in(k, l):
+            return self._get_val(packet, k) in l
+
         def _regex(k, pat, flags=""):
             v = self._get_val(packet, k)
             f = 0
@@ -290,13 +360,33 @@ class RedvyprAddress:
                 if ch == "m": f |= re.MULTILINE
                 if ch == "s": f |= re.DOTALL
             return re.search(pat, str(v), f) is not None
-        def _exists(k): return self._exists_val(packet, k)
-        locals_map.update({"_eq": _eq, "_in": _in, "_regex": _regex, "_exists": _exists, "packet": packet})
+
+        def _exists(k):
+            return self._exists_val(packet, k)
+
+        # -------------------------
+        # Locals
+        # -------------------------
+        locals_map.update({
+            "_dt": _dt,
+            "_eq": _eq,
+            "_ne": _ne,
+            "_gt": _gt,
+            "_ge": _ge,
+            "_lt": _lt,
+            "_le": _le,
+            "_in": _in,
+            "_regex": _regex,
+            "_exists": _exists,
+            "packet": packet,
+        })
+
         if isinstance(packet, dict):
             locals_map["_redvypr"] = packet.get("_redvypr")
             for k, v in packet.items():
                 if k not in locals_map:
                     locals_map[k] = v
+
         return locals_map
 
     def _traverse_path(self, root: dict, parts: list):
@@ -314,10 +404,11 @@ class RedvyprAddress:
         if "_redvypr" in packet:
             found, val = self._traverse_path(packet["_redvypr"], parts)
             if found:
-                return val
+                return self._coerce_datetime(val)
         found, val = self._traverse_path(packet, parts)
         if found:
-            return val
+            return self._coerce_datetime(val)
+
         raise FilterFieldMissing(f"missing key '{key}'")
 
     def _exists_val(self, packet, key):
@@ -334,7 +425,8 @@ class RedvyprAddress:
     # -------------------------
     # Matching & LHS
     # -------------------------
-    def matches_filter(self, packet: Union[dict, "RedvyprAddress"], soft_missing: bool = True):
+    def matches_filter(self, packet: Union[dict, "RedvyprAddress"],
+                       soft_missing: bool = True):
         """
         Check whether a packet or RedvyprAddress matches with the filter part of this address.
 
@@ -347,16 +439,48 @@ class RedvyprAddress:
         if not self._rhs_ast:
             return True
 
-        SAFE_GLOBALS = {"__builtins__": None, "True": True, "False": False, "None": None}
+        SAFE_GLOBALS = {"__builtins__": None, "True": True, "False": False,
+                        "None": None}
 
-        # Evaluation helpers
-        def _eq(k, v):
+        # -------------------------
+        # Datetime helper
+        # -------------------------
+        def _dt(iso):
+            from datetime import datetime
+            return datetime.fromisoformat(iso)
+
+        def _cmp(op, k, v):
             try:
-                val = self._get_val(packet, k)
-                return val == v
+                lv = self._get_val(packet, k)
+                rv = self._coerce_datetime(v)
+                return op(lv, rv)
             except FilterFieldMissing:
                 return soft_missing
 
+        # -------------------------
+        # Existing + extended operators
+        # -------------------------
+        def _eq(k, v):
+            return _cmp(lambda a, b: a == b, k, v)
+
+        def _ne(k, v):
+            return _cmp(lambda a, b: a != b, k, v)
+
+        def _gt(k, v):
+            return _cmp(lambda a, b: a > b, k, v)
+
+        def _ge(k, v):
+            return _cmp(lambda a, b: a >= b, k, v)
+
+        def _lt(k, v):
+            return _cmp(lambda a, b: a < b, k, v)
+
+        def _le(k, v):
+            return _cmp(lambda a, b: a <= b, k, v)
+
+        # -------------------------
+        # UNVERÄNDERT: in / regex / exists
+        # -------------------------
         def _in(k, l):
             try:
                 val = self._get_val(packet, k)
@@ -380,7 +504,23 @@ class RedvyprAddress:
             # remains strict
             return self._exists_val(packet, k)
 
-        locals_map = {"_eq": _eq, "_in": _in, "_regex": _regex, "_exists": _exists, "packet": packet}
+        # -------------------------
+        # Locals
+        # -------------------------
+        locals_map = {
+            "_dt": _dt,
+            "_eq": _eq,
+            "_ne": _ne,
+            "_gt": _gt,
+            "_ge": _ge,
+            "_lt": _lt,
+            "_le": _le,
+            "_in": _in,
+            "_regex": _regex,
+            "_exists": _exists,
+            "packet": packet,
+        }
+
         if isinstance(packet, dict):
             locals_map["_redvypr"] = packet.get("_redvypr")
             for k, v in packet.items():
@@ -388,8 +528,11 @@ class RedvyprAddress:
                     locals_map[k] = v
 
         try:
-            return bool(eval(compile(self._rhs_ast, filename="<ast>", mode="eval"),
-                             SAFE_GLOBALS, locals_map))
+            return bool(eval(
+                compile(self._rhs_ast, filename="<ast>", mode="eval"),
+                SAFE_GLOBALS,
+                locals_map,
+            ))
         except FilterFieldMissing:
             return False
 
@@ -613,20 +756,6 @@ class RedvyprAddress:
         # and update filter_keys bookkeeping
         self.filter_keys.pop(red_key, None)
 
-    def delete_filter_legacy(self, key):
-        if not self._rhs_ast:
-            return
-        red_key = self.PREFIX_MAP.get(key, key)
-        # AST neu erstellen ohne den key
-        old_expr = ast.unparse(self._rhs_ast.body)
-        pattern = re.compile(rf'_((eq|in|regex|exists))\(\s*{repr(red_key)}.*?\)')
-        new_expr = pattern.sub('', old_expr)
-        if new_expr.strip():
-            self._rhs_ast = ast.parse(new_expr, mode="eval")
-        else:
-            self._rhs_ast = None
-        self.filter_keys.pop(red_key, None)
-
     def extract(self, keys: Optional[List[str]] = None) -> Optional["RedvyprAddress"]:
         if not self._rhs_ast:
             return None
@@ -825,39 +954,106 @@ class RedvyprAddress:
     # Lesbare RHS / get_str
     # -------------------------
     def _ast_to_rhs_string(self, node: ast.AST) -> str:
-        """AST → menschenlesbarer Redvypr-String mit Kurzpräfixen"""
+        """
+        Converts an AST (Abstract Syntax Tree) back into a human-readable Redvypr address string.
+
+        This function recursively traverses the AST nodes and converts them into a string
+        representation that uses short prefixes for Redvypr fields. It supports the following:
+
+        - `_eq`, `_in`, `_regex`, `_exists` function calls.
+        - `_dt(...)` calls are converted into Python datetime objects.
+        - Boolean operations (`and`, `or`) are handled recursively.
+        - Comparison operations (`==`, `!=`, `<`, `<=`, `>`, `>=`) are handled.
+        - Constant values and names are converted directly.
+
+        Special notes:
+        - `_dt('ISO_STRING')` inside a comparison (or as standalone) is replaced with
+          a `datetime.datetime` object using `datetime.fromisoformat()`.
+        - BoolOps are flattened into `and` / `or` joined strings.
+        - Comparisons with multiple comparators (like `a < b < c`) are reconstructed
+          in the correct order.
+
+        Parameters
+        ----------
+        node : ast.AST
+            The AST node to convert into a human-readable string.
+
+        Returns
+        -------
+        str
+            The reconstructed Redvypr address string.
+        """
         if node is None:
             return ""
 
+        # Expression → traverse to body
         if isinstance(node, ast.Expression):
             return self._ast_to_rhs_string(node.body)
 
+        # Boolean operations: recursively handle each operand
         elif isinstance(node, ast.BoolOp):
-            op_str = ' and ' if isinstance(node.op, ast.And) else ' or '
-            flat_vals = [self._ast_to_rhs_string(v) for v in node.values]
-            return op_str.join(flat_vals)
+            op_str = " and " if isinstance(node.op, ast.And) else " or "
+            return op_str.join([self._ast_to_rhs_string(v) for v in node.values])
 
-        elif isinstance(node, ast.Call):
+        # Call nodes: _eq, _in, _regex, _exists, _dt
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             func_name = node.func.id
-            key = ast.literal_eval(node.args[0])
-            val = node.args[1] if len(node.args) > 1 else None
+            if func_name in ("_eq", "_in", "_regex", "_exists"):
+                key = ast.literal_eval(node.args[0])
+                field_prefix = self.REV_PREFIX_MAP.get(key, key)
+                if func_name == "_eq":
+                    val = ast.literal_eval(node.args[1])
+                    return f"{field_prefix}:{val}"
+                elif func_name == "_in":
+                    vals = ast.literal_eval(node.args[1])
+                    return f"{field_prefix}:[{','.join(map(str, vals))}]"
+                elif func_name == "_regex":
+                    pat = ast.literal_eval(node.args[1])
+                    flags = ast.literal_eval(node.args[2]) if len(node.args) > 2 else ""
+                    return f"{field_prefix}:~/{pat}/{flags}"
+                elif func_name == "_exists":
+                    return f"{field_prefix}?:"
+            elif func_name == "_dt":
+                val = ast.literal_eval(node.args[0])
+                dt_obj = datetime.fromisoformat(val)
+                dt_str = f"dt({dt_obj.isoformat()})"
+                # return repr(dt_obj)
+                return dt_str
 
-            # Kurzpräfix verwenden
-            field_prefix = self.REV_PREFIX_MAP.get(key, key)
+        # Comparison nodes: e.g., calibration_date == _dt(...)
+        elif isinstance(node, ast.Compare):
+            left = self._ast_to_rhs_string(node.left)
+            comparators = [self._ast_to_rhs_string(c) for c in node.comparators]
+            ops = []
+            for op in node.ops:
+                if isinstance(op, ast.Eq):
+                    ops.append("==")
+                elif isinstance(op, ast.NotEq):
+                    ops.append("!=")
+                elif isinstance(op, ast.Lt):
+                    ops.append("<")
+                elif isinstance(op, ast.LtE):
+                    ops.append("<=")
+                elif isinstance(op, ast.Gt):
+                    ops.append(">")
+                elif isinstance(op, ast.GtE):
+                    ops.append(">=")
+                else:
+                    ops.append("?")
+            # reconstruct chained comparisons
+            pieces = [left]
+            for o, c in zip(ops, comparators):
+                pieces.append(o)
+                pieces.append(c)
+            return " ".join(pieces)
 
-            if func_name == "_eq":
-                val_str = ast.literal_eval(val) if isinstance(val, ast.Constant) else ast.unparse(val)
-                return f"{field_prefix}:{val_str}"
-            elif func_name == "_in":
-                lst = ast.literal_eval(val) if isinstance(val, ast.List) else [val]
-                lst_str = ",".join(str(v) for v in lst)
-                return f"{field_prefix}:[{lst_str}]"
-            elif func_name == "_regex":
-                pat = ast.literal_eval(val)
-                flags = ast.literal_eval(node.args[2]) if len(node.args) > 2 else ""
-                return f"{field_prefix}:~/{pat}/{flags}"
-            elif func_name == "_exists":
-                return f"{field_prefix}?:"
+        # Names and constants
+        elif isinstance(node, ast.Name):
+            return node.id
+        elif isinstance(node, ast.Constant):
+            return repr(node.value)
+
+        # fallback: unparse any other node
         else:
             return ast.unparse(node)
 
@@ -950,14 +1146,23 @@ class RedvyprAddress:
 
     def to_address_string_pure_python(self, keys: Union[str, List[str]] = None) -> str:
         """
-        Liefert eine Python-kompatible Version der Adresse:
-        - i:test -> _redvypr['packetid'] == 'test'
-        - d:cam -> _redvypr['device'] == 'cam'
-        Optional: nur bestimmte Keys berücksichtigen.
+        Returns a Python-evaluable version of the Redvypr address.
+
+        Converts Redvypr-style filters into Python expressions that can be evaluated.
+        Examples:
+            - i:test -> _redvypr['packetid'] == 'test'
+            - d:cam  -> _redvypr['device'] == 'cam'
+
+        Optional:
+            Only include certain keys if `keys` is provided.
+
+        Additionally:
+            - Any `_dt('ISO_STRING')` in the AST is converted to a `datetime.datetime(...)` object.
         """
         if not self._rhs_ast:
             return f"{self.left_expr}@" if self.left_expr else "@"
 
+        # Process allowed keys if specified
         allowed_keys = None
         if keys is not None:
             if isinstance(keys, str):
@@ -968,21 +1173,55 @@ class RedvyprAddress:
         def ast_to_python(node: ast.AST) -> str:
             if node is None:
                 return ""
+
             if isinstance(node, ast.Expression):
                 return ast_to_python(node.body)
+
             elif isinstance(node, ast.BoolOp):
                 op_str = ' and ' if isinstance(node.op, ast.And) else ' or '
                 return op_str.join([ast_to_python(v) for v in node.values])
-            elif isinstance(node, ast.Call):
+
+            elif isinstance(node, ast.Compare):
+                left = ast_to_python(node.left)
+                comparators = [ast_to_python(c) for c in node.comparators]
+                ops = []
+                for op in node.ops:
+                    if isinstance(op, ast.Eq):
+                        ops.append("==")
+                    elif isinstance(op, ast.NotEq):
+                        ops.append("!=")
+                    elif isinstance(op, ast.Lt):
+                        ops.append("<")
+                    elif isinstance(op, ast.LtE):
+                        ops.append("<=")
+                    elif isinstance(op, ast.Gt):
+                        ops.append(">")
+                    elif isinstance(op, ast.GtE):
+                        ops.append(">=")
+                    else:
+                        ops.append("?")
+                pieces = [left]
+                for o, c in zip(ops, comparators):
+                    pieces.append(o)
+                    pieces.append(c)
+                return " ".join(pieces)
+
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                 func_name = node.func.id
                 key = ast.literal_eval(node.args[0])
-                if allowed_keys and key not in [self.PREFIX_MAP.get(k, k) for k in allowed_keys]:
+
+                # skip keys not allowed
+                if allowed_keys and key not in [self.PREFIX_MAP.get(k, k) for k in
+                                                allowed_keys]:
                     return ""
-                # verschachtelte Dicts erzeugen
+
+                # nested dictionary access
                 key_parts = key.split(".")
                 dict_access = "_redvypr"
                 for part in key_parts:
                     dict_access += f"['{part}']"
+
+                # handle standard Redvypr operators
                 if func_name == "_eq":
                     val = ast.literal_eval(node.args[1])
                     return f"{dict_access} == {repr(val)}"
@@ -995,6 +1234,16 @@ class RedvyprAddress:
                     return f"re.search({repr(pat)}, str({dict_access}), {repr(flags)})"
                 elif func_name == "_exists":
                     return f"'{key_parts[-1]}' in {dict_access.rsplit('[', 1)[0]}"
+                elif func_name == "_dt":
+                    # convert _dt('ISO_STRING') to datetime.datetime(...)
+                    val = ast.literal_eval(node.args[0])
+                    return f"datetime.fromisoformat('{val}')"
+
+            elif isinstance(node, ast.Name):
+                return node.id
+            elif isinstance(node, ast.Constant):
+                return repr(node.value)
+
             else:
                 return ast.unparse(node)
 
@@ -1002,6 +1251,7 @@ class RedvyprAddress:
         if self.left_expr:
             return f"{self.left_expr} @ {rhs_python}" if rhs_python else self.left_expr
         return f"@{rhs_python}" if rhs_python else "@"
+
 
     def get_common_address_formats(self):
         return self.common_address_formats
