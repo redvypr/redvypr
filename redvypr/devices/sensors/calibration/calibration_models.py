@@ -225,12 +225,14 @@ class CalibrationGeneric(pydantic.BaseModel):
             print("channel datakey",RedvyprAddress(self.channel).datakey)
             astr = f"@sn=='{self.sn}'"
             astr += f" and channel=='{self.channel}'"
-            astr += f"and calibration_type=='{self.calibration_type}' and date==dt('{caldate}')"
+            astr += f" and calibration_type=='{self.calibration_type}'"
+            astr += f" and date==dt('{caldate}')"
             if len(self.sensor_model) > 0 and self.sensor_model != 'NA':
                 astr += f" and sensor_model=='{self.sensor_model}'"
             if len(self.calibration_uuid):
                 astr += f" and calibration_uuid=='{self.calibration_uuid}'"
 
+            print("astr",astr)
             raddr = RedvyprAddress(astr)
         except:
             logger.warning("Could not create RedvyprAddress",exc_info=True)

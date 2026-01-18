@@ -252,8 +252,10 @@ class RedvyprAddress:
             iso = m.group(2)  # shifted from 1 to 2
             return f"_dt({repr(iso)})"
 
-        rhs = safe_sub(r"dt\(\s*(?:['\"])?([0-9T:\-\.]+)(?:['\"])?\s*\)", repl_dt, rhs)
-
+        #print("rhs1",rhs)
+        rhs = safe_sub(r"dt\(\s*(?:['\"])?([0-9T:\-\.\+]+)(?:['\"])?\s*\)", repl_dt,
+                       rhs)
+        #print("rhs2", rhs)
         # 2. Existenzprüfung (key?:)
         def replace_exists(match):
             key = match.group(2)  # shifted
