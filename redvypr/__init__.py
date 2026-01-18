@@ -12,4 +12,6 @@ from . import redvypr_main
 #from .data_packets import redvypr_datadict
 from . import version
 
+__version__ = str(version.version) if hasattr(version, 'version') else str(version)
+
 

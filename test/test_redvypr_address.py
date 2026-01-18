@@ -1,4 +1,6 @@
+print("Start")
 from redvypr.redvypr_address import RedvyprAddress, FilterNoMatch
+print("Import done")
 from datetime import datetime
 # -------------------------
 # Testpakete
@@ -15,9 +17,10 @@ pkt1 = {
     "y": 2,
     "data2": 10,
     "data": [1, 2, 3, 4, 5],
-    "u": {"a": [42], "b": "Payload pkt1"},
+    "u": {"a": [42], "b": "Payload pkt1","test@i:test":3},
     "t": 0.0,
-    "td":datetime(2000,1,1)
+    "td":datetime(2000,1,1),
+    "test@i:test":3
 }
 
 pkt_empty = {
@@ -79,9 +82,32 @@ pkt4 = {
     't': 1761197984.0252116
 }
 
+pkt5 = {
+    "_redvypr": {
+        "packetid": 'test@i:test',
+        "publisher": "mainhub",
+        "device": "cam",
+        "host": {"hostname": "node01-host", "addr": "10.0.0.1", "uuid": "uuid-pkt1-host"},
+        "localhost": {"hostname": "node01-local", "addr": "10.0.0.2", "uuid": "uuid-pkt1-local"},
+        "location": "lab1"
+    },
+    "x": 1,
+    "y": 2,
+    "data2": 10,
+    "data": [1, 2, 3, 4, 5],
+    "u": {"a": [42], "b": "Payload pkt1","test@i:test":3},
+    "t": 0.0,
+    "td":datetime(2000,1,1),
+    "test@i:test":3
+}
+
 # -------------------------
 # Alte Tests (LHS/RHS)
 addresses_test = [
+    ("u['test@i:test'] @ i:test", pkt1, 3),
+    ("data[0]", pkt1, 1),
+    ("'test@i:test' @ i:test", pkt1, 3),
+    ("'test@i:test' @ i:'test@i:test'", pkt5, 3),
     ("! @ i:test", pkt1, "KeyError"),
     ("! @ i:test", pkt_empty, pkt_empty),
     ("data[::-1] @ i:test", pkt1, [5,4,3,2,1]),
@@ -217,18 +243,20 @@ if True:
     print("apkt1_strict:{}\n matches devaddr:{}".format(apkt1_strict, apkt1_strict.matches_filter(devaddr)))
 
 # Test packet payload creation
+print("\nPacket creation test:\n")
 for addr_str, pkt, expected in addresses_test:
     addr = RedvyprAddress(addr_str)
-    print("Creating packet for address:{}".format(addr))
+    print("\nCreating packet for address:{}".format(addr))
     if isinstance(addr.left_expr,str):
         #pkt_make = addr.create_minimal_datakey_packet()
         pkt_make = addr.to_redvypr_dict()
-        print("Packet",pkt_make)
+        print("\tPacket",pkt_make)
     else:
-        print("Not a string")
+        print("\tNot a string")
 
     datakey_entries = addr.get_datakeyentries()
-    print("Entries", datakey_entries)
+    print("\tEntries:", datakey_entries)
+    print("Done\n")
 
 
 # Test __call__ with different depths of datakeys

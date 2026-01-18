@@ -97,15 +97,6 @@ class RedvyprAddress:
     REV_LONGFORM_MAP = {v: k for k, v in LONGFORM_MAP.items()}
     REV_LONGFORM_TO_SHORT_MAP = {v: k for k, v in LONGFORM_TO_SHORT_MAP.items()}
     REV_LONGFORM_TO_SHORT_MAP_DATAKEY = {v: k for k, v in LONGFORM_TO_SHORT_MAP_DATAKEY.items()}
-    #LONGFORM_TO_SHORT_MAP = {}
-    #for k, v in LONGFORM_MAP.items():
-    #    LONGFORM_TO_SHORT_MAP[k] = REV_PREFIX_MAP[v]
-
-
-    #LONGFORM_TO_SHORT_MAP_DATAKEY = dict(LONGFORM_TO_SHORT_MAP)  # Kopie
-    #LONGFORM_TO_SHORT_MAP_DATAKEY["datakey"] = "k"
-
-
     def __init__(self,
                  expr: Union[str, "RedvyprAddress", dict, None] = None,
                  *,
@@ -163,13 +154,13 @@ class RedvyprAddress:
 
         # String input
         elif isinstance(expr, str):
-            if "@" in expr:
-                left, right = map(str.strip, expr.split("@", 1))
-                self.left_expr = left if left else None
-                if right:
-                    self._rhs_ast = self._parse_rhs(right)
-            else:
-                self.left_expr = expr.strip() or None
+            left, right = self._split_left_right_tokens(expr)
+            #print("left",left)
+            #print("right", right)
+            self.left_expr = left
+            if right:
+                self._rhs_ast = self._parse_rhs(right)
+
 
         # LHS via datakey
         if datakey is not None:
@@ -192,92 +183,178 @@ class RedvyprAddress:
                 self.delete_filter(red_key)
                 self.add_filter(red_key, "eq", val)
 
+        self._compiled_left = None
+        self._compiled_rhs = None
+        self._compile_expressions()
+
+    def _compile_expressions(self):
+        self._compiled_left = None
+        self._compiled_rhs = None
+        if self._rhs_ast:
+            # Wir kompilieren den AST-Knoten in Bytecode
+            self._compiled_rhs = compile(self._rhs_ast, '<string>', 'eval')
+
+        if self.left_expr and self.left_expr != "!":
+            #print("string",self.to_address_string())
+            #print("Hallo",self.left_expr)
+            try:
+                self._compiled_left = compile(self.left_expr, '<string>', 'eval')
+            except:
+                pass
+
+    def _split_left_right_tokens(self, expr: str):
+        """
+        Split a Redvypr address string into (left, right) at the first @ outside quotes.
+        Uses slicing on the original string to preserve formatting.
+        """
+        # Use io.StringIO to make the string compatible with the tokenizer
+        readline = io.StringIO(expr).readline
+        tokens = tokenize.generate_tokens(readline)
+
+        for tok_type, tok_str, start, end, _ in tokens:
+            # Check for the '@' operator
+            if tok_type == tokenize.OP and tok_str == "@":
+                # start[1] is the character offset where '@' begins
+                split_at = start[1]
+
+                left_part = expr[:split_at].strip() or None
+                # split_at + 1 skips the '@' character itself
+                right_part = expr[split_at + 1:].strip() or None
+
+                return left_part, right_part
+
+        # Fallback if no '@' is found outside of strings
+        return expr.strip() or None, None
+
+
     # -------------------------
     # RHS AST Parsing
     # -------------------------
+
+
     def _parse_rhs(self, rhs: str) -> ast.Expression:
         s = rhs.strip()
         if not s:
             return None
 
-        # dt("ISO") literal
+        # Pattern to catch quoted strings (single and double quotes)
+        # This is group(1) in our combined regex
+        STRING_PATTERN = r'("(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
 
+        def safe_sub(pattern, repl_func, text):
+            # Combines the string-catcher with your custom pattern
+            combined = f"{STRING_PATTERN}|{pattern}"
+            return re.sub(combined,
+                          lambda m: m.group(1) if m.group(1) else repl_func(m), text)
+
+        # 1. dt("ISO") literal
         def repl_dt(m):
-            iso = m.group(1)
+            iso = m.group(2)  # shifted from 1 to 2
             return f"_dt({repr(iso)})"
 
-        # allow dt(2026-01-14T16:15:15) and dt("2026-01-14T16:15:15")
-        rhs = re.sub(
-            r"dt\(\s*(?:['\"])?([0-9T:\-\.]+)(?:['\"])?\s*\)",
-            repl_dt,
-            rhs,
-        )
+        rhs = safe_sub(r"dt\(\s*(?:['\"])?([0-9T:\-\.]+)(?:['\"])?\s*\)", repl_dt, rhs)
 
-        # Existenzprüfung
+        # 2. Existenzprüfung (key?:)
         def replace_exists(match):
-            key = match.group(1)
+            key = match.group(2)  # shifted
             red = self.PREFIX_MAP.get(key, key)
             self.filter_keys.setdefault(red, []).append("exists")
             return f"_exists({repr(red)})"
 
-        rhs = re.sub(r'([A-Za-z0-9_]+)\?:', replace_exists, rhs)
+        rhs = safe_sub(r'([A-Za-z0-9_]+)\?:', replace_exists, rhs)
 
-        # r: forms
+        # 3. r: forms (List, Regex, Equality)
         def repl_r_list(m):
-            key, content = m.group(1), m.group(2)
+            key, content = m.group(2), m.group(3)
             self.filter_keys.setdefault(key, []).append("in")
             return f"_in({repr(key)}, {self._list_to_python(content)})"
 
-        rhs = re.sub(r'r:([A-Za-z0-9_]+):\[((?:[^\]]*))\]', repl_r_list, rhs)
+        rhs = safe_sub(r'r:([A-Za-z0-9_]+):\[((?:[^\]]*))\]', repl_r_list, rhs)
 
         def repl_r_regex(m):
-            key, pat, flags = m.group(1), m.group(2), m.group(3) or ""
+            key, pat, flags = m.group(2), m.group(3), m.group(4) or ""
             self.filter_keys.setdefault(key, []).append("regex")
             return f"_regex({repr(key)}, {repr(pat)}, {repr(flags)})"
 
-        rhs = re.sub(r'r:([A-Za-z0-9_]+):~/(.*?)/([a-zA-Z]*)', repl_r_regex, rhs)
+        rhs = safe_sub(r'r:([A-Za-z0-9_]+):~/(.*?)/([a-zA-Z]*)', repl_r_regex, rhs)
 
         def repl_r_eq(m):
-            key, val = m.group(1), m.group(2)
+            key, val = m.group(2), m.group(3)
             self.filter_keys.setdefault(key, []).append("eq")
-            return f"_eq({repr(key)}, {self._lit_to_python(val)})"
+            return f"_eq({repr(key)}, {self._literal_to_python(val)})"
 
-        rhs = re.sub(r'r:([A-Za-z0-9_]+):(".*?"|\'.*?\'|[^\s()]+)', repl_r_eq, rhs)
+        rhs = safe_sub(r'r:([A-Za-z0-9_]+):(".*?"|\'.*?\'|[^\s()]+)', repl_r_eq, rhs)
 
-        # Präfixe
+        # 4. Präfixe (z.B. i:val, p:val)
         prefixes = sorted(self.PREFIX_MAP.keys(), key=lambda x: -len(x))
         prefix_group = "|".join([re.escape(p) for p in prefixes])
 
         def repl_pref_list(m):
-            key, content = m.group(1), m.group(2)
+            key, content = m.group(2), m.group(3)
             red = self.PREFIX_MAP.get(key, key)
             self.filter_keys.setdefault(red, []).append("in")
             return f"_in({repr(red)}, {self._list_to_python(content)})"
 
-        rhs = re.sub(rf'({prefix_group}):\[((?:[^\]]*))\]', repl_pref_list, rhs)
+        rhs = safe_sub(rf'({prefix_group}):\[((?:[^\]]*))\]', repl_pref_list, rhs)
 
         def repl_pref_regex(m):
-            key, pat, flags = m.group(1), m.group(2), m.group(3) or ""
+            key, pat, flags = m.group(2), m.group(3), m.group(4) or ""
             red = self.PREFIX_MAP.get(key, key)
             self.filter_keys.setdefault(red, []).append("regex")
             return f"_regex({repr(red)}, {repr(pat)}, {repr(flags)})"
 
-        rhs = re.sub(rf'({prefix_group}):~/(.*?)/([a-zA-Z]*)', repl_pref_regex, rhs)
+        rhs = safe_sub(rf'({prefix_group}):~/(.*?)/([a-zA-Z]*)', repl_pref_regex, rhs)
 
         def repl_pref_eq(m):
-            key, val = m.group(1), m.group(2)
+            key, val = m.group(2), m.group(3)
             red = self.PREFIX_MAP.get(key, key)
-            py_val = self._lit_to_python(val)
+            py_val = self._literal_to_python(val)
             if py_val == '' or py_val is None:
-                return ''  # Node gar nicht einfügen
+                # Return "True" instead of empty string to avoid breaking AST logic
+                return 'True'
             self.filter_keys.setdefault(red, []).append("eq")
-            return f"_eq({repr(red)}, {self._lit_to_python(val)})"
+            return f"_eq({repr(red)}, {py_val})"
 
-        rhs = re.sub(rf'({prefix_group}):((".*?"|\'.*?\'|[^\s()]+))', repl_pref_eq, rhs)
-
+        rhs = safe_sub(rf'({prefix_group}):((".*?"|\'.*?\'|[^\s()]+))', repl_pref_eq,
+                       rhs)
         return ast.parse(rhs, mode="eval")
 
-    def _lit_to_python(self, token: str) -> str:
+    def _literal_to_python(self, token: str) -> str:
+        """
+        Converts a Domain Specific Language (DSL) token into a valid Python literal string.
+
+        This method ensures that:
+        1. Numeric strings are kept as raw numbers (int/float).
+        2. Already quoted strings (e.g., "'value'") are returned as-is.
+        3. Unquoted strings (e.g., "value") are safely wrapped in quotes.
+        4. Empty inputs return None.
+
+        Args:
+            token (str): The raw string extracted from the address RHS.
+
+        Returns:
+            str: A string that can be safely embedded into a Python eval() expression.
+        """
+        t = token.strip()
+
+        # 1. Handle empty input
+        if not t:
+            return None
+
+        # 2. Check if it's already a quoted string ('...' or "...")
+        # This prevents double-quoting which causes match failures
+        if (t.startswith("'") and t.endswith("'")) or \
+                (t.startswith('"') and t.endswith('"')):
+            return t
+
+        # 3. Check if it's a numeric literal (integer or float)
+        if re.fullmatch(r'-?\d+(\.\d*)?', t):
+            return t
+
+        # 4. For everything else (bare words), turn it into a string literal
+        # Using repr() is safer than f"'{t}'" as it handles internal escapes
+        return repr(t)
+    def _lit_to_python_legacy(self, token: str) -> str:
         t = token.strip()
         if t == '':
             return None          # skip empty strings
@@ -288,7 +365,7 @@ class RedvyprAddress:
 
     def _list_to_python(self, content: str) -> str:
         parts = [p.strip() for p in content.split(",")] if content.strip() else []
-        return "[" + ",".join([self._lit_to_python(p) for p in parts]) + "]"
+        return "[" + ",".join([self._literal_to_python(p) for p in parts]) + "]"
 
     # -------------------------
     # Eval helpers
@@ -529,11 +606,15 @@ class RedvyprAddress:
                     locals_map[k] = v
 
         try:
-            return bool(eval(
-                compile(self._rhs_ast, filename="<ast>", mode="eval"),
-                SAFE_GLOBALS,
-                locals_map,
-            ))
+            if self._compiled_rhs:
+                eval_ret = eval(self._compiled_rhs, SAFE_GLOBALS, locals_map)
+            else:
+                eval_ret = eval(
+                    compile(self._rhs_ast, filename="<ast>", mode="eval"),
+                    SAFE_GLOBALS,
+                    locals_map,
+                )
+            return bool(eval_ret)
         except FilterFieldMissing:
             return False
 
@@ -631,7 +712,7 @@ class RedvyprAddress:
             packet = packet.to_redvypr_dict()
         if self.left_expr is None and self._rhs_ast is None:
             return packet
-        SAFE_GLOBALS = {"__builtins__": None, "True": True, "False": False, "None": None}
+        SAFE_GLOBALS = {"__builtins__": {}, "True": True, "False": False, "None": None}
         locals_map = dict(packet)
         if self._rhs_ast and not self.matches_filter(packet):
             if strict:
@@ -650,13 +731,33 @@ class RedvyprAddress:
                             "Found datakeys '!' (no-data) was requested")
                     return None
                 return packet  # Empty
-            top_key = self.left_expr.split("[")[0].split(".")[0]
-            if top_key not in packet:
-                if strict:
-                    raise KeyError(f"Key {top_key!r} missing in packet")
+
+
+            try:
+                # 1. Evaluate the expression (e.g., "'test@i:test'" becomes "test@i:test")
+                if self._compiled_left is not None:
+                    val =  eval(self._compiled_left, SAFE_GLOBALS, locals_map)
                 else:
-                    return None
-            return eval(self.left_expr, SAFE_GLOBALS, locals_map)
+                    val = eval(self.left_expr, SAFE_GLOBALS, locals_map)
+
+                # 2. If the result is a string AND it's a key in our packet,
+                # we probably want the value from the packet.
+                if isinstance(val, str) and val in packet:
+                    return packet[val]
+
+                return val
+            except (NameError, KeyError, TypeError) as e:
+                # NameError: variable data3 doesn't exist
+                # TypeError: e.g. trying to index something that isn't a list
+                if strict:
+                    raise KeyError(
+                        f"Key or Expression {self.left_expr!r} failed: {e}")
+                return None
+            except Exception as e:
+                if strict:
+                    raise e
+                return None
+
         return packet
 
     # -------------------------
@@ -687,6 +788,7 @@ class RedvyprAddress:
 
         if self._rhs_ast is None:
             self._rhs_ast = new_ast
+
         else:
             # flach kombinieren ohne unnötige Klammern
             rhs_body = self._rhs_ast.body
@@ -696,6 +798,8 @@ class RedvyprAddress:
             else:
                 # sonst normalen And-Baum erzeugen
                 self._rhs_ast = ast.parse(f"({ast.unparse(rhs_body)}) and {expr}", mode="eval")
+
+        self._compile_expressions()
 
     def delete_filter(self, key):
         """
@@ -756,6 +860,7 @@ class RedvyprAddress:
 
         # and update filter_keys bookkeeping
         self.filter_keys.pop(red_key, None)
+        self._compile_expressions()
 
     def extract(self, keys: Optional[List[str]] = None) -> Optional["RedvyprAddress"]:
         if not self._rhs_ast:
@@ -778,8 +883,11 @@ class RedvyprAddress:
         if self.left_expr is None or overwrite:
             self.left_expr = datakey
 
+        self._compile_expressions()
+
     def delete_datakey(self):
         self.left_expr = None
+        self._compile_expressions()
 
     # -------------------------
     # String / Dict Conversion
@@ -845,8 +953,45 @@ class RedvyprAddress:
         red_dict.update(result_datakey)
         return red_dict
 
-
     def get_datakeyentries(self):
+        expr = self.left_expr
+        if not expr or expr == "!":
+            return []
+
+        try:
+            # Parse the expression into an AST node
+            node = ast.parse(expr.strip(), mode='eval').body
+
+            path = []
+            # Walk "down" the tree for expressions like foo['bar'][2]
+            while isinstance(node, ast.Subscript):
+                # The index is node.slice (Python 3.9+)
+                index_node = node.slice
+                if isinstance(index_node, ast.Constant):  # e.g., 'bar' or 2
+                    path.append(index_node.value)
+                elif isinstance(index_node, ast.Index):  # Older Python 3.x
+                    if isinstance(index_node.value, ast.Constant):
+                        path.append(index_node.value.value)
+
+                node = node.value
+
+            # Now we are at the "base" node (the left-most part)
+            if isinstance(node, ast.Name):
+                path.append(node.id)
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                path.append(node.value)
+            else:
+                # Fallback for unexpected node types
+                path.append(ast.unparse(node) if hasattr(ast, 'unparse') else str(node))
+
+            # Reverse the path because we walked from right to left
+            return path[::-1]
+
+        except Exception as e:
+            # Fallback to your regex if AST fails, or raise a cleaner error
+            raise ValueError(f"Could not parse data path from {expr!r}: {e}")
+
+    def get_datakeyentries_legacy(self):
         """
         Parses an LHS expression like "foo['bar'][2]['baz']"
         and returns a list of path components:
@@ -1059,1451 +1204,6 @@ class RedvyprAddress:
         # fallback: unparse any other node
         else:
             return ast.unparse(node)
-
-    def to_address_string(self, keys: Union[str, List[str]] = None) -> str:
-        """Readable version of the address, optionally filtered by keys"""
-
-
-        # Prepare the allowed keys set
-        allowed_keys_set = None
-        show_left = True
-        if keys is not None:
-            if isinstance(keys, str):
-                allowed_keys = [k.strip() for k in keys.split(",") if k.strip()]
-            else:
-                allowed_keys = keys
-
-            # expand both PREFIX_MAP and REV_PREFIX_MAP, so both short and long keys work
-            expanded = set()
-            for k in allowed_keys:
-                if k in self.LONGFORM_MAP:  # short prefix like "p"
-                    expanded.add(self.LONGFORM_MAP[k])
-                elif k in self.PREFIX_MAP:  # short prefix like "p"
-                    expanded.add(self.PREFIX_MAP[k])
-                elif k in self.REV_PREFIX_MAP:  # long key like "publisher"
-                    expanded.add(k)
-                else:
-                    expanded.add(k)
-
-            allowed_keys_set = expanded
-            #allowed_keys_set = set(self.PREFIX_MAP.get(k, k) for k in allowed_keys)
-            if not any(k in allowed_keys for k in ("k", "datakey")):
-                show_left = False  # hide left_expr if not requested explicitly
-
-            if len(allowed_keys) == 0:
-                return "@"
-
-        if not self._rhs_ast:
-            if self.left_expr and show_left:
-                return f"{self.left_expr}"
-            else:
-                return "@"
-
-        def prune_ast(node: ast.AST) -> Optional[ast.AST]:
-            if isinstance(node, ast.Expression):
-                node.body = prune_ast(node.body)
-                return node if node.body else None
-
-            elif isinstance(node, ast.BoolOp):
-                new_vals = [prune_ast(v) for v in node.values]
-                new_vals = [v for v in new_vals if v is not None]
-                if not new_vals:
-                    return None
-                node.values = new_vals
-                return node
-
-            elif isinstance(node, ast.Call):
-                try:
-                    key = ast.literal_eval(node.args[0])
-                except Exception:
-                    return None  # Discard nodes with invalid literals
-
-                # Discard node if the key is None
-                if key is None:
-                    return None
-
-                # Filter by allowed keys
-                if allowed_keys_set and key not in allowed_keys_set:
-                    return None
-
-                # Optionally check other arguments (value/content) for None
-                for arg in node.args[1:]:
-                    try:
-                        val = ast.literal_eval(arg)
-                        if val is None:
-                            return None
-                    except Exception:
-                        continue  # Ignore non-evaluable arguments
-
-                return node
-
-            else:
-                return node
-
-        filtered_ast = prune_ast(copy.deepcopy(self._rhs_ast)) if allowed_keys_set else self._rhs_ast
-        rhs_str = self._ast_to_rhs_string(filtered_ast) if filtered_ast else ""
-
-        if self.left_expr and show_left:
-            return f"{self.left_expr} @ {rhs_str}" if rhs_str else self.left_expr
-        return f"@{rhs_str}" if rhs_str else "@"
-
-    def to_address_string_pure_python(self, keys: Union[str, List[str]] = None) -> str:
-        """
-        Returns a Python-evaluable version of the Redvypr address.
-
-        Converts Redvypr-style filters into Python expressions that can be evaluated.
-        Examples:
-            - i:test -> _redvypr['packetid'] == 'test'
-            - d:cam  -> _redvypr['device'] == 'cam'
-
-        Optional:
-            Only include certain keys if `keys` is provided.
-
-        Additionally:
-            - Any `_dt('ISO_STRING')` in the AST is converted to a `datetime.datetime(...)` object.
-        """
-        if not self._rhs_ast:
-            return f"{self.left_expr}@" if self.left_expr else "@"
-
-        # Process allowed keys if specified
-        allowed_keys = None
-        if keys is not None:
-            if isinstance(keys, str):
-                allowed_keys = [k.strip() for k in keys.split(",") if k.strip()]
-            else:
-                allowed_keys = keys
-
-        def ast_to_python(node: ast.AST) -> str:
-            if node is None:
-                return ""
-
-            if isinstance(node, ast.Expression):
-                return ast_to_python(node.body)
-
-            elif isinstance(node, ast.BoolOp):
-                op_str = ' and ' if isinstance(node.op, ast.And) else ' or '
-                return op_str.join([ast_to_python(v) for v in node.values])
-
-            elif isinstance(node, ast.Compare):
-                left = ast_to_python(node.left)
-                comparators = [ast_to_python(c) for c in node.comparators]
-                ops = []
-                for op in node.ops:
-                    if isinstance(op, ast.Eq):
-                        ops.append("==")
-                    elif isinstance(op, ast.NotEq):
-                        ops.append("!=")
-                    elif isinstance(op, ast.Lt):
-                        ops.append("<")
-                    elif isinstance(op, ast.LtE):
-                        ops.append("<=")
-                    elif isinstance(op, ast.Gt):
-                        ops.append(">")
-                    elif isinstance(op, ast.GtE):
-                        ops.append(">=")
-                    else:
-                        ops.append("?")
-                pieces = [left]
-                for o, c in zip(ops, comparators):
-                    pieces.append(o)
-                    pieces.append(c)
-                return " ".join(pieces)
-
-            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                func_name = node.func.id
-                key = ast.literal_eval(node.args[0])
-
-                # skip keys not allowed
-                if allowed_keys and key not in [self.PREFIX_MAP.get(k, k) for k in
-                                                allowed_keys]:
-                    return ""
-
-                # nested dictionary access
-                key_parts = key.split(".")
-                dict_access = "_redvypr"
-                for part in key_parts:
-                    dict_access += f"['{part}']"
-
-                # handle standard Redvypr operators
-                if func_name == "_eq":
-                    val = ast.literal_eval(node.args[1])
-                    return f"{dict_access} == {repr(val)}"
-                elif func_name == "_in":
-                    vals = ast.literal_eval(node.args[1])
-                    return f"{dict_access} in {repr(vals)}"
-                elif func_name == "_regex":
-                    pat = ast.literal_eval(node.args[1])
-                    flags = ast.literal_eval(node.args[2]) if len(node.args) > 2 else ""
-                    return f"re.search({repr(pat)}, str({dict_access}), {repr(flags)})"
-                elif func_name == "_exists":
-                    return f"'{key_parts[-1]}' in {dict_access.rsplit('[', 1)[0]}"
-                elif func_name == "_dt":
-                    # convert _dt('ISO_STRING') to datetime.datetime(...)
-                    val = ast.literal_eval(node.args[0])
-                    return f"datetime.fromisoformat('{val}')"
-
-            elif isinstance(node, ast.Name):
-                return node.id
-            elif isinstance(node, ast.Constant):
-                return repr(node.value)
-
-            else:
-                return ast.unparse(node)
-
-        rhs_python = ast_to_python(self._rhs_ast)
-        if self.left_expr:
-            return f"{self.left_expr} @ {rhs_python}" if rhs_python else self.left_expr
-        return f"@{rhs_python}" if rhs_python else "@"
-
-
-    def get_common_address_formats(self):
-        return self.common_address_formats
-
-    def get_str_from_format(self, address_format='{k}@{u} and {a} and {h} and {d} and {p} and {i}'):
-        """ Returns a string of the redvypr address from a format string.
-        """
-        funcname = __name__ + '.get_str_from_format():'
-        vals = {
-            'u': self.uuid,
-            'a': self.addr,
-            'h': self.host,
-            'd': self.device,
-            'i': self.packetid,
-            'p': self.publisher,
-            'k': self.datakey,
-            'uuid': self.uuid,
-            'address': self.addr,
-            'host': self.host,
-            'device': self.device,
-            'packetid': self.packetid,
-            'publisher': self.publisher,
-            'datakey': self.datakey,
-        }
-
-        #filtered_vals = {k: f"{k}:{v}" for k, v in vals.items() if v is not None}
-        # Treat None as empty string
-        filtered_vals = {}
-        for k, v in vals.items():
-            if v is not None:
-                v_print = v
-            else:
-                v_print = ""
-            filtered_vals[k] = f"{k}:{v_print}"
-        #print("Address format",address_format,filtered_vals)
-        retstr = address_format.format(**filtered_vals)
-        return retstr
-
-    def __getattr__(self, name):
-        if name in ('datakey','k'):
-            return self.left_expr
-
-        cls = type(self)
-        if name in cls.PREFIX_MAP:
-            red_key = cls.PREFIX_MAP[name]
-        elif name in cls.LONGFORM_MAP:
-            red_key = cls.LONGFORM_MAP[name]
-        else:
-            raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
-
-        if not self._rhs_ast or red_key not in self.filter_keys:
-            return None
-
-        filter_expr = ast.unparse(self._rhs_ast)
-
-        values = []
-
-        eq_pattern = re.compile(r"_eq\(\s*['\"]{}['\"]\s*,\s*(.*?)\s*\)".format(re.escape(red_key)))
-        for m in eq_pattern.finditer(filter_expr):
-            val = m.group(1)
-            try:
-                val_eval = ast.literal_eval(val)
-            except Exception:
-                val_eval = val
-            values.append(val_eval)
-
-        in_pattern = re.compile(r"_in\(\s*['\"]{}['\"]\s*,\s*(.*?)\s*\)".format(re.escape(red_key)))
-        for m in in_pattern.finditer(filter_expr):
-            val = m.group(1)
-            try:
-                val_eval = ast.literal_eval(val)
-            except Exception:
-                val_eval = val
-            if isinstance(val_eval, list):
-                values.extend(val_eval)
-            else:
-                values.append(val_eval)
-
-        if len(values) == 1:
-            return values[0]
-        elif values:
-            return values
-        else:
-            return None
-
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls,
-        _source_type: typing.Any,
-        _handler: pydantic.GetCoreSchemaHandler,
-    ) -> core_schema.CoreSchema:
-        """
-        Modified from here:
-        https://docs.pydantic.dev/latest/concepts/types/#handling-third-party-types
-        We return a pydantic_core.CoreSchema that behaves in the following ways:
-
-        * strs will be parsed as `RedvyprAddress` instances
-        * `RedvyprAddress` instances will be parsed as `RedvyprAddress` instances without any changes
-        * Nothing else will pass validation
-        * Serialization will always return just a str
-        """
-
-        def validate_from_str(value: str) -> RedvyprAddress:
-            result = RedvyprAddress(value)
-            return result
-
-        from_str_schema = core_schema.chain_schema(
-            [
-                core_schema.str_schema(),
-                core_schema.no_info_plain_validator_function(validate_from_str),
-            ]
-        )
-
-        return core_schema.json_or_python_schema(
-            json_schema=from_str_schema,
-            python_schema=core_schema.union_schema(
-                [
-                    # check if it's an instance first before doing any further work
-                    core_schema.is_instance_schema(RedvyprAddress),
-                    from_str_schema,
-                ]
-            ),
-            serialization=core_schema.plain_serializer_function_ser_schema(
-                lambda instance: instance.to_address_string()
-            ),
-        )
-
-    @classmethod
-    def __get_pydantic_json_schema__(
-        cls, _core_schema: core_schema.CoreSchema, handler: pydantic.GetJsonSchemaHandler
-    ) -> pydantic.json_schema.JsonSchemaValue:
-        # Use the same schema that would be used for `str`
-        return handler(core_schema.str_schema())
-
-
-
-class RedvyprAddress_ast_notworking:
-    PREFIX_MAP = {
-        "i": "packetid",
-        "p": "publisher",
-        "d": "device",
-        "u": "host.uuid2",
-        "a": "host.addr",
-        "h": "host.host",
-        "ul": "localhost.uuid",
-        "al": "localhost.addr",
-        "hl": "localhost.host",
-    }
-
-    PREFIX_FULL_MAP = {
-        "i": "_redvypr['packetid']",
-        "p": "_redvypr['publisher']",
-        "d": "_redvypr['device']",
-        "u": "_redvypr['host']['uuid']",
-        "a": "_redvypr['host']['addr']",
-        "h": "_redvypr['host']['host']",
-        "ul": "_redvypr['localhost']['uuid']",
-        "al": "_redvypr['localhost']['addr']",
-        "hl": "_redvypr['localhost']['host']",
-    }
-
-    LONGFORM_MAP = {
-        "packetid": "packetid",
-        "publisher": "publisher",
-        "device": "device",
-        "uuid": "host.uuid2",
-        "host": "host.host",
-        "addr": "host.addr",
-        "uuid_local": "localhost.uuid",
-        "host_local": "localhost.host",
-        "addr_local": "localhost.addr",
-    }
-
-    LONGFORM_TO_SHORT_MAP = {
-        "packetid": "i",
-        "publisher": "p",
-        "device": "d",
-        "uuid": "u",
-        "host": "h",
-        "addr": "a",
-        "uuid_local": "ul",
-        "host_local": "hl",
-        "addr_local": "al",
-    }
-    LONGFORM_TO_SHORT_MAP_DATAKEY = {
-        "datakey": "k",
-        "packetid": "i",
-        "publisher": "p",
-        "device": "d",
-        "uuid": "u",
-        "host": "h",
-        "addr": "a",
-        "uuid_local": "ul",
-        "host_local": "hl",
-        "addr_local": "al",
-    }
-
-    common_address_formats = ['k,i', 'k,d,i', 'k', 'd', 'i', 'p', 'p,d', 'p,d,i', 'u,a,h,d,',
-                            'u,a,h,d,i', 'k,u,a,h,d', 'k,u,a,h,d,i', 'a,h,d', 'a,h,d,i', 'a,h,p']
-
-    REV_PREFIX_MAP = {v: k for k, v in PREFIX_MAP.items()}
-    REV_LONGFORM_MAP = {v: k for k, v in LONGFORM_MAP.items()}
-    REV_LONGFORM_TO_SHORT_MAP = {v: k for k, v in LONGFORM_TO_SHORT_MAP.items()}
-    REV_LONGFORM_TO_SHORT_MAP_DATAKEY = {v: k for k, v in LONGFORM_TO_SHORT_MAP_DATAKEY.items()}
-    #LONGFORM_TO_SHORT_MAP = {}
-    #for k, v in LONGFORM_MAP.items():
-    #    LONGFORM_TO_SHORT_MAP[k] = REV_PREFIX_MAP[v]
-
-
-    #LONGFORM_TO_SHORT_MAP_DATAKEY = dict(LONGFORM_TO_SHORT_MAP)  # Kopie
-    #LONGFORM_TO_SHORT_MAP_DATAKEY["datakey"] = "k"
-
-
-    def __init__(self,
-                 expr: Union[str, "RedvyprAddress", dict, None] = None,
-                 *,
-                 datakey: Optional[str] = None,
-                 packetid: Optional[Any] = None,
-                 device: Optional[Any] = None,
-                 publisher: Optional[Any] = None,
-                 host: Optional[Any] = None,
-                 uuid: Optional[Any] = None,
-                 addr: Optional[Any] = None,
-                 host_local: Optional[Any] = None,
-                 uuid_local: Optional[Any] = None,
-                 addr_local: Optional[Any] = None):
-        self.left_expr: Optional[str] = None
-        self._rhs_ast: Optional[ast.Expression] = None
-        self.filter_keys: typing.Dict[str, list] = {}
-        self.strict_no_datakey = False
-
-        if expr == "":
-            expr = None
-
-        # Kopieren von einem RedvyprAddress
-        if isinstance(expr, RedvyprAddress):
-            self.left_expr = expr.left_expr
-            self._rhs_ast = copy.deepcopy(expr._rhs_ast)
-            self.filter_keys = {k: list(v) for k, v in expr.filter_keys.items()}
-
-        # Dict input (_redvypr mapping)
-        elif isinstance(expr, dict):
-            redvypr = expr.get("_redvypr", {})
-            mapping = {
-                "packetid": "i",
-                "publisher": "p",
-                "device": "d",
-                "host": {"host": "h", "addr": "a", "uuid": "u"},
-                "localhost": {"host": "hl", "addr": "al", "uuid": "ul"},
-            }
-
-            for k, v in redvypr.items():
-                if k not in mapping:
-                    continue  # skip unknown keys
-
-                map_val = mapping[k]
-
-                # Nested dicts (host, localhost)
-                if isinstance(map_val, dict) and isinstance(v, dict):
-                    for subk, prefix in map_val.items():
-                        val = v.get(subk)
-                        if val not in (None, ''):  # skip empty values
-                            self.add_filter(prefix, "eq", val)
-
-                # Single values (packetid, device, publisher)
-                elif v not in (None, ''):
-                    self.add_filter(map_val, "eq", v)
-
-        # String input
-        elif isinstance(expr, str):
-            left, right = self._split_left_right_tokens(expr)
-            self.left_expr = left
-            if right:
-                self._rhs_ast = self._parse_rhs(right)
-
-        # LHS via datakey
-        if datakey is not None:
-            self.left_expr = datakey
-
-        # Keyword args
-        kw_map = [
-            ("packetid", packetid),
-            ("device", device),
-            ("publisher", publisher),
-            ("host", host),
-            ("uuid", uuid),
-            ("address", addr),
-            ("localhost.host", host_local),
-            ("localhost.uuid", uuid_local),
-            ("localhost.addr", addr_local),
-        ]
-        for red_key, val in kw_map:
-            if val not in (None, ''):  # skip empty values
-                self.delete_filter(red_key)
-                self.add_filter(red_key, "eq", val)
-
-    import io, tokenize
-
-    def _split_left_right_tokens(self,expr: str):
-        """
-        Split a Redvypr address string into (left, right) at the first @ outside quotes.
-        Uses Python tokenization to safely ignore any @ inside strings.
-        """
-        left_tokens = []
-        rhs_tokens = []
-        found_at = False
-
-        g = tokenize.generate_tokens(io.StringIO(expr).readline)
-
-        for tok_type, tok_str, *_ in g:
-            if found_at:
-                rhs_tokens.append(tok_str)
-                continue
-            # Only split on @ outside string literals
-            if tok_type == tokenize.OP and tok_str == "@":
-                found_at = True
-                continue
-            left_tokens.append(tok_str)
-
-        left_expr = "".join(left_tokens).strip() or None
-        right_expr = "".join(rhs_tokens).strip() or None
-        return left_expr, right_expr
-
-    # -------------------------
-    # RHS AST Parsing
-    # -------------------------
-    def _parse_rhs(self, rhs: str) -> ast.Expression:
-        """
-        Parse the RHS of a Redvypr address into a Python AST safely.
-        Features:
-        - Quote-safe: string literals are never modified.
-        - Prefix operators (d:, i:, u:, etc.)
-        - Comparison operators: > < >= <=
-        - key?: → _exists(...)
-        - Lists → _in
-        - Regex → _regex (detected via tokens)
-        - Produces valid Python AST (no eval)
-        """
-        if not rhs.strip():
-            return None
-
-        def canonical_key_expr(key: str):
-            expr_str = self.PREFIX_FULL_MAP.get(key, key)
-            try:
-                return ast.parse(expr_str, mode="eval").body
-            except SyntaxError:
-                # fallback: wenn key kein gültiger Ausdruck, als Name parsen
-                return ast.Name(id=key, ctx=ast.Load())
-
-        tokens = list(tokenize.generate_tokens(io.StringIO(rhs).readline))
-        nodes = []
-        i = 0
-
-        cmp_map = {">=": "_ge", "<=": "_le", ">": "_gt", "<": "_lt", "==": "_eq",
-                   "!=": "_ne"}
-
-        while i < len(tokens):
-            tok_type, tok_str, *_ = tokens[i]
-
-            # 1) String literal
-            if tok_type == tokenize.STRING:
-                nodes.append(ast.Constant(value=eval(tok_str)))
-                i += 1
-                continue
-
-            # 2) Names / keys
-            if tok_type == tokenize.NAME:
-                next_tok_str = tokens[i + 1][1] if i + 1 < len(tokens) else None
-
-                # CASE A: key? → _exists
-                if next_tok_str == "?":
-                    key_expr = canonical_key_expr(tok_str)
-                    nodes.append(ast.Call(
-                        func=ast.Name(id="_exists", ctx=ast.Load()),
-                        args=[key_expr],
-                        keywords=[]
-                    ))
-                    i += 2
-                    if i < len(tokens) and tokens[i][1] == ":":  # optional ':'
-                        i += 1
-                    continue
-
-                # CASE B: Detect regex (~/.../) directly from tokens
-                if next_tok_str == ":" and i + 2 < len(tokens) and tokens[i + 2][
-                    1] == "~":
-                    key_expr = canonical_key_expr(tok_str)
-
-                    # Linie ab Position des '~'
-                    line = tokens[i + 2].line
-                    start_pos = tokens[i + 2].start[1]
-
-                    rest = line[start_pos + 1:].strip()  # nach '~'
-                    if rest.startswith("/"):
-                        end_slash = rest.find("/", 1)
-                        if end_slash == -1:
-                            raise ValueError("Regex pattern not closed with '/'")
-                        pattern = rest[1:end_slash]
-                    else:
-                        raise ValueError("Expected '/' after '~' for regex")
-
-                    nodes.append(ast.Call(
-                        func=ast.Name(id="_regex", ctx=ast.Load()),
-                        args=[key_expr, ast.Constant(value=pattern),
-                              ast.Constant(value="")],
-                        keywords=[]
-                    ))
-                    # Index hinter das abschließende '/' finden
-                    regex_end_col = start_pos + 1 + end_slash
-
-                    # Springe alle Tokens, die noch innerhalb dieser Spalte liegen
-                    while i < len(tokens) and tokens[i].start[1] <= regex_end_col:
-                        i += 1
-
-                    continue
-
-
-                # CASE C: prefix:value OR key comparison
-                is_prefix = (next_tok_str == ":")
-                op_idx = i + 2 if is_prefix else i + 1
-
-                if op_idx < len(tokens):
-                    op_tok_str = tokens[op_idx][1]
-                    if op_tok_str in cmp_map:
-                        val_tok_str = tokens[op_idx + 1][1]
-                        # Auto-type detection
-                        try:
-                            cmp_val = int(val_tok_str)
-                        except ValueError:
-                            try:
-                                cmp_val = float(val_tok_str)
-                            except ValueError:
-                                cmp_val = val_tok_str.strip("'\"")
-
-                        key_expr = canonical_key_expr(tok_str)
-                        nodes.append(ast.Call(
-                            func=ast.Name(id=cmp_map[op_tok_str], ctx=ast.Load()),
-                            args=[key_expr, ast.Constant(value=cmp_val)],
-                            keywords=[]
-                        ))
-                        i = op_idx + 2
-                        continue
-
-                # CASE D: prefix:value equality
-                if is_prefix:
-                    key_expr = canonical_key_expr(tok_str)
-                    val_tok_str = tokens[i + 2][1]
-                    try:
-                        val = int(val_tok_str)
-                    except ValueError:
-                        try:
-                            val = float(val_tok_str)
-                        except ValueError:
-                            val = val_tok_str.strip("'\"")
-
-                    nodes.append(ast.Call(
-                        func=ast.Name(id="_eq", ctx=ast.Load()),
-                        args=[key_expr, ast.Constant(value=val)],
-                        keywords=[]
-                    ))
-                    i += 3
-                    continue
-
-                # CASE E: Boolean words
-                if tok_str.lower() in ("and", "or", "not"):
-                    nodes.append(ast.Name(id=tok_str, ctx=ast.Load()))
-                    i += 1
-                    continue
-
-                # CASE F: plain key
-                nodes.append(canonical_key_expr(tok_str))
-                i += 1
-                continue
-
-            # 3) Operators / fallback
-            if tok_type in (tokenize.OP, tokenize.NAME):
-                nodes.append(ast.Name(id=tok_str, ctx=ast.Load()))
-                i += 1
-                continue
-
-            i += 1
-
-        expr_str = " ".join(ast.unparse(n) for n in nodes)
-        parsed = ast.parse(expr_str, mode="eval")
-        return parsed
-
-    def _ast_to_rhs_string(self, node):
-        """
-        Rekursiv AST → RHS-String für Redvypr Adressen.
-        Unterstützt:
-          - _exists(...)
-          - _eq(...)
-          - _regex(...)
-          - Boolesche Operatoren: and/or/not
-          - Shortcuts via PREFIX_FULL_MAP Rückwärts
-        """
-        REVERSE_PREFIX_MAP = {v: k for k, v in self.PREFIX_FULL_MAP.items()}
-
-        def ast_to_path_str(n):
-            """AST → String Pfad (_redvypr['host']['uuid'])"""
-            if isinstance(n, ast.Subscript):
-                base = ast_to_path_str(n.value)
-                if isinstance(n.slice, ast.Constant):
-                    return f"{base}['{n.slice.value}']"
-                else:
-                    return f"{base}[{ast.unparse(n.slice)}]"
-            elif isinstance(n, ast.Name):
-                return n.id
-            else:
-                return ast.unparse(n)
-
-        # _exists(key)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            func_name = node.func.id
-            if func_name == "_exists":
-                key_node = node.args[0]
-                path_str = ast_to_path_str(key_node)
-                key_short = REVERSE_PREFIX_MAP.get(path_str, path_str)
-                return f"{key_short}?"
-            elif func_name == "_eq":
-                key_node, val_node = node.args
-                path_str = ast_to_path_str(key_node)
-                key_short = REVERSE_PREFIX_MAP.get(path_str, path_str)
-                val = ast.literal_eval(val_node)
-                return f"{key_short}:{val}"
-            elif func_name == "_regex":
-                key_node, pattern_node, flags_node = node.args
-                path_str = ast_to_path_str(key_node)
-                key_short = REVERSE_PREFIX_MAP.get(path_str, path_str)
-                pattern = ast.literal_eval(pattern_node)
-                return f"{key_short}:~/{pattern}/"
-            elif func_name in ("_gt", "_lt", "_ge", "_le", "_ne"):
-                key_node, val_node = node.args
-                path_str = ast_to_path_str(key_node)
-                key_short = REVERSE_PREFIX_MAP.get(path_str, path_str)
-                op_map = {"_gt": ">", "_lt": "<", "_ge": ">=", "_le": "<=", "_ne": "!="}
-                op = op_map[func_name]
-                val = ast.literal_eval(val_node)
-                return f"{key_short}{op}{val}"
-            else:
-                # unbekannter Call, fallback
-                return ast.unparse(node)
-
-        # Boolesche Operationen
-        elif isinstance(node, ast.BoolOp):
-            op_str = "and" if isinstance(node.op, ast.And) else "or"
-            return f" {op_str} ".join(self._ast_to_rhs_string(v) for v in node.values)
-
-        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
-            return f"not {self._ast_to_rhs_string(node.operand)}"
-
-        # Plain Name/Subscript
-        elif isinstance(node, (ast.Name, ast.Subscript)):
-            path_str = ast_to_path_str(node)
-            return REVERSE_PREFIX_MAP.get(path_str, path_str)
-
-        # Literal
-        elif isinstance(node, ast.Constant):
-            return repr(node.value)
-
-        # Fallback
-        else:
-            return ast.unparse(node)
-
-    def _ast_to_rhs_string_legacy(self, node: ast.AST) -> str:
-        """
-        Converts AST back to human-readable Redvypr RHS string
-        Handles unknown keys safely.
-        """
-        if node is None:
-            return ""
-
-        if isinstance(node, ast.Expression):
-            return self._ast_to_rhs_string(node.body)
-
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            func_name = node.func.id
-
-            # key extraction
-            key_node = node.args[0]
-            try:
-                key = ast.literal_eval(key_node)
-            except Exception:
-                if isinstance(key_node, ast.Name):
-                    key = key_node.id
-                elif isinstance(key_node, ast.Subscript):
-                    parts = []
-                    n = key_node
-                    while isinstance(n, ast.Subscript):
-                        if isinstance(n.slice, ast.Constant):
-                            parts.append(n.slice.value)
-                        n = n.value
-                    parts.reverse()
-                    key = ".".join(parts)
-                else:
-                    key = "<unknown>"
-
-            # Build RHS string for supported calls
-            if func_name == "_exists":
-                return f"{key}?"
-            elif func_name == "_eq":
-                val = node.args[1]
-                val_str = repr(val.value) if isinstance(val,
-                                                        ast.Constant) else ast.unparse(
-                    val)
-                return f"{key}:{val_str}"
-            elif func_name == "_regex":
-                pat = node.args[1]
-                val_str = repr(pat.value) if isinstance(pat,
-                                                        ast.Constant) else ast.unparse(
-                    pat)
-                return f"{key}:~/{val_str[1:-1]}/"  # remove quotes
-            else:
-                return ast.unparse(node)
-
-        elif isinstance(node, ast.Name):
-            return node.id
-        elif isinstance(node, ast.Constant):
-            return repr(node.value)
-
-        else:
-            return ast.unparse(node)
-
-
-    def _lit_to_python(self, token: str) -> str:
-        t = token.strip()
-        if t == '':
-            return None          # skip empty strings
-        if re.fullmatch(r'-?\d+(\.\d*)?', t):
-            return t
-
-        return repr(t)
-
-    def _list_to_python(self, content: str) -> str:
-        parts = [p.strip() for p in content.split(",")] if content.strip() else []
-        return "[" + ",".join([self._lit_to_python(p) for p in parts]) + "]"
-
-    # -------------------------
-    # Eval helpers
-    # -------------------------
-
-    def _coerce_datetime(self, v):
-        if hasattr(v, "year") and hasattr(v, "month") and hasattr(v, "day"):
-            return v
-        if isinstance(v, str):
-            # cheap ISO-datetime heuristic
-            # YYYY-MM-DD or YYYY-MM-DDTHH:MM
-            if len(v) < 10 or v[4] != "-" or v[7] != "-":
-                return v
-
-            if "T" not in v and ":" not in v:
-                return v
-            try:
-                return datetime.fromisoformat(v)
-            except Exception:
-                pass
-        return v
-
-    def _traverse_path(self, root: dict, parts: list):
-        cur = root
-        for p in parts:
-            if not isinstance(cur, dict) or p not in cur:
-                return False, None
-            cur = cur[p]
-        return True, cur
-
-    def _get_val(self, packet, key):
-        print("Get val packet",packet)
-        print("Get val key", key)
-        if packet is None:
-            raise FilterFieldMissing(f"_redvypr missing key '{key}'")
-
-        # Wenn key schon AST, direkt evaluieren, sonst fallback für String
-        # Hilfsfunktion für AST
-        def eval_ast(node, cur):
-            if isinstance(node, ast.Name):
-                # z.B. _redvypr
-                if node.id == "_redvypr":
-                    return cur.get("_redvypr", {})
-                else:
-                    return cur.get(node.id)
-            elif isinstance(node, ast.Subscript):
-                # Wert und Slice auswerten
-                value = eval_ast(node.value, cur)
-                if isinstance(node.slice, ast.Constant):
-                    key_slice = node.slice.value
-                else:
-                    raise ValueError(
-                        f"Unbekannte Slice-Art: {ast.dump(node.slice)}")
-                if not isinstance(value, dict) or key_slice not in value:
-                    raise FilterFieldMissing(f"missing key '{key_slice}'")
-                return value[key_slice]
-            else:
-                raise ValueError(f"Unbekannter AST-Knoten: {ast.dump(node)}")
-        if isinstance(key, (ast.Name, ast.Subscript)):
-            val = eval_ast(key, packet)
-            return val
-
-        parts = [key]
-        if "_redvypr" in packet:
-            found, val = self._traverse_path(packet["_redvypr"], parts)
-            if found:
-                return self._coerce_datetime(val)
-        found, val = self._traverse_path(packet, parts)
-        if found:
-            return self._coerce_datetime(val)
-
-        raise FilterFieldMissing(f"missing key '{key}'")
-
-    def _exists_val(self, packet, key):
-        if packet is None:
-            return False
-        parts = key.split(".") if "." in key else [key]
-        if "_redvypr" in packet:
-            found, _ = self._traverse_path(packet["_redvypr"], parts)
-            if found:
-                return True
-        found, _ = self._traverse_path(packet, parts)
-        return bool(found)
-
-    # -------------------------
-    # Matching & LHS
-    # -------------------------
-
-    import ast
-    import re
-
-    def matches_filter(self, packet: Union[dict, "RedvyprAddress"],
-                                  soft_missing: bool = True):
-        """
-        Prüft, ob ein Packet dem Filter entspricht.
-
-        soft_missing=True → Key fehlt → False (soft match)
-        soft_missing=False → Key fehlt → FilterNoMatch
-        """
-
-        if not self._rhs_ast:
-            return True  # kein Filter → passt immer
-
-        def eval_node(node):
-            if isinstance(node, ast.Call):
-                func_name = node.func.id
-                args = node.args
-
-                if func_name == "_eq":
-                    k, v = args
-                    try:
-                        lv = self._get_val(packet, k)
-                    except FilterFieldMissing:
-                        return soft_missing
-                    rv = v.value if isinstance(v, ast.Constant) else v
-                    return lv == rv
-
-                elif func_name == "_in":
-                    k, lst = args
-                    try:
-                        lv = self._get_val(packet, k)
-                    except FilterFieldMissing:
-                        return soft_missing
-                    rv = [elt.value for elt in lst.elts] if isinstance(lst,
-                                                                       ast.List) else lst
-                    return lv in rv
-
-                elif func_name == "_regex":
-                    k, pat, flags = args
-                    try:
-                        lv = self._get_val(packet, k)
-                    except FilterFieldMissing:
-                        return soft_missing
-                    pattern = pat.value if isinstance(pat, ast.Constant) else str(pat)
-                    return re.search(pattern, str(lv)) is not None
-
-                elif func_name == "_exists":
-                    k = args[0]
-                    try:
-                        _ = self._get_val(packet, k)
-                        return True
-                    except FilterFieldMissing:
-                        return False
-                elif func_name == "_gt":
-                    k, v = args
-                    try:
-                        lv = self._get_val(packet, k)
-                    except FilterFieldMissing:
-                        return soft_missing
-                    rv = v.value if isinstance(v, ast.Constant) else v
-                    return lv > rv
-                elif func_name == "_ge":
-                    k, v = args
-                    try:
-                        lv = self._get_val(packet, k)
-                    except FilterFieldMissing:
-                        return soft_missing
-                    rv = v.value if isinstance(v, ast.Constant) else v
-                    return lv >= rv
-                elif func_name == "_lt":
-                    k, v = args
-                    try:
-                        lv = self._get_val(packet, k)
-                    except FilterFieldMissing:
-                        return soft_missing
-                    rv = v.value if isinstance(v, ast.Constant) else v
-                    return lv < rv
-                elif func_name == "_le":
-                    k, v = args
-                    try:
-                        lv = self._get_val(packet, k)
-                    except FilterFieldMissing:
-                        return soft_missing
-                    rv = v.value if isinstance(v, ast.Constant) else v
-                    return lv <= rv
-
-                else:
-                    raise ValueError(f"Unsupported function: {func_name}")
-
-            elif isinstance(node, ast.BoolOp):
-                if isinstance(node.op, ast.And):
-                    return all(eval_node(v) for v in node.values)
-                elif isinstance(node.op, ast.Or):
-                    return any(eval_node(v) for v in node.values)
-                else:
-                    raise ValueError(f"Unsupported BoolOp: {ast.dump(node.op)}")
-
-            elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
-                return not eval_node(node.operand)
-
-            elif isinstance(node, ast.Constant):
-                return node.value
-
-            else:
-                raise ValueError(f"Unsupported AST node: {ast.dump(node)}")
-
-        return eval_node(self._rhs_ast.body)
-
-    def matches(self, packet: Union[dict, "RedvyprAddress"], soft_missing: bool = True):
-        """
-        Determines if this Address (the Subject/Filter) matches the provided
-        packet or Address (the Target).
-
-        The logic is based on Hierarchical Subsumption. It follows these rules:
-
-        1. Filter Consistency:
-           The Host, Device, and Publisher must match. If filter fails,
-           the result is False immediately.
-
-        2. Wildcard Logic (Broad Filter vs. Specific Data):
-           A filter with no specific datakey acts as a wildcard for that device.
-           Example:
-           >>> a0 = RedvyprAddress("@d:test_device")
-           >>> atest2 = RedvyprAddress("sine[0]")
-           >>> a0.matches(atest2) # True (Device match is enough for a0)
-
-        3. Parent-Child Compatibility:
-           A filter for a parent key matches a target that is a specific child/index.
-           Example:
-           >>> a1 = RedvyprAddress("sine@d:test_device")
-           >>> atest2 = RedvyprAddress("sine[0]")
-           >>> a1.matches(atest2) # True (sine[0] is part of sine)
-
-        4. Specificity Constraint (Specific Filter vs. Broad Data):
-           A filter that is 'more specific' than the target will fail if the
-           target cannot satisfy the structural requirement.
-           Example:
-           >>> atest0 = RedvyprAddress("sine@d:test_device")
-           >>> a2 = RedvyprAddress("sine[0]@d:test_device")
-           >>> atest0.matches(a2) # False (atest0 wants 'sine', but a2 only provides 'sine[0]')
-
-        Test Matrix Summary:
-        --------------------
-        - atest0.matches(a0) -> True  (atest0: 'sine@dev' finds a0: '@dev' via filter)
-        - atest0.matches(a1) -> True  (Exact match: 'sine' vs 'sine')
-        - atest0.matches(a2) -> False (atest0: 'sine' is too broad for target a2: 'sine[0]')
-        - a0.matches(atest2) -> True  (a0: '@dev' is a wildcard for any key on dev)
-        - a1.matches(atest2) -> True  (a1: 'sine' subsumes target 'sine[0]')
-        - a2.matches(atest2) -> True  (Exact index match)
-
-        Parameters
-        ----------
-        packet : dict or RedvyprAddress
-            The data packet or address to test against.
-        soft_missing : bool
-            If True, missing keys in evaluation return False instead of raising.
-
-        Returns
-        -------
-        bool
-            True if the Subject filter matches the Target.
-        """
-
-        if isinstance(packet, dict):
-            address = RedvyprAddress(dict)
-        else:
-            address = packet
-
-        # 1. RHS Filter check
-        match_filter = self.matches_filter(packet)
-        if match_filter == False:
-            return False
-
-        # 2. Handle the "Explicit No Data" case (!)
-        if self.left_expr == "!":
-            # We need to check if the target actually HAS data
-            # If it has a key like 'data', this must return False
-            try:
-                self.__call__(packet, strict=True)
-                return True
-            except (KeyError, FilterNoMatch):
-                return False
-
-        # 3. Wildcard logic: If I don't care about the key, any key matches
-        # (provided the filter above matched)
-        if address.datakey is None:
-            return True
-
-        # 4. Specific key or Subsumption logic,
-        # try if datakey(s) match, here also more complex datapackets are treated properly
-        try:
-            self.__call__(packet)
-            return True
-        except:
-            return False
-
-    def __call__(self, packet, strict=True):
-        if isinstance(packet, RedvyprAddress):
-            packet = packet.to_redvypr_dict()
-        if self.left_expr is None and self._rhs_ast is None:
-            return packet
-        SAFE_GLOBALS = {"__builtins__": None, "True": True, "False": False, "None": None}
-        locals_map = dict(packet)
-        if self._rhs_ast and not self.matches_filter(packet):
-            if strict:
-                raise FilterNoMatch("Packet did not match filter")
-            else:
-                return None
-        if self.left_expr:
-            if self.left_expr == "!":
-                # We check if the packet contains any data keys other than metadata.
-                # In your system, 'no datakey' typically means that only
-                # the metadata (_redvypr) is present.
-                data_keys = [k for k in packet.keys() if k != "_redvypr"]
-                if len(data_keys) > 0:
-                    if strict:
-                        raise KeyError(
-                            "Found datakeys '!' (no-data) was requested")
-                    return None
-                return packet  # Empty
-            top_key = self.left_expr.split("[")[0].split(".")[0]
-            if top_key not in packet:
-                if strict:
-                    raise KeyError(f"Key {top_key!r} missing in packet")
-                else:
-                    return None
-            return eval(self.left_expr, SAFE_GLOBALS, locals_map)
-        return packet
-
-    # -------------------------
-    # Filter Manipulation (AST)
-    # -------------------------
-    def add_filter(self, key, op, value=None, flags=""):
-        # Always normalize to SHORT key (u,d,i,p,...)
-        if key in self.PREFIX_MAP:  # already short: u,d,i,...
-            short = key
-        elif key in self.LONGFORM_MAP:  # long → short
-            short = self.LONGFORM_TO_SHORT_MAP[key]
-        else:
-            short = key  # fallback
-
-        red_key = self.PREFIX_MAP.get(short, short)
-        self.filter_keys.setdefault(red_key, []).append(op)
-        if op == "eq":
-            expr = f"_eq({repr(red_key)}, {repr(value)})"
-        elif op == "in":
-            expr = f"_in({repr(red_key)}, {repr(value if isinstance(value, list) else [value])})"
-        elif op == "regex":
-            expr = f"_regex({repr(red_key)}, {repr(value)}, {repr(flags)})"
-        elif op == "exists":
-            expr = f"_exists({repr(red_key)})"
-        else:
-            raise ValueError(f"Unsupported operation '{op}'")
-        new_ast = ast.parse(expr, mode="eval")
-
-        if self._rhs_ast is None:
-            self._rhs_ast = new_ast
-        else:
-            # flach kombinieren ohne unnötige Klammern
-            rhs_body = self._rhs_ast.body
-            if isinstance(rhs_body, ast.BoolOp) and isinstance(rhs_body.op, ast.And):
-                # rhs ist schon ein And → nur neue Call anhängen
-                rhs_body.values.append(new_ast.body)
-            else:
-                # sonst normalen And-Baum erzeugen
-                self._rhs_ast = ast.parse(f"({ast.unparse(rhs_body)}) and {expr}", mode="eval")
-
-    def delete_filter(self, key):
-        """
-        Remove all RHS filter expressions that refer to the given key
-        (long or short form).
-        Works robustly with nested AND/OR ASTs.
-        """
-
-        if not self._rhs_ast:
-            return
-
-        # translate to canonical prefix version (e.g. uuid -> u)
-        red_key = self.PREFIX_MAP.get(key, key)
-
-        def _remove(node):
-            # Remove matching _eq/_in/_regex/_exists on this key
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name) and node.func.id in (
-                "_eq", "_in", "_regex", "_exists"):
-                    # First argument is the key
-                    try:
-                        k = ast.literal_eval(node.args[0])
-                        if k == red_key:
-                            return None  # remove this leaf
-                    except Exception:
-                        pass
-                return node
-
-            # Recurse on boolean ops
-            if isinstance(node, ast.BoolOp):
-                new_vals = []
-                for v in node.values:
-                    nv = _remove(v)
-                    if nv is not None:
-                        new_vals.append(nv)
-
-                # No children left → remove node
-                if not new_vals:
-                    return None
-                # Only one child → collapse node to child
-                if len(new_vals) == 1:
-                    return new_vals[0]
-
-                # Otherwise keep same BoolOp with filtered children
-                node.values = new_vals
-                return node
-
-            return node
-
-        # apply removal on AST root
-        new_root = _remove(self._rhs_ast.body)
-
-        # update or drop the AST
-        if new_root is None:
-            self._rhs_ast = None
-        else:
-            self._rhs_ast = ast.Expression(new_root)
-
-        # and update filter_keys bookkeeping
-        self.filter_keys.pop(red_key, None)
-
-    def extract(self, keys: Optional[List[str]] = None) -> Optional["RedvyprAddress"]:
-        if not self._rhs_ast:
-            return None
-        if keys is None:
-            keys = list(self.filter_keys.keys())
-        new_rva = RedvyprAddress()
-        for k in keys:
-            if k in self.filter_keys:
-                for op in self.filter_keys[k]:
-                    new_rva.add_filter(k, op)
-        return new_rva
-
-    # -------------------------
-    # LHS Manipulation
-    # -------------------------
-    def add_datakey(self, datakey: str, overwrite: bool = True):
-        if "@" in datakey:
-            raise ValueError("datakey must not contain '@'.")
-        if self.left_expr is None or overwrite:
-            self.left_expr = datakey
-
-    def delete_datakey(self):
-        self.left_expr = None
-
-    # -------------------------
-    # String / Dict Conversion
-    # -------------------------
-    def to_redvypr_dict(self, include_datakey=True):
-        """
-        Liefert ein Dict mit '_redvypr', gefüllt aus den Filtern.
-        - _eq: direkter Wert
-        - _in: Liste
-        - _regex: {"__regex__": pattern, "flags": flags}
-        - _exists: {"__exists__": True}
-        """
-        result = {}
-        result_datakey = {}
-        depth = None
-        if include_datakey:
-            try:
-                result_datakey = self.create_minimal_datakey_packet()
-            except:
-                pass
-
-        if not self._rhs_ast:
-            red_dict = {"_redvypr": result}
-            red_dict.update(result_datakey)
-            return red_dict
-
-        def add_to_dict(key, value):
-            """Schlüssel wie 'host.addr' in verschachtelte Dicts umwandeln"""
-            parts = key.split(".")
-            cur = result
-            for p in parts[:-1]:
-                if p not in cur or not isinstance(cur[p], dict):
-                    cur[p] = {}
-                cur = cur[p]
-            cur[parts[-1]] = value
-
-        def traverse(node):
-            if isinstance(node, ast.Expression):
-                traverse(node.body)
-            elif isinstance(node, ast.BoolOp):
-                for v in node.values:
-                    traverse(v)
-            elif isinstance(node, ast.Call):
-                func_name = node.func.id
-                key = ast.literal_eval(node.args[0])
-
-                if func_name == "_eq":
-                    val = ast.literal_eval(node.args[1])
-                    add_to_dict(key, val)
-                elif func_name == "_in":
-                    vals = ast.literal_eval(node.args[1])
-                    add_to_dict(key, vals)
-                elif func_name == "_regex":
-                    pat = ast.literal_eval(node.args[1])
-                    flags = ast.literal_eval(node.args[2]) if len(node.args) > 2 else ""
-                    add_to_dict(key, {"__regex__": pat, "flags": flags})
-                elif func_name == "_exists":
-                    add_to_dict(key, {"__exists__": True})
-
-        traverse(self._rhs_ast)
-
-        red_dict = {"_redvypr": result}
-        red_dict.update(result_datakey)
-        return red_dict
-
-
-    def get_datakeyentries(self):
-        """
-        Parses an LHS expression like "foo['bar'][2]['baz']"
-        and returns a list of path components:
-        e.g., ["foo", "bar", 2, "baz"]
-        """
-        expr = self.left_expr
-        entries = []
-        if expr is None:
-            return entries
-        elif len(expr.strip()) == 0:
-            return entries
-        expr = expr.strip()
-
-        # Extract top-level key
-        m = re.match(r"([A-Za-z_][A-Za-z_0-9]*)", expr)
-        if not m:
-            raise ValueError(f"Cannot extract top-level key from expression {expr!r}")
-        entries.append(m.group(1))
-        rest = expr[m.end():]
-
-        while rest:
-            rest = rest.strip()
-            # dict key ['key'] or ["key"]
-            m_key = re.match(r"\[\s*(['\"])(.+?)\1\s*\]", rest)
-            if m_key:
-                entries.append(m_key.group(2))
-                rest = rest[m_key.end():]
-                continue
-            # list index [n]
-            m_index = re.match(r"\[\s*(-?\d+)\s*\]", rest)
-            if m_index:
-                entries.append(int(m_index.group(1)))
-                rest = rest[m_index.end():]
-                continue
-            # slicing, we can store as string
-            m_slice = re.match(r"\[\s*([-0-9]*)\s*:\s*([-0-9]*)\s*(:\s*([-0-9]*))?\s*\]", rest)
-            if m_slice:
-                entries.append(rest[:m_slice.end()])  # keep original slice string
-                rest = rest[m_slice.end():]
-                continue
-
-            raise ValueError(f"Cannot parse remaining part of expression: {rest!r}")
-
-        return entries
-
-    def create_minimal_datakey_packet(self):
-        """
-        Create a nested dict/list structure from an expression like
-        'data[0]', "payload['x']", 'foo["bar"][2]', or "data[::-1]".
-        The resulting packet dict is suitable so that eval(expr, ..., packet)
-        will return a valid value without KeyError.
-        """
-        expr = self.left_expr
-        if expr is None:
-            raise ValueError("Cannot create packet from None")
-        elif len(expr.strip()) == 0:
-            raise ValueError("Cannot create packet from empty expression")
-        # Extract top-level key
-        m = re.match(r"\s*([A-Za-z_][A-Za-z_0-9]*)", expr)
-        if not m:
-            raise ValueError(f"Cannot extract top-level key from expression {expr!r}")
-        top = m.group(1)
-        rest = expr[m.end():]
-
-        if not rest:
-            return {top: True}
-
-        value, depth = self._build_from_rest(rest, current_depth=1)
-        return {top: value}
-
-    def _build_from_rest(self, rest: str, current_depth: int):
-        rest = rest.strip()
-
-        # slicing
-        if re.match(r"\[\s*(-?\d*)?\s*:\s*(-?\d*)?\s*(:\s*(-?\d*)?)?\s*\]", rest):
-            return [True, True, True, True, True], current_depth + 1
-
-        # list index
-        m_index = re.match(r"\[\s*(-?\d+)\s*\]", rest)
-        if m_index:
-            remainder = rest[m_index.end():]
-            if remainder:
-                subval, depth = self._build_from_rest(remainder, current_depth + 1)
-                base = [subval]
-                return base, depth
-            else:
-                return [0], current_depth + 1
-
-        # dict key
-        m_key = re.match(r"""\[\s*(['"])(.+?)\1\s*\]""", rest)
-        if m_key:
-            remainder = rest[m_key.end():]
-            if remainder:
-                subval, depth = self._build_from_rest(remainder, current_depth + 1)
-                return {m_key.group(2): subval}, depth
-            else:
-                return {m_key.group(2): 0}, current_depth + 1
-
-        raise ValueError(f"Cannot interpret structure from remainder={rest!r}")
-
-    def __repr__(self):
-        return self.to_address_string()
-
-
-    # -------------------------
-    # Lesbare RHS / get_str
-    # -------------------------
 
     def to_address_string(self, keys: Union[str, List[str]] = None) -> str:
         """Readable version of the address, optionally filtered by keys"""
