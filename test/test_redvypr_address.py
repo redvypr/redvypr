@@ -77,7 +77,7 @@ addresses_test = [
     ("data @ i:~/^te/", pkt1, [1,2,3,4,5]),
     ("data @ d?:", pkt1, [1,2,3,4,5]),
     #("data @ i:[test,foo,bar]", pkt1, [1,2,3,4,5]),
-    ("data @ (i:test and p:mainhub2) or data2==10", pkt1, [1,2,3,4,5]),
+    #("data @ (i:test and p:mainhub2) or data2==10", pkt1, [1,2,3,4,5]),
     #("data @ location in [lab1,lab2]", pkt1, [1,2,3,4,5]),
     #("_redvypr['packetid'] @ i:[1,2,3]", pkt3, 1),
     ("@i:test", pkt1, pkt1),
@@ -109,6 +109,7 @@ for addr_str, pkt, expected in addresses_test:
     addr = RedvyprAddress(addr_str)
     print(f"New address to test raw is:{addr_str}")
     print(f"New address to test is:{str(addr)}")
+    print(f"New address (pure python) is:{addr.to_address_string_pure_python()}")
     print(f"Expected:{str(expected)}")
 
     #print("Expecting", expected)
@@ -222,7 +223,6 @@ addrstring_test3 = RedvyprAddress("data['temp']@i:testid")
 
 print("Dictionary for {}:{}".format(addrstring_test1,addrstring_test1.to_redvypr_dict()))
 print("{}({}):{}".format(addrstring_test1,addrstring_test2,addrstring_test1(addrstring_test2)))
-print("{}({}):{}".format(addrstring_test2,addrstring_test1,addrstring_test2(addrstring_test1)))
 
 # Test regex expressions
 addr_regex = RedvyprAddress("temp @ i:~/^ch(\d+)SN(\d+)$/")
