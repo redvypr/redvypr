@@ -1,5 +1,5 @@
 from redvypr.redvypr_address import RedvyprAddress, FilterNoMatch
-
+from datetime import datetime
 # -------------------------
 # Testpakete
 pkt1 = {
@@ -16,7 +16,19 @@ pkt1 = {
     "data2": 10,
     "data": [1, 2, 3, 4, 5],
     "u": {"a": [42], "b": "Payload pkt1"},
-    "t": 0.0
+    "t": 0.0,
+    "td":datetime(2000,1,1)
+}
+
+pkt_empty = {
+    "_redvypr": {
+        "packetid": "test",
+        "publisher": "mainhub",
+        "device": "cam",
+        "host": {"hostname": "node01-host", "addr": "10.0.0.1", "uuid": "uuid-pkt1-host"},
+        "localhost": {"hostname": "node01-local", "addr": "10.0.0.2", "uuid": "uuid-pkt1-local"},
+        "location": "lab1"
+    },
 }
 
 pkt2 = {
@@ -70,16 +82,19 @@ pkt4 = {
 # -------------------------
 # Alte Tests (LHS/RHS)
 addresses_test = [
+    ("! @ i:test", pkt1, "KeyError"),
+    ("! @ i:test", pkt_empty, pkt_empty),
     ("data[::-1] @ i:test", pkt1, [5,4,3,2,1]),
     ("data3 @ i:test", pkt1, "KeyError"),
+    ("data[0] @ td==dt(2000-01-01)", pkt1, 1),
     ("payload['y'] @ i:42", pkt2, "KeyError"),
     ("payload['x'] @ i:42", pkt2, 1.23),
     ("data @ i:~/^te/", pkt1, [1,2,3,4,5]),
     ("data @ d?:", pkt1, [1,2,3,4,5]),
-    #("data @ i:[test,foo,bar]", pkt1, [1,2,3,4,5]),
-    #("data @ (i:test and p:mainhub2) or data2==10", pkt1, [1,2,3,4,5]),
+    ("data @ i:[test,foo,bar]", pkt1, [1,2,3,4,5]),
+    ("data @ (i:test and p:mainhub2) or data2==10", pkt1, [1,2,3,4,5]),
     #("data @ location in [lab1,lab2]", pkt1, [1,2,3,4,5]),
-    #("_redvypr['packetid'] @ i:[1,2,3]", pkt3, 1),
+    ("_redvypr['packetid'] @ i:[1,2,3]", pkt3, 1),
     ("@i:test", pkt1, pkt1),
     ("data[0]", pkt1, 1),
     ('v["a"][2][3][0]', pkt4, 6),

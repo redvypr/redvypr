@@ -856,6 +856,8 @@ class RedvyprAddress:
         entries = []
         if expr is None:
             return entries
+        elif expr == "!":
+            return entries
         elif len(expr.strip()) == 0:
             return entries
         expr = expr.strip()
