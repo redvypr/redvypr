@@ -1,9 +1,5 @@
-import copy
 import datetime
 import os.path
-import zoneinfo
-import logging
-import queue
 from PyQt6 import QtWidgets, QtCore, QtGui
 import time
 import numpy as np
@@ -11,8 +7,6 @@ import logging
 import sys
 import pyqtgraph
 import yaml
-import uuid
-import matplotlib
 from matplotlib.figure import Figure
 #from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -28,9 +22,10 @@ import redvypr.files as redvypr_files
 import redvypr.gui
 import redvypr.data_packets
 from redvypr.devices.plot import XYPlotWidget
-from .calibration_models import CalibrationData, CalibrationPoly, CalibrationNTC
+from .calibration_models import CalibrationData, CalibrationPoly, CalibrationNTC, \
+    get_calibration_uuid
 from .calibration_type_widgets import  CalibrationCalculationWidget, ConfigWidgetInitNTC, ConfigWidgetInitPolynom
-from .autocalibration import  Autocalentry, Autocalconfig, Autocalwidget
+from .autocalibration import Autocalconfig, Autocalwidget
 _logo_file = redvypr_files.logo_file
 _icon_file = redvypr_files.icon_file
 description = 'Calibration of sensors'
@@ -52,13 +47,6 @@ class DeviceBaseConfig(pydantic.BaseModel):
     gui_tablabel_display: str = 'Realtime data'
 
 
-def get_uuid():
-    #return 'CAL_' + str(uuid.uuid4())
-    uuid_str = uuid.uuid4().hex
-    short_uuid = "CAL" + uuid_str[:28]
-    return short_uuid
-
-
 class CalibrationSensorAndConfigData(CalibrationData):
     rawdata: list = pydantic.Field(default=[])
     time_rawdata: list = pydantic.Field(default=[])
@@ -77,7 +65,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
     name_ref_sensor: str = ''
     dataformat: str = '{:.4f}'
     calibration_id: str = ''
-    calibration_uuid: str = pydantic.Field(default_factory=get_uuid)
+    calibration_uuid: str = pydantic.Field(default_factory=get_calibration_uuid)
     calibration_comment: str = ''
     calibration_file_structure: str = pydantic.Field(default='{SENSOR_MODEL}_{SN}_{PARAMETER}_{CALDATE}.yaml')
     calibration_directory_structure: str = pydantic.Field(default='{SENSOR_MODEL}/{SN}/{PARAMETER}/')

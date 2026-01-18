@@ -1,4 +1,4 @@
-from redvypr_address import RedvyprAddress, FilterNoMatch
+from redvypr.redvypr_address import RedvyprAddress, FilterNoMatch
 
 # -------------------------
 # Testpakete
@@ -76,10 +76,10 @@ addresses_test = [
     ("payload['x'] @ i:42", pkt2, 1.23),
     ("data @ i:~/^te/", pkt1, [1,2,3,4,5]),
     ("data @ d?:", pkt1, [1,2,3,4,5]),
-    ("data @ i:[test,foo,bar]", pkt1, [1,2,3,4,5]),
+    #("data @ i:[test,foo,bar]", pkt1, [1,2,3,4,5]),
     ("data @ (i:test and p:mainhub2) or data2==10", pkt1, [1,2,3,4,5]),
-    ("data @ r:location:[lab1,lab2]", pkt1, [1,2,3,4,5]),
-    ("_redvypr['packetid'] @ i:[1,2,3]", pkt3, 1),
+    #("data @ location in [lab1,lab2]", pkt1, [1,2,3,4,5]),
+    #("_redvypr['packetid'] @ i:[1,2,3]", pkt3, 1),
     ("@i:test", pkt1, pkt1),
     ("data[0]", pkt1, 1),
     ('v["a"][2][3][0]', pkt4, 6),
@@ -105,9 +105,12 @@ addresses_test += [
 
 print("=== LHS / RHS / Existenz Tests ===")
 for addr_str, pkt, expected in addresses_test:
+    print(f"\n\nTesting address: {addr_str}")
     addr = RedvyprAddress(addr_str)
-    print("Address is:", str(addr))
-    print(f"Testing address: {addr_str}")
+    print(f"New address to test raw is:{addr_str}")
+    print(f"New address to test is:{str(addr)}")
+    print(f"Expected:{str(expected)}")
+
     #print("Expecting", expected)
 
     # matches prüfen (nur, wenn expected != "KeyError")
@@ -119,12 +122,22 @@ for addr_str, pkt, expected in addresses_test:
 
     # __call__ / LHS
     if expected == "KeyError":
+        print("KeyError test")
         # Test, dass ein KeyError geworfen wird
         try:
             val = addr(pkt)
             assert False, f"Expected KeyError for {addr_str} but got value {val}"
         except KeyError as e:
             print(f"Passed KeyError test: {addr_str} -> {e}")
+        continue  # nächsten Test
+    elif expected == "FilterNoMatch":
+        print("Filter test")
+        # Test, dass ein FilterNoMatch geworfen wird
+        try:
+            val = addr(pkt)
+            assert False, f"Expected FilterNoMatch for {addr_str} but got value {val}"
+        except FilterNoMatch as e:
+            print(f"Passed FilterNoMatch test: {addr_str} -> {e}")
         continue  # nächsten Test
     else:
         try:

@@ -2,6 +2,7 @@ from typing import List, Optional, Union, Literal, TypeVar, Generic, Type
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from datetime import datetime
 from redvypr.redvypr_address import RedvyprAddress
+from .calibration_models import CalibrationGeneric, CalibrationLinearFactor, CalibrationNTC, CalibrationPoly
 
 class BaseSensor(BaseModel):
     """
@@ -10,8 +11,6 @@ class BaseSensor(BaseModel):
     description: str = Field(default='Sensor')
     sn: str = Field(default='',description="The serial number of the sensor")
     sensortype: Literal['BaseSensor'] = Field(default='BaseSensor')
-
-
 
 class BaseCalibration(BaseModel):
     model_config = ConfigDict(
@@ -40,53 +39,12 @@ class BaseCalibration(BaseModel):
         )
 
 
-SensorType = TypeVar('SensorType', bound=BaseSensor)
-CalibrationType = TypeVar('CalibrationType', bound=BaseCalibration)
-
-class SensorMeta(Generic[SensorType, CalibrationType]):
-    """Container class to pair a sensor type with its calibration type."""
-
-    sensor_cls: Type[SensorType]
-    calibration_cls: Type[CalibrationType]
-
-    def __init__(self, sensor_cls: Type[SensorType], calibration_cls: Type[CalibrationType]):
-        self.sensor_cls = sensor_cls
-        self.calibration_cls = calibration_cls
-
-    def create_sensor(self, **kwargs) -> SensorType:
-        """Creates a sensor instance."""
-        return self.sensor_cls(**kwargs)
-
-    def create_calibration(self, **kwargs) -> CalibrationType:
-        """Creates a calibration instance."""
-        return self.calibration_cls(**kwargs)
-
-    def create_sensor_from_calibration(
-        self,
-        calibration: CalibrationType,
-        name: str,
-        sn: str,
-        **kwargs
-    ) -> SensorType:
-        """Creates a sensor instance from a calibration object."""
-        return self.sensor_cls.from_calibration(
-            calibration=calibration,
-            name=name,
-            sn=sn,
-            **kwargs
-        )
-
-
-
-
 
 # Classic heat flow sensor
 class HeatflowClassicCalibData(BaseModel):
     """Represents calibration coefficients and related data for a heat flow sensor."""
 
     model_config = ConfigDict(extra='forbid')
-
-
 
     calibcoeff: List[Optional[float]] = Field(
         default_factory=list,
@@ -143,7 +101,7 @@ class HeatflowClassicCalibration(BaseModel):
 
     # Literal für die Kalibrierungsfamilie
     calibration_type: Literal['heatflow'] = Field(
-        default='heatflow',
+        default='heatflow_classic',
         description="Type of the calibration (fixed to 'heatflow')."
     )
 
@@ -263,12 +221,60 @@ class HeatflowClassicSensor(BaseSensor):
         )
 
 
+import pydantic
+from typing import Type, Dict, Any, Optional
 
-# Collect all sensor pairs:
-HEATFLOW_CLASSIC_META = SensorMeta[
-    HeatflowClassicSensor,
-    HeatflowClassicCalibration
-](
-    sensor_cls=HeatflowClassicSensor,
-    calibration_cls=HeatflowClassicCalibration
-)
+
+class CalibrationFactory:
+    """
+    A dynamic factory to register and create calibration models
+    based on the 'calibration_type' field.
+    """
+    _registry: Dict[str, Type[pydantic.BaseModel]] = {}
+
+    @classmethod
+    def register(cls, calibration_type: str, model_class: Type[pydantic.BaseModel]):
+        """
+        Registers a new calibration model class.
+        """
+        cls._registry[calibration_type] = model_class
+        print(
+            f"Registered calibration type: '{calibration_type}' as {model_class.__name__}")
+
+    @classmethod
+    def create(cls, data: Dict[str, Any]) -> pydantic.BaseModel:
+        # 1. Try via explicit type (Fast Path)
+        cal_type = data.get('calibration_type')
+
+        if cal_type:
+            for modelname, model in cls._registry.items():
+                # Check if the model's default for the type field matches
+                # We look at the field definition in Pydantic
+                fields = model.model_fields
+                target_field = fields.get('calibration_type') or fields.get(
+                    'calibration_family')
+
+                if target_field and target_field.default == cal_type:
+                    return model.model_validate(data)
+
+        # 2. Fallback: Try all models until one fits (Slow Path)
+        print(
+            f"No explicit type found or matched. Brute-forcing {len(cls._registry)} models...")
+
+        for modelname,model in cls._registry.items():
+            try:
+                # model_validate raises a ValidationError if the structure doesn't match
+                return model.model_validate(data)
+            except pydantic.ValidationError:
+                continue
+
+        raise ValueError(
+            "None of the registered models could validate the provided data.")
+
+# Initial registration of your core classes
+CalibrationFactory.register('linearfactor', CalibrationLinearFactor)
+CalibrationFactory.register('polynom', CalibrationPoly)
+CalibrationFactory.register('ntc', CalibrationNTC)
+CalibrationFactory.register('generic', CalibrationGeneric)
+CalibrationFactory.register('heatflow_classic', HeatflowClassicCalibration)
+

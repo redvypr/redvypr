@@ -19,6 +19,13 @@ logger = logging.getLogger('redvypr.device.calibration_models')
 logger.setLevel(logging.DEBUG)
 
 
+def get_calibration_uuid():
+    #return 'CAL_' + str(uuid.uuid4())
+    uuid_str = uuid.uuid4().hex
+    short_uuid = "CAL" + uuid_str[:28]
+    return short_uuid
+
+
 
 class CalibrationData(pydantic.BaseModel):
     sn: str = pydantic.Field(default='')
@@ -163,7 +170,7 @@ class CalibrationGeneric(pydantic.BaseModel):
     unit_input: str = pydantic.Field(default='NA', description='The unit of the sensor raw data')
     date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
     calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be chosen by the user')
-    calibration_uuid: str = pydantic.Field(default_factory=lambda: uuid.uuid4().hex,
+    calibration_uuid: str = pydantic.Field(default_factory=get_calibration_uuid,
                                          description='uuid of the calibration, can be chosen by the user')
     comment: typing.Optional[str] = None
     calibration_data: typing.Optional[CalibrationData] = pydantic.Field(default=None)
@@ -213,11 +220,21 @@ class CalibrationGeneric(pydantic.BaseModel):
         return hash_hex
 
     def create_redvypr_address(self) -> 'RedvyprAddress':
-        caldate = self.date.isoformat()
-        astr = f"@calibration_type=='{self.calibration_type}' and calibration_date==dt({caldate}) and manufacturer_sn=='{self.manufacturer_sn}'"
-        if len(self.sensor_model) > 0 and self.sensor_model != 'NA':
-            astr += f" and sensor_model=='{self.sensor_model}'"
-        raddr = RedvyprAddress(astr)
+        try:
+            caldate = self.date.isoformat()
+            print("channel datakey",RedvyprAddress(self.channel).datakey)
+            astr = f"@sn=='{self.sn}'"
+            astr += f" and channel=='{self.channel}'"
+            astr += f"and calibration_type=='{self.calibration_type}' and date==dt('{caldate}')"
+            if len(self.sensor_model) > 0 and self.sensor_model != 'NA':
+                astr += f" and sensor_model=='{self.sensor_model}'"
+            if len(self.calibration_uuid):
+                astr += f" and calibration_uuid=='{self.calibration_uuid}'"
+
+            raddr = RedvyprAddress(astr)
+        except:
+            logger.warning("Could not create RedvyprAddress",exc_info=True)
+            raise ValueError("Could not create RedvyprAddress")
         return raddr
 
 
@@ -288,6 +305,7 @@ class CalibrationPoly(CalibrationGeneric):
         #print("calc str",calc_str)
         return calc_str
 
+# Potentially legacy
 class CalibrationHeatFlow(CalibrationGeneric):
     """
     Calibration model for a heatflow sensor
@@ -484,27 +502,6 @@ class CalibrationList(list):
         # logger.debug(f'New calibration added (ID: {new_content_id})')
         return True
 
-    def add_calibration_legacy(self, calibration):
-        """
-        Adds a calibration to the calibration list, checks before, if the calibration exists
-        calibration: calibration model
-        """
-        flag_new_calibration = True
-        calibration_json = json.dumps(calibration.model_dump_json())
-        for cal_old in self:
-            if calibration_json == json.dumps(cal_old.model_dump_json()):
-                flag_new_calibration = False
-                break
-
-        if flag_new_calibration:
-            #logger.debug('New calibration')
-            self.append(calibration)
-            return True
-        else:
-            logger.warning('Calibration exists already')
-            return False
-
-
     def read_calibration_file(self, fname):
         """
         Open and reads a calibration file, it will as well determine the type of calibration and call the proper function
@@ -677,5 +674,6 @@ class CalibrationWrapper(pydantic.RootModel):
     (like model_validate_json) to the CalibrationModel Union type.
     """
     root: CalibrationModel
+
 
 

@@ -17,7 +17,7 @@ redvypr changelog
 - `RedvyprAddress` can compare datetimes `RedvyprAddress("@calibration_date <= dt(2026-01-14T16:15:15)")`
 - `data_packets.create_datadict` new parameter `random_host="somehostname"` to create a test packet
 - Added maximum size and automatic new file creation to `RedvyprSqliteDb`
-
+- Added `sensor_calibration_manager` and `sensor_and_calibration_definitions` that allow to pair sensor definitions with calibration definitions
 
 ### Changed
 - Improved the first page of redvypr, which is now with a timer that starts redvypr after 10 seconds.

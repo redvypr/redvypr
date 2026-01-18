@@ -42,12 +42,12 @@ class Sensor(pydantic.BaseModel):
     description: str = pydantic.Field(default='Sensor')
     example_data: typing.Union[None,bytes, str] = pydantic.Field(default=None)
     sensortype: typing.Literal['sensor'] = pydantic.Field(default='sensor')
-    datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress('*'))
+    datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress('@'))
     autofindcalibration: bool = pydantic.Field(default=True, description='Tries to find automatically calibrations for the sensor')
     calibrations: typing.Dict[str, typing.Annotated[typing.Union[CalibrationLinearFactor, CalibrationPoly], pydantic.Field(
         discriminator='calibration_type')]] = pydantic.Field(default={})
 
-    def add_calibration_for_datapacket(self, packetaddress=RedvyprAddress('/i:*'), addrformat='/i',calibration=None):
+    def add_calibration_for_datapacket(self, packetaddress=RedvyprAddress('@'), addrformat='i',calibration=None):
         """
         Adds a calibration to the packetaddress. During process data it is checked if the provided datapacket fits with the packetaddress of the calibration and if so all calibrations found are applied.
         :param packetaddress:
