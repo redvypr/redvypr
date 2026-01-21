@@ -120,15 +120,19 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
             logger.warning('Could not update address',exc_info=True)
             return
 
+        print(f"{addr_input_submit=}")
         try:
             raddr_submit = RedvyprAddress(**addr_input_submit)
         except:
             logger.warning('Could not update address',exc_info=True)
             return
 
+        print(f"{raddr.to_address_string()=}")
+        print(f"{addr_input_submit_format=}")
         self.redvypr_address_full = raddr
         self.fulladdr.setText(raddr.to_address_string())
-        submit_str = raddr_submit.to_address_string(addr_input_submit_format)
+        #submit_str = raddr_submit.to_address_string(addr_input_submit_format)
+        submit_str = raddr_submit.to_address_string()
         self.submitaddr.setText(submit_str)
         self.address_format = addr_input_submit_format
         self.redvypr_address = raddr_submit

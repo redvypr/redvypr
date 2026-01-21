@@ -412,11 +412,11 @@ def get_metadata(statistics,
         #except:
         #    continue
 
-        if raddr.matches(raddress):
-            #print("Match of {}({}".format(raddr,raddress))
+        if raddress.matches(raddr):
+            print(f"Match of {raddress} and {raddr}:\n{raddress.matches(raddr)=}")
             if True:
                 metadata = statistics['metadata'][astr]
-                #print('Found metadata', metadata)
+                print('Found metadata', metadata)
                 if mode == 'merge': # Put everything into the addressstring key
                     metadata_return[raddress.to_address_string()].update(metadata)
                 else:

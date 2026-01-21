@@ -48,70 +48,67 @@ class SoftPlaceholder:
         self.val = sm_value
 
     def __eq__(self, other): return self.val
-
     def __ne__(self, other): return self.val
-
     def __lt__(self, other): return self.val
-
     def __le__(self, other): return self.val
-
     def __gt__(self, other): return self.val
-
     def __ge__(self, other): return self.val
-
     def __bool__(self): return self.val
 
     def __call__(self, *args, **kwargs): return self
 
 
 class RedvyprAddress:
-    PREFIX_MAP = {
-        "i": "packetid",
-        "p": "publisher",
-        "d": "device",
-        "u": "host.uuid",
-        "a": "host.addr",
-        "h": "host.host",
-        "ul": "localhost.uuid",
-        "al": "localhost.addr",
-        "hl": "localhost.host",
+    META_CONFIG = {
+        "i": {"path": "packetid", "internal": "__packetid__"},
+        "p": {"path": "publisher", "internal": "__publisher__"},
+        "d": {"path": "device", "internal": "__device__"},
+        "u": {"path": "host.uuid", "internal": "__host_uuid__"},
+        "a": {"path": "host.addr", "internal": "__host_addr__"},
+        "h": {"path": "host.host", "internal": "__host_host__"},
+        "ul": {"path": "localhost.uuid", "internal": "__localhost_uuid__"},
+        "al": {"path": "localhost.addr", "internal": "__localhost_addr__"},
+        "hl": {"path": "localhost.host", "internal": "__localhost_host__"},
     }
 
+    # Für deinen Parser (Regex-Ersetzung) extrahieren wir einfach:
+    PREFIX_MAP = {k: v["internal"] for k, v in META_CONFIG.items()}
+
+    # 1. PREFIX_MAP (Kurzformen -> __dunder__)
+    # Ergebnis: {"i": "__packetid__", "d": "__device__", ...}
+    PREFIX_MAP = {k: v["internal"] for k, v in META_CONFIG.items()}
+
+    # 2. LONGFORM_MAP (Langformen -> __dunder__)
+    # Hier korrigiert: Die Werte müssen auf die "__internal__" Namen zeigen!
     LONGFORM_MAP = {
-        "packetid": "packetid",
-        "publisher": "publisher",
-        "device": "device",
-        "uuid": "host.uuid",
-        "host": "host.host",
-        "addr": "host.addr",
-        "uuid_local": "localhost.uuid",
-        "host_local": "localhost.host",
-        "addr_local": "localhost.addr",
+        "packetid": "__packetid__",
+        "publisher": "__publisher__",
+        "device": "__device__",
+        "uuid": "__host_uuid__",
+        "host": "__host_host__",
+        "addr": "__host_addr__",
+        "uuid_local": "__localhost_uuid__",
+        "host_local": "__localhost_host__",
+        "addr_local": "__localhost_addr__",
     }
 
+    # 3. Hilfs-Maps für die String-Repräsentation (Symmetrie)
     LONGFORM_TO_SHORT_MAP = {
-        "packetid": "i",
-        "publisher": "p",
-        "device": "d",
-        "uuid": "u",
-        "host": "h",
-        "addr": "a",
-        "uuid_local": "ul",
-        "host_local": "hl",
-        "addr_local": "al",
+        "packetid": "i", "publisher": "p", "device": "d",
+        "uuid": "u", "host": "h", "addr": "a",
+        "uuid_local": "ul", "host_local": "hl", "addr_local": "al",
     }
+
+    # Erweiterte Map inklusive Datakey
     LONGFORM_TO_SHORT_MAP_DATAKEY = {
         "datakey": "k",
-        "packetid": "i",
-        "publisher": "p",
-        "device": "d",
-        "uuid": "u",
-        "host": "h",
-        "addr": "a",
-        "uuid_local": "ul",
-        "host_local": "hl",
-        "addr_local": "al",
+        **LONGFORM_TO_SHORT_MAP
     }
+
+    # Umkehrung für to_address_string ( __dunder__ -> Kurzprefix )
+    # Ergebnis: {"__device__": "d", "__packetid__": "i", ...}
+    INTERNAL_TO_PREFIX = {v["internal"]: k for k, v in META_CONFIG.items()}
+
 
     common_address_formats = ['k,i', 'k,d,i', 'k', 'd', 'i', 'p', 'p,d', 'p,d,i', 'u,a,h,d,',
                             'u,a,h,d,i', 'k,u,a,h,d', 'k,u,a,h,d,i', 'a,h,d', 'a,h,d,i', 'a,h,p']
@@ -120,6 +117,7 @@ class RedvyprAddress:
     REV_LONGFORM_MAP = {v: k for k, v in LONGFORM_MAP.items()}
     REV_LONGFORM_TO_SHORT_MAP = {v: k for k, v in LONGFORM_TO_SHORT_MAP.items()}
     REV_LONGFORM_TO_SHORT_MAP_DATAKEY = {v: k for k, v in LONGFORM_TO_SHORT_MAP_DATAKEY.items()}
+
     def __init__(self,
                  expr: Union[str, "RedvyprAddress", dict, None] = None,
                  *,
@@ -149,31 +147,33 @@ class RedvyprAddress:
 
         # Dict input (_redvypr mapping)
         elif isinstance(expr, dict):
-            redvypr = expr.get("_redvypr", {})
-            mapping = {
-                "packetid": "i",
-                "publisher": "p",
-                "device": "d",
-                "host": {"host": "h", "addr": "a", "uuid": "u"},
-                "localhost": {"host": "hl", "addr": "al", "uuid": "ul"},
-            }
+            _redvypr = expr.get("_redvypr", {})
+            constraints = []
 
-            for k, v in redvypr.items():
-                if k not in mapping:
-                    continue  # skip unknown keys
+            # Wir iterieren über die zentrale META_CONFIG
+            for cfg in self.META_CONFIG.values():
+                path = cfg["path"]
+                internal = cfg["internal"]
 
-                map_val = mapping[k]
+                # Pfad im Paket auflösen (z.B. "host.uuid")
+                parts = path.split(".")
+                val = _redvypr
+                try:
+                    for part in parts:
+                        val = val[part]
 
-                # Nested dicts (host, localhost)
-                if isinstance(map_val, dict) and isinstance(v, dict):
-                    for subk, prefix in map_val.items():
-                        val = v.get(subk)
-                        if val not in (None, ''):  # skip empty values
-                            self.add_filter(prefix, "eq", val)
+                    # Wenn ein Wert gefunden wurde, Constraint hinzufügen
+                    if val not in (None, ''):
+                        # Wir speichern es direkt als Python-Vergleichs-String
+                        # e.g. "__packetid__ == 'test'"
+                        constraints.append(f"{internal} == {repr(val)}")
+                except (KeyError, TypeError):
+                    continue
 
-                # Single values (packetid, device, publisher)
-                elif v not in (None, ''):
-                    self.add_filter(map_val, "eq", v)
+            # Zu einem einzigen RHS-String zusammenfügen
+            if constraints:
+                self._rhs_str = " and ".join(constraints)
+                self._rhs_ast = ast.parse(self._rhs_str, mode="eval")
 
         # String input
         elif isinstance(expr, str):
@@ -194,17 +194,19 @@ class RedvyprAddress:
             ("packetid", packetid),
             ("device", device),
             ("publisher", publisher),
-            ("host", host),
-            ("uuid", uuid),
-            ("address", addr),
-            ("localhost.host", host_local),
-            ("localhost.uuid", uuid_local),
-            ("localhost.addr", addr_local),
+            ("host", host),  # Mappt via LONGFORM_MAP auf __host_host__
+            ("uuid", uuid),  # Mappt via LONGFORM_MAP auf __host_uuid__
+            ("addr", addr),  # Korrigiert: hieß oben 'address', sollte 'addr' sein
+            ("host_local", host_local),
+            ("uuid_local", uuid_local),
+            ("addr_local", addr_local),
         ]
         for red_key, val in kw_map:
-            if val not in (None, ''):  # skip empty values
+            if val not in (None, ''):
+                # delete_filter nutzt jetzt auch die LONGFORM_MAP Auflösung
                 self.delete_filter(red_key)
                 self.add_filter(red_key, "eq", val)
+
 
         self._compiled_left = None
         self._compiled_rhs = None
@@ -267,9 +269,104 @@ class RedvyprAddress:
     # -------------------------
     # RHS AST Parsing
     # -------------------------
-
+    import re
+    import ast
 
     def _parse_rhs(self, rhs: str) -> ast.Expression:
+        s = rhs.strip()
+        if not s:
+            return None
+
+        # Pattern to catch quoted strings to avoid replacing keywords inside them
+        STRING_PATTERN = r'("(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
+
+        def safe_sub(pattern, repl_func, text):
+            combined = f"{STRING_PATTERN}|{pattern}"
+            return re.sub(combined,
+                          lambda m: m.group(1) if m.group(1) else repl_func(m), text)
+
+        # 1. dt("ISO") literal conversion
+        def repl_dt(m):
+            iso = m.group(2) or m.group(3)
+            return f"_dt({repr(iso)})"
+
+        dt_pattern = r"dt\(\s*(?:['\"](.*?)['\"]|([0-9T:\-\.\+Z ]+))\s*\)"
+        rhs = safe_sub(dt_pattern, repl_dt, rhs)
+
+        # 2. Existence Check (key?:)
+        def replace_exists(match):
+            key = match.group(2)
+            # Use the internal __dunder__ name if it exists in PREFIX_MAP
+            target = self.PREFIX_MAP.get(key, key)
+            self.filter_keys.setdefault(target, []).append("exists")
+            # Optimization: We pass the RAW identifier for metadata
+            # but keep repr() for root keys to ensure _exists handles both.
+            # However, for our new logic, _exists(target) where target is Name works best.
+            return f"_exists({repr(target)})"
+
+        rhs = safe_sub(r'([A-Za-z0-9_]+)\?:', replace_exists, rhs)
+
+        # 3. r: forms (Root keys - no dunder transformation)
+        def repl_r_list(m):
+            key, content = m.group(2), m.group(3)
+            self.filter_keys.setdefault(key, []).append("in")
+            return f"{key} in {self._list_to_python(content)}"
+
+        rhs = safe_sub(r'r:([A-Za-z0-9_]+):\[((?:[^\]]*))\]', repl_r_list, rhs)
+
+        def repl_r_regex(m):
+            key, pat, flags = m.group(2), m.group(3), m.group(4) or ""
+            self.filter_keys.setdefault(key, []).append("regex")
+            return f"_regex({key}, {repr(pat)}, {repr(flags)})"
+
+        rhs = safe_sub(r'r:([A-Za-z0-9_]+):~/(.*?)/([a-zA-Z]*)', repl_r_regex, rhs)
+
+        def repl_r_eq(m):
+            key, val = m.group(2), m.group(3)
+            self.filter_keys.setdefault(key, []).append("eq")
+            return f"{key} == {self._literal_to_python(val)}"
+
+        rhs = safe_sub(r'r:([A-Za-z0-9_]+):(".*?"|\'.*?\'|[^\s()]+)', repl_r_eq, rhs)
+
+        # 4. Prefixes (Metadata keys - transformed to __dunder__ names)
+        prefixes = sorted(self.PREFIX_MAP.keys(), key=lambda x: -len(x))
+        prefix_group = "|".join([re.escape(p) for p in prefixes])
+
+        def repl_pref_list(m):
+            key, content = m.group(2), m.group(3)
+            internal_name = self.PREFIX_MAP.get(key, key)
+            self.filter_keys.setdefault(internal_name, []).append("in")
+            # Returns: (__packetid__ in [val1, val2])
+            return f"{internal_name} in {self._list_to_python(content)}"
+
+        rhs = safe_sub(rf'({prefix_group}):\[((?:[^\]]*))\]', repl_pref_list, rhs)
+
+        def repl_pref_regex(m):
+            key, pat, flags = m.group(2), m.group(3), m.group(4) or ""
+            internal_name = self.PREFIX_MAP.get(key, key)
+            self.filter_keys.setdefault(internal_name, []).append("regex")
+            # Pass internal_name as a Variable (no quotes)
+            return f"_regex({internal_name}, {repr(pat)}, {repr(flags)})"
+
+        rhs = safe_sub(rf'({prefix_group}):~/(.*?)/([a-zA-Z]*)', repl_pref_regex, rhs)
+
+        def repl_pref_eq(m):
+            key, val = m.group(2), m.group(3)
+            internal_name = self.PREFIX_MAP.get(key, key)
+            py_val = self._literal_to_python(val)
+            if py_val == '' or py_val is None:
+                return 'True'
+            self.filter_keys.setdefault(internal_name, []).append("eq")
+            # Returns: (__packetid__ == 'test_val')
+            return f"{internal_name} == {py_val}"
+
+        rhs = safe_sub(rf'({prefix_group}):((".*?"|\'.*?\'|[^\s()]+))', repl_pref_eq,
+                       rhs)
+
+        #print(f"{rhs=}")
+        return ast.parse(rhs, mode="eval")
+
+    def _parse_rhs_legacy(self, rhs: str) -> ast.Expression:
         s = rhs.strip()
         if not s:
             return None
@@ -406,46 +503,38 @@ class RedvyprAddress:
     # -------------------------
     # Eval helpers
     # -------------------------
-    def matches_filter(self, packet: Union[dict, "RedvyprAddress"],
-                                   soft_missing: bool = True) -> bool:
-        """
-        Checks if a packet matches the filter. Missing fields in the packet
-        default to soft_missing value.
-        """
-        if not self._rhs_ast:
+    def matches_filter(self, packet, soft_missing=True):
+        # 0. No Filter
+        if self._rhs_ast is None:
             return True
 
-        # Normalize data
-        if hasattr(packet, "to_redvypr_dict"):
-            p_data = packet.to_redvypr_dict()
-        else:
-            p_data = packet if isinstance(packet, dict) else {}
+        # 1. Daten normalisieren
+        p_data = packet.to_redvypr_dict() if hasattr(packet,
+                                                     "to_redvypr_dict") else packet
 
-        # Build namespace with placeholders
+        # 2. Daten flachklopfen (Metadata -> __dunder__)
+        flat_data = self._to_redvypr_dict_flat(p_data)
+
+        # 3. Locals vorbereiten
         placeholder = SoftPlaceholder(soft_missing)
-        locals_map = self._build_eval_locals(packet, soft_missing=soft_missing)
+        # Erst alle Namen aus dem AST mit Placeholdern füllen
+        locals_map = {node.id: placeholder for node in ast.walk(self._rhs_ast)
+                      if isinstance(node, ast.Name)}
 
-        # Build namespace with placeholders
-        placeholder = SoftPlaceholder(soft_missing)
-        # Pre-fill every variable found in AST with a placeholder
-        for node in ast.walk(self._rhs_ast):
-            #print("node", ast.dump(node))
-            if isinstance(node, ast.Name):
-                if node.id not in locals_map:
-                    locals_map[node.id] = placeholder
+        # 4. WICHTIG: Die echten Daten müssen die Placeholder ÜBERSCHREIBEN
+        locals_map.update(flat_data)
 
-        # Overwrite placeholders with actual data
-        locals_map.update(p_data)
-        #print("Locals map", locals_map)
-        # Execution
+        # 5. Hilfsfunktionen laden (wie _dt)
+        locals_map.update(self._build_eval_locals(p_data, soft_missing))
+
         try:
             code = compile(self._rhs_ast, filename="<ast>", mode="eval")
-            eval_ret = eval(code, {"__builtins__": __builtins__}, locals_map)
-            return bool(eval_ret)
-        except Exception as e:
-            #print("Exception", e)
-            #return soft_missing
-            return False
+            # Wir führen das eval() aus.
+            # Wenn __device__ in flat_data 'device' ist, aber der Filter 'device2' will:
+            # 'device' == 'device2' -> False. KORREKT.
+            return bool(eval(code, {"__builtins__": {}}, locals_map))
+        except Exception:
+            return soft_missing
 
     def _coerce_datetime(self, v):
         if hasattr(v, "year") and hasattr(v, "month") and hasattr(v, "day"):
@@ -466,72 +555,67 @@ class RedvyprAddress:
 
     def _build_eval_locals(self, packet: dict, soft_missing: bool):
         locals_map = {}
+        INTERNAL_TO_PATH = {v["internal"]: v["path"] for v in self.META_CONFIG.values()}
 
-        # -------------------------
-        # Datetime helper
-        # -------------------------
         def _dt(iso):
             from datetime import datetime
             return datetime.fromisoformat(iso)
 
-        def _cmp(op, k, v):
-            lv = self._get_val(packet, k, soft_missing_val=soft_missing)
-            rv = self._coerce_datetime(v)
-            return op(lv, rv)
+        def _resolve_val(k_or_v):
+            """
+            Hilfsfunktion: Wenn k_or_v ein SoftPlaceholder oder der Wert selbst ist,
+            geben wir ihn zurück. Wenn es ein String-Pfad ist (altes System), lösen wir ihn auf.
+            """
+            if isinstance(k_or_v, SoftPlaceholder):
+                return k_or_v
+            # Wenn es ein String ist, der ein Key sein könnte (kein Dunder, keine Metadaten),
+            # und er NICHT im Paket als Wert existiert, behandeln wir ihn als Pfad.
+            # Aber im neuen System ist k_or_v meistens schon der fertige Wert aus der locals_map.
+            return k_or_v
 
         # -------------------------
-        # Comparison operators
+        # In / Regex / Exists
         # -------------------------
-        def _eq(k, v):
-            return _cmp(lambda a, b: a == b, k, v)
+        def _in(val, list_obj):
+            # val ist hier bereits der Wert der Variable (z.B. __packetid__)
+            return val in list_obj
 
-        def _ne(k, v):
-            return _cmp(lambda a, b: a != b, k, v)
-
-        def _gt(k, v):
-            return _cmp(lambda a, b: a > b, k, v)
-
-        def _ge(k, v):
-            return _cmp(lambda a, b: a >= b, k, v)
-
-        def _lt(k, v):
-            return _cmp(lambda a, b: a < b, k, v)
-
-        def _le(k, v):
-            return _cmp(lambda a, b: a <= b, k, v)
-
-        # -------------------------
-        # UNVERÄNDERT: in / regex / exists
-        # -------------------------
-        def _in(k, l):
-            return self._get_val(packet, k) in l
-
-        def _regex(k, pat, flags=""):
-            v = self._get_val(packet, k)
+        def _regex(val, pat, flags=""):
+            # val ist der Inhalt der Variable
             f = 0
-            for ch in flags:
-                if ch == "i": f |= re.IGNORECASE
-                if ch == "m": f |= re.MULTILINE
-                if ch == "s": f |= re.DOTALL
-            return re.search(pat, str(v), f) is not None
+            if "i" in flags: f |= re.IGNORECASE
+            if "m" in flags: f |= re.MULTILINE
+            if "s" in flags: f |= re.DOTALL
+            return re.search(pat, str(val), f) is not None
 
-        def _exists(k):
-            return self._exists_val(packet, k)
+        def _exists(name: str) -> bool:
+            # Hier bleibt name ein String (z.B. '__device__'), da wir _exists('__device__') rufen
+            if name in INTERNAL_TO_PATH:
+                path = INTERNAL_TO_PATH[name]
+                meta = packet.get('_redvypr', {})
+                val = meta
+                try:
+                    for part in path.split('.'):
+                        val = val[part]
+                    return True
+                except (KeyError, TypeError):
+                    return False
+
+            # Root-Key check
+            return name in packet and name != '_redvypr'
 
         # -------------------------
-        # Locals
+        # Mapping
         # -------------------------
         locals_map.update({
             "_dt": _dt,
-            "_eq": _eq,
-            "_ne": _ne,
-            "_gt": _gt,
-            "_ge": _ge,
-            "_lt": _lt,
-            "_le": _le,
             "_in": _in,
             "_regex": _regex,
             "_exists": _exists,
+            # Die alten _eq, _ne etc. werden eigentlich nicht mehr gebraucht,
+            # da wir jetzt natives (a == b) im AST nutzen.
+            # Wir lassen sie für Notfälle drin, mappen sie aber auf Standard-Logik:
+            "_eq": lambda a, b: a == b,
             "True": True,
             "False": False,
             "None": None,
@@ -539,6 +623,7 @@ class RedvyprAddress:
         })
 
         return locals_map
+
 
     def _traverse_path(self, root: dict, parts: list):
         cur = root
@@ -722,6 +807,87 @@ class RedvyprAddress:
     # Filter Manipulation (AST)
     # -------------------------
     def add_filter(self, key, op, value=None, flags=""):
+        # 1. Den internen Dunder-Namen finden (__device__, etc.)
+        internal_key = None
+        if key in self.PREFIX_MAP:
+            internal_key = self.PREFIX_MAP[key]
+        elif key in self.LONGFORM_MAP:
+            internal_key = self.LONGFORM_MAP[key]
+        else:
+            internal_key = key
+
+        # 2. Den Python-Ausdruck basierend auf dem Operator bauen
+        if op == "eq":
+            expr_str = f"{internal_key} == {repr(value)}"
+        elif op == "in":
+            val_list = value if isinstance(value, list) else [value]
+            expr_str = f"{internal_key} in {repr(val_list)}"
+        elif op == "regex":
+            expr_str = f"_regex({internal_key}, {repr(value)}, {repr(flags)})"
+        elif op == "exists":
+            expr_str = f"_exists({internal_key})"
+        else:
+            raise ValueError(f"Unsupported operation '{op}'")
+
+        # parse erzeugt Knoten MIT lineno
+        new_ast = ast.parse(expr_str, mode="eval")
+
+        # 3. In den bestehenden RHS-AST integrieren
+        if self._rhs_ast is None:
+            self._rhs_ast = new_ast
+        else:
+            current_body = self._rhs_ast.body
+            new_node = new_ast.body
+
+            if isinstance(current_body, ast.BoolOp) and isinstance(current_body.op,
+                                                                   ast.And):
+                current_body.values.append(new_node)
+            else:
+                # WICHTIG: Manuell erstellte Knoten haben keine lineno!
+                combined_body = ast.BoolOp(op=ast.And(),
+                                           values=[current_body, new_node])
+                self._rhs_ast = ast.Expression(body=combined_body)
+
+        # 4. REPARATUR: Füllt lineno/col_offset rekursiv für alle Knoten nach
+        ast.fix_missing_locations(self._rhs_ast)
+
+        self._compile_expressions()
+
+    def delete_filter(self, key):
+        if not self._rhs_ast:
+            return
+
+        # Internen Namen ermitteln
+        internal_target = self.PREFIX_MAP.get(key, self.LONGFORM_MAP.get(key, key))
+
+        def _should_remove(node):
+            # Fall A: Vergleich (__device__ == 'val')
+            if isinstance(node, ast.Compare):
+                if isinstance(node.left, ast.Name) and node.left.id == internal_target:
+                    return True
+            # Fall B: Funktionsaufruf (_regex(__device__, ...))
+            elif isinstance(node, ast.Call):
+                if node.args and isinstance(node.args[0], ast.Name) and node.args[
+                    0].id == internal_target:
+                    return True
+            return False
+
+        def _walk_and_filter(node):
+            if isinstance(node, ast.BoolOp):
+                new_vals = [nv for nv in (_walk_and_filter(v) for v in node.values) if
+                            nv is not None]
+                if not new_vals: return None
+                if len(new_vals) == 1: return new_vals[0]
+                node.values = new_vals
+                return node
+
+            return None if _should_remove(node) else node
+
+        new_root = _walk_and_filter(self._rhs_ast.body)
+        self._rhs_ast = ast.Expression(new_root) if new_root else None
+        self._compile_expressions()
+
+    def add_filter_legacy(self, key, op, value=None, flags=""):
         # Always normalize to SHORT key (u,d,i,p,...)
         if key in self.PREFIX_MAP:  # already short: u,d,i,...
             short = key
@@ -759,7 +925,7 @@ class RedvyprAddress:
 
         self._compile_expressions()
 
-    def delete_filter(self, key):
+    def delete_filter_legacy(self, key):
         """
         Remove all RHS filter expressions that refer to the given key
         (long or short form).
@@ -850,7 +1016,201 @@ class RedvyprAddress:
     # -------------------------
     # String / Dict Conversion
     # -------------------------
+    def _to_redvypr_dict_flat(self, p_data: dict) -> dict:
+        """
+        Converts a nested packet dictionary into a flat dictionary for eval().
+        Maps metadata fields to safe internal names (e.g., __packetid__)
+        to prevent collisions with root user data.
+        """
+        # 1. Copy root data but exclude the metadata block itself
+        flat_data = {k: v for k, v in p_data.items() if k != '_redvypr'}
+
+        if '_redvypr' in p_data:
+            meta = p_data['_redvypr']
+            for cfg in self.META_CONFIG.values():
+                path = cfg["path"]
+                internal_name = cfg["internal"]
+
+                # Path traversal for dot notation (e.g., "host.uuid")
+                parts = path.split(".")
+                current_val = meta
+                try:
+                    for part in parts:
+                        current_val = current_val[part]
+                    flat_data[internal_name] = current_val
+                except (KeyError, TypeError):
+                    continue
+        return flat_data
+
     def to_redvypr_dict(self, include_datakey: bool = True) -> dict:
+        """Führt die Strukturen von LHS und RHS zusammen."""
+        # 1. Metadaten und Root initialisieren
+        root = {}
+
+        # 2. LHS verarbeiten (Struktur-Pfade)
+        root = self.to_redvypr_dict_lhs()
+
+        # 3. RHS verarbeiten (Constraints und Metadaten)
+        root_rhs = self.to_redvypr_dict_rhs()
+
+        # Einfaches Mergen der Top-Level Keys
+        for k, v in root_rhs.items():
+            if k == "_redvypr":
+                # Metadaten zusammenführen, falls schon was da ist
+                root.setdefault("_redvypr", {}).update(v)
+            elif isinstance(v, dict) and k in root and isinstance(root[k], dict):
+                # Tieferes Update für verschachtelte Strukturen im Root
+                root[k].update(v)
+            else:
+                root[k] = v
+
+        ## 4. Optional: Rohen Datakey-String hinzufügen
+        #if include_datakey and self.left_expr:
+        #    root['datakey'] = self.left_expr
+
+        return root
+
+    def to_redvypr_dict_lhs(self) -> dict:
+        """
+        Extrahiert die reine Pfadstruktur der linken Seite (LHS)
+        und bildet sie als verschachteltes Dictionary ab.
+        """
+        result_root = {}
+
+        def add_to_target(key_path, value, target):
+            """Hilfsfunktion zum Aufbau verschachtelter Dicts."""
+            cur = target
+            for i in range(len(key_path) - 1):
+                p = key_path[i]
+                if p not in cur or not isinstance(cur[p], dict):
+                    cur[p] = {}
+                cur = cur[p]
+            cur[key_path[-1]] = value
+
+        def get_path(node):
+            """Extrahiert den Variablenpfad aus einem AST-Knoten."""
+            # Falls der Baum in ein Expression-Objekt gewrappt ist
+            if isinstance(node, ast.Expression):
+                node = node.body
+
+            if isinstance(node, ast.Name):
+                return [node.id]
+            if isinstance(node, ast.Attribute):
+                base = get_path(node.value)
+                return base + [node.attr] if base else [node.attr]
+            if isinstance(node, ast.Subscript):
+                base = get_path(node.value)
+                try:
+                    # Holt den Index/Key (z.B. 0 oder 'temp')
+                    slc = node.slice
+                    # Kompatibilität für verschiedene Python Versionen (Index vs Constant)
+                    if isinstance(slc, ast.Index):
+                        slc = slc.value
+                    idx = ast.literal_eval(slc)
+                    return base + [idx] if base else [idx]
+                except:
+                    return base
+            return None
+
+        # Verarbeiten des LHS AST
+        if self._lhs_ast:
+            # Wir holen den Pfad (z.B. data['temp'][0] -> ['data', 'temp', 0])
+            path = get_path(self._lhs_ast)
+            if path:
+                # Wir markieren die Existenz dieses Pfades mit True
+                add_to_target(path, True, result_root)
+
+        return result_root
+
+    def to_redvypr_dict_rhs(self, include_datakey: bool = True) -> dict:
+        """
+        Reverse process: Converts the AST back into a standard nested dictionary.
+        Internal __dunder__ keys are moved back into the '_redvypr' block.
+        """
+        result_metadata = {}
+        result_root = {}
+
+        # Map internal names back to their original metadata paths
+        # e.g., "__host_uuid__": "host.uuid"
+        REVERSE_META = {v["internal"]: v["path"] for v in self.META_CONFIG.values()}
+
+        def add_to_target(key_path, value, target):
+            """Helper to build nested dictionaries from a list of path parts."""
+            cur = target
+            for i in range(len(key_path) - 1):
+                p = key_path[i]
+                if p not in cur or not isinstance(cur[p], dict):
+                    cur[p] = {}
+                cur = cur[p]
+            cur[key_path[-1]] = value
+
+        def get_path(node):
+            """Extracts the variable path from an AST node."""
+            if isinstance(node, ast.Name): return [node.id]
+            if isinstance(node, ast.Attribute):
+                base = get_path(node.value)
+                return base + [node.attr] if base else [node.attr]
+            if isinstance(node, ast.Subscript):
+                base = get_path(node.value)
+                try:
+                    idx = ast.literal_eval(node.slice)
+                    return base + [idx] if base else [idx]
+                except:
+                    return base
+            return None
+
+        def process_node(node):
+            """Walks the AST to find filter constraints."""
+            if isinstance(node, ast.Compare):
+                path = get_path(node.left)
+                if not path: return
+
+                try:
+                    # Basic literal value extraction
+                    comp = node.comparators[0]
+                    val = ast.literal_eval(comp)
+
+                    # Check if this is one of our internal metadata dunder names
+                    if path[0] in REVERSE_META:
+                        meta_path = REVERSE_META[path[0]].split(".")
+                        add_to_target(meta_path, val, result_metadata)
+                    elif path[0] == "_redvypr":
+                        add_to_target(path[1:], val, result_metadata)
+                    else:
+                        add_to_target(path, val, result_root)
+                except:
+                    pass
+
+            elif isinstance(node, ast.Call):
+                # Handle special helper functions if they are still used in AST
+                func_name = getattr(node.func, 'id', '')
+                if func_name in ("_eq", "_regex", "_exists", "_in"):
+                    try:
+                        # In our new design, the first arg is often a Name node or string
+                        arg0 = node.args[0]
+                        key_str = arg0.id if isinstance(arg0,
+                                                        ast.Name) else ast.literal_eval(
+                            arg0)
+
+                        val = True if func_name == "_exists" else ast.literal_eval(
+                            node.args[1])
+
+                        if key_str in REVERSE_META:
+                            meta_path = REVERSE_META[key_str].split(".")
+                            add_to_target(meta_path, val, result_metadata)
+                        else:
+                            add_to_target(key_str.split("."), val, result_root)
+                    except:
+                        pass
+
+        # Walk through both LHS and RHS ASTs
+        for tree in [self._lhs_ast, self._rhs_ast]:
+            if tree:
+                for node in ast.walk(tree):
+                    process_node(node)
+
+        return {"_redvypr": result_metadata, **result_root}
+    def to_redvypr_dict_legacy(self, include_datakey: bool = True) -> dict:
         result_metadata = {}
         result_root = {}
 
@@ -968,6 +1328,39 @@ class RedvyprAddress:
             traverse(self._rhs_ast, is_lhs=False)
 
         return {"_redvypr": result_metadata, **result_root}
+
+    def _to_redvypr_dict_flat_legacy(self, p_data: dict) -> dict:
+        """
+        Converts a nested packet dictionary into a flat dictionary for eval().
+        Maps metadata fields to safe internal names (e.g., __packetid__)
+        to prevent collisions with root user data.
+        """
+        # 1. Copy root data but exclude the metadata block itself
+        # to keep the namespace clean for eval()
+        flat_data = {k: v for k, v in p_data.items() if k != '_redvypr'}
+
+        if '_redvypr' in p_data:
+            meta = p_data['_redvypr']
+
+            for cfg in self.META_CONFIG.values():
+                path = cfg["path"]
+                internal_name = cfg["internal"]
+
+                # 2. Path traversal for dot notation (e.g., "host.uuid")
+                parts = path.split(".")
+                current_val = meta
+                try:
+                    for part in parts:
+                        current_val = current_val[part]
+
+                    # If we reached here, the value exists in metadata
+                    flat_data[internal_name] = current_val
+                except (KeyError, TypeError):
+                    # Field not found in this specific packet.
+                    # It will stay as a SoftPlaceholder in matches_filter.
+                    continue
+
+        return flat_data
 
     def get_datakeyentries(self):
         expr = self.left_expr
@@ -1119,91 +1512,154 @@ class RedvyprAddress:
             return ast.unparse(node)
 
     def to_address_string(self, keys: Union[str, List[str]] = None) -> str:
-        """Readable version of the address, optionally filtered by keys"""
-
-
-        # Prepare the allowed keys set
+        """
+        Erstellt die lesbare Adresse. Berücksichtigt:
+        1. Filterung nach 'keys' (Pruning)
+        2. Linke Seite (left_expr / datakey)
+        3. Rückwandlung von Dunder-Namen zu Präfixen (i:, d: etc.)
+        4. @-Symbol Symmetrie
+        """
+        # --- 1. Vorbereitung der Key-Filterung ---
         allowed_keys_set = None
         show_left = True
+
         if keys is not None:
             if isinstance(keys, str):
                 allowed_keys = [k.strip() for k in keys.split(",") if k.strip()]
             else:
                 allowed_keys = keys
 
-            # expand both PREFIX_MAP and REV_PREFIX_MAP, so both short and long keys work
+            if len(allowed_keys) == 0:
+                return "@"
+
+            # Expand keys (Mapping von kurz zu lang/intern)
             expanded = set()
             for k in allowed_keys:
-                if k in self.LONGFORM_MAP:  # short prefix like "p"
+                if k in getattr(self, 'LONGFORM_MAP', {}):
                     expanded.add(self.LONGFORM_MAP[k])
-                elif k in self.PREFIX_MAP:  # short prefix like "p"
+                elif k in self.PREFIX_MAP:
                     expanded.add(self.PREFIX_MAP[k])
-                elif k in self.REV_PREFIX_MAP:  # long key like "publisher"
+                elif k in getattr(self, 'REV_PREFIX_MAP', {}):
                     expanded.add(k)
                 else:
                     expanded.add(k)
 
             allowed_keys_set = expanded
-            #allowed_keys_set = set(self.PREFIX_MAP.get(k, k) for k in allowed_keys)
+            # Wenn 'k' oder 'datakey' nicht explizit verlangt wird, linke Seite verstecken
             if not any(k in allowed_keys for k in ("k", "datakey")):
-                show_left = False  # hide left_expr if not requested explicitly
+                show_left = False
 
-            if len(allowed_keys) == 0:
-                return "@"
-
-        if not self._rhs_ast:
-            if self.left_expr and show_left:
-                return f"{self.left_expr}"
-            else:
-                return "@"
-
-        def prune_ast(node: ast.AST) -> Optional[ast.AST]:
+        # --- 2. AST Pruning (Filterung der RHS) ---
+        def prune_ast(node):
+            if node is None: return None
             if isinstance(node, ast.Expression):
                 node.body = prune_ast(node.body)
                 return node if node.body else None
 
-            elif isinstance(node, ast.BoolOp):
+            if isinstance(node, ast.BoolOp):
                 new_vals = [prune_ast(v) for v in node.values]
                 new_vals = [v for v in new_vals if v is not None]
-                if not new_vals:
-                    return None
+                if not new_vals: return None
                 node.values = new_vals
                 return node
 
-            elif isinstance(node, ast.Call):
+            # Prüfung auf Name-Ebene (für __packetid__ etc) oder Call-Ebene
+            target_key = None
+            if isinstance(node, ast.Compare) and isinstance(node.left, ast.Name):
+                target_key = node.left.id
+            elif isinstance(node, ast.Call) and node.args:
                 try:
-                    key = ast.literal_eval(node.args[0])
-                except Exception:
-                    return None  # Discard nodes with invalid literals
+                    # Handhabt _exists('__device__') oder _regex(__device__, ...)
+                    arg0 = node.args[0]
+                    target_key = arg0.id if isinstance(arg0,
+                                                       ast.Name) else ast.literal_eval(
+                        arg0)
+                except:
+                    pass
 
-                # Discard node if the key is None
-                if key is None:
-                    return None
+            if allowed_keys_set and target_key and target_key not in allowed_keys_set:
+                return None
 
-                # Filter by allowed keys
-                if allowed_keys_set and key not in allowed_keys_set:
-                    return None
+            return node
 
-                # Optionally check other arguments (value/content) for None
-                for arg in node.args[1:]:
-                    try:
-                        val = ast.literal_eval(arg)
-                        if val is None:
-                            return None
-                    except Exception:
-                        continue  # Ignore non-evaluable arguments
+        # --- 3. AST Transformation & Unparsing ---
+        rhs_str = ""
+        if self._rhs_ast:
+            # Kopie ziehen und filtern
+            working_ast = copy.deepcopy(self._rhs_ast)
+            if allowed_keys_set:
+                working_ast = prune_ast(working_ast)
 
-                return node
+            if working_ast:
+                # Namen zurücktauschen (__device__ -> d)
+                DUNDER_TO_PREFIX = {v["internal"]: k for k, v in
+                                    self.META_CONFIG.items()}
+                for node in ast.walk(working_ast):
+                    if isinstance(node, ast.Name) and node.id in DUNDER_TO_PREFIX:
+                        node.id = DUNDER_TO_PREFIX[node.id]
 
-            else:
-                return node
+                # String generieren
+                rhs_str = ast.unparse(working_ast)
 
-        filtered_ast = prune_ast(copy.deepcopy(self._rhs_ast)) if allowed_keys_set else self._rhs_ast
-        rhs_str = self._ast_to_rhs_string(filtered_ast) if filtered_ast else ""
+                # Kosmetik
+                rhs_str = rhs_str.replace("_dt(", "dt(")
+                # d == 'val' -> d:'val'
+                for prefix in DUNDER_TO_PREFIX.values():
+                    rhs_str = re.sub(rf'\b({prefix})\s*==\s*', r'\1:', rhs_str)
+                # Klammern um einfache Terme entfernen
+                rhs_str = re.sub(r'\(([\w\.]+:[^()]+)\)', r'\1', rhs_str)
+                rhs_str = rhs_str.strip()
 
-        if self.left_expr and show_left:
-            return f"{self.left_expr} @ {rhs_str}" if rhs_str else self.left_expr
-        return f"@{rhs_str}" if rhs_str else "@"
+        # --- 4. Finaler String-Zusammenbau ---
+        left = self.left_expr if (self.left_expr and show_left) else ""
+
+        if not rhs_str:
+            # Kein Filter vorhanden oder weggefiltert
+            return f"{left}" if (left and not keys) else (f"{left} @ " if left else "@")
+
+        return f"{left} @ {rhs_str}" if left else f"@{rhs_str}"
+
+    def to_address_string_newold(self, keys: Union[str, List[str]] = None) -> str:
+        if not self._rhs_ast:
+            return ""
+
+        # 1. Vorbereitung für die Rückumwandlung der Dunder-Namen
+        DUNDER_TO_PREFIX = {v["internal"]: k for k, v in self.META_CONFIG.items()}
+
+        # 2. AST in einen String umwandeln
+        # Wir arbeiten auf einer Kopie, falls wir den Baum transformieren wollen
+        tree_copy = copy.deepcopy(self._rhs_ast)
+
+        # Optional: Hier könnte ein NodeTransformer Namen anpassen
+        # Für den Moment nutzen wir den direkten Weg:
+        raw_str = ast.unparse(tree_copy)
+
+        # 3. Aufräumen der internen Dunder-Namen und Operatoren
+        # Wir wandeln "__device__ == 'hello'" -> "d:'hello'"
+        for dunder, prefix in DUNDER_TO_PREFIX.items():
+            # Ersetzt: __device__ == 'value' -> d:'value'
+            raw_str = re.sub(rf'{dunder}\s*==\s*', f'{prefix}:', raw_str)
+            # Ersetzt: __device__ (falls einzeln stehend) -> d
+            raw_str = re.sub(rf'\b{dunder}\b', prefix, raw_str)
+
+        # 4. Funktions-Namen zurückdrehen
+        raw_str = raw_str.replace("_dt(", "dt(")
+
+        # 5. DIE KLAMMERN ENTFERNEN
+        # Wir entfernen Klammern um einfache Zuweisungen wie (manufacturer_sn == '0856')
+        # aber NUR wenn sie innerhalb einer 'and/or' Kette stehen und kein komplexes Nesting haben
+        # Dieser Regex sucht nach (Wort == Wert) und entfernt die Klammern
+        raw_str = re.sub(r'\(([\w\.]+ == [^()]+)\)', r'\1', raw_str)
+
+        # Falls d:hello immer noch in Klammern steht: (d:'hello') -> d:'hello'
+        for prefix in DUNDER_TO_PREFIX.values():
+            raw_str = re.sub(rf'\({prefix}:([^()]+)\)', rf'{prefix}:\1', raw_str)
+
+        # 6. Doppelte Leerzeichen bereinigen, falls entstanden
+        raw_str = re.sub(r'\s+', ' ', raw_str)
+
+        return f"@{raw_str.strip()}"
+
 
     def to_address_string_pure_python(self, keys: Union[str, List[str]] = None) -> str:
         """
@@ -1352,51 +1808,78 @@ class RedvyprAddress:
         return retstr
 
     def __getattr__(self, name):
-        if name in ('datakey','k'):
+        #print("\n__getattr__")
+        # 1. Spezialfall für Datakey
+        if name in ('datakey', 'k'):
             return self.left_expr
 
+        # 2. Key-Auflösung (Kurzform oder Longform zu Dunder-Name)
         cls = type(self)
         if name in cls.PREFIX_MAP:
-            red_key = cls.PREFIX_MAP[name]
+            internal_key = cls.PREFIX_MAP[name]
         elif name in cls.LONGFORM_MAP:
-            red_key = cls.LONGFORM_MAP[name]
+            internal_key = cls.LONGFORM_MAP[name]
         else:
-            raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
+            # Wenn es weder ein bekannter Präfix noch ein Dunder-Name ist
+            raise AttributeError(
+                f"{type(self).__name__!r} object has no attribute {name!r}")
 
-        if not self._rhs_ast or red_key not in self.filter_keys:
+        # 3. Wenn kein Filter da ist oder der Key nicht im Filter vorkommt
+        if not self._rhs_ast:
             return None
 
-        filter_expr = ast.unparse(self._rhs_ast)
-
         values = []
+        #print(f"{name=},{internal_key=}")
+        # 4. AST nach Werten für diesen internen Key durchsuchen
+        # Wir suchen nach: key == value ODER key in [list]
+        for node in ast.walk(self._rhs_ast):
+            #print(f"{ast.dump(node)}")
+            # Fall A: Vergleich (__device__ == 'cam')
+            if isinstance(node, ast.Compare):
+                # Prüfen ob die linke Seite unser gesuchter Key ist
+                if isinstance(node.left, ast.Name) and node.left.id == internal_key:
 
-        eq_pattern = re.compile(r"_eq\(\s*['\"]{}['\"]\s*,\s*(.*?)\s*\)".format(re.escape(red_key)))
-        for m in eq_pattern.finditer(filter_expr):
-            val = m.group(1)
-            try:
-                val_eval = ast.literal_eval(val)
-            except Exception:
-                val_eval = val
-            values.append(val_eval)
+                    for op, comparator in zip(node.ops, node.comparators):
+                        try:
+                            val = ast.literal_eval(comparator)
+                            # Bei == fügen wir den Wert hinzu
+                            if isinstance(op, ast.Eq):
+                                values.append(val)
+                            # Bei 'in' fügen wir die Elemente der Liste hinzu
+                            elif isinstance(op, ast.In) and isinstance(val, list):
+                                values.extend(val)
+                        except (ValueError, SyntaxError):
+                            # Falls es kein einfaches Literal ist (z.B. ein Funktionsaufruf)
+                            continue
 
-        in_pattern = re.compile(r"_in\(\s*['\"]{}['\"]\s*,\s*(.*?)\s*\)".format(re.escape(red_key)))
-        for m in in_pattern.finditer(filter_expr):
-            val = m.group(1)
-            try:
-                val_eval = ast.literal_eval(val)
-            except Exception:
-                val_eval = val
-            if isinstance(val_eval, list):
-                values.extend(val_eval)
-            else:
-                values.append(val_eval)
+            # Fall B: Funktionsaufrufe (z.B. _in(__device__, ['a', 'b']))
+            elif isinstance(node, ast.Call):
+                func_name = getattr(node.func, 'id', '')
+                if func_name in ('_in', '_eq') and node.args:
+                    arg0 = node.args[0]
+                    # Prüfen ob das erste Argument unser Key ist
+                    target_match = False
+                    if isinstance(arg0, ast.Name) and arg0.id == internal_key:
+                        target_match = True
+                    elif isinstance(arg0, ast.Constant) and arg0.value == internal_key:
+                        target_match = True
 
+                    if target_match and len(node.args) > 1:
+                        try:
+                            val = ast.literal_eval(node.args[1])
+                            if func_name == '_in' and isinstance(val, list):
+                                values.extend(val)
+                            else:
+                                values.append(val)
+                        except (ValueError, SyntaxError):
+                            continue
+
+        # 5. Rückgabe-Logik
         if len(values) == 1:
             return values[0]
         elif values:
             return values
-        else:
-            return None
+        return None
 
     @classmethod
     def __get_pydantic_core_schema__(

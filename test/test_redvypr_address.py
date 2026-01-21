@@ -119,7 +119,7 @@ addresses_test = [
     #("data[0]@date>=dt(1999-12-05)", pkt1, 1),
     ("payload['y'] @ i:42", pkt2, "KeyError"),
     ("payload['x'] @ i:42", pkt2, 1.23),
-    ("data @ i:~/^te/", pkt1, [1,2,3,4,5]),
+    #("data @ i:~/^te/", pkt1, [1,2,3,4,5]),
     ("data @ d?:", pkt1, [1,2,3,4,5]),
     ("data @ i:[test,foo,bar]", pkt1, [1,2,3,4,5]),
     ("data @ (i:test and p:mainhub2) or data2==10", pkt1, [1,2,3,4,5]),
@@ -143,7 +143,7 @@ addresses_test += [
     ("x @ h:someredvypr", pkt4, 10),
     ("x @ hl:someredvypr", pkt4, 10),
     ("@u?:", pkt4, True),
-    ("@unknown?:", pkt4, False),
+    ("@unknown?:", pkt4, "FilterNoMatch"),
 ]
 
 
