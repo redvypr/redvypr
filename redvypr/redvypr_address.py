@@ -41,6 +41,29 @@ class FilterFieldMissing(Exception):
     pass
 
 
+class SoftPlaceholder:
+    """Returns soft_missing value for any comparison to avoid NameErrors and False negatives."""
+
+    def __init__(self, sm_value):
+        self.val = sm_value
+
+    def __eq__(self, other): return self.val
+
+    def __ne__(self, other): return self.val
+
+    def __lt__(self, other): return self.val
+
+    def __le__(self, other): return self.val
+
+    def __gt__(self, other): return self.val
+
+    def __ge__(self, other): return self.val
+
+    def __bool__(self): return self.val
+
+    def __call__(self, *args, **kwargs): return self
+
+
 class RedvyprAddress:
     PREFIX_MAP = {
         "i": "packetid",
@@ -190,17 +213,31 @@ class RedvyprAddress:
     def _compile_expressions(self):
         self._compiled_left = None
         self._compiled_rhs = None
+        self._lhs_ast = None  # Neu: Speicher für den AST der linken Seite
+
         if self._rhs_ast:
-            # Wir kompilieren den AST-Knoten in Bytecode
             self._compiled_rhs = compile(self._rhs_ast, '<string>', 'eval')
 
         if self.left_expr and self.left_expr != "!":
-            #print("string",self.to_address_string())
-            #print("Hallo",self.left_expr)
             try:
-                self._compiled_left = compile(self.left_expr, '<string>', 'eval')
-            except:
-                pass
+                # Wir parsen den String erst in einen AST
+                self._lhs_ast = ast.parse(self.left_expr, mode='eval')
+            except SyntaxError as e:
+                print(f"\n[LHS Debug] SyntaxError in left_expr")
+                print(f"Content:  '{self.left_expr}'")
+                print(f"Message:  {e.msg}")
+                # e.offset tells us the character position where it failed
+                if e.offset is not None:
+                    indicator = " " * (e.offset - 1) + "^"
+                    print(f"Position: {indicator} (offset: {e.offset})")
+                print("-" * 30)
+
+            except Exception as e:
+                print(f"[LHS Debug] Unexpected Error: {e}")
+
+            # Compile the stuff
+            self._compiled_left = compile(self._lhs_ast, '<string>', 'eval')
+
 
     def _split_left_right_tokens(self, expr: str):
         """
@@ -249,13 +286,18 @@ class RedvyprAddress:
 
         # 1. dt("ISO") literal
         def repl_dt(m):
-            iso = m.group(2)  # shifted from 1 to 2
+            # m.group(2) ist der Inhalt innerhalb der optionalen Quotes
+            # m.group(3) ist der Inhalt, falls gar keine Quotes da waren
+            iso = m.group(2) or m.group(3)
             return f"_dt({repr(iso)})"
-
+        # Dieser Regex prüft:
+        # Entweder: '...' oder "..." (captured in group 2)
+        # Oder: Zeichen ohne Quotes (captured in group 3)
+        dt_pattern = r"dt\(\s*(?:['\"](.*?)['\"]|([0-9T:\-\.\+Z ]+))\s*\)"
         #print("rhs1",rhs)
-        rhs = safe_sub(r"dt\(\s*(?:['\"])?([0-9T:\-\.\+]+)(?:['\"])?\s*\)", repl_dt,
-                       rhs)
+        rhs = safe_sub(dt_pattern, repl_dt, rhs)
         #print("rhs2", rhs)
+
         # 2. Existenzprüfung (key?:)
         def replace_exists(match):
             key = match.group(2)  # shifted
@@ -356,14 +398,6 @@ class RedvyprAddress:
         # 4. For everything else (bare words), turn it into a string literal
         # Using repr() is safer than f"'{t}'" as it handles internal escapes
         return repr(t)
-    def _lit_to_python_legacy(self, token: str) -> str:
-        t = token.strip()
-        if t == '':
-            return None          # skip empty strings
-        if re.fullmatch(r'-?\d+(\.\d*)?', t):
-            return t
-
-        return repr(t)
 
     def _list_to_python(self, content: str) -> str:
         parts = [p.strip() for p in content.split(",")] if content.strip() else []
@@ -372,6 +406,46 @@ class RedvyprAddress:
     # -------------------------
     # Eval helpers
     # -------------------------
+    def matches_filter(self, packet: Union[dict, "RedvyprAddress"],
+                                   soft_missing: bool = True) -> bool:
+        """
+        Checks if a packet matches the filter. Missing fields in the packet
+        default to soft_missing value.
+        """
+        if not self._rhs_ast:
+            return True
+
+        # Normalize data
+        if hasattr(packet, "to_redvypr_dict"):
+            p_data = packet.to_redvypr_dict()
+        else:
+            p_data = packet if isinstance(packet, dict) else {}
+
+        # Build namespace with placeholders
+        placeholder = SoftPlaceholder(soft_missing)
+        locals_map = self._build_eval_locals(packet, soft_missing=soft_missing)
+
+        # Build namespace with placeholders
+        placeholder = SoftPlaceholder(soft_missing)
+        # Pre-fill every variable found in AST with a placeholder
+        for node in ast.walk(self._rhs_ast):
+            #print("node", ast.dump(node))
+            if isinstance(node, ast.Name):
+                if node.id not in locals_map:
+                    locals_map[node.id] = placeholder
+
+        # Overwrite placeholders with actual data
+        locals_map.update(p_data)
+        #print("Locals map", locals_map)
+        # Execution
+        try:
+            code = compile(self._rhs_ast, filename="<ast>", mode="eval")
+            eval_ret = eval(code, {"__builtins__": __builtins__}, locals_map)
+            return bool(eval_ret)
+        except Exception as e:
+            #print("Exception", e)
+            #return soft_missing
+            return False
 
     def _coerce_datetime(self, v):
         if hasattr(v, "year") and hasattr(v, "month") and hasattr(v, "day"):
@@ -390,7 +464,7 @@ class RedvyprAddress:
                 pass
         return v
 
-    def _build_eval_locals(self, packet: dict):
+    def _build_eval_locals(self, packet: dict, soft_missing: bool):
         locals_map = {}
 
         # -------------------------
@@ -401,7 +475,7 @@ class RedvyprAddress:
             return datetime.fromisoformat(iso)
 
         def _cmp(op, k, v):
-            lv = self._get_val(packet, k)
+            lv = self._get_val(packet, k, soft_missing_val=soft_missing)
             rv = self._coerce_datetime(v)
             return op(lv, rv)
 
@@ -458,14 +532,11 @@ class RedvyprAddress:
             "_in": _in,
             "_regex": _regex,
             "_exists": _exists,
+            "True": True,
+            "False": False,
+            "None": None,
             "packet": packet,
         })
-
-        if isinstance(packet, dict):
-            locals_map["_redvypr"] = packet.get("_redvypr")
-            for k, v in packet.items():
-                if k not in locals_map:
-                    locals_map[k] = v
 
         return locals_map
 
@@ -477,7 +548,7 @@ class RedvyprAddress:
             cur = cur[p]
         return True, cur
 
-    def _get_val(self, packet, key):
+    def _get_val(self, packet, key, soft_missing_val=True):
         if packet is None:
             raise FilterFieldMissing(f"_redvypr missing key '{key}'")
         parts = key.split(".") if "." in key else [key]
@@ -489,7 +560,8 @@ class RedvyprAddress:
         if found:
             return self._coerce_datetime(val)
 
-        raise FilterFieldMissing(f"missing key '{key}'")
+        return SoftPlaceholder(soft_missing_val)
+        #raise FilterFieldMissing(f"missing key '{key}'")
 
     def _exists_val(self, packet, key):
         if packet is None:
@@ -505,122 +577,6 @@ class RedvyprAddress:
     # -------------------------
     # Matching & LHS
     # -------------------------
-    def matches_filter(self, packet: Union[dict, "RedvyprAddress"],
-                       soft_missing: bool = True):
-        """
-        Check whether a packet or RedvyprAddress matches with the filter part of this address.
-
-        soft_missing:
-            - True: missing keys for _eq/_in/_regex are treated as True (soft matching)
-            - False: missing keys result in False (strict matching)
-        """
-        if isinstance(packet, RedvyprAddress):
-            packet = packet.to_redvypr_dict()
-        if not self._rhs_ast:
-            return True
-
-        SAFE_GLOBALS = {"__builtins__": None, "True": True, "False": False,
-                        "None": None}
-
-        # -------------------------
-        # Datetime helper
-        # -------------------------
-        def _dt(iso):
-            from datetime import datetime
-            return datetime.fromisoformat(iso)
-
-        def _cmp(op, k, v):
-            try:
-                lv = self._get_val(packet, k)
-                rv = self._coerce_datetime(v)
-                return op(lv, rv)
-            except FilterFieldMissing:
-                return soft_missing
-
-        # -------------------------
-        # Existing + extended operators
-        # -------------------------
-        def _eq(k, v):
-            return _cmp(lambda a, b: a == b, k, v)
-
-        def _ne(k, v):
-            return _cmp(lambda a, b: a != b, k, v)
-
-        def _gt(k, v):
-            return _cmp(lambda a, b: a > b, k, v)
-
-        def _ge(k, v):
-            return _cmp(lambda a, b: a >= b, k, v)
-
-        def _lt(k, v):
-            return _cmp(lambda a, b: a < b, k, v)
-
-        def _le(k, v):
-            return _cmp(lambda a, b: a <= b, k, v)
-
-        # -------------------------
-        # UNVERÄNDERT: in / regex / exists
-        # -------------------------
-        def _in(k, l):
-            try:
-                val = self._get_val(packet, k)
-                return val in l
-            except FilterFieldMissing:
-                return soft_missing
-
-        def _regex(k, pat, flags=""):
-            try:
-                val = self._get_val(packet, k)
-                f = 0
-                for ch in flags:
-                    if ch == "i": f |= re.IGNORECASE
-                    if ch == "m": f |= re.MULTILINE
-                    if ch == "s": f |= re.DOTALL
-                return re.search(pat, str(val), f) is not None
-            except FilterFieldMissing:
-                return soft_missing
-
-        def _exists(k):
-            # remains strict
-            return self._exists_val(packet, k)
-
-        # -------------------------
-        # Locals
-        # -------------------------
-        locals_map = {
-            "_dt": _dt,
-            "_eq": _eq,
-            "_ne": _ne,
-            "_gt": _gt,
-            "_ge": _ge,
-            "_lt": _lt,
-            "_le": _le,
-            "_in": _in,
-            "_regex": _regex,
-            "_exists": _exists,
-            "packet": packet,
-        }
-
-        if isinstance(packet, dict):
-            locals_map["_redvypr"] = packet.get("_redvypr")
-            for k, v in packet.items():
-                if k not in locals_map:
-                    locals_map[k] = v
-
-        try:
-            if self._compiled_rhs:
-                eval_ret = eval(self._compiled_rhs, SAFE_GLOBALS, locals_map)
-            else:
-                eval_ret = eval(
-                    compile(self._rhs_ast, filename="<ast>", mode="eval"),
-                    SAFE_GLOBALS,
-                    locals_map,
-                )
-            return bool(eval_ret)
-        except FilterFieldMissing:
-            return False
-
-
     def matches(self, packet: Union[dict, "RedvyprAddress"], soft_missing: bool = True):
         """
         Determines if this Address (the Subject/Filter) matches the provided
@@ -709,14 +665,14 @@ class RedvyprAddress:
         except:
             return False
 
-    def __call__(self, packet, strict=True):
+    def __call__(self, packet, strict=True, soft_missing=True):
         if isinstance(packet, RedvyprAddress):
             packet = packet.to_redvypr_dict()
         if self.left_expr is None and self._rhs_ast is None:
             return packet
         SAFE_GLOBALS = {"__builtins__": {}, "True": True, "False": False, "None": None}
         locals_map = dict(packet)
-        if self._rhs_ast and not self.matches_filter(packet):
+        if self._rhs_ast and not self.matches_filter(packet,soft_missing=soft_missing):
             if strict:
                 raise FilterNoMatch("Packet did not match filter")
             else:
@@ -894,66 +850,124 @@ class RedvyprAddress:
     # -------------------------
     # String / Dict Conversion
     # -------------------------
-    def to_redvypr_dict(self, include_datakey=True):
-        """
-        Liefert ein Dict mit '_redvypr', gefüllt aus den Filtern.
-        - _eq: direkter Wert
-        - _in: Liste
-        - _regex: {"__regex__": pattern, "flags": flags}
-        - _exists: {"__exists__": True}
-        """
-        result = {}
-        result_datakey = {}
-        depth = None
-        if include_datakey:
-            try:
-                result_datakey = self.create_minimal_datakey_packet()
-            except:
-                pass
+    def to_redvypr_dict(self, include_datakey: bool = True) -> dict:
+        result_metadata = {}
+        result_root = {}
 
-        if not self._rhs_ast:
-            red_dict = {"_redvypr": result}
-            red_dict.update(result_datakey)
-            return red_dict
+        OPS = {
+            ast.Eq: None, ast.NotEq: "$ne",
+            ast.Lt: "$lt", ast.LtE: "$lte",
+            ast.Gt: "$gt", ast.GtE: "$gte"
+        }
 
-        def add_to_dict(key, value):
-            """Schlüssel wie 'host.addr' in verschachtelte Dicts umwandeln"""
-            parts = key.split(".")
-            cur = result
-            for p in parts[:-1]:
-                if p not in cur or not isinstance(cur[p], dict):
-                    cur[p] = {}
-                cur = cur[p]
-            cur[parts[-1]] = value
+        def add_to_target(key_path, value, op_type, target):
+            cur = target
+            for i in range(len(key_path) - 1):
+                p = key_path[i]
+                next_p = key_path[i + 1]
 
-        def traverse(node):
-            if isinstance(node, ast.Expression):
-                traverse(node.body)
+                # 1. Ensure the container exists and is the right type
+                if isinstance(p, str):
+                    if p not in cur or not isinstance(cur[p], (dict, list)):
+                        cur[p] = [] if isinstance(next_p, int) else {}
+                    cur = cur[p]
+
+                elif isinstance(p, int):
+                    # Pad list to reach index p
+                    while len(cur) <= p:
+                        cur.append(None)
+                    # If the slot is empty or wrong type, initialize it
+                    if cur[p] is None or not isinstance(cur[p], (dict, list)):
+                        cur[p] = [] if isinstance(next_p, int) else {}
+                    cur = cur[p]
+
+            # 2. Set the final value at the last key
+            last_key = key_path[-1]
+            op_prefix = OPS.get(type(op_type)) if op_type else None
+            final_val = {op_prefix: value} if op_prefix else value
+
+            if isinstance(last_key, int):
+                while len(cur) <= last_key:
+                    cur.append(0)  # Using 0 as a placeholder for data
+                cur[last_key] = final_val
+            else:
+                cur[last_key] = final_val
+
+        def get_path(node):
+            if isinstance(node, ast.Name): return [node.id]
+            if isinstance(node, ast.Subscript):
+                base = get_path(node.value)
+                try:
+                    idx = ast.literal_eval(node.slice)
+                    return base + [idx] if base else [idx]
+                except:
+                    return base
+            if isinstance(node, ast.Attribute):
+                base = get_path(node.value)
+                return base + [node.attr] if base else [node.attr]
+            return None
+
+        def traverse(node, is_lhs=False):
+            # Wir gehen tiefer in Expression/Expr Knoten
+            if isinstance(node, (ast.Expression, ast.Expr)):
+                traverse(node.body if hasattr(node, 'body') else node.value, is_lhs)
             elif isinstance(node, ast.BoolOp):
-                for v in node.values:
-                    traverse(v)
+                for v in node.values: traverse(v, is_lhs)
+
+            # RHS: Vergleiche
+            elif isinstance(node, ast.Compare):
+                path = get_path(node.left)
+                if not path: return
+                try:
+                    comp = node.comparators[0]
+                    # Wert-Extraktion inkl. UnaryOp für -10
+                    if isinstance(comp, ast.UnaryOp) and isinstance(comp.op, ast.USub):
+                        val = -ast.literal_eval(comp.operand)
+                    elif isinstance(comp, ast.Call):
+                        val = ast.literal_eval(comp.args[0])
+                    else:
+                        val = ast.literal_eval(comp)
+
+                    if path[0] == "_redvypr":
+                        add_to_target(path[1:], val, node.ops[0], result_metadata)
+                    else:
+                        add_to_target(path, val, node.ops[0], result_root)
+                except:
+                    pass
+
+            # Calls wie _eq()
             elif isinstance(node, ast.Call):
-                func_name = node.func.id
-                key = ast.literal_eval(node.args[0])
+                func_name = getattr(node.func, 'id', '')
+                if func_name in ("_eq", "_in", "_regex", "_exists"):
+                    try:
+                        key_path = ast.literal_eval(node.args[0]).split(".")
+                        val = ast.literal_eval(
+                            node.args[1]) if func_name != "_exists" else True
+                        add_to_target(key_path, val, ast.Eq(), result_metadata)
+                    except:
+                        pass
 
-                if func_name == "_eq":
-                    val = ast.literal_eval(node.args[1])
-                    add_to_dict(key, val)
-                elif func_name == "_in":
-                    vals = ast.literal_eval(node.args[1])
-                    add_to_dict(key, vals)
-                elif func_name == "_regex":
-                    pat = ast.literal_eval(node.args[1])
-                    flags = ast.literal_eval(node.args[2]) if len(node.args) > 2 else ""
-                    add_to_dict(key, {"__regex__": pat, "flags": flags})
-                elif func_name == "_exists":
-                    add_to_dict(key, {"__exists__": True})
+            # LHS: Struktur (foo[4])
+            elif is_lhs and isinstance(node, (ast.Name, ast.Subscript, ast.Attribute)):
+                path = get_path(node)
+                if path:
+                    # Spezial-Mapping für i/d Kurzwahlen im LHS
+                    if path[0] == 'i' and len(path) > 1:
+                        result_metadata['packetid'] = path[1]
+                    elif path[0] == 'd' and len(path) > 1:
+                        result_metadata['device'] = path[1]
+                    elif path[0] == '_redvypr' and len(path) > 1:
+                        add_to_target(path[1:], 0, None, result_metadata)
+                    else:
+                        add_to_target(path, 0, None, result_root)
 
-        traverse(self._rhs_ast)
+        # Ausführung auf beiden ASTs
+        if self._lhs_ast:
+            traverse(self._lhs_ast, is_lhs=True)
+        if self._rhs_ast:
+            traverse(self._rhs_ast, is_lhs=False)
 
-        red_dict = {"_redvypr": result}
-        red_dict.update(result_datakey)
-        return red_dict
+        return {"_redvypr": result_metadata, **result_root}
 
     def get_datakeyentries(self):
         expr = self.left_expr
@@ -992,109 +1006,6 @@ class RedvyprAddress:
         except Exception as e:
             # Fallback to your regex if AST fails, or raise a cleaner error
             raise ValueError(f"Could not parse data path from {expr!r}: {e}")
-
-    def get_datakeyentries_legacy(self):
-        """
-        Parses an LHS expression like "foo['bar'][2]['baz']"
-        and returns a list of path components:
-        e.g., ["foo", "bar", 2, "baz"]
-        """
-        expr = self.left_expr
-        entries = []
-        if expr is None:
-            return entries
-        elif expr == "!":
-            return entries
-        elif len(expr.strip()) == 0:
-            return entries
-        expr = expr.strip()
-
-        # Extract top-level key
-        m = re.match(r"([A-Za-z_][A-Za-z_0-9]*)", expr)
-        if not m:
-            raise ValueError(f"Cannot extract top-level key from expression {expr!r}")
-        entries.append(m.group(1))
-        rest = expr[m.end():]
-
-        while rest:
-            rest = rest.strip()
-            # dict key ['key'] or ["key"]
-            m_key = re.match(r"\[\s*(['\"])(.+?)\1\s*\]", rest)
-            if m_key:
-                entries.append(m_key.group(2))
-                rest = rest[m_key.end():]
-                continue
-            # list index [n]
-            m_index = re.match(r"\[\s*(-?\d+)\s*\]", rest)
-            if m_index:
-                entries.append(int(m_index.group(1)))
-                rest = rest[m_index.end():]
-                continue
-            # slicing, we can store as string
-            m_slice = re.match(r"\[\s*([-0-9]*)\s*:\s*([-0-9]*)\s*(:\s*([-0-9]*))?\s*\]", rest)
-            if m_slice:
-                entries.append(rest[:m_slice.end()])  # keep original slice string
-                rest = rest[m_slice.end():]
-                continue
-
-            raise ValueError(f"Cannot parse remaining part of expression: {rest!r}")
-
-        return entries
-
-    def create_minimal_datakey_packet(self):
-        """
-        Create a nested dict/list structure from an expression like
-        'data[0]', "payload['x']", 'foo["bar"][2]', or "data[::-1]".
-        The resulting packet dict is suitable so that eval(expr, ..., packet)
-        will return a valid value without KeyError.
-        """
-        expr = self.left_expr
-        if expr is None:
-            raise ValueError("Cannot create packet from None")
-        elif len(expr.strip()) == 0:
-            raise ValueError("Cannot create packet from empty expression")
-        # Extract top-level key
-        m = re.match(r"\s*([A-Za-z_][A-Za-z_0-9]*)", expr)
-        if not m:
-            raise ValueError(f"Cannot extract top-level key from expression {expr!r}")
-        top = m.group(1)
-        rest = expr[m.end():]
-
-        if not rest:
-            return {top: True}
-
-        value, depth = self._build_from_rest(rest, current_depth=1)
-        return {top: value}
-
-    def _build_from_rest(self, rest: str, current_depth: int):
-        rest = rest.strip()
-
-        # slicing
-        if re.match(r"\[\s*(-?\d*)?\s*:\s*(-?\d*)?\s*(:\s*(-?\d*)?)?\s*\]", rest):
-            return [True, True, True, True, True], current_depth + 1
-
-        # list index
-        m_index = re.match(r"\[\s*(-?\d+)\s*\]", rest)
-        if m_index:
-            remainder = rest[m_index.end():]
-            if remainder:
-                subval, depth = self._build_from_rest(remainder, current_depth + 1)
-                base = [subval]
-                return base, depth
-            else:
-                return [0], current_depth + 1
-
-        # dict key
-        m_key = re.match(r"""\[\s*(['"])(.+?)\1\s*\]""", rest)
-        if m_key:
-            remainder = rest[m_key.end():]
-            if remainder:
-                subval, depth = self._build_from_rest(remainder, current_depth + 1)
-                return {m_key.group(2): subval}, depth
-            else:
-                return {m_key.group(2): 0}, current_depth + 1
-
-        raise ValueError(f"Cannot interpret structure from remainder={rest!r}")
 
     def __repr__(self):
         return self.to_address_string()

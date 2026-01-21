@@ -479,7 +479,7 @@ calibration_counter32 = CalibrationLinearFactor(parameter_result='counter(s)', c
                                                 unit='s', unit_input='counts')
 calibrations_raw = {'adc16':calibration_adc16,'counter32':calibration_counter32}
 S4LB = BinarySensor(name='S4LB', regex_split=s4l_split, binary_format=s4l_binary_format,
-                    datastream=RedvyprAddress('/k:data'),
+                    datastream=RedvyprAddress('data@'),
                     calibrations_raw=calibrations_raw)
 
 
@@ -502,7 +502,7 @@ NMEARMC = BinarySensor(name='NMEA0183_RMC', regex_split=nmea_rmc_split,
                        str_format=nmea_rmc_str_format,
                        description=nmea_rmc_description,
                        example_data=nmea_rmc_test1,
-                       datastream=RedvyprAddress('/k:data'),
+                       datastream=RedvyprAddress('data@'),
                        datakey_metadata=nmea_datakey_metadata,
                        packetid_format=nmea_rmc_packetid_format,
                        calibration_python_str=nmea_calibration_python_str)
@@ -522,7 +522,7 @@ tar_b2 = BinarySensor(name='tar_b2', regex_split=tar_b2_split,
                        example_data=tar_b2_test1,
                        datakey_metadata=tar_b2_datakey_metadata,
                        packetid_format=tar_b2_packetid_format,
-                       datastream=RedvyprAddress('/k:data'))
+                       datastream=RedvyprAddress('data@'))
 
 
 # HF (Heatflow)
@@ -539,7 +539,7 @@ HF = BinarySensor(name='HF', regex_split=HF_split,
                        example_data=HF_test1,
                        datakey_metadata=HF_datakey_metadata,
                        packetid_format=HF_packetid_format,
-                       datastream=RedvyprAddress('/k:data'))
+                       datastream=RedvyprAddress('data@'))
 
 
 # HFS (Heatflow)
@@ -556,7 +556,7 @@ HFS = BinarySensor(name='HFS', regex_split=HFS_split,
                        example_data=HFS_test1,
                        datakey_metadata=HFS_datakey_metadata,
                        packetid_format=HFS_packetid_format,
-                       datastream=RedvyprAddress('/k:data'))
+                       datastream=RedvyprAddress('data@'))
 
 
 predefined_sensors = []

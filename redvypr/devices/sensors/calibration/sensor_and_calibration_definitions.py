@@ -1,6 +1,9 @@
 from typing import List, Optional, Union, Literal, TypeVar, Generic, Type
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from datetime import datetime
+import json
+import hashlib
+from typing import Any
 from redvypr.redvypr_address import RedvyprAddress
 from .calibration_models import CalibrationGeneric, CalibrationLinearFactor, CalibrationNTC, CalibrationPoly
 
@@ -167,6 +170,34 @@ class HeatflowClassicCalibration(BaseModel):
             astr += f" and series=='{series}'"
         raddr = RedvyprAddress(astr)
         return raddr
+
+    def get_data_hash(self) -> str:
+        """
+        Generates a deterministic SHA256 hash of the model data.
+        Uses sorted keys to ensure that field order doesn't change the hash.
+        """
+        # We use model_dump_json to utilize your custom json_encoders (e.g. for datetime)
+        json_string = self.model_dump_json()
+
+        # To ensure "byte-perfect" stability regardless of whitespace/field order in Pydantic:
+        # We parse it back once and dump it with sorted keys.
+        stable_json = json.dumps(
+            json.loads(json_string),
+            sort_keys=True,
+            separators=(',', ':')
+        )
+        return hashlib.sha256(stable_json.encode('utf-8')).hexdigest()
+
+    def __eq__(self, other: Any) -> bool:
+        """Enables equality comparison based on the data hash."""
+        if not isinstance(other, HeatflowClassicCalibration):
+            return False
+        return self.get_data_hash() == other.get_data_hash()
+
+    def __hash__(self) -> int:
+        """Enables the use of sets and dict keys by returning the integer representation of the hash."""
+        # Python's hash() must return an integer
+        return int(self.get_data_hash(), 16)
 
 
 

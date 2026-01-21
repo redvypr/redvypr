@@ -1,7 +1,7 @@
 print("Start")
 from redvypr.redvypr_address import RedvyprAddress, FilterNoMatch
 print("Import done")
-from datetime import datetime
+from datetime import datetime, timezone
 # -------------------------
 # Testpakete
 pkt1 = {
@@ -20,6 +20,7 @@ pkt1 = {
     "u": {"a": [42], "b": "Payload pkt1","test@i:test":3},
     "t": 0.0,
     "td":datetime(2000,1,1),
+    "td_utc":datetime(2000,1,1,tzinfo=timezone.utc),
     "test@i:test":3
 }
 
@@ -113,6 +114,9 @@ addresses_test = [
     ("data[::-1] @ i:test", pkt1, [5,4,3,2,1]),
     ("data3 @ i:test", pkt1, "KeyError"),
     ("data[0] @ td==dt(2000-01-01)", pkt1, 1),
+    ("data[0]@td_utc>=dt('1999-12-05T10:48:04.762994Z')", pkt1, 1),
+    ("data[0]@td_utc>=dt('1999-12-05T10:48:04.762994+00:00')", pkt1, 1),
+    #("data[0]@date>=dt(1999-12-05)", pkt1, 1),
     ("payload['y'] @ i:42", pkt2, "KeyError"),
     ("payload['x'] @ i:42", pkt2, 1.23),
     ("data @ i:~/^te/", pkt1, [1,2,3,4,5]),

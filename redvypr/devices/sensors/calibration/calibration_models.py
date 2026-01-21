@@ -10,7 +10,7 @@ import numpy as np
 import pydantic
 import pytz
 import hashlib
-
+from typing import Any
 import redvypr
 from redvypr.redvypr_address import RedvyprAddress
 
@@ -232,12 +232,43 @@ class CalibrationGeneric(pydantic.BaseModel):
             if len(self.calibration_uuid):
                 astr += f" and calibration_uuid=='{self.calibration_uuid}'"
 
-            print("astr",astr)
+            #print("astr",astr)
             raddr = RedvyprAddress(astr)
         except:
             logger.warning("Could not create RedvyprAddress",exc_info=True)
             raise ValueError("Could not create RedvyprAddress")
         return raddr
+
+
+    def get_data_hash(self) -> str:
+        """
+        Generates a deterministic SHA256 hash of the model data.
+        Uses sorted keys to ensure that field order doesn't change the hash.
+        """
+        # We use model_dump_json to utilize your custom json_encoders (e.g. for datetime)
+        json_string = self.model_dump_json()
+
+        # To ensure "byte-perfect" stability regardless of whitespace/field order in Pydantic:
+        # We parse it back once and dump it with sorted keys.
+        stable_json = json.dumps(
+            json.loads(json_string),
+            sort_keys=True,
+            separators=(',', ':')
+        )
+        return hashlib.sha256(stable_json.encode('utf-8')).hexdigest()
+
+    def __eq__(self, other: Any) -> bool:
+        """Enables equality comparison based on the data hash."""
+        try:
+            return self.get_data_hash() == other.get_data_hash()
+        except (AttributeError, TypeError):
+            return False
+
+
+    def __hash__(self) -> int:
+        """Enables the use of sets and dict keys by returning the integer representation of the hash."""
+        # Python's hash() must return an integer
+        return int(self.get_data_hash(), 16)
 
 
 class CalibrationLinearFactor(CalibrationGeneric):
