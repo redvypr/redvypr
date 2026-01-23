@@ -183,26 +183,6 @@ class SqliteConfigWidget(QtWidgets.QWidget):
         # Optional: Display only the filename in the preview for better readability
         self.preview_label.setText(os.path.basename(preview_path))
 
-    def update_preview_legacy(self):
-        """Updates the filename preview based on the format and base name."""
-        # Extract base name without extension for the {name} placeholder
-        base = os.path.basename(self.path_edit.text())
-        name_part, _ = os.path.splitext(base)
-        if not name_part:
-            name_part = "data"
-
-        fmt = self.format_edit.text()
-        try:
-            example = fmt.format(
-                name=name_part,
-                filecount="001",
-                filedate=datetime.now().strftime("%Y%m%d_%H%M%S")
-            )
-            self.preview_label.setText(example)
-        except (KeyError, ValueError, IndexError):
-            self.preview_label.setText(
-                "Invalid format! Use {name}, {filecount}, {filedate}")
-
     def toggle_rotation_ui(self):
         """Enables/Disables sub-settings based on the rotation checkbox."""
         enabled = self.rotate_cb.isChecked()
@@ -255,86 +235,6 @@ class SqliteConfigWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.critical(self, "Connection Error",
                                            f"Failed: {str(e)}")
 
-
-class SqliteConfigWidget_legacy(QtWidgets.QWidget):
-    db_config_changed = QtCore.Signal(dict)
-    def __init__(self, initial_config: SqliteConfig, parent=None):
-        super().__init__(parent)
-        self.config = initial_config
-        self.setup_ui()
-
-    def setup_ui(self):
-        main_layout = QtWidgets.QVBoxLayout(self)
-        layout = QtWidgets.QFormLayout()
-
-        self.path_edit = QtWidgets.QLineEdit(self.config.filepath)
-        self.path_edit.textChanged.connect(self.config_changed)
-        self.browse_btn = QtWidgets.QPushButton("Browse...")
-        self.browse_btn.clicked.connect(self.handle_browse)
-
-        file_layout = QtWidgets.QHBoxLayout()
-        file_layout.addWidget(self.path_edit)
-        file_layout.addWidget(self.browse_btn)
-
-        layout.addRow("Database File:", file_layout)
-
-        # 2. Test/Query Buttons
-        self.test_button = QtWidgets.QPushButton("Test DB Connection")
-        # Placeholder icon from qtawesome stub
-        icon = qtawesome.icon('mdi6.database-outline')
-        self.test_button.setIcon(icon)
-        self.query_button = QtWidgets.QPushButton("Query DB")
-        icon = qtawesome.icon('mdi6.database-search-outline')
-        self.query_button.setIcon(icon)
-        self.button_layout = QtWidgets.QHBoxLayout()
-        self.button_layout.addWidget(self.test_button)
-        self.button_layout.addWidget(self.query_button)
-
-        self.test_button.clicked.connect(self.test_connection_clicked)
-        self.query_button.clicked.connect(self.query_db_clicked)
-        main_layout.addLayout(layout)
-        main_layout.addLayout(self.button_layout)
-
-    def config_changed(self):
-        config = self.get_config()
-        print(f"Sqlite config changed:{config}")
-        self.db_config_changed.emit(config.model_dump())
-
-    def handle_browse(self):
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Select SQLite Database", "",
-            "DB Files (*.db *.sqlite);;All Files (*)"
-        )
-        if path:
-            self.path_edit.setText(path)
-
-    def get_config(self) -> SqliteConfig:
-        return SqliteConfig(dbtype="sqlite", filepath=self.path_edit.text())
-
-
-    def query_db_clicked(self):
-        config = self.get_config()
-        db = RedvyprDBFactory.create(config)
-        self.query_widdget = DBQueryDialog(db_instance=db)
-        self.query_widdget.show()
-
-    def test_connection_clicked(self):
-        # pconfig is an instance of TimescaleConfig
-        pconfig = self.get_config()
-        print("Testing connection")
-        try:
-            # Instantiate the correct class
-            db = RedvyprDBFactory.create(pconfig)
-            print("DB",db)
-
-            # Pass the DB instance to the Dialog.
-            # The dialog will handle 'with db:' internally to keep it alive.
-            diag = DBStatusDialog(db, self)
-            diag.exec_()
-
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Connection Error",
-                                           f"Failed: {str(e)}")
 
 class TimescaleDbConfigWidget(QtWidgets.QWidget):
     """

@@ -103,7 +103,7 @@ class HeatflowClassicCalibration(BaseModel):
     )
 
     # Literal für die Kalibrierungsfamilie
-    calibration_type: Literal['heatflow'] = Field(
+    calibration_type: Literal['heatflow_classic'] = Field(
         default='heatflow_classic',
         description="Type of the calibration (fixed to 'heatflow')."
     )
@@ -143,6 +143,33 @@ class HeatflowClassicCalibration(BaseModel):
     # Validator für datetime-Felder
     @field_validator('calibration_date', 'date_produced', mode='before')
     def parse_datetime(cls, value):
+        if isinstance(value, datetime):
+            return value
+
+        if isinstance(value, str):
+            # optionales Prefix entfernen
+            if value.startswith("__dt__:"):
+                value = value.removeprefix("__dt__:")
+
+            # 1) ISO-8601 versuchen
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                pass
+
+            # 2) Deutsches Format versuchen
+            try:
+                return datetime.strptime(value, "%d.%m.%Y %H:%M:%S")
+            except ValueError:
+                pass
+
+            raise ValueError(
+                f"Unsupported datetime format: {value!r}. "
+                "Expected ISO-8601 or 'DD.MM.YYYY HH:MM:SS'"
+            )
+
+        return value
+    def parse_datetime_legacy(cls, value):
         """Parses datetime strings in 'DD.MM.YYYY HH:MM:SS' format."""
         if isinstance(value, str):
             return datetime.strptime(value, "%d.%m.%Y %H:%M:%S")
@@ -165,7 +192,7 @@ class HeatflowClassicCalibration(BaseModel):
     def create_redvypr_address(self) -> 'RedvyprAddress':
         caldate = self.calibration_date.isoformat()
         series = self.series
-        astr = f"@calibration_type=='{self.calibration_type}' and calibration_date==dt({caldate}) and manufacturer_sn=='{self.manufacturer_sn}'"
+        astr = f"@i:calibration and calibration_type=='{self.calibration_type}' and calibration_date==dt({caldate}) and manufacturer_sn=='{self.manufacturer_sn}'"
         if len(series)>0:
             astr += f" and series=='{series}'"
         raddr = RedvyprAddress(astr)

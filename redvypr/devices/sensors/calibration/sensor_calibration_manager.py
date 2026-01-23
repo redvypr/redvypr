@@ -15,7 +15,7 @@ import uuid
 import pydantic
 from pydantic import BaseModel
 import typing
-from typing import List
+from typing import List, Any
 from collections.abc import Iterable
 import numpy
 from pathlib import Path
@@ -25,7 +25,9 @@ from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from .sensor_and_calibration_definitions import CalibrationFactory
-
+from redvypr.device import RedvyprDeviceCustomConfig
+from redvypr.devices.db.db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget
+from redvypr.devices.db.db_engines import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
 
 
 _logo_file = redvypr_files.logo_file
@@ -42,7 +44,11 @@ redvypr_devicemodule = True
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = False
     subscribes: bool = False
-    description: str = 'Managa calibrations and sensors'
+    description: str = 'Manage calibrations and sensors'
+
+
+class DeviceCustomConfig(RedvyprDeviceCustomConfig):
+    calibration_lists: dict = pydantic.Field(default={'Calibrations':[]})
 
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
@@ -66,7 +72,18 @@ class Device(RedvyprDevice):
         logger.debug(funcname)
 
         # Internal storage: { 'list_name': [cal_dict_1, cal_dict_2] }
-        self._calibration_lists = {}
+        self.calibration_lists = self.custom_config.calibration_lists
+        # Convert the dictionaries into calibratios
+        for list_name, cal_list in self.calibration_lists.items():
+            print(f"Processing {list_name}")
+            new_list = []
+            for cal in cal_list:
+                cal_proc = CalibrationFactory.create(cal)
+                new_list.append(cal_proc)
+
+            # Replacing the old list
+            self.calibration_lists[list_name] = new_list
+
 
 
     def import_calibration(self, list_name: str, file_path: str) -> bool:
@@ -87,11 +104,11 @@ class Device(RedvyprDevice):
                     if calibration_data is None:
                         continue  # Skips empty entries
 
-                    if list_name not in self._calibration_lists:
-                        self._calibration_lists[list_name] = []
+                    if list_name not in self.calibration_lists:
+                        self.calibration_lists[list_name] = []
 
                     calibration = CalibrationFactory.create(calibration_data)
-                    self._calibration_lists[list_name].append(calibration)
+                    self.calibration_lists[list_name].append(calibration)
 
                 logger.info(f"Successfully imported '{path.name}' into list '{list_name}'.")
             return True
@@ -107,8 +124,8 @@ class Device(RedvyprDevice):
         """
         Deletes an entire list of calibrations.
         """
-        if list_name in self._calibration_lists:
-            del self._calibration_lists[list_name]
+        if list_name in self.calibration_lists:
+            del self.calibration_lists[list_name]
             logger.info(f"Calibration list '{list_name}' deleted.")
         else:
             logger.warning(f"List '{list_name}' does not exist.")
@@ -117,14 +134,14 @@ class Device(RedvyprDevice):
         """
         Removes all lists and data.
         """
-        self._calibration_lists.clear()
+        self.calibration_lists.clear()
         logger.debug("All calibration data cleared.")
 
     def get_calibrations(self, list_name: str) -> list:
         """
         Returns the calibrations for a specific list, or an empty list if not found.
         """
-        return self._calibration_lists.get(list_name, [])
+        return self.calibration_lists.get(list_name, [])
 
     def create_metadict_from_calibration_list(self, list_name: str) -> dict:
         """
@@ -139,7 +156,7 @@ class Device(RedvyprDevice):
         """
         funcname = __name__ + '.create_metadatapacket_from_calibration_list():'
         logger.debug(funcname)
-        calibrations = self._calibration_lists[list_name]
+        calibrations = self.calibration_lists[list_name]
 
         calibration_dict_meta = {}
         for calibration in calibrations:
@@ -151,25 +168,195 @@ class Device(RedvyprDevice):
         logger.debug(funcname + 'Metadata packet created')
         return calibration_dict_meta
 
+    def create_calibration_list_from_metadata(self, list_name='metadata') -> dict:
+        """
+
+        Parameters
+        ----------
+
+
+        Returns
+        -------
+
+        """
+        funcname = __name__ + '.create_metadatapacket_from_calibration_list():'
+        logger.debug(funcname)
+
+        metadata = self.redvypr.get_metadata()
+        self.calibration_lists[list_name] = []
+        for maddr,mdata in metadata.items():
+            print(mdata)
+            if 'calibration' in mdata.keys():
+                print("Found calibration")
+                calibration_data = mdata["calibration"]
+                print(f"Calibration data:{calibration_data}")
+                calibration = CalibrationFactory.create(calibration_data)
+                self.calibration_lists[list_name].append(calibration)
+
+        print(f"{self.calibration_lists=}")
+        return self.calibration_lists[list_name]
+
     def set_metadata_from_calibration_list(self, list_name: str):
         metadict = self.create_metadict_from_calibration_list(list_name=list_name)
         self.redvypr.set_metadata_from_dict(metadata=metadict)
 
+    def load_calibrations_from_db(self, databaseconfig=None, list_name=None) -> dict:
+        print("Creating db from config", databaseconfig)
+        db = RedvyprDBFactory.create(databaseconfig)
+        return_dict = {'num_read':0,'num_added':0}
+        with db:
+            print("Opened")
+            # 1. Setup (gentle approach)
+            db.identify_and_setup()
+            status = db.check_health()
 
-from PyQt6 import QtWidgets, QtCore, QtGui
-from pydantic import BaseModel
-from typing import List, Any
-import copy
+            # Read metadata first
+            metainfo = db.get_metadata_info()
+            count_all = 0
+            for m in metainfo:
+                count_all += m['count']
 
+            #print("Metadata stat", metainfo)
+            #print("Count all", count_all)
+            metadata = db.get_metadata(0, count_all)
+            #print("Metadata", metadata)
+            try:
+                self.calibration_lists[list_name]
+            except:
+                self.calibration_lists[list_name] = []
+
+            list_add = self.calibration_lists[list_name]
+            for mdict in metadata:
+                print("mdict",mdict)
+                #maddr = mdict['address']
+                mdata = mdict['metadata']
+                if 'calibration' in mdata.keys():
+                    return_dict['num_read'] += 1
+                    cal_proc = CalibrationFactory.create(mdata['calibration'])
+                    if cal_proc not in list_add:
+                        list_add.append(cal_proc)
+                        return_dict['num_added'] += 1
+                    else:
+                        print("Calibration already in list")
+
+
+        return return_dict
+
+
+    def save_calibrations_to_db(self, databaseconfig=None, list_name=None):
+        print("Creating db from config",databaseconfig)
+        db = RedvyprDBFactory.create(databaseconfig)
+        with db:
+            print("Opened")
+            # 1. Setup (gentle approach)
+            db.identify_and_setup()
+            status = db.check_health()
+            calibrations = self.calibration_lists[list_name]
+            for calibration in calibrations:
+                print(f"Creating metadata for {calibration=}")
+                raddress = calibration.create_redvypr_address()
+                address_str = raddress.to_address_string()
+                calibration_dict = calibration.model_dump()
+                uuid = hash(calibration)
+                packetid = raddress.packetid
+                try:
+                    db.add_metadata(address=address_str,
+                                    uuid=uuid,
+                                    metadata_dict={'calibration': calibration_dict})
+                except:
+                    logger.warning("Could not add metadata", exc_info=True)
+
+
+
+from enum import Enum
+from typing import Literal
+
+
+class DBAction(Enum):
+    LOAD = "load"
+    SAVE = "save"
+
+
+class DBCalibrationLoadSaveWidget(QtWidgets.QWidget):
+    """
+    Wraps DBConfigWidget and adds a contextual Load or Save button.
+    """
+    # Signal, das gefeuert wird, wenn der Button geklickt wird
+    action_triggered = QtCore.Signal(object)  # Emittiert die DatabaseConfig
+    calibration_loaded = QtCore.Signal(dict)  #
+
+    def __init__(self, initial_config: DatabaseConfig,
+                 mode: Literal["load", "save"] = "load",
+                 calibrations_list=None,
+                 list_name=None, device=None, parent=None):
+        super().__init__(parent)
+        self.mode = mode
+        self.calibration_list = calibrations_list
+        self.list_name = list_name
+        self.device = device
+        # Wir nutzen Komposition: Das Config-Widget wird ein Kind dieses Widgets
+        self.config_widget = DBConfigWidget(initial_config)
+
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.layout = QtWidgets.QVBoxLayout(self)
+
+        # 1. Das eingebettete Konfigurations-Widget hinzufügen
+        self.layout.addWidget(self.config_widget)
+
+        # 2. Action Button Bereich
+        self.button_layout = QtWidgets.QHBoxLayout()
+        self.button_layout.addStretch()  # Schiebt den Button nach rechts
+
+        if self.mode == "load":
+            self.action_btn = QtWidgets.QPushButton("Load Calibration")
+            self.action_btn.setIcon(
+                self.style().standardIcon(QtWidgets.QStyle.SP_DialogOpenButton))
+            self.action_btn.clicked.connect(self.on_load_clicked)
+        else:
+            self.action_btn = QtWidgets.QPushButton("Save Calibration")
+            self.action_btn.setIcon(
+                self.style().standardIcon(QtWidgets.QStyle.SP_DialogSaveButton))
+
+            self.action_btn.clicked.connect(self.on_save_clicked)
+
+
+        self.button_layout.addWidget(self.action_btn)
+
+        self.layout.addLayout(self.button_layout)
+
+    def on_load_clicked(self):
+        """Holt die aktuelle Konfiguration und schickt sie mit dem Signal raus."""
+        current_config = self.config_widget.get_config()
+        config = self.get_config()
+        db = RedvyprDBFactory.create(config)
+        config = self.get_config()
+        ret_dict = self.device.load_calibrations_from_db(databaseconfig=config,
+                                            list_name=self.list_name)
+
+        self.calibration_loaded.emit(ret_dict)
+    def on_save_clicked(self):
+        """Holt die aktuelle Konfiguration und schickt sie mit dem Signal raus."""
+        current_config = self.config_widget.get_config()
+        config = self.get_config()
+        self.device.save_calibrations_to_db(databaseconfig=config, list_name=self.list_name)
+
+
+
+    # Proxy-Methoden, damit man von außen leichter an das Config-Widget kommt
+    def get_config(self):
+        return self.config_widget.get_config()
 
 class CalibrationTable(QtWidgets.QTableWidget):
     # Signals
     calibrationDataChanged = QtCore.pyqtSignal(int)
     calibrationDeleted = QtCore.pyqtSignal(object)
 
-    def __init__(self, data_list: List[BaseModel], parent=None):
+    def __init__(self, calibration_lists, list_name, parent=None):
         super().__init__(parent)
-        self.data_list = data_list  # List of Pydantic objects
+        self.calibration_lists = calibration_lists
+        self.list_name = list_name
 
         # Standard columns that are always visible
         self.default_columns = ['name', 'sn', 'sensortype', 'date']
@@ -185,6 +372,19 @@ class CalibrationTable(QtWidgets.QTableWidget):
         self.copy_shortcut.activated.connect(self.copy_selection)
         self.paste_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+V"), self)
         self.paste_shortcut.activated.connect(self.paste_selection)
+
+    @property
+    def data_list(self):
+        """
+           This is solved this way,
+           as it allows that the list is removed and recreated somewhere else
+        """
+        try:
+            self.calibration_lists[self.list_name]
+        except:
+            self.calibration_lists[self.list_name] = []
+
+        return self.calibration_lists[self.list_name]
 
     def setup_ui(self):
         # UI Policy and Selection
@@ -373,13 +573,25 @@ class CalibrationManageWidget(QtWidgets.QWidget):
     # Signals for communication with the main app
     dataImported = QtCore.pyqtSignal()
 
-    def __init__(self, data_list, device_reference, list_name, parent=None):
+    def __init__(self, calibration_lists, device_reference, list_name, parent=None):
         super().__init__(parent)
-        self.data_list = data_list
         self.device = device_reference
         self.list_name = list_name
-
+        self.calibration_lists = calibration_lists
         self.setup_ui()
+
+    @property
+    def data_list(self):
+        """
+           This is solved this way,
+           as it allows that the list is removed and recreated somewhere else
+        """
+        try:
+            self.calibration_lists[self.list_name]
+        except:
+            self.calibration_lists[self.list_name] = []
+
+        return self.calibration_lists[self.list_name]
 
     def setup_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -399,6 +611,7 @@ class CalibrationManageWidget(QtWidgets.QWidget):
         self.btn_save = QtWidgets.QPushButton("Save / Apply")
         save_menu = QtWidgets.QMenu(self)
         save_menu.addAction("Export to YAML", self.save_data)
+        save_menu.addAction("Save to Database", self.save_to_db)
         save_menu.addSeparator()
         # Your new feature: Sending to redvypr system
         save_menu.addAction("Apply Metadata to System", self.apply_metadata_to_system)
@@ -424,7 +637,7 @@ class CalibrationManageWidget(QtWidgets.QWidget):
         layout.addLayout(toolbar)
 
         # 4. THE TABLE
-        self.table = CalibrationTable(self.data_list)
+        self.table = CalibrationTable(self.calibration_lists, self.list_name)
         layout.addWidget(self.table)
 
     def import_from_yaml(self):
@@ -496,92 +709,55 @@ class CalibrationManageWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.critical(self, "System Error",
                                            f"Failed to apply metadata: {e}")
 
+    def list_changed(self, load_info):
+        print(f"List changed:{load_info}")
+        self.table.update_possible_keys()
+        self.table.refresh_table()
+        self.dataImported.emit()
+
     def load_from_db(self):
         print(f"Loading {self.list_name} from DB...")
+        initial_config = SqliteConfig()
+        self.db_config_widget = DBCalibrationLoadSaveWidget(
+            initial_config=initial_config, mode='load',
+            device=self.device,
+            calibrations_list=self.calibration_lists,
+            list_name=self.list_name)
+
+        self.db_config_widget.calibration_loaded.connect(self.list_changed)
+        self.db_config_widget.show()
+
+
+
+    def save_to_db(self):
+        print(f"Saving {self.list_name} to DB...")
+        initial_config = SqliteConfig()
+        self.db_config_widget = DBCalibrationLoadSaveWidget(
+            initial_config=initial_config, mode='save',
+            device=self.device,
+            calibrations_list=self.calibration_lists,
+            list_name=self.list_name)
+
+
+        self.db_config_widget.show()
 
     def load_from_metadata(self):
         print(f"Loading {self.list_name} from Metadata...")
+        calibrations = self.device.create_calibration_list_from_metadata(list_name=self.list_name)
+        imported_count = len(calibrations)
+        print("calibrations")
+        print(f"Loaded {imported_count} calibrations")
+        if imported_count > 0:
+            print(f"{self.list_name=}")
+            print(f"{self.data_list=}")
+            self.table.update_possible_keys()
+            self.table.refresh_table()
+            self.dataImported.emit()
 
-class CalibrationManageWidget_old(QtWidgets.QWidget):
-    # Signals for communication with the main app
-    dataImported = QtCore.pyqtSignal()
-
-    def __init__(self, data_list, device_reference, list_name, parent=None):
-        super().__init__(parent)
-        self.data_list = data_list
-        self.device = device_reference
-        self.list_name = list_name
-
-        self.setup_ui()
-
-    def setup_ui(self):
-        layout = QtWidgets.QVBoxLayout(self)
-
-        # Toolbar for Load/Save
-        toolbar = QtWidgets.QHBoxLayout()
-
-        # 1. LOAD BUTTON with Menu
-        self.btn_load = QtWidgets.QPushButton("Load")
-        load_menu = QtWidgets.QMenu(self)
-        load_menu.addAction("Import from YAML", self.import_from_yaml)
-        load_menu.addAction("Load from Database", self.load_from_db)
-        load_menu.addAction("Load from Metadata", self.load_from_metadata)
-        self.btn_load.setMenu(load_menu)
-
-        # 2. SAVE BUTTON
-        self.btn_save = QtWidgets.QPushButton("Save")
-        self.btn_save.clicked.connect(self.save_data)
-
-        toolbar.addWidget(self.btn_load)
-        toolbar.addWidget(self.btn_save)
-        toolbar.addStretch()
-
-        layout.addLayout(toolbar)
-
-        # 3. THE TABLE
-        self.table = CalibrationTable(self.data_list)
-        layout.addWidget(self.table)
-
-    def import_from_yaml(self):
-        # Allow selecting multiple files
-        file_paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
-            self,
-            "Import YAML Files",
-            "",
-            "YAML Files (*.yaml *.yml);;All Files (*)"
-        )
-
-        if file_paths:
-            imported_count = 0
-            for path in file_paths:
-                # We call the existing import method in your Device class
-                success = self.device.import_calibration(self.list_name, path)
-                if success:
-                    imported_count += 1
-
-            if imported_count > 0:
-                # Refresh the table only once after all files are processed
-                self.table.update_possible_keys()
-                self.table.refresh_table()
-                self.dataImported.emit()
-
-                # Optional: Show a small status message
-                QtWidgets.QToolTip.showText(
-                    QtGui.QCursor.pos(),
-                    f"Successfully imported {imported_count} file(s)."
-                )
-    def load_from_db(self):
-        # Implementation for DB load
-        print(f"Loading {self.list_name} from DB...")
-
-    def load_from_metadata(self):
-        # Implementation for metadata load
-        print(f"Loading {self.list_name} from Metadata...")
-
-    def save_data(self):
-        # Export logic
-        print(f"Saving {self.list_name}...")
-
+            QtWidgets.QToolTip.showText(
+                QtGui.QCursor.pos(),
+                f"Successfully imported {imported_count} file(s)."
+            )
 
 
 class RedvyprDeviceWidget(QtWidgets.QWidget):
@@ -609,8 +785,8 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         self.tabs.tabCloseRequested.connect(self.delete_list)
         self.main_layout.addWidget(self.tabs)
 
-        #self.layout.addLayout(self.main_layout)
-        self.add_calibration_tab("Calibrations")
+        for list_name in self.device.calibration_lists.keys():
+            self.add_calibration_tab(list_name)
 
     def create_list_dialog(self):
         """Opens a dialog to name a new calibration list."""
@@ -621,12 +797,12 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
     def add_calibration_tab(self, name: str):
         """Creates a new tab with a CalibrationTable."""
         # Ensure the list exists in the Device backend
-        if name not in self.device._calibration_lists:
-            self.device._calibration_lists[name] = []
+        if name not in self.device.calibration_lists:
+            self.device.calibration_lists[name] = []
 
 
         manage_widget = CalibrationManageWidget(
-            self.device._calibration_lists[name],
+            self.device.calibration_lists,
             self.device,
             name
         )
@@ -643,6 +819,6 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
         )
         if reply == QtWidgets.QMessageBox.StandardButton.Yes:
-            if name in self.device._calibration_lists:
-                del self.device._calibration_lists[name]
+            if name in self.device.calibration_lists:
+                del self.device.calibration_lists[name]
             self.tabs.removeTab(index)

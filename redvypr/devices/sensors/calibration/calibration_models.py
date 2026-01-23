@@ -223,7 +223,8 @@ class CalibrationGeneric(pydantic.BaseModel):
         try:
             caldate = self.date.isoformat()
             print("channel datakey",RedvyprAddress(self.channel).datakey)
-            astr = f"@sn=='{self.sn}'"
+            astr = f"@i:calibration"
+            astr += f"@sn=='{self.sn}'"
             astr += f" and channel=='{self.channel}'"
             astr += f" and calibration_type=='{self.calibration_type}'"
             astr += f" and date==dt('{caldate}')"

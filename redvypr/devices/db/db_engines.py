@@ -638,7 +638,7 @@ class RedvyprTimescaleDb(AbstractDatabase):
         # Falls du die Felder direkt als Argumente hättest, wäre es einfacher,
         # aber so bleibt die API sauber.
         try:
-            raddr = RedvyprAddress.from_address_string(address, uuid=uuid)
+            raddr = RedvyprAddress(address, uuid=uuid)
             packetid = raddr.packetid
             device = raddr.device
             host = raddr.host
@@ -1419,20 +1419,31 @@ class RedvyprSqliteDb(AbstractDatabase):
         finally:
             cur.close()
 
-    def add_metadata(self, address: str, uuid: str, metadata_dict: dict,
-                     mode: str = "merge"):
+    def add_metadata(self, address: str, uuid: str,
+                     metadata_dict: dict, mode: str = "merge"):
+
+        try:
+            raddr = RedvyprAddress(address, uuid=uuid)
+            packetid = raddr.packetid
+            device = raddr.device
+            host = raddr.host
+        except:
+            logger.info("Could not get address details, will use None instead",exc_info=True)
+            # Fallback falls die Adresse nicht geparst werden kann
+            packetid, device, host = None, None, None
+
         # SQLite Upsert
         cur = self._connection.cursor()
         try:
             # Einfaches Upsert (overwrite), Merge-Logik könnte hier bei Bedarf ergänzt werden
             sql = """
-                INSERT INTO redvypr_metadata (redvypr_address, uuid, metadata)
-                VALUES (?, ?, ?)
+                INSERT INTO redvypr_metadata (redvypr_address, uuid, metadata, packetid, device, host)
+                VALUES (?, ?, ?, ?, ?, ? )
                 ON CONFLICT(redvypr_address, uuid) DO UPDATE SET
                     metadata = excluded.metadata,
                     created_at = CURRENT_TIMESTAMP;
             """
-            cur.execute(sql, (address, uuid, json_safe_dumps(metadata_dict)))
+            cur.execute(sql, (address, uuid, json_safe_dumps(metadata_dict), packetid, device, host))
             self._connection.commit()
         finally:
             cur.close()
