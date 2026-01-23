@@ -140,6 +140,18 @@ class HeatflowClassicCalibration(BaseModel):
     shipped: str = Field(default="", description="Shipping date or status.")
     steg: str = Field(default="", description="Additional metadata.")
 
+    @property
+    def sensor_model(self):
+        return self.series
+
+    @property
+    def date(self):
+        return self.calibration_date
+
+    @property
+    def sn(self):
+        return self.manufacturer_sn
+
     # Validator für datetime-Felder
     @field_validator('calibration_date', 'date_produced', mode='before')
     def parse_datetime(cls, value):
