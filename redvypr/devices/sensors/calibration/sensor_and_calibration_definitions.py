@@ -33,6 +33,7 @@ class BaseCalibration(BaseModel):
             return datetime.strptime(value, "%d.%m.%Y %H:%M:%S")
         return value
 
+
     def create_redvypr_address(self) -> 'RedvyprAddress':
         """
         Excepts an implementation
@@ -85,6 +86,7 @@ class HeatflowClassicCalibData(BaseModel):
             return None
         return float(value) if value is not None else None
 
+
     @classmethod
     def preprocess_calibcoeff(cls, calibcoeff: List[Union[str, float]]) -> List[
         Optional[float]]:
@@ -106,6 +108,11 @@ class HeatflowClassicCalibration(BaseModel):
     calibration_type: Literal['heatflow_classic'] = Field(
         default='heatflow_classic',
         description="Type of the calibration (fixed to 'heatflow')."
+    )
+
+    channel: Literal['hf'] = Field(
+        default='hf',
+        description="Channel name"
     )
 
     # Datetime-Felder
@@ -151,6 +158,16 @@ class HeatflowClassicCalibration(BaseModel):
     @property
     def sn(self):
         return self.manufacturer_sn
+
+    # In some of the yamls there is a newline in series & name
+    @field_validator('series', 'name', mode='before', check_fields=False)
+    @classmethod
+    def fix_newlines_in_strings(cls, value):
+        """Entfernt Newlines aus den Feldern 'series' und 'name'."""
+        if isinstance(value, str):
+            value_ret = value.replace('\n', '').strip()
+            return value_ret
+        return value
 
     # Validator für datetime-Felder
     @field_validator('calibration_date', 'date_produced', mode='before')

@@ -359,7 +359,7 @@ class CalibrationTable(QtWidgets.QTableWidget):
         self.list_name = list_name
 
         # Standard columns that are always visible
-        self.default_columns = ['name', 'sn', 'sensor_model', 'date']
+        self.default_columns = ['name', 'sn', 'channel','sensor_model', 'date']
         self.extra_columns = []
         self.all_possible_keys = []
 
