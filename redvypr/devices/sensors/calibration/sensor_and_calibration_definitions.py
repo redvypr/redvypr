@@ -1,9 +1,10 @@
-from typing import List, Optional, Union, Literal, TypeVar, Generic, Type
+from typing import List, Union, Literal, Type, Dict, Optional
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from datetime import datetime
 import json
 import hashlib
 from typing import Any
+import pydantic
 from redvypr.redvypr_address import RedvyprAddress
 from .calibration_models import CalibrationGeneric, CalibrationLinearFactor, CalibrationNTC, CalibrationPoly
 
@@ -308,8 +309,7 @@ class HeatflowClassicSensor(BaseSensor):
         )
 
 
-import pydantic
-from typing import Type, Dict, Any, Optional
+
 
 
 class CalibrationFactory:

@@ -34,6 +34,62 @@ class DeviceCustomConfig(pydantic.BaseModel):
     messages:list = pydantic.Field(default=[])
     datakey: str = pydantic.Field(default='',description='The datakey to look for NMEA data, if empty scan all fields and use the first match')
 
+class WMV_post():
+    def __init__(self):
+        """
+        "$IIMWV,006,R,000.0,M,A*26"
+
+        <MWV(wind_angle=Decimal('6'), reference='R', wind_speed=Decimal('0.0'), wind_speed_units='M', status='A')>
+        Field descriptions:
+        0) Talker
+        1) ID
+        2) Wind Angle, 0 to 360 degrees
+        3) Reference, R = Relative, T = True
+        4) Wind Speed
+        5) Wind Speed Units, K/M/N: K:kmh-1, M: ms-1, N:Knots
+        6) Status, A = Data Valid
+        7) Checksum
+        """
+        self.speed_factors = {'M': 1.0, 'N': 0.51444, 'K': 0.27778}
+    def __call__(self, nmea_obj):
+        datadict = {}
+        try:
+            wind_angle = float(nmea_obj.wind_angle)
+        except:
+            wind_angle = np.nan
+        datadict['wind_angle'] = wind_angle
+
+        try:
+            wind_speed = float(nmea_obj.wind_speed)
+        except:
+            wind_speed = np.nan
+        datadict['wind_speed'] = self.speed_ms(wind_speed,nmea_obj.wind_speed_units)
+
+        return datadict
+    def speed_ms(self,speed, unit) -> float:
+        return speed * self.speed_factors.get(unit, 1.0)
+
+    def metadata(self, baseaddress=None):
+        """
+
+        Returns
+        -------
+
+        """
+        if baseaddress is None:
+            baseaddrstr = ''
+        else:
+            baseaddrstr = baseaddress.to_address_string()
+        metadict = {}
+        metadict[f'wind_angle{baseaddrstr}'] = {'unit':'deg','description': 'Wind Angle, 0 to 360 degrees'}
+        metadict[f'wind_speed{baseaddrstr}'] = {'unit':'ms-1','description': 'Wind Speed'}
+        return metadict
+# Here Postprocessing of registered talker are defined
+class NMEAPostprocess():
+    def __init__(self):
+        self.sentence_types = {}
+        self.sentence_types['MWV'] = WMV_post()
+
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     """ 
     """
@@ -45,6 +101,8 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     dtstatus = config['dt_status']
 
     #
+    nmea_postprocess = NMEAPostprocess()
+    nmea_metadata = {} # Dictionary with metadata entries
     npackets = 0  # Number packets received
     while True:
         data = datainqueue.get()
@@ -72,40 +130,56 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 except:
                     logger.debug(funcname + ' Could not decode:',exc_info=True)
                     continue
-            if (type(dataparse) == str) and (len(dataparse) > 2):
-                print('Parsing data at datakey {}:{}'.format(datakey,dataparse))
-
+            if (type(dataparse) == str) and (len(dataparse) > 2) and (dataparse.startswith("$")):
+                #print(f'Parsing data at datakey {datakey}:')
+                #print(f"dataparse:{dataparse}")
                 try:
                     msg = pynmea2.parse(dataparse)
                     talker = msg.talker
                     sentence_type = msg.sentence_type
                     daddr = redvypr.RedvyprAddress(data)
-                    devname = sentence_type + '_' + daddr.devicename
-                    print('Devicename', daddr.devicename)
-                    data_parsed = redvypr.data_packets.create_datadict(data=msg.talker, datakey='talker', device=devname)
-                    data_parsed['sentence_type'] = sentence_type
-                    #attr = dir(msg)
-                    #for a in attr:
-                    #    d = getattr(msg,a)
-                    #    #print('da',a,d)
-                    #    if not(a.startswith('_')):
-                    #        if(type(d) == float) or (type(d) == int) or (type(d) == str) or (type(d) == bool):
-                    #            data_parsed[a] = d
-                    for field in msg.fields:
-                        field_short = field[1]
-                        field_descr = field[0]
-                        data_parsed[field_short] = getattr(msg,field_short)
+                    #print(f"daddr:{daddr}")
+                    devname = 'nmeaparser' + '_' + daddr.packetid
+                    packetid = f'nmea_{sentence_type}'
+                    if sentence_type in nmea_postprocess.sentence_types.keys():
+                        #print(f"Postprocessing:{sentence_type=}")
+                        data_parsed = nmea_postprocess.sentence_types[sentence_type](msg)
+                        raddr = redvypr.RedvyprAddress(device=devname, packetid=packetid)
+                        data_packet = raddr.to_redvypr_dict()
+                        data_packet.update(data_parsed)
+                        #print(f"Data packet:{data_packet}")
+                        dataqueue.put(data_packet)
+                        # Test if we have to send metadata (if not done already)
+                        if sentence_type not in nmea_metadata:
+                            metadata = nmea_postprocess.sentence_types[
+                                sentence_type].metadata(baseaddress=raddr)
+                            metadata_packet = redvypr.data_packets.create_metadatapacket(
+                                metadata)
+                            #print("Metadata",metadata_packet)
+                            dataqueue.put(metadata_packet)
+                            nmea_metadata[sentence_type] = metadata_packet
+                    else:
+                        data_parsed = redvypr.data_packets.create_datadict(data=msg.talker, datakey='talker', device=devname)
+                        data_parsed['sentence_type'] = sentence_type
 
-                    print('Parsing of type {} suceeded:{}'.format(sentence_type,msg))
-                    #print('Longitude',msg.longitude,msg.latitude)
-                    print('Data parsed',data_parsed)
-                    print('----Done-----')
-                    dataqueue.put(data_parsed)
-                    #if msgtype == 'GGA':
-                    #    #tGGA = msg.timestamp
-                    #    data_parsed = redvypr.data_packets.datapacket(data = msg.longitude, datakey='lon',device = devname)
-                    #    data_parsed['latitude'] = msg.latitude
-                    #    dataqueue.put(data_parsed)
+                        for field in msg.fields:
+                            field_short = field[1]
+                            field_descr = field[0]
+                            field_data = getattr(msg, field_short)
+                            if isinstance(field_data, pynmea2.Decimal):
+                                field_data = float(field_data)
+                            data_parsed[field_short] = field_data
+
+                        print('Parsing of type {} suceeded:{}'.format(sentence_type,msg))
+                        #print('Longitude',msg.longitude,msg.latitude)
+                        print('Data parsed',data_parsed)
+                        print('----Done-----')
+                        dataqueue.put(data_parsed)
+                        #if msgtype == 'GGA':
+                        #    #tGGA = msg.timestamp
+                        #    data_parsed = redvypr.data_packets.datapacket(data = msg.longitude, datakey='lon',device = devname)
+                        #    data_parsed['latitude'] = msg.latitude
+                        #    dataqueue.put(data_parsed)
                 except:
                     logger.debug('NMEA Parsing failed:', exc_info=True)
 

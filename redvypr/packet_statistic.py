@@ -397,26 +397,26 @@ def get_metadata(statistics,
     decorated = [(len(RedvyprAddress(astr).get_datakeyentries()),astr) for astr in statistics['metadata'].keys()]
     decorated.sort()
     metadata_keys_sorted = [astr for nentries,astr in decorated]
-    print('Metadaty_keys_sorted',metadata_keys_sorted)
+    #print('Metadaty_keys_sorted',metadata_keys_sorted)
     #for astr in statistics['metadata'].keys():
     for astr in metadata_keys_sorted:
-        print("Astr",astr,mode,raddress)
+        #print("Astr",astr,mode,raddress)
         raddr = RedvyprAddress(astr)
         #print("Test address,",raddr,raddress)
         #print("Test address result,", raddr(raddress))
-        print("Test matches", raddress.matches_filter(raddr, soft_missing=False), raddr.matches_filter(raddress, soft_missing=False))
-        print("Test address result2,", RedvyprAddress(astr))
-        print("\n")
+        #print("Test matches", raddress.matches_filter(raddr, soft_missing=False), raddr.matches_filter(raddress, soft_missing=False))
+        #print("Test address result2,", RedvyprAddress(astr))
+        #print("\n")
         #try:
         #    retdata = raddr(raddress)
         #except:
         #    continue
 
         if raddress.matches(raddr):
-            print(f"Match of {raddress} and {raddr}:\n{raddress.matches(raddr)=}")
+            #print(f"Match of {raddress} and {raddr}:\n{raddress.matches(raddr)=}")
             if True:
                 metadata = statistics['metadata'][astr]
-                print('Found metadata', metadata)
+                #print('Found metadata', metadata)
                 if mode == 'merge': # Put everything into the addressstring key
                     metadata_return[raddress.to_address_string()].update(metadata)
                 else:

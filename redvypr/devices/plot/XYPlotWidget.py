@@ -27,8 +27,8 @@ pyqtgraph.setConfigOption('foreground', 'k')
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.XYPlotWidget(base)')
-#logger.setLevel(logging.DEBUG)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
+#logger.setLevel(logging.INFO)
 
 colors = ['red','blue','green','gray','yellow','purple']
 
@@ -1078,7 +1078,9 @@ class XYPlotWidget(QtWidgets.QFrame):
 
             # print('Line',line)
             # FLAG_HAVE_LINE = False
-            self.get_metadata_for_line(line,force_update=False) # This is updating the unit
+            #self.get_metadata_for_line(line, force_update=False) # This is updating the unit
+            self.get_metadata_for_line(line,
+                                       force_update=True)  # This is updating the unit
             labelname = self.construct_labelname(line)
             line.label = labelname
             linename = "Line {}: {}".format(iline, labelname)
@@ -1241,6 +1243,8 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.logger.debug(funcname + ' done.')
 
     def get_metadata_for_line(self, line, force_update=False):
+        #metadata = self.device.get_metadata(line.y_addr)
+        #print("Metadata for line",metadata)
         funcname = __name__ + '.get_metadata_for_line():'
         iline = self.config.lines.index(line)
         self.logger.debug(funcname + 'Getting metadata for {}'.format(line.y_addr))
@@ -1252,7 +1256,8 @@ class XYPlotWidget(QtWidgets.QFrame):
             has_metadata = False
 
         if has_metadata == False or force_update:
-            line._metadata = self.device.get_metadata(line.y_addr)
+            metadata = self.device.get_metadata(line.y_addr)
+            line._metadata = metadata[list(metadata.keys())[0]]
             self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._metadata)))
             try:
                 unit = line._metadata['unit']
@@ -1448,7 +1453,8 @@ class XYPlotWidget(QtWidgets.QFrame):
                             self.tlastupdate_metadata = tnow
                             self.logger.debug(funcname + 'Getting metadata for {}'.format(line.y_addr))
                             # Check for metadata
-                            flag_new_metadata = self.get_metadata_for_line(line,force_update=True)
+                            flag_new_metadata = self.get_metadata_for_line(line, force_update=True)
+                            print(f"Metadata flag:{flag_new_metadata=}")
                             if flag_new_metadata:
                                 self.apply_config()
 
@@ -1498,4 +1504,4 @@ class XYPlotWidget(QtWidgets.QFrame):
                 pass
                 #print('DONE DONE DONE')
         except:
-            self.logger.debug('Could not update data', exc_info=True)
+            self.logger.info('Could not update data', exc_info=True)

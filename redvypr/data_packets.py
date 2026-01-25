@@ -481,6 +481,25 @@ def create_datadict_legacy(data=None,
     return datadict
 
 
+def create_metadatapacket(metadict=None):
+    datapacket = {}
+    datapacket['_metadata'] = {}
+    for addr,metadata in metadict.items():
+        if isinstance(addr,str):
+            try:
+                RedvyprAddress(addr) # Test if this is a valid RedvyprAddress
+            except:
+                raise ValueError(f"key {str(addr)} of metadict dictionary must be valid RedvyprAddress string")
+
+            datapacket['_metadata'][addr] = metadata
+        else:
+            raise ValueError(
+                f"key {str(addr)} of metadict dictionary must be valid RedvyprAddress string")
+
+
+
+    return datapacket
+
 def add_metadata2datapacket(datapacket, address=None, datakey=None,
                             metakey=None, metadata=None, metadict=None):
     """
