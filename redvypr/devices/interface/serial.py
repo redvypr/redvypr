@@ -147,7 +147,7 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
     if True:
         try:
             serial_device = serial.Serial(comport, baud, parity=parity, stopbits=stopbits, bytesize=bytesize,
-                                          timeout=0)
+                                          timeout=0.1)
             data = create_datadict(device= devicename_redvypr, packetid=packetid)
             data['t'] = time.time()
             data['comport'] = serial_device.name
@@ -194,14 +194,15 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
                     serial_device.write(data_send)
                     print("Done ...")
 
-        time.sleep(dt_poll)
-        ndata = serial_device.inWaiting()
-        try:
-            rawdata_tmp = serial_device.read(ndata)
-        except Exception as e:
-            logger.warning("Could not read from serial port",exc_info=True)
-            return
+        #time.sleep(dt_poll)
+        #ndata = serial_device.inWaiting()
+        #try:
+        #    rawdata_tmp = serial_device.read(ndata)
+        #except Exception as e:
+        #    logger.warning("Could not read from serial port",exc_info=True)
+        #    return
 
+        rawdata_tmp = serial_device.read(serial_device.in_waiting or 1)
         nread = len(rawdata_tmp)
         if True:
             if nread > 0:

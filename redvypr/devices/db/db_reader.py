@@ -1,9 +1,6 @@
-import copy
-import numpy as np
 import datetime
-import pytz
+from qtpy import QtWidgets, QtCore, QtGui
 import logging
-import queue
 from PyQt6 import QtWidgets, QtCore, QtGui
 import qtawesome
 import time
@@ -257,16 +254,37 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     finally:
         logger_thread.info("Thread shutting down, connection cleaned up.")
 
+class Device(RedvyprDevice):
+    """
+    db_reader device
+    """
 
-from qtpy import QtWidgets, QtCore, QtGui
-from datetime import datetime
+    def __init__(self, **kwargs):
+        """
+        """
+        funcname = __name__ + '__init__()'
+        super(Device, self).__init__(**kwargs)
+
+    def thread_start(self, config=None):
+        """
+        Starts export devices, to save the data
+        Parameters
+        ----------
+        config
+
+        Returns
+        -------
+
+        """
+        print("Starting thread now")
+        super().thread_start(config)
 
 
 class ReplaySettingsDialog(QtWidgets.QDialog):
     def __init__(self, current_config, parent=None):
         super().__init__(parent)
         self.config = current_config
-        self.setWindowTitle("Replay & Filter Settings")
+        self.setWindowTitle("Replay/Export & Filter Settings")
         self.setMinimumWidth(500)
         self.setup_ui()
 
@@ -401,8 +419,8 @@ class ReplaySettingsDialog(QtWidgets.QDialog):
                 # 2. Collect time data
                 try:
                     # fromisoformat handles strings of the format "2026-01-01T16:13:38.566638+00:00"
-                    t_start = datetime.fromisoformat(item["tstart"])
-                    t_end = datetime.fromisoformat(item["tend"])
+                    t_start = datetime.datetime.fromisoformat(item["tstart"])
+                    t_end = datetime.datetime.fromisoformat(item["tend"])
 
                     all_starts.append(t_start)
                     all_ends.append(t_end)
@@ -493,7 +511,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.device.thread_started.connect(self.thread_start_signal)
         initial_config = self.device.custom_config
         # 1. Create Settings Button
-        self.settings_button = QtWidgets.QPushButton(" Replay Settings")
+        self.settings_button = QtWidgets.QPushButton("Replay/Export Settings")
         self.settings_button.setIcon(qtawesome.icon('fa5s.cog'))
         self.settings_button.clicked.connect(self.open_settings)
 
