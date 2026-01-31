@@ -91,27 +91,7 @@ class Device(RedvyprDevice):
             logger.warning('Index of reference sensor is larger than number of sensors, resetting to zero')
             self.custom_config.ind_ref_sensor = -1
 
-
         self.subscribe_to_sensors()
-
-    def create_sensor_calibration_config_legacy(self, newsen: str | RedvyprAddress, sentype='datastream', calibrationtype=None, calconfig=None):
-        cal_object = None
-        if sentype == 'datastream':
-            channel = newsen.datakey
-        else:
-            channel = ''
-
-        if calibrationtype.lower() == "ntc":
-            # And finally the fit
-            Toff = calconfig['Toff']
-            poly_degree = calconfig['poly_degree']
-            cal_object = CalibrationNTC(channel=channel, Toff=Toff, poly_degree=poly_degree)
-
-        elif calibrationtype.lower() == "polynom":
-            poly_degree = calconfig['poly_degree']
-            cal_object = CalibrationPoly(channel=channel,poly_degree=poly_degree)
-
-        return cal_object
 
     def create_calibration_object_and_calc_coeff_for_sensor(self, sensor):
         funcname = __name__ + ".create_calibration_object_and_calc_coeff_for_sensor()"
@@ -196,6 +176,42 @@ class Device(RedvyprDevice):
             sensor = CalibrationSensorAndConfigData(inputtype=sentype, calibrationtype=calibrationtype, calibration_config=None)
             self.custom_config.calibrationdata.append(sensor)
             index = len(self.custom_config.calibrationdata) - 1
+
+        # Adding calibration_config
+        self.add_sensor_calibration_config(sensor, calconfig)
+        self.__make_calibrationdata_equally_long__()
+        self.subscribe_to_sensors()
+
+    def add_sensors(self, newsensors: list):
+        funcname = __name__ + '.add_sensors()'
+        for newsendict in newsensors:
+            newsen = newsendict['newsen']
+            sentype = newsendict['sentype']
+            calibrationtype = newsendict['calibrationtype']
+            calconfig = newsendict['calibrationconfig']
+            logger.debug(
+                funcname + ' Adding new sensor with name: "{:s}"'.format(str(newsen)))
+            sentype = str(sentype)
+            # cal_object = self.create_sensor_calibration_config(newsen, sentype=sentype, calibrationtype=calibrationtype, calconfig=calconfig)
+            # newsen = str(newsen)
+            if sentype == 'datastream':
+                logger.debug(funcname + ' Adding datastream of sensor {}'.format(newsen))
+                print("Newsen", newsen, 'Datakey', newsen.datakey)
+                sensor = CalibrationSensorAndConfigData(datastream=newsen,
+                                                        channel=newsen.datakey,
+                                                        inputtype=sentype,
+                                                        calibrationtype=calibrationtype,
+                                                        calibration_config=None)
+                self.custom_config.calibrationdata.append(sensor)
+                index = len(self.custom_config.calibrationdata) - 1
+            else:
+                logger.debug(funcname + ' Adding manual sensor')
+                # print('config',str(newsen))
+                sensor = CalibrationSensorAndConfigData(inputtype=sentype,
+                                                        calibrationtype=calibrationtype,
+                                                        calibration_config=None)
+                self.custom_config.calibrationdata.append(sensor)
+                index = len(self.custom_config.calibrationdata) - 1
 
         # Adding calibration_config
         self.add_sensor_calibration_config(sensor, calconfig)
@@ -1033,17 +1049,21 @@ class initDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '.sensorsApplyClicked():'
         logger.debug(funcname)
         # Adding all addresses
+        sensors_add = []
         for addr in datastreamdict['addresses']:
+            newsendict = {}
             newsen = addr
             logger.debug(funcname + 'Adding {}'.format(newsen))
             calibrationtype = self.caltype.currentText().lower()
             calconfig = self.calibration_config_widget_custom.get_config()
-            self.device.add_sensor(newsen, sentype='datastream',
-                                   calibrationtype=calibrationtype,
-                                   calconfig=calconfig)
+            newsendict['newsen'] = newsen
+            newsendict['sentype'] = 'datastream'
+            newsendict['calibrationtype'] = calibrationtype
+            newsendict['calibrationconfig'] = calconfig
+            sensors_add.append(newsendict)
 
-            #calorder = self.calibration_config_widget_custom.get_config()['poly_degree']
-            #self.device.add_sensor(newsen, sentype='datastream', calibrationtype=calibrationtype, calorder=calorder)
+        self.device.add_sensors(sensors_add)
+
 
         if len(datastreamdict['addresses'])>0:
             layout = self.sensorsConfig_layout
@@ -2110,8 +2130,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
         except Exception:
             logger.warning('Could not update with data',exc_info=True)
 
-
-        #print('Hallo',self.datastreams)
 
 
 

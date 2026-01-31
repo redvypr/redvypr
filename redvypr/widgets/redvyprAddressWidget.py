@@ -340,7 +340,7 @@ class AddressFilterwidget(QtWidgets.QWidget):
                                              device=device,
                                              publisher=publisher)
         #print('Update filteraddress',self.filter_address.get_str())
-        self.line_filterstr.setText(self.filter_address.get_str())
+        self.line_filterstr.setText(self.filter_address.to_address_string())
         self.filterChanged.emit()
 
     def _onfilter_btn_(self):
@@ -682,10 +682,8 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                 #print('Address',itmk.datakey_address)
                 #print('Address parsed', itmk.datakey_address.parsed_addrstr)
                 if self.filterWidget.filter_on:
-                    test_filter = itmk.datakey_address not in self.filterWidget.filter_address
-                    logger.debug('Testing (@tuple): {} not in {}: {}'.format(itmk.datakey_address,
-                                                                             self.filterWidget.filter_address,
-                                                                             test_filter))
+                    test_filter =  not(self.filterWidget.filter_address.matches(itmk.datakey_address))
+                    logger.debug(f'Testing (@tuple): {self.filterWidget.filter_address}.matches({itmk.datakey_address}): {test_filter}')
                     if test_filter:
                         logger.debug('No filter match for {}'.format(itmk.datakey_address))
                     else:
@@ -809,8 +807,8 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                             #print('Datakeys',datakey_dict)
                             devaddress_redvypr = RedvyprAddress(devaddress)
                             if self.filterWidget.filter_on:
-                                if devaddress_redvypr not in self.filterWidget.filter_address:
-                                    #print('No filter match for ', devaddress_redvypr)
+                                if  not(self.filterWidget.filter_address.matches(devaddress_redvypr)):
+                                    print('No filter match for ', devaddress_redvypr)
                                     continue
 
                             #print('Addr', devaddress_redvypr, devaddress_redvypr.get_str())

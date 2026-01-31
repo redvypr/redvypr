@@ -932,7 +932,7 @@ class RedvyprDevice(QtCore.QObject):
         devaddrs = self.get_deviceaddresses(local)
         datakeys = []
         for devaddr in devaddrs:
-            dkeys = self.statistics['device_redvypr'][devaddr.address_str]['datakeys']
+            dkeys = self.statistics['device_redvypr'][devaddr.to_address_string()]['datakeys']
             datakeys.extend(dkeys)
 
         # Sort the datakeys and make them unique

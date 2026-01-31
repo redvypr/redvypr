@@ -89,8 +89,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
         except:
             continue
 
-        print("Processing data:")
-        print(f"{datapacket['data']=}")
+        #print("Processing data:")
+        #print(f"{datapacket['data']=}")
         merged_packets = tar_processor.process_rawdata(datapacket['data'])
         if merged_packets['metadata'] is not None:
             for ppub in merged_packets['metadata']:
@@ -125,6 +125,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.show_numpackets = 1
         self.packetbuffer = {}
         self.qtreebuffer = {} # A buffer for the device qtree
+
         self.devicetree = QtWidgets.QTreeWidget(self)
         self.devicetree.setColumnCount(3)
         # self.devicetree.setHeaderHidden(True)
@@ -136,6 +137,33 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         root.addChild(self.root_tar)
         root.addChild(self.root_single)
         root.addChild(self.root_raw)
+
+        # 1. GroupBox erstellen
+        self.filter_group = QtWidgets.QWidget()
+        self.filter_layout = QtWidgets.QHBoxLayout(
+            self.filter_group)  # Horizontal anordnen
+
+        self.filter_layout.setContentsMargins(0, 0, 0, 0)
+        # Setzt den Abstand zwischen den Checkboxen auf einen kleinen Wert (z.B. 10px)
+        self.filter_layout.setSpacing(10)
+        # Verhindert, dass das Widget vertikalen Platz beansprucht, der ihm nicht zusteht
+        self.filter_group.setSizePolicy(QtWidgets.QSizePolicy.Preferred,
+                                        QtWidgets.QSizePolicy.Maximum)
+        # 2. Checkboxen erstellen
+        self.cb_raw = QtWidgets.QCheckBox("Raw")
+        self.cb_single = QtWidgets.QCheckBox("Single")
+        self.cb_chain = QtWidgets.QCheckBox("Chain")
+
+        # 3. Standardwerte & Signale (wie zuvor)
+        for cb, item in zip([self.cb_raw, self.cb_single, self.cb_chain],
+                            [self.root_raw, self.root_single, self.root_tar]):
+            cb.setChecked(True)
+            # Lambda nutzt 'item=item', um den aktuellen Wert in der Schleife zu binden
+            cb.stateChanged.connect(
+                lambda state, i=item, c=cb: i.setHidden(not c.isChecked()))
+            self.filter_layout.addWidget(cb)
+
+        self.filter_layout.addStretch(1)
         self.datadisplaywidget = QtWidgets.QWidget(self)
         self.splitter = QtWidgets.QSplitter()
         self.splitter.addWidget(self.devicetree)
@@ -146,15 +174,31 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.datadisplaywidget_layout = QtWidgets.QHBoxLayout(self.datadisplaywidget)
         self.tabwidget = QtWidgets.QTabWidget()
         self.datadisplaywidget_layout.addWidget(self.tabwidget)
+        self.layout.addWidget(self.filter_group)
         self.layout.addWidget(self.splitter)
         self.devicetree.currentItemChanged.connect(self.devicetree_item_changed)
         self.files_button = QtWidgets.QPushButton("Convert file(s)")
         self.files_button.clicked.connect(self.choose_files_clicked)
+
+
+
         self.config_widgets.append(self.files_button)
         #self.layout_buttons.removeWidget(self.subscribe_button)
         self.layout_buttons.removeWidget(self.configure_button)
         self.layout_buttons.addWidget(self.files_button, 2, 2, 1, 1)
         self.layout_buttons.addWidget(self.configure_button, 2, 3, 1, 1)
+
+
+
+    def update_tree_visibility(self):
+        self.root_raw.setHidden(not self.cb_raw.isChecked())
+        self.root_single.setHidden(not self.cb_single.isChecked())
+        self.root_tar.setHidden(not self.cb_chain.isChecked())
+
+        # Falls das aktuell selektierte Item jetzt unsichtbar ist -> Selektion löschen
+        current = self.devicetree.currentItem()
+        if current and current.isHidden():
+            self.devicetree.setCurrentItem(None)
 
 
     def choose_files_clicked(self):
@@ -379,7 +423,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                         button.clicked.connect(lambda _, item=itm_datatype: self.devicetree_plot_button_clicked(item))
                         # Button in die dritte Spalte des TreeWidgetItems einfügen
                         self.devicetree.setItemWidget(itm_datatype, 2, button)
-                    parentitm = itm
+
+                    #parentitm = itm
                     tmpdict = tmpdict_new
 
                 if flag_tree_update:

@@ -148,6 +148,11 @@ def read_serial(device_info, config={}, dataqueue=None, datainqueue=None, status
         try:
             serial_device = serial.Serial(comport, baud, parity=parity, stopbits=stopbits, bytesize=bytesize,
                                           timeout=0.1)
+            # Increase the buffer sizes (works for windows)
+            try:
+                serial_device.set_buffer_size(rx_size=8192*8, tx_size=8192*8)
+            except:
+                pass
             data = create_datadict(device= devicename_redvypr, packetid=packetid)
             data['t'] = time.time()
             data['comport'] = serial_device.name
