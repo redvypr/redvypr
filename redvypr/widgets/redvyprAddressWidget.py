@@ -915,8 +915,11 @@ class RedvyprMultipleAddressesWidget(RedvyprAddressWidget):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args,**kwargs)
-        # Disable menus
-        self.devicelist.setContextMenuPolicy(QtCore.Qt.DefaultContextMenu)
+        # Add select all, deselect all menu
+        self.devicelist.customContextMenuRequested.disconnect()
+        self.devicelist.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.devicelist.customContextMenuRequested.connect(
+            self.show_device_context_menu)
         self.addrentries_for_str_format = ['h', 'd', 'i', 'k']
         self.devicelist.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
         self.datastreamtable = QtWidgets.QTableWidget()
@@ -977,6 +980,34 @@ class RedvyprMultipleAddressesWidget(RedvyprAddressWidget):
         self.layout.addWidget(self.apply_button,3,0,1,-1)
         self.addresses_chosen = []
         self.update_datastreamtable()
+
+    def show_device_context_menu(self, position):
+        """ Creates and displays a context menu for the device list """
+        menu = QtWidgets.QMenu(self)
+
+        # Reuse your existing icons
+        icon_add = qtawesome.icon('ei.caret-right')
+
+        # Create actions
+        action_add = menu.addAction(icon_add, "Add selected")
+        action_add_all = menu.addAction(icon_add, "Add all items")
+        menu.addSeparator()
+        action_select_all = menu.addAction("Select all (Ctrl+A)")
+        action_deselect_all = menu.addAction("Deselect all (Esc)")
+
+        # Display the menu at the cursor position
+        # mapToGlobal converts widget coordinates to screen coordinates
+        action = menu.exec_(self.devicelist.viewport().mapToGlobal(position))
+
+        # Handle the selected action
+        if action == action_add:
+            self.add_datastreams_clicked()
+        elif action == action_add_all:
+            self.add_all_datastreams()
+        elif action == action_select_all:
+            self.devicelist.selectAll()
+        elif action == action_deselect_all:
+            self.devicelist.clearSelection()
 
     def apply_clicked_datastreams(self):
         funcname = __name__ + '.apply_clicked_datastreams()'

@@ -425,7 +425,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                         self.devicetree.setItemWidget(itm_datatype, 2, button)
 
                     #parentitm = itm
-                    tmpdict = tmpdict_new
+                    #tmpdict = tmpdict_new
 
                 if flag_tree_update:
                     #self.devicetree.expandAll()

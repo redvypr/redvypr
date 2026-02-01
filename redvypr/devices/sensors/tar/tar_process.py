@@ -445,6 +445,7 @@ class TarProcessor():
                             dataarray[p['ntcistart']:p['ntciend'] + 1] = p[datatype_packet]
                         except:
                             logger.debug('Could not add data', exc_info=True)
+                            #print(f"{data_packet_processed=}")
 
                         self.packetbuffer_tar_merge[mac][datatype_packet][nump]['dataarray'] = dataarray
                         self.packetbuffer_tar_merge[mac][datatype_packet][nump]['nmerged'] += len(p[datatype_packet])

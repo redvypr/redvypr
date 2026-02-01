@@ -1,5 +1,7 @@
 import datetime
 import os.path
+
+import PyQt6.sip
 from PyQt6 import QtWidgets, QtCore, QtGui
 import time
 import numpy as np
@@ -372,6 +374,120 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
 
 
 
+class DataStreamTableItem(QtWidgets.QTableWidgetItem):
+    def __init__(self, *args, datastream=None, device=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.datastream = datastream
+        self.device = device
+        self.datastreama = RedvyprAddress(self.datastream)
+        self.formatstr = "{:.5f}"
+        self.data_buffer = []
+        self.data_buffer_t = []
+        self.data_buffer_len = 2000 # Buffer length
+
+    def get_data(self, t_intervall):
+        funcname = __name__ + '.get_data():'
+        logger.info(funcname)
+        ttmp = np.asarray(self.data_buffer_t)
+        ind = (ttmp >= min(t_intervall)) & (ttmp <= max(t_intervall))
+        print(funcname, 'ind', ind)
+        data = {'t': [], 'x': [], 'y': []}
+        if sum(ind) > 0:
+            indi = np.where(ind)[0]
+            #print('indi', indi)
+            for i in indi:
+                data['t'].append(self.data_buffer_t[i])
+                data['x'].append(self.data_buffer_t[i])
+                data['y'].append(self.data_buffer[i])
+
+            #print('Shape',np.shape(data['y']))
+        else:
+            pass
+
+        data['t'] = np.asarray(data['t'])
+        data['y'] = np.asarray(data['y'])
+        data['x'] = np.asarray(data['x'])
+        return data
+
+    def update_plot(self, data):
+        if self.datastreama.matches(data):
+            try:
+                val = self.datastreama(data)
+            except:
+                logger.info("Could not get data",exc_info=True)
+                print(f"{data=}")
+                print(f"{self.datastreama=}")
+            valstr = self.formatstr.format(val)
+            self.setText(valstr)
+
+            data_tmp = val
+            data_tmp_t = data['_redvypr']['t']  # use the redvypr time
+            if isinstance(data_tmp, numpy.ndarray):
+                data_final = numpy.mean(data_tmp)
+                data_final_t = numpy.mean(data_tmp_t)
+            # Generic Iterables (Listen, Tupel, Sets, Generatoren)
+            elif isinstance(data_tmp, Iterable):
+                data_final = numpy.mean(data_tmp)
+                data_final_t = numpy.mean(data_tmp_t)
+            else:
+                data_final = data_tmp
+                data_final_t = data_tmp_t
+
+            self.data_buffer.append(data_final)
+            self.data_buffer_t.append(data_final_t)
+
+            if len(self.data_buffer) > self.data_buffer_len:
+                self.data_buffer.pop(0)
+                self.data_buffer_t.pop(0)
+
+
+class RealtimedataPlotButton(QtWidgets.QPushButton):
+    def __init__(self, sdata, device, parent_widget):
+        super().__init__("Open Plot")
+        self.sdata = sdata
+        self.device = device
+        self.parent_widget = parent_widget  # Referenz auf dein RedvyprDeviceWidget
+        self.clicked.connect(self.open_plot)
+        self.external_plot = None  # Hier speichern wir die Referenz auf das Fenster
+
+    def open_plot(self):
+        # Deine Plot-Konfigurations-Logik
+        if 'XY' in self.sdata.realtimeplottype:
+            configLine = XYPlotWidget.configLine(y_addr=self.sdata.datastream)
+            config = XYPlotWidget.ConfigXYplot(
+                interactive='xlim_keep',
+                data_dialog='off',
+                lines=[configLine]
+            )
+
+            # Erstelle das Widget als eigenständiges Fenster
+            self.external_plot = XYPlotWidget.XYPlotWidget(
+                config=config,
+                redvypr_device=self.device
+            )
+
+            # Verbinde Signale (wie in deinem Code)
+            self.external_plot.plotWidget.scene().sigMouseMoved.connect(
+                self.parent_widget.anyMouseMoved)
+            self.external_plot.interactive_signal.connect(
+                self.parent_widget.xyplot_interactive_signal)
+
+            self.external_plot.vlines = []
+            self.external_plot.vlines_xpos = []
+
+            # Fenster-Einstellungen
+            self.external_plot.setWindowTitle(f"Plot: {self.sdata.datastream}")
+            self.external_plot.resize(800, 600)
+            self.external_plot.show()
+
+    def update_plot(self, data):
+        """
+        Falls das Plot-Fenster offen ist, leiten wir die
+        neuen Daten direkt an den Plot weiter.
+        """
+        if self.external_plot and self.external_plot.isVisible():
+            self.external_plot.update_plot(data)
+
 
 
 
@@ -501,7 +617,7 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
 
 
 
-class PlotCanvas(FigureCanvas):
+class PlotCanvas_legacy(FigureCanvas):
     def __init__(self, parent=None, width=5, height=4, dpi=100):
         fig = Figure(figsize=(width, height), dpi=dpi)
         self.fig = fig
@@ -526,12 +642,12 @@ class PlotCanvas(FigureCanvas):
 #
 iColType = 0
 iColName = 1
-iColChoose = 2
-iColRem = 3
-iColPlottye = 4
-iColCaltype = 5
-iColCalconfig = 6
-iColRef = 7
+#iColChoose = 2
+iColRem = 2
+#iColPlottye = 4
+iColCaltype = 3
+iColCalconfig = 4
+iColRef = 5
 class initDeviceWidget(QtWidgets.QWidget):
     connect = QtCore.pyqtSignal(
         RedvyprDevice)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
@@ -666,11 +782,9 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.sensorsConfigTable.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.sensorsConfigTable.customContextMenuRequested.connect(
             self._show_context_menu)
-        self.__headerlabels = ['Type', 'Name', 'Change Address', 'Remove',
-                               'Plot type', 'Caltype', 'Calibration config',
+        self.__headerlabels = ['Type', 'Name', 'Remove',
+                               'Caltype', 'Calibration config',
                                'Reference']
-
-
 
         self.sensorsConfigTable.setColumnCount(len(self.__headerlabels))
         self.sensorsConfigTable.setHorizontalHeaderLabels(self.__headerlabels)
@@ -701,12 +815,16 @@ class initDeviceWidget(QtWidgets.QWidget):
                     mansensorName.listindex = i
                     self.sensorsConfigTable.setCellWidget(i, iColName, mansensorName)
 
-
-                sensorChoose = QtWidgets.QPushButton('Choose')  # Choose a datastream
-                sensorChoose.clicked.connect(self.chooseDatastream)
-                sensorChoose.lineEditDatastream_addr = sensorDatastream
-                sensorChoose.listindex = i
-                self.sensorsConfigTable.setCellWidget(i, iColChoose, sensorChoose)
+                if False:
+                    # Choose a datastream
+                    sensorChoose = QtWidgets.QPushButton('Choose')  # Choose a datastream
+                    sensorChoose.clicked.connect(self.chooseDatastream)
+                    if sdata.inputtype == 'datastream':
+                        sensorChoose.lineEditDatastream_addr = sensorDatastream
+                    else:
+                        sensorChoose.setEnabled(False)
+                    sensorChoose.listindex = i
+                    self.sensorsConfigTable.setCellWidget(i, iColChoose, sensorChoose)
 
                 sensorRem = QtWidgets.QPushButton('Remove')  # Choose a datastream
                 sensorRem.clicked.connect(self.sensorRemClicked)
@@ -717,23 +835,24 @@ class initDeviceWidget(QtWidgets.QWidget):
                     sensorRem.sensortype = 'manual'
 
                 self.sensorsConfigTable.setCellWidget(i, iColRem, sensorRem)
-                # The realtime plot type
-                sensorPlotType = QtWidgets.QComboBox()  # Choose a datastream
-                sensorPlotType.addItem('Table')
-                sensorPlotType.addItem('XY Plot')
-                sensorPlotType.listindex = i
-                if sdata.inputtype == 'datastream':
-                    sensorPlotType.sensortype = 'datastream'
-                else:
-                    sensorPlotType.sensortype = 'manual'
-                    sensorPlotType.setEnabled(False)
+                if False:
+                    # The realtime plot type
+                    sensorPlotType = QtWidgets.QComboBox()  # Choose a datastream
+                    sensorPlotType.addItem('Table')
+                    sensorPlotType.addItem('XY Plot')
+                    sensorPlotType.listindex = i
+                    if sdata.inputtype == 'datastream':
+                        sensorPlotType.sensortype = 'datastream'
+                    else:
+                        sensorPlotType.sensortype = 'manual'
+                        sensorPlotType.setEnabled(False)
 
-                if 'XY' in sdata.realtimeplottype:
-                    sensorPlotType.setCurrentIndex(1)  # XY
-                else:
-                    sensorPlotType.setCurrentIndex(0)  # Table
-                sensorPlotType.currentIndexChanged.connect(self.__realtime_plot_changed__)
-                self.sensorsConfigTable.setCellWidget(i, iColPlottye, sensorPlotType)
+                    if 'XY' in sdata.realtimeplottype:
+                        sensorPlotType.setCurrentIndex(1)  # XY
+                    else:
+                        sensorPlotType.setCurrentIndex(0)  # Table
+                    sensorPlotType.currentIndexChanged.connect(self.__realtime_plot_changed__)
+                    self.sensorsConfigTable.setCellWidget(i, iColPlottye, sensorPlotType)
 
                 # Calibration type
                 sensorCalibrationType = QtWidgets.QComboBox()  # Choose a datastream
@@ -750,7 +869,6 @@ class initDeviceWidget(QtWidgets.QWidget):
 
                 sensorCalibrationType.setCurrentIndex(idx_cal)
                 sensorCalibrationType.currentIndexChanged.connect(self.__calibration_type_changed__)
-                self.device.custom_config.calibrationdata[i].__calibration_type_widget__ = sensorCalibrationType
                 self.sensorsConfigTable.setCellWidget(i, iColCaltype, sensorCalibrationType)
 
 
@@ -762,6 +880,10 @@ class initDeviceWidget(QtWidgets.QWidget):
                 self.sensorsConfigTable.setCellWidget(i, iColCalconfig,
                                                       sensorCalibrationConfig)
 
+                self.device.custom_config.calibrationdata[
+                    i].__calibration_type_widget__ = sensorCalibrationType
+                self.device.custom_config.calibrationdata[
+                    i].__calibration_config_widget__ = sensorCalibrationConfig
                 # Reference index
                 refbutton = QtWidgets.QRadioButton("Reference")
                 refbutton.refindex = i
@@ -993,8 +1115,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         try:
             for c in self.device.custom_config.calibrationdata:
                 c.__calibration_type_widget__.setEnabled(True)
+                c.__calibration_config_widget__.setEnabled(True)
 
             self.device.custom_config.calibrationdata[indexnew].__calibration_type_widget__.setEnabled(False)
+            self.device.custom_config.calibrationdata[indexnew].__calibration_config_widget__.setEnabled(False)
         except:
             logger.debug("Could not update refsensor",exc_info=True)
 
@@ -1028,7 +1152,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.device.subscribe_to_sensors()
 
     def manualSensorChanged(self):
-        funcname = __name__ + '.manualsSensorChanged():'
+        funcname = __name__ + '.manualSensorChanged():'
         logger.debug(funcname)
         l = self.sender()
         sensorname = l.text()
@@ -1037,6 +1161,41 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.device.custom_config.calibrationdata[i].sn = sensorname
         #self.device.config['manualsensors']
         self.updateDisplayWidget()
+
+    def sensorAddClicked(self):
+        funcname = __name__ + '.sensorAddClicked():'
+        logger.debug(funcname)
+
+        calibrationtype = self.caltype.currentText().lower()
+        newsen = RedvyprAddress('')
+        calconfig = self.calibration_config_widget_custom.get_config()
+        if not(self.sender() == self.sensoradd):
+            logger.debug('Manual sensor')
+            self.device.add_sensor(newsen, sentype='manual',
+                                   calibrationtype=calibrationtype, calconfig=calconfig)
+
+            self.populateSensorInputWidgets()
+            self.updateDisplayWidget()
+        else:
+            logger.debug('Adding realtime data sensor')
+            #self.device.add_sensor(newsen, sentype='datastream',
+            #                       calibrationtype=calibrationtype, calconfig=calconfig)
+            self.dstreamwidget = redvypr.gui.RedvyprAddressWidget(self.device.redvypr)
+            self.dstreamwidget.apply.connect(self.sensorApplyClicked)
+            self.dstreamwidget.show()
+
+    def sensorApplyClicked(self, datastream_dict):
+        funcname = __name__ + '.sensorApplyClicked():'
+        logger.debug(funcname)
+        print(f'Choosen:{datastream_dict=}')
+        calibrationtype = self.caltype.currentText().lower()
+        newsen = datastream_dict['datastream_address']
+        calconfig = self.calibration_config_widget_custom.get_config()
+        self.device.add_sensor(newsen, sentype='datastream',
+                                   calibrationtype=calibrationtype, calconfig=calconfig)
+
+        self.updateDisplayWidget()
+        self.device.subscribe_to_sensors()
 
     def sensorsAddClicked(self):
         funcname = __name__ + '.sensorsAddClicked():'
@@ -1076,7 +1235,9 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.populateSensorInputWidgets()
             self.updateDisplayWidget()
 
-    def sensorAddClicked(self):
+
+
+    def sensorAddClicked_legacy(self):
         funcname = __name__ + '.sensorAddClicked():'
         logger.debug(funcname)
 
@@ -1212,13 +1373,13 @@ class displayDeviceWidget(QtWidgets.QWidget):
         funcname = __name__ + '__init__():'
         logger.debug(funcname)
         super(QtWidgets.QWidget, self).__init__()
-        self.layout        = QtWidgets.QGridLayout(self)
+        self.layout = QtWidgets.QGridLayout(self)
         self.irowdatastart = 5 # The row of the datatable where the data starts
         self.irowparameter = 0  # The row of the datatable where the data starts
-        self.irowinput     = 1  # The row of the datatable where the data starts
-        self.irowunit      = 2  # The row of the datatable where the data starts
-        self.irowmac_sn    = 3  # The row of the datatable where the data starts
-        self.irowsenstype  = 4  # The row of the datatable where the data starts
+        self.irowinput = 1  # The row of the datatable where the data starts
+        self.irowunit = 2  # The row of the datatable where the data starts
+        self.irowmac_sn = 3  # The row of the datatable where the data starts
+        self.irowsenstype = 4  # The row of the datatable where the data starts
         self.rowheader = ['Parameter','Input','Unit', 'SN', 'Sensortype']
         self.device = device
 
@@ -1280,7 +1441,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def create_widgets(self):
         funcname = __name__ + 'create_widgets():'
         logger.debug(funcname)
-
         #
         # Create the Calibration widget with the averaged data
         #
@@ -1294,15 +1454,23 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.addLineButton.clicked.connect(self.addBlankCalibrationData)
         self.remLineButton = QtWidgets.QPushButton('Rem row(s)')
         self.remLineButton.clicked.connect(self.remCalibrationData)
-        # The widget the realtime data is shown
+        #
+        # Init the widget the realtime data is shown
+        #
         self.realtimedata_parent_widget = QtWidgets.QWidget()
         self.realtimedata_parent_widget_layout = QtWidgets.QGridLayout(self.realtimedata_parent_widget)
         # Add a scroll area, to deal with a lot of data
         self.plot_widgets_parent_scroll = QtWidgets.QScrollArea()
         self.plot_widgets_parent_scroll.setWidget(self.realtimedata_parent_widget)
         self.plot_widgets_parent_scroll.setWidgetResizable(True)
-        # Add the realtime data
-        self.add_plots()
+        # Add the realtimedata table
+        self.realtimedata_table = QtWidgets.QTableWidget()
+        self.realtimedata_table_headerlabels = ['Datastream', 'Unit', 'Data', 'Plot']
+        self.realtimedata_table.setColumnCount(len(self.realtimedata_table_headerlabels))
+        self.realtimedata_table.setHorizontalHeaderLabels(self.realtimedata_table_headerlabels)
+        self.realtimedata_parent_widget_layout.addWidget(self.realtimedata_table,0,0)
+        # Add the realtime data items to the table
+        self.add_realtime_widgets()
         self.addintervall_time = QtWidgets.QDoubleSpinBox()
         self.addintervall_time.setValue(30.0)
         self.addintervall_combo = QtWidgets.QComboBox()
@@ -1612,7 +1780,158 @@ class displayDeviceWidget(QtWidgets.QWidget):
         #self.update_coefftable_ntc()
         #print('Config', self.device.custom_config)
 
-    def add_plots(self):
+    def add_realtime_widgets(self):
+        """
+        Add the realtimedata widgets
+        :return:
+        """
+        funcname = __name__ + '.add_realtime_widgets():'
+        logger.debug(funcname)
+        # Re-Initialize plot_widgets
+        #self.plot_widgets = []
+        #self.datastreams = []  # List of all datastreams
+        self.sensorcols = []
+        self.sensorcolsindex = []
+        self.manualsensorcols = []
+        self.manualsensorcolsindex = []
+        self.allsensornames = []
+        nwidgets = 0
+        ioff = 1
+        nrow = 0
+        ncol = 0
+        nsensors = 0
+        # Count realtimesensors
+        for i, sdata in enumerate(self.device.custom_config.calibrationdata):
+            if sdata.inputtype == 'datastream':
+                nsensors += 1
+        self.realtimedata_table.setRowCount(nsensors)
+        for i, sdata in enumerate(self.device.custom_config.calibrationdata):
+            # Realtimedata
+            if sdata.inputtype == 'datastream':
+                # This is to check if the plot has changed
+                try:
+                    realtimeplottype = sdata.__realtimeplottype
+                except:
+                    #logger.info('Could not get plottype',exc_info=True)
+                    realtimeplottype = 'unknown'
+
+                same_plotwidgettype = realtimeplottype == sdata.realtimeplottype
+                try:
+                    plot_widget = sdata.__plot_widget
+                    xyplotwidget = sdata.__xyplotwidget
+                    logger.debug('Plotwidget is existing')
+                    if PyQt6.sip.isdeleted(plot_widget):
+                        print("Widget is deleted, recreating")
+                        flag_new_plot_widget = True
+                    flag_new_plot_widget = False
+                except:
+                    logger.debug(funcname + 'creating plotwidget')
+                    flag_new_plot_widget = True
+
+                #print('same_plotwidgettype',realtimeplottype, same_plotwidgettype,flag_new_plot_widget)
+                # Check if the plotwidgettype changed
+                if (same_plotwidgettype == False) and (flag_new_plot_widget == False):
+                    #print('Changing plotwidget')
+                    try:
+                        sdata.__plot_widget.setParent(None)
+                    except:
+                        logger.info('Could not close widget',exc_info=True)
+
+                    flag_new_plot_widget = True
+
+                if flag_new_plot_widget:
+                    #print('Adding new widget',sdata.realtimeplottype)
+                    #config = {}
+                    #config['title'] = sdata.sn
+                    #self.datastreams.append(None)
+                    #plot_widget = plot_widgets.redvypr_graph_widget(config=config)
+                    if True:
+                        plot_widget = DataStreamTableItem(device=self.device,datastream = sdata.datastream)
+                        xyplotwidget = RealtimedataPlotButton(sdata=sdata,device=self.device,parent_widget=self.realtimedata_table)
+                        sdata.__realtimeplottype = sdata.realtimeplottype
+                    elif 'XY' in sdata.realtimeplottype:
+                        #print('Adding XYplotwidget with address {}'.format(sdata.datastream))
+                        configLine = XYPlotWidget.configLine(y_addr=sdata.datastream)
+                        config = XYPlotWidget.ConfigXYplot(interactive='xlim_keep', data_dialog='off', lines=[configLine])
+                        plot_widget = XYPlotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
+                        plot_widget.plotWidget.scene().sigMouseMoved.connect(self.anyMouseMoved)
+                        plot_widget.interactive_signal.connect(self.xyplot_interactive_signal)
+                        #plot_widget.plotWidget.scene().sigMouseClicked.connect(self.anyMouseClicked)
+                        plot_widget.vlines = []  # List of vertical lines
+                        plot_widget.vlines_xpos = []  # List of vertical lines
+                        sdata.__realtimeplottype = sdata.realtimeplottype
+                        # Check if there is already a subscription
+                        plot_widget.datastream = sdata.datastream  # Datastream to be plotted
+                        print('Done')
+                    elif 'able' in sdata.realtimeplottype:
+                        plot_widget = QTableCalibrationWidget(sensorindex=i, device=self.device)
+                        sdata.__realtimeplottype = sdata.realtimeplottype
+                        # Check if there is already a subscription
+                        plot_widget.datastream = sdata.datastream  # Datastream to be plotted
+
+                plot_widget.datatablecolumn = i + ioff  # The column the data is saved
+                plot_widget.sensorindex = i
+                plot_widget.sensortype = 'datastream'
+                self.sensorcolsindex.append(plot_widget.datatablecolumn)
+                self.sensorcols.append(str(sdata.datastream))
+                self.allsensornames.append(str(sdata.datastream))
+                # Add the widget to the parent widget
+                self.ncol_realtime_datastream = 0
+                self.ncol_realtime_unit = 1
+                self.ncol_realtime_data = 2
+                self.ncol_realtime_plot = 3
+                datastreamitem = QtWidgets.QTableWidgetItem(plot_widget.datastream.to_address_string())
+                self.realtimedata_table.setItem(nrow, self.ncol_realtime_datastream, datastreamitem)
+                self.realtimedata_table.setItem(nrow, self.ncol_realtime_data, plot_widget)
+                self.realtimedata_table.setCellWidget(nrow, self.ncol_realtime_plot, xyplotwidget)
+                nrow += 1
+                nwidgets += 1
+                sdata.__plot_widget = plot_widget
+                sdata.__xyplotwidget = xyplotwidget
+
+            # Manualdata
+            else:
+                if len(self.sensorcolsindex)>0:
+                    ioff = max(self.sensorcolsindex) + 1 # Make a new ioff
+
+                self.manualsensorcols.append(str(sdata.sn))
+                self.manualsensorcolsindex.append(i + ioff)
+                self.allsensornames.append(str(sdata.sn))
+
+        #self.realtimedata_vertical_spacer = QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        #self.plot_widgets_parent_layout.addItem(self.realtimedata_vertical_spacer, nrow+1, 0)
+        # Update the name of the reference sensor
+        try:
+            self.device.custom_config.name_ref_sensor = self.allsensornames[self.device.custom_config.ind_ref_sensor]
+        except:
+            self.device.custom_config.name_ref_sensor = ''
+
+        # Collect all widgets
+        self.plot_widgets = []
+        # Loop über alle Zeilen der Tabelle
+        for row in range(self.realtimedata_table.rowCount()):
+
+            # 1. Das "Data"-Widget (Dein TableItem mit update_plot Funktion)
+            # Da es mit setItem() gesetzt wurde:
+            item_data = self.realtimedata_table.item(row, self.ncol_realtime_data)
+
+            # 2. Das "Plot"-Widget (Der Button oder das XY-Plot Widget)
+            # Da es vermutlich mit setCellWidget() gesetzt wurde:
+            widget_plot = self.realtimedata_table.cellWidget(row,
+                                                             self.ncol_realtime_plot)
+
+            # Sammeln in der Liste (nur wenn sie existieren)
+            if item_data:
+                self.plot_widgets.append(item_data)
+
+            if widget_plot:
+                self.plot_widgets.append(widget_plot)
+
+        logger.debug(f"Collected {len(self.plot_widgets)} widgets for updates.")
+
+
+
+    def add_plots_legacy(self):
         """
         Add the realtimedata plots/tables
         :return:
@@ -1776,6 +2095,47 @@ class displayDeviceWidget(QtWidgets.QWidget):
                             line.setPos(xpos[i])
                             p.plotWidget.addItem(line, ignoreBounds=True)
                             self.__interactive_lines.append({'plotwidget':p,'line':line})
+
+    def xyplot_interactive_signal(self, data_interactive):
+        funcname = __name__ + '.xyplot_interactive_signal():'
+        logger.debug(funcname)
+        sender = self.sender()
+        #print('Got data',data_interactive)
+        xpos = data_interactive['xlines']
+        try:
+            self.__interactive_lines
+        except:
+            self.__interactive_lines = []
+
+        if len(xpos) == 0:  # Set the position everywhere
+            self.__t_intervall_interactive = None
+            #print('Removing lines')
+            for l in self.__interactive_lines:
+                l['plotwidget'].plotWidget.removeItem(l['line'])
+
+            self.__interactive_lines = []
+        elif len(xpos) == 2: # Set the position everywhere
+            self.__t_intervall_interactive = xpos
+            for p in self.plot_widgets:
+                # print('Moveit',type(p),type(XYplotWidget),isinstance(p,type(XYplotWidget)))
+                if isinstance(p, XYPlotWidget.XYPlotWidget):
+                    if sender == p.plotWidget.scene():
+                        pass
+                    else:
+                        logger.debug('Adding line')
+                        for i in range(2):
+                            # Add lines to the graphs
+                            angle = 90
+                            color = QtGui.QColor(200, 100, 100)
+                            linewidth = 2.0
+                            pen = pyqtgraph.mkPen(color, width=linewidth)
+                            line = pyqtgraph.InfiniteLine(angle=angle, movable=False, pen=pen)
+                            line.setPos(xpos[i])
+                            p.plotWidget.addItem(line, ignoreBounds=True)
+                            self.__interactive_lines.append({'plotwidget':p,'line':line})
+
+
+
 
     def get_intervalldatamode_changed(self):
         mode = self.addintervall_combo.currentText()
@@ -2061,9 +2421,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
             for i, caldata in enumerate(self.device.custom_config.calibrationdata):
                 if caldata.inputtype == 'datastream':
                     plot_widget = caldata.__plot_widget
-                    #print('Checking widget',i,plot_widget.datastream)
-                    if plot_widget.datastream(data, strict=False):
-                        #logger.debug('Updating plot {:d}')
+                    print('Checking widget',i,plot_widget.datastream)
+                    if plot_widget.datastream.matches(data):
+                        print(f'Updating plot {i}')
                         plot_widget.update_plot(data)
                         try:
                             update_datainfo = caldata.__update_with_datapacket

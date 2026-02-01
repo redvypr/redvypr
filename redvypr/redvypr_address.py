@@ -625,12 +625,12 @@ class RedvyprAddress:
         """
 
         if isinstance(packet, dict):
-            address = RedvyprAddress(dict)
+            address = RedvyprAddress(packet)
         else:
             address = packet
 
         # 1. RHS Filter check
-        match_filter = self.matches_filter(packet)
+        match_filter = self.matches_filter(packet, soft_missing=soft_missing)
         if match_filter == False:
             return False
 
@@ -644,18 +644,25 @@ class RedvyprAddress:
             except (KeyError, FilterNoMatch):
                 return False
 
-        # 3. Wildcard logic: If I don't care about the key, any key matches
-        # (provided the filter above matched)
-        if address.datakey is None:
-            return True
-
-        # 4. Specific key or Subsumption logic,
+        # 3. Specific key or Subsumption logic,
         # try if datakey(s) match, here also more complex datapackets are treated properly
         try:
             self.__call__(packet)
             return True
         except:
-            return False
+            # If this is a packet, the address is without a datakey, but the __call__ did not find any data
+            # so it does not match
+            if isinstance(packet, dict):
+                return False
+            else:
+                pass
+
+        # 4. Wildcard logic: If I don't care about the key, any key matches
+        # (provided the filter above matched)
+        if address.datakey is None:
+            return True
+
+        return False
 
     def __call__(self, packet, strict=True, soft_missing=True):
         if isinstance(packet, RedvyprAddress):
