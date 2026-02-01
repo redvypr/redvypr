@@ -1256,8 +1256,8 @@ class XYPlotWidget(QtWidgets.QFrame):
             has_metadata = False
 
         if has_metadata == False or force_update:
-            metadata = self.device.get_metadata(line.y_addr)
-            line._metadata = metadata[list(metadata.keys())[0]]
+            metadata = self.device.get_metadata(line.y_addr, mode='merge')
+            line._metadata = metadata
             self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._metadata)))
             try:
                 unit = line._metadata['unit']

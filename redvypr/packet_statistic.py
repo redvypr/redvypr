@@ -428,7 +428,10 @@ def get_metadata(statistics,
 
                     #print("Expanded", metadata_return)
 
-    return metadata_return
+    if mode == 'merge':
+        return metadata_return[raddress.to_address_string()]
+    else:
+        return metadata_return
 
 
 def get_metadata_in_range(
