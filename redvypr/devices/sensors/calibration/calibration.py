@@ -452,7 +452,8 @@ class RealtimedataPlotButton(QtWidgets.QPushButton):
 
     def open_plot(self):
         # Deine Plot-Konfigurations-Logik
-        if 'XY' in self.sdata.realtimeplottype:
+        print("Plotting")
+        if True:
             configLine = XYPlotWidget.configLine(y_addr=self.sdata.datastream)
             config = XYPlotWidget.ConfigXYplot(
                 interactive='xlim_keep',
@@ -1424,7 +1425,15 @@ class displayDeviceWidget(QtWidgets.QWidget):
         """
         funcname = __name__ + '.clear_widgets():'
         logger.debug(funcname)
-        w_delete = [self.realtimedata_parent_widget, self.calibrationdata_widget, self.realtimedata_parent_widget, self.calibrationcalculation_widget]
+        print("Clearing widgets")
+        for i, sdata in enumerate(self.device.custom_config.calibrationdata):
+            if hasattr(sdata,'__plot_widget'):
+                delattr(sdata,'__plot_widget')
+            if hasattr(sdata,'__xyplotwidget'):
+                delattr(sdata, '__xyplotwidget')
+        self.plot_widgets = []
+
+        w_delete = [self.realtimedata_table, self.realtimedata_parent_widget, self.calibrationdata_widget, self.realtimedata_parent_widget, self.calibrationcalculation_widget]
         for w in w_delete:
             try:
                 w.deleteLater()
@@ -1465,7 +1474,10 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.plot_widgets_parent_scroll.setWidgetResizable(True)
         # Add the realtimedata table
         self.realtimedata_table = QtWidgets.QTableWidget()
-        self.realtimedata_table_headerlabels = ['Datastream', 'Unit', 'Data', 'Plot']
+        self.ncol_realtime_datastream = 0
+        self.ncol_realtime_data = 1
+        self.ncol_realtime_plot = 2
+        self.realtimedata_table_headerlabels = ['Datastream', 'Data', 'Plot']
         self.realtimedata_table.setColumnCount(len(self.realtimedata_table_headerlabels))
         self.realtimedata_table.setHorizontalHeaderLabels(self.realtimedata_table_headerlabels)
         self.realtimedata_parent_widget_layout.addWidget(self.realtimedata_table,0,0)
@@ -1820,24 +1832,18 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     plot_widget = sdata.__plot_widget
                     xyplotwidget = sdata.__xyplotwidget
                     logger.debug('Plotwidget is existing')
+                    flag_new_plot_widget = False
                     if PyQt6.sip.isdeleted(plot_widget):
                         print("Widget is deleted, recreating")
                         flag_new_plot_widget = True
-                    flag_new_plot_widget = False
+
                 except:
                     logger.debug(funcname + 'creating plotwidget')
                     flag_new_plot_widget = True
 
-                #print('same_plotwidgettype',realtimeplottype, same_plotwidgettype,flag_new_plot_widget)
-                # Check if the plotwidgettype changed
-                if (same_plotwidgettype == False) and (flag_new_plot_widget == False):
-                    #print('Changing plotwidget')
-                    try:
-                        sdata.__plot_widget.setParent(None)
-                    except:
-                        logger.info('Could not close widget',exc_info=True)
 
-                    flag_new_plot_widget = True
+
+                flag_new_plot_widget = True
 
                 if flag_new_plot_widget:
                     #print('Adding new widget',sdata.realtimeplottype)
@@ -1847,27 +1853,8 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     #plot_widget = plot_widgets.redvypr_graph_widget(config=config)
                     if True:
                         plot_widget = DataStreamTableItem(device=self.device,datastream = sdata.datastream)
-                        xyplotwidget = RealtimedataPlotButton(sdata=sdata,device=self.device,parent_widget=self.realtimedata_table)
+                        xyplotwidget = RealtimedataPlotButton(sdata=sdata,device=self.device,parent_widget=self)
                         sdata.__realtimeplottype = sdata.realtimeplottype
-                    elif 'XY' in sdata.realtimeplottype:
-                        #print('Adding XYplotwidget with address {}'.format(sdata.datastream))
-                        configLine = XYPlotWidget.configLine(y_addr=sdata.datastream)
-                        config = XYPlotWidget.ConfigXYplot(interactive='xlim_keep', data_dialog='off', lines=[configLine])
-                        plot_widget = XYPlotWidget.XYPlotWidget(config=config, redvypr_device=self.device)
-                        plot_widget.plotWidget.scene().sigMouseMoved.connect(self.anyMouseMoved)
-                        plot_widget.interactive_signal.connect(self.xyplot_interactive_signal)
-                        #plot_widget.plotWidget.scene().sigMouseClicked.connect(self.anyMouseClicked)
-                        plot_widget.vlines = []  # List of vertical lines
-                        plot_widget.vlines_xpos = []  # List of vertical lines
-                        sdata.__realtimeplottype = sdata.realtimeplottype
-                        # Check if there is already a subscription
-                        plot_widget.datastream = sdata.datastream  # Datastream to be plotted
-                        print('Done')
-                    elif 'able' in sdata.realtimeplottype:
-                        plot_widget = QTableCalibrationWidget(sensorindex=i, device=self.device)
-                        sdata.__realtimeplottype = sdata.realtimeplottype
-                        # Check if there is already a subscription
-                        plot_widget.datastream = sdata.datastream  # Datastream to be plotted
 
                 plot_widget.datatablecolumn = i + ioff  # The column the data is saved
                 plot_widget.sensorindex = i
@@ -1876,10 +1863,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 self.sensorcols.append(str(sdata.datastream))
                 self.allsensornames.append(str(sdata.datastream))
                 # Add the widget to the parent widget
-                self.ncol_realtime_datastream = 0
-                self.ncol_realtime_unit = 1
-                self.ncol_realtime_data = 2
-                self.ncol_realtime_plot = 3
                 datastreamitem = QtWidgets.QTableWidgetItem(plot_widget.datastream.to_address_string())
                 self.realtimedata_table.setItem(nrow, self.ncol_realtime_datastream, datastreamitem)
                 self.realtimedata_table.setItem(nrow, self.ncol_realtime_data, plot_widget)
@@ -2391,7 +2374,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
                 else:
                     p.vLineMouse.setPos(mousePoint.x())
 
-
     def anyMouseClicked(self, evt):
         sender = self.sender()
         #print('Clicked: ' + str(evt.scenePos()))
@@ -2425,6 +2407,12 @@ class displayDeviceWidget(QtWidgets.QWidget):
                     if plot_widget.datastream.matches(data):
                         print(f'Updating plot {i}')
                         plot_widget.update_plot(data)
+                        # Update xy plot, if present
+                        try:
+                            caldata.__xyplotwidget.update_plot(data)
+                        except:
+                            pass
+
                         try:
                             update_datainfo = caldata.__update_with_datapacket
                         except:
