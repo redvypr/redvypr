@@ -628,6 +628,8 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
                 button.setChecked(False)
                 return
 
+
+
             self.statuswidget = SerialStatusWidget(dhffl=self.dhffl, data_queue=self.dhffl.serial_queue_status,
                                                    comqueue=self.__comqueue)
             self.statuswidget.statuswidget_queue.put('test')
@@ -641,6 +643,19 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
             self.commandwidget.setEnabled(True)
             button.setText('Close')
             self.status_serial = 'open'
+
+            # Check if the serial shall wait for a booting device and let it stay
+            # in the bootloader
+            if self.detectandstayinbootloader.isChecked():
+                logger.info("Will search for 20 seconds a bootloader")
+                mac = self.dhffl.poll_serial_and_stay_in_bootloader(tsearch=20)
+                # Update the gui
+                if mac is not None:
+                    print("Found sensor", mac)
+                    mac = self.dhffl.sendFlag(mac, bootflag=0,
+                                              countdown=5)
+                    self.query_devices(get_calib=False)
+
         else:
             self.stop_clicked()
             self.status_serial = 'closed'
@@ -1153,34 +1168,6 @@ class HexflashWidget(QtWidgets.QWidget):
         self.automatic_filename_changed()
         self.update_device_tree()
 
-
-    def create_statuswidget_legacy(self):
-        """
-        Creating a widget that shows the serial datastream
-        """
-        if self.dhffl is not None:
-            self.statuswidget = QtWidgets.QWidget()
-            self.statuswidget_layout = QtWidgets.QVBoxLayout(self.statuswidget)
-            self.statuswidget_progress = QtWidgets.QProgressBar()
-            self.statuswidget_layout.addWidget(self.statuswidget_progress)
-            self.statuswidget_progress_label = QtWidgets.QLabel('Status')
-            self.statuswidget_layout.addWidget(self.statuswidget_progress_label)
-            self.statuswidget_cancel = QtWidgets.QPushButton('Cancel')
-            self.statuswidget_cancel.clicked.connect(self.statuswidget_cancel_clicked)
-            self.statuswidget_layout.addWidget(self.statuswidget_cancel)
-            self.statuswidget_text = QtWidgets.QPlainTextEdit()
-            self.statuswidget_layout.addWidget(self.statuswidget_text)
-            self.statuswidget_com = QtWidgets.QLineEdit()
-            self.statuswidget_layout.addWidget(self.statuswidget_com)
-            self.statuswidget_com_send = QtWidgets.QPushButton('Send')
-            self.statuswidget_com_send.clicked.connect(self.send_command_clicked)
-            self.statuswidget_layout.addWidget(self.statuswidget_com_send)
-            self.statuswidget_queue = self.dhffl.serial_queue_write
-            self.statuswidget_timer = QtCore.QTimer()
-            self.statuswidget_timer.timeout.connect(self.update_statuswidget)
-            self.statuswidget_timer.start(200)
-
-
     def send_command_clicked(self):
         COMMAND = self.statuswidget_com.text()
         self.logger.debug('Send command {}'.format(COMMAND))
@@ -1211,6 +1198,7 @@ class HexflashWidget(QtWidgets.QWidget):
         self.logger.debug('Set flag clicked')
         bootflag = int(self.flag_widgets_boot_combo.currentText())
         countdown = int(self.flag_widgets_countdown_spin.value())
+        print(f"Setting bootflag:{bootflag},countdown:{countdown}")
         mac = self.dhffl.sendFlag(self.mac_sensor, bootflag=bootflag, countdown=countdown)
         time.sleep(0.1)
         self.dhffl.get_config_of_device(self.mac_sensor.macstr)

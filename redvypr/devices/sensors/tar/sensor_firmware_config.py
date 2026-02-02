@@ -373,6 +373,12 @@ class dhf_sensor():
 
         return command
 
+    def create_stay_in_bootloader_command(self):
+        self.logger.debug('create_stay_in_bootloader_command()')
+        command = "${:s}{:s}\n".format(self.macstr, self.macsum_str)
+        self.logger.debug('Device is in bootmonitor, command:{}'.format(command))
+        return command
+
     def create_printcalib_command_all(self):
         self.logger.debug('create_printcalib_command_all()')
         if self.status_firmware == 'bootmonitor':
@@ -545,7 +551,8 @@ class dhf_flasher():
         self.serial_queue_status = queue.Queue(maxsize=100000)
         self.serial_queue_received = queue.Queue(maxsize=100000)
         self.serial_queue_received2 = queue.Queue(maxsize=100000)
-        self.outqs = [self.serial_queue_status, self.serial_queue_received, self.serial_queue_received2]
+        self.serial_queue_bootloader = queue.Queue(maxsize=100000)
+        self.outqs = [self.serial_queue_status, self.serial_queue_received, self.serial_queue_received2, self.serial_queue_bootloader]
 
 
 
@@ -573,10 +580,36 @@ class dhf_flasher():
         logger.info('Starting readwrite thread')
         readwritethread.start()
 
-    def add_serial_read_queue_legacy(self):  # Not working at the moment, plan to re-alive and get read of readline2()
-        queue_received = queue.Queue(maxsize=100000)
-        self.outqs.append(queue_received)
-        return queue_received
+
+
+    def poll_serial_and_stay_in_bootloader(self, tsearch=20):
+        tstart = time.time()
+        while True:
+            if (time.time() - tstart) > tsearch:
+                return None
+            try:
+                rawdata = self.serial_queue_bootloader.get_nowait()
+                print("Got data", rawdata)
+                data = rawdata[2].decode('utf-8')
+                if '$' in data and len(data) >= 17 and 'CRC' in data:
+                    try:
+                        ds = dhf_sensor(data[1:17])
+                        ds.status_firmware = 'bootmonitor' # Hardcode the firmware to bootmonitor
+                    except:
+                        logger.info("Could not create sensor object", exc_info=True)
+                if '$' in data and len(data) >= 17 and 'countdown' in data:
+                    try:
+                        cmd = ds.create_stay_in_bootloader_command().encode('utf-8')
+                        # cmd = ds.create_bootconfig_command()
+                        print(f"Sending command:{cmd}")
+                        self.serial_write(cmd)
+                    except:
+                        logger.info("Could not create bootcommand", exc_info=True)
+                if '$' in data and len(data) >= 17 and '?' in data: # In bootloader, ready for commands
+                    return ds
+            except:
+                time.sleep(0.05)
+
 
     def stop(self):
         self.serial_queue_write.put({'STOP':True})
@@ -996,7 +1029,7 @@ class dhf_flasher():
         while ntries > 0:
             self.logger.debug(funcname + 'Ntries get config of device:{} of {}'.format(ntries,ntries_tot))
             ntries -= 1
-            time.sleep(0.1)
+            time.sleep(0.05)
             # And now check if there is something to receive from the device
             for i in range(10):
                 try:
@@ -1428,7 +1461,7 @@ class dhf_flasher():
         Sends a set flag command
         :return:
         """
-        funcname = '.sendReset():'
+        funcname = '.sendFlag():'
         self.logger.debug(funcname)
         if bootflag is not None:
             self.logger.debug(funcname + ' bootflag {}'.format(bootflag))
@@ -1436,20 +1469,27 @@ class dhf_flasher():
             self.serial_write(command.encode('utf-8'))
             # And now check if there is something to receive from the device
             for i in range(10):
+                time.sleep(0.05)
                 try:
                     data = self.serial_readline()
                 except:
                     continue
+
+        time.sleep(0.1)
         if countdown is not None:
             self.logger.debug(funcname + ' countdown {}'.format(countdown))
+
             macstr = mac.macstr
             if mac.status_firmware == 'bootmonitor':
                 DEVICECOMMAND = '${}{}countdown {}\n'.format(mac.macstr, mac.macsum_str, str(countdown))
             else:
                 DEVICECOMMAND = "${:s}!,countdown {}\n".format(macstr, str(countdown))
+
+            print("Sending command",DEVICECOMMAND)
             self.serial_write(DEVICECOMMAND.encode('utf-8'))
             # And now check if there is something to receive from the device
             for i in range(10):
+                time.sleep(0.05)
                 try:
                     data = self.serial_readline()
                 except:
