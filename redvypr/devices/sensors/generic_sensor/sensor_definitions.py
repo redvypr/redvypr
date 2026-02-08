@@ -374,7 +374,7 @@ class BinarySensor(Sensor):
                             data = convfunction(redict[keyname])
                         except:
                             #print('Data',redict[keyname])
-                            logger.debug('Could not decode data for key {}'.format(keyname),exc_info=True)
+                            #logger.debug('Could not decode data for key {}'.format(keyname),exc_info=True)
                             data = self._str_functions_invalid_data[keyname]
 
                         data_packet[keyname] = data

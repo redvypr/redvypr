@@ -57,9 +57,9 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     tar_processor = tar_process.TarProcessor()
     metadata_dict = {} # Store the metadata
 
-    metadata_packets = tar_processor.create_metadata_packets()
-    for p in metadata_packets:
-        dataqueue.put(p)
+    #metadata_packets = tar_processor.create_metadata_packets()
+    #for p in metadata_packets:
+    #    dataqueue.put(p)
 
     if len(config['convert_files']):
         logger_thread.info('Converting datafiles')
@@ -94,6 +94,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
         merged_packets = tar_processor.process_rawdata(datapacket['data'])
         if merged_packets['metadata'] is not None:
             for ppub in merged_packets['metadata']:
+                #print("Publishing metadata!",ppub)
                 # Publish the data
                 dataqueue.put(ppub)
         if merged_packets['merged_packets'] is not None:
