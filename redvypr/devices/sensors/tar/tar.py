@@ -399,7 +399,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                         itm = tmpdict[mac_qtree]['item']
                         tmpdict_new = tmpdict[mac_qtree]
                     except:
-                        logger.info('did not work', exc_info=True)
+                        logger.info(f'Adding new sensor with mac:{mac_qtree}')
+                        #logger.debug('New sensor with mac:{}did not work', exc_info=True)
                         itm = QtWidgets.QTreeWidgetItem([mac_qtree, ''])
                         tmpdict_new = {'item': itm}
                         tmpdict[mac_qtree] = tmpdict_new
