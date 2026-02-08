@@ -189,7 +189,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.layout_buttons.addWidget(self.configure_button, 2, 3, 1, 1)
 
 
-
     def update_tree_visibility(self):
         self.root_raw.setHidden(not self.cb_raw.isChecked())
         self.root_single.setHidden(not self.cb_single.isChecked())
@@ -232,12 +231,13 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 plotdevice = None
 
             if plotdevice is None:
-                logger.debug('Creating PcolorPlotDevice')
+                logger.debug('Creating PlotDevice')
+                datatest = itemclicked.__datatest__
                 mac = itemclicked.__mac__
                 datatype = itemclicked.__datatype__
                 packets = self.packetbuffer[mac][datatype]['packets']
                 if "pos" in datatype: # Plot the position as xy-plot
-                    print('Plotting position')
+                    logger.info('Plotting position')
                     address_tmp = itemclicked.__address__
                     address_x = redvypr.RedvyprAddress(address_tmp, datakey='pos_x')
                     address_y = redvypr.RedvyprAddress(address_tmp, datakey='pos_z')
@@ -266,7 +266,33 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                             widget.update_data(p, force_update=True)
                     plotdevice.thread_start()
                     button.__plotdevice__ = plotdevice
+                elif isinstance(datatest,float) or isinstance(datatest,int):  #
+                    packetid = itemclicked.__packetid__
+                    datastream = redvypr.RedvyprAddress(packetid=packetid,
+                                                        datakey=datatype)
+                    logger.info(f'Plotting XY-Plot of address:{datastream}')
+                    devicemodulename = 'redvypr.devices.plot.XYPlotDevice'
+                    plotname = 'XYPlot_{}_{}'.format(mac, datastream.datakey)
+                    custom_config = redvypr.devices.plot.XYPlotDevice.DeviceCustomConfig()
+                    custom_config.lines[0].y_addr = redvypr.RedvyprAddress(datastream)
+                    device_parameter = RedvyprDeviceParameter(name=plotname)
+                    plotdevice = self.device.redvypr.add_device(
+                        devicemodulename=devicemodulename,
+                        base_config=device_parameter,
+                        custom_config=custom_config)
+
+                    itemclicked.__plotdevice__ = plotdevice
+                    logger.debug('Starting plot device')
+                    # Update the plot widget with the data in the buffer
+                    for ip, p in enumerate(packets):
+                        for (guiqueue, widget) in plotdevice.guiqueues:
+                            print("updating with", p)
+                            widget.update_data(p, force_update=True)
+                    plotdevice.thread_start()
+                    button.__plotdevice__ = plotdevice
+
                 else: # otherwise as pcolorplot
+                    logger.debug('Creating PcolorPlotDevice')
                     packetid = itemclicked.__packetid__
                     datastream = redvypr.RedvyprAddress(packetid=packetid,datakey=datatype)
                     custom_config = redvypr.devices.plot.PcolorPlotDevice.DeviceCustomConfig(datastream=datastream)
@@ -352,6 +378,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 # Check if datakeys has 'R' or 'T'
                 if datatype in data.keys():
                     datatar = data[datatype]
+                    # Check if the data is a single int or float, if so, create a list
                     icol = 0
                     icols.append(icol)
                     datatars.append(datatar)
@@ -407,11 +434,15 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                         parentitm.addChild(itm)
                         flag_tree_update = True
 
+                    # Check if the datatype item is already there, otherwise
+                    # create it
                     try:
                         itm_datatype = tmpdict_new['item_' + datatype]
                     except:
                         itm_datatype = QtWidgets.QTreeWidgetItem([packetid, datatype])
                         tmpdict_new['item_' + datatype] = itm_datatype
+                        datatest = data[datatype]
+                        itm_datatype.__datatest__ = datatest # Here Check datatype
                         itm_datatype.__mac__ = mac
                         itm_datatype.__datatype__ = datatype
                         itm_datatype.__packetid__ = packetid
@@ -450,70 +481,93 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 if len(self.packetbuffer[mac][datatype]['packets']) > self.device.custom_config.size_packetbuffer:
                     self.packetbuffer[mac][datatype]['packets'].pop(0)
 
-                # Update the table
+                #
+                # Update the datatable
+                #
+                if isinstance(datatar,float) or isinstance(datatar,int):
+                    datatar_show = [datatar]
+                else:
+                    datatar_show = datatar
                 irows = ['mac', 'np', 't']  # Rows to plot
                 try:
                     table = self.packetbuffer[mac][datatype]['table']
-                except:
+                except: # Create a new table for the data
                     table = QtWidgets.QTableWidget()
                     self.packetbuffer[mac][datatype]['table'] = table
-                    table.setRowCount(len(datatar) + len(irows) - 1)
-                    numcols = len(icols)
+                    table.setRowCount(len(datatar_show) + len(irows))
+                    numcols = 3
                     # print('Numcols')
                     table.setColumnCount(numcols)
                     # self.datadisplaywidget_layout.addWidget(table)
                     self.tabwidget.addTab(table, '{} {}'.format(mac, datatype))
-                    headerlabels = [datatype]
+                    headerlabels = ['Datakey','Data','Plot']
                     table.setHorizontalHeaderLabels(headerlabels)
                     # Create plot buttons
                     if True:
-
                         try:
+                            icol = 0
+                            # Create the nameitems
                             for irow, key in enumerate(irows):
-                                pass
-                                #d = data[key]
-                                #dataitem = QtWidgets.QTableWidgetItem(str(d))
-                                #table.setItem(irow, icol, dataitem)
+                                dataitem = QtWidgets.QTableWidgetItem(key)
+                                table.setItem(irow, icol, dataitem)
 
                             # And now the real data
-                            for i, d in enumerate(datatar):
+                            for i, d in enumerate(datatar_show):
                                 rdata = redvypr.Datapacket(data)
-                                datakey = "{}[{}]".format(datatype,i)
+                                if len(datatar_show) > 1:
+                                    datakey = "{}[{}]".format(datatype,i)
+                                else:
+                                    datakey = "{}".format(datatype)
                                 address = redvypr.RedvyprAddress(data, datakey = datakey)
                                 datastr = "{:4f}".format(d)
+                                datakeyitem = QtWidgets.QTableWidgetItem(datakey)
+                                icol_key = 0
+                                irowtar = i + irow + 1
+                                table.setItem(irowtar, icol_key, datakeyitem)
                                 # Button erstellen und zur Zelle hinzufügen
                                 button = QtWidgets.QPushButton("Plot")
                                 button.setCheckable(False)
-                                #button.clicked.connect(
-                                #    lambda _, item=itm_datatype: self.devicetree_plot_button_clicked(item))
                                 dataitem = QtWidgets.QTableWidgetItem(datastr)
-                                irowtar = i + irow
                                 button.clicked.connect(self.parameter_plot_button_clicked)
                                 button.__address__ = address
                                 button.__mac__ = mac
                                 button.__datatype__ = datatype
                                 button.__packetid__ = packetid
-                                icol = 1
+                                icol = 2
                                 table.setCellWidget(irowtar, icol, button)
                         except:
                             logger.info('Could not add button', exc_info=True)
 
-                for icol,datatar,colheader in zip(icols,datatars,colheaders):
+
+                # Update the data
+                for datatar,colheader in zip(datatars,colheaders):
                     # update the table packetbuffer
                     if datatar is not None:
                         try:
                             #print('Icol',icol)
                             # First the metadata
+                            icol = 1
                             for irow,key in enumerate(irows):
                                 d = data[key]
-                                dataitem = QtWidgets.QTableWidgetItem(str(d))
+                                if key == 't':
+                                    dstr = datetime.datetime.fromtimestamp(d).isoformat()
+                                else:
+                                    dstr = str(d)
+                                dataitem = QtWidgets.QTableWidgetItem(dstr)
                                 table.setItem(irow, icol, dataitem)
                             # And now the real data
-                            for i, d in enumerate(datatar):
-                                datastr = "{:4f}".format(d)
+                            icol = 1
+                            if isinstance(datatar, float) or isinstance(datatar, int):
+                                datastr = "{:4f}".format(datatar)
                                 dataitem = QtWidgets.QTableWidgetItem(datastr)
-                                irowtar = i + irow
+                                irowtar = i + irow + 1
                                 table.setItem(irowtar, icol, dataitem)
+                            else:
+                                for i, d in enumerate(datatar):
+                                    datastr = "{:4f}".format(d)
+                                    dataitem = QtWidgets.QTableWidgetItem(datastr)
+                                    irowtar = i + irow + 1
+                                    table.setItem(irowtar, icol, dataitem)
                         except:
                             logger.info('Does not work',exc_info=True)
 
