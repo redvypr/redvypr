@@ -370,7 +370,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             #print(funcname + 'Got some data', data)
 
             packetid = data['_redvypr']['packetid']
-            #print('Got packet',packetid)
+            print('Got packet',packetid,data.keys())
             for datatype in datatypes_plot:
                 icols = []  # The columns in the table that will be updated
                 datatars = []  # The data in the columns to be updated

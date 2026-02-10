@@ -26,6 +26,99 @@ logger = logging.getLogger('redvypr.device.tar_process')
 logger.setLevel(logging.DEBUG)
 
 
+class TarChain():
+    """
+    TarChain collects datapackets from TarDevices connected as a chain.
+    """
+    def __init__(self, root, *args, **kwargs):
+        self.macs = [] # The list of macs
+        self.root = root # The root device
+        self.databuffer = {}
+        self._total_nump_layout_update = 2 # The number of packages
+        self._nump_layout_update = []
+        self.layout_update_done = False
+
+    def add_datapacket(self, datapacket):
+        nump = datapacket['np']
+        mac_packet = datapacket['mac']
+        num_tar_chain = len(datapacket['parents']) + 1
+        #
+        # Update the tar chain layout
+        #
+        if self.layout_update_done == False:
+            if nump not in self._nump_layout_update:
+                self._nump_layout_update.append(nump)
+            if len(self.macs) < num_tar_chain:
+                # Brute force overwrite, here one could be more gentle and
+                # compare macs
+                self.macs = datapacket['parents']
+                self.macs.append(mac_packet)
+                logger.info(f"Updated mac chain {self.root=} with {self.macs=}")
+
+            if len(self._nump_layout_update) >= self._total_nump_layout_update:
+                logger.info(f"\n\nMac chain {self.root=} finalized with  with {self.macs=}\n\n")
+                self.layout_update_done = True
+
+        pos_tar_chain = len(datapacket['parents'])
+        try:
+            self.databuffer[nump]
+        except:
+            self.databuffer[nump] = [None] * num_tar_chain
+
+        target_len = pos_tar_chain + 1
+        current_len = len(self.databuffer[nump])
+        if current_len < target_len:
+            self.databuffer[nump].extend([None] * (target_len - current_len))
+        self.databuffer[nump][pos_tar_chain] = datapacket
+
+        flag_finished = not(None in self.databuffer[nump]) and (len(self.databuffer[nump]) == len(self.macs))
+        #print("Hallo",self.databuffer[nump])
+        if self.layout_update_done and flag_finished:
+            logger.info(f"Merging packets with {nump=} of TarChain {self.root=}")
+            datapacket_merged = self.merge_tarchain(nump)
+            return datapacket_merged
+
+        return None
+
+    def merge_tarchain(self, nump):
+        datatypes_merge = ['R','T']
+        logger.info("Merging TarChain {nump=}")
+        tarchainmac = self.root + f'N{len(self.macs)}'
+        device_chain = 'tar_chain_' + self.root + 'N{}'.format(
+            len(self.macs))
+
+        packetid_chain = device_chain
+        packets = self.databuffer[nump]
+        trecv_all = []
+        for p in packets:
+            trecv_all.append(p["_redvypr"]["t"])
+
+        trecv = min(trecv_all)
+        if None in packets:
+            raise ValueError("Cannot merge tar chain, incomplete datapackets")
+
+        datapacket_tar_chain_merge = redvypr_create_datadict(tu=trecv,
+                                                           packetid=packetid_chain,
+                                                           device=device_chain)
+
+        datapacket_tar_chain_merge['np'] = nump
+        datapacket_tar_chain_merge['t'] = trecv
+        datapacket_tar_chain_merge['mac'] = tarchainmac
+        for datatype_merge in datatypes_merge:
+            data_merged = []
+            for p in packets:
+                data_merged.append(p[datatype_merge])
+
+            print("Len data_merged",len(data_merged),len(data_merged[0]))
+            data_merged_final = np.hstack(data_merged).tolist()
+            print("Len data_merged final",len(data_merged_final),len(np.vstack(data_merged).tolist()))
+            datapacket_tar_chain_merge[datatype_merge] = data_merged_final
+
+        return datapacket_tar_chain_merge
+
+
+
+
 class TarDevice():
     """
     TarDevice collects single datapackets, stores them into buffers
@@ -45,7 +138,7 @@ class TarDevice():
 
         p = datapacket
         try:
-            parents = p['parents_raw']
+            parents = p['macparents_raw']
         except:
             parents = None
         if True:
@@ -102,17 +195,27 @@ class TarDevice():
             trecv = p['_redvypr']['t']
             mac = p['mac']
             try:
-                parents_raw = p['parents_raw']
+                parents_raw = p['macparents_raw']
             except:
                 parents_raw = None
 
+            print("Parents raw",parents_raw)
             logger.debug(f"Merging {mac=},{trecv=},{parents_raw}")
             packetid = f"tar_{mac}"
             device = f"tar_{mac}"
             datapacket_merge_redvypr = redvypr_create_datadict(tu=trecv,
                                                        packetid=packetid,
                                                        device=device)
-            datapacket_merge_redvypr['parents_raw'] = parents_raw
+
+            #datapacket_merge_redvypr['parents_raw'] = parents_raw
+            datapacket_merge_redvypr['parents'] = []
+            if parents_raw is not None:
+                parents_split = parents_raw.replace("$","").split(':')
+                for pa in parents_split:
+                    if len(pa) > 0:
+                        datapacket_merge_redvypr['parents'].append(pa)
+
+        print('Parents',datapacket_merge_redvypr['parents'])
         datapacket_merge = {}
 
         for datatype in datatypes_packet:
@@ -166,10 +269,12 @@ class TarDevice():
         # Update the redvypr information
         datapacket_merge.update(datapacket_merge_redvypr)
         #print(f"Merged to:{datapacket_merge}\n\n")
+        self.packetbuffer_nump.pop(nump)
         return datapacket_merge
 
-
-# not used at the moment
+#
+# not used at the moment, can replace the standard sensors defined below
+#
 class TarSensor(sensor_definitions.BinarySensor):
     num_ntc: int = pydantic.Field(default=64, description='number of ntc sensors')
     def __init__(self,*args,**kwargs):
@@ -326,6 +431,7 @@ if True:
 class TarProcessor():
     def __init__(self):
         self.tar_devices = {} # Dictionary of TarDevices
+        self.tar_chains = {} # Dictionary of all TarChains
         self.metadata_sent = None
         self.init_buffer()
         self.init_sensors()
@@ -400,6 +506,7 @@ class TarProcessor():
         self.sensors.append(tarv2nmea_IMU)
         self.datatypes.append('IMU')
 
+    # Will be moved into the TarChain class soonish
     def merge_tar_chain(self):
         funcname = __name__ + '.merge_tar_chain():'
         if config['merge_tar_chain'] and (self.np_processed_counter) > 2:
@@ -483,7 +590,7 @@ class TarProcessor():
             print('Done with tar chain merging, returning:')
             return merged_packets
 
-    def process_datapacket(self, datapacket):
+    def process_datapacket_legacy(self, datapacket):
         """
         Processes a redvypr datapacket
         Parameters
@@ -496,7 +603,7 @@ class TarProcessor():
         """
         pass
     def process_rawdata(self, binary_data):
-        packets = {'merged_packets':None,'merged_tar_chain':None,'metadata':None}
+        packets = {'merged_packets':[],'merged_tar_chain':[],'metadata':None}
         #print(f"\nProcessing rawdata:{binary_data}")
         for sensor, datatype in zip(self.sensors, self.datatypes):
             #print(f'Checking for sensor:{sensor,datatype}')
@@ -537,18 +644,31 @@ class TarProcessor():
 
                     datapacket_merged = self.tar_devices[mac].add_datapacket(data_packet_processed)
                     if datapacket_merged is not None:
-                        if packets['merged_packets'] is None:
-                            packets['merged_packets'] = []
                         packets['merged_packets'].append(datapacket_merged)
                         if self.metadata_sent is None:
                             packets['metadata'] = [{'_metadata':self.metadata[mac]}]
                         else:
                             self.metadata_sent = [self.metadata[mac]]
 
-        if data_packets_processed is None:
-            pass
-        else:
-            pass
+                    # Try to merge into a datachain
+                        if len(datapacket_merged['parents']) == 0:
+                            print("Found a root tar device")
+                            rootmac = datapacket_merged['mac']
+                        else:
+                            rootmac = datapacket_merged['parents'][0]
+
+                        try:
+                            self.tar_chains[rootmac]
+                        except:
+                            print(f"Creating new TarChain with {rootmac=}\n\n")
+                            self.tar_chains[rootmac] = TarChain(root=rootmac)
+
+                        print("Found a root tar device done\n\n\n")
+                        datapacket_merged = self.tar_chains[rootmac].add_datapacket(datapacket_merged)
+                        if datapacket_merged is not None:
+                            print("Got merged packet")
+                            packets['merged_tar_chain'].append(datapacket_merged)
+
             # Merge datapackets which have only parts (T,R with NTC indices)
             #print("\nMerging the tar chain")
             #merged_tar_chain = self.merge_tar_chain()
