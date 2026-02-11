@@ -541,38 +541,41 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
 
                 # Update the data
-                for datatar,colheader in zip(datatars,colheaders):
-                    # update the table packetbuffer
-                    if datatar is not None:
-                        try:
-                            #print('Icol',icol)
-                            # First the metadata
-                            icol = 1
-                            for irow,key in enumerate(irows):
-                                d = data[key]
-                                if key == 't':
-                                    dstr = datetime.datetime.fromtimestamp(d).isoformat()
-                                else:
-                                    dstr = str(d)
-                                dataitem = QtWidgets.QTableWidgetItem(dstr)
-                                table.setItem(irow, icol, dataitem)
-                            # And now the real data
-                            icol = 1
-                            if isinstance(datatar, float) or isinstance(datatar, int):
-                                datastr = "{:4f}".format(datatar)
-                                dataitem = QtWidgets.QTableWidgetItem(datastr)
-                                irowtar = i + irow + 1
-                                table.setItem(irowtar, icol, dataitem)
-                            else:
-                                for i, d in enumerate(datatar):
-                                    datastr = "{:4f}".format(d)
+                if not(table.isVisible()):
+                    print(f"Table for {datatype} is not visible")
+                else:
+                    for datatar,colheader in zip(datatars,colheaders):
+                        # update the table packetbuffer
+                        if datatar is not None:
+                            try:
+                                #print('Icol',icol)
+                                # First the metadata
+                                icol = 1
+                                for irow,key in enumerate(irows):
+                                    d = data[key]
+                                    if key == 't':
+                                        dstr = datetime.datetime.fromtimestamp(d).isoformat()
+                                    else:
+                                        dstr = str(d)
+                                    dataitem = QtWidgets.QTableWidgetItem(dstr)
+                                    table.setItem(irow, icol, dataitem)
+                                # And now the real data
+                                icol = 1
+                                if isinstance(datatar, float) or isinstance(datatar, int):
+                                    datastr = "{:4f}".format(datatar)
                                     dataitem = QtWidgets.QTableWidgetItem(datastr)
                                     irowtar = i + irow + 1
                                     table.setItem(irowtar, icol, dataitem)
-                        except:
-                            logger.info('Does not work',exc_info=True)
+                                else:
+                                    for i, d in enumerate(datatar):
+                                        datastr = "{:4f}".format(d)
+                                        dataitem = QtWidgets.QTableWidgetItem(datastr)
+                                        irowtar = i + irow + 1
+                                        table.setItem(irowtar, icol, dataitem)
+                            except:
+                                logger.info('Does not work',exc_info=True)
 
-                table.resizeColumnsToContents()
+                    table.resizeColumnsToContents()
         except:
             logger.debug('Could not update data',exc_info=True)
 
