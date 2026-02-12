@@ -84,6 +84,8 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
             metadata = {'unit': 'nice sine unit (random)'}
             data_sine_packet = redvypr.data_packets.add_metadata2datapacket(data_sine_packet, datakey='sine_rand',
                                                                             metadict=metadata)
+
+        print(f"Publishing:{data_sine_packet=}")
         dataqueue.put(data_sine_packet)
 
         time.sleep(config['delay_s'])

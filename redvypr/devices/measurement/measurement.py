@@ -46,7 +46,7 @@ class MeasurementDatastreamConfig(pydantic.BaseModel):
     lon: typing.Optional[float] = pydantic.Field(default=None)
     lat: typing.Optional[float] = pydantic.Field(default=None)
     contacts: typing.List[Person] = pydantic.Field(default_factory=list)
-    description: str = 'A measurement config for a scpecific datastream'
+    description: str = 'A measurement config for a specific datastream'
 
 
 class MeasurementConfig(pydantic.BaseModel):

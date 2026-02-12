@@ -390,6 +390,7 @@ class RedvyprDeviceScan():
 
 # TODO: properly implement status signal with status dict similar to thread_started/stopped
 class RedvyprDevice(QtCore.QObject):
+    new_data = QtCore.pyqtSignal(dict)  # Signal emitted when new data is available (either from the start thread or subscribed data)
     thread_started = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     thread_stopped = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     status_signal  = QtCore.pyqtSignal(dict)   # Signal with the status of the device
@@ -1031,7 +1032,7 @@ class RedvyprDevice(QtCore.QObject):
                 datastreams_dev = dev.get_datastreams()
                 for d in datastreams_dev:
                     daddr = RedvyprAddress(d)
-                    if (subaddr in daddr) and (dev is not self):
+                    if (subaddr.matches(daddr)) and (dev is not self):
                         datastreams.append(d)
 
         return datastreams

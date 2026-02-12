@@ -2242,9 +2242,9 @@ class displayDeviceWidget(QtWidgets.QWidget):
             for i, caldata in enumerate(self.device.custom_config.calibrationdata):
                 if caldata.inputtype == 'datastream':
                     plot_widget = caldata.__plot_widget
-                    print('Checking widget',i,plot_widget.datastream)
+                    #print('Checking widget',i,plot_widget.datastream)
                     if plot_widget.datastream.matches(data):
-                        print(f'Updating plot {i}')
+                        #print(f'Updating plot {i}')
                         plot_widget.update_plot(data)
                         # Update xy plot, if present
                         try:

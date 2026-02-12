@@ -2,13 +2,21 @@
 
 redvypr changelog
 
+---
 
+## [unreleased] 
+
+### Added
+- nothing yet
+### Changed
+- nothing yet
 
 ---
 
-## [Unreleased]
+## [0.9.18] - 2026-02-12
 
 ### Added
+- Added new_data signal in `redvypr.device`, making it easier to get own or subscribed data from device, not working yet
 - Metadata from splash screen is now added.
 - Remove mode to `redvypr.rem_metadata()`: Keys can be removed from all address entries that match, useful with "@" address.
 - First draft of measurement device able to add measurement metadata info to instance.
