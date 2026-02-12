@@ -388,6 +388,37 @@ class RedvyprDeviceScan():
         return devicecheck
 
 
+class QueueReaderWorker(QtCore.QObject):
+    """
+    Class reads the self.dataqueue_local of the device and emits a signal if new data has arrived
+    """
+    data_received = QtCore.pyqtSignal(dict)
+    finished = QtCore.pyqtSignal()
+
+    def __init__(self, data_queue):
+        super().__init__()
+        self.data_queue = data_queue
+        self._running = True
+
+    @QtCore.pyqtSlot()
+    def run(self):
+        while self._running:
+            try:
+                # timeout=1 erlaubt es dem Thread, regelmäßig nach self._running zu sehen
+                data = self.data_queue.get(timeout=0.25)
+                if data is not None:
+                    #print("Emitting")
+                    self.data_received.emit(data)
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"Error in QueueReader: {e}")
+        self.finished.emit()
+
+    def stop(self):
+        self._running = False
+
+
 # TODO: properly implement status signal with status dict similar to thread_started/stopped
 class RedvyprDevice(QtCore.QObject):
     new_data = QtCore.pyqtSignal(dict)  # Signal emitted when new data is available (either from the start thread or subscribed data)
@@ -408,6 +439,12 @@ class RedvyprDevice(QtCore.QObject):
         self.dataqueue = dataqueue
         self.comqueue = comqueue
         self.statusqueue = statusqueue
+        # Create local dataqueue, here all the data, that is put in the self.dataqueue in the start thread is available as well
+        if 'thread' in device_parameter.multiprocess:
+            self.dataqueue_local = queue.Queue(maxsize=queuesize)
+        else:
+            self.dataqueue_local = multiprocessing.Queue(maxsize=queuesize)
+
         self.custom_config = custom_config
         self.distribute_data_replyqueue = queue.Queue(maxsize=500)
         self.redvypr = redvypr
@@ -460,6 +497,46 @@ class RedvyprDevice(QtCore.QObject):
         # Timer to ping the status of thread
         self.__stoptimer__ = QtCore.QTimer()
         self.__stoptimer__.timeout.connect(self.__check_thread_status)  # Add to the timer another update
+
+        # Start the dataque reader
+        self.start_queue_reader()
+
+    def start_queue_reader(self):
+        # 1. Thread und Worker erstellen
+        self._reader_thread = QtCore.QThread()
+        self._reader_worker = QueueReaderWorker(self.dataqueue_local)
+
+        # 2. Worker in den Thread verschieben
+        self._reader_worker.moveToThread(self._reader_thread)
+
+        # 3. Signale verbinden
+        self._reader_thread.started.connect(self._reader_worker.run)
+
+        # Das Signal vom Worker direkt an das Signal deiner Klasse weiterleiten
+        self._reader_worker.data_received.connect(self.new_data.emit)
+
+        # Cleanup
+        self._reader_worker.finished.connect(self._reader_thread.quit)
+        self._reader_worker.finished.connect(self._reader_worker.deleteLater)
+        self._reader_thread.finished.connect(self._reader_thread.deleteLater)
+
+        # 4. Starten
+        self._reader_thread.start()
+
+    def stop_and_cleanup(self):
+        """Safely stops the queue reader thread before deletion."""
+        if hasattr(self, '_reader_worker') and self._reader_worker:
+            self._reader_worker.stop()  # Setzt _running = False
+
+        if hasattr(self, '_reader_thread') and self._reader_thread.isRunning():
+            # Wir warten kurz, bis der Thread aus der run() Schleife austritt
+            self._reader_thread.quit()
+            if not self._reader_thread.wait(500):  # Warte max 0.5 Sek
+                self._reader_thread.terminate()  # Harter Abbruch, falls nötig
+
+    def stop_queue_reader(self):
+        if hasattr(self, '_reader_worker'):
+            self._reader_worker.stop()
 
     def add_guiqueue(self, widget=None):
         """

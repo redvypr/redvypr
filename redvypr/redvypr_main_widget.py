@@ -565,11 +565,11 @@ class redvyprWidget(QtWidgets.QWidget):
                         except:
                             break
 
-                        if hasattr(device, "new_data"):
-                            try:
-                                device.new_data.emit(data)
-                            except:
-                                logger.warning("Could not emit new_data signal",exc_info=True)
+                        #if hasattr(device, "new_data"):
+                        #    try:
+                        #        device.new_data.emit(data)
+                        #    except:
+                        #        logger.warning("Could not emit new_data signal",exc_info=True)
 
                         # The old school way
                         # Updating the widget, if existing

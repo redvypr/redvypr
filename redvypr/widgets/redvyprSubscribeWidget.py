@@ -106,15 +106,14 @@ class SubscribeWidget(QtWidgets.QWidget):
             layout.addWidget(self.device_label, 1, 0)
             layout.addWidget(self.devices_listDevices, 2, 0)
 
-
-        layout.addWidget(self.subscribe_label, 1, 0 , 1, 2)
-        layout.addWidget(self.dataprovider_label, 1, 2, 1, 2)
-        layout.addWidget(self.devices_listallsub, 2, 0 ,1,2)
-        layout.addWidget(self.devices_listPublisher, 2, 2, 1, 2)
+        layout.addWidget(self.subscribe_label, 1, 2, 1, 2)
+        layout.addWidget(self.dataprovider_label, 1, 0, 1, 2)
+        layout.addWidget(self.devices_listallsub, 2, 2, 1, 2)
+        layout.addWidget(self.devices_listPublisher, 2, 0, 1, 2)
         layout.addWidget(self.subscribe_edit, 3, 0, 1, 2)
         layout.addWidget(self.__formatLabel, 3, 2, 1, 1)
         layout.addWidget(self.__formatCombo, 3, 3, 1, 1)
-        layout.addWidget(self.__commitbtn,4,0,1,-1)
+        layout.addWidget(self.__commitbtn, 4, 0, 1, -1)
         layout.addWidget(self.__subscribeAllBtn, 5, 0, 1, -1)
         layout.addWidget(self.__closeBtn, 6, 0, 1, -1)
 
@@ -246,6 +245,8 @@ class SubscribeWidget(QtWidgets.QWidget):
                     # Add all data_devices
                     if True:
                         devs_forwarded = dev.get_device_info()
+                        #print("Devs forwarded for device {dev.name}")
+                        #print("Dev",devs_forwarded)
                         for devaddress in devs_forwarded.keys():
                             devaddress_redvypr = RedvyprAddress(devaddress)
                             subscribed = False
@@ -288,7 +289,7 @@ class SubscribeWidget(QtWidgets.QWidget):
 
                 if(devitm is not None):
                     self.devices_listDevices.setCurrentItem(devitm)
-                    self.lab.setText('Subscriptions for\n ' + str(sen.name))
+                    self.lab.setText('Subscriptions for\n ' + str(devitm.device.name))
 
             # Fill the subscribed list
             if True:

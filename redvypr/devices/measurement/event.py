@@ -48,6 +48,8 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 logger.debug('Command is for me: {:s}'.format(str(command)))
                 break
 
+        dataqueue.put(data)
+
 
 class Device(RedvyprDevice):
     """
@@ -114,133 +116,6 @@ class EventTableModel(QtCore.QAbstractTableModel):
 #
 #
 #
-class EventConfigEditor_legacy(QtWidgets.QWidget):
-    config_updated = QtCore.pyqtSignal(object)
-    request_close = QtCore.pyqtSignal()
-
-    def __init__(self, config: EventBaseConfig, parent=None, device=None):
-        super().__init__(parent)
-        self.device = device
-        # Wir arbeiten auf einer Kopie
-        self.config = config.model_copy()
-        self.setup_ui()
-        self.load_config_into_ui()
-
-    def setup_ui(self):
-        self.main_layout = QtWidgets.QVBoxLayout(self)
-
-        # Scroll Area damit alles auch auf kleinen Screens passt
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        content = QtWidgets.QWidget()
-        self.layout = QtWidgets.QVBoxLayout(content)
-
-        # --- 1. BASIS DATEN (Immer sichtbar) ---
-        base_group = QtWidgets.QGroupBox("Basic Event Metadata")
-        base_form = QtWidgets.QFormLayout(base_group)
-
-        self.edit_name = QtWidgets.QLineEdit()
-        self.combo_type = QtWidgets.QComboBox()
-        self.combo_type.setEditable(True)
-        self.combo_type.addItems(EventBaseConfig.default_event_types)
-
-        self.edit_num = QtWidgets.QSpinBox()
-        self.edit_num.setRange(0, 99999)
-
-        base_form.addRow("Event Name:", self.edit_name)
-        base_form.addRow("Event Type:", self.combo_type)
-        base_form.addRow("Event Number:", self.edit_num)
-        self.layout.addWidget(base_group)
-
-        # --- 2. ZEIT & ORT (Sektionen zum Ausklappen) ---
-        self.time_sec, time_content = self.create_section("Time & Duration",
-                                                          checked=True)
-        t_form = QtWidgets.QFormLayout(time_content)
-        self.start_dt = QtWidgets.QDateTimeEdit(calendarPopup=True)
-        self.end_dt = QtWidgets.QDateTimeEdit(calendarPopup=True)
-        t_form.addRow("Start:", self.start_dt)
-        t_form.addRow("End:", self.end_dt)
-        self.layout.addWidget(self.time_sec)
-
-        self.loc_sec, loc_content = self.create_section("Location & Coordinates",
-                                                        checked=False)
-        l_form = QtWidgets.QFormLayout(loc_content)
-        self.edit_loc = QtWidgets.QLineEdit()
-        self.spin_lon = QtWidgets.QDoubleSpinBox()
-        self.spin_lat = QtWidgets.QDoubleSpinBox()
-        for s in [self.spin_lon, self.spin_lat]: s.setRange(-180, 180); s.setDecimals(6)
-        l_form.addRow("Location Label:", self.edit_loc)
-        l_form.addRow("Longitude:", self.spin_lon)
-        l_form.addRow("Latitude:", self.spin_lat)
-        self.layout.addWidget(self.loc_sec)
-
-        # --- 3. DATASTREAMS (Die "Sub-Configs") ---
-        self.ds_sec, ds_content = self.create_section("Associated Datastreams",
-                                                      checked=False)
-        ds_lay = QtWidgets.QVBoxLayout(ds_content)
-        self.ds_list = QtWidgets.QListWidget()
-        ds_lay.addWidget(self.ds_list)
-        # Hier Buttons zum Add/Remove von Datastreams wie in deinem alten Code
-        self.layout.addWidget(self.ds_sec)
-
-        # --- 4. CONTACTS ---
-        self.contact_sec, contact_content = self.create_section("Contacts / Personnel",
-                                                                checked=False)
-        # ... (TableWidget für Kontakte hier einfügen)
-        self.layout.addWidget(self.contact_sec)
-
-        self.layout.addStretch()
-        scroll.setWidget(content)
-        self.main_layout.addWidget(scroll)
-
-        # Bottom Buttons
-        btn_lay = QtWidgets.QHBoxLayout()
-        self.save_btn = QtWidgets.QPushButton("Apply & Save Event")
-        self.save_btn.clicked.connect(self.save_to_config)
-        btn_lay.addStretch()
-        btn_lay.addWidget(self.save_btn)
-        self.main_layout.addLayout(btn_lay)
-
-    def create_section(self, title: str, checked: bool = False):
-        """Deine bewährte Helper-Funktion"""
-        group = QtWidgets.QGroupBox(title)
-        group.setCheckable(True)
-        group.setChecked(checked)
-        group_layout = QtWidgets.QVBoxLayout(group)
-        content_widget = QtWidgets.QWidget()
-        content_widget.setVisible(checked)
-        group_layout.addWidget(content_widget)
-        group.toggled.connect(content_widget.setVisible)
-        return group, content_widget
-
-    def load_config_into_ui(self):
-        # Mapping von Pydantic zu UI
-        self.edit_name.setText(self.config.name)
-        self.combo_type.setCurrentText(self.config.eventtype)
-        self.edit_num.setValue(self.config.num)
-        if self.config.tstart: self.start_dt.setDateTime(self.config.tstart)
-        if self.config.tend: self.end_dt.setDateTime(self.config.tend)
-        self.edit_loc.setText(self.config.location or "")
-        self.spin_lon.setValue(self.config.lon or 0.0)
-        self.spin_lat.setValue(self.config.lat or 0.0)
-        # ... Datastreams und Kontakte laden
-
-    def save_to_config(self):
-        # Zurückschreiben in das Pydantic Modell
-        self.config.name = self.edit_name.text()
-        self.config.eventtype = self.combo_type.currentText()
-        self.config.num = self.edit_num.value()
-        self.config.tstart = self.start_dt.dateTime().toPyDateTime()
-        self.config.tend = self.end_dt.dateTime().toPyDateTime()
-
-        # Validierung via Pydantic
-        try:
-            self.config = EventBaseConfig.model_validate(self.config.model_dump())
-            self.config_updated.emit(self.config)
-            self.request_close.emit()
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Validation Error", str(e))
 
 
 class EventConfigEditor(QtWidgets.QWidget):
@@ -252,9 +127,10 @@ class EventConfigEditor(QtWidgets.QWidget):
         self.device = device
         # Work on a copy to allow discarding changes
         self.config = config.model_copy()
-
+        self.widget_config = {'autoloc':True,'autoloc_address_lon':'lon@','autoloc_address_lat':'lat@'}
         self.setup_ui()
         self.load_config_into_ui()
+        # If new data from the device has arrived, process it also here in the widget
         self.device.new_data.connect(self.new_data)
 
     def setup_ui(self):
@@ -300,17 +176,34 @@ class EventConfigEditor(QtWidgets.QWidget):
 
         # --- 3. LOCATION & COORDINATES (Collapsible) ---
         self.loc_sec, loc_content = self.create_section("Location & Coordinates",
-                                                        checked=False)
+                                                        checked=True)
         l_form = QtWidgets.QFormLayout(loc_content)
         self.edit_loc = QtWidgets.QLineEdit()
         self.spin_lon = QtWidgets.QDoubleSpinBox()
         self.spin_lat = QtWidgets.QDoubleSpinBox()
+        self.latlon_from_device = QtWidgets.QCheckBox("Position from device")
+        self.latlon_from_device.toggled.connect(self.autoloc_changed)
+        self.latlon_from_device.setChecked(self.widget_config['autoloc'])
+        self.button_choose_lonaddress = QtWidgets.QPushButton("Choose address longitude")
+        self.button_choose_lonaddress.clicked.connect(self.choose_latlondevice_clicked)
+        self.button_choose_lataddress = QtWidgets.QPushButton("Choose address latitude")
+        self.button_choose_lataddress.clicked.connect(self.choose_latlondevice_clicked)
+        self.edit_locdevice_lon = QtWidgets.QLineEdit()
+        self.edit_locdevice_lon.setText(self.widget_config['autoloc_address_lon'])
+        self.edit_locdevice_lat = QtWidgets.QLineEdit()
+        self.edit_locdevice_lat.setText(self.widget_config['autoloc_address_lat'])
         for s in [self.spin_lon, self.spin_lat]:
             s.setRange(-180, 180)
             s.setDecimals(6)
         l_form.addRow("Location Label:", self.edit_loc)
         l_form.addRow("Longitude:", self.spin_lon)
         l_form.addRow("Latitude:", self.spin_lat)
+        # Positions from a device
+        l_form.addRow(self.latlon_from_device)
+        l_form.addRow(self.button_choose_lonaddress)
+        l_form.addRow("Autolocation address longitude:", self.edit_locdevice_lon)
+        l_form.addRow(self.button_choose_lataddress)
+        l_form.addRow("Autolocation address latitude:", self.edit_locdevice_lat)
         self.layout.addWidget(self.loc_sec)
 
         # --- 4. DATASTREAMS (Collapsible) ---
@@ -353,6 +246,49 @@ class EventConfigEditor(QtWidgets.QWidget):
         btn_lay.addWidget(self.save_next_btn)
         btn_lay.addWidget(self.save_btn)
         self.main_layout.addLayout(btn_lay)
+
+    def autoloc_changed(self, state):
+        print("State",state)
+        self.widget_config['autoloc'] = state
+        self.autoloc_address_lon = RedvyprAddress(self.widget_config['autoloc_address_lon'])
+        self.autoloc_address_lat = RedvyprAddress(
+            self.widget_config['autoloc_address_lat'])
+
+        # unsubscribe all
+        self.device.unsubscribe_all()
+        if state:
+            self.device.subscribe_address(self.autoloc_address_lon)
+            self.device.subscribe_address(self.autoloc_address_lat)
+
+
+    def choose_latlondevice_clicked(self):
+        if self.sender() == self.button_choose_lonaddress:
+            latlon = 'lon'
+        else:
+            latlon = 'lat'
+        # Filter with an address that has lon or lat
+        filter_address = RedvyprAddress("@(lon?:) or (lat?:)")
+        self._latlondevice_choose = RedvyprAddressWidget(device=self.device,
+                                                         redvypr=self.device.redvypr,
+                                                         filter_datastream=[filter_address],
+                                                         deviceonly=True)
+
+        self._latlondevice_choose.__latlon__ = latlon
+
+        self._latlondevice_choose.apply.connect(self.latlondevice_chosen)
+        self._latlondevice_choose.show()
+
+    def latlondevice_chosen(self, address_dict):
+        latlon = self.sender().__latlon__
+        addr = address_dict['datastream_address']
+        addrstr = addr.to_address_string()
+
+        if latlon == 'lon':
+            self.widget_config['autoloc_address_lon'] = addrstr
+            self.edit_locdevice_lon.setText(addrstr)
+        else:
+            self.widget_config['autoloc_address_lat'] = addrstr
+            self.edit_locdevice_lat.setText(addrstr)
 
     def create_section(self, title: str, checked: bool = False):
         """Helper to create a collapsible QGroupBox."""
@@ -433,6 +369,14 @@ class EventConfigEditor(QtWidgets.QWidget):
 
     def new_data(self, data):
         print(f"Got new data:{data=}")
+        # Check if autolocation should be used
+        if self.widget_config['autoloc']:
+            if self.autoloc_address_lon.matches(data):
+                lon = self.autoloc_address_lon(data)
+                lat = self.autoloc_address_lat(data)
+                self.spin_lon.setValue(lon)
+                self.spin_lat.setValue(lat)
+                print(f"Lon:{lon} Lat:{lat}")
 #
 #
 #

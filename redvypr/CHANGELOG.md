@@ -9,7 +9,9 @@ redvypr changelog
 ### Added
 - nothing yet
 ### Changed
-- nothing yet
+- bug and layout in `redvyprSubscribeWidget`
+- `new_data(datapacket)` signal properly implemented in `redvypr.device`
+  - first usage in device `devices.event.event.EventConfigEditor` 
 
 ---
 

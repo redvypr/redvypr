@@ -85,8 +85,15 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
             data_sine_packet = redvypr.data_packets.add_metadata2datapacket(data_sine_packet, datakey='sine_rand',
                                                                             metadict=metadata)
 
-        print(f"Publishing:{data_sine_packet=}")
+        #print(f"Publishing:{data_sine_packet=}")
         dataqueue.put(data_sine_packet)
+
+        # Create a position packet
+        data_latlon = redvypr.data_packets.create_datadict(packetid='latlon_random',device=device_info['device'])
+        data_latlon['lon'] = float(np.random.rand(1) - 0.5) * 180
+        data_latlon['lat'] = float(np.random.rand(1) - 0.5) * 90
+        data_latlon['t'] = time.time()
+        dataqueue.put(data_latlon)
 
         time.sleep(config['delay_s'])
         #print('Hallo')

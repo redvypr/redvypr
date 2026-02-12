@@ -369,7 +369,7 @@ class AddressFilterwidget(QtWidgets.QWidget):
 
 class RedvyprAddressWidget(QtWidgets.QWidget):
     """
-    Widget that lets the user to enter a RedvyprAddress.
+    Widget that lets the user enter a RedvyprAddress.
     devicelock: The user cannot change the device anymore
     """
     apply = QtCore.pyqtSignal(dict)  # Signal notifying if the Apply button was clicked
@@ -384,7 +384,8 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                  showapplybutton=True,
                  datastreamstring=None,
                  closeAfterApply=True,
-                 filter_include=[],
+                 filter_device = ["@"],
+                 filter_datastream= ["@"],
                  allow_all_addresses=True,
                  datakeys_expanded=True,
                  manual_address=None):
@@ -396,7 +397,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
             datakey:
             deviceonly:
             devicelock:
-            filter_include: List of RedvyprAdresses the will be checked
+            filter_device: List of RedvyprAdresses the will be checked
             subscribed_only: Show the subscribed devices only
             manual_address: String for the manual address
         """
@@ -408,7 +409,14 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
         self.redvypr = redvypr
         self.datakeys_expanded = datakeys_expanded
         self.allow_all_addresses = allow_all_addresses
-        self.external_filter_include = filter_include
+        # For the moment
+        self.external_filter_include = []
+        for f in filter_device:
+            self.external_filter_include.append(RedvyprAddress(f))
+
+        self.external_filter_datastream = []
+        for f in filter_datastream:
+            self.external_filter_datastream.append(RedvyprAddress(f))
         self.datastreamstring_orig = datastreamstring
         self.datastreamstring  = datastreamstring
         self.layout = QtWidgets.QGridLayout(self)
@@ -583,7 +591,6 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                             logger.debug('No filter match for {} in {}'.format(dev.address, self.filterWidget.filter_address))
                             continue
 
-
                     itm = QtWidgets.QTreeWidgetItem([dev.name])
                     col = QtGui.QColor(220,220,220)
                     itm.setBackground(0, col)
@@ -681,15 +688,29 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                 itmk.datakey_address = RedvyprAddress(devaddress, datakey=addrstr_expanded)
                 #print('Address',itmk.datakey_address)
                 #print('Address parsed', itmk.datakey_address.parsed_addrstr)
+
+                test_external_filter = False
+                for f in self.external_filter_datastream:
+                    logger.debug(
+                        'Testing datastream: {} matches {}: {}'.format(f, itmk.datakey_address,
+                                                           f.matches(itmk.datakey_address)))
+                    if f.matches(itmk.datakey_address):
+                        test_external_filter = True
+                        break
+                # Test gui filter widget
                 if self.filterWidget.filter_on:
-                    test_filter =  not(self.filterWidget.filter_address.matches(itmk.datakey_address))
-                    logger.debug(f'Testing (@tuple): {self.filterWidget.filter_address}.matches({itmk.datakey_address}): {test_filter}')
-                    if test_filter:
-                        logger.debug('No filter match for {}'.format(itmk.datakey_address))
-                    else:
-                        parent_item.addChild(itmk)
+                    test_filter_widget = self.filterWidget.filter_address.matches(
+                        itmk.datakey_address)
+                    logger.debug(
+                        f'Testing (@tuple): {self.filterWidget.filter_address}.matches({itmk.datakey_address}): {test_filter_widget}')
                 else:
+                    test_filter_widget = True
+
+                if test_external_filter and test_filter_widget:
+                    print("Add item ...\n\n\n",itmk.datakey_address)
                     parent_item.addChild(itmk)
+                else:
+                    print("Will not add item ...")
 
             elif isinstance(data_new, list):
                 print("List entry\n")
@@ -713,9 +734,30 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                 itmk.device = dev
                 itmk.setBackground(0, colgrey_key)
                 itmk.datakey_address = itmk.redvypr_address
-                parent_item.addChild(itmk)
-                for data_new_index, data_new_item in enumerate(data_new):
-                    update_recursive(data_new_index, data_new_item, parent_item=itmk, datakey_construct=datakey_construct_new, expandlevel=expandlevel+1)
+                # Check filter
+                test_external_filter = False
+                for f in self.external_filter_datastream:
+                    logger.debug(
+                        'Testing datastream: {} matches {}: {}'.format(f,
+                                                                       itmk.datakey_address,
+                                                                       f.matches(
+                                                                           itmk.datakey_address)))
+                    if f.matches(itmk.datakey_address):
+                        test_external_filter = True
+                        break
+                # Test gui filter widget
+                if self.filterWidget.filter_on:
+                    test_filter_widget = self.filterWidget.filter_address.matches(
+                        itmk.datakey_address)
+                    logger.debug(
+                        f'Testing (@tuple): {self.filterWidget.filter_address}.matches({itmk.datakey_address}): {test_filter_widget}')
+                else:
+                    test_filter_widget = True
+
+                if test_external_filter and test_filter_widget:
+                    parent_item.addChild(itmk)
+                    for data_new_index, data_new_item in enumerate(data_new):
+                        update_recursive(data_new_index, data_new_item, parent_item=itmk, datakey_construct=datakey_construct_new, expandlevel=expandlevel+1)
 
             elif isinstance(data_new, dict):
                 print("Dict entry\n")
@@ -758,15 +800,14 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                     #print('Device {}'.format(dev.name))
                     #print('Address', dev.address)
                     # Check for external filter
-                    flag_external_filter = True
+                    test_external_filter = False
                     for addr_include in self.external_filter_include:
-                        test_include = dev.address not in addr_include
-                        logger.debug('Testing {} not in {}: {}'.format(dev.address, addr_include, test_include))
-                        if test_include:
-                            #print('No filter match for external filter', dev.address)
-                            flag_external_filter = False
+                        test_external_filter = addr_include.matches(dev.address)
+                        logger.debug('Testing {} not in {}: {}'.format(dev.address, addr_include, test_external_filter))
+                        if test_external_filter:
+                            break
 
-                    if flag_external_filter == False:
+                    if test_external_filter == False:
                         continue
                     # Check for filter from filter widget
                     if self.filterWidget.filter_on:
@@ -807,7 +848,7 @@ class RedvyprAddressWidget(QtWidgets.QWidget):
                             #print('Datakeys',datakey_dict)
                             devaddress_redvypr = RedvyprAddress(devaddress)
                             if self.filterWidget.filter_on:
-                                if  not(self.filterWidget.filter_address.matches(devaddress_redvypr)):
+                                if not(self.filterWidget.filter_address.matches(devaddress_redvypr)):
                                     print('No filter match for ', devaddress_redvypr)
                                     continue
 
