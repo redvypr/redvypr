@@ -10,6 +10,7 @@ redvypr changelog
 - nothing yet
 ### Changed
 - bug and layout in `redvyprSubscribeWidget`
+- `RedvyprMultipleAddressesWidget` with new functionality of `self.address_names`, a dictionary of names that are assigned with `RedvyprAddress`
 - `new_data(datapacket)` signal properly implemented in `redvypr.device`
   - first usage in device `devices.event.event.EventConfigEditor` 
 

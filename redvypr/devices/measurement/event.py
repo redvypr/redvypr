@@ -117,7 +117,6 @@ class EventTableModel(QtCore.QAbstractTableModel):
 #
 #
 
-
 class EventConfigEditor(QtWidgets.QWidget):
     config_updated = QtCore.pyqtSignal(object)
     request_close = QtCore.pyqtSignal()
@@ -127,11 +126,39 @@ class EventConfigEditor(QtWidgets.QWidget):
         self.device = device
         # Work on a copy to allow discarding changes
         self.config = config.model_copy()
-        self.widget_config = {'autoloc':True,'autoloc_address_lon':'lon@','autoloc_address_lat':'lat@'}
+        print("tstart",self.config.tstart)
+        widget_config = {'autoloc': True, 'autoloc_address_lon': 'lon@', 'autoloc_address_lat': 'lat@'}
+        widget_config['autotime_start'] = True
+        widget_config['autotime_end'] = True
+        widget_config['autotime_address_start'] = "t@"
+        widget_config['autotime_address_end'] = "t@"
+        self.widget_config = widget_config
         self.setup_ui()
         self.load_config_into_ui()
         # If new data from the device has arrived, process it also here in the widget
         self.device.new_data.connect(self.new_data)
+
+
+
+        # Initialen Status setzen (falls 'Use' am Anfang aus ist)
+        # Das triggert den Slot sofort einmal
+        if self.config.tstart is None:
+            self.time_controls["start"]['check_use'].setChecked(False)
+            self.on_edittime_toggled(False, "start")
+        else:
+            self.time_controls["start"]['check_use'].setChecked(True)
+            self.on_edittime_toggled(True, "start")
+
+        if self.config.tend is None:
+            self.time_controls["end"]['check_use'].setChecked(False)
+            self.on_edittime_toggled(False, "end")
+        else:
+            self.time_controls["end"]['check_use'].setChecked(True)
+            self.on_edittime_toggled(True, "end")
+
+        # Call the autoloc_changed function
+        self.autoloc_changed(self.widget_config['autoloc'])
+
 
     def setup_ui(self):
         self.main_layout = QtWidgets.QVBoxLayout(self)
@@ -169,9 +196,12 @@ class EventConfigEditor(QtWidgets.QWidget):
         self.start_dt = QtWidgets.QDateTimeEdit(calendarPopup=True)
         self.end_dt = QtWidgets.QDateTimeEdit(calendarPopup=True)
         for dt in [self.start_dt, self.end_dt]:
-            dt.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
-        t_form.addRow("Start:", self.start_dt)
-        t_form.addRow("End:", self.end_dt)
+            dt.setTimeSpec(QtCore.Qt.TimeSpec.UTC)
+            dt.setDisplayFormat("yyyy-MM-dd HH:mm:ss 'UTC'")
+            dt.dateTimeChanged.connect(self.on_time_changed)
+
+        t_form.addRow("Start:", self._create_time_control_widget(self.start_dt,"start"))
+        t_form.addRow("End:", self._create_time_control_widget(self.end_dt,"end"))
         self.layout.addWidget(self.time_sec)
 
         # --- 3. LOCATION & COORDINATES (Collapsible) ---
@@ -181,13 +211,21 @@ class EventConfigEditor(QtWidgets.QWidget):
         self.edit_loc = QtWidgets.QLineEdit()
         self.spin_lon = QtWidgets.QDoubleSpinBox()
         self.spin_lat = QtWidgets.QDoubleSpinBox()
-        self.latlon_from_device = QtWidgets.QCheckBox("Position from device")
-        self.latlon_from_device.toggled.connect(self.autoloc_changed)
-        self.latlon_from_device.setChecked(self.widget_config['autoloc'])
-        self.button_choose_lonaddress = QtWidgets.QPushButton("Choose address longitude")
-        self.button_choose_lonaddress.clicked.connect(self.choose_latlondevice_clicked)
-        self.button_choose_lataddress = QtWidgets.QPushButton("Choose address latitude")
-        self.button_choose_lataddress.clicked.connect(self.choose_latlondevice_clicked)
+        widget_autolatlon = QtWidgets.QWidget()
+        layout_autolatlon = QtWidgets.QHBoxLayout(widget_autolatlon)
+        layout_autolatlon.setContentsMargins(0, 0, 0, 0)
+        layout_autolatlon.setSpacing(4)
+
+
+        self.autolatlon_from_device = QtWidgets.QCheckBox("Auto update location from device")
+        self.autolatlon_from_device.setChecked(self.widget_config['autoloc'])
+        self.autolatlon_from_device.toggled.connect(self.autoloc_changed)
+        self.autolatlon_add_time = QtWidgets.QCheckBox(
+            "Autoupdate time as well")
+        self.autolatlon_add_time.setChecked(True)
+        self.autolatlon_add_time.setEnabled(False)
+        self.button_choose_latlonaddress = QtWidgets.QPushButton("Choose address longitude")
+        self.button_choose_latlonaddress.clicked.connect(self.choose_latlondevice_clicked)
         self.edit_locdevice_lon = QtWidgets.QLineEdit()
         self.edit_locdevice_lon.setText(self.widget_config['autoloc_address_lon'])
         self.edit_locdevice_lat = QtWidgets.QLineEdit()
@@ -195,15 +233,19 @@ class EventConfigEditor(QtWidgets.QWidget):
         for s in [self.spin_lon, self.spin_lat]:
             s.setRange(-180, 180)
             s.setDecimals(6)
+
+        self.autloc_devices_enable = [self.button_choose_latlonaddress, self.edit_locdevice_lon,
+         self.edit_locdevice_lat]
+        layout_autolatlon.addWidget(self.autolatlon_from_device)
+        layout_autolatlon.addWidget(self.button_choose_latlonaddress)
+        layout_autolatlon.addWidget(self.autolatlon_add_time)
+
         l_form.addRow("Location Label:", self.edit_loc)
         l_form.addRow("Longitude:", self.spin_lon)
         l_form.addRow("Latitude:", self.spin_lat)
-        # Positions from a device
-        l_form.addRow(self.latlon_from_device)
-        l_form.addRow(self.button_choose_lonaddress)
-        l_form.addRow("Autolocation address longitude:", self.edit_locdevice_lon)
-        l_form.addRow(self.button_choose_lataddress)
-        l_form.addRow("Autolocation address latitude:", self.edit_locdevice_lat)
+        l_form.addRow(widget_autolatlon)
+        l_form.addRow("Datastream address longitude:", self.edit_locdevice_lon)
+        l_form.addRow("Datastream address latitude:", self.edit_locdevice_lat)
         self.layout.addWidget(self.loc_sec)
 
         # --- 4. DATASTREAMS (Collapsible) ---
@@ -247,6 +289,143 @@ class EventConfigEditor(QtWidgets.QWidget):
         btn_lay.addWidget(self.save_btn)
         self.main_layout.addLayout(btn_lay)
 
+    def _create_time_control_widget(self, dt_edit, name_prefix):
+        """Modified to store references for autotime logic."""
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        # Store references in a dictionary on the instance
+        if not hasattr(self, 'time_controls'):
+            self.time_controls = {}
+
+        ctrls = {}
+        ctrls['check_use'] = QtWidgets.QCheckBox("Use")
+        ctrls['check_autotime'] = QtWidgets.QCheckBox("Auto update")
+        ctrls['address_edit'] = QtWidgets.QLineEdit()
+        # Default value for demo/standard
+        ctrls['address_edit'].setText("time@")
+        ctrls['address_choose'] = QtWidgets.QPushButton("Datastream")
+        ctrls['address_choose'].clicked.connect(self._choose_autotimedevice_clicked)
+
+        # UI Setup (wie gehabt)
+        spin = QtWidgets.QDoubleSpinBox()
+        spin.setRange(0, 9999);
+        spin.setFixedWidth(60);
+        spin.setValue(10)
+        unit_combo = QtWidgets.QComboBox()
+        unit_combo.addItems(["s", "min", "h", "days"])
+        btn_sub = QtWidgets.QPushButton("-");
+        btn_add = QtWidgets.QPushButton("+")
+        btn_now = QtWidgets.QPushButton("Now")
+
+        dt_edit.__edit_widgets__ = [spin,unit_combo,btn_sub, btn_add, btn_now]
+        # Layout hinzufügen
+        layout.addWidget(ctrls['check_use'])
+        layout.addWidget(spin)
+        layout.addWidget(unit_combo)
+        layout.addWidget(btn_sub)
+        layout.addWidget(btn_add)
+        layout.addWidget(dt_edit)
+        layout.addWidget(btn_now)
+        layout.addWidget(ctrls['check_autotime'])
+        layout.addWidget(ctrls['address_edit'])
+        layout.addWidget(ctrls['address_choose'])
+
+        # Logic for autotime toggle
+        ctrls['check_autotime'].toggled.connect(
+            lambda state: self.on_autotime_toggled(state, dt_edit,
+                                                   ctrls['address_edit']))
+
+        # Store the set of controls for this specific date_edit (start or end)
+        self.time_controls[name_prefix] = ctrls
+        # Button signals...
+        btn_now.clicked.connect(
+            lambda: dt_edit.setDateTime(QtCore.QDateTime.currentDateTime()))
+
+        ctrls['check_use'].toggled.connect(
+            lambda state: self.on_edittime_toggled(state, name_prefix)
+        )
+
+        def adjust_time(multiplier):
+            mapping = {"s": 1, "min": 60, "h": 3600, "days": 86400}
+            delta_seconds = spin.value() * mapping[
+                unit_combo.currentText()] * multiplier
+            dt_edit.setDateTime(dt_edit.dateTime().addSecs(int(delta_seconds)))
+
+        btn_now.clicked.connect(
+            lambda: dt_edit.setDateTime(QtCore.QDateTime.currentDateTime()))
+        btn_add.clicked.connect(lambda: adjust_time(1))
+        btn_sub.clicked.connect(lambda: adjust_time(-1))
+
+        return container
+
+    def on_edittime_toggled(self, state, name_prefix):
+        """
+        Handles if time shall be changed
+
+        """
+        if hasattr(self, 'time_controls') and name_prefix in self.time_controls:
+            ctrls = self.time_controls[name_prefix]
+
+            # 1. Die im ctrls-Dictionary gespeicherten Widgets umschalten
+            ctrls['check_autotime'].setEnabled(state)
+            ctrls['address_edit'].setEnabled(state)
+            ctrls['address_choose'].setEnabled(state)
+
+            # 2. Falls du auch die Spinboxen und Buttons umschalten willst,
+            # müssen wir diese im Widget-Tree finden.
+            # Am einfachsten: Das Parent-Widget (Container) nutzen.
+            # Da 'check_use' das Signal sendet, ist das Parent-Widget
+            # der Container, den wir deaktivieren können:
+            container = ctrls['check_use'].parentWidget()
+
+            # Wir iterieren durch alle Kinder des Containers
+            for i in range(container.layout().count()):
+                widget = container.layout().itemAt(i).widget()
+                if widget and widget != ctrls['check_use']:
+                    widget.setEnabled(state)
+    def on_autotime_toggled(self, state, dt_edit, address_edit):
+        """Handles subscription when autotime is enabled."""
+        dt_edit.setEnabled(not state)
+        for w in dt_edit.__edit_widgets__:
+            w.setEnabled(not state)
+        if state:
+            addr_str = address_edit.text()
+            if addr_str:
+                self.device.subscribe_address(RedvyprAddress(addr_str))
+                self.device.thread_start()
+
+    def on_time_changed(self):
+        """Auto-fix: Ensures start_dt <= end_dt."""
+        start = self.start_dt.dateTime()
+        end = self.end_dt.dateTime()
+        if start > end:
+            self.start_dt.blockSignals(True)
+            self.end_dt.blockSignals(True)
+            if self.sender() == self.start_dt:
+                self.end_dt.setDateTime(start.addSecs(60))
+            else:
+                self.start_dt.setDateTime(end.addSecs(-60))
+            self.start_dt.blockSignals(False)
+            self.end_dt.blockSignals(False)
+
+    def _choose_autotimedevice_clicked(self):
+        # Filter with an address that has lon or lat
+        self._autotimedevice_choose = RedvyprAddressWidget(device=self.device,
+                                                         redvypr=self.device.redvypr,
+                                                         deviceonly=True)
+
+
+        self._autotimedevice_choose.apply.connect(self._autotimedevice_chosen)
+        self._autotimedevice_choose.show()
+
+    def _autotimedevice_chosen(self, address_dict):
+        addr = address_dict['datastream_address']
+        addrstr = addr.to_address_string()
+
+
     def autoloc_changed(self, state):
         print("State",state)
         self.widget_config['autoloc'] = state
@@ -257,38 +436,57 @@ class EventConfigEditor(QtWidgets.QWidget):
         # unsubscribe all
         self.device.unsubscribe_all()
         if state:
+            self.spin_lon.setEnabled(False)
+            self.spin_lat.setEnabled(False)
+            for w in self.autloc_devices_enable:
+                w.setEnabled(True)
             self.device.subscribe_address(self.autoloc_address_lon)
             self.device.subscribe_address(self.autoloc_address_lat)
+            # Autoupdate time as well
+            if self.autolatlon_add_time.isChecked():
+                taddress = RedvyprAddress(self.autoloc_address_lon, datakey="t")
+                taddressstr = taddress.to_address_string()
+                self.time_controls["start"]['check_use'].setChecked(True)
+                self.time_controls["start"]['address_edit'].setText(taddressstr)
+                self.time_controls["start"]['check_autotime'].setChecked(True)
+                self.time_controls["end"]['check_use'].setChecked(False)
+                self.time_controls["end"]['check_autotime'].setChecked(False)
+            self.device.thread_start()
+        else:
+            self.spin_lon.setEnabled(True)
+            self.spin_lat.setEnabled(True)
+            for w in self.autloc_devices_enable:
+                w.setEnabled(False)
+            self.device.thread_stop()
 
 
     def choose_latlondevice_clicked(self):
-        if self.sender() == self.button_choose_lonaddress:
-            latlon = 'lon'
-        else:
-            latlon = 'lat'
         # Filter with an address that has lon or lat
         filter_address = RedvyprAddress("@(lon?:) or (lat?:)")
-        self._latlondevice_choose = RedvyprAddressWidget(device=self.device,
+        self._latlondevice_choose = RedvyprMultipleAddressesWidget(device=self.device,
                                                          redvypr=self.device.redvypr,
+                                                         address_names = {'Longitude':'lon@','Latitude':'lat@'},
                                                          filter_datastream=[filter_address],
                                                          deviceonly=True)
-
-        self._latlondevice_choose.__latlon__ = latlon
 
         self._latlondevice_choose.apply.connect(self.latlondevice_chosen)
         self._latlondevice_choose.show()
 
     def latlondevice_chosen(self, address_dict):
-        latlon = self.sender().__latlon__
-        addr = address_dict['datastream_address']
-        addrstr = addr.to_address_string()
+        print("Got address dict",address_dict)
+        lonaddr = address_dict['addresses_named']['Longitude']
+        lataddr = address_dict['addresses_named']['Latitude']
+        lonaddrstr = lonaddr#.to_address_string()
+        lataddrstr = lataddr#.to_address_string()
 
-        if latlon == 'lon':
-            self.widget_config['autoloc_address_lon'] = addrstr
-            self.edit_locdevice_lon.setText(addrstr)
-        else:
-            self.widget_config['autoloc_address_lat'] = addrstr
-            self.edit_locdevice_lat.setText(addrstr)
+        self.widget_config['autoloc_address_lon'] = lonaddrstr
+        self.edit_locdevice_lon.setText(lonaddrstr)
+        self.widget_config['autoloc_address_lat'] = lataddrstr
+        self.edit_locdevice_lat.setText(lataddrstr)
+
+
+        # Update of the config etc
+        self.autoloc_changed(True)
 
     def create_section(self, title: str, checked: bool = False):
         """Helper to create a collapsible QGroupBox."""
@@ -320,11 +518,15 @@ class EventConfigEditor(QtWidgets.QWidget):
     def save_to_config(self, close_after: bool = True):
         """Extract UI data, validate via Pydantic, and emit updated config."""
         # Update local model copy from UI
+        iso_start = self.start_dt.dateTime().toString(QtCore.Qt.ISODate)
+        iso_end = self.end_dt.dateTime().toString(QtCore.Qt.ISODate)
+        dt_start = datetime.datetime.fromisoformat(iso_start)
+        dt_end = datetime.datetime.fromisoformat(iso_end)
         self.config.name = self.edit_name.text()
         self.config.eventtype = self.combo_type.currentText()
         self.config.num = self.edit_num.value()
-        self.config.tstart = self.start_dt.dateTime().toPyDateTime()
-        self.config.tend = self.end_dt.dateTime().toPyDateTime()
+        self.config.tstart = dt_start
+        self.config.tend = dt_end
         self.config.location = self.edit_loc.text()
         self.config.lon = self.spin_lon.value()
         self.config.lat = self.spin_lat.value()
@@ -368,15 +570,51 @@ class EventConfigEditor(QtWidgets.QWidget):
         self.edit_name.selectAll()
 
     def new_data(self, data):
-        print(f"Got new data:{data=}")
+        #print(f"Got new data:{data=}")
         # Check if autolocation should be used
         if self.widget_config['autoloc']:
             if self.autoloc_address_lon.matches(data):
-                lon = self.autoloc_address_lon(data)
-                lat = self.autoloc_address_lat(data)
-                self.spin_lon.setValue(lon)
-                self.spin_lat.setValue(lat)
-                print(f"Lon:{lon} Lat:{lat}")
+                try:
+                    lon = self.autoloc_address_lon(data)
+                    self.spin_lon.setValue(lon)
+                except:
+                    logger.info("Could not update lon",exc_info=True)
+                try:
+                    lat = self.autoloc_address_lat(data)
+                    self.spin_lat.setValue(lat)
+                except:
+                    logger.info("Could not update lat", exc_info=True)
+
+        # --- 2. Autotime Logic (New) ---
+        if hasattr(self, 'time_controls'):
+            for prefix, ctrls in self.time_controls.items():
+                if ctrls['check_autotime'].isChecked():
+                    addr_str = ctrls['address_edit'].text()
+                    addr = RedvyprAddress(addr_str)
+
+                    if addr.matches(data):
+                        try:
+                            val = addr(data)
+                            # Convert to QDateTime if val is a timestamp or datetime
+                            if isinstance(val, (int, float)):
+                                dt = QtCore.QDateTime.fromSecsSinceEpoch(int(val), QtCore.Qt.TimeSpec.UTC)
+                            elif isinstance(val, datetime.datetime):
+                                # Add utz timezone if not present
+                                if val.tzinfo is None:
+                                    val = val.replace(tzinfo=datetime.timezone.utc)
+                                    dt = QtCore.QDateTime(val)
+                                    dt.setTimeSpec(QtCore.Qt.TimeSpec.UTC)
+                                elif isinstance(val, datetime.datetime):
+                                    dt = QtCore.QDateTime(val)
+                            else:
+                                continue
+
+                            # Update start_dt or end_dt
+                            target_dt_edit = self.start_dt if prefix == 'start' else self.end_dt
+                            target_dt_edit.setDateTime(dt)
+                        except Exception:
+                            pass
+
 #
 #
 #
