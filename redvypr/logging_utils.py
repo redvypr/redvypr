@@ -34,7 +34,21 @@ class loglevelWidget(QtWidgets.QWidget):
 
         """
         super().__init__(*args,**kwargs)
+        self.short_imported_only = True
         self.redvypr = redvypr
+        # Get the loggernames of the devices
+        logger_names = ["redvypr","redvypr.base"]
+        baselogger = logging.getLogger("redvypr.base")
+        for base_tmp in baselogger.getChildren():
+            logger_names.append(base_tmp.name)
+        for dev_dict in self.redvypr.devices:
+            dev_obj = dev_dict.get("device")
+            if dev_obj:
+                logger_tmp = getattr(dev_obj, 'logger', None)
+                if logger_tmp:
+                    logger_names.append(logger_tmp.name)
+
+        self.logger_names_devices = logger_names
         self.__logtable = QtWidgets.QTreeWidget()
         self.__loglevelwidget_layout = QtWidgets.QVBoxLayout(self)
         self.__check_all_loggers = QtWidgets.QCheckBox('Show all loggers')
@@ -55,15 +69,23 @@ class loglevelWidget(QtWidgets.QWidget):
         other_logger = []
         other_logger_root = []
         rootlogger = logging.getLogger('root')
+        #print("devices",self.logger_names_devices)
         for name in logging.root.manager.loggerDict:
+            #print("Name",name)
+            #print(name in self.logger_names_devices)
+            #self.logger_names_devices
             logger_tmp = logging.getLogger(name)
-            if 'redvypr' in name:
-                redvypr_logger.append(logger_tmp)
+            if self.short_imported_only:
+                if name in self.logger_names_devices:
+                    redvypr_logger.append(logger_tmp)
             else:
-                other_logger.append(logger_tmp)
-                # print('Parent',logger_tmp.parent)
-                if logger_tmp.parent == rootlogger:
-                    other_logger_root.append(logger_tmp)
+                if 'redvypr' in name:
+                    redvypr_logger.append(logger_tmp)
+                else:
+                    other_logger.append(logger_tmp)
+                    # print('Parent',logger_tmp.parent)
+                    if logger_tmp.parent == rootlogger:
+                        other_logger_root.append(logger_tmp)
 
         logger_tmp = logging.getLogger('redvypr')
         itm = QtWidgets.QTreeWidgetItem([logger_tmp.name])
@@ -134,36 +156,37 @@ class loglevelWidget(QtWidgets.QWidget):
         loglevels = ['INFO', 'DEBUG', 'WARNING', 'ERROR', 'CRITICAL']
         for logger_children in logger_children:
             # print('Logger children',logger_children)
-            itm_child = QtWidgets.QTreeWidgetItem([logger_children.name])
-            itm.addChild(itm_child)
-            # Add combobox
-            loglevel_combobox = QtWidgets.QComboBox()
-            loglevel_combobox.__logger__ = logger_children
-            for i, l in enumerate(loglevels):
-                loglevel_combobox.addItem(l)
-
-            level = logger_children.getEffectiveLevel()
-            levelname = logging.getLevelName(level)
-            loglevel_combobox.setCurrentText(levelname)
-            loglevel_combobox.currentIndexChanged.connect(self.__loglevelChanged__)
-            table.setItemWidget(itm_child, 1, loglevel_combobox)
-
-            logger_children_children = logger_children.getChildren()
-            if len(logger_children_children) > 0:
-                # Add combobox for logger and children
-                loglevel_combobox_all = QtWidgets.QComboBox()
-                loglevel_combobox_all.__logger__ = logger_children
-                loglevel_combobox_all.__propagate_down__ = True
+            if logger_children.name in self.logger_names_devices:
+                itm_child = QtWidgets.QTreeWidgetItem([logger_children.name])
+                itm.addChild(itm_child)
+                # Add combobox
+                loglevel_combobox = QtWidgets.QComboBox()
+                loglevel_combobox.__logger__ = logger_children
                 for i, l in enumerate(loglevels):
-                    loglevel_combobox_all.addItem(l)
+                    loglevel_combobox.addItem(l)
 
                 level = logger_children.getEffectiveLevel()
                 levelname = logging.getLevelName(level)
-                loglevel_combobox_all.setCurrentText(levelname)
-                loglevel_combobox_all.currentIndexChanged.connect(self.__loglevelChanged__)
-                table.setItemWidget(itm_child, 2, loglevel_combobox_all)
+                loglevel_combobox.setCurrentText(levelname)
+                loglevel_combobox.currentIndexChanged.connect(self.__loglevelChanged__)
+                table.setItemWidget(itm_child, 1, loglevel_combobox)
 
-            self.__update_logleveltable_recursive(itm_child, logger_children_children)
+                logger_children_children = logger_children.getChildren()
+                if len(logger_children_children) > 0:
+                    # Add combobox for logger and children
+                    loglevel_combobox_all = QtWidgets.QComboBox()
+                    loglevel_combobox_all.__logger__ = logger_children
+                    loglevel_combobox_all.__propagate_down__ = True
+                    for i, l in enumerate(loglevels):
+                        loglevel_combobox_all.addItem(l)
+
+                    level = logger_children.getEffectiveLevel()
+                    levelname = logging.getLevelName(level)
+                    loglevel_combobox_all.setCurrentText(levelname)
+                    loglevel_combobox_all.currentIndexChanged.connect(self.__loglevelChanged__)
+                    table.setItemWidget(itm_child, 2, loglevel_combobox_all)
+
+                self.__update_logleveltable_recursive(itm_child, logger_children_children)
 
         table.expandAll()
         for i in range(3):

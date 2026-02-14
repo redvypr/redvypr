@@ -27,7 +27,7 @@ else:
     faulthandler.enable(file=logfile)
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.redvypr_main')
+logger = logging.getLogger('redvypr.base.redvypr_main')
 logger.setLevel(logging.INFO)
 
 

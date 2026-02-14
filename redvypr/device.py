@@ -106,7 +106,7 @@ class deviceQThread(QtCore.QThread):
 
 def device_start_standard(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start():'
-    logger = logging.getLogger('redvypr.redvypr.device_start():')
+    logger = logging.getLogger('redvypr.base.device_start_standard():')
     while True:
         data = datainqueue.get()
         if data is not None:
@@ -151,7 +151,7 @@ class RedvyprDeviceScan():
         loglevel: logging.loglevel
             The loglevel
         """
-        self.logger = logging.getLogger('redvypr.redvypr_device_scan')
+        self.logger = logging.getLogger('redvypr.base.redvypr_device_scan')
         self.logger.setLevel(loglevel)
         self.device_paths = device_path
         self.redvypr_devices = redvypr_devices
@@ -186,7 +186,7 @@ class RedvyprDeviceScan():
 
     def scan_devicepath(self):
         funcname = 'search_in_path():'
-        self.logger.debug(funcname)
+        self.logger.debug(funcname + ' Start searching')
         self.device_modules = []  # Clear the list
         #
         # Add all devices from additionally folders
@@ -227,10 +227,11 @@ class RedvyprDeviceScan():
                 else:
                     self.logger.debug(funcname + 'Not a valid device')
 
+        self.logger.debug(f"{funcname} Found {len(self.redvypr_devices['files'])} devices in devicepaths")
+
     def scan_module_recursive(self,testmodule, module_dict):
         funcname = 'scan_module_recursive():'
-        self.logger.debug(funcname + ' Scanning: {}'.format(testmodule))
-        #print(funcname,testmodule)
+        #self.logger.debug(funcname + ' Scanning: {}'.format(testmodule))
         # Check if the device is valid
         valid_module = self.valid_device(testmodule)
         #print('Valid dictionary',valid_module)
@@ -244,7 +245,7 @@ class RedvyprDeviceScan():
                 module_dict['__devices__'] = [devdict]
 
             self.redvypr_devices_flat.append(devdict)
-            self.logger.debug(funcname + ' Found valid module {:s}'.format(str(testmodule)))
+            #self.logger.debug(funcname + ' Found valid module {:s}'.format(str(testmodule)))
         # Always append as scanned
         self.__modules_scanned__.append(testmodule)
 
@@ -279,6 +280,7 @@ class RedvyprDeviceScan():
                 self.logger.exception(e)
                 #self.logger.info(funcname + ' Could not import module: ' + str(e))# If the module is valid add it to devices
 
+        self.logger.debug(f"Found {len(self.redvypr_devices_flat)} valid redvyp devices")
 
     def scan_modules(self,package_names = ['vypr','vyper']):
         """

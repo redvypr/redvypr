@@ -10,7 +10,7 @@ import typing
 from datetime import datetime
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.packet_statistics')
+logger = logging.getLogger('redvypr.base.packet_statistics')
 logger.setLevel(logging.INFO)
 
 # A dictionary for the device_redvypr entry in the statistics

@@ -12,7 +12,7 @@ import pydantic
 import typing
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.data_packets')
+logger = logging.getLogger('redvypr.base.data_packets')
 logger.setLevel(logging.DEBUG)
 
 regex_symbol_start = '{'

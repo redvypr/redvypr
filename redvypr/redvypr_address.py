@@ -21,7 +21,7 @@ import tokenize
 import io
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.redvypr_address')
+logger = logging.getLogger('redvypr.base.redvypr_address')
 logger.setLevel(logging.DEBUG)
 
 #metadata_address = '/d:/p:/i:metadata/k:_redvypr_command'

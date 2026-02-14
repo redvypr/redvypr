@@ -159,7 +159,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
     """ The heart of redvypr, this functions distributes the queue data onto the subqueues.
     """
     funcname = __name__ + '.distribute_data()'
-    logger_dist = logging.getLogger('redvypr.distribute_data')
+    logger_dist = logging.getLogger('redvypr.base.distribute_data')
     logger_dist.setLevel(logging.DEBUG)
     dt_info = 5.0  # The time interval information will be sent
     dt_avg = 0  # Averaging of the distribution time needed
@@ -455,6 +455,8 @@ class Redvypr(QtCore.QObject):
         if hostname is not None:
             config.hostname = hostname
 
+
+
         # global loglevel
         #print('Loglevel',loglevel)
         if loglevel is not None:
@@ -483,6 +485,18 @@ class Redvypr(QtCore.QObject):
         self.datadistinfoqueue = queue.Queue(maxsize=1000)  # A queue to get informations from the datadistthread
         self.redvyprqueue = queue.Queue()  # A queue to send informations to the datadistthread
         self.redvyprreplyqueue = queue.Queue()  # A queue to send informations to the datadistthread
+        # Adding metadata from config, if present
+        if len(config.metadata.keys()) > 0:
+            for k in config.metadata.keys():
+                logger.debug(f'Adding {k} metadata entry')
+            metadata_init = {'_metadata':config.metadata}
+            status_statistics = redvypr_packet_statistic.do_metadata(
+                metadata_init, self.deviceinfo_all)
+            #print("Hallo",self.deviceinfo_all)
+            logger.debug(
+                f'Added {len(config.metadata.keys())} entries from config to metadata {len(self.deviceinfo_all['metadata'].keys())} local entries.')
+            #print("Metadata done")
+
         # Lets start the distribution!
         self.datadistthread = threading.Thread(target=distribute_data, args=(
         self.devices, self.hostinfo, self.deviceinfo_all, self.datadistinfoqueue, self.redvyprqueue, self.redvyprreplyqueue, self.dt_datadist), daemon=True)
@@ -522,12 +536,14 @@ class Redvypr(QtCore.QObject):
         -------
 
         """
+        funcname = __name__ + '.apply_config():'
         redvypr_config = merge_configuration(config)
         if use_devices:
             self.add_devices_from_config(redvypr_config, rename_if_exists=False)
         if use_metadata:
-            print("Using metadata",redvypr_config.metadata)
+            print(f"Applying metadata:{redvypr_config.metadata=}")
             self.set_metadata_from_dict(redvypr_config.metadata)
+            logger.debug(funcname + 'Adding metadata done')
 
     def get_config(self):
         """
@@ -560,7 +576,7 @@ class Redvypr(QtCore.QObject):
         logger.debug(funcname)
         self.apply_config(config=[fname], use_metadata=use_metadata, use_loglevel=use_loglevel, use_devices=use_devices)
 
-    def save_config(self, fname=None, autostart=False, add_metadata=False, set_loglevel:typing.Optional[typing.Literal["DEBUG","INFO","WARNING"]]=None):
+    def save_config(self, fname=None, autostart=False, add_metadata=True, set_loglevel:typing.Optional[typing.Literal["DEBUG","INFO","WARNING"]]=None):
         config = self.get_config()
         data_save = config.model_dump()
         print('Data save',data_save)
@@ -1663,5 +1679,5 @@ def merge_configuration(redvypr_config=None):
         # config = config.model_copy(update=config_tmp)
     config_tmp2 = redvypr.RedvyprConfig(devices=devices_all, devicepaths=devicepath_all)
     config = config_tmp2.model_copy(update=config_tmp.model_dump(exclude=['devices', 'devicepaths']))
-    #print('Config', config)
+    #print(f'Merged config:{config}')
     return config
