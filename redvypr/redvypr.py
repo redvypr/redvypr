@@ -486,7 +486,7 @@ class Redvypr(QtCore.QObject):
         self.redvyprqueue = queue.Queue()  # A queue to send informations to the datadistthread
         self.redvyprreplyqueue = queue.Queue()  # A queue to send informations to the datadistthread
         # Adding metadata from config, if present
-        if len(config.metadata.keys()) > 0:
+        if config.metadata and len(config.metadata.keys()) > 0:
             for k in config.metadata.keys():
                 logger.debug(f'Adding {k} metadata entry')
             metadata_init = {'_metadata':config.metadata}

@@ -16,7 +16,6 @@ from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 
 
-
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.nmeaparser')
 logger.setLevel(logging.DEBUG)

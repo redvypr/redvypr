@@ -139,24 +139,6 @@ class Device(RedvyprDevice):
         for addr_datastream, metadata_datastream in measurement.datastreams.items():
             self.redvypr.rem_metadata(addr_datastream, metadata_keys=[address_str])
 
-    def add_metadata_clicked(self):
-        address_text = self.address_new.text()
-        raddress = RedvyprAddress(address_text)
-        key = self.metadatakey_new.text()
-        entry = self.metadataentry_new.text()
-        metadata = {key: entry}
-
-        if self.time_constrain_checkbox.isChecked():
-            # Extract Python datetime from QDateTime
-            t1 = self.t1_edit.dateTime().toPython()
-            t2 = self.t2_edit.dateTime().toPython()
-
-            print(f"Adding time-constrained metadata: {metadata} [{t1} to {t2}]")
-            self.redvypr.add_metadata_time_constrained(raddress, metadata=metadata,
-                                                       t1=t1, t2=t2)
-        else:
-            print(f"Adding global metadata: {metadata}")
-            self.redvypr.set_metadata(raddress, metadata=metadata)
 
 
 class ContactEditWidget(QtWidgets.QWidget):
@@ -806,7 +788,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetStartonly):
             self.tabs.setTabText(self.opened_tabs[identifier], config_obj.name)
 
         self.refresh_dashboard_lists()
-        self.device.add_measurement_to_metadata(config_obj)
+        self.device.add_event_to_metadata(config_obj)
 
     def remove_measurement(self):
         row = self.meas_list.currentRow()
@@ -821,7 +803,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetStartonly):
             self.close_tab_by_identifier(f"meas_{config.uuid}")
             measurement_remove = self.custom_config.measurements.pop(row)
             self.refresh_dashboard_lists()
-            self.device.rem_measurement_from_metadata(measurement_remove)
+            self.device.rem_event_from_metadata(measurement_remove)
 
     # --- Contact Logic ---
 

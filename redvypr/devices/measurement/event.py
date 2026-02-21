@@ -16,7 +16,7 @@ import re
 from redvypr.redvypr_address import RedvyprAddress
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('event')
+logger = logging.getLogger('redvypr.device.event')
 logger.setLevel(logging.INFO)
 
 redvypr_devicemodule = True
@@ -61,6 +61,76 @@ class Device(RedvyprDevice):
         funcname = __name__ + '.__init__()'
         super(Device, self).__init__(**kwargs)
         self.calfiles_processed = []
+
+    def create_address_string_from_event(self, event):
+        address_str = f"@i:event__{event.uuid} and d:event_metadata"
+        return address_str
+    def add_event_to_metadata(self, event):
+        funcname = __name__ + '.add_event_to_metadata()'
+        print(f"{funcname}")
+        #print(f"Measurement:{measurement}")
+        address_str = self.create_address_string_from_event(event)
+        meta_address = RedvyprAddress(address_str)
+        meta_address_str = meta_address.to_address_string()
+        metadata = event.model_dump()
+        #print("Adding metadata",metadata)
+        self.redvypr.set_metadata(meta_address_str, metadata=metadata)
+        # Try to remove the measurement metadata entries in all datastreams
+        self.redvypr.rem_metadata("@", metadata_keys=[meta_address_str], mode="matches")
+        for addr_datastream, metadata_datastream in metadata["datastreams"].items():
+            print(f"Adding metadata to datastream {addr_datastream}")
+            #print("Metadata",metadata_datastream)
+            #metadata_datastream_submit = {meta_address_str:metadata_datastream}
+            # Do not send the whole metadata, but a link to the metadata
+            metadata_datastream_submit = {meta_address_str:f'["datastreams"][{addr_datastream}]'}
+            #print("Adding",metadata_datastream_submit)
+            self.redvypr.set_metadata(addr_datastream,metadata=metadata_datastream_submit)
+
+    def load_events_from_metadata(self):
+        """
+        Retrieves all event metadata from redvypr and reconstructs Event objects.
+        Returns a list of validated event objects.
+        """
+        funcname = __name__ + '.load_events_from_metadata()'
+        print(f"{funcname}")
+
+        # 1. Define the search pattern based on your address string logic
+        # We look for anything starting with 'event__' and containing 'event_metadata'
+        search_pattern = "@d:event_metadata"
+
+        # 2. Fetch all matching metadata from redvypr
+        # This returns a dict: {address_string: metadata_dict}
+        all_metadata = self.redvypr.get_metadata(search_pattern)
+
+        events = []
+
+        if not all_metadata:
+            print("No events found in metadata.")
+            return events
+
+        for addr_str, metadata_content in all_metadata.items():
+            try:
+                # 3. Reconstruct the object via Pydantic
+                # Since you saved it using model_dump(), model_validate() is the safest way back
+                # Replace 'EventBaseConfig' with your actual Pydantic model class name
+                event_obj = EventBaseConfig.model_validate(metadata_content)
+                events.append(event_obj)
+                print(f"Successfully loaded event: {event_obj.uuid}")
+
+            except Exception as e:
+                print(f"Error validating event metadata at {addr_str}: {e}")
+
+        return events
+
+    def rem_event_from_metadata(self, event):
+        funcname = __name__ + '.rem_measurement_from_metadata()'
+        print(f"{funcname}")
+        address_str = self.create_address_string_from_event(event)
+        # Delete the whole entry
+        print(f"Deleting metadata entry for event:{address_str}")
+        self.redvypr.rem_metadata(address_str, metadata_keys=[], constraint_entries=[])
+        for addr_datastream, metadata_datastream in event.datastreams.items():
+            self.redvypr.rem_metadata(addr_datastream, metadata_keys=[address_str])
 
 
 class EventTableModel(QtCore.QAbstractTableModel):
@@ -693,6 +763,18 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetStartonly):
         rem_m_btn.setIcon(qtawesome.icon('fa5s.trash-alt'))
         rem_m_btn.clicked.connect(self.remove_measurement)
 
+        sync_btn = QtWidgets.QPushButton(" Sync to Metadata")
+        sync_btn.setIcon(qtawesome.icon('fa5s.sync'))
+        sync_btn.setToolTip("Upload all local events to Redvypr metadata")
+        sync_btn.clicked.connect(self.sync_events_to_remote)
+
+        load_btn = QtWidgets.QPushButton(" Load from Metadata")
+        load_btn.setIcon(qtawesome.icon('fa5s.cloud-download-alt'))
+        load_btn.setToolTip("Fetch all events from Redvypr metadata")
+        load_btn.clicked.connect(self.load_events_from_remote)
+
+        btn_lay.addWidget(sync_btn)
+        btn_lay.addWidget(load_btn)
         btn_lay.addWidget(add_m_btn)
         btn_lay.addWidget(rem_m_btn)
 
@@ -768,6 +850,63 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetStartonly):
         layout.addWidget(m_group)
 
         self.tabs.addTab(container, qtawesome.icon('fa5s.layer-group'), "Events")
+
+    def sync_events_to_remote(self):
+        """Push all local events from custom_config to the Redvypr metadata store."""
+        if not self.custom_config.events:
+            QtWidgets.QMessageBox.information(self, "Sync", "No local events to sync.")
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self, "Sync Metadata",
+            f"Do you want sync {len(self.custom_config.events)} events to metadata?",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
+        )
+
+        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            try:
+                for event in self.custom_config.events:
+                    # Calling the method we defined in the Device class earlier
+                    self.device.add_event_to_metadata(event)
+                QtWidgets.QMessageBox.information(self, "Success",
+                                                  "Metadata sync complete.")
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Error", f"Sync failed: {e}")
+
+    def load_events_from_remote(self):
+        """Fetch events from Redvypr metadata and merge them into the local list."""
+        try:
+            # Using the 'load' method from the Device class
+            remote_events = self.device.load_events_from_metadata()
+
+            if not remote_events:
+                QtWidgets.QMessageBox.information(self, "Load",
+                                                  "No events found in metadata")
+                return
+
+            # Avoid duplicates by checking UUIDs
+            local_uuids = [e.uuid for e in self.custom_config.events]
+            new_count = 0
+
+            for r_event in remote_events:
+                if r_event.uuid not in local_uuids:
+                    self.custom_config.events.append(r_event)
+                    new_count += 1
+                else:
+                    # Optional: Update existing local event with remote data
+                    idx = local_uuids.index(r_event.uuid)
+                    self.custom_config.events[idx] = r_event
+
+            if new_count > 0 or remote_events:
+                self.event_model.refresh()
+                QtWidgets.QMessageBox.information(
+                    self, "Load Complete",
+                    f"Loaded {len(remote_events)} events ({new_count} were new)."
+                )
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error",
+                                           f"Failed to load metadata: {e}")
 
     # --- Measurement Logic ---
 

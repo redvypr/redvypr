@@ -24,7 +24,7 @@ from redvypr.data_packets import check_for_command, commandpacket
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
-from .sensor_and_calibration_definitions import CalibrationFactory
+from .sensor_and_calibration_definitions import CalibrationFactory, SensorFactory
 from redvypr.device import RedvyprDeviceCustomConfig
 from redvypr.devices.db.db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget
 from redvypr.devices.db.db_engines import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
@@ -49,6 +49,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
 
 class DeviceCustomConfig(RedvyprDeviceCustomConfig):
     calibration_lists: dict = pydantic.Field(default={'Calibrations':[]})
+    sensor_lists: dict = pydantic.Field(default={'Sensors': []})
 
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
@@ -73,6 +74,7 @@ class Device(RedvyprDevice):
 
         # Internal storage: { 'list_name': [cal_dict_1, cal_dict_2] }
         self.calibration_lists = self.custom_config.calibration_lists
+        self.sensor_lists = self.custom_config.sensor_lists
         # Convert the dictionaries into calibratios
         for list_name, cal_list in self.calibration_lists.items():
             print(f"Processing {list_name}")
@@ -84,8 +86,112 @@ class Device(RedvyprDevice):
             # Replacing the old list
             self.calibration_lists[list_name] = new_list
 
+    def import_sensor(self, list_name: str, file_path: str) -> bool:
+        """
+        Loads a YAML file and appends its content to the specified list.
+        """
+        path = Path(file_path)
+        if not path.exists():
+            logger.error(f"File not found: {file_path}")
+            return False
+
+        try:
+            with open(path, 'r') as file:
+                # safe_load_all liest alle Dokumente (getrennt durch ---) nacheinander ein
+                all_sensors = yaml.safe_load_all(file)
+                for sensor_data in all_sensors:
+                    if sensor_data is None:
+                        continue  # Skips empty entries
+
+                    if list_name not in self.sensor_lists:
+                        self.sensor_lists[list_name] = []
+
+                    sensor = SensorFactory.create(sensor_data)
+                    self.sensor_lists[list_name].append(sensor)
+
+                logger.info(
+                    f"Successfully imported '{path.name}' into list '{list_name}'.")
+            return True
+
+        except yaml.YAMLError as exc:
+            logger.error(f"Error parsing YAML file: {exc}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error during import: {e}")
+            return False
+
+    def delete_sensor_list(self, list_name: str):
+        """
+        Deletes an entire list of calibrations.
+        """
+        if list_name in self.sensor_lists:
+            del self.sensor_lists[list_name]
+            logger.info(f"Sensor list '{list_name}' deleted.")
+        else:
+            logger.warning(f"List '{list_name}' does not exist.")
+
+    def create_metadict_from_sensor_list(self, list_name: str) -> dict:
+        """
+
+        Parameters
+        ----------
+        list_name
+
+        Returns
+        -------
+        Dictionary that can be sent processed with redvypr.set_metadata_from_dict
+        """
+        funcname = __name__ + '.create_metadatapacket_from_sensor_list():'
+        logger.debug(funcname)
+        sensors = self.sensor_lists[list_name]
+
+        sensor_dict_meta = {}
+        for sensor in sensors:
+            raddress = sensor.create_redvypr_address()
+            address_str = raddress.to_address_string()
+            calibration_dict = sensor.model_dump()
+            sensor_dict_meta[address_str] = {'sensor':calibration_dict}
+
+        logger.debug(funcname + 'Metadata packet created')
+        return sensor_dict_meta
+
+    def create_sensor_list_from_metadata(self, list_name='metadata') -> dict:
+        """
+
+        Parameters
+        ----------
 
 
+        Returns
+        -------
+
+        """
+        funcname = __name__ + '.create_metadatapacket_from_sensor_list():'
+        logger.debug(funcname)
+
+        metadata = self.redvypr.get_metadata()
+        self.sensor_lists[list_name] = []
+        for maddr,mdata in metadata.items():
+            print(mdata)
+            if 'sensor' in mdata.keys():
+                print("Found calibration")
+                sensor_data = mdata["sensor"]
+                print(f"Sensor data:{sensor_data}")
+                sensor = SensorFactory.create(sensor_data)
+                self.sensor_lists[list_name].append(sensor)
+
+        print(f"{self.sensor_lists=}")
+        return self.sensor_lists[list_name]
+
+    def set_metadata_from_sensor_list(self, list_name: str):
+        metadict = self.create_metadict_from_sensor_list(list_name=list_name)
+        self.redvypr.set_metadata_from_dict(metadata=metadict)
+
+    #
+    #
+    # Calibration
+    #
+    #
     def import_calibration(self, list_name: str, file_path: str) -> bool:
         """
         Loads a YAML file and appends its content to the specified list.
@@ -348,6 +454,415 @@ class DBCalibrationLoadSaveWidget(QtWidgets.QWidget):
     def get_config(self):
         return self.config_widget.get_config()
 
+
+
+class SensorTable(QtWidgets.QTableWidget):
+    # Signals
+    sensor_data_changed = QtCore.pyqtSignal(int)
+    sensor_deleted = QtCore.pyqtSignal(object)
+
+    def __init__(self, sensor_lists, list_name, parent=None):
+        super().__init__(parent)
+        self.sensor_lists = sensor_lists
+        self.list_name = list_name
+
+        # Standard columns that are always visible
+        self.default_columns = ['name', 'sn', 'channel','sensor_model', 'date']
+        self.extra_columns = []
+        self.all_possible_keys = []
+
+        self.setup_ui()
+        self.update_possible_keys()
+        self.refresh_table()
+
+        # Shortcuts
+        self.copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+C"), self)
+        self.copy_shortcut.activated.connect(self.copy_selection)
+        self.paste_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+V"), self)
+        self.paste_shortcut.activated.connect(self.paste_selection)
+
+    @property
+    def data_list(self):
+        """
+           This is solved this way,
+           as it allows that the list is removed and recreated somewhere else
+        """
+        try:
+            self.sensor_lists[self.list_name]
+        except:
+            self.sensor_lists[self.list_name] = []
+
+        return self.sensor_lists[self.list_name]
+
+    def setup_ui(self):
+        # UI Policy and Selection
+        self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
+
+        self.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setAlternatingRowColors(True)
+
+        # Headers
+        header = self.horizontalHeader()
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(True)
+
+        # Enable Sorting
+        self.setSortingEnabled(True)
+
+    def update_possible_keys(self):
+        """Finds keys in the Pydantic models not present in default_columns."""
+        keys = set()
+        for item in self.data_list:
+            if hasattr(item, "model_dump"):
+                keys.update(item.model_dump().keys())
+            else:
+                keys.update(item.dict().keys())
+
+        self.all_possible_keys = sorted([
+            k for k in keys if k not in self.default_columns
+        ])
+
+    def refresh_table(self):
+        """Rebuilds the table structure and data."""
+        # Disable sorting while populating to prevent flickering/index shifts
+        self.setSortingEnabled(False)
+        self.clear()
+
+        # Define Columns: # (Row Number), then Defaults, then Extras
+        headers = ['#'] + [col.capitalize() for col in
+                           self.default_columns] + self.extra_columns
+        actual_keys = self.default_columns + self.extra_columns
+
+        self.setColumnCount(len(headers))
+        self.setHorizontalHeaderLabels(headers)
+        self.setRowCount(len(self.data_list))
+
+        for row_idx, item in enumerate(self.data_list):
+            # 1. Sequential Row Number (Column 0)
+            # We use a custom QTableWidgetItem that sorts numerically
+            num_item = QtWidgets.QTableWidgetItem()
+            num_item.setData(QtCore.Qt.ItemDataRole.DisplayRole, row_idx + 1)
+            num_item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            # Make row number read-only and non-selectable for clarity
+            num_item.setFlags(num_item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+            self.setItem(row_idx, 0, num_item)
+
+            # 2. Data Columns
+            for col_idx, key in enumerate(actual_keys, start=1):
+                val = getattr(item, key, "-")
+                table_item = QtWidgets.QTableWidgetItem(str(val))
+                table_item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+                # Store the original Pydantic object reference in the first data cell of the row
+                if col_idx == 1:
+                    table_item.setData(QtCore.Qt.ItemDataRole.UserRole, item)
+
+                self.setItem(row_idx, col_idx, table_item)
+
+        self.setSortingEnabled(True)
+
+    def get_selected_pydantic_objects(self) -> List[Any]:
+        """Helper to get Pydantic objects from selected rows regardless of sorting."""
+        objects = []
+        selected_indexes = self.selectionModel().selectedRows()
+        for index in selected_indexes:
+            # We get the object from Column 1 where we stored it in UserRole
+            obj = self.item(index.row(), 1).data(QtCore.Qt.ItemDataRole.UserRole)
+            objects.append(obj)
+        return objects
+
+    def copy_selection(self):
+        items = self.get_selected_pydantic_objects()
+        if not items:
+            return
+
+        items_to_copy = []
+        for original_item in items:
+            if hasattr(original_item, "model_copy"):
+                items_to_copy.append(original_item.model_copy())
+            else:
+                items_to_copy.append(copy.deepcopy(original_item))
+
+        # Access clipboard in RedvyprDeviceWidget
+        parent = self.parent_widget()
+        if parent:
+            parent._clipboard = items_to_copy
+            QtWidgets.QToolTip.showText(
+                QtGui.QCursor.pos(),
+                f"Copied {len(items_to_copy)} sensors(s)"
+            )
+
+    def paste_selection(self):
+        parent = self.parent_widget()
+        if not parent or not parent._clipboard:
+            return
+
+        clipboard_data = parent._clipboard
+        items_to_paste = clipboard_data if isinstance(clipboard_data, list) else [
+            clipboard_data]
+
+        for item in items_to_paste:
+            if hasattr(item, "model_copy"):
+                new_item = item.model_copy()
+            else:
+                new_item = copy.deepcopy(item)
+            self.data_list.append(new_item)
+
+        self.update_possible_keys()
+        self.refresh_table()
+        self.sensor_data_changed.emit(len(self.data_list))
+        QtWidgets.QToolTip.showText(QtGui.QCursor.pos(),
+                                    f"Pasted {len(items_to_paste)} sensor(s)")
+
+    def delete_selected_rows(self):
+        items_to_delete = self.get_selected_pydantic_objects()
+        if not items_to_delete:
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self, 'Confirm Deletion',
+            f"Delete {len(items_to_delete)} selected sensor(s)?",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
+        )
+
+        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            for item in items_to_delete:
+                if item in self.data_list:
+                    self.data_list.remove(item)
+                    self.sensor_deleted.emit(item)
+
+            self.update_possible_keys()
+            self.refresh_table()
+            self.sensor_data_changed.emit(len(self.data_list))
+
+    def show_context_menu(self, position):
+        menu = QtWidgets.QMenu(self)
+        selected_rows = self.selectionModel().selectedRows()
+
+        if selected_rows:
+            del_act = menu.addAction(f"Delete Selected ({len(selected_rows)})")
+            del_act.triggered.connect(lambda: self.delete_selected_rows())
+            menu.addSeparator()
+
+        col_menu = menu.addMenu("Toggle Extra Columns")
+        for key in self.all_possible_keys:
+            action = QtGui.QAction(key, col_menu, checkable=True,
+                                   checked=(key in self.extra_columns))
+            action.triggered.connect(
+                lambda checked, k=key: self.toggle_column(k, checked))
+            col_menu.addAction(action)
+        menu.exec(self.viewport().mapToGlobal(position))
+
+    def toggle_column(self, key, checked):
+        if checked and key not in self.extra_columns:
+            self.extra_columns.append(key)
+        elif not checked and key in self.extra_columns:
+            self.extra_columns.remove(key)
+        self.refresh_table()
+
+    def parent_widget(self) -> 'RedvyprDeviceWidget':
+        curr = self.parent()
+        # Find the widget that has the _clipboard attribute
+        while curr:
+            if hasattr(curr, '_clipboard'):
+                return curr
+            curr = curr.parent()
+        return None
+
+class SensorManageWidget(QtWidgets.QWidget):
+    # Signals for communication with the main app
+    dataImported = QtCore.pyqtSignal()
+
+    def __init__(self, sensor_lists, device_reference, list_name, parent=None):
+        super().__init__(parent)
+        self.device = device_reference
+        self.list_name = list_name
+        self.sensor_lists = sensor_lists
+        self.setup_ui()
+
+    @property
+    def data_list(self):
+        """
+           This is solved this way,
+           as it allows that the list is removed and recreated somewhere else
+        """
+        try:
+            self.sensor_lists[self.list_name]
+        except:
+            self.sensor_lists[self.list_name] = []
+
+        return self.sensor_lists[self.list_name]
+
+    def setup_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # --- Toolbar for Load/Save/Clipboard ---
+        toolbar = QtWidgets.QHBoxLayout()
+
+        # 1. LOAD BUTTON with Menu
+        self.btn_load = QtWidgets.QPushButton("Load")
+        load_menu = QtWidgets.QMenu(self)
+        load_menu.addAction("Import from YAML", self.import_from_yaml)
+        load_menu.addAction("Load from Database", self.load_from_db)
+        load_menu.addAction("Load from Metadata", self.load_from_metadata)
+        self.btn_load.setMenu(load_menu)
+
+        # 2. SAVE/APPLY BUTTON with Menu
+        self.btn_save = QtWidgets.QPushButton("Save / Apply")
+        save_menu = QtWidgets.QMenu(self)
+        save_menu.addAction("Export to YAML", self.save_data)
+        save_menu.addAction("Save to Database", self.save_to_db)
+        save_menu.addSeparator()
+        # Your new feature: Sending to redvypr system
+        save_menu.addAction("Apply to Redvypr-Metadata", self.apply_metadata_to_system)
+        self.btn_save.setMenu(save_menu)
+
+        # 3. CLIPBOARD BUTTONS
+        self.btn_copy = QtWidgets.QPushButton("Copy")
+        self.btn_copy.setToolTip("Copy selected rows (Ctrl+C)")
+        self.btn_copy.clicked.connect(lambda: self.table.copy_selection())
+
+        self.btn_paste = QtWidgets.QPushButton("Paste")
+        self.btn_paste.setToolTip("Paste from clipboard (Ctrl+V)")
+        self.btn_paste.clicked.connect(lambda: self.table.paste_selection())
+
+        # Add widgets to toolbar
+        toolbar.addWidget(self.btn_load)
+        toolbar.addWidget(self.btn_save)
+        toolbar.addSpacing(20)  # Visual separator
+        toolbar.addWidget(self.btn_copy)
+        toolbar.addWidget(self.btn_paste)
+        toolbar.addStretch()
+
+        layout.addLayout(toolbar)
+
+        # 4. THE TABLE
+        self.table = SensorTable(self.sensor_lists, self.list_name)
+        layout.addWidget(self.table)
+
+    def import_from_yaml(self):
+        print("Import")
+        # Allow selecting multiple files
+        file_paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self,
+            "Import YAML Files",
+            "",
+            "YAML Files (*.yaml *.yml);;All Files (*)"
+        )
+
+        if file_paths:
+            imported_count = 0
+            for path in file_paths:
+                success = self.device.import_sensor(self.list_name, path)
+                if success:
+                    imported_count += 1
+
+            if imported_count > 0:
+                self.table.update_possible_keys()
+                self.table.refresh_table()
+                self.dataImported.emit()
+
+                QtWidgets.QToolTip.showText(
+                    QtGui.QCursor.pos(),
+                    f"Successfully imported {imported_count} file(s)."
+                )
+
+    def save_data(self):
+        """Export current list to a single YAML file."""
+        if not self.data_list:
+            QtWidgets.QMessageBox.warning(self, "Save", "List is empty.")
+            return
+
+        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Export YAML", f"{self.list_name}.yaml", "YAML Files (*.yaml)"
+        )
+
+        if file_path:
+            try:
+                # Convert Pydantic models to dicts
+                export_data = [
+                    obj.model_dump() if hasattr(obj, 'model_dump') else obj.dict()
+                    for obj in self.data_list
+                ]
+                with open(file_path, 'w') as f:
+                    yaml.safe_dump(export_data, f, sort_keys=False)
+
+                QtWidgets.QMessageBox.information(self, "Success", "Export successful.")
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Error", f"Export failed: {e}")
+
+    def apply_metadata_to_system(self):
+        """Uses the new device method to set metadata on the redvypr system."""
+        if not self.data_list:
+            QtWidgets.QMessageBox.warning(self, "Warning", "List is empty.")
+            return
+
+        try:
+            # Call your newly added device methods
+            self.device.set_metadata_from_sensor_list(self.list_name)
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "System Update",
+                f"Successfully applied metadata for '{self.list_name}' to Redvypr."
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "System Error",
+                                           f"Failed to apply metadata: {e}")
+
+    def list_changed(self, load_info):
+        print(f"List changed:{load_info}")
+        self.table.update_possible_keys()
+        self.table.refresh_table()
+        self.dataImported.emit()
+
+    def load_from_db(self):
+        print(f"Loading {self.list_name} from DB...")
+        initial_config = SqliteConfig()
+        self.db_config_widget = DBCalibrationLoadSaveWidget(
+            initial_config=initial_config, mode='load',
+            device=self.device,
+            calibrations_list=self.sensor_lists,
+            list_name=self.list_name)
+
+        self.db_config_widget.calibration_loaded.connect(self.list_changed)
+        self.db_config_widget.show()
+
+    def save_to_db(self):
+        print(f"Saving {self.list_name} to DB...")
+        initial_config = SqliteConfig()
+        self.db_config_widget = DBCalibrationLoadSaveWidget(
+            initial_config=initial_config, mode='save',
+            device=self.device,
+            calibrations_list=self.sensor_lists,
+            list_name=self.list_name)
+
+
+        self.db_config_widget.show()
+
+    def load_from_metadata(self):
+        print(f"Loading {self.list_name} from Metadata...")
+        sensors = self.device.create_sensor_list_from_metadata(list_name=self.list_name)
+        imported_count = len(sensors)
+        print("Sensors")
+        print(f"Loaded {imported_count} sensors")
+        if imported_count > 0:
+            print(f"{self.list_name=}")
+            print(f"{self.data_list=}")
+            self.table.update_possible_keys()
+            self.table.refresh_table()
+            self.dataImported.emit()
+
+            QtWidgets.QToolTip.showText(
+                QtGui.QCursor.pos(),
+                f"Successfully imported {imported_count} file(s)."
+            )
+
+
+
 class CalibrationTable(QtWidgets.QTableWidget):
     # Signals
     calibrationDataChanged = QtCore.pyqtSignal(int)
@@ -565,9 +1080,6 @@ class CalibrationTable(QtWidgets.QTableWidget):
         return None
 
 
-from PyQt6 import QtWidgets, QtCore, QtGui
-import yaml
-
 
 class CalibrationManageWidget(QtWidgets.QWidget):
     # Signals for communication with the main app
@@ -614,7 +1126,7 @@ class CalibrationManageWidget(QtWidgets.QWidget):
         save_menu.addAction("Save to Database", self.save_to_db)
         save_menu.addSeparator()
         # Your new feature: Sending to redvypr system
-        save_menu.addAction("Apply Metadata to System", self.apply_metadata_to_system)
+        save_menu.addAction("Apply to Redvypr-Metadata", self.apply_metadata_to_system)
         self.btn_save.setMenu(save_menu)
 
         # 3. CLIPBOARD BUTTONS
@@ -761,6 +1273,135 @@ class CalibrationManageWidget(QtWidgets.QWidget):
 
 
 class RedvyprDeviceWidget(QtWidgets.QWidget):
+    def __init__(self, *args, device=None, redvypr=None, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.device = device
+        self.redvypr = redvypr
+        self._clipboard = None
+
+        # Hauptlayout ohne unnötige Abstände
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.setContentsMargins(2, 2, 2, 2)
+
+        # Tab Widget Setup
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.setTabsClosable(True)
+        self.tabs.setMovable(True)  # Tabs sortieren per Drag & Drop
+        self.tabs.tabCloseRequested.connect(self.delete_list)
+        self.main_layout.addWidget(self.tabs)
+
+        # --- Corner Widget (Das "+" Icon oben rechts) ---
+        self.add_button = QtWidgets.QToolButton(self)
+        self.add_button.setText("+")
+        # Ein bisschen Styling für den modernen Look
+        self.add_button.setStyleSheet("""
+            QToolButton { 
+                font-weight: bold; 
+                font-size: 14px;
+                border: none; 
+                padding: 4px 10px;
+                background: transparent;
+            }
+            QToolButton:hover { background: rgba(0,0,0,0.1); border-radius: 4px; }
+            QToolButton::menu-indicator { image: none; } /* Entfernt den kleinen Pfeil */
+        """)
+
+        # Menü für den Button
+        self.add_menu = QtWidgets.QMenu(self)
+
+        # Neue Kalibrierungsliste
+        action_cal = self.add_menu.addAction("New Calibration List")
+        action_cal.setShortcut(QtGui.QKeySequence("Ctrl+L"))
+        action_cal.triggered.connect(lambda: self.create_list_dialog("Calibration"))
+
+        # Neue Sensorliste
+        action_sens = self.add_menu.addAction("New Sensor List")
+        action_sens.setShortcut(QtGui.QKeySequence("Ctrl+Shift+S"))
+        action_sens.triggered.connect(lambda: self.create_list_dialog("Sensor"))
+        self.add_button.setMenu(self.add_menu)
+        self.add_button.setPopupMode(
+            QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+
+        # In die Tab-Leiste einfügen
+        self.tabs.setCornerWidget(self.add_button, QtCore.Qt.Corner.TopRightCorner)
+
+        # Shortcuts für Power-User
+        self.shortcut_cal = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+L"), self)
+        self.shortcut_cal.activated.connect(
+            lambda: self.create_list_dialog("Calibration"))
+
+        # Vorhandene Daten beim Start laden
+        self._load_existing_data()
+
+    def _load_existing_data(self):
+        """Initialisiert die Tabs aus dem Device-Backend."""
+        if hasattr(self.device, 'calibration_lists'):
+            for name in self.device.calibration_lists.keys():
+                self.add_tab(name, "Calibration")
+
+        if hasattr(self.device, 'sensor_lists'):
+            for name in self.device.sensor_lists.keys():
+                self.add_tab(name, "Sensor")
+
+    def create_list_dialog(self, list_type: str):
+        """Öffnet den Namensdialog."""
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, f"New {list_type}", f"Enter name for {list_type} list:"
+        )
+        if ok and name.strip():
+            self.add_tab(name.strip(), list_type)
+
+    def add_tab(self, name: str, list_type: str):
+        """Erzeugt das entsprechende Widget und fügt den Tab hinzu."""
+        if list_type == "Calibration":
+            if name not in self.device.calibration_lists:
+                self.device.calibration_lists[name] = []
+
+            manage_widget = CalibrationManageWidget(
+                self.device.calibration_lists, self.device, name
+            )
+            icon = "🛠"  # Oder ein richtiges QIcon
+
+        else:  # Sensor
+            if not hasattr(self.device, 'sensor_lists'):
+                self.device.sensor_lists = {}
+            if name not in self.device.sensor_lists:
+                self.device.sensor_lists[name] = []
+
+            manage_widget = SensorManageWidget(
+                self.device.sensor_lists, self.device, name
+            )
+            icon = "📡"
+
+        # Metadaten zur Identifizierung beim Löschen
+        manage_widget.setProperty("list_type", list_type)
+        manage_widget.setProperty("internal_name", name)
+
+        index = self.tabs.addTab(manage_widget, f"{icon} {name}")
+        self.tabs.setCurrentIndex(index)
+
+    def delete_list(self, index):
+        """Löscht Tab und Backend-Eintrag."""
+        widget = self.tabs.widget(index)
+        list_type = widget.property("list_type")
+        name = widget.property("internal_name")
+
+        reply = QtWidgets.QMessageBox.question(
+            self, "Confirm Delete",
+            f"Are you sure you want to delete the {list_type} list '{name}'?",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
+        )
+
+        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            if list_type == "Calibration":
+                self.device.calibration_lists.pop(name, None)
+            else:
+                getattr(self.device, 'sensor_lists', {}).pop(name, None)
+
+            self.tabs.removeTab(index)
+
+class RedvyprDeviceWidget_legacy(QtWidgets.QWidget):
     def __init__(self, *args, device=None, redvypr=None, **kwargs):
         super().__init__(*args, **kwargs)
 

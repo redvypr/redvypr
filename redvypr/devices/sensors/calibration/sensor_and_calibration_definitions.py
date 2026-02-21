@@ -14,7 +14,16 @@ class BaseSensor(BaseModel):
     name: str = Field(default='sensor')
     description: str = Field(default='Sensor')
     sn: str = Field(default='',description="The serial number of the sensor")
+    series: str = Field(default="", description="Series or model.")
     sensortype: Literal['BaseSensor'] = Field(default='BaseSensor')
+
+    def create_redvypr_address(self) -> 'RedvyprAddress':
+        series = self.series
+        astr = f"@i:sensor and name=='{self.name}' and sensortype=='{self.sensortype}' and sn=='{self.sn}'"
+        if len(series) > 0:
+            astr += f" and series=='{series}'"
+        raddr = RedvyprAddress(astr)
+        return raddr
 
 class BaseCalibration(BaseModel):
     model_config = ConfigDict(
@@ -309,7 +318,102 @@ class HeatflowClassicSensor(BaseSensor):
         )
 
 
+class TarSensor(BaseSensor):
+    """
+    Specialized class for Tar sensors.
+    """
 
+    sensortype: Literal['TarSensor'] = Field(
+        default='TarSensor',
+        description="Type of the sensor (fixed to 'TarSensor')."
+    )
+
+    # Additional attributes to BaseSensor
+    date_produced: datetime = Field(
+        ...,
+        description="Date when the sensor was produced."
+    )
+    pcb_board_version: str = Field(
+        default="",
+        description="Version of the pcb board"
+    )
+
+    pcb_production_details: Optional[str] = pydantic.Field(default=None,
+                                                                  description="Production details like manufacturer, Project, Purchase order")
+
+    ntc_configuration: str = Field(
+        default="",
+        description="Configuration of the sensors"
+    )
+
+    ntc_type: str = Field(
+        default="",
+        description="Type of the NTC sensors"
+    )
+
+    ntc_details: str = Field(
+        default="",
+        description="Details like manufacturer"
+    )
+
+
+class SensorFactory:
+    """
+    A dynamic factory to register and create sensor models
+    based on the 'sensortype' field.
+    """
+    _registry: Dict[str, Type[pydantic.BaseModel]] = {}
+
+    @classmethod
+    def register(cls, sensor_type: str, model_class: Type[pydantic.BaseModel]):
+        """
+        Registers a new sensor model class to the factory.
+        """
+        cls._registry[sensor_type] = model_class
+        print(f"Registered sensor type: '{sensor_type}' as {model_class.__name__}")
+
+    @classmethod
+    def create(cls, data: Dict[str, Any]) -> pydantic.BaseModel:
+        """
+        Validates and returns the appropriate sensor model based on the input data.
+        """
+        # 1. Fast Path: Use the explicit 'sensortype' field
+        stype = data.get('sensortype')
+
+        if stype:
+            # Check if the type is a direct key in our registry
+            model = cls._registry.get(stype)
+            if model:
+                try:
+                    return model.model_validate(data)
+                except pydantic.ValidationError as e:
+                    print(f"Validation failed for registered type '{stype}': {e}")
+
+            # Fallback: Search through model field defaults if the key doesn't match exactly
+            for model_class in cls._registry.values():
+                fields = model_class.model_fields
+                type_field = fields.get('sensortype')
+                if type_field and type_field.default == stype:
+                    return model_class.model_validate(data)
+
+        # 2. Slow Path: Brute-force try all registered models
+        print(
+            f"No explicit match for sensortype '{stype}'. Trying all {len(cls._registry)} models...")
+
+        for model_class in cls._registry.values():
+            try:
+                return model_class.model_validate(data)
+            except pydantic.ValidationError:
+                continue
+
+        raise ValueError(
+            f"Unable to create sensor. No registered model could validate data for type: '{stype}'"
+        )
+
+
+# Initial registration of your sensor classes
+SensorFactory.register('TarSensor', TarSensor)
+SensorFactory.register('HeatflowClassicSensor', HeatflowClassicSensor)
 
 
 class CalibrationFactory:
