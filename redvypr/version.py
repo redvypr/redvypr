@@ -1,40 +1,57 @@
 """ Utility to have the version in redvypr available
 """
-import pkg_resources
 import os
 import sys
 import logging
+from importlib import resources  # Modern replacement for pkg_resources
 
+# Setup logging
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.version')
 logger.setLevel(logging.INFO)
 
-#https://stackoverflow.com/questions/7674790/bundling-data-files-with-pyinstaller-onefile/13790741#13790741
-def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+
+def get_version():
+    """
+    Get the version of redvypr.
+    Works for installed packages, development mode, and PyInstaller.
+    """
+    # 1. Primary Method: Use importlib.resources (Modern Python 3.9+)
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
+        # This looks inside the 'redvypr' package for a file named 'VERSION'
+        with resources.files('redvypr').joinpath('VERSION').open('r') as f:
+            return f.read().strip()
+    except (FileNotFoundError, ModuleNotFoundError, TypeError, AttributeError):
+        # Fallback for older Python versions or specific PyInstaller edge cases
+        logger.debug("importlib.resources failed, trying manual path resolution")
 
-    return os.path.join(base_path, relative_path)
+    # 2. Fallback: Manual path (PyInstaller / Local Dev)
+    # PyInstaller sets sys._MEIPASS when running as a bundled executable
+    base_path = getattr(sys, '_MEIPASS', os.path.abspath("."))
 
-# Get the version of redvypr
-_version_file = pkg_resources.resource_filename('redvypr','VERSION')
+    # Try different possible locations for the VERSION file
+    possible_paths = [
+        os.path.join(base_path, 'redvypr', 'VERSION'),  # Package structure
+        os.path.join(base_path, 'VERSION')  # Flat structure/PyInstaller root
+    ]
 
-# This is a workaround to read the VERSION file in a pyinstaller environment in linux (redvypr exectuable and redvypr directory cannot life together)
-if(os.path.exists(_version_file)):
-    pass
-else:
-    _version_file = resource_path('VERSION')
-    if (os.path.exists(_version_file)):
-        pass
-    else: # pyinstaller windows10
-        logger.warning('Could not load version file {}'.format(_version_file))
+    for path in possible_paths:
+        if os.path.exists(path):
+            logger.debug(f'Opening version file at {path}')
+            try:
+                with open(path, 'r') as f:
+                    return f.read().strip()
+            except Exception as e:
+                logger.debug(f"Could not read {path}: {e}")
 
-logger.debug('Opening version file {}'.format(_version_file))
-with open(_version_file) as _version_f:
-   version = _version_f.read().strip()
+    logger.warning('Could not locate VERSION file in any known location.')
+    return "unknown"
 
-_version_f.close()
+
+# Define the version variable for other modules to import
+version = get_version()
+
+if __name__ == "__main__":
+    print(f"redvypr version: {version}")
+
+

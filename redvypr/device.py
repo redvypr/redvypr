@@ -22,7 +22,8 @@ import importlib
 import glob
 import pathlib
 import inspect
-import pkg_resources
+#import pkg_resources
+from importlib.metadata import distributions
 import redvypr
 import pydantic
 import typing
@@ -186,7 +187,7 @@ class RedvyprDeviceScan():
 
     def scan_devicepath(self):
         funcname = 'search_in_path():'
-        self.logger.debug(funcname + ' Start searching')
+        self.logger.debug(funcname + f' Start searching in {len(self.device_paths)} pathes')
         self.device_modules = []  # Clear the list
         #
         # Add all devices from additionally folders
@@ -300,21 +301,24 @@ class RedvyprDeviceScan():
         self.logger.debug(funcname)
 
         # Loop over all modules and search for devices
-        for d in pkg_resources.working_set:
+
+        for d in distributions():
             FLAG_POTENTIAL_MODULE = False
-            #print('Package', d.location, d.project_name, d.version, d.key)
-            #print(d.key)
+            dist_name = d.name
+            dist_key = dist_name.lower()
+            #print(f"dist_key:{dist_key}")
             for name in package_names:
-                if name in d.key:
+                if name in dist_key:
                     FLAG_POTENTIAL_MODULE = True
 
             # Dont import the redvypr module itself
-            if d.key == 'redvypr':
+            if dist_key == 'redvypr':
                 FLAG_POTENTIAL_MODULE = False
 
             if(FLAG_POTENTIAL_MODULE):
-                print('Found potential package',d.location, d.project_name, d.version, d.key)
-                libstr2 = d.key.replace('-','_')  # Need to replace - with _, because - is not allowed in python
+                location = str(d.locate_file(''))
+                print(f'Found potential package: {dist_name} (Version: {d.version}) at {location}')
+                libstr2 = dist_key.replace('-', '_')
                 try:
                     testmodule = importlib.import_module(libstr2)
                 except Exception as e:

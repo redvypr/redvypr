@@ -7,8 +7,9 @@ redvypr changelog
 ## [unreleased] 
 
 ### Added
-- nothing yet
+- datapath in redvypr.config
 ### Changed
+- replaced `pkg_resources` with a modern alternative
 - bug and layout in `redvyprSubscribeWidget`
 - `RedvyprMultipleAddressesWidget` with new functionality of `self.address_names`, a dictionary of names that are assigned with `RedvyprAddress`
 - `new_data(datapacket)` signal properly implemented in `redvypr.device`

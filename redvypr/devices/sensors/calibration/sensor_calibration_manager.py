@@ -19,15 +19,19 @@ from typing import List, Any
 from collections.abc import Iterable
 import numpy
 from pathlib import Path
+from enum import Enum
+from typing import Literal
+from pathlib import Path
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import check_for_command, commandpacket
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
-from .sensor_and_calibration_definitions import CalibrationFactory, SensorFactory
+from .sensor_and_calibration_definitions import CalibrationFactory, SensorFactory, BaseSensor
 from redvypr.device import RedvyprDeviceCustomConfig
 from redvypr.devices.db.db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget
 from redvypr.devices.db.db_engines import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
+from redvypr.devices.sensors.calibration.calibration_models import CalibrationGeneric
 
 
 _logo_file = redvypr_files.logo_file
@@ -46,10 +50,19 @@ class DeviceBaseConfig(pydantic.BaseModel):
     subscribes: bool = False
     description: str = 'Manage calibrations and sensors'
 
-
+T = typing.TypeVar("T", bound=BaseSensor)
+#C = typing.TypeVar("C", bound=CalibrationGeneric)
 class DeviceCustomConfig(RedvyprDeviceCustomConfig):
-    calibration_lists: dict = pydantic.Field(default={'Calibrations':[]})
-    sensor_lists: dict = pydantic.Field(default={'Sensors': []})
+    #calibration_lists: dict = pydantic.Field(default={'Calibrations':[]})
+    calibration_lists: typing.Dict[str, List] = pydantic.Field(
+        default_factory=lambda: {'Calibrations': []})
+    sensor_lists: typing.Dict[str, List[T]] = pydantic.Field(
+        default_factory=lambda: {'Sensors': []})
+
+    attachment_base_path: Path = pydantic.Field(
+        default=Path("./sensordata/attachments"),
+        description="Root dir for sensor attachments"
+    )
 
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
@@ -374,8 +387,101 @@ class Device(RedvyprDevice):
 
 
 
-from enum import Enum
-from typing import Literal
+
+
+
+class AttachmentManagerWidget(QtWidgets.QWidget):
+    """
+    A reusable widget to display, open, and delete attachments
+    for any object following the BaseSensor attachment pattern.
+    """
+    attachment_updated = QtCore.pyqtSignal()
+
+    def __init__(self, data_object, parent=None,redvypr=None):
+        super().__init__(parent)
+        self.redvypr = redvypr
+        self.data_object = data_object  # This is your sensor
+        self.base_path = Path(self.redvypr.config.datapath)
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # List Display
+        self.list_widget = QtWidgets.QListWidget()
+        self.list_widget.setAlternatingRowColors(True)
+        self.list_widget.setSpacing(2)
+        self.refresh_list()
+        layout.addWidget(self.list_widget)
+
+        # Buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        self.btn_open = QtWidgets.QPushButton("📂 Open Folder")
+        self.btn_delete = QtWidgets.QPushButton("🗑️ Delete")
+
+        # Style the delete button a bit to warn the user
+        self.btn_delete.setStyleSheet("QPushButton:hover { color: red; }")
+
+        btn_layout.addWidget(self.btn_open)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.btn_delete)
+        layout.addLayout(btn_layout)
+
+        # Connections
+        self.btn_open.clicked.connect(self.open_attachment_dir)
+        self.btn_delete.clicked.connect(self.delete_selected)
+        self.list_widget.itemDoubleClicked.connect(self.open_attachment_dir)
+
+    def refresh_list(self):
+        self.list_widget.clear()
+        if not hasattr(self.data_object, 'attachments'):
+            return
+
+        for att in self.data_object.attachments:
+            # Create a label with file name and size
+            size_mb = att.file_size_bytes / (1024 * 1024)
+            label = f"{att.file_name} ({size_mb:.2f} MB)"
+
+            item = QtWidgets.QListWidgetItem(label)
+            # Use specific icons based on file type if possible
+            item.setIcon(
+                self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_FileIcon))
+            # Store the ID so we can find it in the data_object
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, att.attachment_uuid)
+            self.list_widget.addItem(item)
+
+    def open_attachment_dir(self):
+        item = self.list_widget.currentItem()
+        if not item: return
+
+        att_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        # Using your BaseSensor method to get the path
+        folder_path = self.data_object.get_attachment_dir(att_id, self.base_path)
+
+        if folder_path.exists():
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(folder_path)))
+        else:
+            QtWidgets.QMessageBox.warning(self, "Error",
+                                          "Folder does not exist on disk.")
+
+    def delete_selected(self):
+        item = self.list_widget.currentItem()
+        if not item: return
+
+        att_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
+
+        # Confirm deletion
+        reply = QtWidgets.QMessageBox.question(
+            self, "Confirm Deletion",
+            "Are you sure you want to delete this attachment permanently from disk?",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
+        )
+
+        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            # Call your BaseSensor method
+            if self.data_object.delete_attachment(att_id, self.base_path):
+                self.refresh_list()
+                self.attachment_updated.emit()
 
 
 class DBAction(Enum):
@@ -461,11 +567,11 @@ class SensorTable(QtWidgets.QTableWidget):
     sensor_data_changed = QtCore.pyqtSignal(int)
     sensor_deleted = QtCore.pyqtSignal(object)
 
-    def __init__(self, sensor_lists, list_name, parent=None):
+    def __init__(self, sensor_lists, list_name, parent=None, redvypr=None):
         super().__init__(parent)
         self.sensor_lists = sensor_lists
         self.list_name = list_name
-
+        self.redvypr = redvypr
         # Standard columns that are always visible
         self.default_columns = ['name', 'sn', 'channel','sensor_model', 'date']
         self.extra_columns = []
@@ -639,8 +745,137 @@ class SensorTable(QtWidgets.QTableWidget):
             self.sensor_data_changed.emit(len(self.data_list))
 
     def show_context_menu(self, position):
+        """
+        Displays the context menu for the sensor table, including
+        attachment management and column toggling.
+        """
+        menu = QtWidgets.QMenu(self)
+
+        # 1. Get selected objects using your helper method
+        # This ensures we have the actual Pydantic models regardless of sorting
+        selected_objects = self.get_selected_pydantic_objects()
+        num_selected = len(selected_objects)
+
+        # 2. Attachment Actions (only enabled if exactly one sensor is selected)
+        if num_selected == 1:
+            sensor = selected_objects[0]
+            # Count existing attachments to show in the menu label
+            att_count = len(sensor.attachments) if hasattr(sensor, 'attachments') else 0
+
+            # Action: Add Attachment
+            add_att_act = menu.addAction("📎 Add Attachment...")
+            add_att_act.triggered.connect(lambda: self.handle_add_attachment(sensor))
+
+            # Action: Show/Manage Attachments
+            show_att_act = menu.addAction(f"📂 Show Attachments ({att_count})")
+            show_att_act.triggered.connect(lambda: self.handle_show_attachments(sensor))
+            menu.addSeparator()
+
+        # 3. Deletion Action (for one or more selected rows)
+        if num_selected > 0:
+            del_label = f"🗑️ Delete Selected ({num_selected})"
+            del_act = menu.addAction(del_label)
+            del_act.triggered.connect(self.delete_selected_rows)
+            menu.addSeparator()
+
+        # 4. Column Management (Toggle Extra Columns)
+        col_menu = menu.addMenu("📊 Toggle Extra Columns")
+        for key in self.all_possible_keys:
+            # We use a checkable action to show which extra columns are currently active
+            action = QtGui.QAction(key, col_menu, checkable=True,
+                                   checked=(key in self.extra_columns))
+
+            # Note: Using k=key in lambda to correctly capture the current key inside the loop
+            action.triggered.connect(
+                lambda checked, k=key: self.toggle_column(k, checked))
+            col_menu.addAction(action)
+
+        # 5. Execute Menu at the cursor position
+        menu.exec(self.viewport().mapToGlobal(position))
+
+    def handle_show_attachments(self, sensor: 'BaseSensor'):
+        """
+        Displays the reusable AttachmentManagerWidget in a dialog.
+        """
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(f"Attachments: {sensor.name} (SN: {sensor.sn})")
+        dialog.setMinimumSize(500, 400)
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        # Create the reusable widget
+        manager = AttachmentManagerWidget(sensor, parent=dialog, redvypr=self.redvypr)
+        layout.addWidget(manager)
+
+        # If something is deleted in the manager, tell the table to refresh
+        manager.attachment_updated.connect(self.refresh_table)
+        manager.attachment_updated.connect(
+            lambda: self.sensor_data_changed.emit(len(self.data_list)))
+
+        # Close button for the dialog
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+
+        dialog.exec()
+
+    def handle_add_attachment(self, sensor: 'BaseSensor'):
+        """
+        Opens a file dialog, calculates metadata, and saves the file to the
+        redvypr data path using the Pydantic model logic.
+        """
+        import redvypr
+        from pathlib import Path
+
+        # 1. Open the File Dialog
+        file_path_str, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Select Attachment",
+            "",
+            "All Files (*)"
+        )
+
+        if not file_path_str:
+            return  # User cancelled
+
+        source_path = Path(file_path_str)
+
+        # 2. Define the Base Path from redvypr config
+        # Ensure this directory exists on your system
+        base_path = Path(self.redvypr.config.datapath)
+
+        try:
+            # 3. Call the Pydantic method you defined in BaseSensor
+            # This handles SHA256, metadata creation, folder creation, and copying
+            new_meta = sensor.add_and_save_attachment(
+                source_path=source_path,
+                base_path=base_path
+            )
+
+            # 4. UI Feedback
+            # Refresh the table so the attachment count/list updates
+            self.refresh_table()
+
+            # Emit signal if your application needs to save the sensor list to a file/DB
+            self.sensor_data_changed.emit(len(self.data_list))
+
+            QtWidgets.QToolTip.showText(
+                QtGui.QCursor.pos(),
+                f"Successfully attached: {new_meta.file_name}"
+            )
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Attachment Error",
+                f"Failed to save attachment:\n{str(e)}"
+            )
+
+    def show_context_menu_legacy(self, position):
         menu = QtWidgets.QMenu(self)
         selected_rows = self.selectionModel().selectedRows()
+
+
 
         if selected_rows:
             del_act = menu.addAction(f"Delete Selected ({len(selected_rows)})")
@@ -679,6 +914,7 @@ class SensorManageWidget(QtWidgets.QWidget):
     def __init__(self, sensor_lists, device_reference, list_name, parent=None):
         super().__init__(parent)
         self.device = device_reference
+        self.redvypr = self.device.redvypr
         self.list_name = list_name
         self.sensor_lists = sensor_lists
         self.setup_ui()
@@ -740,7 +976,7 @@ class SensorManageWidget(QtWidgets.QWidget):
         layout.addLayout(toolbar)
 
         # 4. THE TABLE
-        self.table = SensorTable(self.sensor_lists, self.list_name)
+        self.table = SensorTable(self.sensor_lists, self.list_name, redvypr=self.redvypr)
         layout.addWidget(self.table)
 
     def import_from_yaml(self):

@@ -1,12 +1,22 @@
 from typing import List, Union, Literal, Type, Dict, Optional
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from datetime import datetime
 import json
 import hashlib
 from typing import Any
 import pydantic
+import uuid
+import shutil
+from pathlib import Path
 from redvypr.redvypr_address import RedvyprAddress
 from .calibration_models import CalibrationGeneric, CalibrationLinearFactor, CalibrationNTC, CalibrationPoly
+
+class AttachmentMetadata(BaseModel):
+    attachment_uuid: uuid.UUID = Field(default_factory=uuid.uuid4)
+    file_name: str
+    mime_type: str
+    file_size_bytes: int
+    sha256: str
 
 class BaseSensor(BaseModel):
     """
@@ -16,6 +26,107 @@ class BaseSensor(BaseModel):
     sn: str = Field(default='',description="The serial number of the sensor")
     series: str = Field(default="", description="Series or model.")
     sensortype: Literal['BaseSensor'] = Field(default='BaseSensor')
+    attachments: List[AttachmentMetadata] = Field(default_factory=list, description="Attachments of files like photos, reports etc.")
+    event_uuids: List[str] = Field(default_factory=list,description="List of UUIDs of events associated with this sensor")
+    calibration_uuids: Optional[List[str]] = Field(default_factory=list,description="List of calibration uuid")
+
+    def get_attachment_dir(self, attachment_id: uuid.UUID, base_path: Path) -> Path:
+        """
+        Returns the directory path for a specific attachment: BASE_PATH/sn/uuid/
+        """
+        return base_path / "attachments" / "sensor" / self.sn / str(attachment_id)
+
+    def get_attachment_path(self, attachment_id: uuid.UUID, base_path: Path) -> Path:
+        """
+        Returns the full file path: BASE_PATH/sn/uuid/filename
+        """
+        meta = next((a for a in self.attachments if a.attachment_uuid == attachment_id), None)
+        if not meta:
+            raise FileNotFoundError(f"Attachment {attachment_id} not found.")
+
+        return self.get_attachment_dir(attachment_id, base_path) / meta.file_name
+
+    def _calculate_sha256(self, file_path: Path) -> str:
+        """Berechnet den SHA256 Hash einer Datei in Chunks (schont den RAM)."""
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            # Wir lesen in 4KB Blöcken, falls die Datei mal größer als 5MB ist
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+
+    def add_and_save_attachment(self, source_path: Path, base_path: Path,
+                                mime_type: str = "application/octet-stream") -> AttachmentMetadata:
+        """
+        1. Creates metadata
+        2. Creates the folder structure
+        3. Copies the file to the target location
+        4. Adds metadata to the internal list
+        """
+        source_path = Path(source_path)
+        if not source_path.exists():
+            raise FileNotFoundError(f"Source file {source_path} does not exist.")
+
+        file_hash = self._calculate_sha256(source_path)
+
+        # Create new metadata
+        new_meta = AttachmentMetadata(
+            file_name=source_path.name,
+            mime_type=mime_type,
+            sha256=file_hash,
+            file_size_bytes=source_path.stat().st_size
+        )
+
+        # Ensure directory exists
+        target_dir = self.get_attachment_dir(new_meta.attachment_uuid, base_path)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy file
+        target_file_path = target_dir / new_meta.file_name
+        shutil.copy2(source_path,
+                     target_file_path)  # copy2 preserves metadata like timestamps
+
+        # Add to list
+        self.attachments.append(new_meta)
+
+        return new_meta
+
+    def delete_attachment(self, attachment_id: uuid.UUID, base_path: Path) -> bool:
+        """
+        1. Finds the metadata
+        2. Deletes the physical folder (BASE_PATH/sn/uuid/)
+        3. Removes metadata from the internal list
+        """
+        # 1. Find the metadata
+        meta = next((a for a in self.attachments if a.attachment_uuid == attachment_id), None)
+
+        if not meta:
+            print(
+                f"Attachment {attachment_id} not found in sensor {self.sn}. Nothing to delete.")
+            return False
+
+        # 2. Determine the folder path
+        # It's safer to delete the whole UUID directory to leave no traces
+        target_dir = self.get_attachment_dir(attachment_id, base_path)
+
+        try:
+            if target_dir.exists() and target_dir.is_dir():
+                # shutil.rmtree deletes the directory and all its contents
+                shutil.rmtree(target_dir)
+
+            # 3. Remove from the internal Pydantic list
+            self.attachments = [a for a in self.attachments if a.attachment_uuid != attachment_id]
+
+            # Optional: Clean up the SN folder if it's now empty
+            sn_dir = base_path / self.sn
+            if sn_dir.exists() and not any(sn_dir.iterdir()):
+                sn_dir.rmdir()
+
+            return True
+
+        except OSError as e:
+            print(f"Error while deleting attachment files: {e}")
+            return False
 
     def create_redvypr_address(self) -> 'RedvyprAddress':
         series = self.series
@@ -24,34 +135,6 @@ class BaseSensor(BaseModel):
             astr += f" and series=='{series}'"
         raddr = RedvyprAddress(astr)
         return raddr
-
-class BaseCalibration(BaseModel):
-    model_config = ConfigDict(
-        json_encoders={
-            datetime: lambda dt: dt.isoformat()  # Saves datetime as ISO-String
-        }
-    )
-
-    calibration_date: datetime = Field(..., description="Date and time of calibration in ISO format.")
-    calibration_type: Literal['BaseCalibration'] = Field(default='BaseCalibration')
-
-    @field_validator('calibration_date', mode='before')
-    def parse_calibration_date(cls, value):
-        """Parses the calibration_date string into a datetime object."""
-        if isinstance(value, str):
-            # Beispiel: "14.01.2026 16:15:15" → datetime-Objekt
-            return datetime.strptime(value, "%d.%m.%Y %H:%M:%S")
-        return value
-
-
-    def create_redvypr_address(self) -> 'RedvyprAddress':
-        """
-        Excepts an implementation
-        """
-        raise NotImplementedError(
-            f"Class {self.__class__.__name__} needs 'create_redvypr_address' implementation."
-        )
-
 
 
 # Classic heat flow sensor
@@ -107,7 +190,7 @@ class HeatflowClassicCalibData(BaseModel):
 
 
 class HeatflowClassicCalibration(BaseModel):
-    """Represents the full calibration data for a Heatflow Classic sensor."""
+    """Represents the full calibration data (CalibrationGeneric) for a Heatflow Classic sensor."""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -156,6 +239,25 @@ class HeatflowClassicCalibration(BaseModel):
     series: str = Field(default="", description="Series or model.")
     shipped: str = Field(default="", description="Shipping date or status.")
     steg: str = Field(default="", description="Additional metadata.")
+
+    calibration_uuid: str = Field(default="")
+
+    @model_validator(mode='after')
+    def generate_deterministic_uuid(self):
+        MY_CALIBRATION_NAMESPACE = "6e587f59-e2b3-45a6-956e-e992d9b378ba"
+        # Falls die UUID noch nicht gesetzt ist, bauen wir sie
+        if not self.calibration_uuid:
+            date_str = self.date.isoformat() if self.date else "1970-01-01"
+            val_str = f"{self.calibration_HF_SI:.8f}" if self.calibration_HF_SI else "None"
+
+            seed = f"{self.manufacturer_sn}|{date_str}|{val_str}"
+
+            # UUIDv5 generieren
+            pure_uuid = str(uuid.uuid5(MY_CALIBRATION_NAMESPACE, seed))
+            self.calibration_uuid = f"CALHFC_{pure_uuid}"
+        return self
+
+
 
     @property
     def sensor_model(self):

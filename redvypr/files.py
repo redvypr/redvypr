@@ -1,49 +1,60 @@
-import pkg_resources
 import os
 import sys
 import logging
+from importlib import resources
 
+# Setup logging
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.files')
 logger.setLevel(logging.INFO)
 
-#https://stackoverflow.com/questions/7674790/bundling-data-files-with-pyinstaller-onefile/13790741#13790741
-def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+
+def get_resource_path(package, resource_name, subfolder=None):
+    """
+    Modern replacement for resource_filename.
+    Handles installed packages, dev mode, and PyInstaller.
+    """
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
+        # 1. Try modern importlib.resources (Python 3.9+)
+        traversable = resources.files(package)
+        if subfolder:
+            traversable = traversable.joinpath(subfolder)
 
-    return os.path.join(base_path, relative_path)
+        target_file = traversable.joinpath(resource_name)
 
-# Get the logo pixmap of redvypr
-# Until v 0.3.11
-#logo_file = pkg_resources.resource_filename('redvypr','icon/redvypr_logo_v02.png')
-# Desert Horned Viper
-logo_file = pkg_resources.resource_filename('redvypr','icon/logo_v03.1.svg')
-# This is a workaround to read the VERSION file in a pyinstaller environment in linux (redvypr exectuable and redvypr directory cannot life together)
-if(os.path.exists(logo_file)):
-    pass
-else:
-    logo_file = resource_path('logo_v03.1.svg')
-    if (os.path.exists(logo_file)):
+        # Check if it exists within the package
+        if target_file.exists():
+            # as_file() ensures we have a real system path (extracts if necessary)
+            with resources.as_file(target_file) as path:
+                return str(path)
+
+    except (FileNotFoundError, ModuleNotFoundError, TypeError, AttributeError):
         pass
-    else:  # pyinstaller windows10
-        logger.warning('Could not load logo file {}'.format(logo_file))
-    
-# Desert Horned Viper
-icon_file = pkg_resources.resource_filename('redvypr','icon/icon_v03.3.svg')
-# This is a workaround to read the VERSION file in a pyinstaller environment in linux (redvypr exectuable and redvypr directory cannot life together)
-if(os.path.exists(icon_file)):
-    pass
-else:
-    icon_file = resource_path('icon_v03.3.svg')
-    if (os.path.exists(icon_file)):
-        pass
-    else:  # pyinstaller windows10
-        logger.warning('Could not load icon file {}'.format(icon_file))
+
+    # 2. Fallback for PyInstaller / Manual bundling
+    base_path = getattr(sys, '_MEIPASS', os.path.abspath("."))
+
+    # Check common locations:
+    # - inside the subfolder in the bundle
+    # - or flat in the root (how some PyInstaller setups handle it)
+    search_paths = [
+        os.path.join(base_path, package, subfolder or "", resource_name),
+        os.path.join(base_path, subfolder or "", resource_name),
+        os.path.join(base_path, resource_name)
+    ]
+
+    for path in search_paths:
+        if os.path.exists(path):
+            return path
+
+    logger.warning(f'Could not load resource: {resource_name}')
+    return ""
 
 
+# --- Usage ---
 
+# 1. Get the Logo
+logo_file = get_resource_path('redvypr', 'logo_v03.1.svg', subfolder='icon')
+
+# 2. Get the Icon
+icon_file = get_resource_path('redvypr', 'icon_v03.3.svg', subfolder='icon')

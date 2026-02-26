@@ -10,6 +10,7 @@ import hashlib
 from typing import Any
 import json
 from redvypr.redvypr_address import RedvyprAddress
+from redvypr.devices.sensors.calibration.sensor_and_calibration_definitions import AttachmentMetadata
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('event_definitions')
@@ -81,6 +82,8 @@ class EventBaseConfig(pydantic.BaseModel):
     description: typing.Optional[str] = pydantic.Field(default=None)
     datastreams: typing.Dict[str, DatastreamBaseConfig] = pydantic.Field(
         default_factory=dict)
+    attachments: typing.List[AttachmentMetadata] = pydantic.Field(default_factory=list,
+                                                  description="Attachments of files like photos, reports etc.")
 
     def create_redvypr_address(self) -> 'RedvyprAddress':
         caldate = self.calibration_date.isoformat()

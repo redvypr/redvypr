@@ -11,6 +11,7 @@ import pydantic
 import pytz
 import hashlib
 from typing import Any
+from pydantic import field_validator
 import redvypr
 from redvypr.redvypr_address import RedvyprAddress
 
@@ -142,12 +143,42 @@ def get_date_from_calibration(calibration, channel, return_str = False, strforma
         return td
 
 
+# Not needed anymore?
+class CalibrationBase(pydantic.BaseModel):
+    date: datetime.datetime = pydantic.Field(
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc),
+        description='The calibration date'
+    )
+    calibration_type: typing.Literal['base'] = 'base'
+    # date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
+    calibration_id: str = pydantic.Field(default='',
+                                         description='ID of the calibration, can be chosen by the user')
+    calibration_uuid: str = pydantic.Field(default_factory=get_calibration_uuid,
+                                           description='uuid of the calibration, can be chosen by the user')
+    comment: typing.Optional[str] = None
+
+    @field_validator('date', mode='before')
+    @classmethod
+    def ensure_utc(cls, v):
+        # Falls v ein String ist (z.B. aus JSON), konvertiert Pydantic ihn später.
+        # Falls v bereits ein datetime-Objekt ist:
+        if isinstance(v, datetime.datetime):
+            if v.tzinfo is None:
+                return v.replace(tzinfo=datetime.timezone.utc)
+        return v
+
+    def create_redvypr_address(self) -> 'RedvyprAddress':
+        """
+        Excepts an implementation
+        """
+        raise NotImplementedError(
+            f"Class {self.__class__.__name__} needs 'create_redvypr_address' implementation."
+        )
 
 
-
-class CalibrationGeneric(pydantic.BaseModel):
+class CalibrationGeneric(CalibrationBase):
     """
-    Generic calibration model
+    Generic calibration model, somewhat more specific as the very simple CalibrationBase
     """
     _content_id: typing.Optional[str] = pydantic.PrivateAttr(default=None)
 
@@ -168,11 +199,7 @@ class CalibrationGeneric(pydantic.BaseModel):
     sensor_model: str = pydantic.Field(default='NA', description='The sensor model')
     unit: str = pydantic.Field(default='NA', description='The unit of the sensor data, after the calibration was applied')
     unit_input: str = pydantic.Field(default='NA', description='The unit of the sensor raw data')
-    date: datetime.datetime = pydantic.Field(default=datetime.datetime(1970,1,1,0,0,0), description='The calibration date')
-    calibration_id: str = pydantic.Field(default='', description='ID of the calibration, can be chosen by the user')
-    calibration_uuid: str = pydantic.Field(default_factory=get_calibration_uuid,
-                                         description='uuid of the calibration, can be chosen by the user')
-    comment: typing.Optional[str] = None
+
     calibration_data: typing.Optional[CalibrationData] = pydantic.Field(default=None)
     calibration_reference_data: typing.Optional[CalibrationData] = pydantic.Field(default=None)
 
@@ -189,6 +216,7 @@ class CalibrationGeneric(pydantic.BaseModel):
         """
         data = raw_data
         return data
+
 
     def calc_content_id(self) -> str:
         """

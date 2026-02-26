@@ -7,7 +7,6 @@ import logging
 import queue
 import sys
 import yaml
-import pkg_resources
 from PyQt6 import QtWidgets, QtCore, QtGui
 import inspect
 import threading
@@ -76,8 +75,7 @@ class RedvyprConfig(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="allow")
     hostname: typing.Optional[str] = pydantic.Field(default=None)
     metadata: typing.Optional[dict] = pydantic.Field(default=None)
-    #devices: list = pydantic.Field(default=[])
-    #devices: typing.List[RedvyprDeviceConfig] = pydantic.Field(default=[])
+    datapath: str=pydantic.Field(default="redvypr_data")
     devices: typing.List[typing.Annotated[typing.Union[RedvyprDeviceConfig], pydantic.Field(discriminator='config_type')]] = pydantic.Field(default=[])
     devicepaths: list = pydantic.Field(default=[])
     loglevel: typing.Literal['INFO','DEBUG','WARNING'] = pydantic.Field(default='INFO')
@@ -610,7 +608,7 @@ class Redvypr(QtCore.QObject):
         :return:
         """
         devicemodulename = None
-        funcname = __name__ + '.get_devicemodulename_from_str():'
+        funcname = __name__ + f'.get_devicemodulename_from_str():{devicename=}'
         logger.debug(funcname)
         #print('Devicename',devicename)
         # Make an exact test first
