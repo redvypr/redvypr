@@ -18,14 +18,8 @@ from redvypr.redvypr_address import RedvyprAddress
 import numpy as np
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.device.timescaledb')
+logger = logging.getLogger('redvypr.device.db_engines')
 logger.setLevel(logging.DEBUG)
-
-
-
-# --- Setup Logging ---
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("RedvyprDB")
 
 def json_safe_dumps(obj):
     """
@@ -138,6 +132,9 @@ class SqliteConfig(pydantic.BaseModel):
         default="{name}_{filecount}_{filedate}.db",
         description="Naming template for rotated files. Placeholders: {name}, {filecount}, {filedate}."
     )
+
+
+
 # Das 'Union' erlaubt entweder das eine oder das andere Modell
 DatabaseConfig = typing.Union[TimescaleConfig, SqliteConfig]
 class DatabaseSettings(pydantic.RootModel):
@@ -375,7 +372,8 @@ class AbstractDatabase(ABC):
         if not self._connection:
             return health
 
-        print("Enginge type",self.engine_type)
+        # TODO: Das ist nicht ausreichend, da nur eine Tabelle abgefragt wird
+        print(f"database Engine type:{self.engine_type}")
         # Cursor manuell öffnen für maximale Kompatibilität
         cur = self._connection.cursor()
         try:
@@ -1043,125 +1041,6 @@ class RedvyprTimescaleDb(AbstractDatabase):
                     cur.close()
 
         return status
-    def get_status_legacy2(self, fast_count: bool = False) -> Dict[str, Any]:
-        """
-        Returns a dictionary with TimescaleDB status information.
-
-        Args:
-            fast_count (bool): If True, uses database statistics for a near-instant estimate.
-                               If False, performs a full 'SELECT COUNT(*)' (expensive).
-        """
-        is_connected = self._connection is not None
-
-        status = {
-            "engine": "TimescaleDB",
-            "connection": "Connected" if is_connected else "Disconnected",
-            "host": self.conn_params["host"],
-            "database": self.conn_params["dbname"],
-            "total_packets": 0,
-            "is_estimate": fast_count,
-            "table_size_pretty": "0.00 MB",
-            "db_total_size_pretty": "0.00 MB",
-            "chunks_count": 0,
-            "compression_ratio": "N/A"
-        }
-
-        if is_connected:
-            try:
-                cur = self._connection.cursor()
-
-                # 1. Packet Count (Fast Estimate vs. Exact Count)
-                if fast_count:
-                    # Query the planner statistics (instant even with billions of rows)
-                    cur.execute(
-                        "SELECT reltuples::bigint FROM pg_class WHERE relname = 'redvypr_packets'")
-                    res = cur.fetchone()
-                    status["total_packets"] = res[0] if res else 0
-                else:
-                    # Full scan (accurate but slow)
-                    cur.execute("SELECT COUNT(*) FROM redvypr_packets")
-                    status["total_packets"] = cur.fetchone()[0]
-
-                # 2. Hypertable size
-                cur.execute("SELECT hypertable_size('redvypr_packets')")
-                size_bytes = cur.fetchone()[0]
-                status["table_size_pretty"] = f"{size_bytes / (1024 * 1024):.2f} MB"
-
-                # 3. Overall Database size
-                cur.execute("SELECT pg_database_size(%s)",
-                            (self.conn_params["dbname"],))
-                db_bytes = cur.fetchone()[0]
-                status["db_total_size_pretty"] = f"{db_bytes / (1024 * 1024):.2f} MB"
-
-                # 4. Chunks count
-                cur.execute(
-                    "SELECT count(*) FROM timescaledb_information.chunks WHERE hypertable_name = 'redvypr_packets'"
-                )
-                status["chunks_count"] = cur.fetchone()[0]
-
-                # 5. Compression Stats
-                try:
-                    cur.execute(
-                        "SELECT uncompressed_total_bytes, compressed_total_bytes "
-                        "FROM hypertable_compression_stats('redvypr_packets')")
-                    comp_stats = cur.fetchone()
-                    if comp_stats and comp_stats[0] and comp_stats[0] > 0:
-                        uncompressed, compressed = comp_stats
-                        savings = (1 - (compressed / uncompressed)) * 100
-                        status["compression_ratio"] = f"{savings:.1f}% saved"
-                except Exception:
-                    status["compression_ratio"] = "Not enabled"
-
-                cur.close()
-            except Exception as e:
-                status["connection"] = f"Error: {str(e)}"
-
-        return status
-
-    def get_status_legacy(self) -> Dict[str, Any]:
-        """Returns a dictionary with current TimescaleDB status information."""
-        is_connected = self._connection is not None
-        #self.conn_params = {
-        #    'dbname': dbname, 'user': user, 'password': password,
-        #    'host': host, 'port': port
-        #}
-        status = {
-            "engine": "TimescaleDB",
-            "connection": "Connected" if is_connected else "Disconnected",
-            "host": self.conn_params["host"],
-            "database": self.conn_params["dbname"],
-            "total_packets": 0,
-            "table_size_pretty": "0 bytes",
-            "chunks_count": 0
-        }
-
-        if is_connected:
-            try:
-                cur = self._connection.cursor()
-                # 1. Anzahl Pakete
-                cur.execute("SELECT COUNT(*) FROM redvypr_packets")
-                status["total_packets"] = cur.fetchone()[0]
-
-                # 2. Hypertable Größe (TimescaleDB spezifisch)
-                cur.execute("SELECT hypertable_size('redvypr_packets')")
-                size_bytes = cur.fetchone()[0]
-                status["table_size_pretty"] = f"{size_bytes / (1024 * 1024):.2f} MB"
-
-                # 3. Anzahl der Chunks
-                cur.execute(
-                    "SELECT count(*) FROM timescaledb_information.chunks WHERE hypertable_name = 'redvypr_packets'")
-                status["chunks_count"] = cur.fetchone()[0]
-                cur.close()
-            except Exception as e:
-                status["connection"] = f"Error: {str(e)}"
-
-        return status
-
-
-
-
-
-
 
 class RedvyprDBFactory:
     """
@@ -1642,6 +1521,9 @@ class RedvyprSqliteDb(AbstractDatabase):
             status["limit_mb"] = self.max_file_size_mb
 
         return status
+
+
+
 
 
 

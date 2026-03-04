@@ -8,6 +8,7 @@ redvypr changelog
 
 ### Added
 - datapath in redvypr.config
+- db_writer_extended allowing to save single redvypr addresses in flat tables
 ### Changed
 - replaced `pkg_resources` with a modern alternative
 - bug and layout in `redvyprSubscribeWidget`

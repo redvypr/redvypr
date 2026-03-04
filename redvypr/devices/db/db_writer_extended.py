@@ -8,11 +8,11 @@ import qtawesome
 from redvypr.data_packets import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.redvypr_address import RedvyprAddress
-from .db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget
-from .db_engines import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
+from .db_util_widgets_extended import DBConfigWidgetExtended
+from .db_engines_extended import DatabaseConfigExtended, DatabaseSettingsExtended, TimescaleConfig, SqliteConfigExtended, RedvyprDBFactoryExtended
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.device.db.db_writer')
+logger = logging.getLogger('redvypr.device.db.db_writer_extended')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
@@ -25,7 +25,7 @@ class DeviceBaseConfig(pydantic.BaseModel):
 
 class DeviceCustomConfig(pydantic.BaseModel):
     auto_create_table: bool = pydantic.Field(default=True, description="Create redvypr tables automatically at start, if not existing")
-    database: DatabaseConfig = pydantic.Field(default_factory=SqliteConfig, discriminator='dbtype')
+    database: DatabaseConfigExtended = pydantic.Field(default_factory=SqliteConfigExtended, discriminator='dbtype')
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
     """
@@ -47,16 +47,10 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
     device_config = DeviceCustomConfig(**config)
     dbconfig = device_config.database
+    print("Database tables",dbconfig.tables)
     logger_thread.info("Opening database")
     try:
-
-        db = RedvyprDBFactory.create(dbconfig)
-        #db = RedvyprTimescaleDb(dbname = dbconfig.dbname,
-        #                        user= dbconfig.user,
-        #                        password=dbconfig.password,
-        #                        host=dbconfig.host,
-        #                        port=dbconfig.port)
-
+        db = RedvyprDBFactoryExtended.create(dbconfig)
         with db:
             print("Opened")
             # 1. Setup (gentle approach)
@@ -70,12 +64,14 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             print(f"-----------------------------")
             db_info = db.get_database_info()
             # Check if tables are there
-            if not(status['tables_exist']) and status['can_write']:
+            #if not(status['tables_exist']) and status['can_write']:
+            if status['can_write']:
                 if device_config.auto_create_table:
-                    print("Creating tables")
+                    print("Creating tables",db)
                     db.setup_schema()
                     status = db.check_health()
 
+            status['tables_exist'] = True
             if status['tables_exist'] and status['can_write']:
                 statistics = {}
                 while True:
@@ -100,6 +96,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 datapacket) + ' stopping now')
                             logger.debug('Stop command')
                             return
+                        # Check if there is metadata to save
                         elif command == 'info' and packetid == 'metadata':
                             print("Info command", datapacket.keys())
                             metadata = datapacket["deviceinfo_all"]["metadata"]
@@ -194,7 +191,7 @@ def get_database_info(config):
 
 
 
-class DisplayDbStatusWidget(QtWidgets.QGroupBox):
+class DisplayDbStatusWidgetExtended(QtWidgets.QGroupBox):
     def __init__(self, title="Database Status", parent=None):
         super().__init__(title, parent)
         # Set a reasonable maximum width so it doesn't push the splitter too far
@@ -267,11 +264,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         # Connect thread signals
         self.device.thread_started.connect(self.thread_start_signal)
         # 2. Create the new DBConfigWidget
-        self.db_config_widget = DBConfigWidget(
-            initial_config=initial_config.database)
+        self.db_config_widget = DBConfigWidgetExtended(
+            initial_config=initial_config.database, redvypr = self.device.redvypr)
         self.db_config_widget.db_type_changed.connect(self.update_config_from_widgets)
         self.db_config_widget.db_config_changed.connect(self.update_config_from_widgets)
-        self.dbstatus = DisplayDbStatusWidget()
+        self.dbstatus = DisplayDbStatusWidgetExtended()
         self.statustable = QtWidgets.QTableWidget()
         self.statustable.setRowCount(2) # First all packets, second metadata packets
         self._statustableheader = ['Packets','Num stored','Num stored error']
@@ -304,7 +301,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     def update_config_from_widgets(self, config_new):
         print(f"Got new config from widgets:{config_new}")
-        db_config = DatabaseSettings(config_new).root
+        db_config = DatabaseSettingsExtended(config_new).root
         print(f"Got new config from widgets:{db_config}")
         self.device.custom_config.database = db_config
 

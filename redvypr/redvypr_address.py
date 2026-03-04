@@ -665,6 +665,81 @@ class RedvyprAddress:
         return False
 
     def __call__(self, packet, strict=True, soft_missing=True):
+        """
+        Evaluates the Redvypr address expression on a given packet and returns the result.
+
+        This method is the core of the Redvypr address system. It processes the packet
+        according to the address's left-hand side (LHS) expression and right-hand side (RHS)
+        filter constraints. The method supports dynamic evaluation of expressions, metadata
+        filtering, and strict/soft handling of missing keys.
+
+        Parameters
+        ----------
+        packet : dict or RedvyprAddress
+            The input packet to evaluate. If a `RedvyprAddress` is provided, it is converted
+            to a dictionary using `to_redvypr_dict()`. The packet can contain a `_redvypr`
+            key for metadata (e.g., `packetid`, `device`, `publisher`), as it is the
+            standard for redvypd datapackets.
+        strict : bool, optional
+            If `True`, raises exceptions for missing keys or failed evaluations.
+            If `False`, returns `None` for missing keys or failed evaluations.
+            Default is `True`.
+        soft_missing : bool, optional
+            If `True`, missing keys in the packet are treated as `None` without raising an error.
+            If `False`, missing keys may raise a `KeyError` or `FilterNoMatch` depending on `strict`.
+            Default is `True`.
+
+        Returns
+        -------
+        dict or Any or None
+            - If the address has no LHS expression and no RHS filter, the original `packet` is returned.
+            - If the RHS filter does not match the packet and `strict=True`, a `FilterNoMatch` is raised.
+            - If the LHS expression is `"!"` (no-data), returns the packet if it contains no data keys
+              (only metadata), otherwise raises a `KeyError` or returns `None` depending on `strict`.
+            - If the LHS expression is evaluated successfully, returns the result of the evaluation:
+              - If the result is a string and matches a key in the packet, returns the value of that key.
+              - Otherwise, returns the evaluated result (e.g., a string, number, or other value).
+            - If evaluation fails and `strict=False`, returns `None`.
+
+        Raises
+        ------
+        FilterNoMatch
+            Raised if the packet does not match the RHS filter and `strict=True`.
+        KeyError
+            Raised if a required key is missing and `strict=True`, or if the LHS expression is `"!"`
+            but the packet contains data keys.
+        NameError
+            Raised if a variable in the LHS expression is undefined and `strict=True`.
+        TypeError
+            Raised if an operation in the LHS expression is invalid (e.g., indexing a non-list) and `strict=True`.
+        Exception
+            Any other exception raised during evaluation is propagated if `strict=True`.
+
+        Notes
+        -----
+        - The LHS expression is compiled to a Python AST for efficient repeated evaluation.
+        - If the LHS expression is a string and matches a key in the packet, the corresponding value
+          is returned. This allows for dynamic key access (e.g., `datakey@d:device`).
+        - The RHS filter is evaluated first. If it fails, the LHS expression is not evaluated.
+
+        Examples
+        --------
+        >>> addr = RedvyprAddress("temperature@d:device1")
+        >>> packet = {"temperature": 25.5, "_redvypr": {"device": "device1"}}
+        >>> addr(packet)
+        25.5
+
+        >>> addr = RedvyprAddress("@d:device1 and i:123")
+        >>> packet = {"data": "value", "_redvypr": {"device": "device1", "packetid": 123}}
+        >>> addr(packet)
+        {'data': 'value', '_redvypr': {...}}
+
+        >>> addr = RedvyprAddress("!")
+        >>> packet = {"_redvypr": {"device": "device1"}}  # No data keys
+        >>> addr(packet)
+        {'_redvypr': {'device': 'device1'}}
+        """
+
         if isinstance(packet, RedvyprAddress):
             packet = packet.to_redvypr_dict()
         if self.left_expr is None and self._rhs_ast is None:
