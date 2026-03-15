@@ -10,6 +10,8 @@ redvypr changelog
 - datapath in redvypr.config
 - db_writer_extended allowing to save single redvypr addresses in flat tables
 ### Changed
+- `test_device` with config gui to change data to be sent
+- `XYPlotDevice` changed to `new_data` signal
 - replaced `pkg_resources` with a modern alternative
 - bug and layout in `redvyprSubscribeWidget`
 - `RedvyprMultipleAddressesWidget` with new functionality of `self.address_names`, a dictionary of names that are assigned with `RedvyprAddress`
