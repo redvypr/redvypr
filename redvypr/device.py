@@ -418,8 +418,8 @@ class QueueReaderWorker(QtCore.QObject):
                 if data is not None:
                     self.buffer.append(data)
 
-                # Prüfe, ob es Zeit ist, die Daten zu senden
-                current_time = time.monotonic()
+
+                current_time = time.time()
                 if self.buffer and (current_time - self.last_emit_time) >= self.dt_emit:
                     self.data_received.emit(self.buffer.copy())
                     self.buffer.clear()
@@ -427,7 +427,7 @@ class QueueReaderWorker(QtCore.QObject):
 
             except queue.Empty:
                 # Prüfe auch bei Empty, ob es Zeit ist, die Daten zu senden
-                current_time = time.monotonic()
+                current_time = time.time()
                 if self.buffer and (current_time - self.last_emit_time) >= self.dt_emit:
                     self.data_received.emit(self.buffer.copy())
                     self.buffer.clear()

@@ -1422,86 +1422,88 @@ class XYPlotWidget(QtWidgets.QFrame):
         #print('Close event')
         self.closing.emit()
 
-    def update_plot(self, data, force_update=False):
-        """ Updates the plot based on the given data
+    def update_plot(self, data_in, force_update=False):
+        """ Updates the plot with data_in
         """
         funcname = self.__class__.__name__ + '.update_plot():'
         #self.logger.debug(funcname + 'Update {}'.format(len(self.config.lines)))
         tnow = time.time()
-        ## Create a redvypr datapacket
-        #rdata = redvypr.data_packets.Datapacket(data)
-        #print(funcname + 'got data',data,tnow)
-        try:
-            # Check if the device is to be plotted
-            # Loop over all lines
-            for iline, line in enumerate(self.config.lines):
-                line.__newdata = False
-                try:
-                    line.add_data(data)
-                    line.__newdata = True
-                except:
-                    continue
-                    #self.logger.debug('Could not add data', exc_info=True)
-                    #pass
+        if isinstance(data_in,dict):
+            data_in = [data_in]
 
-                #print('Added data',data['t'],data['_redvypr'])
-                if True:
-                    # Show the unit in the legend, if wished by the user, and we have access to the device that can give us the metainformation
-                    if (self.config.show_units) and (self.device is not None):
-                        dt_metadata = tnow - self.tlastupdate_metadata
-                        if dt_metadata > self.config.dt_update_metadata:
-                            self.tlastupdate_metadata = tnow
-                            self.logger.debug(funcname + 'Getting metadata for {}'.format(line.y_addr))
-                            # Check for metadata
-                            flag_new_metadata = self.get_metadata_for_line(line, force_update=True)
-                            print(f"Metadata flag:{flag_new_metadata=}")
-                            if flag_new_metadata:
-                                self.apply_config()
-
-            # Update the lines plot
-            something_updated = False
-            for iline, line in enumerate(self.config.lines):
-                tlastupdate = line._tlastupdate  # The time the plot was last updated
-                # Check if an update of the plot shall be done, or if only the buffer is updated
-                dt = tnow - tlastupdate
-                if dt > self.config.dt_update:
-                    update = True
-                elif force_update:
-                    update = True
-                else:
-                    update = False
-                    # print('no update')
-
-                #if len(self.config.lines) > 1:
-                #    print('Update',update,line.__newdata)
-                if update and line.__newdata:  # We could check here if data was changed above the for given line
-                    line._tlastupdate = tnow
+        for data in data_in:
+            #print(funcname + 'got data',data,tnow)
+            try:
+                # Check if the device is to be plotted
+                # Loop over all lines
+                for iline, line in enumerate(self.config.lines):
+                    line.__newdata = False
                     try:
-                        [x,y,err]= self.__get_data_for_line(line)
-                        line._lineplot.setData(x=x, y=y)
-                        self.x_min = min(self.x_min,min(x))
-                        self.x_max = max(self.x_max, max(x))
-                        something_updated = True
-                        if line._errorplot is not None:
-                            beamwidth = None
-                            line._errorplot.setData(x=np.asarray(x), y=np.asarray(y), top=np.asarray(err) * 1,
-                                                    bottom=np.asarray(err) * 1, beam=beamwidth)
-
+                        line.add_data(data)
+                        line.__newdata = True
                     except:
-                        self.logger.info('Could not update line',exc_info=True)
+                        continue
+                        #self.logger.debug('Could not add data', exc_info=True)
+                        #pass
 
-            if something_updated:
-                try:
-                    # Check if ranges need to be changed
-                    if self.config.plot_mode_x == 'last_N_s':
-                        xmin = self.x_max - self.config.last_N_s
-                        xmax = self.x_max
-                        self.plotWidget.setXRange(xmin,xmax)
-                except:
-                    logger.info(funcname,exc_info=True)
+                    #print('Added data',data['t'],data['_redvypr'])
+                    if True:
+                        # Show the unit in the legend, if wished by the user, and we have access to the device that can give us the metainformation
+                        if (self.config.show_units) and (self.device is not None):
+                            dt_metadata = tnow - self.tlastupdate_metadata
+                            if dt_metadata > self.config.dt_update_metadata:
+                                self.tlastupdate_metadata = tnow
+                                self.logger.debug(funcname + 'Getting metadata for {}'.format(line.y_addr))
+                                # Check for metadata
+                                flag_new_metadata = self.get_metadata_for_line(line, force_update=True)
+                                print(f"Metadata flag:{flag_new_metadata=}")
+                                if flag_new_metadata:
+                                    self.apply_config()
 
-            if len(self.config.lines) > 1:
-                pass
-                #print('DONE DONE DONE')
-        except:
-            self.logger.info('Could not update data', exc_info=True)
+                # Update the lines plot
+                something_updated = False
+                for iline, line in enumerate(self.config.lines):
+                    tlastupdate = line._tlastupdate  # The time the plot was last updated
+                    # Check if an update of the plot shall be done, or if only the buffer is updated
+                    dt = tnow - tlastupdate
+                    if dt > self.config.dt_update:
+                        update = True
+                    elif force_update:
+                        update = True
+                    else:
+                        update = False
+                        # print('no update')
+
+                    #if len(self.config.lines) > 1:
+                    #    print('Update',update,line.__newdata)
+                    if update and line.__newdata:  # We could check here if data was changed above the for given line
+                        line._tlastupdate = tnow
+                        try:
+                            [x,y,err]= self.__get_data_for_line(line)
+                            line._lineplot.setData(x=x, y=y)
+                            self.x_min = min(self.x_min,min(x))
+                            self.x_max = max(self.x_max, max(x))
+                            something_updated = True
+                            if line._errorplot is not None:
+                                beamwidth = None
+                                line._errorplot.setData(x=np.asarray(x), y=np.asarray(y), top=np.asarray(err) * 1,
+                                                        bottom=np.asarray(err) * 1, beam=beamwidth)
+
+                        except:
+                            self.logger.info('Could not update line',exc_info=True)
+
+                if something_updated:
+                    try:
+                        # Check if ranges need to be changed
+                        if self.config.plot_mode_x == 'last_N_s':
+                            xmin = self.x_max - self.config.last_N_s
+                            xmax = self.x_max
+                            self.plotWidget.setXRange(xmin,xmax)
+                    except:
+                        logger.info(funcname,exc_info=True)
+
+                if len(self.config.lines) > 1:
+                    pass
+                    #print('DONE DONE DONE')
+            except:
+                self.logger.info('Could not update data', exc_info=True)

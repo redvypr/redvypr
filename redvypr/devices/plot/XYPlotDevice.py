@@ -60,6 +60,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.startAction = self.xyplot.plotWidget.plotItem.vb.menu.addAction('NA')
         self.startAction.triggered.connect(self.thread_startstop)
         self.xyplot.plotWidget.plotItem.vb.menu.aboutToShow.connect(self.update_menu_text)
+        # Connect new_data signal
+        self.device.new_data.connect(self.new_data)
 
 
     def update_menu_text(self):
@@ -86,11 +88,12 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.xyplot.config = self.device.custom_config
         self.xyplot.apply_config()
 
-    def update_data(self, data, force_update = False):
-        funcname = __name__ + '.update_data():'
-        #print(funcname)
-        #print("Got data",data)
-        self.xyplot.update_plot(data, force_update)
+    def new_data(self, data_in):
+        funcname = __name__ + '.new_data():'
+        print(funcname)
+        force_update = False
+        #print("Got data",data_in)
+        self.xyplot.update_plot(data_in, force_update)
 
 
 
