@@ -62,6 +62,10 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                             description="Flag if random position data shall be sent")
     latlon_freq: float = pydantic.Field(default=1,
                                                   description="Frequency of the latlon package")
+    send_complex: bool = pydantic.Field(default=False,
+                                       description="Flag if complex data shall be sent")
+    complex_freq: float = pydantic.Field(default=1,
+                                        description="Frequency of the complex package to be sent")
 
 
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
@@ -85,7 +89,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     dataqueue.put(datapacket_info)
     i = 0
     counter = 0
-    t_last_keys = ['sine','rand','fast']
+    t_last_keys = ['sine','rand','fast','latlon','complex']
     t_last = {}
     t_tmp = time.time()
     for k in t_last_keys:
@@ -95,6 +99,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     print("Config",pdconfig)
     while True:
         time.sleep(pdconfig.delay_s)
+        counter += 1
         t_now = time.time()
         try:
             data = datainqueue.get(block = False)
@@ -108,7 +113,6 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 break
             elif (command == 'config'):
                 logger.debug('Command is for me: {:s}'.format(str(command)))
-                print("Data",data)
                 new_config = comdata["command_data"]["data"]["config"]
                 print("Applying new config")
                 pdconfig = DeviceCustomConfig.model_validate(new_config)
@@ -116,7 +120,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         if pdconfig.send_rand:
             dt_tmp = t_now - t_last['rand']
             if dt_tmp > (1/pdconfig.rand_freq_send):
-                print("Sending rand")
+                #print("Sending rand")
                 t_last['rand'] = t_now
                 data = redvypr.data_packets.create_datadict(device = device_info['device'])
                 rand_data = pdconfig.rand_amp * (np.random.rand(10) - 0.5)
@@ -132,7 +136,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
             dt_tmp = t_now - t_last['sine']
             if dt_tmp > (1 / pdconfig.sine_freq_send):
                 t_last['sine'] = t_now
-                print("Sending sine")
+                #print("Sending sine")
                 # Calculate some sine
                 data_rand = pdconfig.sine_rand_amp * float(np.random.rand(1) - 0.5)
                 f_sin = 2 * np.pi * pdconfig.sine_freq
@@ -166,6 +170,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         if pdconfig.send_latlon:
             dt_tmp = t_now - t_last['latlon']
             if dt_tmp > (1 / pdconfig.latlon_freq):
+                t_last['latlon'] = t_now
                 # Create a position packet
                 data_latlon = redvypr.data_packets.create_datadict(packetid='latlon_random',device=device_info['device'])
                 data_latlon['lon'] = float(np.random.rand(1) - 0.5) * 180
@@ -173,45 +178,49 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 data_latlon['t'] = time.time()
                 dataqueue.put(data_latlon)
 
-        if False:
-            #print('Hallo')
-            # Add complex data
-            data = redvypr.data_packets.create_datadict(device='test_complex_data', packetid='complex_data')
-            if counter == 0:
-                # Add metadata
 
-                metadata = {'unit': 'baseunit','location':'another room'}
-                data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_list_list',
-                                                                    metadict=metadata)
+        if pdconfig.send_complex:
+            dt_tmp = t_now - t_last['complex']
+            if dt_tmp > (1 / pdconfig.complex_freq):
+                t_last['complex'] = t_now
+                #print('Hallo')
+                # Add complex data
+                data = redvypr.data_packets.create_datadict(device='test_complex_data', packetid='complex_data')
+                if counter == 0:
+                    # Add metadata
 
-                metadata = {'unit': 'otherunit of entry 0'}
-                data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_list_list[0]',
-                                                                    metadict=metadata)
+                    metadata = {'unit': 'baseunit','location':'another room'}
+                    data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_list_list',
+                                                                        metadict=metadata)
 
-                metadata = {'description': 'Counter and polynomial functions of counter', 'unit': 'grigra'}
-                data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_list_poly',
-                                                                               metadict=metadata)
+                    metadata = {'unit': 'otherunit of entry 0'}
+                    data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_list_list[0]',
+                                                                        metadict=metadata)
 
-                metadata = {'description': 'Temperature', 'unit': 'degC'}
-                data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_dict_list["temp"]',
-                                                                    metadict=metadata)
+                    metadata = {'description': 'Counter and polynomial functions of counter', 'unit': 'grigra'}
+                    data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_list_poly',
+                                                                                   metadict=metadata)
 
-                metadata = {'unit': 'Pa'}
-                data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_dict_list["pressure"]',
-                                                                    metadict=metadata)
-            data['data_list'] = [counter,data_sine,data_rand]
-            data['data_list_list'] = [[counter, data_sine, data_rand],[counter, data_sine]]
-            data['data_list_poly'] = [counter, counter + data_rand, 2 * counter + data_rand, -10 * counter + data_rand+ 3, 0.1 * counter**2 + 2 * counter + data_rand+ 3]
-            data['data_dict_list'] = {'temp':[data_rand, 2*data_rand-10],'pressure':10+data_rand, 'info':{'location':'House','sn':123,'operator':{'name':'Joe','age':89}}}
-            data['data_ndarray_1d'] = np.zeros((5,)) + counter
-            data['data_ndarray_2d'] = np.zeros((6,7)) + counter
-            data['data_ndarray_2d_int'] = np.zeros((3,2),dtype=int) + int(counter)
-            #print('datastreams',redvypr.data_packets.Datapacket(data).datastreams(expand=True))
-            #print("Publishing now")
-            dataqueue.put(data)
-            # Put some pathological data into the queue
-            dataqueue.put(None)
-            counter += 1
+                    metadata = {'description': 'Temperature', 'unit': 'degC'}
+                    data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_dict_list["temp"]',
+                                                                        metadict=metadata)
+
+                    metadata = {'unit': 'Pa'}
+                    data = redvypr.data_packets.add_metadata2datapacket(data, datakey='data_dict_list["pressure"]',
+                                                                        metadict=metadata)
+                data['data_list'] = [counter,data_sine,data_rand]
+                data['data_list_list'] = [[counter, data_sine, data_rand],[counter, data_sine]]
+                data['data_list_poly'] = [counter, counter + data_rand, 2 * counter + data_rand, -10 * counter + data_rand+ 3, 0.1 * counter**2 + 2 * counter + data_rand+ 3]
+                data['data_dict_list'] = {'temp':[data_rand, 2*data_rand-10],'pressure':10+data_rand, 'info':{'location':'House','sn':123,'operator':{'name':'Joe','age':89}}}
+                data['data_ndarray_1d'] = np.zeros((5,)) + counter
+                data['data_ndarray_2d'] = np.zeros((6,7)) + counter
+                data['data_ndarray_2d_int'] = np.zeros((3,2),dtype=int) + int(counter)
+                #print('datastreams',redvypr.data_packets.Datapacket(data).datastreams(expand=True))
+                #print("Publishing now")
+                dataqueue.put(data)
+                # Put some pathological data into the queue
+                dataqueue.put(None)
+
 
 
 class ConfigGroupWidget_old(QtWidgets.QGroupBox):
@@ -301,6 +310,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             }),
             "Lat/Lon": ("send_latlon", {
                 "latlon_freq": "Packet Freq",
+            }),
+            "Complex data": ("send_complex", {
+                "complex_freq": "Packet Freq",
             })
         }
 
