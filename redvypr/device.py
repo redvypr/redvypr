@@ -398,16 +398,50 @@ class QueueReaderWorker(QtCore.QObject):
     """
     Class reads the self.dataqueue_local of the device and emits a signal if new data has arrived
     """
-    data_received = QtCore.pyqtSignal(dict)
+    data_received = QtCore.pyqtSignal(list)
     finished = QtCore.pyqtSignal()
 
-    def __init__(self, data_queue):
+    def __init__(self, data_queue, dt_emit=0.05):
         super().__init__()
         self.data_queue = data_queue
         self._running = True
+        self.dt_emit = dt_emit
+        self.buffer = []
+        self.last_emit_time = time.time()
 
     @QtCore.pyqtSlot()
     def run(self):
+        while self._running:
+            try:
+                # Timeout kürzer als dt_emit, z. B. 10 ms
+                data = self.data_queue.get(timeout=0.01)
+                if data is not None:
+                    self.buffer.append(data)
+
+                # Prüfe, ob es Zeit ist, die Daten zu senden
+                current_time = time.monotonic()
+                if self.buffer and (current_time - self.last_emit_time) >= self.dt_emit:
+                    self.data_received.emit(self.buffer.copy())
+                    self.buffer.clear()
+                    self.last_emit_time = current_time
+
+            except queue.Empty:
+                # Prüfe auch bei Empty, ob es Zeit ist, die Daten zu senden
+                current_time = time.monotonic()
+                if self.buffer and (current_time - self.last_emit_time) >= self.dt_emit:
+                    self.data_received.emit(self.buffer.copy())
+                    self.buffer.clear()
+                    self.last_emit_time = current_time
+                continue
+            except Exception as e:
+                print(f"Error in QueueReader: {e}")
+
+        # Sende ggf. noch gepufferte Daten beim Beenden
+        if self.buffer:
+            self.data_received.emit(self.buffer.copy())
+        self.finished.emit()
+
+    def run_old(self):
         while self._running:
             try:
                 # timeout=1 erlaubt es dem Thread, regelmäßig nach self._running zu sehen
@@ -427,7 +461,7 @@ class QueueReaderWorker(QtCore.QObject):
 
 # TODO: properly implement status signal with status dict similar to thread_started/stopped
 class RedvyprDevice(QtCore.QObject):
-    new_data = QtCore.pyqtSignal(dict)  # Signal emitted when new data is available (either from the start thread or subscribed data)
+    new_data = QtCore.pyqtSignal(list)  # Signal emitted when new data is available (either from the start thread or subscribed data)
     thread_started = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     thread_stopped = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     status_signal  = QtCore.pyqtSignal(dict)   # Signal with the status of the device

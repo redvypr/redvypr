@@ -639,9 +639,10 @@ class EventConfigEditor(QtWidgets.QWidget):
         self.edit_name.setFocus()
         self.edit_name.selectAll()
 
-    def new_data(self, data):
+    def new_data(self, data_list):
         #print(f"Got new data:{data=}")
         # Check if autolocation should be used
+        data = data_list[0]
         if self.widget_config['autoloc']:
             if self.autoloc_address_lon.matches(data):
                 try:
