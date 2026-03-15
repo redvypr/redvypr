@@ -58,6 +58,11 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                                  description="Flag if fast single data to be sent as merged packets")
     fast_freq_merged_send: float = pydantic.Field(default=2,
                                                   description="Frequency of the merged packets to be sent (filled with fast data)")
+    send_latlon: bool = pydantic.Field(default=False,
+                                            description="Flag if random position data shall be sent")
+    latlon_freq: float = pydantic.Field(default=1,
+                                                  description="Frequency of the latlon package")
+
 
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start():'
@@ -157,13 +162,16 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 data['fast'] = float(rand_data.mean())
                 dataqueue.put(data)
 
-        if False:
-            # Create a position packet
-            data_latlon = redvypr.data_packets.create_datadict(packetid='latlon_random',device=device_info['device'])
-            data_latlon['lon'] = float(np.random.rand(1) - 0.5) * 180
-            data_latlon['lat'] = float(np.random.rand(1) - 0.5) * 90
-            data_latlon['t'] = time.time()
-            dataqueue.put(data_latlon)
+
+        if pdconfig.send_latlon:
+            dt_tmp = t_now - t_last['latlon']
+            if dt_tmp > (1 / pdconfig.latlon_freq):
+                # Create a position packet
+                data_latlon = redvypr.data_packets.create_datadict(packetid='latlon_random',device=device_info['device'])
+                data_latlon['lon'] = float(np.random.rand(1) - 0.5) * 180
+                data_latlon['lat'] = float(np.random.rand(1) - 0.5) * 90
+                data_latlon['t'] = time.time()
+                dataqueue.put(data_latlon)
 
         if False:
             #print('Hallo')
@@ -290,6 +298,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             }),
             "Fast Merged": ("send_fast_merged", {
                 "fast_freq_merged_send": "Packet Freq",
+            }),
+            "Lat/Lon": ("send_latlon", {
+                "latlon_freq": "Packet Freq",
             })
         }
 
