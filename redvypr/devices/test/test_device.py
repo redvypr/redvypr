@@ -89,7 +89,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     dataqueue.put(datapacket_info)
     i = 0
     counter = 0
-    t_last_keys = ['sine','rand','fast','latlon','complex']
+    t_last_keys = ['sine','rand','fast','fast_merge','latlon','complex']
     t_last = {}
     t_tmp = time.time()
     for k in t_last_keys:
@@ -155,16 +155,38 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 #print(f"Publishing:{data_sine_packet=}")
                 dataqueue.put(data_sine_packet)
 
-        if pdconfig.send_fast_single:
+        if pdconfig.send_fast_single or pdconfig.send_fast_merged:
             dt_tmp = t_now - t_last['fast']
             if dt_tmp > (1 / pdconfig.fast_freq_single):
                 t_last['fast'] = t_now
                 #print("Sending fast")
-                data = {}
+                data = redvypr.data_packets.create_datadict(
+                    device=device_info['device'], packetid="fast_single")
                 rand_data = pdconfig.rand_amp * (np.random.rand(10) - 0.5)
                 data['t'] = t_now
                 data['fast'] = float(rand_data.mean())
-                dataqueue.put(data)
+                if pdconfig.send_fast_single:
+                    dataqueue.put(data)
+                if pdconfig.send_fast_merged:
+                    try:
+                        data_fast_merged
+                    except:
+                        data_fast_merged = redvypr.data_packets.create_datadict(
+                            device=device_info['device'], packetid="fast_merged")
+                        data_fast_merged['t'] = []
+                        data_fast_merged['fast_merged'] = []
+
+                    data_fast_merged['t'].append(t_now)
+                    data_fast_merged['fast_merged'].append(data['fast'])
+
+            dt_tmp = t_now - t_last['fast_merge']
+            if dt_tmp > (1 / pdconfig.fast_freq_merged_send):
+                t_last['fast_merge'] = t_now
+                print("Sending merged data")
+                dataqueue.put(data_fast_merged)
+                data_fast_merged['t'] = []
+                data_fast_merged['fast_merged'] = []
+
 
 
         if pdconfig.send_latlon:
@@ -220,66 +242,6 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 dataqueue.put(data)
                 # Put some pathological data into the queue
                 dataqueue.put(None)
-
-
-
-class ConfigGroupWidget_old(QtWidgets.QGroupBox):
-    def __init__(self, title: str, config_key: str, device_config: Any,
-                 fields: Dict[str, str]):
-        super().__init__(title)
-        self.config_key = config_key
-        self.device_config = device_config
-        self.fields = fields
-
-        is_checked = getattr(self.device_config, self.config_key)
-        self.setCheckable(True)
-        self.setChecked(is_checked)
-
-        # Hauptlayout der GroupBox
-        self.main_layout = QtWidgets.QVBoxLayout()
-
-        # Erstelle die Tabelle
-        self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(len(self.fields))
-        self.table.setRowCount(1)
-
-        # Setze die Beschreibungen als horizontale Header (Überschriften)
-        self.table.setHorizontalHeaderLabels(list(self.fields.values()))
-
-        # Tabelle optisch anpassen
-        self.table.verticalHeader().setVisible(False)  # Keine Zeilennummern links
-        self.table.horizontalHeader().setSectionResizeMode(
-            QtWidgets.QHeaderView.Stretch)
-        self.table.setFixedHeight(65)  # Kompakte Höhe für eine Zeile + Header
-
-        # Felder in die Tabelle einfügen
-        for column, (field_name, _) in enumerate(self.fields.items()):
-            input_widget = QtWidgets.QDoubleSpinBox()
-            input_widget.setRange(-1e6, 1e6)
-            input_widget.setDecimals(3)
-            input_widget.setValue(getattr(self.device_config, field_name))
-
-            # Wichtig: Closure für den field_name im Lambda
-            input_widget.valueChanged.connect(
-                lambda val, fn=field_name: self.on_field_changed(fn, val)
-            )
-
-            # Widget in die Zelle setzen
-            self.table.setCellWidget(0, column, input_widget)
-
-        self.main_layout.addWidget(self.table)
-        self.setLayout(self.main_layout)
-
-        # Signale verbinden
-        self.toggled.connect(self.toggle_visibility)
-        self.toggle_visibility(is_checked)
-
-    def toggle_visibility(self, on: bool):
-        self.table.setVisible(on)
-        setattr(self.device_config, self.config_key, on)
-
-    def on_field_changed(self, field_name: str, value: float):
-        setattr(self.device_config, field_name, value)
 
 
 class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
