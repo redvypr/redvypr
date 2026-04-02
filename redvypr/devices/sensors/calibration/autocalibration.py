@@ -120,7 +120,7 @@ class Autocalwidget(QtWidgets.QWidget):
         self.timer_wait.setValue(self.config.timer_wait)
         self.parameter_threshold = QtWidgets.QDoubleSpinBox()
         self.modecombo = QtWidgets.QComboBox()
-        modes = typing.get_args(typing.get_type_hints(Autocalconfig())['autocalmode'])
+        modes = typing.get_args(typing.get_type_hints(Autocalconfig)['autocalmode'])
         for m in modes:
             self.modecombo.addItem(str(m))
 
