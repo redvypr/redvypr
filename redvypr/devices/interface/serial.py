@@ -39,9 +39,6 @@ packet_start = ['<None>','$','custom']
 packet_delimiter = ['None','CR/LF','LF','custom']
 redvypr_devicemodule = True
 
-class RedvyprSerialDeviceMetadata(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra="allow")
-    comment: str = ''
 
 class DeviceBaseConfig(pydantic.BaseModel):
     """
@@ -54,6 +51,10 @@ class DeviceBaseConfig(pydantic.BaseModel):
     description: str = 'Reads to and writes from a serial devices'
     gui_tablabel_display: str = 'Serial device status'
     gui_icon: str = 'mdi.serial-port'
+
+class RedvyprSerialDeviceMetadata(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="allow")
+    comment: str = ''
 
 class SerialDeviceCustomConfig(pydantic.BaseModel):
     use_device: bool = pydantic.Field(default=True, description='Flag if the device should be used')
@@ -998,29 +999,23 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.comporttable.resizeColumnsToContents()
 
     def __showdata__(self):
-        """
-        Opens the raw data widget
-        """
         button = self.sender()
         tabname = button.__comport__.device
-        self.tabwidget.addTab(button.displaywidget, tabname)
-        #button.displaywidget.show()
-        #button.displaywidget.setFocus()
-        #button.displaywidget.raise_()
-        #button.displaywidget.activateWindow()
-        #try:
-        #    isshowing = button.showing
-        #except:
-        #    isshowing = False#
+        # Prüfen, ob der Tab bereits existiert
+        index = -1
+        for i in range(self.tabwidget.count()):
+            if self.tabwidget.tabText(i) == tabname:
+                index = i
+                break
+        if index >= 0:
+            # Tab existiert: Schließen
+            self.tabwidget.removeTab(index)
+            button.setText('Show')
+        else:
+            # Tab existiert nicht: Öffnen
+            self.tabwidget.addTab(button.displaywidget, tabname)
+            button.setText('Hide')
 
-        #if not(isshowing):
-        #    button.setText('Hide')
-        #    button.showing = True
-        #    button.displaywidget.show()
-        #else:
-        #    button.showing = False
-        #    button.setText('Show')
-        #    button.displaywidget.hide()
     def update_data(self, data):
         #print('data',data)
         try:
