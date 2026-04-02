@@ -34,7 +34,7 @@ logger.setLevel(logging.DEBUG)
 
 class Autocalentry(pydantic.BaseModel):
     """
-    An entry for the autocalibration procedure
+    An entry for the autocalibration procedures
     """
     autocalmode: typing.Literal['timer', 'response', 'threshold'] = pydantic.Field(default='response',
                                                                                    description='The mode, i.e. the way autocal shall behave after the value is set.')
