@@ -10,12 +10,17 @@ import logging
 import sys
 import pydantic
 import typing
-
+import threading
 import redvypr
+import redvypr.files as redvypr_files
 from redvypr.data_packets import check_for_command
 from redvypr.redvypr_address import RedvyprAddress
+from redvypr.device import RedvyprDevice
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
 
+
+_logo_file = redvypr_files.logo_file
+_icon_file = redvypr_files.icon_file
 description = 'Reading data from a serial device'
 
 
@@ -26,12 +31,15 @@ logger.setLevel(logging.DEBUG)
 
 packet_start = ['<None>','$','custom']
 packet_delimiter = ['None','CR/LF','LF','custom']
+baud_standard: list = [300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 691200, 921600]
 
 
 class SerialDeviceConfig(pydantic.BaseModel):
     """
     Hardware configuration of a serial device
     """
+    use_device: bool = pydantic.Field(default=True,
+                                      description='Flag if the device should be used')
     comport_device: str = pydantic.Field(default='')
     comport_device_short: typing.Optional[str] = pydantic.Field(default='',
                                                                 description="short devicename of the comport, used in linux systems to get rid of the path")
@@ -57,9 +65,8 @@ class SerialDeviceConfig(pydantic.BaseModel):
 
 class SerialDeviceConfigRedvypr(SerialDeviceConfig):
     """
-    Extended config for redvypr specific configuration used by the thread
+    Extended config for redvypr specific configuration used by the serial thread
     """
-    use_device: bool = pydantic.Field(default=True, description='Flag if the device should be used')
     receive_data: bool = pydantic.Field(default=True,
                                       description='Flag if the device shall receive data')
     send_data: bool = pydantic.Field(default=True,
@@ -69,15 +76,24 @@ class SerialDeviceConfigRedvypr(SerialDeviceConfig):
     send_mode: typing.Literal["raw", "redvypr_datapacket"] = pydantic.Field(
         default="raw",
         description="The mode for data sending, raw for , redvypr_datapacket to send redvpyr datapackets")
-    send_data_address: RedvyprAddress = pydantic.Field(default=RedvyprAddress("data@"),description='The address of the data to be sent')
+    send_data_address: RedvyprAddress = pydantic.Field(default=RedvyprAddress("@"),description='The address of the data to be sent')
     send_serializer: typing.Literal["utf-8", "redvypr_datapacket"] = pydantic.Field(default="utf-8",description="Mode of data conversion to binary format")
     recv_mode: typing.Literal["raw","redvypr_datapacket"] = pydantic.Field(default="raw",description="The mode for data reception, raw for serial data, redvypr_datapacket to read redvpyr datapackets")
     datakey_recv_raw: str = pydantic.Field(default="data",
                                     description='The datakey in the redvype packet for the received raw data')
-    chunksize: int = pydantic.Field(default=0, description='The maximum amount of bytes read with one chunk')
+    chunksize: int = pydantic.Field(default=-1, description='The maximum amount of bytes read with one chunk')
     packetdelimiter: str = pydantic.Field(default='LF', description='The delimiter to distinguish packets, leave empty to disable')
     packetstart: str = pydantic.Field(default='', description='The delimiter to distinguish packets, leave empty to disable')
-
+    comport_nread: int = pydantic.Field(default=512, description='The amount of bytes read maximum within one ser.read() call')
+    comport_timeout: float = pydantic.Field(default=0.01, description='The timout [s] if not comport_nread bytes have been read ')
+    calc_recv_time: bool = pydantic.Field(default=True,
+                                     description='Flag if the device shall compute '
+                                                 '(approximately) the receive time of '
+                                                 'the bytes. This is done by calculating'
+                                                 ' the transmission per byte together '
+                                                 'with the receive time of a chunk of bytes')
+    command_history: list = pydantic.Field(default_factory=list,
+                                           description='List of command data sent to the device')
 
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
@@ -85,18 +101,68 @@ class DeviceBaseConfig(pydantic.BaseModel):
     description: str = 'Reads to and write from a serial device'
     gui_tablabel_display: str = 'Serial data'
 
-class DeviceCustomConfig(pydantic.BaseModel):
-    serial_device: SerialDeviceConfigRedvypr = pydantic.Field(default=SerialDeviceConfigRedvypr(baud=2400), description='Configuration of the serial device')
-    baud: int = 4800
-    parity: int = serial.PARITY_NONE
-    stopbits: int = serial.STOPBITS_ONE
-    bytesize: int = serial.EIGHTBITS
-    dt_poll: float = 0.05
-    chunksize: int = pydantic.Field(default=1000, description='The maximum amount of bytes read with one chunk')
-    packetdelimiter: str = pydantic.Field(default='\n', description='The delimiter to distinuish packets')
-    comport: str = ''
+class DeviceCustomConfig(SerialDeviceConfigRedvypr):
+    """Alias for Redvypr config to be used in generic device contexts."""
+    pass
 
 redvypr_devicemodule = True
+
+
+def read_serial(config: SerialDeviceConfigRedvypr, queue_data_read, queue_data_send, queue_thread_command ):
+    """
+    The function that actually reads from the serial port
+    Parameters
+    ----------
+    config
+    queue_data_read
+    queue_data_send
+    queue_thread_command
+
+    Returns
+    -------
+
+    """
+    # Setup serial connection
+    dt_timeout = config["comport_timeout"]
+    nread = config["comport_nread"]
+    baud = config["baud"]
+    port = config["comport_device"]
+    comport_device = config["comport_device"]
+    parity = config["parity"]
+    stopbits = config["stopbits"]
+    bytesize = config["bytesize"]
+    ser = serial.Serial(
+        port=port,
+        baudrate=baud,
+        parity=parity,
+        stopbits=stopbits,
+        bytesize=bytesize,
+        timeout=dt_timeout
+    )
+
+    if not ser.is_open:
+        ser.open()
+
+
+    while True:
+        current_time = time.time()
+        data = ser.read(nread)
+        queue_data_read.put([data,current_time,ser.name,comport_device])
+
+        try:
+            data_send = queue_data_send.get_nowait()
+            print(f"Sending data to serial device {ser.name}")
+            ser.write(data_send)
+        except:
+            pass
+
+        try:
+            queue_thread_command.get_nowait()
+            return
+        except:
+            pass
+
+
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
     """
@@ -105,16 +171,16 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Starting reading serial data')
     chunksize = config['chunksize'] #The maximum amount of bytes read with one chunk
-    serial_name = config['serial_device']['comport_device']
-    baud = config['serial_device']['baud']
-    parity = config['serial_device']['parity']
-    stopbits = config['serial_device']['stopbits']
-    bytesize = config['serial_device']['bytesize']
-    dt_poll = config['serial_device']['dt_poll']
+    serial_name = config['comport_device']
+    baud = config['baud']
+    parity = config['parity']
+    stopbits = config['stopbits']
+    bytesize = config['bytesize']
+    dt_poll = config['dt_poll']
 
     print('Starting',config)
     
-    newpacket = config['serial_device']['packetdelimiter']
+    newpacket = config['packetdelimiter']
     newpacket = newpacket.replace('CR/LF','\r\n')
     newpacket = newpacket.replace('LF','\n')
     newpacket = newpacket.replace('None','')
@@ -131,32 +197,33 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     bytes_read = 0
     sentences_read = 0
     bytes_read_old = 0 # To calculate the amount of bytes read per second
-    t_update = time.time()
-    serial_device = False
-    if True:
-        try:
-            serial_device = serial.Serial(serial_name,baud,parity=parity,stopbits=stopbits,bytesize=bytesize,timeout=0)
-            #print('Serial device 0',serial_device)
-            #serial_device.timeout(0.05)
-            #print('Serial device 1',serial_device)                        
-        except Exception as e:
-            #print('Serial device 2',serial_device)
-            logger.debug(funcname + ': Exception open_serial_device {:s} {:d}: '.format(serial_name,baud) + str(e))
-            return False
 
-    got_dollar = False    
+    queuesize = 10000
+    queue_data_read_thread = queue.Queue(maxsize=queuesize)
+    queue_data_send_thread = queue.Queue(maxsize=queuesize)
+    queue_command_thread = queue.Queue(maxsize=queuesize)
+    args = [config, queue_data_read_thread, queue_data_send_thread, queue_command_thread]
+    serial_thread = threading.Thread(target=read_serial, args=args, daemon=True)
+    logger.debug('Starting serial read/write thread of comport: {serial_name}')
+    serial_thread.start()
+
+    t_update = time.time()
     while True:
-        # TODO, here commands could be send as well
         try:
             data = datainqueue.get(block=False)
         except:
             data = None
+
+
         if (data is not None):
-            command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
+            if data == 'stop':
+                command = 'stop'
+            else:
+                command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
             # logger.debug('Got a command: {:s}'.format(str(data)))
             if (command is not None):
                 if command == 'stop':
-                    serial_device.close()
+                    queue_command_thread.put('stop')
                     sstr = funcname + ': Command is for me: {:s}'.format(str(command))
                     logger.debug(sstr)
                     try:
@@ -165,14 +232,14 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                         pass
                     return
 
-
         time.sleep(dt_poll)
-        ndata = serial_device.inWaiting()
-        try:
-            rawdata_tmp = serial_device.read(ndata)
-        except Exception as e:
-            print(e)
-            #print('rawdata_tmp', rawdata_tmp)
+        rawdata_tmp = b''
+        while True:
+            try:
+                [rawdata_tmptmp,time_tmp,serial_port, comport_device] = queue_data_read_thread.get_nowait()
+                rawdata_tmp += rawdata_tmptmp
+            except:
+                break
 
         nread = len(rawdata_tmp)
         if True:
@@ -180,21 +247,22 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 bytes_read  += nread
                 rawdata_all += rawdata_tmp
                 #print('rawdata_all',rawdata_all)
-                FLAG_CHUNK = len(rawdata_all) > chunksize
-                if(FLAG_CHUNK):
-                    data = {'t':time.time()}
-                    data['data'] = rawdata_all
-                    data['comport'] = serial_device.name
-                    data['bytes_read'] = bytes_read
-                    dataqueue.put(data)
-                    rawdata_all = b''
+                if chunksize > 0:
+                    FLAG_CHUNK = len(rawdata_all) > chunksize
+                    if(FLAG_CHUNK):
+                        data = {'t':time.time()}
+                        data['data'] = rawdata_all
+                        data['comport'] = comport_device
+                        data['bytes_read'] = bytes_read
+                        dataqueue.put(data)
+                        rawdata_all = b''
 
                 # Check if the newpacket character in the data
                 if(FLAG_DELIMITER):
                     FLAG_CHAR = newpacket in rawdata_all
                     if(FLAG_CHAR):
                         rawdata_split = rawdata_all.split(newpacket)
-                        #print('rawdata_all', rawdata_all)
+                        print('rawdata_all', rawdata_all)
                         if(len(rawdata_split)>1): # If len==0 then character was not found
                             for ind in range(len(rawdata_split)-1): # The last packet does not have the split character
                                 sentences_read += 1
@@ -202,9 +270,10 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 #print('raw', raw)
                                 data = {'t':time.time()}
                                 data[config['datakey_recv_raw']] = raw
-                                data['comport'] = serial_device.name
+                                data['comport'] = serial_port
                                 data['bytes_read'] = bytes_read
                                 data['sentences_read'] = sentences_read
+                                #print("publishing",data)
                                 dataqueue.put(data)
 
                             rawdata_all = rawdata_split[-1]
@@ -216,6 +285,32 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             #print('ndata',len(rawdata_all),'rawdata',rawdata_all,type(rawdata_all))
             #print('bps',bps)
             t_update = time.time()
+
+
+class Device(RedvyprDevice):
+    """
+    calibration device
+    """
+
+    def __init__(self, **kwargs):
+        """
+        """
+        funcname = __name__ + '__init__()'
+        super(Device, self).__init__(**kwargs)
+        logger.debug(funcname)
+        # Connect thread start/stop signals to subscribe functions
+        self.thread_started.connect(self.subscribe_to_sensors)
+        self.thread_stopped.connect(self.unsubscribe_all)
+
+    def subscribe_to_sensors(self):
+        funcname = __name__ + '.subscribe_to_sensors():'
+        logger.debug(funcname)
+        self.unsubscribe_all()
+        if self.custom_config.send_data:
+            datastream = self.custom_config.send_data_address
+            logger.info(f"{funcname} subscribing to {datastream}")
+            self.subscribe_address(datastream)
+
 
 
 class SerialDeviceWidget(QtWidgets.QWidget):
@@ -236,10 +331,16 @@ class SerialDeviceWidget(QtWidgets.QWidget):
         "• {manufacturer} - Manufacturer name"
     )
 
-    def __init__(self, config=None, parent=None, add_packetid=False):
+    def __init__(self, config=None,
+                 parent=None,
+                 add_usedevice=False,
+                 fix_serial_device=True,
+                 add_packetid=False):
         super().__init__(parent)
         self.config = config
         self.add_packetid = add_packetid
+        self.add_usedevice = add_usedevice
+        self.fix_serialdevice = fix_serial_device
         self._port_objects = {}
 
         self._setup_ui()
@@ -255,6 +356,12 @@ class SerialDeviceWidget(QtWidgets.QWidget):
         self._update_packetid_display()
         self._sync_config_to_ui()
 
+    def _use_device_toggled(self, flag_use_device):
+        print("Use device",flag_use_device)
+        self.config.use_device = flag_use_device
+        for w in self.inputwidgets:
+            w.setEnabled(flag_use_device)
+
     def _setup_ui(self):
         self.main_layout = QtWidgets.QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -264,8 +371,17 @@ class SerialDeviceWidget(QtWidgets.QWidget):
         self.grid_layout.setSpacing(8)
 
         # Labels
-        labels = ["Port", "Baud", "Parity", "Data", "Stop", "ID Format",
+        labels = ["", "Port", "Baud", "Parity", "Data", "Stop", "ID Format",
                   "Resulting Packet ID"]
+
+        if self.add_usedevice == False:
+            #labels.pop(0)
+            self.chk_use_device = None
+        else:
+            self.chk_use_device = QtWidgets.QCheckBox("Use Device")
+            self.chk_use_device.setChecked(self.config.use_device)
+            self.chk_use_device.toggled.connect(self._use_device_toggled)
+
         if self.add_packetid == False:
             labels.remove("ID Format")
             labels.remove("Resulting Packet ID")
@@ -275,21 +391,67 @@ class SerialDeviceWidget(QtWidgets.QWidget):
             self.grid_layout.addWidget(lbl, 0, i)
 
         # Input Widgets
+        self.inputwidgets = []
         self.combo_device = QtWidgets.QComboBox()
+        if self.fix_serialdevice == False:
+            self.inputwidgets.append(self.combo_device)
+        else:
+            # Change the style
+            self.combo_device.setStyleSheet("""
+                /* Disabled state: Looks like a flat label or text field */
+                QComboBox:disabled {
+                    background-color: #f0f0f0;  /* Light gray background */
+                    color: black;               /* Keep text black (overrides default gray-out) */
+                    border: 1px solid #d3d3d3;  /* Subtle border */
+                    padding-right: 2px;         /* Reset padding since the arrow is removed */
+                }
+
+                /* Completely eliminate the dropdown button area when disabled */
+                QComboBox::drop-down:disabled {
+                    width: 0px;
+                    border: none;
+                }
+
+                /* Make the actual arrow icon invisible when disabled */
+                QComboBox::down-arrow:disabled {
+                    image: none;
+                    border: none;
+                }
+            """)
+
+            self.combo_device.setEnabled(False)
+
         self.combo_baud = QtWidgets.QComboBox()
+        self.inputwidgets.append(self.combo_baud)
         self.combo_parity = QtWidgets.QComboBox()
+        self.inputwidgets.append(self.combo_parity)
         self.combo_databits = QtWidgets.QComboBox()
+        self.inputwidgets.append(self.combo_databits)
         self.combo_stopbits = QtWidgets.QComboBox()
+        self.inputwidgets.append(self.combo_stopbits)
         if self.add_packetid:
             self.lineedit_format = QtWidgets.QLineEdit()
             self.lineedit_format.setPlaceholderText("{device_short}")
+            self.inputwidgets.append(self.lineedit_format)
             # Add the Info-Tooltip to the format field
             self.lineedit_format.setToolTip(self.FORMAT_INFO)
 
             self.lineedit_packetid = QtWidgets.QLineEdit()
+            self.inputwidgets.append(self.lineedit_packetid)
             self.lineedit_packetid.setReadOnly(True)
-            self.lineedit_packetid.setStyleSheet(
-                "background-color: #f4f4f4; border: 1px solid #ddd; color: #b22222; font-weight: bold;")
+            self.lineedit_packetid.setStyleSheet("""
+                QLineEdit {
+                    background-color: #f4f4f4; 
+                    border: 1px solid #ddd; 
+                    color: #b22222; 
+                    font-weight: bold;
+                }
+                QLineEdit:disabled {
+                    background-color: #e0e0e0; 
+                    color: #888888;           
+                    border: 1px solid #ccc;
+                }
+            """)
 
         self.btn_details = QtWidgets.QPushButton("Details")
         self.btn_details.setFixedWidth(65)
@@ -305,15 +467,17 @@ class SerialDeviceWidget(QtWidgets.QWidget):
             self.lineedit_packetid.setMinimumWidth(180)
 
         # Grid Placement
-        self.grid_layout.addWidget(self.combo_device, 1, 0)
-        self.grid_layout.addWidget(self.combo_baud, 1, 1)
-        self.grid_layout.addWidget(self.combo_parity, 1, 2)
-        self.grid_layout.addWidget(self.combo_databits, 1, 3)
-        self.grid_layout.addWidget(self.combo_stopbits, 1, 4)
+        if self.add_usedevice:
+            self.grid_layout.addWidget(self.chk_use_device, 1, 0)
+        self.grid_layout.addWidget(self.combo_device, 1, 0+1)
+        self.grid_layout.addWidget(self.combo_baud, 1, 1+1)
+        self.grid_layout.addWidget(self.combo_parity, 1, 2+1)
+        self.grid_layout.addWidget(self.combo_databits, 1, 3+1)
+        self.grid_layout.addWidget(self.combo_stopbits, 1, 4+1)
         if self.add_packetid:
-            self.grid_layout.addWidget(self.lineedit_format, 1, 5)
-            self.grid_layout.addWidget(self.lineedit_packetid, 1, 6)
-        self.grid_layout.addWidget(self.btn_details, 1, 7)
+            self.grid_layout.addWidget(self.lineedit_format, 1, 5+1)
+            self.grid_layout.addWidget(self.lineedit_packetid, 1, 6+1)
+        self.grid_layout.addWidget(self.btn_details, 1, 7+1)
         # Add stretch
         self.grid_layout.setRowStretch(2, 1)
 
@@ -340,7 +504,7 @@ class SerialDeviceWidget(QtWidgets.QWidget):
         self.combo_parity.blockSignals(True)
         self.combo_databits.blockSignals(True)
         self.combo_stopbits.blockSignals(True)
-        for b in [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 921600]:
+        for b in baud_standard:
             self.combo_baud.addItem(str(b), b)
         for n, v in [('None', serial.PARITY_NONE), ('Odd', serial.PARITY_ODD),
                      ('Even', serial.PARITY_EVEN)]:
@@ -439,246 +603,53 @@ class SerialDeviceWidget(QtWidgets.QWidget):
 
 
 
+class RedvyprConfigWidget(QtWidgets.QWidget):
+    """ Separate widget containing all Send/Receive and Thread configurations. """
+    changed = QtCore.pyqtSignal(str, object)  # Emits (attribute_name, value)
 
-class SerialDeviceWidgetRedvypr_legacy(SerialDeviceWidget):
-    """
-    Extended Serial Widget with separate Send/Receive sections.
-    Start and End Delimiters are now part of the Receive logic.
-    """
+    def __init__(self, config, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self._setup_ui()
 
-    def __init__(self, config=None, parent=None, add_packetid=False):
-        if config is None:
-            config = SerialDeviceConfigRedvypr()
-        super().__init__(config=config, parent=parent, add_packetid=add_packetid)
+    def _setup_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        self._setup_redvypr_ui()
-        self._sync_redvypr_config_to_ui()
-
-    def _setup_redvypr_ui(self):
-        # Haupt-Container für die Redvypr-Erweiterung
-        self.redvypr_group = QtWidgets.QGroupBox("Redvypr Thread Configuration")
-        self.main_redvypr_layout = QtWidgets.QVBoxLayout(self.redvypr_group)
-
-        # --- TOP: General Thread Control ---
-        gen_layout = QtWidgets.QHBoxLayout()
-        self.chk_use_device = QtWidgets.QCheckBox("Use Device")
+        # --- General Section ---
+        gen_group = QtWidgets.QGroupBox("General Thread Control")
+        gen_l = QtWidgets.QHBoxLayout(gen_group)
         self.spin_dt_poll = QtWidgets.QDoubleSpinBox()
         self.spin_dt_poll.setRange(0.001, 1.0)
         self.spin_dt_poll.setDecimals(3)
         self.spin_dt_poll.setSuffix(" s")
 
-        gen_layout.addWidget(self.chk_use_device)
-        gen_layout.addSpacing(20)
-        gen_layout.addWidget(QtWidgets.QLabel("Poll Int.:"))
-        gen_layout.addWidget(self.spin_dt_poll)
-        gen_layout.addStretch()
-        self.main_redvypr_layout.addLayout(gen_layout)
+        gen_l.addWidget(QtWidgets.QLabel("Poll Interval:"))
+        gen_l.addWidget(self.spin_dt_poll)
+        gen_l.addStretch()
+        layout.addWidget(gen_group)
 
-        # --- MIDDLE: Split Send/Receive Layout ---
+        # --- Split Section ---
         split_layout = QtWidgets.QHBoxLayout()
 
-        # --- RECEIVE SECTION ---
+        # Receive
         self.recv_group = QtWidgets.QGroupBox("Receive")
         self.recv_group.setCheckable(True)
         recv_l = QtWidgets.QGridLayout(self.recv_group)
-
         self.combo_recv_mode = QtWidgets.QComboBox()
         self.combo_recv_mode.addItems(["raw", "redvypr_datapacket"])
-
-        self.spin_maxwait = QtWidgets.QDoubleSpinBox()
-        self.spin_maxwait.setRange(-1.0, 3600.0)
-        self.spin_maxwait.setSpecialValueText("Disabled")
-        self.spin_maxwait.setSuffix(" s")
-
         self.line_datakey = QtWidgets.QLineEdit()
-        self.line_datakey.setPlaceholderText("data")
-
         self.spin_chunk = QtWidgets.QSpinBox()
         self.spin_chunk.setRange(0, 65535)
-        self.spin_chunk.setSpecialValueText("Auto")
-
-        # Delimiter gehören zur Reception Logic
-        self.line_start = QtWidgets.QLineEdit()
-        self.line_start.setPlaceholderText("e.g. $")
-        self.line_end = QtWidgets.QLineEdit()
-        self.line_end.setPlaceholderText("e.g. LF")
-
-        # Grid Layout für Receive
-        recv_l.addWidget(QtWidgets.QLabel("Mode:"), 0, 0)
-        recv_l.addWidget(self.combo_recv_mode, 0, 1)
-        recv_l.addWidget(QtWidgets.QLabel("Max Wait:"), 1, 0)
-        recv_l.addWidget(self.spin_maxwait, 1, 1)
-        recv_l.addWidget(QtWidgets.QLabel("Data Key:"), 2, 0)
-        recv_l.addWidget(self.line_datakey, 2, 1)
-        recv_l.addWidget(QtWidgets.QLabel("Chunksize:"), 3, 0)
-        recv_l.addWidget(self.spin_chunk, 3, 1)
-        recv_l.addWidget(QtWidgets.QLabel("Start Delim:"), 4, 0)
-        recv_l.addWidget(self.line_start, 4, 1)
-        recv_l.addWidget(QtWidgets.QLabel("End Delim:"), 5, 0)
-        recv_l.addWidget(self.line_end, 5, 1)
-
-        split_layout.addWidget(self.recv_group)
-
-        # --- SEND SECTION ---
-        self.send_group = QtWidgets.QGroupBox("Send")
-        self.send_group.setCheckable(True)
-        send_l = QtWidgets.QGridLayout(self.send_group)
-
-        self.combo_send_mode = QtWidgets.QComboBox()
-        self.combo_send_mode.addItems(["raw", "redvypr_datapacket"])
-
-        self.combo_serializer = QtWidgets.QComboBox()
-        self.combo_serializer.addItems(["utf-8", "redvypr_datapacket"])
-
-        send_l.addWidget(QtWidgets.QLabel("Mode:"), 0, 0)
-        send_l.addWidget(self.combo_send_mode, 0, 1)
-        send_l.addWidget(QtWidgets.QLabel("Serializer:"), 1, 0)
-        send_l.addWidget(self.combo_serializer, 1, 1)
-        # Spacer, um die Höhe an die Receive-Box anzupassen
-        send_l.setRowStretch(2, 1)
-
-        split_layout.addWidget(self.send_group)
-        self.main_redvypr_layout.addLayout(split_layout)
-
-        # Ins Erweiterungs-Layout der Basisklasse einfügen
-        self.extension_layout.addWidget(self.redvypr_group)
-
-        # --- SIGNAL CONNECTIONS ---
-        self.chk_use_device.toggled.connect(
-            lambda v: self._update_config("use_device", v))
-        self.spin_dt_poll.valueChanged.connect(
-            lambda v: self._update_config("dt_poll", v))
-
-        self.recv_group.toggled.connect(
-            lambda v: self._update_config("receive_data", v))
-        self.send_group.toggled.connect(lambda v: self._update_config("send_data", v))
-
-        # Receive Fields (inkl. Delimiter)
-        self.combo_recv_mode.currentTextChanged.connect(
-            lambda t: self._update_config("recv_mode", t))
-        self.spin_maxwait.valueChanged.connect(
-            lambda v: self._update_config("dt_maxwait", v))
-        self.line_datakey.textChanged.connect(
-            lambda t: self._update_config("datakey_recv_raw", t))
-        self.spin_chunk.valueChanged.connect(
-            lambda v: self._update_config("chunksize", v))
-        self.line_start.textChanged.connect(
-            lambda t: self._update_config("packetstart", t))
-        self.line_end.textChanged.connect(
-            lambda t: self._update_config("packetdelimiter", t))
-
-        # Send Fields
-        self.combo_send_mode.currentTextChanged.connect(
-            lambda t: self._update_config("send_mode", t))
-        self.combo_serializer.currentTextChanged.connect(
-            lambda t: self._update_config("send_serializer", t))
-
-    def _sync_redvypr_config_to_ui(self):
-        if not self.config: return
-        c = self.config
-
-        # Signale blockieren um rekursive 'config_changed' Prints zu vermeiden
-        self.redvypr_group.blockSignals(True)
-
-        self.chk_use_device.setChecked(c.use_device)
-        self.spin_dt_poll.setValue(c.dt_poll)
-
-        # Gruppen-Status
-        self.recv_group.setChecked(c.receive_data)
-        self.send_group.setChecked(c.send_data)
-
-        # Receive Sync
-        self.combo_recv_mode.setCurrentText(c.recv_mode)
-        self.spin_maxwait.setValue(c.dt_maxwait)
-        self.line_datakey.setText(c.datakey_recv_raw)
-        self.spin_chunk.setValue(c.chunksize)
-        self.line_start.setText(c.packetstart)
-        self.line_end.setText(c.packetdelimiter)
-
-        # Send Sync
-        self.combo_send_mode.setCurrentText(c.send_mode)
-        self.combo_serializer.setCurrentText(c.send_serializer)
-
-        self.redvypr_group.blockSignals(False)
-
-    def _update_config(self, attr, value):
-        """Schreibt Werte in die Config und emittiert Signal."""
-        if self.config and hasattr(self.config, attr):
-            setattr(self.config, attr, value)
-            self.config_changed.emit(True)
-
-
-class SerialDeviceWidgetRedvypr(SerialDeviceWidget):
-    """
-    Extended Serial Widget with separate Send/Receive sections.
-    Includes editable ComboBoxes for Delimiters and Address field for Sending.
-    """
-
-    def __init__(self, config=None, parent=None, add_packetid=False):
-        if config is None:
-            config = SerialDeviceConfigRedvypr()
-        super().__init__(config=config, parent=parent, add_packetid=add_packetid)
-
-        self._setup_redvypr_ui()
-        self._sync_redvypr_config_to_ui()
-
-    def _setup_redvypr_ui(self):
-        # Haupt-Container für die Redvypr-Erweiterung
-        self.redvypr_group = QtWidgets.QGroupBox("Redvypr Thread Configuration")
-        self.main_redvypr_layout = QtWidgets.QVBoxLayout(self.redvypr_group)
-
-        # --- TOP: General Thread Control ---
-        gen_layout = QtWidgets.QHBoxLayout()
-        self.chk_use_device = QtWidgets.QCheckBox("Use Device")
-        self.spin_dt_poll = QtWidgets.QDoubleSpinBox()
-        self.spin_dt_poll.setRange(0.001, 1.0)
-        self.spin_dt_poll.setDecimals(3)
-        self.spin_dt_poll.setSuffix(" s")
-
-        gen_layout.addWidget(self.chk_use_device)
-        gen_layout.addSpacing(20)
-        gen_layout.addWidget(QtWidgets.QLabel("Poll Int.:"))
-        gen_layout.addWidget(self.spin_dt_poll)
-        gen_layout.addStretch()
-        self.main_redvypr_layout.addLayout(gen_layout)
-
-        # --- MIDDLE: Split Send/Receive Layout ---
-        split_layout = QtWidgets.QHBoxLayout()
-
-        # --- RECEIVE SECTION ---
-        self.recv_group = QtWidgets.QGroupBox("Receive")
-        self.recv_group.setCheckable(True)
-        recv_l = QtWidgets.QGridLayout(self.recv_group)
-
-        self.combo_recv_mode = QtWidgets.QComboBox()
-        self.combo_recv_mode.addItems(["raw", "redvypr_datapacket"])
-
-        self.spin_maxwait = QtWidgets.QDoubleSpinBox()
-        self.spin_maxwait.setRange(-1.0, 3600.0)
-        self.spin_maxwait.setSpecialValueText("Disabled")
-        self.spin_maxwait.setSuffix(" s")
-
-        self.line_datakey = QtWidgets.QLineEdit()
-        self.line_datakey.setPlaceholderText("data")
-
-        self.spin_chunk = QtWidgets.QSpinBox()
-        self.spin_chunk.setRange(0, 65535)
-        self.spin_chunk.setSpecialValueText("Auto")
-
-        # Delimiter als EDITIERBARE ComboBoxen
         self.combo_start = QtWidgets.QComboBox()
         self.combo_start.setEditable(True)
         self.combo_start.addItems(["<None>", "$"])
-
         self.combo_end = QtWidgets.QComboBox()
         self.combo_end.setEditable(True)
         self.combo_end.addItems(["None", "CR/LF", "LF"])
 
-        # Grid Layout für Receive
         recv_l.addWidget(QtWidgets.QLabel("Mode:"), 0, 0)
         recv_l.addWidget(self.combo_recv_mode, 0, 1)
-        recv_l.addWidget(QtWidgets.QLabel("Max Wait:"), 1, 0)
-        recv_l.addWidget(self.spin_maxwait, 1, 1)
         recv_l.addWidget(QtWidgets.QLabel("Data Key:"), 2, 0)
         recv_l.addWidget(self.line_datakey, 2, 1)
         recv_l.addWidget(QtWidgets.QLabel("Chunksize:"), 3, 0)
@@ -687,21 +658,16 @@ class SerialDeviceWidgetRedvypr(SerialDeviceWidget):
         recv_l.addWidget(self.combo_start, 4, 1)
         recv_l.addWidget(QtWidgets.QLabel("End Delim:"), 5, 0)
         recv_l.addWidget(self.combo_end, 5, 1)
-
         split_layout.addWidget(self.recv_group)
 
-        # --- SEND SECTION ---
+        # Send
         self.send_group = QtWidgets.QGroupBox("Send")
         self.send_group.setCheckable(True)
         send_l = QtWidgets.QGridLayout(self.send_group)
-
         self.combo_send_mode = QtWidgets.QComboBox()
         self.combo_send_mode.addItems(["raw", "redvypr_datapacket"])
-
         self.combo_serializer = QtWidgets.QComboBox()
         self.combo_serializer.addItems(["utf-8", "redvypr_datapacket"])
-
-        # Neues Adress-Feld
         self.line_send_address = QtWidgets.QLineEdit()
         self.line_send_address.setPlaceholderText("data@")
 
@@ -711,83 +677,115 @@ class SerialDeviceWidgetRedvypr(SerialDeviceWidget):
         send_l.addWidget(self.combo_serializer, 1, 1)
         send_l.addWidget(QtWidgets.QLabel("Send Address:"), 2, 0)
         send_l.addWidget(self.line_send_address, 2, 1)
-
-        # Spacer
         send_l.setRowStretch(3, 1)
-
         split_layout.addWidget(self.send_group)
-        self.main_redvypr_layout.addLayout(split_layout)
 
-        # Ins Erweiterungs-Layout der Basisklasse einfügen
-        self.extension_layout.addWidget(self.redvypr_group)
+        layout.addLayout(split_layout)
+        self._connect_internal_signals()
 
-        # --- SIGNAL CONNECTIONS ---
-        self.chk_use_device.toggled.connect(
-            lambda v: self._update_config("use_device", v))
+    def _connect_internal_signals(self):
         self.spin_dt_poll.valueChanged.connect(
-            lambda v: self._update_config("dt_poll", v))
-
-        self.recv_group.toggled.connect(
-            lambda v: self._update_config("receive_data", v))
-        self.send_group.toggled.connect(lambda v: self._update_config("send_data", v))
-
-        # Receive Fields
+            lambda v: self.changed.emit("dt_poll", v))
+        self.recv_group.toggled.connect(lambda v: self.changed.emit("receive_data", v))
+        self.send_group.toggled.connect(lambda v: self.changed.emit("send_data", v))
         self.combo_recv_mode.currentTextChanged.connect(
-            lambda t: self._update_config("recv_mode", t))
-        self.spin_maxwait.valueChanged.connect(
-            lambda v: self._update_config("dt_maxwait", v))
+            lambda t: self.changed.emit("recv_mode", t))
         self.line_datakey.textChanged.connect(
-            lambda t: self._update_config("datakey_recv_raw", t))
+            lambda t: self.changed.emit("datakey_recv_raw", t))
         self.spin_chunk.valueChanged.connect(
-            lambda v: self._update_config("chunksize", v))
-
-        # Delimiter Signale (editierbare Combobox nutzt editTextChanged für sofortige Updates)
+            lambda v: self.changed.emit("chunksize", v))
         self.combo_start.editTextChanged.connect(
-            lambda t: self._update_config("packetstart", t))
+            lambda t: self.changed.emit("packetstart", t))
         self.combo_end.editTextChanged.connect(
-            lambda t: self._update_config("packetdelimiter", t))
-
-        # Send Fields
+            lambda t: self.changed.emit("packetdelimiter", t))
         self.combo_send_mode.currentTextChanged.connect(
-            lambda t: self._update_config("send_mode", t))
+            lambda t: self.changed.emit("send_mode", t))
         self.combo_serializer.currentTextChanged.connect(
-            lambda t: self._update_config("send_serializer", t))
+            lambda t: self.changed.emit("send_serializer", t))
         self.line_send_address.textChanged.connect(
-            lambda t: self._update_config("send_data_address", t))
+            lambda t: self.changed.emit("send_data_address", t))
 
-    def _sync_redvypr_config_to_ui(self):
-        if not self.config: return
-        c = self.config
-
-        self.redvypr_group.blockSignals(True)
-
-        self.chk_use_device.setChecked(c.use_device)
+    def sync_to_ui(self, c):
+        self.blockSignals(True)
         self.spin_dt_poll.setValue(c.dt_poll)
-
         self.recv_group.setChecked(c.receive_data)
         self.send_group.setChecked(c.send_data)
-
-        # Receive Sync
         self.combo_recv_mode.setCurrentText(c.recv_mode)
-        self.spin_maxwait.setValue(c.dt_maxwait)
         self.line_datakey.setText(c.datakey_recv_raw)
         self.spin_chunk.setValue(c.chunksize)
-
-        # Delimiter Sync
         self.combo_start.setCurrentText(c.packetstart if c.packetstart else "<None>")
         self.combo_end.setCurrentText(
             c.packetdelimiter if c.packetdelimiter else "None")
-
-        # Send Sync
         self.combo_send_mode.setCurrentText(c.send_mode)
         self.combo_serializer.setCurrentText(c.send_serializer)
         self.line_send_address.setText(str(c.send_data_address))
+        self.blockSignals(False)
 
-        self.redvypr_group.blockSignals(False)
+
+class SerialDeviceWidgetRedvypr(SerialDeviceWidget):
+    def __init__(self, config: SerialDeviceConfigRedvypr | None = None,
+                 parent=None,
+                 add_packetid=True,
+                 fix_serial_device=True,
+                 add_usedevice=True,
+                 show_sendrecv_config=False):
+        if config is None:
+            config = SerialDeviceConfigRedvypr()
+
+        self._show_inline = show_sendrecv_config
+        super().__init__(config=config,
+                         parent=parent,
+                         add_packetid=add_packetid,
+                         add_usedevice=add_usedevice,
+                         fix_serial_device=fix_serial_device)
+        # Check if the serial device shall be kept
+        if fix_serial_device:
+            print("Keeping serial device")
+
+
+        # Initialize the config widget
+        self.redvypr_cfg_widget = RedvyprConfigWidget(self.config)
+        self.redvypr_cfg_widget.changed.connect(self._update_config)
+
+        if self._show_inline:
+            # Traditional: Add to the extension area (below details)
+            self.extension_layout.addWidget(self.redvypr_cfg_widget)
+        else:
+            # Slim: Add button to header, keep widget hidden for Dialog
+            self.btn_redvypr_config = QtWidgets.QPushButton("Send/Recv config")
+            self.btn_redvypr_config.clicked.connect(self._show_config_dialog)
+            self.inputwidgets.append(self.btn_redvypr_config)
+            self.grid_layout.addWidget(self.btn_redvypr_config, 1, 8)
+            self.redvypr_cfg_widget.hide()
+
+        self._sync_redvypr_config_to_ui()
+
+    def _show_config_dialog(self):
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(f"Redvypr serial configuration - {self.config.comport_device_short}")
+        dialog.setMinimumWidth(700)
+
+        dlg_layout = QtWidgets.QVBoxLayout(dialog)
+        dlg_layout.addWidget(self.redvypr_cfg_widget)
+        self.redvypr_cfg_widget.show()
+
+        btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok)
+        btns.accepted.connect(dialog.accept)
+        dlg_layout.addWidget(btns)
+
+        dialog.exec_()
+
+        # Reparent back after closing
+        self.redvypr_cfg_widget.hide()
+        self.redvypr_cfg_widget.setParent(self)
+
+    def _sync_redvypr_config_to_ui(self):
+        if self.config:
+            self.redvypr_cfg_widget.sync_to_ui(self.config)
 
     def _update_config(self, attr, value):
         if self.config and hasattr(self.config, attr):
-            # Spezialbehandlung für Address-Objekt, falls nötig (abhängig von Pydantic-Parsing)
+            # Special parsing for Address if needed
             if attr == "send_data_address" and not isinstance(value,
                                                               redvypr.RedvyprAddress):
                 try:
@@ -799,12 +797,169 @@ class SerialDeviceWidgetRedvypr(SerialDeviceWidget):
             self.config_changed.emit(True)
 
 
+class HistoryLineEdit(QtWidgets.QLineEdit):
+    def __init__(self, parent=None, history=None):
+        super().__init__(parent)
+        if history is None:
+            self.history = []
+        else:
+            self.history = history
+        self.history_index = -1
+        self.temp_text = ""
+
+        # Setup Completer
+        self.completer_model = QtCore.QStringListModel()
+        self.completer = QtWidgets.QCompleter(self.completer_model, self)
+        # CaseInsensitive: "hel" findet "HELP"
+        self.completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+        # Popup-Modus (wie eine Dropdown-Liste beim Tippen)
+        self.completer.setCompletionMode(
+            QtWidgets.QCompleter.CompletionMode.PopupCompletion)
+        self.setCompleter(self.completer)
+
+    def keyPressEvent(self, event):
+        # Wenn das Completer-Popup offen ist, lassen wir den Completer
+        # die Pfeiltasten steuern, damit man dort auswählen kann.
+        if self.completer and self.completer.popup() and self.completer.popup().isVisible():
+            if event.key() in (QtCore.Qt.Key.Key_Enter, QtCore.Qt.Key.Key_Return):
+                # Bei Enter im Popup: Auswahl übernehmen
+                super().keyPressEvent(event)
+                return
+
+        # Deine bisherige Pfeiltasten-Logik für die Historie
+        if event.key() == QtCore.Qt.Key.Key_Up:
+            if self.history:
+                if self.history_index == -1:
+                    self.temp_text = self.text()
+                if self.history_index < len(self.history) - 1:
+                    self.history_index += 1
+                    self.setText(self.history[-(self.history_index + 1)])
+            return
+
+        elif event.key() == QtCore.Qt.Key.Key_Down:
+            if self.history_index > -1:
+                self.history_index -= 1
+                if self.history_index == -1:
+                    self.setText(self.temp_text)
+                else:
+                    self.setText(self.history[-(self.history_index + 1)])
+            return
+
+        super().keyPressEvent(event)
+
+    def add_to_history(self, text):
+        """Fügt Text zur Historie hinzu und aktualisiert den Completer."""
+        if text and (not self.history or text != self.history[-1]):
+            self.history.append(text)
+
+            # Update Completer Modell (einmalige Einträge)
+            unique_commands = list(set(self.history))
+            self.completer_model.setStringList(unique_commands)
+
+        self.history_index = -1
+
+class SerialDataShowSendWidget(QtWidgets.QWidget):
+    """
+    Widget shows the data received by a serial port
+    """
+    def __init__(self, serial_config, device = None):
+        super().__init__()
+        self.device = device
+        self.serial_config = serial_config
+        self.comport_device = self.serial_config.comport_device_short
+        self.layout = QtWidgets.QVBoxLayout(self)
+        hlayout = QtWidgets.QHBoxLayout()
+
+        self.bytes_read = QtWidgets.QLabel('Bytes read: ')
+        self.lines_read = QtWidgets.QLabel('Lines read: ')
+        hlayout.addWidget(self.bytes_read)
+        hlayout.addWidget(self.lines_read)
+
+        self.datatext = QtWidgets.QPlainTextEdit()
+        self.datatext.setReadOnly(True)
+        self.datatext.setMaximumBlockCount(10000)
+        self.datatext.setWindowIcon(QtGui.QIcon(_icon_file))
+        self.datatext.setWindowTitle(self.comport_device)
+
+        self.layout.addLayout(hlayout)
+        self.layout.addWidget(self.datatext)
+        layout = QtWidgets.QHBoxLayout()
+        self.layout.addLayout(layout)
+        self.clearbtn = QtWidgets.QPushButton('Clear')
+        self.clearbtn.clicked.connect(self.cleartext)
+        self.scrollchk = QtWidgets.QCheckBox('Scroll to end')
+        self.scrollchk.setChecked(True)
+        self.updatechk = QtWidgets.QCheckBox('Update')
+        self.updatechk.setChecked(True)
+
+        #self.text.setMaximumBlockCount(self.device.custom_config.bufsize)
+        layout.addWidget(self.scrollchk)
+        layout.addWidget(self.updatechk)
+        layout.addWidget(self.clearbtn)
+
+        # Add send widgets
+        if True:
+            layoutsend = QtWidgets.QHBoxLayout()
+            #self.sendedit = QtWidgets.QLineEdit()
+            self.sendedit = HistoryLineEdit(history=self.serial_config.command_history)
+            self.senddelimiter = QtWidgets.QComboBox()
+            self.senddelimiter.addItem("None")
+            self.senddelimiter.addItem("LF")
+            self.senddelimiter.addItem("CR/LF")
+            self.senddelimiter.addItem("CR")
+            self.sendbtn = QtWidgets.QPushButton('Send')
+            self.sendbtn.clicked.connect(self.send_clicked)
+            layoutsend.addWidget(self.sendedit)
+            layoutsend.addWidget(self.senddelimiter)
+            layoutsend.addWidget(self.sendbtn)
+            self.layout.addLayout(layoutsend)
+
+    def send_clicked(self):
+        datastr = str(self.sendedit.text())
+        self.sendedit.add_to_history(datastr)
+        data_delimiter = self.senddelimiter.currentText()
+        if "CR" in data_delimiter:
+            datastr += "\r"
+        if "LF" in data_delimiter:
+            datastr += "\n"
+
+        data = datastr.encode('utf-8')
+        print("Sending data ...",data)
+        data_dict = {'comport':self.comport_device,'data_send':data}
+        self.device.thread_command('send',data_dict)
+
+    def cleartext(self):
+        self.datatext.clear()
+
+    def add_data(self, data_list):
+        datakey = self.serial_config.datakey_recv_raw
+        for data in data_list:
+            if "bytes_read" in data.keys() and "sentences_read" in data.keys():
+                bstr = "Bytes read: {:d}".format(data['bytes_read'])
+                lstr = "Sentences read: {:d}".format(data['sentences_read'])
+                self.bytes_read.setText(bstr)
+                self.lines_read.setText(lstr)
+
+            if (self.updatechk.isChecked()):
+                if datakey in data.keys():
+                    data_new = str(data[datakey])
+                    prev_cursor = self.datatext.textCursor()
+                    pos = self.datatext.verticalScrollBar().value()
+                    self.datatext.moveCursor(QtGui.QTextCursor.End)
+                    self.datatext.insertPlainText(str(data_new) + '\n')
+                    if (self.scrollchk.isChecked()):
+                        self.datatext.verticalScrollBar().setValue(
+                            self.datatext.verticalScrollBar().maximum())
+                    else:
+                        self.datatext.verticalScrollBar().setValue(pos)
+
+
 class initDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout = QtWidgets.QVBoxLayout(self)
         self.device = device
-        self.serialconfigwidget = SerialDeviceWidgetRedvypr(config=self.device.custom_config.serial_device)
+        self.serialconfigwidget = SerialDeviceWidgetRedvypr(config=self.device.custom_config)
         layout.addWidget(self.serialconfigwidget)
         layout.addStretch()
         self._button_serial_openclose = QtWidgets.QPushButton('Open')
@@ -849,32 +1004,12 @@ class initDeviceWidget(QtWidgets.QWidget):
 class displayDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
-        layout        = QtWidgets.QVBoxLayout(self)
-        hlayout        = QtWidgets.QHBoxLayout()
+        layout = QtWidgets.QVBoxLayout(self)
         self.device = device
-        self.bytes_read = QtWidgets.QLabel('Bytes read: ')
-        self.lines_read = QtWidgets.QLabel('Lines read: ')
-        self.text     = QtWidgets.QPlainTextEdit(self)
-        self.text.setReadOnly(True)
-        self.text.setMaximumBlockCount(10000)
-        hlayout.addWidget(self.bytes_read)
-        hlayout.addWidget(self.lines_read)
-        layout.addLayout(hlayout)
-        layout.addWidget(self.text)
+        serial_config = self.device.custom_config
+        self.serial_data_show = SerialDataShowSendWidget(serial_config=serial_config, device=self.device)
+        layout.addWidget(self.serial_data_show)
+        self.device.new_data.connect(self.serial_data_show.add_data)
 
-    def update_data(self,data):
-        funcname = __name__ + '.update():'
-        #print('data',data)
-        try:
-            bstr = "Bytes read: {:d}".format(data['bytes_read'])
-            lstr = "Sentences read: {:d}".format(data['sentences_read'])
-            self.bytes_read.setText(bstr)
-            self.lines_read.setText(lstr)
-        except Exception as e:
-            logger.exception(e)
-        try:
-            self.text.insertPlainText(str(data['data']))
-            self.text.insertPlainText('\n')
-        except Exception as e:
-            logger.debug(funcname,exc_info=True)
+
         

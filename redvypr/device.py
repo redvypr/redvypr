@@ -1128,7 +1128,7 @@ class RedvyprDevice(QtCore.QObject):
         for dev in reversed(devs):
             for subaddr in dev.subscribed_addresses:
                 daddr = RedvyprAddress(subaddr)
-                if (self.address in daddr) and (dev is not self):
+                if daddr.matches(self.address) and (dev is not self):
                     devs_publishing_to.append(dev)
                     break
 
@@ -1168,7 +1168,7 @@ class RedvyprDevice(QtCore.QObject):
         devs_subscribed = []
         for subaddr in self.subscribed_addresses:
             for dev in reversed(devs):
-                if (subaddr in dev.address) and (dev is not self):
+                if (subaddr.matches(dev.address)) and (dev is not self):
                     devs_subscribed.append(dev)
                     devs.remove(dev)
 

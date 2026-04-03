@@ -77,7 +77,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
 
 class Device(RedvyprDevice):
     """
-    heatflow_serial device
+    calibration device
     """
 
     def __init__(self, **kwargs):
