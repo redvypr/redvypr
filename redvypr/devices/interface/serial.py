@@ -118,12 +118,13 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                         pass
                     return
                 elif command == 'send':  # Something to send
-                    data_com = comdata['command_data']['data']
-                    comport = data_com['comport']
-                    data_send = data_com['data_send']
-                    print("Sending",data_send)
+                    #data_com = comdata['command_data']['data']
+                    #comport = data_com['comport']
+                    #data_send = data_com['data_send']
+                    print("Sending",data)
                     if comport in serial_threads_datainqueues.keys():
-                        serial_threads_datainqueues[comport].put(['send',data_send])
+                        #serial_threads_datainqueues[comport].put(['send',data_send])
+                        serial_threads_datainqueues[comport].put(data)
                     else:
                         logger.warning("comport {} not available ({})".format(comport,serial_threads_datainqueues.keys()))
 

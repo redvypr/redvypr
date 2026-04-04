@@ -12,11 +12,19 @@ import pydantic
 import typing
 import threading
 import redvypr
+import yaml
 import redvypr.files as redvypr_files
 from redvypr.data_packets import check_for_command
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.device import RedvyprDevice
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
+
+
+yaml.add_constructor(
+    u"tag:yaml.org,2002:python/name:builtins.NoneType",
+    lambda loader, suffix: type(None),
+    Loader=yaml.CUnsafeLoader,
+)
 
 
 _logo_file = redvypr_files.logo_file
@@ -148,10 +156,9 @@ def read_serial(config: SerialDeviceConfigRedvypr, queue_data_read, queue_data_s
         current_time = time.time()
         data = ser.read(nread)
         queue_data_read.put([data,current_time,ser.name,comport_device])
-
         try:
             data_send = queue_data_send.get_nowait()
-            print(f"Sending data to serial device {ser.name}")
+            #print(f"Sending data to serial device {ser.name}")
             ser.write(data_send)
         except:
             pass
@@ -178,6 +185,10 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     bytesize = config['bytesize']
     dt_poll = config['dt_poll']
 
+    flag_send_data = config['send_data']
+    raddress_send = RedvyprAddress(config['send_data_address'])
+    send_mode = config['send_mode']
+
     print('Starting',config)
     
     newpacket = config['packetdelimiter']
@@ -196,6 +207,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     dt_update = 1 # Update interval in seconds
     bytes_read = 0
     sentences_read = 0
+    bytes_sent = 0
+    sentences_sent = 0
     bytes_read_old = 0 # To calculate the amount of bytes read per second
 
     queuesize = 10000
@@ -219,7 +232,9 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             if data == 'stop':
                 command = 'stop'
             else:
-                command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
+                #command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
+                [command, comdata] = check_for_command(data, thread_uuid=device_info[
+                    'thread_uuid'], add_data=True)
             # logger.debug('Got a command: {:s}'.format(str(data)))
             if (command is not None):
                 if command == 'stop':
@@ -231,6 +246,32 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                     except:
                         pass
                     return
+                elif command == 'send':  # Something to send
+                    data_com = comdata['command_data']['data']
+                    comport = data_com['comport']
+                    data_send = data_com['data_send']
+                    print("Got a send command, sending", data_send)
+                    bytes_sent += len(data_send)
+                    sentences_sent += 1
+                    queue_data_send_thread.put(data_send)
+            elif flag_send_data and raddress_send.matches(data):
+                #print("Sending datapacket")
+                #print("data",data)
+                if send_mode == 'raw':
+                    datasend_raw = raddress_send(data)
+                    datasend_raw = str(datasend_raw).encode('utf-8')
+                    #print("Sending datakey", datasend_raw)
+                    queue_data_send_thread.put(datasend_raw)
+                    bytes_sent += len(datasend_raw)
+                    sentences_sent += 1
+                elif send_mode == "redvypr_datapacket": # Serialize whole packet
+                    datasend_raw = yaml.dump(data, explicit_end=True, explicit_start=True)
+                    datasend_raw = str(datasend_raw).encode('utf-8')
+                    #print("Sending packet",datasend_raw)
+                    queue_data_send_thread.put(datasend_raw)
+                    bytes_sent += len(datasend_raw)
+                    sentences_sent += 1
+
 
         time.sleep(dt_poll)
         rawdata_tmp = b''
@@ -262,7 +303,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                     FLAG_CHAR = newpacket in rawdata_all
                     if(FLAG_CHAR):
                         rawdata_split = rawdata_all.split(newpacket)
-                        print('rawdata_all', rawdata_all)
+                        #print('rawdata_all', rawdata_all)
                         if(len(rawdata_split)>1): # If len==0 then character was not found
                             for ind in range(len(rawdata_split)-1): # The last packet does not have the split character
                                 sentences_read += 1
@@ -282,6 +323,16 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             dbytes = bytes_read - bytes_read_old
             bytes_read_old = bytes_read
             bps = dbytes/dt_update# bytes per second
+            # Send status message
+            data = {'t': time.time()}
+            data['status'] = comport_device
+            data['comport'] = comport_device
+            data['bytes_read'] = bytes_read
+            data['sentences_read'] = sentences_read
+            data['bytes_sent'] = bytes_sent
+            data['sentences_sent'] = sentences_sent
+            data['bps'] = bps
+            dataqueue.put(data)
             #print('ndata',len(rawdata_all),'rawdata',rawdata_all,type(rawdata_all))
             #print('bps',bps)
             t_update = time.time()
@@ -866,7 +917,7 @@ class SerialDataShowSendWidget(QtWidgets.QWidget):
         super().__init__()
         self.device = device
         self.serial_config = serial_config
-        self.comport_device = self.serial_config.comport_device_short
+        self.comport_device = self.serial_config.comport_device
         self.layout = QtWidgets.QVBoxLayout(self)
         hlayout = QtWidgets.QHBoxLayout()
 
@@ -874,6 +925,10 @@ class SerialDataShowSendWidget(QtWidgets.QWidget):
         self.lines_read = QtWidgets.QLabel('Lines read: ')
         hlayout.addWidget(self.bytes_read)
         hlayout.addWidget(self.lines_read)
+        self.bytes_sent = QtWidgets.QLabel('Bytes sent: ')
+        self.lines_sent = QtWidgets.QLabel('Lines sent: ')
+        hlayout.addWidget(self.bytes_sent)
+        hlayout.addWidget(self.lines_sent)
 
         self.datatext = QtWidgets.QPlainTextEdit()
         self.datatext.setReadOnly(True)
@@ -940,6 +995,12 @@ class SerialDataShowSendWidget(QtWidgets.QWidget):
                 self.bytes_read.setText(bstr)
                 self.lines_read.setText(lstr)
 
+            if "bytes_sent" in data.keys() and "sentences_sent" in data.keys():
+                bstr = "Bytes sent: {:d}".format(data['bytes_sent'])
+                lstr = "Sentences sent: {:d}".format(data['sentences_sent'])
+                self.bytes_sent.setText(bstr)
+                self.lines_sent.setText(lstr)
+
             if (self.updatechk.isChecked()):
                 if datakey in data.keys():
                     data_new = str(data[datakey])
@@ -959,13 +1020,14 @@ class initDeviceWidget(QtWidgets.QWidget):
         super(QtWidgets.QWidget, self).__init__()
         layout = QtWidgets.QVBoxLayout(self)
         self.device = device
-        self.serialconfigwidget = SerialDeviceWidgetRedvypr(config=self.device.custom_config)
+        self.serialconfigwidget = SerialDeviceWidgetRedvypr(config=self.device.custom_config,
+                                                            add_usedevice=False,
+                                                            fix_serial_device=False)
         layout.addWidget(self.serialconfigwidget)
         layout.addStretch()
         self._button_serial_openclose = QtWidgets.QPushButton('Open')
         self._button_serial_openclose.clicked.connect(self.start_clicked)
         layout.addWidget(self._button_serial_openclose)
-
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update_buttons)
         self.statustimer.start(500)
