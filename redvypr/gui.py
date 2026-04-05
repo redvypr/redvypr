@@ -586,11 +586,6 @@ class redvypr_deviceStatisticWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.infowidget,0,0)
 
         self.__update_info()
-        # Todo, let the user choose for an update
-        #self.updatetimer = QtCore.QTimer()
-        #self.updatetimer.timeout.connect(self.__update_info)
-        #self.updatetimer.start(dt_update)
-
     def __update_info(self):
         funcname = __name__ + '.__update_info():'
         prev_cursor = self.infowidget.textCursor()
@@ -690,11 +685,11 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         try:
             metadata_raw = metadata_device[deviceAddress.address_str]
         except:
-            logger.info('Could not load metadata', exc_info=True)
+            logger.info(f'{funcname}:Could not load metadata', exc_info=True)
             metadata_raw = {}
 
         metadata = RedvyprDeviceMetadata(**metadata_raw)
-        print('Metadata',metadata)
+        logger.debug(f"{funcname}:{metadata=}")
         self.__metadata_edit = metadata
         self.__metadata_address = deviceAddress
         self.metadata_config = pydanticConfigWidget(metadata, configname=deviceAddress.to_address_string())
@@ -704,8 +699,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
     def metadata_config_apply(self):
         funcname = __name__ + '.metadata_config_apply():'
         logger.debug(funcname)
-
-        print('Metadata new',self.__metadata_edit)
+        logger.debug(f"{funcname}:Metadata new:{self.__metadata_edit}")
         metadata = self.__metadata_edit.model_dump()
         self.device.set_metadata(self.__metadata_address, metadata)
 
