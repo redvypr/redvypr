@@ -368,7 +368,6 @@ def get_keys_from_data(data):
     return keys
 
 
-#def get_metadata(statistics, address=None, mode='expanded'):
 def get_metadata(statistics,
     address: None | str | RedvyprAddress = None,
     mode: typing.Literal["merge", "expanded"] = "expanded"):

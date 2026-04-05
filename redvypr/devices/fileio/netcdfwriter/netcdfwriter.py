@@ -51,6 +51,40 @@ class DeviceCustomConfig(pydantic.BaseModel):
     filedateformat:str= pydantic.Field(default='%Y-%m-%d_%H%M%S',description='Dateformat used in the filename, must be understood by datetime.strftime')
     filecountformat:str= pydantic.Field(default='04',description='Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}')
 
+
+def get_nc_structure(nc_object):
+    """
+    Recursively scans a NetCDF object to capture its hierarchy,
+    group attributes, variable dimensions, and variable attributes.
+    """
+    status = {
+        'attributes': {},  # Group-level (or root-level) attributes
+        'variables': {},
+        'groups': {}
+    }
+
+    # 1. Capture attributes of the current group/root-level
+    status['attributes'] = {attr: nc_object.getncattr(attr) for attr in
+                            nc_object.ncattrs()}
+
+    # 2. Process all variables in the current group level
+    for var_name, var_obj in nc_object.variables.items():
+        var_attributes = {attr: var_obj.getncattr(attr) for attr in var_obj.ncattrs()}
+
+        status['variables'][var_name] = {
+            'shape': var_obj.shape,
+            'length': len(var_obj) if 'time' in var_obj.dimensions else 0,
+            'dimensions': var_obj.dimensions,
+            'attributes': var_attributes
+        }
+
+    # 3. Recursively process all subgroups
+    for group_name, group_obj in nc_object.groups.items():
+        status['groups'][group_name] = get_nc_structure(group_obj)
+
+    return status
+
+
 def create_logfile(config,count=0):
     funcname = __name__ + '.create_logfile():'
     logger.debug(funcname)
@@ -84,6 +118,7 @@ def create_logfile(config,count=0):
 
     # Create a workbook and add a worksheet.
     nc = netCDF4.Dataset(filename, mode='w',format='NETCDF4')
+    print("Done ...")
     return [nc,filename]
 
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
@@ -153,7 +188,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     packets_written_total = 0
     [nc,filename] = create_logfile(config,count)
     logger_start.debug('Adding main group {}'.format(device_info))
-    hostname = device_info['hostinfo']['hostname']
+    hostname = device_info['hostinfo']['host']
     redvypr_version_str = 'redvypr {}'.format(redvypr.version)
     nc.redvypr_version = redvypr_version_str
     data_stat = {'_deviceinfo': {}}
@@ -219,7 +254,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 else:
                     #print('Packet data', data)
                     #print('Packet address hostname',packet_address.hostname)
-                    hostname = packet_address.hostname + '__UUID__' + packet_address.uuid
+                    hostname = packet_address.host + '__UUID__' + packet_address.uuid
                     #print('Hostname',hostname)
                     #print('Remote')
                     #print('Remote')
@@ -263,8 +298,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         if deviceinfo_all is not None and not (var in vars_updated):
                             raddress_tmp = redvypr_address.RedvyprAddress(data)
                             #raddress_tmp_str = raddress_tmp.get_str('/h/d/i')
-                            metadata_tmp = packet_statistics.get_metadata_deviceinfo_all(deviceinfo_all, raddress_tmp)
-                            # print('Metadata tmp', raddress_tmp, metadata_tmp)
+                            metadata_tmp = packet_statistics.get_metadata(deviceinfo_all, raddress_tmp, mode="merge")
+                            #print('Metadata tmp', raddress_tmp, metadata_tmp)
                             # device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
                             if len(metadata_tmp.keys()) > 0:  # Check if something was found
                                 for metakey in metadata_tmp.keys():
@@ -347,16 +382,17 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         try:
                             if deviceinfo_all is not None and not(var in vars_updated):
                                 raddress_tmp = redvypr_address.RedvyprAddress(data, datakey=k)
-                                metadata_tmp = packet_statistics.get_metadata_deviceinfo_all(deviceinfo_all, raddress_tmp)
+                                metadata_tmp = packet_statistics.get_metadata(deviceinfo_all, raddress_tmp, mode="merge")
                                 # print('Metadata tmp', raddress_tmp, metadata_tmp)
                                 # device_worksheets[packet_address_str].write(lineindex, colindex, datawrite)
                                 if len(metadata_tmp.keys()) > 0:  # Check if something was found
                                     for metakey in metadata_tmp.keys():
+                                        logger_start.debug(f"Setting attribute {metakey} to {metadata_tmp[metakey]}")
                                         setattr(var,metakey,metadata_tmp[metakey])
 
                                 vars_updated.append(var)
                         except:
-                            logger_start.debug('Could not set metadata',exc_info=True)
+                            logger_start.info('Could not set metadata',exc_info=True)
 
 
                 # Send statistics
@@ -368,7 +404,16 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     data_stat['_deviceinfo']['bytes_written'] = bytes_written
                     data_stat['_deviceinfo']['packets_written'] = packets_written
                     data_stat['_deviceinfo']['file_status'] = file_status
+                    data_stat['_deviceinfo']['closed'] = -1
                     data_stat['_deviceinfo']['file_status_reduced'] = file_status_reduced
+                    nc.filename = data_stat['_deviceinfo']['filename']
+                    nc.filename_full = data_stat['_deviceinfo']['filename_full']
+                    nc.closed = data_stat['_deviceinfo']['closed']
+                    nc.bytes_written = data_stat['_deviceinfo']['bytes_written']
+                    nc.packets_written = data_stat['_deviceinfo']['packets_written']
+                    nc_structure = get_nc_structure(nc)
+                    #print("nc structure",nc_structure)
+                    data_stat['_deviceinfo']['nc_structure'] = nc_structure
                     dataqueue.put(data_stat)
 
             except Exception as e:
@@ -381,14 +426,21 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             FLAG_TIME = (dtnews > 0) and (file_age >= dtnews)
             FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
             if FLAG_TIME or FLAG_SIZE or (FLAG_RUN == False):
-                # Autofit
-                nc.close()
+                # Update file information
                 data_stat = {'_deviceinfo': {}}
                 data_stat['_deviceinfo']['filename'] = filename
                 data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
                 data_stat['_deviceinfo']['closed'] = time.time()
                 data_stat['_deviceinfo']['bytes_written'] = bytes_written
                 data_stat['_deviceinfo']['packets_written'] = packets_written
+                nc.filename = data_stat['_deviceinfo']['filename']
+                nc.filename_full = data_stat['_deviceinfo']['filename_full']
+                nc.closed = data_stat['_deviceinfo']['closed']
+                nc.bytes_written = data_stat['_deviceinfo']['bytes_written']
+                nc.packets_written = data_stat['_deviceinfo']['packets_written']
+                # Autofit
+                nc.close()
+
                 dataqueue.put(data_stat)
                 if FLAG_RUN:
                     tfile = tcheck
@@ -663,7 +715,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         #print('Deviceaddresses',raddresses)
         self.inlist.clear()
         for raddr in raddresses:
-            self.inlist.addItem(raddr.address_str)
+            self.inlist.addItem(str(raddr))
 
 
     def config_to_widgets(self):
@@ -804,15 +856,15 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         self.device = device
-        layout          = QtWidgets.QVBoxLayout(self)
-        hlayout         = QtWidgets.QHBoxLayout()
-        self.filetable  = QtWidgets.QTableWidget()
+        layout = QtWidgets.QVBoxLayout(self)
+        hlayout = QtWidgets.QHBoxLayout()
+        self.filetable = QtWidgets.QTableWidget()
         headers = ['Filename','Bytes written','Packets written','Date created','Date closed','Full filepath']
         self.filetable.setColumnCount(len(headers))
         self.filetable.setHorizontalHeaderLabels(headers)
         self.filetable.resizeColumnsToContents()
-        self.filelab= QtWidgets.QLabel("File: ")
-        self.byteslab   = QtWidgets.QLabel("Bytes written: ")
+        self.filelab = QtWidgets.QLabel("File: ")
+        self.byteslab = QtWidgets.QLabel("Bytes written: ")
         self.packetslab = QtWidgets.QLabel("Packets written: ")
         # Table that displays all datastreams and the format as it is written to the file
         self.deviceinfoQtree = redvypr.gui.dictQTreeWidget(dataname='file status', show_datatype = False)
@@ -821,29 +873,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.update_auto = QtWidgets.QCheckBox('Autoupdate file status')
         self.update_auto.setChecked(True)
         updatelayout.addWidget(self.update_auto)
-        self.update_show_all_files = QtWidgets.QRadioButton('Show all files')
-        #self.update_show_all_files.setChecked(True)
-        self.update_show_cur_file = QtWidgets.QRadioButton('Show current file')
-        self.update_show_cur_file.setChecked(True)
-        show_group=QtWidgets.QButtonGroup()
-        show_group.addButton(self.update_show_all_files)
-        show_group.addButton(self.update_show_cur_file)
-        self.show_group = show_group
-        updatelayout.addWidget(self.update_show_all_files)
-        updatelayout.addWidget(self.update_show_cur_file)
-
-        self.update_show_full = QtWidgets.QRadioButton('Show all information')
-        #self.update_show_full.setChecked(True)
-        self.update_show_red = QtWidgets.QRadioButton('Show reduced information')
-        self.update_show_red.setChecked(True)
-        showred_group = QtWidgets.QButtonGroup()
-        showred_group.addButton(self.update_show_full)
-        showred_group.addButton(self.update_show_red)
-        self.showred_group = showred_group
-        updatelayout.addWidget(self.update_show_full)
-        updatelayout.addWidget(self.update_show_red)
-
-
 
         hlayout.addWidget(self.byteslab)
         hlayout.addWidget(self.packetslab)
@@ -853,54 +882,33 @@ class displayDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.deviceinfoQtree)
         # Add update options
         layout.addLayout(updatelayout)
-        #self.text.insertPlainText("hallo!")
 
-    def update_qtreewidget(self):
+    def update_qtreewidget(self, nc_structure):
         funcname = __name__ + '.update_qtreewidget()'
         logger.debug(funcname)
         if self.update_auto.isChecked():
-            devinfo = self.device.get_device_info(address=self.device.address_str)
-
-            print('Deviceinfo!!!!', devinfo)
-            print('__________')
-            #devinfo = self.device.get_device_info()
-            #print('Deviceinfo 2!!!!', devinfo)
-
-            filename = devinfo['_deviceinfo']['filename']
-
-            if self.update_show_red.isChecked():
-                print('Hallo show reduced is checked')
-                file_status = devinfo['_deviceinfo']['file_status_reduced']
-                print('File status', file_status)
-            else:
-                print('Hallo show full is checked')
-                file_status = devinfo['_deviceinfo']['file_status']
-                print('File status', file_status)
-
-            if self.update_show_cur_file.isChecked():
-                print('Hallo current file is checked')
-                #file_status = file_status[filename]
-                print('File status', file_status)
-            else:
-                print('Hallo is not checked')
-                print('File status', file_status)
-
-            print('hallo hallo',file_status)
             # Update the qtree
             # https://stackoverflow.com/questions/9364754/remembering-scroll-value-of-a-qtreewidget-in-pyqt?rq=3
             bar = self.deviceinfoQtree.verticalScrollBar()
             yScroll = bar.value()
-            print('File status',file_status)
-            self.deviceinfoQtree.reload_data(file_status)
+            #print('File status',nc_structure)
+            self.deviceinfoQtree.reload_data(nc_structure)
             self.deviceinfoQtree.verticalScrollBar().setSliderPosition(yScroll)
 
     def update_data(self,data):
         funcname = __name__ + '.update()'
-        print(funcname,data)
+        #print(funcname,data)
         try:
             data['_deviceinfo']
         except:
             return
+
+        try:
+            nc_structure = data['_deviceinfo']['nc_structure']
+            #print("nc structure",nc_structure)
+            self.update_qtreewidget(nc_structure)
+        except:
+            pass
 
         # Update qtree
         try:
@@ -930,49 +938,6 @@ class displayDeviceWidget(QtWidgets.QWidget):
             except:
                 FLAG_FILEUPDATE = False
 
-            try:
-                data['_deviceinfo']['csvcolumns']
-                FLAG_CSVCOLUMNUPDATE = True
-            except:
-                FLAG_CSVCOLUMNUPDATE = False
-
-            if FLAG_CSVCOLUMNUPDATE:
-                #print('csv column update')
-                csvcolumns = data['_deviceinfo']['csvcolumns']
-                nrows = len(csvcolumns)
-                self.datastreamtable.setRowCount(nrows)
-                iaddr = self.datastreamtable_columns.index('Address')
-                idatatype = self.datastreamtable_columns.index('Datatype')
-                idatakey = self.datastreamtable_columns.index('Datakey')
-                idevice = self.datastreamtable_columns.index('Device')
-                iformat = self.datastreamtable_columns.index('Format')
-                icolnr = self.datastreamtable_columns.index('Columnnr.')
-                #self.datastreamtable_columns = ['Columnnr.', 'Datakey', 'Device', 'Datatype', 'Format', 'Address']
-
-                for i,c in enumerate(csvcolumns):
-                    item = QtWidgets.QTableWidgetItem(str(i))
-                    self.datastreamtable.setItem(i, icolnr, item)
-
-                    datatype = data['_deviceinfo']['header_datatype'][i]
-                    item = QtWidgets.QTableWidgetItem(datatype)
-                    self.datastreamtable.setItem(i, idatatype, item)
-
-                    datakey = data['_deviceinfo']['header_datakeys'][i]
-                    item = QtWidgets.QTableWidgetItem(datakey)
-                    self.datastreamtable.setItem(i, idatakey, item)
-
-                    dataformat = data['_deviceinfo']['csvformat'][i]
-                    item = QtWidgets.QTableWidgetItem(dataformat)
-                    self.datastreamtable.setItem(i, iformat, item)
-
-                    datadevice = data['_deviceinfo']['header_device'][i]
-                    item = QtWidgets.QTableWidgetItem(datadevice)
-                    self.datastreamtable.setItem(i, idevice, item)
-
-                    item = QtWidgets.QTableWidgetItem(str(c))
-                    self.datastreamtable.setItem(i, iaddr, item)
-
-                self.datastreamtable.resizeColumnsToContents()
             if FLAG_FILEUPDATE:
                 #print('Filename table',filename_table,data['_deviceinfo']['filename'])
                 try:

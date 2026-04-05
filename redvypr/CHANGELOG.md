@@ -10,6 +10,7 @@ redvypr changelog
 - datapath in redvypr.config
 - db_writer_extended allowing to save single redvypr addresses in flat tables
 ### Changed
+- improved `netcdfwriter`: Cleaned layout, fixed metadata for the new api
 - improved `serial_single`: Better configuration
 - improved `RedvyprAddressWidget`: Expansion is not done for time series, as this can be long but can be forced by checkbox
 - `test_device` with config gui to change data to be sent
