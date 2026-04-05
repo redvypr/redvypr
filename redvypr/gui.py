@@ -683,7 +683,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         metadata_device = copy.deepcopy(self.device.statistics['metadata'])
         deviceAddress = RedvyprAddress(device=self.device.name)
         try:
-            metadata_raw = metadata_device[deviceAddress.address_str]
+            metadata_raw = metadata_device[deviceAddress.to_address_string()]
         except:
             logger.info(f'{funcname}:Could not load metadata', exc_info=True)
             metadata_raw = {}
