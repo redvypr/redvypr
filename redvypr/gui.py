@@ -697,7 +697,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         print('Metadata',metadata)
         self.__metadata_edit = metadata
         self.__metadata_address = deviceAddress
-        self.metadata_config = pydanticConfigWidget(metadata, configname=deviceAddress.address_str)
+        self.metadata_config = pydanticConfigWidget(metadata, configname=deviceAddress.to_address_string())
         self.metadata_config.config_editing_done.connect(self.metadata_config_apply)
         self.metadata_config.show()
 
