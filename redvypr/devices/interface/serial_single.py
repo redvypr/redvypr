@@ -406,6 +406,7 @@ class SerialDeviceWidget(QtWidgets.QWidget):
         # Initial generation of the ID and UI sync
         self._update_packetid_display()
         self._sync_config_to_ui()
+        self._on_device_changed(self.combo_device.currentText())
 
     def _use_device_toggled(self, flag_use_device):
         print("Use device",flag_use_device)
