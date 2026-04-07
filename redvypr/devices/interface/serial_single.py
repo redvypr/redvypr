@@ -55,7 +55,7 @@ class SerialDeviceConfig(pydantic.BaseModel):
     parity: typing.Literal[serial.PARITY_NONE, serial.PARITY_ODD, serial.PARITY_EVEN, serial.PARITY_MARK, serial.PARITY_SPACE] = pydantic.Field(default=serial.PARITY_NONE)
     stopbits: typing.Literal[serial.STOPBITS_ONE, serial.STOPBITS_ONE_POINT_FIVE,serial.STOPBITS_TWO] = pydantic.Field(default=serial.STOPBITS_ONE)
     bytesize: typing.Literal[serial.EIGHTBITS, serial.SEVENBITS, serial.SIXBITS] = pydantic.Field(default=serial.EIGHTBITS)
-    comport_packetid_format: str = pydantic.Field(default='{device_short}',
+    comport_packetid_format: str = pydantic.Field(default='serial_{device_short}',
                                                   description="Formatstring of the packetid of the comport, can be edited")
     comport_packetid: str = pydantic.Field(default='', description="Packetid of the comport. Created by applying comport_packetid_format")
     serial_number:  typing.Optional[str] = pydantic.Field(default='', description="Serial number of the comport")
@@ -482,7 +482,6 @@ class SerialDeviceWidget(QtWidgets.QWidget):
         self.inputwidgets.append(self.combo_stopbits)
         if self.add_packetid:
             self.lineedit_format = QtWidgets.QLineEdit()
-            self.lineedit_format.setPlaceholderText("{device_short}")
             self.inputwidgets.append(self.lineedit_format)
             # Add the Info-Tooltip to the format field
             self.lineedit_format.setToolTip(self.FORMAT_INFO)
@@ -548,6 +547,7 @@ class SerialDeviceWidget(QtWidgets.QWidget):
             lambda: self._update_config("stopbits", self.combo_stopbits.currentData()))
         if self.add_packetid:
             self.lineedit_format.textChanged.connect(self._on_format_changed)
+            self.lineedit_format.setPlaceholderText(self.config.comport_packetid_format)
         self.btn_details.clicked.connect(self._show_details)
 
     def _populate_options(self):
