@@ -14,7 +14,7 @@ import threading
 import redvypr
 import yaml
 import redvypr.files as redvypr_files
-from redvypr.data_packets import check_for_command
+from redvypr.data_packets import check_for_command, create_datadict
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.device import RedvyprDevice
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
@@ -184,7 +184,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     stopbits = config['stopbits']
     bytesize = config['bytesize']
     dt_poll = config['dt_poll']
-
+    devicename_redvypr = device_info['device']
+    packetid = config['comport_packetid']
     flag_send_data = config['send_data']
     raddress_send = RedvyprAddress(config['send_data_address'])
     send_mode = config['send_mode']
@@ -309,6 +310,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 sentences_read += 1
                                 raw = rawdata_split[ind] + newpacket # reconstruct the data
                                 #print('raw', raw)
+                                data = create_datadict(device=devicename_redvypr,
+                                                       packetid=packetid)
                                 data = {'t':time.time()}
                                 data[config['datakey_recv_raw']] = raw
                                 data['comport'] = comport_device
