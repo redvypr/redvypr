@@ -293,7 +293,9 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 if chunksize > 0:
                     FLAG_CHUNK = len(rawdata_all) > chunksize
                     if(FLAG_CHUNK):
-                        data = {'t':time.time()}
+                        data = create_datadict(device=devicename_redvypr,
+                                               packetid=packetid)
+                        data['t'] = time.time()
                         data['data'] = rawdata_all
                         data['comport'] = comport_device
                         data['bytes_read'] = bytes_read
@@ -313,7 +315,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 #print('raw', raw)
                                 data = create_datadict(device=devicename_redvypr,
                                                        packetid=packetid)
-                                data = {'t':time.time()}
+                                data['t'] = time.time()
                                 data[config['datakey_recv_raw']] = raw
                                 data['comport'] = comport_device
                                 data['bytes_read'] = bytes_read
