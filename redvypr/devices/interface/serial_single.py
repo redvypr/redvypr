@@ -806,7 +806,7 @@ class SerialDeviceWidgetRedvypr(SerialDeviceWidget):
             self.btn_redvypr_config = QtWidgets.QPushButton("Send/Recv config")
             self.btn_redvypr_config.clicked.connect(self._show_config_dialog)
             self.inputwidgets.append(self.btn_redvypr_config)
-            self.grid_layout.addWidget(self.btn_redvypr_config, 1, 8)
+            self.grid_layout.addWidget(self.btn_redvypr_config, 1, 8+1)
             self.redvypr_cfg_widget.hide()
 
         self._sync_redvypr_config_to_ui()
