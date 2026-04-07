@@ -320,7 +320,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 data['comport'] = comport_device
                                 data['bytes_read'] = bytes_read
                                 data['sentences_read'] = sentences_read
-                                #print("publishing",data)
+                                print("publishing",data)
                                 dataqueue.put(data)
 
                             rawdata_all = rawdata_split[-1]
