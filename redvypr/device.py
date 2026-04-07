@@ -923,7 +923,13 @@ class RedvyprDevice(QtCore.QObject):
                     try:
                         # The arguments for the start function
                         thread_uuid = 'thread_' + str(uuid.uuid1())
-                        device_info = {'device':self.name,'uuid':self.uuid,'thread_uuid':thread_uuid,'hostinfo':self.redvypr.hostinfo,'address_str':self.address_str}
+                        device_config = self.get_config().model_dump()
+                        device_info = {'device':self.name,
+                                       'device_config': device_config,
+                                       'uuid':self.uuid,
+                                       'thread_uuid':thread_uuid,
+                                       'hostinfo':self.redvypr.hostinfo,
+                                       'address_str':self.address_str}
                         if config is None:
                             self.logger.debug('Using internal configuration')
                             self.logger.debug('Pydantic configuration')

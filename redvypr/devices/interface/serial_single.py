@@ -65,10 +65,16 @@ class SerialDeviceConfig(pydantic.BaseModel):
     comport_compare: typing.Optional[
         typing.List[typing.Literal["device","serial_number","vid","pid","manufactuer"]]] = pydantic.Field(default=["device"])
 
-    def create_packetid(self):
+    def create_packetid_device_short(self):
         device_short = self.comport_device.split('/')[-1]
-        self.comport_packetid = self.comport_packetid_format.format(device_short=device_short, device=self.comport_device, vid=self.vid, pid=self.pid, serial_number=self.serial_number, manufacturer=self.manufacturer)
+        self.comport_packetid = self.comport_packetid_format.format(device_short=device_short,
+                                                                    device=self.comport_device,
+                                                                    vid=self.vid,
+                                                                    pid=self.pid,
+                                                                    serial_number=self.serial_number,
+                                                                    manufacturer=self.manufacturer)
         self.comport_device_short = device_short
+        #return self.comport_packetid
 
 
 class SerialDeviceConfigRedvypr(SerialDeviceConfig):
@@ -178,22 +184,32 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Starting reading serial data')
     pdconfig = SerialDeviceConfigRedvypr.model_validate(config)
-    chunksize = config['chunksize'] #The maximum amount of bytes read with one chunk
-    serial_name = config['comport_device']
-    baud = config['baud']
-    parity = config['parity']
-    stopbits = config['stopbits']
-    bytesize = config['bytesize']
-    dt_poll = config['dt_poll']
+    pdconfig.create_packetid_device_short()
+    packetid = pdconfig.comport_packetid
+    chunksize = pdconfig.chunksize #The maximum amount of bytes read with one chunk
+    dt_poll = pdconfig.dt_poll
     devicename_redvypr = device_info['device']
-    packetid = pdconfig.create_packetid()
+
+    logger_start = logging.getLogger('redvypr.device.serial_single.start')
+
+    loglevel = device_info['device_config']['base_config']['loglevel']
+    #print("Loglevel",loglevel)
+    logger_start.setLevel(loglevel)
+    logger_start.debug(f"Starting ...\n")
+    logger_start.debug(f"Starting with device_info:{device_info}")
+    logger_start.debug(f"Starting with config:{config}")
+    logger_start.debug(f"Starting ...\n")
+
+    #print("pdfonfig",pdconfig)
+    #print("packetid",packetid)
     flag_send_data = config['send_data']
     raddress_send = RedvyprAddress(config['send_data_address'])
     send_mode = config['send_mode']
 
-    print('Starting',config)
+    #print('Starting',config)
+
     
-    newpacket = config['packetdelimiter']
+    newpacket = pdconfig.packetdelimiter
     newpacket = newpacket.replace('CR/LF','\r\n')
     newpacket = newpacket.replace('LF','\n')
     newpacket = newpacket.replace('None','')
@@ -219,7 +235,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     queue_command_thread = queue.Queue(maxsize=queuesize)
     args = [config, queue_data_read_thread, queue_data_send_thread, queue_command_thread]
     serial_thread = threading.Thread(target=read_serial, args=args, daemon=True)
-    logger.debug('Starting serial read/write thread of comport: {serial_name}')
+    logger_start.debug('Starting serial read/write thread of comport: {serial_name}')
     serial_thread.start()
 
     t_update = time.time()
@@ -237,12 +253,12 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 #command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
                 [command, comdata] = check_for_command(data, thread_uuid=device_info[
                     'thread_uuid'], add_data=True)
-            # logger.debug('Got a command: {:s}'.format(str(data)))
+            # logger_start.debug('Got a command: {:s}'.format(str(data)))
             if (command is not None):
                 if command == 'stop':
                     queue_command_thread.put('stop')
                     sstr = funcname + ': Command is for me: {:s}'.format(str(command))
-                    logger.debug(sstr)
+                    logger_start.debug(sstr)
                     try:
                         statusqueue.put_nowait(sstr)
                     except:
@@ -316,12 +332,12 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 data = create_datadict(device=devicename_redvypr,
                                                        packetid=packetid)
                                 data['t'] = time.time()
-                                data[config['datakey_recv_raw']] = raw
+                                data[pdconfig.datakey_recv_raw] = raw
                                 data['comport'] = comport_device
                                 data['bytes_read'] = bytes_read
                                 data['sentences_read'] = sentences_read
-                                print("publishing",data)
-                                print(f"packetid={packetid} device:{devicename_redvypr}")
+                                #print("publishing",data)
+                                #print(f"packetid={packetid} device:{devicename_redvypr}")
                                 dataqueue.put(data)
 
                             rawdata_all = rawdata_split[-1]
@@ -634,7 +650,7 @@ class SerialDeviceWidget(QtWidgets.QWidget):
     def _update_packetid_display(self):
         if self.config:
             try:
-                self.config.create_packetid()
+                self.config.create_packetid_device_short()
                 if self.add_packetid:
                     self.lineedit_packetid.setText(str(self.config.comport_packetid))
             except Exception:

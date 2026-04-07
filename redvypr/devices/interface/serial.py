@@ -192,7 +192,7 @@ class Device(RedvyprDevice):
                                                       manufacturer=str(comport.manufacturer),
                                                       serial_number=str(comport.serial_number))
 
-                    config.create_packetid()
+                    config.create_packetid_device_short()
                     #self.config.serial_devices.append(config)
                     serial_devices_new.append(config)
                     self.comports.append(comport)

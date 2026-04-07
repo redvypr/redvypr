@@ -8,6 +8,7 @@ redvypr changelog
 
 ### Added
 - datapath in redvypr.config
+- added `'device_config': device_config,` with `device_config = self.get_config().model_dump()` to `device_info` dict for the start parameter of a device thread
 - db_writer_extended allowing to save single redvypr addresses in flat tables
 ### Changed
 - improved `netcdfwriter`: Cleaned layout, fixed metadata for the new api
