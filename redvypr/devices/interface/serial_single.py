@@ -311,7 +311,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 #print('raw', raw)
                                 data = {'t':time.time()}
                                 data[config['datakey_recv_raw']] = raw
-                                data['comport'] = serial_port
+                                data['comport'] = comport_device
                                 data['bytes_read'] = bytes_read
                                 data['sentences_read'] = sentences_read
                                 #print("publishing",data)

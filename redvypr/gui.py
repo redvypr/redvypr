@@ -681,6 +681,8 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         funcname = __name__ + '.metadata_clicked():'
         logger.debug(funcname)
         metadata_device = copy.deepcopy(self.device.statistics['metadata'])
+        print(self.device.get_metadata(RedvyprAddress(publisher=self.device.name)))
+        print(f"metadata device:{metadata_device=}")
         deviceAddress = RedvyprAddress(device=self.device.name)
         try:
             metadata_raw = metadata_device[deviceAddress.to_address_string()]
