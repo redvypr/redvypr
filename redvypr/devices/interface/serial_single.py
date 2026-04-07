@@ -177,6 +177,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     """
     funcname = __name__ + '.start()'
     logger.debug(funcname + ':Starting reading serial data')
+    pdconfig = SerialDeviceConfigRedvypr.model_validate(config)
     chunksize = config['chunksize'] #The maximum amount of bytes read with one chunk
     serial_name = config['comport_device']
     baud = config['baud']
@@ -185,7 +186,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     bytesize = config['bytesize']
     dt_poll = config['dt_poll']
     devicename_redvypr = device_info['device']
-    packetid = config['comport_packetid']
+    packetid = pdconfig.create_packetid()
     flag_send_data = config['send_data']
     raddress_send = RedvyprAddress(config['send_data_address'])
     send_mode = config['send_mode']
