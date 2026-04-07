@@ -321,6 +321,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 data['bytes_read'] = bytes_read
                                 data['sentences_read'] = sentences_read
                                 print("publishing",data)
+                                print(f"packetid={packetid} device:{devicename_redvypr}")
                                 dataqueue.put(data)
 
                             rawdata_all = rawdata_split[-1]
