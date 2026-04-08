@@ -203,16 +203,17 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     file_status_reduced = file_status
     deviceinfo_all = None
     while FLAG_RUN:
-        tcheck = time.time()
-        # Flush file on regular basis
-        if ((time.time() - tflush) > config['dt_sync']):
-            nc.sync()
-            bytes_written = os.path.getsize(filename)
-            logger_start.info(f"{funcname}:Syncing netCDF file {filename} ({bytes_written}bytes)")
-            tflush = time.time()
-
         time.sleep(0.05)
         while(datainqueue.empty() == False):
+            tcheck = time.time()
+            # Flush file on regular basis
+            if ((time.time() - tflush) > config['dt_sync']):
+                nc.sync()
+                bytes_written = os.path.getsize(filename)
+                logger_start.info(
+                    f"{funcname}:Syncing netCDF file {filename} ({bytes_written}bytes)")
+                tflush = time.time()
+
             try:
                 data = datainqueue.get(block=False)
                 packet_address = redvypr.RedvyprAddress(data)
