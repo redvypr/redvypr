@@ -519,7 +519,7 @@ class redvyprAddDeviceWidget(QtWidgets.QWidget):
             elif self.mp_qthread.isChecked():
                 device_parameter.multiprocess = 'qthread'
             elif self.mp_multi.isChecked():
-                device_parameter.multiprocess = 'multiprocessing'
+                device_parameter.multiprocess = 'multiprocess'
 
             levelname = self.logwidget.currentText()
             device_parameter.loglevel = levelname
