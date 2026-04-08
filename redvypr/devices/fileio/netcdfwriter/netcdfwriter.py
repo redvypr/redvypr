@@ -47,7 +47,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
     datafolder:str = pydantic.Field(default='.',description='Folder the data is saved to')
     fileextension:str= pydantic.Field(default='nc',description='File extension, if empty not used')
     fileprefix:str= pydantic.Field(default='redvypr',description='If empty not used')
-    filepostfix:str= pydantic.Field(default='netcdflogger',description='If empty not used')
+    filepostfix:str= pydantic.Field(default='netcdfwriter',description='If empty not used')
     filedateformat:str= pydantic.Field(default='%Y-%m-%d_%H%M%S',description='Dateformat used in the filename, must be understood by datetime.strftime')
     filecountformat:str= pydantic.Field(default='04',description='Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}')
 
@@ -126,7 +126,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     logger_start.setLevel(logging.DEBUG)
     funcname = __name__ + '.start()'
     logger_start.debug(funcname + ':Opening writing:')
-    #print('Config',config)
     if config['clearqueue']:
         while (datainqueue.empty() == False):
             try:
@@ -134,7 +133,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             except:
                 break
 
-    data_write_to_file = [] # List of columns to be written to file
     count = 0
     if True:
         try:
@@ -173,15 +171,12 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             logger.debug("Configuration incomplete", exc_info=True)
             sizenewb = 0  # Size in bytes
             
-            
     try:
         config['dt_sync']
     except:
         config['dt_sync'] = 5
 
-
     flag_zlib = config['zlib']
-    #flag_zlib = False
     bytes_written = 0
     packets_written = 0
     bytes_written_total = 0
@@ -201,22 +196,19 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     count += 1
 
     tfile = time.time() # Save the time the file was created
-    tflush = time.time() # Save the time the file was created
+    tflush = time.time() # Save the time the file was flushed to disk
     tupdate = time.time() # Save the time for the update timing
     FLAG_RUN = True
     file_status = {}
     file_status_reduced = file_status
     deviceinfo_all = None
-    metadata_update = False
     while FLAG_RUN:
-        tcheck      = time.time()
+        tcheck = time.time()
         # Flush file on regular basis
         if ((time.time() - tflush) > config['dt_sync']):
-            logger_start.info(funcname + 'Syncing netCDF file {}'.format(filename))
             nc.sync()
             bytes_written = os.path.getsize(filename)
-            #bytes_written = pympler.asizeof.asizeof(nc)
-            #print('Bytes written',bytes_written)
+            logger_start.info(f"{funcname}:Syncing netCDF file {filename} ({bytes_written}bytes)")
             tflush = time.time()
 
         time.sleep(0.05)
@@ -245,20 +237,11 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                         logger_start.debug('Ignoring metadata packet')
                         continue
 
-
-                #statistics = data_packets.do_data_statistics(data,statistics)
-                #packet_address = redvypr.RedvyprAddress(data)
                 # Check if host uuid is the same as local uuid
                 if packet_address.uuid == device_info['hostinfo']['uuid']:
                     pass
                 else:
-                    #print('Packet data', data)
-                    #print('Packet address hostname',packet_address.hostname)
                     hostname = packet_address.host + '__UUID__' + packet_address.uuid
-                    #print('Hostname',hostname)
-                    #print('Remote')
-                    #print('Remote')
-                    #print('Remote')
                 address_format = 'h,p,d'
                 packet_address_str = packet_address.to_address_string(address_format)
                 publisher = packet_address.publisher
@@ -266,7 +249,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 # This is the group structure
                 # Data is written to the group found in
                 # ncgroup = groups[hostname][publisher][devicename]
-
                 try:
                     nc[hostname]
                 except:
@@ -308,7 +290,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             vars_updated.append(var)
                     except:
                         logger_start.debug('Could not set metadata', exc_info=True)
-
 
                 # Write data
                 if True:
@@ -419,7 +400,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             except Exception as e:
                 logger.exception(e)
                 logger.debug(funcname + ':Exception:' + str(e))
-                # print(data)
 
         if True: # Check if a new file should be created, close the old one and write the header
             file_age = tcheck - tfile
@@ -450,7 +430,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     packets_written_total = 0
                     [nc, filename] = create_logfile(config, count)
                     redvypr_version_str = 'redvypr {}'.format(redvypr.version)
-
                     data_stat = {'_deviceinfo': {}}
                     data_stat['_deviceinfo']['filename'] = filename
                     data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
