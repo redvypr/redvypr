@@ -215,7 +215,7 @@ class NMEAMacProcessor():
             mac = data_packet['mac']
 
             # Check if the next packet is newer, if yes, merge the old one
-            if npnew > npold:
+            if (npnew > npold) and (npold != -9999):
                 self.packetbuffer[mac][npnew] = [data_packet] # New datapacket, merge the old one
                 self.merge_by_variable["np"] = npnew
 
