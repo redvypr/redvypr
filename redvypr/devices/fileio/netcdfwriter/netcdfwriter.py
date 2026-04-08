@@ -338,6 +338,10 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                                 # For some reason zlib does not work with str
                                 var = nc_device.createVariable(k, str, ('time'), zlib=False)
                                 setattr(var, 'redvypr_address', packet_address.to_address_string())
+                            elif (typedata is bytes): # Ignore bytes
+                                var = None
+                            elif (typedata is dict): # Ignore dict
+                                var = None
                             else:
                                 try:
                                     logger_start.info('Creating variable with type {}'.format(typedata))
