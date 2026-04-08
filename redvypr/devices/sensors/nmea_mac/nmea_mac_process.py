@@ -209,13 +209,18 @@ class NMEAMacProcessor():
         """
         data_packets_merged = []
         for data_packet in data_packet_processed:
+
             # Merge by np
             npold = self.merge_by_variable["np"]
             npnew = data_packet['np']
             mac = data_packet['mac']
+            try:
+                self.packetbuffer[mac]
+            except:
+                self.packetbuffer[mac] = {}
 
             # Check if the next packet is newer, if yes, merge the old one
-            if (npnew > npold) and (npold != -9999):
+            if npnew > npold:
                 self.packetbuffer[mac][npnew] = [data_packet] # New datapacket, merge the old one
                 self.merge_by_variable["np"] = npnew
 
@@ -239,10 +244,6 @@ class NMEAMacProcessor():
                         logger.warning("Could not merge packet:{}".format(data_packets_merged),exc_info=True)
 
             else:
-                try:
-                    self.packetbuffer[mac]
-                except:
-                    self.packetbuffer[mac] = {}
                 try:
                     self.packetbuffer[mac][npnew].append(data_packet)
                 except:
