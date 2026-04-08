@@ -420,6 +420,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 nc.packets_written = data_stat['_deviceinfo']['packets_written']
                 # Autofit
                 nc.close()
+                count += 1
 
                 dataqueue.put(data_stat)
                 if FLAG_RUN:
