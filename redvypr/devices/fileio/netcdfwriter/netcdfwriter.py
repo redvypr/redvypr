@@ -343,6 +343,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                                 var = None
                             elif (typedata is dict): # Ignore dict
                                 var = None
+                            elif (typedata is None):  # Ignore None
+                                var = None
                             else:
                                 try:
                                     logger_start.info('Creating variable with type {}'.format(typedata))
