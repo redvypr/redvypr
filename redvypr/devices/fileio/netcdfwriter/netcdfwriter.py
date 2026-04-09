@@ -343,7 +343,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                                 var = None
                             elif (typedata is dict): # Ignore dict
                                 var = None
-                            elif (typedata is None):  # Ignore None
+                            elif (typedata is None or typedata is type(None)): # Ignore None
                                 var = None
                             else:
                                 try:
