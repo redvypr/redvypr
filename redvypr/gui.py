@@ -4,7 +4,7 @@ import sys
 import yaml
 import datetime
 import qtawesome
-from pydantic.color import Color as pydColor
+from pydantic_extra_types import Color as pydColor
 from PyQt6 import QtWidgets, QtCore, QtGui
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.widgets.redvyprSubscribeWidget import SubscribeWidget
@@ -320,9 +320,8 @@ def get_QColor(data):
         color = QtGui.QColor(colordata[0], colordata[1], colordata[2])
     elif (type(colordata) == list):
         color = QtGui.QColor(colordata[0], colordata[1], colordata[2])
-    elif (type(colordata) == pydColor):
-        colors = colordata.as_rgb_tuple()
-        color = QtGui.QColor(colors[0], colors[1], colors[2])
+    elif isinstance(colordata,pydColor):
+        color = QtGui.QColor(colordata.as_hex())
     else:
         colors = colordata
         color = QtGui.QColor(colors['r'], colors['g'], colors['b'])

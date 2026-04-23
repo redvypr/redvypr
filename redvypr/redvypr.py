@@ -7,6 +7,7 @@ import logging
 import queue
 import sys
 import yaml
+from pathlib import Path
 from PyQt6 import QtWidgets, QtCore, QtGui
 import inspect
 import threading
@@ -21,11 +22,12 @@ import uuid
 import random
 import re
 import pydantic
+# Pydantic color
+from pydantic_extra_types import Color as pydColor
 import typing
 from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
 import platform
-
 import redvypr
 # Import redvypr specific stuff
 import redvypr.data_packets as data_packets
@@ -68,6 +70,20 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr')
 logger.setLevel(logging.INFO)
 
+
+
+# Adding helper function for yaml dumps of complex objects
+def yaml_path_representer(dumper, data):
+    return dumper.represent_scalar('tag:yaml.org,2002:str', str(data))
+
+# Registriere den Representer für alle Path-Objekte
+yaml.add_multi_representer(Path, yaml_path_representer)
+# Falls du SafeDumper nutzt:
+yaml.SafeDumper.add_multi_representer(Path, yaml_path_representer)
+
+# Register string representation for color
+yaml.add_multi_representer(pydColor, yaml_path_representer)
+yaml.SafeDumper.add_multi_representer(pydColor, yaml_path_representer)
 
 # Pydantic
 

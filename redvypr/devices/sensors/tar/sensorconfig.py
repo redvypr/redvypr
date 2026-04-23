@@ -1552,7 +1552,10 @@ class TarCalibrationsWidget(QtWidgets.QWidget):
         savecalcmds = {}
         for cal in self.calibrations:
             #print("calibration",cal)
-            mac = cal.sn#.split("_")[1]
+            if "_" in cal.sn:
+                mac = cal.sn.split("_")[1]
+            else:
+                mac = cal.sn  # .split("_")[1]
             savecalcmds[mac] = self.tarcfg.get_savecal_command(mac)
             tar_cfg = sensor_firmware_config.dhf_sensor(mac)
             if 'ntc' in cal.calibration_type.lower():

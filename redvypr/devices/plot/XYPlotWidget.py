@@ -8,8 +8,8 @@ import sys
 import yaml
 import copy
 import pydantic
-from pydantic.color import Color as pydColor
-#from pydantic_extra_types import Color as pydColor
+#from pydantic.color import Color as pydColor
+from pydantic_extra_types import Color as pydColor
 import typing
 from collections.abc import Iterable
 import pyqtgraph
@@ -1104,7 +1104,9 @@ class XYPlotWidget(QtWidgets.QFrame):
             lineplot._line_config = line
             line._tlastupdate = 0
             try:
-                #print('Color',self.config.lines[iline].color.as_rgb())
+                #print('Color 1',self.config.lines[iline].color.as_rgb())
+                #print('Color 2', self.config.lines[iline].color)
+                #print('Color 3', type(self.config.lines[iline].color))
                 color = redvypr.gui.get_QColor(self.config.lines[iline].color)
                 # print('Set pen 2')
                 linewidth = self.config.lines[iline].linewidth
