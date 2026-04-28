@@ -69,35 +69,40 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
         try:
             #print(config["datastream"])
             rawdata = Datapacket(datapacket)[config["datastream"]]
-            print("Rawdata",rawdata)
+            #datapacket['t']
+            #print("Rawdata",rawdata)
         except:
             logger.info("Could not get data",exc_info=True)
             rawdata = None
 
         if rawdata is not None:
-            print("Processing")
+            #print("Processing")
             processed_packets = nmea_mac_processer.process_rawdata(rawdata)
             if len(processed_packets['merged']) > 0:
                 for ppub in processed_packets['merged']:
-                        #print('Publishing',ppub)
-                        if True:
-                            metaddress = RedvyprAddress(datakey="R",packetid=RedvyprAddress(ppub).packetid)
-                            ppub = redvypr.data_packets.add_metadata2datapacket(datapacket=ppub,
-                                                                                address=metaddress,
-                                                                                datakey='R',
-                                                                                metakey='unit',
-                                                                                metadata='Ohm')
-                            ppub = redvypr.data_packets.add_metadata2datapacket(datapacket=ppub,
-                                                                                address=metaddress,
-                                                                                datakey='R',
-                                                                                metakey='sn',
-                                                                                metadata=ppub['mac'])
-                            # Create a time vector that is of the same length as the parsed data
-                            dt = ppub['ts'][-1] - ppub['ts'][0]
-                            torig = ppub['t']
-                            t = np.asarray(ppub['ts']) - ppub['ts'][0] + torig - dt
-                            ppub['t'] = t.tolist()
-                        dataqueue.put(ppub)
+                    if isinstance(datapacket['t'],list):
+                        ppub['t'] = datapacket['t'][0]
+                    else:
+                        ppub['t'] = datapacket['t']
+                    #print('Publishing',ppub)
+                    if True:
+                        metaddress = RedvyprAddress(datakey="R",packetid=RedvyprAddress(ppub).packetid)
+                        ppub = redvypr.data_packets.add_metadata2datapacket(datapacket=ppub,
+                                                                            address=metaddress,
+                                                                            datakey='R',
+                                                                            metakey='unit',
+                                                                            metadata='Ohm')
+                        ppub = redvypr.data_packets.add_metadata2datapacket(datapacket=ppub,
+                                                                            address=metaddress,
+                                                                            datakey='R',
+                                                                            metakey='sn',
+                                                                            metadata=ppub['mac'])
+                        # Create a time vector that is of the same length as the parsed data
+                        dt = ppub['ts'][-1] - ppub['ts'][0]
+                        torig = ppub['t']
+                        t = np.asarray(ppub['ts']) - ppub['ts'][0] + torig - dt
+                        ppub['t'] = t.tolist()
+                    dataqueue.put(ppub)
 
 
 class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
