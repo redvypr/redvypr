@@ -233,7 +233,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             dataqueue.put(data_stat)
                             return
 
-                statistics, status = do_data_statistics(data,statistics)
+                do_data_statistics(data,statistics)
                 yamlstr = yaml.dump(data,explicit_end=True,explicit_start=True)
                 bytes_written         += len(yamlstr)
                 packets_written       += 1
@@ -484,7 +484,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         #print('Deviceaddresses',raddresses)
         self.inlist.clear()
         for raddr in raddresses:
-            self.inlist.addItem(raddr.address_str)
+            self.inlist.addItem(raddr.to_address_string())
 
 
     def config_to_widgets(self):

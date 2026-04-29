@@ -26,7 +26,7 @@ import redvypr.gui
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.netcdfwriter')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 redvypr_devicemodule = True
 class DeviceBaseConfig(pydantic.BaseModel):
@@ -36,12 +36,12 @@ class DeviceBaseConfig(pydantic.BaseModel):
     gui_tablabel_display: str = 'netCDF logging status'
 
 class DeviceCustomConfig(pydantic.BaseModel):
-    dt_sync: int = pydantic.Field(default=5,description='Time after which an open file is synced on disk')
+    dt_sync: int = pydantic.Field(default=60,description='Time after which an open file is synced on disk')
     dt_newfile: int = pydantic.Field(default=3600,description='Time after which a new file is created')
     dt_newfile_unit: typing.Literal['none','seconds','hours','days'] = pydantic.Field(default='seconds')
     dt_update:int = pydantic.Field(default=2,description='Time after which an upate is sent to the gui')
     clearqueue: bool = pydantic.Field(default=True, description='Flag if the buffer of the subscribed queue should be emptied before start')
-    zlib: bool = pydantic.Field(default=True, description='Flag if zlib compression shall be used for the netCDF data')
+    zlib: bool = pydantic.Field(default=False, description='Flag if zlib compression shall be used for the netCDF data')
     size_newfile:int = pydantic.Field(default=500,description='Size of object in RAM after which a new file is created')
     size_newfile_unit: typing.Literal['none','bytes','kB','MB'] = pydantic.Field(default='MB')
     datafolder:str = pydantic.Field(default='.',description='Folder the data is saved to')
@@ -386,6 +386,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 # Send statistics
                 if ((time.time() - tupdate) > config['dt_update']):
                     tupdate = time.time()
+                    bytes_written = os.path.getsize(filename)
                     data_stat = {'_deviceinfo': {}}
                     data_stat['_deviceinfo']['filename'] = filename
                     data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)

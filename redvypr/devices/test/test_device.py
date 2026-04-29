@@ -180,12 +180,14 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                     data_fast_merged['fast_merged'].append(data['fast'])
 
             dt_tmp = t_now - t_last['fast_merge']
-            if dt_tmp > (1 / pdconfig.fast_freq_merged_send):
-                t_last['fast_merge'] = t_now
-                print("Sending merged data")
-                dataqueue.put(data_fast_merged)
-                data_fast_merged['t'] = []
-                data_fast_merged['fast_merged'] = []
+            if pdconfig.send_fast_merged:
+                if dt_tmp > (1 / pdconfig.fast_freq_merged_send):
+                    t_last['fast_merge'] = t_now
+                    print("Sending merged data")
+
+                    dataqueue.put(data_fast_merged)
+                    data_fast_merged['t'] = []
+                    data_fast_merged['fast_merged'] = []
 
 
 
