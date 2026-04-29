@@ -183,9 +183,10 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
             if pdconfig.send_fast_merged:
                 if dt_tmp > (1 / pdconfig.fast_freq_merged_send):
                     t_last['fast_merge'] = t_now
-                    print("Sending merged data")
+                    #print("Sending merged data")
+                    #print(data_fast_merged)
 
-                    dataqueue.put(data_fast_merged)
+                    dataqueue.put(copy.deepcopy(data_fast_merged))
                     data_fast_merged['t'] = []
                     data_fast_merged['fast_merged'] = []
 

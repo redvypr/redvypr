@@ -40,6 +40,9 @@ class DeviceCustomConfig(pydantic.BaseModel):
     dt_newfile: int = pydantic.Field(default=3600,description='Time after which a new file is created')
     dt_newfile_unit: typing.Literal['none','seconds','hours','days'] = pydantic.Field(default='seconds')
     dt_update:int = pydantic.Field(default=2,description='Time after which an upate is sent to the gui')
+    nc_bufsize:int = pydantic.Field(default=10,description='netcdf buffer size, storing data before it is written to the file')
+    dt_bufsync: float = pydantic.Field(default=10,
+                                    description='Time after which the netcdf buffer is synced to file')
     clearqueue: bool = pydantic.Field(default=True, description='Flag if the buffer of the subscribed queue should be emptied before start')
     zlib: bool = pydantic.Field(default=False, description='Flag if zlib compression shall be used for the netCDF data')
     size_newfile:int = pydantic.Field(default=500,description='Size of object in RAM after which a new file is created')
@@ -193,10 +196,12 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     tfile = time.time() # Save the time the file was created
     tflush = time.time() # Save the time the file was flushed to disk
     tupdate = time.time() # Save the time for the update timing
+    tsync_buffer = time.time()
     FLAG_RUN = True
     file_status = {}
     file_status_reduced = file_status
     deviceinfo_all = None
+    data_buffer = {} # The data buffer
     while FLAG_RUN:
         tcheck = time.time()
         time.sleep(0.05)
@@ -250,12 +255,14 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 except:
                     logger_start.debug('Creating base group {}'.format(hostname))
                     nchost = nc.createGroup(hostname)
+                    data_buffer[hostname] = {}
 
                 try:
                     nc[hostname][publisher]
                 except:
                     logger_start.debug('Creating publishing device {}'.format(publisher))
                     ncgroup_pub = nc[hostname].createGroup(publisher)
+                    data_buffer[hostname][publisher] = {}
 
                 # The device
                 try:
@@ -264,10 +271,94 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     logger_start.debug('Creating device {}'.format(devicename))
                     nc_device = nc[hostname][publisher].createGroup(devicename)
                     nc_device.redvypr_address = redvypr_address.RedvyprAddress(data).to_address_string()
-                    # Add time variable
-                    logger.debug('Creating time dimension')
-                    nc_device.createDimension('time',None)
-                    nc_device.createVariable('time', float,('time'))
+                    data_buffer[hostname][publisher][devicename] = {}
+
+
+                # The datakey
+                datakeys = data_packets.Datapacket(data).datakeys()
+                datakeys.remove('t')
+                for k in datakeys:
+                    # print('-----')
+                    # print('Datakeys', datakeys)
+                    # print('Datakey',k)
+                    try:
+                        nc_datakey = nc[hostname][publisher][devicename][k]
+                    except:  # Create group and variables for datakey
+                        logger_start.debug(f'Creating group for datakey {k}')
+                        nc_datakey = nc[hostname][publisher][devicename].createGroup(k)
+                        nc_datakey.redvypr_address = redvypr_address.RedvyprAddress(
+                            data,datakey=k).to_address_string()
+                        # Add time variable
+                        logger.debug('Creating time dimension')
+                        nc_datakey.createDimension('time', None)
+                        nc_datakey.createVariable('time', float, ('time'))
+                        data_buffer[hostname][publisher][devicename][k] = {}
+                        data_buffer[hostname][publisher][devicename][k]['time'] = []
+                        data_buffer[hostname][publisher][devicename][k][k] = []
+                        # Create variable
+                        typedata = type(data[k])
+                        # print('typedata',typedata)
+                        if isinstance(data['t'],list) or isinstance(data['t'],numpy.ndarray):
+                            lent = len(data['t']) # The length of the time dimension
+                        else:
+                            lent = 1
+                        if (typedata is list) or (typedata is numpy.ndarray):
+                            try:
+                                logger_start.info(
+                                    'Creating variable for list/ndarray type {}'.format(
+                                        typedata))
+                                dwrite = numpy.asarray(data[k])
+                                datatype_array = dwrite.dtype
+                                dwrite_shape = numpy.shape(dwrite)
+                                lenk = dwrite_shape[0] # The length of the data in the time dimension
+                                dimnames = ['time']
+                                if lent == lenk and len(dwrite_shape) == 1:
+                                    print("case1")
+                                else:
+                                    if lent == lenk:
+                                        ishape=0
+                                    else:
+                                        ishape=1
+                                    for id, nd in enumerate(dwrite_shape[ishape:]):
+                                        dimname = k + '_n_{}'.format(id)
+                                        dimnames.append(dimname)
+                                        nc_datakey.createDimension(dimname, None)
+
+                                logger_start.debug(
+                                    'Creating variable {}. Dimnames {}. Datatype {}.'.format(
+                                        k, dimnames, datatype_array))
+                                var = nc_datakey.createVariable(k, datatype_array,
+                                                               dimnames, zlib=flag_zlib)
+                                setattr(var, 'redvypr_address',
+                                        packet_address.to_address_string())
+                            except:
+                                logger_start.warning(
+                                    'Could not create variable for {}'.format(k),
+                                    exc_info=True)
+                        elif (typedata is str):
+                            logger_start.info('Creating string variable')
+                            # For some reason zlib does not work with str
+                            var = nc_datakey.createVariable(k, str, ('time'), zlib=False)
+                            setattr(var, 'redvypr_address',
+                                    packet_address.to_address_string())
+                        elif (typedata is bytes):  # Ignore bytes
+                            var = None
+                        elif (typedata is dict):  # Ignore dict
+                            var = None
+                        elif (typedata is None or typedata is type(
+                                None)):  # Ignore None
+                            var = None
+                        else:
+                            try:
+                                logger_start.info(
+                                    'Creating variable with type {}'.format(typedata))
+                                var = nc_datakey.createVariable(k, typedata, ('time'),
+                                                               zlib=flag_zlib)
+                                setattr(var, 'redvypr_address',
+                                        packet_address.to_address_string())
+                            except:
+                                var = None
+
 
                 # Write metadata of roogroup and devices
                 if deviceinfo_all is not None and not(nc in vars_updated):
@@ -287,81 +378,69 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     except:
                         logger_start.debug('Could not set metadata', exc_info=True)
 
-                # Write data
-                if True:
-                    #print(funcname + ' got data',data)
+
+                # Fill the databuffer
+                flag_sync_databuffer_size = False
+                packets_written += 1
+                for k in datakeys:
+                    data_tmp = data[k]
                     try:
-                        data['t']
+                        t_tmp = data['t']
                     except:
-                        data['t'] = data['_redvypr']['t']
+                        t_tmp =  data['t'] = data['_redvypr']['t']
 
-                    lent = len(nc_device.variables['time'])
-                    nc_device.variables['time'][lent] = data['t']
-                    datakeys = data_packets.Datapacket(data).datakeys()
-                    datakeys.remove('t')
-                    #datakeys.insert(0,'t')
-                    # Write data in datakeys or create variable
-                    # Write time
-                    packets_written += 1
+
+                    if isinstance(data_tmp,list):
+                        data_buffer[hostname][publisher][devicename][k][k].extend(data_tmp)
+                    else:
+                        data_buffer[hostname][publisher][devicename][k][k].append(
+                            data_tmp)
+
+                    if isinstance(t_tmp, list):
+                        data_buffer[hostname][publisher][devicename][k]['time'].extend(t_tmp)
+                    else:
+                        data_buffer[hostname][publisher][devicename][k]['time'].append(t_tmp)
+
+                    nbuf = len(data_buffer[hostname][publisher][devicename][k]['time'])
+                    if nbuf >= config['nc_bufsize']:
+                        w = True
+
+                if flag_sync_databuffer_size or ((time.time() - tsync_buffer) > config['dt_bufsync']):
+                    tsync_buffer = time.time()
+                    logger_start.info(f"Syncing databuffer to {filename}")
                     for k in datakeys:
-                        #print('-----')
-                        #print('Datakeys', datakeys)
-                        #print('Datakey',k)
-                        try:
-                            var = nc_device.variables[k]
-                        except: # Create variable
-                            typedata = type(data[k])
-                            #print('typedata',typedata)
-                            if (typedata is list) or (typedata is numpy.ndarray):
-                                try:
-                                    logger_start.info('Creating variable for list/ndarray type {}'.format(typedata))
-                                    dwrite = numpy.asarray(data[k])
-                                    datatype_array = dwrite.dtype
-                                    dwrite_shape = numpy.shape(dwrite)
-                                    dimnames = ['time']
-                                    for id,nd in enumerate(numpy.shape(dwrite)):
-                                        dimname = k + '_n_{}'.format(id)
-                                        dimnames.append(dimname)
-                                        nc_device.createDimension(dimname, None)
-
-                                    logger_start.debug('Creating variable {}. Dimnames {}. Datatype {}.'.format(k,dimnames,datatype_array))
-                                    var = nc_device.createVariable(k, datatype_array, dimnames, zlib=flag_zlib)
-                                    setattr(var, 'redvypr_address', packet_address.to_address_string())
-                                except:
-                                    logger_start.warning('Could not create variable for {}'.format(k),exc_info=True)
-                            elif (typedata is str):
-                                logger_start.info('Creating string variable')
-                                # For some reason zlib does not work with str
-                                var = nc_device.createVariable(k, str, ('time'), zlib=False)
-                                setattr(var, 'redvypr_address', packet_address.to_address_string())
-                            elif (typedata is bytes): # Ignore bytes
-                                var = None
-                            elif (typedata is dict): # Ignore dict
-                                var = None
-                            elif (typedata is None or typedata is type(None)): # Ignore None
-                                var = None
-                            else:
-                                try:
-                                    logger_start.info('Creating variable with type {}'.format(typedata))
-                                    var = nc_device.createVariable(k, typedata, ('time'), zlib=flag_zlib)
-                                    setattr(var, 'redvypr_address', packet_address.to_address_string())
-                                except:
-                                    var = None
-
-                        # And finally write the data
-                        if var is not None:
-                            try:
-                                var[lent] = data[k]
-                                try:
-                                    file_status[k] += 1
-                                except:
-                                    file_status[k] = 1
-                            except:
-                                logger_start.warning('Could not write data',exc_info=True)
+                        logger_start.info(f"\tSyncing {k}")
+                        nc_datakey = nc[hostname][publisher][devicename][k]
+                        t_write = data_buffer[hostname][publisher][devicename][k]['time']
+                        data_write = data_buffer[hostname][publisher][devicename][k][k]
+                        data_buffer[hostname][publisher][devicename][k]['time'] = []
+                        data_buffer[hostname][publisher][devicename][k][k] = []
+                        var_k = nc_datakey.variables[k]
+                        var_t = nc_datakey.variables['time']
+                        lent_new = len(t_write)
+                        lent_nc = len(var_t)
+                        #print(t_write)
+                        #print(data_write)
+                        #print(f"{numpy.shape(data_write)}")
+                        #print(f"{numpy.shape(t_write)}")
+                        var_t[lent_nc:lent_nc + lent_new] = t_write
+                        # strings needs to be written solely
+                        if isinstance(data_write[0],str):
+                            for i, val in enumerate(data_write):
+                                var_k[lent_nc + i] = val
                         else:
-                            pass
+                            var_k[lent_nc:lent_nc + lent_new] = data_write
+
+                        try:
+                            file_status[k] += 1
+                        except:
+                            file_status[k] = 1
 
 
+
+                # Write data
+                if False:
+                    for k in datakeys:
                         # Write metadata
                         try:
                             if deviceinfo_all is not None and not(var in vars_updated):
