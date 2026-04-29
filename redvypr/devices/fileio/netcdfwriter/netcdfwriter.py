@@ -171,11 +171,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             logger.debug("Configuration incomplete", exc_info=True)
             sizenewb = 0  # Size in bytes
             
-    try:
-        config['dt_sync']
-    except:
-        config['dt_sync'] = 5
-
     flag_zlib = config['zlib']
     bytes_written = 0
     packets_written = 0
@@ -353,6 +348,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                                 except:
                                     var = None
 
+                        # And finally write the data
                         if var is not None:
                             try:
                                 var[lent] = data[k]

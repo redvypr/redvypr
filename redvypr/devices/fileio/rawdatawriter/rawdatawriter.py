@@ -603,7 +603,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                     q.get(block=False)
                 except queue.Empty:
                     continue
-                q.task_done()
+                #q.task_done()
             self.device.thread_start()
         else:
             logger.debug(funcname + 'button released')
