@@ -210,16 +210,16 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
 
             # Process data from the main thread
             if redvyprdata is not None:
-                print("Got data from redvyprqueue",redvyprdata)
+                #print("Got data from redvyprqueue",redvyprdata)
                 if "_metadata" in redvyprdata.keys() or "_metadata_remove" in redvyprdata.keys():
-                    print("Adding/remove metadata from redvyrqueue")
+                    #print("Adding/remove metadata from redvyrqueue")
                     try:
                         status_statistics = redvypr_packet_statistic.do_metadata(
                             redvyprdata, deviceinfo_all)
                         #print("Deviceinfo all",deviceinfo_all)
-                        print("Status statistics",status_statistics)
+                        #print("Status statistics",status_statistics)
                     except:
-                        print("Problem")
+                        #print("Problem")
                         logger_dist.info(funcname + ':Metadata:', exc_info=True)
 
                     # Update metadata
@@ -258,7 +258,9 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                                                                 'distribute_data')
                         data_packets_fan_out.append(compacket)
 
+            #
             # Loop over all devices and process data
+            #
             for devicedict in devices:
                 #print("devicedict", devicedict)
                 #print("\n\n")
@@ -273,7 +275,6 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                         data = device.dataqueue.get(block=False)
                         if not (isinstance(data, dict)): # If data is not a dictionary, convert it to one
                             data = {'data':data}
-
 
                         devicedict['statistics']['packets_published'] += 1  # The total number of packets published by the device
                         packets_processed += 1 # Counter for the statistics

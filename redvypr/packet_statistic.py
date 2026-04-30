@@ -244,7 +244,6 @@ def do_metadata(data, metadatadict, auto_add_packetfilter=True):
                     address_str = address_str_work
 
                 new_metadata = data['_metadata'][address_str_work]
-
                 # Ensure the address exists in our storage
                 if address_str not in metadatadict['metadata']:
                     metadatadict['metadata'][address_str] = {}
@@ -392,6 +391,7 @@ def get_metadata(statistics,
     # Sort the datakeys by the number of the datakey indices.
     # This allows to have the longest entries latest such that the most
     # specific one is overwriting a less specific one
+    # The more datakeyentries, the deeper and the more specific
     #https://docs.python.org/3/howto/sorting.html Decorate-Sort-Undecorate
     decorated = [(len(RedvyprAddress(astr).get_datakeyentries()),astr) for astr in statistics['metadata'].keys()]
     decorated.sort()
@@ -401,21 +401,15 @@ def get_metadata(statistics,
     for astr in metadata_keys_sorted:
         #print("Astr",astr,mode,raddress)
         raddr = RedvyprAddress(astr)
-        #print("Test address,",raddr,raddress)
-        #print("Test address result,", raddr(raddress))
-        #print("Test matches", raddress.matches_filter(raddr, soft_missing=False), raddr.matches_filter(raddress, soft_missing=False))
-        #print("Test address result2,", RedvyprAddress(astr))
-        #print("\n")
-        #try:
-        #    retdata = raddr(raddress)
-        #except:
-        #    continue
-
         if raddress.matches(raddr):
             #print(f"Match of {raddress} and {raddr}:\n{raddress.matches(raddr)=}")
             if True:
                 metadata = statistics['metadata'][astr]
-                #print('Found metadata', metadata)
+                print(f'Found metadata:{metadata} for address:{astr}')
+                if not(isinstance(metadata,dict)):
+                    logger.debug("Metadata is not dict, converting it")
+                    print("Metadata is not dict, converting it")
+                    metadata = {astr:metadata}
                 if mode == 'merge': # Put everything into the addressstring key
                     metadata_return[raddress.to_address_string()].update(metadata)
                 else:

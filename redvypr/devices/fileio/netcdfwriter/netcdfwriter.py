@@ -175,6 +175,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             sizenewb = 0  # Size in bytes
             
     flag_zlib = config['zlib']
+    packets_read = 0
     bytes_written = 0
     packets_written = 0
     bytes_written_total = 0
@@ -205,7 +206,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     while FLAG_RUN:
         tcheck = time.time()
         time.sleep(0.05)
-        while(datainqueue.empty() == False):
+        while(datainqueue.empty() == False) and FLAG_RUN:
+            #print("Got data",packets_read)
             # Flush file on regular basis
             if ((time.time() - tflush) > config['dt_sync']):
                 nc.sync()
@@ -216,6 +218,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
             try:
                 data = datainqueue.get(block=False)
+                packets_read += 1
                 packet_address = redvypr.RedvyprAddress(data)
                 if (data is not None):
                     [command,comdata] = data_packets.check_for_command(data, thread_uuid=device_info['thread_uuid'], add_data=True)
@@ -383,58 +386,60 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 flag_sync_databuffer_size = False
                 packets_written += 1
                 for k in datakeys:
-                    data_tmp = data[k]
-                    try:
-                        t_tmp = data['t']
-                    except:
-                        t_tmp =  data['t'] = data['_redvypr']['t']
+                    if k in nc_datakey.variables:
+                        data_tmp = data[k]
+                        try:
+                            t_tmp = data['t']
+                        except:
+                            t_tmp = data['_redvypr']['t']
 
+                        if isinstance(data_tmp,list):
+                            data_buffer[hostname][publisher][devicename][k][k].extend(data_tmp)
+                        else:
+                            data_buffer[hostname][publisher][devicename][k][k].append(
+                                data_tmp)
 
-                    if isinstance(data_tmp,list):
-                        data_buffer[hostname][publisher][devicename][k][k].extend(data_tmp)
-                    else:
-                        data_buffer[hostname][publisher][devicename][k][k].append(
-                            data_tmp)
+                        if isinstance(t_tmp, list):
+                            data_buffer[hostname][publisher][devicename][k]['time'].extend(t_tmp)
+                        else:
+                            data_buffer[hostname][publisher][devicename][k]['time'].append(t_tmp)
 
-                    if isinstance(t_tmp, list):
-                        data_buffer[hostname][publisher][devicename][k]['time'].extend(t_tmp)
-                    else:
-                        data_buffer[hostname][publisher][devicename][k]['time'].append(t_tmp)
-
-                    nbuf = len(data_buffer[hostname][publisher][devicename][k]['time'])
-                    if nbuf >= config['nc_bufsize']:
-                        w = True
+                        nbuf = len(data_buffer[hostname][publisher][devicename][k]['time'])
+                        if nbuf >= config['nc_bufsize']:
+                            flag_sync_databuffer_size = True
 
                 if flag_sync_databuffer_size or ((time.time() - tsync_buffer) > config['dt_bufsync']):
                     tsync_buffer = time.time()
                     logger_start.info(f"Syncing databuffer to {filename}")
                     for k in datakeys:
-                        logger_start.info(f"\tSyncing {k}")
-                        nc_datakey = nc[hostname][publisher][devicename][k]
-                        t_write = data_buffer[hostname][publisher][devicename][k]['time']
-                        data_write = data_buffer[hostname][publisher][devicename][k][k]
-                        data_buffer[hostname][publisher][devicename][k]['time'] = []
-                        data_buffer[hostname][publisher][devicename][k][k] = []
-                        var_k = nc_datakey.variables[k]
-                        var_t = nc_datakey.variables['time']
-                        lent_new = len(t_write)
-                        lent_nc = len(var_t)
-                        #print(t_write)
-                        #print(data_write)
-                        #print(f"{numpy.shape(data_write)}")
-                        #print(f"{numpy.shape(t_write)}")
-                        var_t[lent_nc:lent_nc + lent_new] = t_write
-                        # strings needs to be written solely
-                        if isinstance(data_write[0],str):
-                            for i, val in enumerate(data_write):
-                                var_k[lent_nc + i] = val
-                        else:
-                            var_k[lent_nc:lent_nc + lent_new] = data_write
+                        if k in nc_datakey.variables:
+                            logger_start.info(f"\tSyncing {k}")
+                            nc_datakey = nc[hostname][publisher][devicename][k]
+                            t_write = data_buffer[hostname][publisher][devicename][k]['time']
+                            data_write = data_buffer[hostname][publisher][devicename][k][k]
+                            data_buffer[hostname][publisher][devicename][k]['time'] = []
+                            data_buffer[hostname][publisher][devicename][k][k] = []
+                            #print(t_write)
+                            #print(data_write)
+                            #print(f"{numpy.shape(data_write)}")
+                            #print(f"{numpy.shape(t_write)}")
+                            var_k = nc_datakey.variables[k]
+                            var_t = nc_datakey.variables['time']
+                            lent_new = len(t_write)
+                            lent_nc = len(var_t)
 
-                        try:
-                            file_status[k] += 1
-                        except:
-                            file_status[k] = 1
+                            var_t[lent_nc:lent_nc + lent_new] = t_write
+                            # strings needs to be written solely
+                            if isinstance(data_write[0],str):
+                                for i, val in enumerate(data_write):
+                                    var_k[lent_nc + i] = val
+                            else:
+                                var_k[lent_nc:lent_nc + lent_new] = data_write
+
+                            try:
+                                file_status[k] += 1
+                            except:
+                                file_status[k] = 1
 
 
 

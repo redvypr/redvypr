@@ -397,7 +397,9 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
     nnewread = 0
     if (filestream is not None):
         while True:
+            #print("Waiting for command")
             com = commandqueue.get()
+            #print("Got command")
             if type(com) == int: # Read n new packets
                 nnewread = com
                 nread = 0
@@ -409,9 +411,9 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
                 seek_start = filestream.tell()
                 data_read = filestream.read(chunksize)
                 seek_now = filestream.tell()
-                #print('data read', seek_start,seek_now, seek_now - seek_start,len(data_read))
+                #print('data read', seek_start,seek_now, seek_now - seek_start,len(data_read),size)
                 lendata = len(data_read)
-                # print('len', len(data_read))
+                #print('len', len(data_read))
                 if len(data_read) < chunksize:
                     flag_eof = True
 
@@ -420,6 +422,7 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
                 seek_data_buffer_end = seek_now
                 seek_data_buffer_start = seek_data_buffer_end - len(data_buffer)
                 while True:
+                    #print("loopiloop")
                     # Look for the start of a packet
                     try:
                         index_start = data_buffer.index(b'---')
@@ -438,13 +441,18 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
                     #print('index start',index_start,index_end)
 
                     if (index_end is not None) and (index_start is not None) and ((index_end - index_start) > 0):
+                        #print("Decoding")
                         datab = data_buffer[index_start:index_end]
                         databs = datab.decode('utf-8')
                         #print('databs',databs,index_start,index_end)
                     else:
+                        #print("Breaking")
                         break
                     try:
-                        data_packet = yaml.safe_load(databs)
+                        #data_packet = yaml.safe_load(databs)
+                        #print("Load")
+                        data_packet = yaml.unsafe_load(databs)
+                        #print("Load done")
                         if (data_packet is not None):
                             numpacket = data_packet['_redvypr']['numpacket']
                             tpacket = data_packet['_redvypr']['t']
@@ -468,24 +476,24 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
                                 if dt > 0.5:
                                     tstatus = time.time()
                                     #logger.debug(funcname + ' Status:' + str(status_thread))
-                            # Remove the packet from the dta_buffer
+                            # Remove the packet from the data_buffer
                             data_buffer = data_buffer[index_end+len(pattern_end):]
                             seek_data_buffer_start = seek_data_buffer_end - len(data_buffer)
-                    except Exception as e:
-                        logger.debug(funcname + ': Could not decode message:"{:s}"'.format(str(databs)))
+                    except:
+                        logger.warning(funcname + ': Could not decode message:"{:s}"'.format(str(databs)),exc_info=True)
 
-                        logger.exception(e)
-                        #return [packets, packet_ind]
-
+                    #print("loopiloop done")
                     #break
 
 
                 if flag_eof:  # EOF, cleanup
+                    #print("EOF")
                     logger.debug(funcname + ': EOF. Rewinding file')
                     filestream.seek(0)
                     t = time.time()
                     td = datetime.datetime.fromtimestamp(t)
                     tdstr = td.strftime("%Y-%m-%d %H:%M:%S.%f")
+                    #print("EOF DONE")
                     return
 
             # In thread mode, add stat to status dictionary
@@ -508,11 +516,6 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
                 status_thread['flag_eof'] = flag_eof
                 #status_thread['stat'] = stat
                 statusqueue.put(status_thread)
-
-
-
-
-
 
 def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
@@ -622,12 +625,16 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             logger.debug(funcname + ' Reading thread finished')
             FLAG_NEW_FILE = True
         else:
-            if len(packets) > 1:
+            if len(packets) < npacket_buf:
+                dn = npacket_buf - len(packets)
+                # print('Asking for new packets',dn)
+                read_commandqueue.put(dn)
                 while True:
                     try:
                         packets.append(read_dataqueue.get_nowait())
                     except:
                         break
+            if len(packets) > 1:
                 if True:
                     t_pnow = pnow['_redvypr']['t']
                     t_pnext = pnext['_redvypr']['t']
@@ -652,14 +659,13 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                         logger.warning(funcname + ' Long dt_packet of {:f} seconds'.format(dt_packet))
 
 
-                    if len(packets) < npacket_buf:
-                        dn = npacket_buf - len(packets)
-                        #print('Asking for new packets',dn)
-                        read_commandqueue.put(dn)
+
 
                     #print('sleeping dt_packet',dt_packet)
                     time.sleep(dt_packet)
                     t_sent = time.time()
+            else:
+                time.sleep(0.1)
 
 
         # Status update
@@ -985,7 +991,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         for p in self.inspect_threads:
             try:
                 status = p.statusqueue.get_nowait()
-                print(funcname + ' Got status')
+                #print(funcname + ' Got status')
                 # print('Hallo status',status)
                 row = p.row
             except Exception as e:

@@ -974,8 +974,10 @@ class RedvyprDevice(QtCore.QObject):
 
                         self.thread_uuid = thread_uuid
                         # Sending metadata
-                        print("METADATA!!!")
+
                         compacket = self.redvypr.get_metadata_commandpacket(device=self.name)
+                        print(f"Compacket:{compacket}")
+                        print(f"Sending metadata packet to device:{self.name}")
                         self.datainqueue.put(compacket)
                         #for addr in self.subscribed_addresses:
                         #    if addr.matches_filter(compacket):
@@ -1211,7 +1213,8 @@ class RedvyprDevice(QtCore.QObject):
         self.logger.debug(funcname)
         self.subscribed_addresses = []
 
-    def get_metadata_datakey(self, address, all_entries=True):
+    # Deprecated
+    def get_metadata_datakey_legacy(self, address, all_entries=True):
         """
         Returns the metadata of the redvypr address
         """
