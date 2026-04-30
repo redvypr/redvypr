@@ -411,10 +411,10 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
                 if flag_sync_databuffer_size or ((time.time() - tsync_buffer) > config['dt_bufsync']):
                     tsync_buffer = time.time()
-                    logger_start.info(f"Syncing databuffer to {filename}")
+                    logger_start.debug(f"Syncing databuffer to {filename}")
                     for k in datakeys:
                         if k in nc_datakey.variables:
-                            logger_start.info(f"\tSyncing {k}")
+                            logger_start.debug(f"\tSyncing {k}")
                             nc_datakey = nc[hostname][publisher][devicename][k]
                             t_write = data_buffer[hostname][publisher][devicename][k]['time']
                             data_write = data_buffer[hostname][publisher][devicename][k][k]
