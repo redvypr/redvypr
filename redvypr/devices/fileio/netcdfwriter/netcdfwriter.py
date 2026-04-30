@@ -126,7 +126,7 @@ def create_logfile(config,count=0):
 
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
     logger_start = logging.getLogger('netcdfwriter/thread')
-    logger_start.setLevel(logging.DEBUG)
+    logger_start.setLevel(logging.INFO)
     funcname = __name__ + '.start()'
     logger_start.debug(funcname + ':Opening writing:')
     if config['clearqueue']:
