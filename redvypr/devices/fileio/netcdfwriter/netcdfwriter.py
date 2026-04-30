@@ -277,6 +277,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     data_buffer[hostname][publisher][devicename] = {}
 
 
+
                 # The datakey
                 datakeys = data_packets.Datapacket(data).datakeys()
                 datakeys.remove('t')
