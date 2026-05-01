@@ -387,7 +387,11 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 flag_sync_databuffer_size = False
                 packets_written += 1
                 for k in datakeys:
-                    if k in nc_datakey.variables:
+                    try:
+                        nc_datakey = nc[hostname][publisher][devicename][k]
+                    except:  # Create group and variables for datakey
+                        continue
+                    if True:
                         data_tmp = data[k]
                         try:
                             t_tmp = data['t']
@@ -413,7 +417,11 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     tsync_buffer = time.time()
                     logger_start.debug(f"Syncing databuffer to {filename}")
                     for k in datakeys:
-                        if k in nc_datakey.variables:
+                        try:
+                            nc_datakey = nc[hostname][publisher][devicename][k]
+                        except:  # Create group and variables for datakey
+                            continue
+                        if True:
                             logger_start.info(f"\tSyncing {k}")
                             nc_datakey = nc[hostname][publisher][devicename][k]
                             t_write = data_buffer[hostname][publisher][devicename][k]['time']
