@@ -255,8 +255,8 @@ class TarDevice():
         # Calculate the sensor locations
         xdist = numpy.arange(0, ntcnum) * ntcdist / 1000
         ydist = numpy.arange(0, ntcnum) * 0
-        datapacket_merge['pos_pcb_x'] = xdist
-        datapacket_merge['pos_pcb_y'] = ydist
+        datapacket_merge['pos_pcb_x'] = xdist.tolist()
+        datapacket_merge['pos_pcb_y'] = ydist.tolist()
         # print('Xdist', xdist)
         sensors_body = np.column_stack(
             (xdist, np.zeros_like(xdist), np.zeros_like(xdist)))
