@@ -111,12 +111,13 @@ def raw_to_packet(datab, config, safe_load=False):
                 data = yaml.load(databs,Loader=loader)
             except Exception as e:
                 #print('data',databs)
-                print("Loader",loader)
+                logger.debug(f"Loader:{loader}")
                 logger.info(funcname + ': Could not decode message:',exc_info=True)
                 logger.debug(funcname + ': Could not decode message  with supposed format {:s} into something useful.'.format(config['datakey']))
                 data = None
             if(data is not None):
                 if(config['datakey'] == 'all'): # Forward the whole message
+                    #logger.debug("Received packet from:{data['_redvypr']['packetid']}")
                     packets.append(data)
                 else:
                     datan = {'t':t}

@@ -405,7 +405,7 @@ def get_metadata(statistics,
             #print(f"Match of {raddress} and {raddr}:\n{raddress.matches(raddr)=}")
             if True:
                 metadata = statistics['metadata'][astr]
-                print(f'Found metadata:{metadata} for address:{astr}')
+                #print(f'Found metadata:{metadata} for address:{astr}')
                 if not(isinstance(metadata,dict)):
                     logger.debug("Metadata is not dict, converting it")
                     print("Metadata is not dict, converting it")

@@ -121,7 +121,7 @@ def create_logfile(config,count=0):
 
     # Create a workbook and add a worksheet.
     nc = netCDF4.Dataset(filename, mode='w',format='NETCDF4')
-    print("Done ...")
+    logger.info(funcname + "Done ...")
     return [nc,filename]
 
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
@@ -293,6 +293,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             nc_datakey = nc[hostname][publisher][devicename].createGroup(k)
                             nc_datakey.redvypr_address = redvypr_address.RedvyprAddress(
                                 data,datakey=k).to_address_string()
+                            nc_datakey.stack = 0
                             # Add time variable
                             logger.debug('Creating time dimension')
                             nc_datakey.createDimension('time', None)
@@ -317,19 +318,21 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                                     lenk = dwrite_shape[0] # The length of the data in the time dimension
                                     dimnames = ['time']
                                     if lent == lenk and len(dwrite_shape) == 1:
-                                        print("case1")
+                                        nc_datakey.stack = 1
+                                        #print("Stack 1")
                                     else:
                                         # If the first dimension equals the time dimension, start with the second
                                         if lent == lenk:
                                             ishape=1
                                         else:
                                             ishape=0
-                                        print("case2",ishape)
+                                        #print("case2",ishape)
                                         for id, nd in enumerate(dwrite_shape[ishape:]):
                                             dimname = k + '_n_{}'.format(id)
-                                            print("dimname", dimname)
+                                            print(f"dimname {dimname} with size {nd}")
                                             dimnames.append(dimname)
-                                            nc_datakey.createDimension(dimname, None)
+                                            nc_datakey.createDimension(dimname, nd)
+                                            nc_datakey.stack=2
 
 
                                     logger_start.info(f'Creating variable {k}. Dimnames {dimnames}. Datatype {datatype_array}')
@@ -394,6 +397,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             nc_var = nc[hostname][publisher][devicename][k][k]
                         except:  # Create group and variables for datakey
                             continue
+
                         if True:
                             data_tmp = data[k]
                             try:
@@ -401,16 +405,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             except:
                                 t_tmp = data['_redvypr']['t']
 
-                            if isinstance(data_tmp,list):
-                                data_buffer[hostname][publisher][devicename][k][k].extend(data_tmp)
-                            else:
-                                data_buffer[hostname][publisher][devicename][k][k].append(
-                                    data_tmp)
-
-                            if isinstance(t_tmp, list):
-                                data_buffer[hostname][publisher][devicename][k]['time'].extend(t_tmp)
-                            else:
-                                data_buffer[hostname][publisher][devicename][k]['time'].append(t_tmp)
+                            data_buffer[hostname][publisher][devicename][k][k].append(data_tmp)
+                            data_buffer[hostname][publisher][devicename][k]['time'].append(t_tmp)
 
                             nbuf = len(data_buffer[hostname][publisher][devicename][k]['time'])
                             if nbuf >= config['nc_bufsize']:
@@ -426,38 +422,47 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             except:  #
                                 continue
 
-                            print(f"nc_datakey:{nc_datakey}")
-                            if True:
-                                logger_start.info(f"\tSyncing {k}")
+
+                            #print(f"nc_datakey:{nc_datakey}, {stack=}")
+                            data_write = data_buffer[hostname][publisher][devicename][k][k]
+                            if len(data_write)>0:
+                                logger_start.debug(f"\tSyncing {k}")
                                 nc_datakey = nc[hostname][publisher][devicename][k]
                                 t_write = data_buffer[hostname][publisher][devicename][k]['time']
-                                data_write = data_buffer[hostname][publisher][devicename][k][k]
                                 data_buffer[hostname][publisher][devicename][k]['time'] = []
                                 data_buffer[hostname][publisher][devicename][k][k] = []
                                 #print(t_write)
-                                #print(data_write)
-                                print(f"{numpy.shape(t_write)}, {numpy.shape(data_write)}")
+                                #print("data write",data_write)
+                                #print(f"{numpy.shape(t_write)=}, {numpy.shape(data_write)=}")
 
                                 var_k = nc_datakey.variables[k]
                                 var_t = nc_datakey.variables['time']
-                                lent_new = len(t_write)
+
                                 lent_nc = len(var_t)
 
-                                print(f"{numpy.shape(var_k)=},{lent_nc=},{lent_new=}")
-
-                                var_t[lent_nc:lent_nc + lent_new] = t_write
+                                #print(f"{numpy.shape(var_k)=},{lent_nc=},{lent_new=}")
+                                if nc_datakey.stack == 1:
+                                    t_write_flat = numpy.concatenate(t_write)
+                                else:
+                                    t_write_flat = t_write
+                                lent_new = len(t_write_flat)
+                                var_t[lent_nc:lent_nc + lent_new] = t_write_flat
                                 # strings needs to be written solely
                                 if isinstance(data_write[0],str):
-                                #if True:
                                     for i, val in enumerate(data_write):
-
                                         try:
                                             var_k[lent_nc + i] = val
                                         except:
                                             print("Could not sync i,val", i, val)
                                 else:
-                                    data_np = numpy.asarray(data_write)
-                                    print(f"shape np {numpy.shape(data_np)}")
+                                    if nc_datakey.stack == 1:
+                                        data_np = numpy.concatenate(data_write)
+                                    elif nc_datakey.stack == 2:
+                                        #print("Stacking")
+                                        data_np = numpy.stack(data_write)
+                                    else:
+                                        data_np = numpy.asarray(data_write)
+                                    #print(f"shape np {numpy.shape(data_np)}")
                                     try:
                                         var_k[lent_nc:lent_nc + lent_new, ...] = data_np
                                     except Exception as e:
