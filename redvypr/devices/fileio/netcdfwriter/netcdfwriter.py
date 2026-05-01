@@ -414,7 +414,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     logger_start.debug(f"Syncing databuffer to {filename}")
                     for k in datakeys:
                         if k in nc_datakey.variables:
-                            logger_start.debug(f"\tSyncing {k}")
+                            logger_start.info(f"\tSyncing {k}")
                             nc_datakey = nc[hostname][publisher][devicename][k]
                             t_write = data_buffer[hostname][publisher][devicename][k]['time']
                             data_write = data_buffer[hostname][publisher][devicename][k][k]
@@ -422,8 +422,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                             data_buffer[hostname][publisher][devicename][k][k] = []
                             #print(t_write)
                             #print(data_write)
-                            #print(f"{numpy.shape(data_write)}")
-                            #print(f"{numpy.shape(t_write)}")
+                            print(f"{numpy.shape(t_write)}, {numpy.shape(data_write)}")
                             var_k = nc_datakey.variables[k]
                             var_t = nc_datakey.variables['time']
                             lent_new = len(t_write)
