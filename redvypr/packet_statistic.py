@@ -15,7 +15,7 @@ logger.setLevel(logging.INFO)
 
 # A dictionary for the device_redvypr entry in the statistics
 #device_redvypr_statdict = {'_redvypr': {},'datakeys':[],'datakeys_expanded': {},'packets_received':0,'packets_published':0,'packets_droped':0,'_metadata':{},'_deviceinfo':{},'_keyinfo':{}}
-device_redvypr_statdict = {'_redvypr': {},'datakeys':[],'datakeys_expanded': {},'packets_received':0,'packets_published':0,'packets_droped':0,'_metadata':{}}
+device_redvypr_statdict = {'_redvypr': {},'datakeys':[],'datakeys_expanded': {},'packets_received':0,'packets_published':0,'packets_dropped':0,'_metadata':{}}
 
 data_statistics_address_format = redvypr_standard_address_filter#["i","p","d","h","u","a"]
 
@@ -81,6 +81,7 @@ def create_data_statistic_dict():
     statdict['inspect'] = True
     statdict['packets_published'] = 0
     statdict['packets_received'] = 0
+    statdict['packets_dropped'] = 0
     statdict['datakeys'] = []
     #statdict['datakeys_expanded'] = {}
     statdict['devicekeys'] = {}

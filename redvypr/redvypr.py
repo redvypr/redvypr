@@ -163,11 +163,12 @@ def send_packets_to_devices(devicedict, devices, data_packets_fan_out, logger_di
                         # print('Sent data to',devicename_stat,devicedict_sub['packets_received'])
                         break
                     except:
-                        thread_status = devicesub.get_thread_status()
-                        if thread_status['thread_running']:
-                            devicedict['statistics']['packets_dropped'] += 1
-                        logger_dist.warning(funcname + ':dataout of :' + devicedict_sub[
-                            'device'].name, exc_info=True)
+                        devicedict_sub['statistics']['packets_dropped'] += 1
+                        #thread_status = devicesub.get_thread_status()
+                        #if thread_status['thread_running']:
+                        #    devicedict['statistics']['packets_dropped'] += 1
+                        #logger_dist.warning(funcname + ':dataout of :' + devicedict_sub[
+                        #    'device'].name, exc_info=True)
 
 def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, redvyprreplyqueue, dt=0.01):
     """ The heart of redvypr, this functions distributes the queue data onto the subqueues.

@@ -412,7 +412,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.devicetabs.setMovable(True)
         self.devicetabs.setTabsClosable(True)
         self.devicetabs.tabCloseRequested.connect(self.closeTab)
-        # Create home tab
+        # Create home tab, here all devices are listed
         self.createHomeWidget()
         tab_index = self.devicetabs.addTab(self.__homeWidget, 'Home')
         # Add an icon
@@ -605,29 +605,7 @@ class redvyprWidget(QtWidgets.QWidget):
             loglevel_save = options['loglevel']
             save_metadata = options['save_metadata']  # Check if metadata shall be saved
 
-
         self.redvypr.save_config(fname=fname_full, add_metadata=save_metadata, set_loglevel=loglevel_save)
-        if False: # Old legacy approach
-            config = self.redvypr.get_config()
-            data_save = config.model_dump()
-            #print('Data save',data_save)
-            if True:
-                tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
-                fname_suggestion = 'config_' + self.redvypr.hostinfo['host'] + '_' + tstr + '.yaml'
-                dialog = RedvyprSaveFileDialog(self,default_file=fname_suggestion)
-                if dialog.exec():
-                    fname_full = dialog.selectedFiles()
-                    options = dialog.get_custom_option()
-                    data_save['loglevel'] = options['loglevel']
-                    save_metadata = options['save_metadata'] # Check if metadata shall be saved
-                    for d in data_save['devices']:
-                        d['base_config']['autostart'] = options['autostart']
-                        d['base_config']['loglevel'] = options['loglevel']
-
-                if fname_full:
-                    logger.debug('Saving to file {:s}'.format(fname_full))
-                    with open(fname_full, 'w') as fyaml:
-                        yaml.dump(data_save, fyaml)
 
     def open_add_device_widget(self):
         """

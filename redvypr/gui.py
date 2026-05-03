@@ -30,7 +30,8 @@ iconnames = {'settings':'ri.settings-5-line'}
 
 class deviceTableWidget(QtWidgets.QTableWidget):
     """
-    Tablewidget that displays all devices of the redvypr instance, gives informations and controls possibility.
+    Tablewidget that displays all devices of the redvypr instance.
+    Gives basic information and control possibilities of the devices
 
     """
 
@@ -54,7 +55,7 @@ class deviceTableWidget(QtWidgets.QTableWidget):
     def populate_table(self):
         nRows = len(self.redvypr.devices)
         colheader = ['Name', 'Start', 'Subscribe', 'Loglevel', 'Window location', 'Configure', 'View',
-                         'Packets published', 'Packets received']
+                         'Packets published', 'Packets received', 'Packets dropped']
 
         self.colheader = colheader
         nCols = len(colheader)
@@ -154,6 +155,10 @@ class deviceTableWidget(QtWidgets.QTableWidget):
             nrecv = d['device'].statistics['packets_received']
             colindex = self.colheader.index('Packets received')
             item_recv = QtWidgets.QTableWidgetItem(str(nrecv))
+            self.setItem(irow, colindex, item_recv)
+            ndropped = d['device'].statistics['packets_dropped']
+            colindex = self.colheader.index('Packets dropped')
+            item_recv = QtWidgets.QTableWidgetItem(str(ndropped))
             self.setItem(irow, colindex, item_recv)
 
     def deviceViewClicked(self):
