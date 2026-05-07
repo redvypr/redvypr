@@ -209,7 +209,6 @@ class TarDevice():
             except:
                 parents_raw = None
 
-            print("Parents raw",parents_raw)
             logger.debug(f"Merging {mac=},{trecv=},{parents_raw}")
             packetid = f"tar_{mac}"
             device = f"tar_{mac}"
