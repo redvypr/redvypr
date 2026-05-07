@@ -558,7 +558,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
                 # Update the data
                 if not(table.isVisible()):
-                    print(f"Table for {datatype} is not visible")
+                    pass
+                    #print(f"Table for {datatype} is not visible")
                 else:
                     for datatar,colheader in zip(datatars,colheaders):
                         # update the table packetbuffer
