@@ -224,7 +224,7 @@ class TarDevice():
                     if len(pa) > 0:
                         datapacket_merge_redvypr['parents'].append(pa)
 
-        print('Parents',datapacket_merge_redvypr['parents'])
+        #print('Parents',datapacket_merge_redvypr['parents'])
         datapacket_merge = {}
 
         for datatype in datatypes_packet:
