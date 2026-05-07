@@ -105,7 +105,7 @@ class TarChain():
         datapacket_tar_chain_merge['t'] = trecv
         datapacket_tar_chain_merge['mac'] = tarchainmac
         for datatype_merge in datatypes_merge:
-            print(f"Merging:{datatype_merge=}")
+            logger.debug(f"Merging:{datatype_merge=}")
             data_merged = []
             for p in packets:
                 data_merge = p[datatype_merge]
@@ -567,7 +567,7 @@ class TarProcessor():
 
                     # Try to merge into a datachain
                         if len(datapacket_merged['parents']) == 0:
-                            print("Found a root tar device")
+                            logger.debug("Found a root tar device")
                             rootmac = datapacket_merged['mac']
                         else:
                             rootmac = datapacket_merged['parents'][0]
@@ -575,13 +575,13 @@ class TarProcessor():
                         try:
                             self.tar_chains[rootmac]
                         except:
-                            print(f"Creating new TarChain with {rootmac=}\n\n")
+                            logger.debug(f"Creating new TarChain with {rootmac=}\n\n")
                             self.tar_chains[rootmac] = TarChain(root=rootmac)
 
-                        print("Found a root tar device done\n\n\n")
+                        #print("Found a root tar device done\n\n\n")
                         datapacket_merged = self.tar_chains[rootmac].add_datapacket(datapacket_merged)
                         if datapacket_merged is not None:
-                            print("Got merged packet")
+                            #print("Got merged packet")
                             packets['merged_tar_chain'].append(datapacket_merged)
 
         return packets
@@ -589,7 +589,7 @@ class TarProcessor():
     def process_file(self, filename_tar):
         f = open(filename_tar, 'rb')
         for binary_data in f.readlines():
-            print('data from line', binary_data)
+            #print('data from line', binary_data)
             self.process_rawdata(binary_data)
 
     def to_ncfile(self):
