@@ -54,71 +54,87 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     logger_thread = logging.getLogger('redvypr.device.tar.start')
     logger_thread.setLevel(logging.DEBUG)
     logger_thread.debug(funcname)
-    tar_processor = tar_process.TarProcessor()
-    metadata_dict = {} # Store the metadata
+    # 2. Prüfen, ob bereits Handler existieren (verhindert doppelte Einträge bei Neustart)
+    if not logger_thread.handlers:
+        log_file = 'thread_tar_debug.log'
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        logger_thread.addHandler(file_handler)
+        logger_thread.propagate = False
 
-    #metadata_packets = tar_processor.create_metadata_packets()
-    #for p in metadata_packets:
-    #    dataqueue.put(p)
+    logger_thread.debug(f"--- Thread gestartet: {funcname} ---")
 
-    if len(config['convert_files']):
-        logger_thread.info('Converting datafiles')
-        for fname in config['convert_files']:
-            logger_thread.info('Converting {}'.format(fname))
-            tar_processor.process_file(fname)
-            tar_processor.to_ncfile()
+    try:
+        tar_processor = tar_process.TarProcessor()
+        metadata_dict = {} # Store the metadata
+
+        #metadata_packets = tar_processor.create_metadata_packets()
+        #for p in metadata_packets:
+        #    dataqueue.put(p)
+
+        if len(config['convert_files']):
+            logger_thread.info('Converting datafiles')
+            for fname in config['convert_files']:
+                logger_thread.info('Converting {}'.format(fname))
+                tar_processor.process_file(fname)
+                tar_processor.to_ncfile()
 
 
-    while True:
-        datapacket = datainqueue.get()
-        [command, comdata] = check_for_command(datapacket, thread_uuid=device_info['thread_uuid'],
-                                               add_data=True)
-        if command is not None:
-            logger.debug('Command is for me: {:s}'.format(str(command)))
-            if command == 'stop':
-                logger.info(funcname + 'received command:' + str(datapacket) + ' stopping now')
-                logger.debug('Stop command')
-                return
+        while True:
+            datapacket = datainqueue.get()
+            [command, comdata] = check_for_command(datapacket, thread_uuid=device_info['thread_uuid'],
+                                                   add_data=True)
+            if command is not None:
+                logger_thread.debug('Command is for me: {:s}'.format(str(command)))
+                if command == 'stop':
+                    logger_thread.info(funcname + 'received command:' + str(datapacket) + ' stopping now')
+                    logger_thread.debug('Stop command')
+                    return
 
-        #print("Got data",datapacket.keys())
-        try:
-            # This needs to be refined with the datastreams
-            datapacket['data']
-            #print('Data', datapacket['data'])
-            #print('Done done done')
-        except:
-            continue
+            #print("Got data",datapacket.keys())
+            try:
+                # This needs to be refined with the datastreams
+                datapacket['data']
+                #print('Data', datapacket['data'])
+                #print('Done done done')
+            except:
+                continue
 
-        #print("Processing data:")
-        #print(f"{datapacket['data']=}")
-        merged_packets = tar_processor.process_rawdata(datapacket['data'])
-        if merged_packets['metadata'] is not None:
-            for ppub in merged_packets['metadata']:
-                #print("Publishing metadata!",ppub)
-                # Publish the data
-                dataqueue.put(ppub)
-        if merged_packets['merged_packets'] is not None:
-            if config['publish_raw_sensor']:
-                for ppub in merged_packets['merged_packets']:
-                    atmp = redvypr.RedvyprAddress(ppub)
-                    pkid = atmp.packetid
-                    #print("Atmp",atmp)
-                    # Metadata
-                    if pkid not in metadata_dict.keys():
-                        pass
-                        #print("New metadata")
-
+            #print("Processing data:")
+            #print(f"{datapacket['data']=}")
+            merged_packets = tar_processor.process_rawdata(datapacket['data'])
+            if merged_packets['metadata'] is not None:
+                for ppub in merged_packets['metadata']:
+                    #print("Publishing metadata!",ppub)
                     # Publish the data
                     dataqueue.put(ppub)
+            if merged_packets['merged_packets'] is not None:
+                if config['publish_raw_sensor']:
+                    for ppub in merged_packets['merged_packets']:
+                        atmp = redvypr.RedvyprAddress(ppub)
+                        pkid = atmp.packetid
+                        #print("Atmp",atmp)
+                        # Metadata
+                        if pkid not in metadata_dict.keys():
+                            pass
+                            #print("New metadata")
 
-        if merged_packets['merged_tar_chain'] is not None:
-            for ppub in merged_packets['merged_tar_chain']:
-                #print('Publishing merged tar chain')
-                #print('Publishing merged tar chain')
-                #print('Publishing merged tar chain',ppub)
-                dataqueue.put(ppub)
+                        # Publish the data
+                        dataqueue.put(ppub)
+
+            if merged_packets['merged_tar_chain'] is not None:
+                for ppub in merged_packets['merged_tar_chain']:
+                    #print('Publishing merged tar chain')
+                    #print('Publishing merged tar chain')
+                    #print('Publishing merged tar chain',ppub)
+                    dataqueue.put(ppub)
+    except:
+        logger_thread.error("thread crashed unexpectetly",exc_info=True)
 
     return None
+
 
 class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def __init__(self,*args,**kwargs):
@@ -370,7 +386,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             #print(funcname + 'Got some data', data)
 
             packetid = data['_redvypr']['packetid']
-            print('Got packet',packetid,data.keys())
+            #print('Got packet',packetid,data.keys())
             for datatype in datatypes_plot:
                 icols = []  # The columns in the table that will be updated
                 datatars = []  # The data in the columns to be updated
