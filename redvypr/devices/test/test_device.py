@@ -138,7 +138,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 t_last['sine'] = t_now
                 #print("Sending sine")
                 # Calculate some sine
-                data_rand = pdconfig.sine_rand_amp * float(np.random.rand(1) - 0.5)
+                data_rand = pdconfig.sine_rand_amp * float(np.random.rand() - 0.5)
                 f_sin = 2 * np.pi * pdconfig.sine_freq
                 A_sin = pdconfig.sine_amp
                 data_sine = float(A_sin * np.sin(f_sin * time.time()))
@@ -198,8 +198,8 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 t_last['latlon'] = t_now
                 # Create a position packet
                 data_latlon = redvypr.data_packets.create_datadict(packetid='latlon_random',device=device_info['device'])
-                data_latlon['lon'] = float(np.random.rand(1) - 0.5) * 180
-                data_latlon['lat'] = float(np.random.rand(1) - 0.5) * 90
+                data_latlon['lon'] = float(np.random.rand() - 0.5) * 180
+                data_latlon['lat'] = float(np.random.rand() - 0.5) * 90
                 data_latlon['t'] = time.time()
                 dataqueue.put(data_latlon)
 
