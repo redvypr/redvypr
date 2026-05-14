@@ -263,8 +263,12 @@ class DbSqliteWriter:
                                                'columns_flat_active': {}}
         print(f"Opening database file: {self.filepath}")
         self.file_created = time.time()
-        self.conn = sqlite3.connect(self.filepath)
+        #self.conn = sqlite3.connect(self.filepath)
+        #self.conn.execute("PRAGMA foreign_keys = ON;")
+        self.conn = sqlite3.connect(':memory:')
         self.conn.execute("PRAGMA foreign_keys = ON;")
+        # Increase cache size
+        self.conn.execute("PRAGMA cache_size = -20000;") # ca. 20MB Cache
         self._initialize_metadata_tables()
         self.numconfig = self._determine_numconfig()
         self._register_config()
