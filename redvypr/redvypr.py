@@ -337,6 +337,17 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                             status_statistics['metadata_changed'] = True
                         elif (command == 'reply'):  # status update
                             device.distribute_data_replyqueue.put_nowait(data)
+                        elif command == 'subscribe' or command == 'unsubscribe':  # subscribe/unsubscribe command
+                            addresses = comdata['command_data']['data']
+                            if not(isinstance(addresses,list)):
+                                addresses = [addresses]
+                            for addr in addresses:
+                                if command == 'subscribe':
+                                    device.subscribe_address(address=addr)
+                                else:
+                                    device.unsubscribe_address(address=addr)
+                        elif (command == 'unsubscribe_all'):  # unsubscribe all command
+                            device.unsubscribe_all()
                         elif (command == 'device'):  # A command for the device
                             command = 'device.' + comdata
                             print('Got a command',command)

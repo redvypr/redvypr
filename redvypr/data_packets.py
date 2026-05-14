@@ -10,6 +10,7 @@ from redvypr.redvypr_address import RedvyprAddress, redvypr_standard_address_fil
 import collections
 import pydantic
 import typing
+from typing import Any, Dict, Optional, Union
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.base.data_packets')
@@ -339,9 +340,70 @@ class Datapacket(dict):
     def get_addressstr(self,addrformat='k,i'):
         return self.address.to_address_string(addrformat)
 
+    def expand_data(self, expansion_level=1, address_format='k,i,h,d,p'):
+        """
+        Expands data
 
-import time
-from typing import Any, Dict, Optional, Union
+        """
+        data_tmp = self
+        datakeys = self.datakeys()
+        data_return = {}
+        try:
+            t = data_tmp['t']
+        except:
+            t = data_tmp['_redvypr'].get('t',-1)
+        try:
+            lent = len(t)
+            t0 = t[0]
+        except:
+            lent = -1
+            t0 = t
+
+        # Get rid of the time
+        try:
+            datakeys.remove('t')
+        except:
+            pass
+
+        for k in datakeys:
+            data_expanded_tmp = {'format':'0d'} # can be 0d:one point,0d_stacked: points in a list with time of the same length
+            data_tmp = self[k]
+            #print(f"{k=},{data_tmp=}")
+            if isinstance(data_tmp, list):
+                if lent == len(data_tmp):
+                    data_expanded_tmp['t'] = t
+                    data_expanded_tmp['format'] = '0d_stacked'
+                else:
+                    data_expanded_tmp['t'] = t0
+
+                data_expanded_tmp['data'] = data_tmp
+                data_expanded_tmp['key'] = k
+                data_expanded_tmp['address'] = RedvyprAddress(self,
+                                                              datakey=k).to_address_string(
+                    address_format)
+                data_return[data_expanded_tmp['address']] = data_expanded_tmp
+            elif isinstance(data_tmp, dict):
+                # Here a recursive approach could be done
+                data_expanded_tmp['t'] = t0
+                data_expanded_tmp['data'] = data_tmp
+                data_expanded_tmp['key'] = k
+                data_expanded_tmp['address'] = RedvyprAddress(self,
+                                                              datakey=k).to_address_string(
+                    address_format)
+                data_return[data_expanded_tmp['address']] = data_expanded_tmp
+            else:
+                data_expanded_tmp['t'] = t0
+                data_expanded_tmp['data'] = data_tmp
+                data_expanded_tmp['key'] = k
+                data_expanded_tmp['address'] = RedvyprAddress(self,datakey=k).to_address_string(address_format)
+                data_return[data_expanded_tmp['address']] = data_expanded_tmp
+
+
+        #print(f"{data_return=}")
+        return data_return
+
+
+
 
 
 def create_datadict(

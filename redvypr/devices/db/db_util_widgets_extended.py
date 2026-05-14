@@ -26,6 +26,143 @@ class DBConfigWidgetExtended(QtWidgets.QWidget):
         self.current_config = initial_config
         self.setup_ui()
 
+        tables_local = copy.deepcopy(self.config.tables)
+        self.datastreamsconfigwidget = DatastreamsTabsWidget(redvypr=self.redvypr,
+                                                             tables=tables_local)
+        self.datastreamsconfigwidget.tables_changed.connect(
+            self._update_datastreams_dict)
+        self.datastreamsconfigwidget.show()
+
+    def setup_ui(self):
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # --- 1. Selection Header ---
+        header_layout = QtWidgets.QHBoxLayout()
+        header_layout.addWidget(QtWidgets.QLabel("<b>Database Engine:</b>"))
+
+        self.type_combo = QtWidgets.QComboBox()
+        self.type_combo.addItems(["sqlite", "timescaledb"])
+
+        # Set initial selection from config
+        index = self.type_combo.findText(self.current_config.dbtype)
+        if index >= 0:
+            self.type_combo.setCurrentIndex(index)
+
+        header_layout.addWidget(self.type_combo)
+        self.main_layout.addLayout(header_layout)
+
+        # --- 2. The Stacked Area ---
+        self.stack = QtWidgets.QStackedWidget()
+
+        # Instantiate specific widgets
+        # We pass dummy defaults if the initial type doesn't match
+        self.timescale_ui = TimescaleDbConfigWidgetExtended(
+            initial_config=self.current_config if isinstance(self.current_config,
+                                                             TimescaleConfigExtended) else TimescaleConfigExtended()
+        )
+
+        self.sqlite_ui = SqliteConfigWidgetExtended(
+            initial_config=self.current_config if isinstance(self.current_config,
+                                                             SqliteConfigExtended) else SqliteConfigExtended(),
+            redvypr=self.redvypr
+        )
+
+        self.sqlite_ui.db_config_changed.connect(self.db_widget_config_changed)
+        self.stack.addWidget(self.timescale_ui)  # Index 0
+        self.stack.addWidget(self.sqlite_ui)  # Index 1
+
+        self.main_layout.addWidget(self.stack)
+
+        # Connect signals
+        self.type_combo.currentTextChanged.connect(self.switch_view)
+
+        # Set initial view
+        self.switch_view(self.current_config.dbtype)
+
+
+    def setup_ui_legacy(self):
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # --- 1. Selection Header ---
+        header_layout = QtWidgets.QHBoxLayout()
+        header_layout.addWidget(QtWidgets.QLabel("<b>Database Engine:</b>"))
+
+        self.type_combo = QtWidgets.QComboBox()
+        self.type_combo.addItems(["sqlite", "timescaledb"])
+
+        # Set initial selection from config
+        index = self.type_combo.findText(self.current_config.dbtype)
+        if index >= 0:
+            self.type_combo.setCurrentIndex(index)
+
+        header_layout.addWidget(self.type_combo)
+        self.main_layout.addLayout(header_layout)
+
+        # --- 2. The Stacked Area ---
+        self.stack = QtWidgets.QStackedWidget()
+
+        # Instantiate specific widgets
+        # We pass dummy defaults if the initial type doesn't match
+        self.timescale_ui = TimescaleDbConfigWidgetExtended(
+            initial_config=self.current_config if isinstance(self.current_config,
+                                                             TimescaleConfigExtended) else TimescaleConfigExtended()
+        )
+
+        self.sqlite_ui = SqliteConfigWidgetExtended(
+            initial_config=self.current_config if isinstance(self.current_config,
+                                                             SqliteConfigExtended) else SqliteConfigExtended(),
+            redvypr=self.redvypr
+        )
+        self.sqlite_ui.db_config_changed.connect(self.db_widget_config_changed)
+        self.stack.addWidget(self.timescale_ui)  # Index 0
+        self.stack.addWidget(self.sqlite_ui)  # Index 1
+
+        self.main_layout.addWidget(self.stack)
+
+        # Connect signals
+        self.type_combo.currentTextChanged.connect(self.switch_view)
+
+        # Set initial view
+        self.switch_view(self.current_config.dbtype)
+
+    def db_widget_config_changed(self, db_config: dict):
+        self.db_config_changed.emit(db_config)
+    def switch_view(self, dbtype: str):
+        """Swaps the visible configuration form."""
+        if "timescaledb" in dbtype:
+            self.stack.setCurrentWidget(self.timescale_ui)
+            config = self.timescale_ui.get_config()
+        elif "sqlite" in dbtype:
+            self.stack.setCurrentWidget(self.sqlite_ui)
+            config = self.sqlite_ui.get_config()
+
+        print(f"DB type changed:{config}")
+        self.db_type_changed.emit(config.model_dump())
+
+    def get_config(self) -> DatabaseConfigExtended:
+        """Returns the specific Pydantic model from the active sub-widget."""
+        if self.type_combo.currentText() == "timescaledb":
+            return self.timescale_ui.get_config()
+        else:
+            return self.sqlite_ui.get_config()
+
+
+class DBConfigWidgetExtendedCompact(QtWidgets.QWidget):
+    """
+    A container widget that switches between TimescaleDbConfigWidget
+    and SqliteConfigWidget based on the selected dbtype.
+    """
+    db_type_changed = QtCore.Signal(dict)
+    db_config_changed = QtCore.Signal(dict)
+    def __init__(self, initial_config: DatabaseConfigExtended, parent=None, redvypr=None):
+        super().__init__(parent)
+        self.redvypr = redvypr
+        self.current_config = initial_config
+        self.setup_ui()
+
+
     def setup_ui(self):
         self.main_layout = QtWidgets.QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)

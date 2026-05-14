@@ -7,9 +7,17 @@ redvypr changelog
 ## [unreleased] 
 
 ### Added
+- Datapacket.expand_data(self, expansion_level=1, address_format='k,i,h,d,p'): Helper function to get individual data entries
 - datapath in redvypr.config
 - added `'device_config': device_config,` with `device_config = self.get_config().model_dump()` to `device_info` dict for the start parameter of a device thread
 - db_writer_extended allowing to save single redvypr addresses in flat tables
+- "subscribe","unsubscribe","unsubscribe_all" commands can be sent from the thread
+  -  ```
+        compacket = commandpacket("unsubscribe_all")
+        dataqueue.put(compacket)
+        compacket = commandpacket("subscribe",comdata=addresses_subscribe)
+        dataqueue.put(compacket)
+     ```
 ### Changed
 - improved `netcdfwriter`: Cleaned layout, fixed metadata for the new api
 - improved `serial_single`: Better configuration

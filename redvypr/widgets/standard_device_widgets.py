@@ -483,3 +483,139 @@ class RedvyprdevicewidgetStartonly(QtWidgets.QWidget):
             # self.conbtn.setEnabled(True)
 
 
+
+
+class RedvyprDeviceStartStopKillConfigWidget(QtWidgets.QWidget):
+    def __init__(self, device, show_subscribe=True, show_configure=True):
+        """
+        Widget that provides basic functionalities to start/stop/kill/configure/subscribe
+
+        Args:
+            device:
+        """
+        funcname = __name__ + '.__init__():'
+        logger.debug(funcname)
+        super().__init__()
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.buttons_widget = QtWidgets.QWidget()
+        self.layout_buttons = QtWidgets.QGridLayout(self.buttons_widget)
+        self.config_widgets = []
+        self.device = device
+        # Start-button
+        self.startbutton = QtWidgets.QPushButton('Start')
+        self.startbutton.clicked.connect(self.start_clicked)
+        self.startbutton.setCheckable(True)
+        self.device.thread_started.connect(self.thread_status_changed)
+        self.device.thread_stopped.connect(self.thread_status_changed)
+        # Process kill button (if thread)
+        if (self.device.mp == 'multiprocess') or (self.device.mp == 'qthread'):
+            # Killbutton
+            self.killbutton = QtWidgets.QPushButton('Kill process')
+            self.killbutton.clicked.connect(self.kill_clicked)
+
+        # configure button
+        icon = qtawesome.icon(iconnames['settings'])
+        self.configure_button = QtWidgets.QPushButton("Configure")
+        self.configure_button.setIcon(icon)
+        self.configure_button.clicked.connect(self.configure_clicked)
+        # self.conbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+        self.config_widgets.append(self.configure_button)
+        if device.subscribes:
+            # subscribe button
+
+            self.subscribe_button = QtWidgets.QPushButton("Subscribe")
+            self.subscribe_button.clicked.connect(self.subscribe_clicked)
+            #self.conbutton.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+            self.config_widgets.append(self.subscribe_button)
+            if show_subscribe:
+                self.layout_buttons.addWidget(self.subscribe_button, 2, 0, 1, 2)
+
+        if show_configure:
+            self.layout_buttons.addWidget(self.configure_button, 2, 2, 1, 2)
+        if (self.device.mp == 'multiprocess')  or (self.device.mp == 'qthread'):
+            self.layout_buttons.addWidget(self.startbutton, 3, 0, 1, 3)
+            self.layout_buttons.addWidget(self.killbutton, 3, 3)
+        else:
+            self.layout_buttons.addWidget(self.startbutton, 4, 0, 1, 4)
+
+        # Add both widgets to splitter
+        self.layout.addWidget(self.buttons_widget)
+        # If the config is changed, update the device widget
+        self.statustimer = QtCore.QTimer()
+        self.statustimer.timeout.connect(self.update_buttons)
+        self.statustimer.start(500)
+
+    def thread_status_changed(self, status):
+        funcname = __name__ + '.thread_status_changed():'
+        logger.debug(funcname)
+        #print('status',status)
+
+    def config_changed(self):
+        """
+
+
+        Args:
+            config:
+
+        Returns:
+
+        """
+        funcname = __name__ + '.config_changed():'
+        logger.debug(funcname)
+
+    def kill_clicked(self):
+        button = self.sender()
+        logger.debug("Kill device {:s}".format(self.device.name))
+        self.device.kill_process()
+
+    def start_clicked(self):
+        button = self.sender()
+        if button.isChecked():
+            logger.debug("button pressed")
+            button.setText('Starting')
+            self.device.thread_start()
+            # self.device_start.emit(self.device)
+        else:
+            logger.debug('button released')
+            # button.setText('Stopping')
+            self.startbutton.setChecked(True)
+            self.device.thread_stop()
+
+    def update_buttons(self):
+        """ Updating all buttons depending on the thread status (if its alive, graying out things)
+        """
+
+        status = self.device.get_thread_status()
+        thread_status = status['thread_running']
+        # Running
+        if (thread_status):
+            self.startbutton.setText('Stop')
+            self.startbutton.setChecked(True)
+            for w in self.config_widgets:
+                w.setEnabled(False)
+        # Not running
+        else:
+            self.startbutton.setText('Start')
+            for w in self.config_widgets:
+                w.setEnabled(True)
+
+            # Check if an error occured and the startbutton
+            if (self.startbutton.isChecked()):
+                self.startbutton.setChecked(False)
+            # self.conbtn.setEnabled(True)
+
+    def subscribe_clicked(self):
+        button = self.sender()
+        # self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
+        self.__subscribeWidget = redvypr.widgets.redvyprSubscribeWidget.SubscribeWidget(redvypr=self.redvypr, device=self.device)
+        self.__subscribeWidget.show()
+        self.subscribed.emit(self.device)
+
+    def configure_clicked(self):
+        button = self.sender()
+
+        funcname = __name__ + '.config_clicked():'
+        logger.debug(funcname)
+        self.config_widget = pydanticDeviceConfigWidget(self.device)
+        self.config_widget.showMaximized()
+        #self.subscribed.emit(self.device)

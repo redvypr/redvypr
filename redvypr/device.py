@@ -37,7 +37,7 @@ logging.basicConfig(stream=sys.stderr)
 
 # The maximum size the dataqueues have, this should be more than
 # enough for a "normal" usage case
-queuesize = 10000
+queuesize = 1000
 # queuesize = 10
 
 class DeviceMetadata(pydantic.BaseModel):

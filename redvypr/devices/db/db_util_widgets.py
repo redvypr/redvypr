@@ -72,10 +72,10 @@ class DBConfigWidget(QtWidgets.QWidget):
         self.db_config_changed.emit(db_config)
     def switch_view(self, dbtype: str):
         """Swaps the visible configuration form."""
-        if dbtype == "timescaledb":
+        if "timescaledb" in dbtype:
             self.stack.setCurrentWidget(self.timescale_ui)
             config = self.timescale_ui.get_config()
-        elif dbtype == "sqlite":
+        elif "sqlite" in dbtype:
             self.stack.setCurrentWidget(self.sqlite_ui)
             config = self.sqlite_ui.get_config()
 

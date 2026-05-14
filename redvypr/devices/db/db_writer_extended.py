@@ -5,10 +5,12 @@ import sys
 import pydantic
 import typing
 import qtawesome
+from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
-from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
+from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple, RedvyprDeviceStartStopKillConfigWidget
 from redvypr.redvypr_address import RedvyprAddress
-from .db_util_widgets_extended import DBConfigWidgetExtended
+from .db_util_widgets import DBConfigWidget
+from .db_util_widgets_extended import DBConfigWidgetExtended, DatastreamsTabsWidget
 from .db_engines_extended import DatabaseConfigExtended, DatabaseSettingsExtended, TimescaleConfig, SqliteConfigExtended, RedvyprDBFactoryExtended
 
 logging.basicConfig(stream=sys.stderr)
@@ -255,7 +257,45 @@ class DisplayDbStatusWidgetExtended(QtWidgets.QGroupBox):
         self.last_update_label.setText(f"Last update: {now}")
 
 
-class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
+
+class RedvyprDeviceWidget(QtWidgets.QWidget):
+    def __init__(self,device,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.tabwidget = QtWidgets.QTabWidget()
+        self.layout.addWidget(self.tabwidget)
+        self.device = device
+        initial_config = self.device.custom_config
+        self.device.thread_started.connect(self.thread_start_signal)
+        # The database and device start/stop widget
+        self.device_widget = QtWidgets.QWidget()
+        self.layout_device = QtWidgets.QVBoxLayout(self.device_widget)
+        self.startstop = RedvyprDeviceStartStopKillConfigWidget(device=device)
+        self.db_config_widget = DBConfigWidgetExtended(redvypr=self.device.redvypr,
+            initial_config=initial_config.database)
+        self.db_config_widget.db_type_changed.connect(self.update_config_from_widgets)
+        self.db_config_widget.db_config_changed.connect(self.update_config_from_widgets)
+        self.layout_device.addWidget(self.db_config_widget)
+
+        self.layout_device.addWidget(self.startstop, alignment=QtCore.Qt.AlignBottom)
+        self.tabwidget.addTab(self.device_widget,'Init/Start/Stop')
+        # Single datastreams
+        self.datastreams_single_widget = DatastreamsTabsWidget(redvypr=self.device.redvypr)
+        self.tabwidget.addTab(self.datastreams_single_widget, 'Single datastreams')
+
+    def update_config_from_widgets(self, config_new):
+        print(f"Got new config from widgets:{config_new}")
+        db_config = DatabaseSettingsExtended(config_new).root
+        print(f"Got new config from widgets:{db_config}")
+        self.device.custom_config.database = db_config
+
+    def thread_start_signal(self):
+        print("Thread started, starting statustimer")
+        self.statustimer_db.start(500)
+
+
+
+class RedvyprDeviceWidget_legacy(RedvyprdevicewidgetSimple):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.statistics = {}
