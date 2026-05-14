@@ -50,6 +50,11 @@ class SqliteConfig(pydantic.BaseModel):
         description="Naming template for rotated files. Placeholders: {name}, {filecount}, {filedate}."
     )
 
+    dt_newfile: int = pydantic.Field(default=3600,
+                                     description='Time after which a new file is created')
+    dt_newfile_unit: typing.Literal[
+        'none', 'seconds', 'hours', 'days'] = pydantic.Field(default='seconds')
+
     filedateformat: str = pydantic.Field(default='%Y-%m-%d_%H%M%S',
                                          description='Dateformat used in the filename, must be understood by datetime.strftime')
     write_config: DbWriteConfig = pydantic.Field(default_factory=DbWriteConfig)
@@ -211,13 +216,31 @@ class DbSqliteWriter:
         self.file_format = getattr(self.config, 'file_format', "{name}_{filecount}")
         self._file_index = -1
         self._packet_counter = 0
-        self.size_check_interval = 100  # Alle 100 Pakete prüfen
+        self.size_check_interval = 10  # Check every n packets
         self.filepath = self.generate_new_filename()
         self.file_statistics_total = {'packets_raw_written':0,
                                 'packets_flat_written':0,
                                 'metadata_written':0,
                                 'entries_flat_written':0,
                                 'columns_flat_active':{}}
+
+        try:
+            dtneworig = config.dt_newfile
+            dtunit = config.dt_newfile_unit
+            if (dtunit.lower() == 'seconds'):
+                dtfac = 1.0
+            elif (dtunit.lower() == 'hours'):
+                dtfac = 3600.0
+            elif (dtunit.lower() == 'days'):
+                dtfac = 86400.0
+            else:
+                dtfac = 0
+
+            self.dtnews = dtneworig * dtfac
+            logger.info(f' Will create new file every {config.dt_newfile} {config.dt_newfile_unit}.')
+        except:
+            logger.warning("Configuration incomplete", exc_info=True)
+            self.dtnews = 0
 
         self.file_statistics = {}
         # Convert the addresses in string format into redvypr addresses
@@ -239,6 +262,7 @@ class DbSqliteWriter:
                                                'entries_flat_written': 0,
                                                'columns_flat_active': {}}
         print(f"Opening database file: {self.filepath}")
+        self.file_created = time.time()
         self.conn = sqlite3.connect(self.filepath)
         self.conn.execute("PRAGMA foreign_keys = ON;")
         self._initialize_metadata_tables()
@@ -249,15 +273,17 @@ class DbSqliteWriter:
 
 
     def _check_rotation(self):
-        """Prüft, ob die Datei zu groß ist und rotiert werden muss."""
-        if self.max_file_size_mb is None:
-            return
-
+        """Checks if the file has to be rotated"""
         self._packet_counter += 1
         if self._packet_counter >= self.size_check_interval:
             self._packet_counter = 0
-
-            if os.path.exists(self.filepath):
+            if (time.time() >= self.file_created + self.dtnews) and (self.dtnews>0):
+                logger.info(
+                    f"🔄 Limit of file age {self.dtnews}s reached. Rotating...")
+                self.rotate_database()
+            elif os.path.exists(self.filepath):
+                if self.max_file_size_mb is None:
+                    return
                 file_size_mb = os.path.getsize(self.filepath) / (1024 * 1024)
                 if file_size_mb >= self.max_file_size_mb:
                     logger.info(
@@ -523,7 +549,10 @@ class DbSqliteWriter:
         flag_packet_written = False
         for table_name, t_cfg in wcra["tables"].items():
             table_type = t_cfg["tabletype"]
+            flag_address_match = False
             for iaddr,raddr in enumerate(t_cfg["raddresses"]):
+                if flag_address_match:
+                    break
                 addr = t_cfg["addresses"][iaddr]
                 #print("raddr",raddr)
                 #print(f"{table_name=},{table_type=},{raddr=}")
@@ -531,32 +560,32 @@ class DbSqliteWriter:
                     if raddr.matches_filter(data):
                         #print("Write packet to db table:{table_name}")
                         sql_command = self.get_sql_insert_datapacket(table_name, data)
-                        #print(f"{sql_command=}")
-                        try:
-                            self._execute(sql_command[0],sql_command[1])
-                        except:
-                            logger.warning(f"Could not insert data:{sql_command}",exc_info=True)
-                            print("data",data)
-                            print("table_name", table_name)
-                        #print(f"Stored packet in {table_name}")
-                        flag_packet_written = True
-                        self.file_statistics[self.filepath]['packets_raw_written'] += 1
-                        self.file_statistics_total['packets_raw_written'] += 1
-                        try:
+                        if sql_command:
+                            #print(f"{sql_command=}")
+                            try:
+                                self._execute(sql_command[0],sql_command[1])
+                            except:
+                                logger.warning(f"Could not insert data:{sql_command}",exc_info=True)
+                                print("data",data)
+                                print("table_name", table_name)
+                            #print(f"Stored packet in {table_name}")
+                            flag_packet_written = True
+                            self.file_statistics[self.filepath]['packets_raw_written'] += 1
+                            self.file_statistics_total['packets_raw_written'] += 1
+                            try:
+                                self.file_statistics_total['columns_flat_active'][
+                                    table_name][addr]
+                            except:
+                                self.file_statistics_total['columns_flat_active'][
+                                    table_name][
+                                    addr] = {
+                                    'colname_db': sanitize_name_for_db(addr),
+                                    'entries_written': 0}
+
                             self.file_statistics_total['columns_flat_active'][
-                                table_name][addr]
-                        except:
-                            self.file_statistics_total['columns_flat_active'][
-                                table_name][
-                                addr] = {
-                                'colname_db': sanitize_name_for_db(addr),
-                                'entries_written': 0}
+                                table_name][addr]['entries_written'] += 1
 
-                        self.file_statistics_total['columns_flat_active'][
-                            table_name][addr]['entries_written'] += 1
-
-
-                        break
+                            flag_address_match = True # Packet for address found, no need to look for further addresses
                 elif table_type == "data_flat":
                     #print("Checking address")
                     rv_meta = data.get('_redvypr', {})
@@ -572,45 +601,62 @@ class DbSqliteWriter:
                             #print("Got a datapacket, expanding")
                             rdata = Datapacket(data)
                             data_expanded = rdata.expand_data()
+                            #print("data_expanded all", data_expanded)
+                            #print("data_expanded",data_expanded.keys())
                         else:
-                            data_expanded = {addr:{}}
-                            data_expanded[addr]['t'] = tdata
-                            data_expanded[addr]['tpacket'] = tpacket
-                            data_expanded[addr]['data'] = data_addr
-                            data_expanded[addr]['key'] = None
-                            data_expanded[addr]['address'] = addr
+                            data_expanded = Datapacket.create_expanded_datadict(tdata,data_address,addr,raddr)
+                            #data_expanded = {addr:{}}
+                            #data_expanded[addr]['t'] = tdata
+                            #data_expanded[addr]['data'] = data_addr
+                            #data_expanded[addr]['key'] = None
+                            #data_expanded[addr]['address'] = addr
+                            #data_expanded['format'] = '0d'
 
                         for addr_write, data_expanded_tmp in data_expanded.items():
-                            # Check if addr in table exists
-                            #print(f"Checking if {addr_write=} exists in db table:{table_name}")
                             data_addr_write_final = data_expanded_tmp['data']
-                            self.check_addr_in_table(address=addr_write, table_name=table_name, value=data_addr_write_final)
-                            # Check how many entries we have to write
-                            try:
-                                nlines = len(tdata)
-                            except:
+                            if data_expanded_tmp['format'] == '0d':
                                 nlines = 1
-                                tdata = [tdata]
+                                tdata = [data_expanded_tmp['t']]
+                                if not isinstance(data_addr_write_final, list) or len(data_addr_write_final) == 0:
+                                    data_addr_write_final = [data_addr_write_final]
+                            elif data_expanded_tmp['format'] == '0d_stacked':
+                                nlines = len(tdata)
 
-                            # Check how many entries we have to write
+                            # Check if addr in table exists
+                            #print(
+                            #    f"Checking if {addr_write=} exists in db table:{table_name}")
                             try:
-                                nlines_data = len(data_addr_write_final)
+                                self.check_addr_in_table(address=addr_write,
+                                                         table_name=table_name,
+                                                         value=self.serialize_value(data_addr_write_final[0]))
+
                             except:
-                                nlines_data = 1
-                                data_addr_write_final = [data_addr_write_final]
+                                logger.warning(f"Error checking table with data: {self.serialize_value(data_addr_write_final[0])}", exc_info=True)
 
                             #print(f"Write data to db table:{table_name}")
                             sql_commands = []
                             for nline in range(nlines):
+                                data_write_db = self.serialize_value(data_addr_write_final[nline])
                                 sql_command = self.get_sql_insert_address_data(table_name=table_name,
                                                             address=addr_write,
                                                             t=tdata[nline],
                                                             t_packet=tpacket,
                                                             numpacket=numpacket,
-                                                            data=data_addr_write_final[nline])
+                                                            data=data_write_db)
 
-                                #print(f"{sql_command=}")
                                 sql_commands.append(sql_command)
+                                #try:
+                                #    self._execute(sql_command[0],sql_command[1])
+                                #except:
+                                #    print("\nError")
+                                #    print(data_expanded_tmp)
+                                #    print(f"{sql_command[0]=}")
+                                #    print(f"{sql_command[1]=}")
+                                #    print(data_write_db)
+                                #    # print(data_expanded_tmp)
+                                #    print(
+                                #       f"Could not write addr {addr_write=} in db table:{table_name}")
+                                #   logger.warning("Error writing", exc_info=True)
                                 # Statistics
                                 self.file_statistics_total['entries_flat_written']+=1
                                 try:
@@ -625,17 +671,35 @@ class DbSqliteWriter:
 
                                 #self.file_statistics[self.filepath]['entries_flat_written'] += 1
 
-                            self._execute_list(sql_commands)
+                            try:
+                                self._execute_list(sql_commands)
+                            except:
+                                logger.warning("Error writing",exc_info=True)
                             flag_packet_written = True
-                            break
+                            flag_address_match = True  # Packet for address found, no need to look for further addresses
 
         if flag_packet_written:
+            #print("Flag packet written")
             self.file_statistics[self.filepath]['packets_flat_written'] += 1
             self.file_statistics_total['packets_flat_written'] += 1
             self._check_rotation()
 
-
-
+    @staticmethod
+    def serialize_value(value):
+        """
+        Serialize a value for SQLite storage:
+        - NumPy arrays → bytes (BLOB)
+        - list/dict → JSON string (TEXT)
+        - Other types → unchanged
+        """
+        if isinstance(value, np.ndarray):
+            return value.tobytes()  # BLOB
+        elif isinstance(value, (list, dict)):
+            return json.dumps(value)  # TEXT (JSON)
+        elif isinstance(value, (bytes, bytearray)):
+            return bytes(value)  # BLOB
+        else:
+            return value  # INTEGER, REAL, TEXT, etc.
 
     def check_addr_in_table(self, address: str, table_name: str, value: any):
         """
@@ -665,6 +729,10 @@ class DbSqliteWriter:
         # 2. Determine SQLite data type from Python type
         if isinstance(value, int):
             sql_type = "INTEGER"
+        elif isinstance(value, (bytes, bytearray)):
+            sql_type = "BLOB"
+        elif isinstance(value, (list, dict)):
+            return json.dumps(value)  # TEXT (JSON)
         elif isinstance(value, float):
             sql_type = "REAL"
         elif isinstance(value, bool):
@@ -833,9 +901,6 @@ class DbSqliteWriter:
 
 
 
-
-
-
 class SqliteConfigWidget(QtWidgets.QWidget):
     db_config_changed = QtCore.Signal(dict)
 
@@ -848,7 +913,7 @@ class SqliteConfigWidget(QtWidgets.QWidget):
         main_layout = QtWidgets.QVBoxLayout(self)
         layout = QtWidgets.QFormLayout()
 
-        # 1. Base File Path
+        # --- 1. Base File Path ---
         self.path_edit = QtWidgets.QLineEdit(self.config.filepath)
         self.path_edit.textChanged.connect(self.config_changed)
         self.browse_btn = QtWidgets.QPushButton("Browse...")
@@ -863,26 +928,14 @@ class SqliteConfigWidget(QtWidgets.QWidget):
         file_layout.addWidget(self.query_button)
         layout.addRow("Database Name/Path:", file_layout)
 
-        # 5. Naming Format
-        self.format_edit = QtWidgets.QLineEdit(self.config.file_format)
-        self.format_edit.textChanged.connect(self.config_changed)
-        layout.addRow("File Naming Format:", self.format_edit)
-
-        # 6. Live Preview Label
-        self.preview_label = QtWidgets.QLabel()
-        self.preview_label.setStyleSheet(
-            "color: gray; font-style: italic; font-size: 11px;")
-        self.preview_label.setWordWrap(True)
-        layout.addRow("Filename Preview:", self.preview_label)
-
-        # 2. Rotation Toggle
+        # --- 2. File Rotation (Size-based) ---
         self.rotate_cb = QtWidgets.QCheckBox("Enable File Rotation (Limit Size)")
         self.rotate_cb.setChecked(self.config.max_file_size_mb is not None)
         self.rotate_cb.stateChanged.connect(self.toggle_rotation_ui)
         self.rotate_cb.stateChanged.connect(self.config_changed)
         layout.addRow(self.rotate_cb)
 
-        # 3. Max Size (MB)
+        # Max Size (MB)
         self.size_spin = QtWidgets.QDoubleSpinBox()
         self.size_spin.setRange(0.1, 9999.0)
         self.size_spin.setSuffix(" MB")
@@ -890,7 +943,7 @@ class SqliteConfigWidget(QtWidgets.QWidget):
         self.size_spin.valueChanged.connect(self.config_changed)
         layout.addRow("Max File Size:", self.size_spin)
 
-        # 4. Check Interval (Packets)
+        # Check Interval (Packets)
         self.interval_spin = QtWidgets.QSpinBox()
         self.interval_spin.setRange(1, 10000)
         self.interval_spin.setValue(self.config.size_check_interval)
@@ -898,18 +951,87 @@ class SqliteConfigWidget(QtWidgets.QWidget):
         self.interval_spin.valueChanged.connect(self.config_changed)
         layout.addRow("Check Interval:", self.interval_spin)
 
+        # --- 3. Time-based Rotation (NEU) ---
+        self.time_rotation_cb = QtWidgets.QCheckBox("Enable Time-based Rotation")
+        self.time_rotation_cb.setChecked(self.config.dt_newfile > 0)
+        self.time_rotation_cb.stateChanged.connect(self.toggle_time_rotation_ui)
+        self.time_rotation_cb.stateChanged.connect(self.config_changed)
+        layout.addRow(self.time_rotation_cb)
 
-        # UI Initialization
+        # Time Interval (Value)
+        self.time_spin = QtWidgets.QSpinBox()
+        self.time_spin.setRange(1, 999999)
+        self.time_spin.setValue(self.config.dt_newfile)
+        self.time_spin.valueChanged.connect(self.config_changed)
+        layout.addRow("Time Interval:", self.time_spin)
+
+        # Time Unit (Seconds/Hours/Days)
+        self.time_unit_combo = QtWidgets.QComboBox()
+        self.time_unit_combo.addItems(["seconds", "hours", "days"])
+        self.time_unit_combo.setCurrentText(self.config.dt_newfile_unit)
+        self.time_unit_combo.currentTextChanged.connect(self.config_changed)
+        layout.addRow("Time Unit:", self.time_unit_combo)
+
+        # --- 4. Naming Format ---
+        self.format_edit = QtWidgets.QLineEdit(self.config.file_format)
+        self.format_edit.textChanged.connect(self.config_changed)
+        layout.addRow("File Naming Format:", self.format_edit)
+
+        # --- 5. Date Format ---
+        self.date_format_edit = QtWidgets.QLineEdit(self.config.filedateformat)
+        self.date_format_edit.textChanged.connect(self.config_changed)
+        layout.addRow("Date Format (strftime):", self.date_format_edit)
+
+        # --- 6. Live Preview Label ---
+        self.preview_label = QtWidgets.QLabel()
+        self.preview_label.setStyleSheet(
+            "color: gray; font-style: italic; font-size: 11px;"
+        )
+        self.preview_label.setWordWrap(True)
+        layout.addRow("Filename Preview:", self.preview_label)
+
+        # --- UI Initialization ---
         self.toggle_rotation_ui()
+        self.toggle_time_rotation_ui()
         self.update_preview()
 
         main_layout.addLayout(layout)
 
+    def toggle_rotation_ui(self):
+        """Enables/Disables size-based rotation sub-settings."""
+        enabled = self.rotate_cb.isChecked()
+        self.size_spin.setEnabled(enabled)
+        self.interval_spin.setEnabled(enabled)
+
+    def toggle_time_rotation_ui(self):
+        """Enables/Disables time-based rotation sub-settings."""
+        enabled = self.time_rotation_cb.isChecked()
+        self.time_spin.setEnabled(enabled)
+        self.time_unit_combo.setEnabled(enabled)
+
+    def get_config(self) -> SqliteConfig:
+        """Returns a valid SqliteConfig object based on UI state."""
+        max_size = self.size_spin.value() if self.rotate_cb.isChecked() else None
+        dt_newfile = self.time_spin.value() if self.time_rotation_cb.isChecked() else 0
+        dt_newfile_unit = self.time_unit_combo.currentText() if self.time_rotation_cb.isChecked() else "none"
+        c = SqliteConfig(
+            dbtype="sqlite",
+            filepath=self.path_edit.text(),
+            max_file_size_mb=max_size,
+            size_check_interval=self.interval_spin.value(),
+            file_format=self.format_edit.text(),
+            filedateformat=self.date_format_edit.text(),
+            dt_newfile=dt_newfile,
+            dt_newfile_unit=dt_newfile_unit
+        )
+
+        print("config",c)
+
+        return c
+
     def update_preview(self):
-        """Updates the UI preview using the shared logic from the DB class."""
+        """Updates the filename preview."""
         config = self.get_config()
-        print("Config",config)
-        # We simulate the preview for the first file (index 1)
         preview_path = DbSqliteWriter.format_filename(
             base_name=config.filepath,
             file_format=config.file_format,
@@ -917,39 +1039,16 @@ class SqliteConfigWidget(QtWidgets.QWidget):
             max_file_size_mb=config.max_file_size_mb,
             file_dateformat=config.filedateformat
         )
-        print("Preview path",preview_path)
-        # Optional: Display only the filename in the preview for better readability
         self.preview_label.setText(os.path.basename(preview_path))
-
-    def toggle_rotation_ui(self):
-        """Enables/Disables sub-settings based on the rotation checkbox."""
-        enabled = self.rotate_cb.isChecked()
-        self.size_spin.setEnabled(enabled)
-        self.interval_spin.setEnabled(enabled)
-        #self.format_edit.setEnabled(enabled)
-        #self.preview_label.setVisible(enabled)
-
-    def get_config(self) -> SqliteConfig:
-        """Returns a valid SqliteConfig object based on UI state."""
-        max_size = self.size_spin.value() if self.rotate_cb.isChecked() else None
-
-        return SqliteConfig(
-            dbtype="sqlite",
-            filepath=self.path_edit.text(),
-            max_file_size_mb=max_size,
-            size_check_interval=self.interval_spin.value(),
-            file_format=self.format_edit.text()
-        )
 
     def config_changed(self):
         """Triggers preview update and emits the changed config."""
         self.update_preview()
         config = self.get_config()
-        # Logging to console as in your original script
-        # print(f"Sqlite config changed: {config}")
         self.db_config_changed.emit(config.model_dump())
 
     def handle_browse(self):
+        """Opens a file dialog to select the database path."""
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self, "Select SQLite Database", "",
             "DB Files (*.db *.sqlite);;All Files (*)"
@@ -958,12 +1057,13 @@ class SqliteConfigWidget(QtWidgets.QWidget):
             self.path_edit.setText(path)
 
     def query_db_clicked(self):
+        """Handles the 'Query DB' button click."""
         config = self.get_config()
         filename = config.filepath
         DbSqliteReader.get_file_info(filename)
         dbtest = DbSqliteReader(config=config)
         test_result = dbtest.check_file_consistency()
-        print("Test result",test_result)
+        print("Test result", test_result)
 
 
 
@@ -1064,6 +1164,7 @@ class StatusTableWidget(QtWidgets.QWidget):
 
     def _update_sqlite_table(self, status_dict: dict):
         """Update the SQLite table with data from status_db[0]['columns_flat_active']."""
+        status_dict = copy.deepcopy(status_dict)
         if not status_dict.get("status_db"):
             return
 

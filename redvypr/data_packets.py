@@ -340,6 +340,67 @@ class Datapacket(dict):
     def get_addressstr(self,addrformat='k,i'):
         return self.address.to_address_string(addrformat)
 
+    @staticmethod
+    def create_expanded_datadict(t,data,datakey,raddress,address_format='k,i,h,d,p'):
+        """
+        Options
+        1:
+            t: float,int
+            data: Anything
+            format: 0d
+        2:
+            t: list
+            data: float/int/str/binary
+            format: 0d
+        3:
+            t: list
+            data: list same length as t
+            format: 0d_stacked
+
+        Parameters
+        ----------
+        t
+        data
+        datakey
+        raddress
+        address_format
+
+        Returns
+        -------
+
+        """
+        data_expanded_tmp = {'format': '0d'}  # can be 0d:one point,0d_stacked: points in a list with time of the same length
+        data_expanded_tmp['address'] = RedvyprAddress(raddress, datakey=datakey).to_address_string(address_format)
+        try:
+            lent = len(t)
+            t0 = t[0]
+        except:
+            lent = -1
+            t0 = t
+        # print(f"{k=},{data_tmp=}")
+        if isinstance(data, list):
+            if lent == len(data):
+                data_expanded_tmp['t'] = t
+                data_expanded_tmp['format'] = '0d_stacked'
+            else:
+                data_expanded_tmp['t'] = t0
+
+            data_expanded_tmp['data'] = data
+            data_expanded_tmp['key'] = datakey
+        elif isinstance(data, dict):
+            # Here a recursive approach could be done
+            data_expanded_tmp['t'] = t0
+            data_expanded_tmp['data'] = data
+            data_expanded_tmp['key'] = datakey
+        else:
+            data_expanded_tmp['t'] = t0
+            data_expanded_tmp['data'] = data
+            data_expanded_tmp['key'] = datakey
+
+
+        return data_expanded_tmp
+
+
     def expand_data(self, expansion_level=1, address_format='k,i,h,d,p'):
         """
         Expands data
@@ -352,12 +413,6 @@ class Datapacket(dict):
             t = data_tmp['t']
         except:
             t = data_tmp['_redvypr'].get('t',-1)
-        try:
-            lent = len(t)
-            t0 = t[0]
-        except:
-            lent = -1
-            t0 = t
 
         # Get rid of the time
         try:
@@ -366,38 +421,9 @@ class Datapacket(dict):
             pass
 
         for k in datakeys:
-            data_expanded_tmp = {'format':'0d'} # can be 0d:one point,0d_stacked: points in a list with time of the same length
             data_tmp = self[k]
-            #print(f"{k=},{data_tmp=}")
-            if isinstance(data_tmp, list):
-                if lent == len(data_tmp):
-                    data_expanded_tmp['t'] = t
-                    data_expanded_tmp['format'] = '0d_stacked'
-                else:
-                    data_expanded_tmp['t'] = t0
-
-                data_expanded_tmp['data'] = data_tmp
-                data_expanded_tmp['key'] = k
-                data_expanded_tmp['address'] = RedvyprAddress(self,
-                                                              datakey=k).to_address_string(
-                    address_format)
-                data_return[data_expanded_tmp['address']] = data_expanded_tmp
-            elif isinstance(data_tmp, dict):
-                # Here a recursive approach could be done
-                data_expanded_tmp['t'] = t0
-                data_expanded_tmp['data'] = data_tmp
-                data_expanded_tmp['key'] = k
-                data_expanded_tmp['address'] = RedvyprAddress(self,
-                                                              datakey=k).to_address_string(
-                    address_format)
-                data_return[data_expanded_tmp['address']] = data_expanded_tmp
-            else:
-                data_expanded_tmp['t'] = t0
-                data_expanded_tmp['data'] = data_tmp
-                data_expanded_tmp['key'] = k
-                data_expanded_tmp['address'] = RedvyprAddress(self,datakey=k).to_address_string(address_format)
-                data_return[data_expanded_tmp['address']] = data_expanded_tmp
-
+            data_expanded_tmp = self.create_expanded_datadict(t,data_tmp,k,self.address)
+            data_return[data_expanded_tmp['address']] = data_expanded_tmp
 
         #print(f"{data_return=}")
         return data_return

@@ -54,6 +54,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     print("Config",config)
     print("device_info", device_info)
 
+
+
     device_config = DeviceCustomConfig(**config)
     dbconfig = device_config.database
     print("Database tables",dbconfig)
@@ -101,7 +103,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                     print("Metadata", metadata)
                     # add_metadata(self, address: str, uuid: str, metadata_dict: dict,mode: str = "merge"):
                     for metadata_address_str, metadata_content in metadata.items():
-                        print("Adding metadata", metadata_address_str)
+                        #print("Adding metadata", metadata_address_str)
                         metadata_address = RedvyprAddress(metadata_address_str)
                         try:
                             uuid = metadata_address.uuid
@@ -150,7 +152,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 statusqueue.put(data)
             if ((time.time() - t_update_db) > dt_update_db):
                 t_update_db = time.time()
-                print("Status")
+                #print("Status")
                 #db_status = db.get_status()
                 #statusqueue.put(db_status)
                 #print("Db Status",db_status)
@@ -275,6 +277,7 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         print(f"Databases:{self.device.custom_config.database=}")
         self.db_config_widget = SqliteConfigWidget(initial_config=self.device.custom_config.database)
         self.layout_device.addWidget(self.db_config_widget)
+        self.db_config_widget.db_config_changed.connect(self.dbfile_config_changed)
 
         self.layout_device.addWidget(self.startstop, alignment=QtCore.Qt.AlignBottom)
         self.tabwidget.addTab(self.device_widget,'Init/Start/Stop')
@@ -300,7 +303,14 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
     def dbwriter_config_changed(self):
         new_config = self.writer_config_widget.get_config()
         self.device.custom_config.database.write_config = new_config
-        print("Config changed",new_config)
+        print("Config changed",self.device.custom_config)#new_config)
+
+    def dbfile_config_changed(self):
+        new_file_config = self.db_config_widget.get_config()
+        new_writer_config = self.writer_config_widget.get_config()
+        new_file_config.write_config = new_writer_config
+        self.device.custom_config.database = new_file_config
+        print("DB File, Config changed", self.device.custom_config)  # new_config)
 
     def update_status(self):
         """Clears and redraws the status rows."""
@@ -312,7 +322,6 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
             status = None
         if status:
             self.status_table.update_table(status)
-
 
     def thread_start_signal(self):
         print("Thread started, starting statustimer")
