@@ -8,6 +8,7 @@ import hashlib
 import re
 import uuid
 import json
+import numpy as np
 from typing import Any, Dict, List, Optional, Iterator
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.widgets.redvyprAddressWidget import RedvyprMultipleAddressesWidget
