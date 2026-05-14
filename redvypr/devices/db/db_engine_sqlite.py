@@ -34,7 +34,7 @@ class SqliteConfig(pydantic.BaseModel):
         description="The type of the database engine."
     )
     filepath: str = pydantic.Field(
-        default="data_{filedate}.sql",
+        default="data.sql",
         description="The base filename or path for the SQLite database."
     )
     max_file_size_mb: typing.Optional[float] = pydantic.Field(
@@ -228,6 +228,16 @@ class DbSqliteWriter:
 
     def connect(self):
         """Connects to the sqlite database"""
+        self.file_statistics_total = {'packets_raw_written': 0,
+                                      'packets_flat_written': 0,
+                                      'metadata_written': 0,
+                                      'entries_flat_written': 0,
+                                      'columns_flat_active': {}}
+        self.file_statistics[self.filepath] = {'packets_raw_written': 0,
+                                               'packets_flat_written': 0,
+                                               'metadata_written': 0,
+                                               'entries_flat_written': 0,
+                                               'columns_flat_active': {}}
         print(f"Opening database file: {self.filepath}")
         self.conn = sqlite3.connect(self.filepath)
         self.conn.execute("PRAGMA foreign_keys = ON;")
@@ -236,16 +246,7 @@ class DbSqliteWriter:
         self._register_config()
         self._initialize_data_tables()
         self._tables_flat = {}
-        self.file_statistics_total = {'packets_raw_written': 0,
-                                      'packets_flat_written': 0,
-                                      'metadata_written': 0,
-                                      'entries_flat_written': 0,
-                                      'columns_flat_active': {}}
-        self.file_statistics[self.filepath] = {'packets_raw_written': 0,
-                                      'packets_flat_written': 0,
-                                      'metadata_written': 0,
-                                      'entries_flat_written': 0,
-                                      'columns_flat_active': {}}
+
 
     def _check_rotation(self):
         """Prüft, ob die Datei zu groß ist und rotiert werden muss."""
@@ -424,7 +425,6 @@ class DbSqliteWriter:
         wc = self.config.write_config
 
         for table_name, t_cfg in wc.tables.items():
-
             # Update Table Metadata - mark as active (1) for this config
             table_name_db = sanitize_name_for_db(table_name)
             # Update statistics
@@ -817,7 +817,9 @@ class DbSqliteWriter:
             # Simple fallback if template is broken
             new_filename_base = f"{clean_name}_{file_index:03d}_{now_str}"
 
-        return os.path.join(directory, f"{new_filename_base}{extension}")
+        filename_final = os.path.join(directory, f"{new_filename_base}{extension}")
+        #print("Filename final",filename_final)
+        return filename_final
 
 
     def get_status(self):
@@ -1058,7 +1060,6 @@ class StatusTableWidget(QtWidgets.QWidget):
     def _update_sqlite_table(self, status_dict: dict):
         """Update the SQLite table with data from status_db[0]['columns_flat_active']."""
         if not status_dict.get("status_db"):
-            print("Hallo")
             return
 
         db_entry = status_dict["status_db"][0]
@@ -1066,13 +1067,11 @@ class StatusTableWidget(QtWidgets.QWidget):
         columns_flat_active = db_entry.get("columns_flat_active")
         # Iterate through each entry in status_db[0]
         if True:
-            print("Hallo1")
             # Iterate through each table in the entry
             for table_name, table_data in columns_flat_active.items():
                 if not isinstance(table_data, dict):
                     continue
 
-                print("Table name",table_name)
                 table_name_db = table_data.get("table_name_db", "N/A")
                 # Process each address in columns_flat_active
                 for address, column_data in table_data.items():

@@ -28,7 +28,9 @@ class DeviceBaseConfig(pydantic.BaseModel):
 initial_config = SqliteConfig()
 initial_config.write_config.name = "Sqlite Writer"
 raw_table = DbTableConfig(tablename="redvypr_raw",addresses=["@"],tabletype="redvypr_datapacket")
+flat_table = DbTableConfig(tablename="redvypr_flat",addresses=["@"],tabletype="data_flat")
 initial_config.write_config.tables["redvypr_raw"] = raw_table
+initial_config.write_config.tables["redvypr_flat"] = flat_table
 
 class DeviceCustomConfig(pydantic.BaseModel):
     auto_create_table: bool = pydantic.Field(default=True, description="Create redvypr tables automatically at start, if not existing")
@@ -144,7 +146,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 data['metadata_address_inserted'] = metadata_address_inserted
                 data['statistics'] = statistics
                 data['status_db'] = db.get_status()
-                print("Status data",data)
+                #print("Status data",data)
                 statusqueue.put(data)
             if ((time.time() - t_update_db) > dt_update_db):
                 t_update_db = time.time()
@@ -303,7 +305,7 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
     def update_status(self):
         """Clears and redraws the status rows."""
         # Clear rows
-        print("Update")
+        #print("Update")
         try:
             status = self.device.statusqueue.get_nowait()
         except:
@@ -314,7 +316,7 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
 
     def thread_start_signal(self):
         print("Thread started, starting statustimer")
-        self.statustimer_db.start(500)
+        self.statustimer_db.start(1000)
 
 
 
