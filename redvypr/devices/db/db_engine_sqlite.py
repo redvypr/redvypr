@@ -38,11 +38,11 @@ class SqliteConfig(pydantic.BaseModel):
         description="The base filename or path for the SQLite database."
     )
     max_file_size_mb: typing.Optional[float] = pydantic.Field(
-        default=None,
+        default=100,
         description="Maximum file size in MB before rotating. If None, rotation is disabled."
     )
     size_check_interval: int = pydantic.Field(
-        default=100,
+        default=10,
         description="Number of packets to wait between file size checks."
     )
     file_format: str = pydantic.Field(
@@ -210,6 +210,7 @@ class DbSqliteReader:
 class DbSqliteWriter:
     def __init__(self, config: SqliteConfig):
         self.config = config
+        self.dtbackup = 60
         # Initialisierung der Rotations-Parameter
         self.base_name = self.config.filepath
         self.max_file_size_mb = getattr(self.config, 'max_file_size_mb', None)
@@ -263,6 +264,7 @@ class DbSqliteWriter:
                                                'columns_flat_active': {}}
         print(f"Opening database file: {self.filepath}")
         self.file_created = time.time()
+        self.file_last_check = time.time()
         #self.conn = sqlite3.connect(self.filepath)
         #self.conn.execute("PRAGMA foreign_keys = ON;")
         self.conn = sqlite3.connect(':memory:')
@@ -275,9 +277,57 @@ class DbSqliteWriter:
         self._initialize_data_tables()
         self._tables_flat = {}
 
+    def get_memory_usage(self) -> int:
+        """
+        Calculate the memory usage (in bytes) of a SQLite in-memory database.
+
+        Uses the provided `_execute` method to query the database for page count and size.
+
+        Returns:
+            int: Memory usage in bytes.
+        """
+        # Query the number of pages in the database
+        page_count = self._execute("PRAGMA page_count").fetchone()[0]
+
+        # Query the size of each page in bytes
+        page_size = self._execute("PRAGMA page_size").fetchone()[0]
+
+        # Calculate total memory usage
+        memory_usage = page_count * page_size
+
+        return memory_usage
+
+    def save_to_disk(self):
+        """Kopiert die RAM-Datenbank effizient auf die Disk."""
+        if not hasattr(self, 'conn'):
+            return
+
+        # Verzeichnis sicherheitshalber erstellen
+        logger.info(f"Saving data from ram into file:{self.filepath}")
+        # Ensure the directory exists (only if filepath contains a directory)
+        filepath_dir = os.path.dirname(self.filepath)
+        if filepath_dir:  # Only create directory if it's not empty
+            os.makedirs(filepath_dir, exist_ok=True)
+
+        try:
+            #logger.info(f"Saving data from ram into file:{self.filepath}")
+            dest_conn = sqlite3.connect(self.filepath)
+            # pages=-1 kopiert die gesamte DB am Stück.
+            # Bei sehr großen DBs könnte man hier kleine Zahlen nutzen,
+            # um den Haupt-Thread weniger zu blockieren.
+            self.conn.backup(dest_conn, pages=-1)
+            dest_conn.close()
+        except Exception as e:
+            logger.error(f"Backup fehlgeschlagen: {e}")
+
 
     def _check_rotation(self):
         """Checks if the file has to be rotated"""
+        if time.time() >= self.file_last_check + self.dtbackup:
+            logger.info("Backup of file to disk")
+            self.save_to_disk()
+            self.file_last_check = time.time()
+
         self._packet_counter += 1
         if self._packet_counter >= self.size_check_interval:
             self._packet_counter = 0
@@ -285,27 +335,21 @@ class DbSqliteWriter:
                 logger.info(
                     f"🔄 Limit of file age {self.dtnews}s reached. Rotating...")
                 self.rotate_database()
-            elif os.path.exists(self.filepath):
-                if self.max_file_size_mb is None:
-                    return
-                file_size_mb = os.path.getsize(self.filepath) / (1024 * 1024)
-                if file_size_mb >= self.max_file_size_mb:
+            if self.max_file_size_mb:
+                ram_size_mb = self.get_memory_usage() / (1024 * 1024)
+                #print(f"Ram size:{ram_size_mb}")
+                if ram_size_mb >= self.max_file_size_mb:
                     logger.info(
                         f"🔄 Limit {self.max_file_size_mb}MB reached. Rotating...")
                     self.rotate_database()
 
     def rotate_database(self):
-        """Schließt aktuelle DB und öffnet die nächste."""
+        self.save_to_disk()
         if hasattr(self, 'conn') and self.conn:
             self.conn.close()
 
-        # Neuen Dateinamen generieren
         self.filepath = self.generate_new_filename()
-
-        # Neu verbinden (Initialisiert auch automatisch das Schema)
         self.connect()
-
-
 
     def convert_write_config_raddr(self, dbconfig):
         write_config_raddr = dbconfig.write_config.model_dump()
@@ -504,6 +548,7 @@ class DbSqliteWriter:
                 f"CREATE TABLE IF NOT EXISTS {table_name_db} ({', '.join(columns)})")
 
     def close(self):
+        self.save_to_disk()
         self.conn.close()
 
 
@@ -935,6 +980,7 @@ class SqliteConfigWidget(QtWidgets.QWidget):
         # --- 2. File Rotation (Size-based) ---
         self.rotate_cb = QtWidgets.QCheckBox("Enable File Rotation (Limit Size)")
         self.rotate_cb.setChecked(self.config.max_file_size_mb is not None)
+        self.rotate_cb.setEnabled(False)
         self.rotate_cb.stateChanged.connect(self.toggle_rotation_ui)
         self.rotate_cb.stateChanged.connect(self.config_changed)
         layout.addRow(self.rotate_cb)
