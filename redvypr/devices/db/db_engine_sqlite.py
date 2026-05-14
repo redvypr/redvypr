@@ -532,7 +532,10 @@ class DbSqliteWriter:
                         #print("Write packet to db table:{table_name}")
                         sql_command = self.get_sql_insert_datapacket(table_name, data)
                         #print(f"{sql_command=}")
-                        self._execute(sql_command[0],sql_command[1])
+                        try:
+                            self._execute(sql_command[0],sql_command[1])
+                        except:
+                            logger.warning(f"Could not insert data:{sql_command}",exc_info=True)
                         #print(f"Stored packet in {table_name}")
                         flag_packet_written = True
                         self.file_statistics[self.filepath]['packets_raw_written'] += 1
