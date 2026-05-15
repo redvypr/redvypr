@@ -98,9 +98,9 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                     return
                 # Check if there is metadata to save
                 elif command == 'info' and packetid == 'metadata':
-                    print("Info command", datapacket.keys())
+                    logger.info(f"Info command:{datapacket.keys()}")
                     metadata = datapacket["deviceinfo_all"]["metadata"]
-                    print("Metadata", metadata)
+                    #print("Metadata", metadata)
                     # add_metadata(self, address: str, uuid: str, metadata_dict: dict,mode: str = "merge"):
                     for metadata_address_str, metadata_content in metadata.items():
                         #print("Adding metadata", metadata_address_str)
@@ -143,6 +143,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 # print("Updating")
                 data = {}
                 data['t'] = time.time()
+                data['filename'] = db.filepath
+                data['filesize'] = db.get_memory_usage()
                 data['packet_inserted'] = packet_inserted
                 data['packet_inserted_failure'] = packet_inserted_failure
                 data['metadata_address_inserted'] = metadata_address_inserted

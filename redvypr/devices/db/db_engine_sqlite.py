@@ -38,7 +38,7 @@ class SqliteConfig(pydantic.BaseModel):
         description="The base filename or path for the SQLite database."
     )
     max_file_size_mb: typing.Optional[float] = pydantic.Field(
-        default=100,
+        default=500,
         description="Maximum file size in MB before rotating. If None, rotation is disabled."
     )
     size_check_interval: int = pydantic.Field(
@@ -49,6 +49,9 @@ class SqliteConfig(pydantic.BaseModel):
         default="{name}_{filecount}_{filedate}",
         description="Naming template for rotated files. Placeholders: {name}, {filecount}, {filedate}."
     )
+
+    dt_backup: int = pydantic.Field(default=120,
+                                     description='Time after which the sqlite memory is written to the disk')
 
     dt_newfile: int = pydantic.Field(default=3600,
                                      description='Time after which a new file is created')
@@ -210,7 +213,7 @@ class DbSqliteReader:
 class DbSqliteWriter:
     def __init__(self, config: SqliteConfig):
         self.config = config
-        self.dtbackup = 60
+        self.dtbackup = self.config.dt_backup
         # Initialisierung der Rotations-Parameter
         self.base_name = self.config.filepath
         self.max_file_size_mb = getattr(self.config, 'max_file_size_mb', None)
@@ -264,13 +267,13 @@ class DbSqliteWriter:
                                                'columns_flat_active': {}}
         print(f"Opening database file: {self.filepath}")
         self.file_created = time.time()
-        self.file_last_check = time.time()
+        self.file_last_check = time.time() - self.dtbackup + 10
         #self.conn = sqlite3.connect(self.filepath)
         #self.conn.execute("PRAGMA foreign_keys = ON;")
         self.conn = sqlite3.connect(':memory:')
         self.conn.execute("PRAGMA foreign_keys = ON;")
         # Increase cache size
-        self.conn.execute("PRAGMA cache_size = -20000;") # ca. 20MB Cache
+        self.conn.execute("PRAGMA cache_size = -20000;") # approx. 20MB Cache
         self._initialize_metadata_tables()
         self.numconfig = self._determine_numconfig()
         self._register_config()
@@ -302,8 +305,7 @@ class DbSqliteWriter:
         if not hasattr(self, 'conn'):
             return
 
-        # Verzeichnis sicherheitshalber erstellen
-        logger.info(f"Saving data from ram into file:{self.filepath}")
+        logger.debug(f"Saving data from ram into file:{self.filepath}")
         # Ensure the directory exists (only if filepath contains a directory)
         filepath_dir = os.path.dirname(self.filepath)
         if filepath_dir:  # Only create directory if it's not empty
@@ -312,13 +314,10 @@ class DbSqliteWriter:
         try:
             #logger.info(f"Saving data from ram into file:{self.filepath}")
             dest_conn = sqlite3.connect(self.filepath)
-            # pages=-1 kopiert die gesamte DB am Stück.
-            # Bei sehr großen DBs könnte man hier kleine Zahlen nutzen,
-            # um den Haupt-Thread weniger zu blockieren.
             self.conn.backup(dest_conn, pages=-1)
             dest_conn.close()
         except Exception as e:
-            logger.error(f"Backup fehlgeschlagen: {e}")
+            logger.error(f"Backup failed: {e}")
 
 
     def _check_rotation(self):
@@ -653,7 +652,11 @@ class DbSqliteWriter:
                             #print("data_expanded all", data_expanded)
                             #print("data_expanded",data_expanded.keys())
                         else:
-                            data_expanded = Datapacket.create_expanded_datadict(tdata,data_address,addr,raddr)
+                            #(t, data, datakey, raddress, address_format='k,i,h,d,p'):
+                            data_expanded = {}
+                            data_expanded_tmp = Datapacket.create_expanded_datadict(t=tdata,data=data_addr,datakey=raddr.datakey,raddress=raddr)
+                            data_expanded[data_expanded_tmp['address']] = data_expanded_tmp
+                            #print("Data expanded",data_expanded)
                             #data_expanded = {addr:{}}
                             #data_expanded[addr]['t'] = tdata
                             #data_expanded[addr]['data'] = data_addr
@@ -663,14 +666,17 @@ class DbSqliteWriter:
 
                         for addr_write, data_expanded_tmp in data_expanded.items():
                             data_addr_write_final = data_expanded_tmp['data']
+                            #print("\nType:",type(data_addr_write_final))
                             if data_expanded_tmp['format'] == '0d':
                                 nlines = 1
                                 tdata = [data_expanded_tmp['t']]
-                                if not isinstance(data_addr_write_final, list) or len(data_addr_write_final) == 0:
-                                    data_addr_write_final = [data_addr_write_final]
+                                #if isinstance(data_addr_write_final, (list,dict)): #
+                                data_addr_write_final = [data_addr_write_final]
                             elif data_expanded_tmp['format'] == '0d_stacked':
                                 nlines = len(tdata)
 
+                            #print("\nData write final:", data_addr_write_final)
+                            #print("nlines",nlines)
                             # Check if addr in table exists
                             #print(
                             #    f"Checking if {addr_write=} exists in db table:{table_name}")
@@ -686,6 +692,7 @@ class DbSqliteWriter:
                             sql_commands = []
                             for nline in range(nlines):
                                 data_write_db = self.serialize_value(data_addr_write_final[nline])
+
                                 sql_command = self.get_sql_insert_address_data(table_name=table_name,
                                                             address=addr_write,
                                                             t=tdata[nline],
@@ -694,6 +701,7 @@ class DbSqliteWriter:
                                                             data=data_write_db)
 
                                 sql_commands.append(sql_command)
+                                #print("SQL",sql_command)
                                 #try:
                                 #    self._execute(sql_command[0],sql_command[1])
                                 #except:
@@ -795,7 +803,7 @@ class DbSqliteWriter:
         existing_columns = [row[1] for row in cursor.fetchall()]
 
         if address_db not in existing_columns:
-            print(
+            logger.info(
                 f"Adding missing column '{address_db}' ({sql_type}) to table '{table_name_db}'")
             try:
                 # SQLite ALTER TABLE does not support parameters for column names
@@ -1149,8 +1157,10 @@ class StatusTableWidget(QtWidgets.QWidget):
         self.layout.addWidget(QtWidgets.QLabel("Columns Flat Active Status:"))
         self.layout.addWidget(self.sqlite_infotable)
 
-        # Initialize generic table with one row
-        self.generic_infotable.insertRow(0)
+
+
+        # Track rows by filename to avoid duplicated
+        self.file_keys = {}  #
 
         # Track rows by (table_name_db, address) to avoid duplicates
         self.row_keys = {}  # {(table_name_db, address): row_index}
@@ -1159,8 +1169,7 @@ class StatusTableWidget(QtWidgets.QWidget):
         """Configure the generic info table."""
         self.generic_infotable.setColumnCount(5)
         self.generic_infotable.setHorizontalHeaderLabels([
-            "Timestamp", "Packets Inserted", "Failures",
-            "Metadata Inserted", "Device Info"
+            "Filename","Filesize (MB)","Timestamp", "Packets Inserted", "Metadata Inserted"
         ])
         self.generic_infotable.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeMode.Stretch
@@ -1193,7 +1202,21 @@ class StatusTableWidget(QtWidgets.QWidget):
 
     def _update_generic_table(self, status_dict: dict):
         """Update the first row in the generic info table."""
+
         timestamp = datetime.fromtimestamp(status_dict.get("t", 0)).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        filename = str(status_dict.get("filename", "NA"))
+        try:
+            self.file_keys[filename]
+        except:
+            # Initialize generic table with one row
+            self.generic_infotable.insertRow(0)
+            for k in self.file_keys.keys():
+                self.file_keys[k] +=1
+
+            self.file_keys[filename] = 0
+
+
+        filesize = str(status_dict.get("filesize", 0)/1024/1024)
         packets = str(status_dict.get("packet_inserted", 0))
         failures = str(status_dict.get("packet_inserted_failure", 0))
         metadata = str(status_dict.get("metadata_address_inserted", 0))
@@ -1206,11 +1229,12 @@ class StatusTableWidget(QtWidgets.QWidget):
                 device_info = next(iter(stats.keys()), "N/A")
 
         # Update the first row
-        self.generic_infotable.setItem(0, 0, QtWidgets.QTableWidgetItem(timestamp))
-        self.generic_infotable.setItem(0, 1, QtWidgets.QTableWidgetItem(packets))
-        self.generic_infotable.setItem(0, 2, QtWidgets.QTableWidgetItem(failures))
-        self.generic_infotable.setItem(0, 3, QtWidgets.QTableWidgetItem(metadata))
-        self.generic_infotable.setItem(0, 4, QtWidgets.QTableWidgetItem(device_info))
+        #"Filename", "Filesize", "Timestamp", "Packets Inserted", "Metadata Inserted"
+        self.generic_infotable.setItem(0, 0, QtWidgets.QTableWidgetItem(filename))
+        self.generic_infotable.setItem(0, 1, QtWidgets.QTableWidgetItem(filesize))
+        self.generic_infotable.setItem(0, 2, QtWidgets.QTableWidgetItem(timestamp))
+        self.generic_infotable.setItem(0, 3, QtWidgets.QTableWidgetItem(packets))
+        self.generic_infotable.setItem(0, 4, QtWidgets.QTableWidgetItem(metadata))
 
     def _update_sqlite_table(self, status_dict: dict):
         """Update the SQLite table with data from status_db[0]['columns_flat_active']."""
