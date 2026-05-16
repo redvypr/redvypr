@@ -9,6 +9,7 @@ import os
 import time
 import pydantic
 import typing
+import threading
 from datetime import datetime, timezone
 import json
 import copy
@@ -300,24 +301,51 @@ class DbSqliteWriter:
 
         return memory_usage
 
-    def save_to_disk(self):
-        """Kopiert die RAM-Datenbank effizient auf die Disk."""
+    def save_to_disk(self, blocking=False):
+        """Copies the RAM database onto the harddisk."""
         if not hasattr(self, 'conn'):
             return
 
         logger.debug(f"Saving data from ram into file:{self.filepath}")
-        # Ensure the directory exists (only if filepath contains a directory)
-        filepath_dir = os.path.dirname(self.filepath)
-        if filepath_dir:  # Only create directory if it's not empty
-            os.makedirs(filepath_dir, exist_ok=True)
+        # A direct copy of the database
+        if blocking:
+            try:
+                #logger.info(f"Saving data from ram into file:{self.filepath}")
+                #dest_conn = sqlite3.connect(self.filepath)
+                #self.conn.backup(dest_conn, pages=-1)
+                #dest_conn.close()
+                self._db_save_and_close(self.conn,self.filepath)
+            except Exception as e:
+                logger.error(f"Backup (blocking mode) failed: {e}")
+        else: # Nonblocking
+            try:
+                # Backup sqlite database first onto another ram database
+                # Disable thread check, this is possible as this is only a backup/read from ram_clone_conn thread
+                ram_clone_conn = sqlite3.connect(":memory:", check_same_thread=False)
+                self.conn.backup(ram_clone_conn, pages=-1)
+                bg_thread = threading.Thread(target=self._db_save_and_close,
+                                             args=(ram_clone_conn,
+                                                   self.filepath,),
+                                             daemon=True,
+                )
+                bg_thread.start()
+            except Exception as e:
+                logger.error(f"Backup (background thread mode) failed: {e}")
 
+    def _db_save_and_close(self, old_conn, target_filepath):
+        """Writes the DB onto a file, function works in a thread"""
+        filepath_dir = os.path.dirname(target_filepath)
+        if filepath_dir:
+            os.makedirs(filepath_dir, exist_ok=True)
         try:
-            #logger.info(f"Saving data from ram into file:{self.filepath}")
-            dest_conn = sqlite3.connect(self.filepath)
-            self.conn.backup(dest_conn, pages=-1)
+            dest_conn = sqlite3.connect(target_filepath)
+            old_conn.backup(dest_conn, pages=-1)
             dest_conn.close()
+            logger.info(f"✅ Backup finished: {target_filepath}")
         except Exception as e:
-            logger.error(f"Backup failed: {e}")
+            logger.error(f"❌ Backup failed: {e}")
+        finally:
+            old_conn.close()  # Closes the connection
 
 
     def _check_rotation(self):
@@ -1216,7 +1244,7 @@ class StatusTableWidget(QtWidgets.QWidget):
             self.file_keys[filename] = 0
 
 
-        filesize = str(status_dict.get("filesize", 0)/1024/1024)
+        filesize = "{:.2f}".format(status_dict.get("filesize", 0)/1024/1024)
         packets = str(status_dict.get("packet_inserted", 0))
         failures = str(status_dict.get("packet_inserted_failure", 0))
         metadata = str(status_dict.get("metadata_address_inserted", 0))
