@@ -4,4 +4,5 @@ from . import db_reader
 from . import db_config_util
 from . import db_engine_sqlite
 from . import sqlite_writer
+from . import timescale_writer
 redvypr_devicemodule = True

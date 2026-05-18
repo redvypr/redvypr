@@ -879,7 +879,7 @@ class DBStatusDialogExtended(QtWidgets.QDialog):
                 self.db.identify_and_setup()
 
                 # Queries system tables (information_schema) to check health
-                health = self.db.check_health()
+                health = self.db.identify_and_check_health()
                 if isinstance(health, dict):
                     self.status.update(health)
                     self.status['connected'] = True

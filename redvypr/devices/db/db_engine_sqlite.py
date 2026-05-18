@@ -212,7 +212,8 @@ class DbSqliteReader:
 
 
 class DbSqliteWriter:
-    def __init__(self, config: SqliteConfig):
+    def __init__(self, config: SqliteConfig, mode="write"):
+        self.mode = mode
         self.config = config
         self.dtbackup = self.config.dt_backup
         # Initialisierung der Rotations-Parameter
@@ -252,10 +253,20 @@ class DbSqliteWriter:
         self.write_config_raddr = self.convert_write_config_raddr(self.config)
 
         # 3. Log the configuration and setup data tables
-        self.connect()
+        if self.mode == "write":
+            self.init_db_write()
 
     def connect(self):
         """Connects to the sqlite database"""
+        print(f"Opening database file: {self.filepath}")
+        self.file_created = time.time()
+        self.file_last_check = time.time() - self.dtbackup + 10
+        self.conn = sqlite3.connect(self.filepath)
+        self.conn.execute("PRAGMA foreign_keys = ON;")
+        # Increase cache size
+        self.conn.execute("PRAGMA cache_size = -20000;") # approx. 20MB Cache
+
+    def init_db_write(self):
         self.file_statistics_total = {'packets_raw_written': 0,
                                       'packets_flat_written': 0,
                                       'metadata_written': 0,
@@ -269,17 +280,18 @@ class DbSqliteWriter:
         print(f"Opening database file: {self.filepath}")
         self.file_created = time.time()
         self.file_last_check = time.time() - self.dtbackup + 10
-        #self.conn = sqlite3.connect(self.filepath)
-        #self.conn.execute("PRAGMA foreign_keys = ON;")
+        # self.conn = sqlite3.connect(self.filepath)
+        # self.conn.execute("PRAGMA foreign_keys = ON;")
         self.conn = sqlite3.connect(':memory:')
         self.conn.execute("PRAGMA foreign_keys = ON;")
         # Increase cache size
-        self.conn.execute("PRAGMA cache_size = -20000;") # approx. 20MB Cache
+        self.conn.execute("PRAGMA cache_size = -20000;")  # approx. 20MB Cache
         self._initialize_metadata_tables()
         self.numconfig = self._determine_numconfig()
         self._register_config()
         self._initialize_data_tables()
         self._tables_flat = {}
+
 
     def get_memory_usage(self) -> int:
         """
@@ -371,12 +383,15 @@ class DbSqliteWriter:
                     self.rotate_database()
 
     def rotate_database(self):
-        self.save_to_disk()
-        if hasattr(self, 'conn') and self.conn:
-            self.conn.close()
+        if self.mode == "write":
+            self.save_to_disk()
+            if hasattr(self, 'conn') and self.conn:
+                self.conn.close()
 
-        self.filepath = self.generate_new_filename()
-        self.connect()
+            self.filepath = self.generate_new_filename()
+            self.init_db_write()
+        else:
+            raise ValueError("rotate_database only implemented in write mode")
 
     def convert_write_config_raddr(self, dbconfig):
         write_config_raddr = dbconfig.write_config.model_dump()
@@ -817,7 +832,7 @@ class DbSqliteWriter:
         elif isinstance(value, (bytes, bytearray)):
             sql_type = "BLOB"
         elif isinstance(value, (list, dict)):
-            return json.dumps(value)  # TEXT (JSON)
+            sql_type = "TEXT"
         elif isinstance(value, float):
             sql_type = "REAL"
         elif isinstance(value, bool):
@@ -979,9 +994,27 @@ class DbSqliteWriter:
         #print("Filename final",filename_final)
         return filename_final
 
-
     def get_status(self):
         return [self.file_statistics_total, self.file_statistics]
+
+    def __enter__(self):
+        """Allows usage: with DatabaseInstance as db:"""
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Ensures the connection is closed when exiting the 'with' block."""
+        self.disconnect()
+
+    def disconnect(self):
+        """Closes the connection safely."""
+        if self._connection:
+            try:
+                self.conn.close()
+            except Exception as e:
+                logger.error(f"Error during disconnect: {e}")
+            finally:
+                self.conn = None
 
 
 
@@ -1154,7 +1187,7 @@ class SqliteConfigWidget(QtWidgets.QWidget):
 
 
 
-class StatusTableWidget(QtWidgets.QWidget):
+class SqliteStatusTableWidget(QtWidgets.QWidget):
     """
     A reusable widget with two QTableWidgets:
     - Generic info table: Timestamp, packets, failures, metadata, device info (single row, updated).

@@ -10,10 +10,10 @@ from redvypr.data_packets import check_for_command, commandpacket
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple, RedvyprDeviceStartStopKillConfigWidget
 from redvypr.redvypr_address import RedvyprAddress
 from .db_config_util import DbConfigWidget, DbTableConfig
-from .db_engine_sqlite import SqliteConfig,DbSqliteWriter, SqliteConfigWidget, SqliteStatusTableWidget
+from .db_engine_timescale import TimescaleConfig,DbTimescaleWriter, TimescaleDbConfigWidget, TimescaleStatusTableWidget
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.device.db.sqlite_writer')
+logger = logging.getLogger('redvypr.device.db.timescale_writer')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
@@ -21,12 +21,12 @@ redvypr_devicemodule = True
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = False
     subscribes: bool = True
-    description: str = 'Writes data into a sqlite database'
+    description: str = 'Writes data into a postgres/timescale database'
     gui_tablabel_display: str = 'database status'
 
 
-initial_config = SqliteConfig()
-initial_config.write_config.name = "Sqlite Writer"
+initial_config = TimescaleConfig()
+initial_config.write_config.name = "Timescale Writer"
 raw_table = DbTableConfig(tablename="redvypr_raw",addresses=["@"],tabletype="redvypr_datapacket")
 flat_table = DbTableConfig(tablename="redvypr_flat",addresses=["@"],tabletype="data_flat")
 initial_config.write_config.tables["redvypr_raw"] = raw_table
@@ -34,14 +34,14 @@ initial_config.write_config.tables["redvypr_flat"] = flat_table
 
 class DeviceCustomConfig(pydantic.BaseModel):
     auto_create_table: bool = pydantic.Field(default=True, description="Create redvypr tables automatically at start, if not existing")
-    database: SqliteConfig = pydantic.Field(default=initial_config)
+    database: TimescaleConfig = pydantic.Field(default=initial_config)
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
     """
 
     """
     funcname = __name__ + '.start()'
-    logger_thread = logging.getLogger('redvypr.device.sqlite_writer.start')
+    logger_thread = logging.getLogger('redvypr.device.timescale_writer.start')
     logger_thread.setLevel(logging.DEBUG)
     logger_thread.debug(funcname)
     dt_update = 1  # Update interval in seconds
@@ -65,7 +65,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             addresses_subscribe.append(addr)
     logger_thread.info("Opening database")
     try:
-        db = DbSqliteWriter(config=dbconfig)
+        db = DbTimescaleWriter(config=dbconfig,mode="write")
         compacket = commandpacket("unsubscribe_all")
         dataqueue.put(compacket)
         compacket = commandpacket("subscribe",comdata=addresses_subscribe)
@@ -94,7 +94,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                     logger.info(funcname + 'received command:' + str(
                         datapacket) + ' stopping now')
                     logger.debug('Stop command')
-                    db.close()
+                    db.disconnect()
                     return
                 # Check if there is metadata to save
                 elif command == 'info' and packetid == 'metadata':
@@ -143,8 +143,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 # print("Updating")
                 data = {}
                 data['t'] = time.time()
-                data['filename'] = db.filepath
-                data['filesize'] = db.get_memory_usage()
+                #data['filename'] = db.filepath
+                #data['filesize'] = db.get_memory_usage()
                 data['packet_inserted'] = packet_inserted
                 data['packet_inserted_failure'] = packet_inserted_failure
                 data['metadata_address_inserted'] = metadata_address_inserted
@@ -162,6 +162,31 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     except:
         logger_thread.exception("Could not connect to database")
         return
+
+
+
+
+
+def get_database_info(config):
+    db = DbTimescaleWriter(config=config)
+    print("Opening with config",config)
+    with db:
+        print("Opened")
+        # 1. Setup (gentle approach)
+        db.identify_and_setup()
+        status = db.identify_and_check_health()
+
+        print(f"--- Database Health Check ---")
+        print(f"Engine:  {status['engine']} (Timescale: {status['is_timescale']})")
+        print(f"Tables:  {'✅ Found' if status['tables_exist'] else '❌ Missing'}")
+        print(f"Write:   {'✅ Permitted' if status['can_write'] else '❌ Denied'}")
+        print(f"-----------------------------")
+
+        stats = db.get_unique_combination_stats(keys=['uuid'])
+        print("Stats",stats)
+
+        info = db.get_database_info()
+        return info
 
 
 
@@ -246,7 +271,7 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
                                                                 show_subscribe=False,
                                                                 show_configure=False)
         print(f"Databases:{self.device.custom_config.database=}")
-        self.db_config_widget = SqliteConfigWidget(initial_config=self.device.custom_config.database)
+        self.db_config_widget = TimescaleDbConfigWidget(initial_config=self.device.custom_config.database)
         self.layout_device.addWidget(self.db_config_widget)
         self.db_config_widget.db_config_changed.connect(self.dbfile_config_changed)
 
@@ -259,8 +284,8 @@ class RedvyprDeviceWidget(QtWidgets.QWidget):
         self.tabwidget.addTab(self.writer_config_widget, 'Writer Config')
 
         self.status_widget = QtWidgets.QWidget()
-        self.status_widget_layout =QtWidgets.QVBoxLayout(self.status_widget)
-        self.status_table = SqliteStatusTableWidget()
+        self.status_widget_layout = QtWidgets.QVBoxLayout(self.status_widget)
+        self.status_table = TimescaleStatusTableWidget()
         self.status_widget_layout.addWidget(self.status_table)
         self.tabwidget.addTab(self.status_widget, 'Status')
 

@@ -177,7 +177,7 @@ def get_database_info(config):
         print("Opened")
         # 1. Setup (gentle approach)
         db.identify_and_setup()
-        status = db.check_health()
+        status = db.identify_and_check_health()
 
         print(f"--- Database Health Check ---")
         print(f"Engine:  {status['engine']} (Timescale: {status['is_timescale']})")
