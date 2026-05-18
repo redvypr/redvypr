@@ -10,7 +10,7 @@ from redvypr.data_packets import check_for_command, commandpacket
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple, RedvyprDeviceStartStopKillConfigWidget
 from redvypr.redvypr_address import RedvyprAddress
 from .db_config_util import DbConfigWidget, DbTableConfig
-from .db_engine_sqlite import SqliteConfig,DbSqliteWriter, SqliteConfigWidget, SqliteStatusTableWidget
+from .db_engine_sqlite import SqliteConfig, DbSqlite, SqliteConfigWidget, SqliteStatusTableWidget
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.db.sqlite_writer')
@@ -65,7 +65,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             addresses_subscribe.append(addr)
     logger_thread.info("Opening database")
     try:
-        db = DbSqliteWriter(config=dbconfig)
+        db = DbSqlite(config=dbconfig)
         compacket = commandpacket("unsubscribe_all")
         dataqueue.put(compacket)
         compacket = commandpacket("subscribe",comdata=addresses_subscribe)

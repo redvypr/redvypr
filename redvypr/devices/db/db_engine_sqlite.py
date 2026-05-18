@@ -16,9 +16,9 @@ import copy
 import logging
 from PyQt6 import QtWidgets, QtCore
 import qtawesome
-from typing import Any, Dict, List, Optional, Iterator
 from abc import ABC, abstractmethod
-from typing import Iterator, Optional, Any, Dict
+from typing import Union, Iterator, Optional, Any, Dict, List, Literal
+from dataclasses import dataclass
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import Datapacket
 from .db_config_util import DbWriteConfig, sanitize_name_for_db, json_safe_dumps, json_safe_loads
@@ -27,6 +27,18 @@ import numpy as np
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.db_engine_sqlite')
 logger.setLevel(logging.DEBUG)
+
+
+@dataclass
+class DataQuery:
+    """Configuration class defining filters and slicing for database reads."""
+    t_start: Optional[float] = None
+    t_end: Optional[float] = None
+    t_packet_start: Optional[float] = None
+    t_packet_end: Optional[float] = None
+    limit: Optional[int] = None
+    offset: Optional[int] = None  # <-- Added for index-based slicing
+    order: Literal['ASC', 'DESC'] = 'ASC'
 
 
 class SqliteConfig(pydantic.BaseModel):
@@ -64,154 +76,10 @@ class SqliteConfig(pydantic.BaseModel):
     write_config: DbWriteConfig = pydantic.Field(default_factory=DbWriteConfig)
 
 
-class DbSqliteReader:
-    def __init__(self, config: SqliteConfig):
-        """
-        Initializes the reader with a specific configuration to check against.
-        """
-        self.config = config
-        self.filepath = config.filepath
-
-    @staticmethod
-    def get_file_info(filename: str) -> Dict[str, Any]:
-        """
-        Static method to inspect a SQLite file for Redvypr metadata without
-        requiring a full class instantiation or a config object.
-
-        Useful for UI file browsers or quick pre-loading checks.
-        """
-        info = {
-            "exists": False,
-            "is_redvypr": False,
-            "config_name": None,
-            "config_uuid": None,
-            "tables_count": 0,
-            "last_entry": None,
-            "error": None
-        }
-
-        if not os.path.exists(filename):
-            return info
-
-        info["exists"] = True
-        try:
-            # Open in read-only mode to avoid locking issues with active writers
-            conn = sqlite3.connect(f"file:{filename}?mode=ro", uri=True)
-            cursor = conn.cursor()
-
-            # Check if the main metadata table exists
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='_redvypr_config_'"
-            )
-            if cursor.fetchone():
-                info["is_redvypr"] = True
-
-                # Fetch the active configuration metadata
-                cursor.execute(
-                    "SELECT name, uuid, created_at, full_config_json FROM _redvypr_config_"
-                )
-                row = cursor.fetchall()
-                print("row",row)
-                if row:
-                    info["configs"] = []
-                    for r in row:
-                        c = {}
-                        c["config_name"], c["config_uuid"], c["created_at"], c["config_json"] = r
-                        # Try to convert JSON to Pydantic model
-                        c["config_pydantic"] = SqliteConfig.model_validate_json(c["config_json"])
-                        info["configs"].append(c)
-
-                # Count registered tables
-                cursor.execute("SELECT COUNT(*) FROM _redvypr_tables_")
-                info["tables_count"] = cursor.fetchone()[0]
-
-            conn.close()
-        except:
-            logger.error("Error in getting file information",exc_info=True)
-
-        print(f"get_file_info():{info=}")
-        return info
-
-    def check_file_consistency(self) -> str:
-        """
-        Compares the physical database structure with the current SqliteConfig.
-
-        Returns
-        -------
-        "correct"   : All tables and columns required by config exist.
-        "incorrect" : Structural conflict (e.g., table exists but has wrong type).
-        "partially" : File belongs to project, but some tables/columns are missing (can be expanded).
-        "empty"     : File does not exist or contains no Redvypr schema.
-        """
-        if not os.path.exists(self.filepath):
-            return "empty"
-
-        try:
-            # Use read-only to be safe
-            conn = sqlite3.connect(f"file:{self.filepath}?mode=ro", uri=True)
-            cursor = conn.cursor()
-
-            # 1. Basic Schema Check
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='_redvypr_tables_'"
-            )
-            if not cursor.fetchone():
-                conn.close()
-                return "empty"
-
-            write_cfg = self.config.write_config
-            is_partial = False
-
-            # 2. Iterate through tables defined in the config
-            for table_name, t_cfg in write_cfg.tables.items():
-                table_name_db = sanitize_name_for_db(table_name)
-
-                # Check if table exists physically
-                cursor.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                    (table_name_db,)
-                )
-                if not cursor.fetchone():
-                    is_partial = True
-                    continue
-
-                # 3. Deep check for 'data_flat' tables (column-level consistency)
-                if t_cfg.tabletype == "data_flat":
-                    cursor.execute(f"PRAGMA table_info({table_name_db})")
-                    existing_cols = [row[1] for row in cursor.fetchall()]
-
-                    for addr in t_cfg.addresses:
-                        addr_db = sanitize_name_for_db(addr)
-                        if addr_db not in existing_cols:
-                            is_partial = True
-                            break
-
-            conn.close()
-
-            if is_partial:
-                return "partially"
-            return "correct"
-
-        except Exception as e:
-            logger.error(f"Consistency check failed: {e}")
-            return "incorrect"
-
-    def fetch_full_config(self) -> Optional[Dict]:
-        """Retrieves the full JSON configuration stored in the database metadata."""
-        try:
-            conn = sqlite3.connect(f"file:{self.filepath}?mode=ro", uri=True)
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT full_config_json FROM _redvypr_config_")
-            rows = cursor.fetchall()
-            conn.close()
-            return json.loads(rows[0]) if rows else None
-        except:
-            logger.error("Could not fetch configurations",exc_info=True)
-            return None
 
 
-class DbSqliteWriter:
+
+class DbSqlite:
     def __init__(self, config: SqliteConfig, mode="write"):
         self.mode = mode
         self.config = config
@@ -223,42 +91,50 @@ class DbSqliteWriter:
         self._file_index = -1
         self._packet_counter = 0
         self.size_check_interval = 10  # Check every n packets
-        self.filepath = self.generate_new_filename()
+
         self.file_statistics_total = {'packets_raw_written':0,
                                 'packets_flat_written':0,
                                 'metadata_written':0,
                                 'entries_flat_written':0,
                                 'columns_flat_active':{}}
 
-        try:
-            dtneworig = config.dt_newfile
-            dtunit = config.dt_newfile_unit
-            if (dtunit.lower() == 'seconds'):
-                dtfac = 1.0
-            elif (dtunit.lower() == 'hours'):
-                dtfac = 3600.0
-            elif (dtunit.lower() == 'days'):
-                dtfac = 86400.0
-            else:
-                dtfac = 0
-
-            self.dtnews = dtneworig * dtfac
-            logger.info(f' Will create new file every {config.dt_newfile} {config.dt_newfile_unit}.')
-        except:
-            logger.warning("Configuration incomplete", exc_info=True)
-            self.dtnews = 0
-
+        self.dtnews = None
         self.file_statistics = {}
-        # Convert the addresses in string format into redvypr addresses
-        self.write_config_raddr = self.convert_write_config_raddr(self.config)
+        # Check mode and either load file from disk or create file in memory for writing and
+        # new filename based in configuration
+        if self.mode == "read":
+            self.filepath = config.filepath
+            self.connect_with_file()
+        elif self.mode == "write":
+            self.filepath = self.generate_new_filename()
+            # Convert the addresses in string format into redvypr addresses
+            self.write_config_raddr = self.convert_write_config_raddr(self.config)
+            try:
+                dtneworig = config.dt_newfile
+                dtunit = config.dt_newfile_unit
+                if (dtunit.lower() == 'seconds'):
+                    dtfac = 1.0
+                elif (dtunit.lower() == 'hours'):
+                    dtfac = 3600.0
+                elif (dtunit.lower() == 'days'):
+                    dtfac = 86400.0
+                else:
+                    dtfac = 0
 
-        # 3. Log the configuration and setup data tables
-        if self.mode == "write":
+                self.dtnews = dtneworig * dtfac
+                logger.info(
+                    f' Will create new file every {config.dt_newfile} {config.dt_newfile_unit}.')
+            except:
+                logger.warning("Configuration incomplete", exc_info=True)
+                self.dtnews = 0
             self.init_db_write()
 
-    def connect(self):
+    def connect_with_file(self):
         """Connects to the sqlite database"""
         print(f"Opening database file: {self.filepath}")
+        if not os.path.isfile(self.filepath):
+            raise FileExistsError(f"❌ Database file does not exist: {self.filepath}")
+
         self.file_created = time.time()
         self.file_last_check = time.time() - self.dtbackup + 10
         self.conn = sqlite3.connect(self.filepath)
@@ -450,7 +326,27 @@ class DbSqliteWriter:
 
 
     def _initialize_metadata_tables(self):
-        """Initializes internal tracking tables with 'active' columns."""
+        """
+        Create internal tracking and configuration tables for the system.
+
+        This method sets up the base relational schema required for tracking
+        database configurations, structural layouts, and address mappings. If
+        the tables already exist, execution passes safely via IF NOT EXISTS
+        guards.
+
+        The following internal management tables are initialized:
+
+        _redvypr_config_
+            Stores system engine configurations, execution state flags,
+            and a fallback serialized JSON dump of the active database settings.
+        _redvypr_tables_
+            Acts as a registry tracking logical table configurations, their
+            sanitized physical database names, data layouts, and associated
+            configuration IDs.
+        _redvypr_addresses_
+            Tracks unique ingestion addresses, mapping raw keys to dynamically
+            allocated metrics and columns.
+        """
         # Main Config table with 'active' status
         self._execute("""
             CREATE TABLE IF NOT EXISTS _redvypr_config_ (
@@ -487,6 +383,7 @@ class DbSqliteWriter:
                 config_uuid TEXT,
                 numconfig INTEGER,
                 state INTEGER DEFAULT 0,
+                datatype TEXT, 
                 PRIMARY KEY (address, tablename, config_uuid),
                 FOREIGN KEY (config_uuid) REFERENCES _redvypr_config_(uuid)
             )
@@ -573,17 +470,20 @@ class DbSqliteWriter:
                 columns.append("data TEXT NOT NULL")
                 #columns.append("raw_data BLOB")
             else:
-                for addr in t_cfg.addresses:
-                    col_name_db = sanitize_name_for_db(addr)
-                    #col_name_db = self.write_config_raddr[table_name]["addresses"][addr]["address_db"]
-                    # We dont include yet, because the datatype is not known yet
-                    #columns.append(f"{col_name_db} TEXT")
+                pass
+                # Dont add anything, the addresses will be added dynamicall during insert_data
+                if False:
+                    for addr in t_cfg.addresses:
+                        col_name_db = sanitize_name_for_db(addr)
+                        #col_name_db = self.write_config_raddr[table_name]["addresses"][addr]["address_db"]
+                        # We dont include yet, because the datatype is not known yet
+                        #columns.append(f"{col_name_db} TEXT")
 
-                    # Log Address Metadata
-                    self._execute("""
-                        INSERT OR REPLACE INTO _redvypr_addresses_ (address, address_db, tablename, config_uuid, numconfig, state)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (addr, col_name_db, table_name, wc.uuid, self.numconfig, 0))
+                        # Log Address Metadata
+                        self._execute("""
+                            INSERT OR REPLACE INTO _redvypr_addresses_ (address, address_db, tablename, config_uuid, numconfig, state)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (addr, col_name_db, table_name, wc.uuid, self.numconfig, 0))
 
             # Create the data table
             self._execute(
@@ -726,7 +626,7 @@ class DbSqliteWriter:
                             try:
                                 self.check_addr_in_table(address=addr_write,
                                                          table_name=table_name,
-                                                         value=self.serialize_value(data_addr_write_final[0]))
+                                                         value=data_addr_write_final[0])
 
                             except:
                                 logger.warning(f"Error checking table with data: {self.serialize_value(data_addr_write_final[0])}", exc_info=True)
@@ -801,6 +701,35 @@ class DbSqliteWriter:
         else:
             return value  # INTEGER, REAL, TEXT, etc.
 
+    @staticmethod
+    def deserialize_value(value, datatype: Optional[str]):
+        """Reconstructs the original data type based on the stored datatype string."""
+        if value is None:
+            return None
+
+        if datatype in ("list", "dict"):
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                return value
+
+        elif datatype == "ndarray":
+            try:
+                # Falls es als JSON-Array oder String-Repräsentation vorliegt
+                return np.array(json.loads(value))
+            except:
+                # Falls es als roher BLOB/Bytes gespeichert wurde
+                return np.frombuffer(value, dtype=np.float64)
+
+        elif datatype == "float":
+            return float(value)
+        elif datatype == "int":
+            return int(value)
+        elif datatype == "bool":
+            return bool(value)
+
+        return value
+
     def check_addr_in_table(self, address: str, table_name: str, value: any):
         """
         Ensures that a specific address exists as a column in the data table.
@@ -826,22 +755,33 @@ class DbSqliteWriter:
             table_name_db]:
             return
 
-        # 2. Determine SQLite data type from Python type
+        # 2. Determine SQLite data type AND Python datatype string (UPDATED)
         if isinstance(value, int):
             sql_type = "INTEGER"
+            type_str = "int"
         elif isinstance(value, (bytes, bytearray)):
             sql_type = "BLOB"
-        elif isinstance(value, (list, dict)):
+            type_str = "bytes"
+        elif isinstance(value, list):
             sql_type = "TEXT"
+            type_str = "list"
+        elif isinstance(value, dict):
+            sql_type = "TEXT"
+            type_str = "dict"
         elif isinstance(value, float):
             sql_type = "REAL"
+            type_str = "float"
         elif isinstance(value, bool):
             sql_type = "INTEGER"  # SQLite uses 0/1 for booleans
+            type_str = "bool"
+        elif isinstance(value, np.ndarray):
+            sql_type = "BLOB"
+            type_str = "ndarray"
         else:
             sql_type = "TEXT"
+            type_str = type(value).__name__
 
         # 3. Physical Schema Check (Does the column actually exist in the table?)
-        # PRAGMA table_info returns rows: (id, name, type, notnull, default_value, pk)
         cursor = self.conn.execute(f"PRAGMA table_info({table_name_db})")
         existing_columns = [row[1] for row in cursor.fetchall()]
 
@@ -856,19 +796,29 @@ class DbSqliteWriter:
                 if "duplicate column name" not in str(e).lower():
                     raise e
 
-        # 4. Metadata Registry Check (_redvypr_addresses_ table)
+        # 4. Metadata Registry Check & Update (_redvypr_addresses_ table) (UPDATED)
         cursor = self._execute("""
-            SELECT 1 FROM _redvypr_addresses_ 
+            SELECT datatype FROM _redvypr_addresses_ 
             WHERE address_db = ? AND tablename = ? AND config_uuid = ?
         """, (address_db, table_name, self.config.write_config.uuid))
 
-        if not cursor.fetchone():
+        row = cursor.fetchone()
+
+        if not row:
+            # Address completely unknown in this configuration -> Insert with datatype
             self._execute("""
                 INSERT OR REPLACE INTO _redvypr_addresses_ 
-                (address, address_db, tablename, config_uuid, numconfig, state)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (address, address_db, tablename, config_uuid, numconfig, state, datatype)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (address, address_db, table_name, self.config.write_config.uuid,
-                  self.numconfig, 0))
+                  self.numconfig, 0, type_str))
+        elif row[0] is None:
+            # Address exists from initialization, but datatype was missing -> Update it now
+            self._execute("""
+                UPDATE _redvypr_addresses_ 
+                SET datatype = ? 
+                WHERE address_db = ? AND tablename = ? AND config_uuid = ?
+            """, (type_str, address_db, table_name, self.config.write_config.uuid))
 
         # 5. Update Local Cache
         if table_name_db not in self._tables_flat:
@@ -997,9 +947,478 @@ class DbSqliteWriter:
     def get_status(self):
         return [self.file_statistics_total, self.file_statistics]
 
+    def read_db_layout(self) -> dict | None:
+        """
+        Read the active system tracking configuration and layout from SQLite metadata tables.
+        """
+        if not hasattr(self, 'conn') or self.conn is None:
+            logger.warning("⚠️ No active database connection found.")
+            return None
+
+        # 1. Check if the required tracking tables exist using YOUR _execute method
+        check_query = """
+            SELECT name FROM sqlite_master 
+            WHERE type='table' 
+              AND name IN ('_redvypr_config_', '_redvypr_tables_', '_redvypr_addresses_')
+        """
+        try:
+            cursor = self._execute(check_query)
+            tables_found = len(cursor.fetchall())
+            print("Tables found",tables_found)
+            if tables_found < 3:
+                logger.warning(
+                    "⚠️ Core tracking tables are missing or incomplete in SQLite.")
+                return None
+        except Exception as e:
+            logger.error(f"❌ Failed to verify SQLite tables existence: {e}")
+            return None
+
+        layout = {"configs": {}, "tables": [], "addresses": []}
+        old_row_factory = self.conn.row_factory
+
+        try:
+            # Enable name-based column lookups locally
+            self.conn.row_factory = sqlite3.Row
+
+            # Fetch data using YOUR _execute method
+            cur_config = self._execute("SELECT * FROM _redvypr_config_")
+            for row in cur_config.fetchall():
+                row_dict = dict(row)
+                uuid_key = row_dict.pop("uuid")
+                layout["configs"][uuid_key] = row_dict
+
+            cur_tables = self._execute("SELECT * FROM _redvypr_tables_")
+            layout["tables"] = [dict(row) for row in cur_tables.fetchall()]
+
+            cur_addrs = self._execute("SELECT * FROM _redvypr_addresses_")
+            layout["addresses"] = [dict(row) for row in cur_addrs.fetchall()]
+
+            logger.info(
+                f"📊 Loaded SQLite layout: {len(layout['configs'])} configs, "
+                f"{len(layout['tables'])} tables, {len(layout['addresses'])} addresses registered."
+            )
+            return layout
+
+        except Exception as e:
+            logger.error(f"❌ Failed to parse database layout from SQLite metadata: {e}")
+            raise RuntimeError("SQLite layout retrieval failed") from e
+
+        finally:
+            # Always restore the connection's original row factory
+            self.conn.row_factory = old_row_factory
+
+    def get_data_tables(self, tabletype: typing.Literal['all', 'raw', 'flat'] = 'all') -> dict:
+        """
+        Get registered data tables filtered by their architectural type with
+        extended table-level and address-level metrics.
+
+        Parameters
+        ----------
+        tabletype : {'all', 'raw', 'flat'}, default 'all'
+            The structural type of the tables to retrieve.
+            Maps locally to 'redvypr_datapacket' and 'data_flat'.
+
+        Returns
+        -------
+        dict
+            A structured dictionary of tables, their global stats, and containing metrics.
+        """
+        if not hasattr(self, 'conn') or self.conn is None:
+            logger.warning("⚠️ No active database connection found.")
+            return {}
+
+        # Backup the current row_factory status
+        old_row_factory = self.conn.row_factory
+        result = {}
+
+        try:
+            # Enable column name-based access
+            self.conn.row_factory = sqlite3.Row
+
+            # 1. Fetch all active tables from the metadata registry
+            table_query = "SELECT tablename, tablename_db, tabletype FROM _redvypr_tables_ WHERE state = 0"
+            cur_tables = self._execute(table_query)
+            tables = cur_tables.fetchall()
+
+            if not tables:
+                return {}
+
+            # Map parameter tokens to internal database types
+            if tabletype == 'all':
+                target_types = ['redvypr_datapacket', 'data_flat']
+            elif tabletype == 'flat':
+                target_types = ['data_flat']
+            else:
+                target_types = ['redvypr_datapacket']
+
+            # Build structural framework and filter by targeted type
+            for t in tables:
+                if t['tabletype'] not in target_types:
+                    continue
+
+                logical_name = t['tablename']
+                result[logical_name] = {
+                    'tablename_db': t['tablename_db'],
+                    'tabletype': t['tabletype'],
+                    'num_entries': 0,
+                    't_first': None,
+                    't_last': None,
+                    't_packet_first': None,
+                    't_packet_last': None,
+                    'addresses': {}
+                }
+
+            if not result:
+                return {}
+
+            # 2. Fetch all registered addresses for the filtered tables in a single batch query
+            placeholders = ",".join(["?"] * len(result))
+            addr_query = f"""
+                SELECT address, address_db, tablename 
+                FROM _redvypr_addresses_ 
+                WHERE tablename IN ({placeholders}) AND state = 0
+            """
+            cur_addrs = self._execute(addr_query, tuple(result.keys()))
+
+            for addr in cur_addrs.fetchall():
+                logical_table = addr['tablename']
+                if logical_table in result:
+                    result[logical_table]['addresses'][addr['address']] = {
+                        'address_db': addr['address_db'],
+                        'num_entries': 0,
+                        't_first': None,
+                        't_last': None,
+                        't_packet_first': None,
+                        't_packet_last': None
+                    }
+
+            # 3. Compute structural metrics dynamically from active data tables
+            for logical_name, table_info in result.items():
+                phys_table = table_info['tablename_db']
+                addresses_dict = table_info['addresses']
+
+                # Verify that the target physical table exists within the SQLite schema
+                table_check = self._execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    (phys_table,)
+                ).fetchone()
+
+                if not table_check:
+                    continue
+
+                # --- GLOBAL STATS FOR THE ENTIRE TABLE ---
+                global_query = f"""
+                    SELECT 
+                        COUNT(*) as total_rows, 
+                        MIN(t) as t_first, 
+                        MAX(t) as t_last,
+                        MIN(t_packet) as t_packet_first,
+                        MAX(t_packet) as t_packet_last
+                    FROM "{phys_table}"
+                """
+                try:
+                    global_row = self._execute(global_query).fetchone()
+                    if global_row and global_row['total_rows'] > 0:
+                        table_info['num_entries'] = global_row['total_rows']
+                        table_info['t_first'] = global_row['t_first']
+                        table_info['t_last'] = global_row['t_last']
+                        table_info['t_packet_first'] = global_row['t_packet_first']
+                        table_info['t_packet_last'] = global_row['t_packet_last']
+                except Exception as table_err:
+                    logger.debug(
+                        f"Could not fetch global stats for table {phys_table}: {table_err}")
+
+                # --- METRICS FOR EACH INDIVIDUAL ADDRESS FIELD ---
+                for raw_addr, addr_meta in addresses_dict.items():
+                    col_db = addr_meta['address_db']
+
+                    stats_query = f"""
+                        SELECT 
+                            COUNT("{col_db}") as num_entries,
+                            MIN(t) as t_first,
+                            MAX(t) as t_last,
+                            MIN(t_packet) as t_packet_first,
+                            MAX(t_packet) as t_packet_last
+                        FROM "{phys_table}"
+                        WHERE "{col_db}" IS NOT NULL
+                    """
+                    try:
+                        stats_row = self._execute(stats_query).fetchone()
+                        if stats_row and stats_row['num_entries'] > 0:
+                            addr_meta['num_entries'] = stats_row['num_entries']
+                            addr_meta['t_first'] = stats_row['t_first']
+                            addr_meta['t_last'] = stats_row['t_last']
+                            addr_meta['t_packet_first'] = stats_row['t_packet_first']
+                            addr_meta['t_packet_last'] = stats_row['t_packet_last']
+                    except Exception as col_err:
+                        logger.debug(
+                            f"Could not fetch stats for column {col_db} in {phys_table}: {col_err}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ Error compiling data tables dictionary: {e}")
+            raise RuntimeError("Failed to build data tables dictionary") from e
+
+        finally:
+            # Cleanly restore connection row factory state
+            self.conn.row_factory = old_row_factory
+
+    def get_data(
+            self,
+            tablename: str,
+            addresses: Union[str, List[str]],
+            query: Optional[DataQuery] = None
+    ) -> dict:
+        """
+        Retrieve clean, address-centric timeseries datasets.
+        ...
+        """
+        if not hasattr(self, 'conn') or self.conn is None:
+            logger.warning("⚠️ No active database connection found.")
+            return {}
+
+        # 1. Resolve table physical name
+        table_info_query = "SELECT tablename_db FROM _redvypr_tables_ WHERE tablename = ? AND state = 0"
+        table_row = self._execute(table_info_query, (tablename,)).fetchone()
+        if not table_row:
+            logger.warning(f"⚠️ Table '{tablename}' is not registered or active.")
+            return {}
+        phys_table = table_row[0]
+
+        # Normalize input to a list
+        address_list = [addresses] if isinstance(addresses, str) else addresses
+
+        # 2. Fetch physical column mappings AND the stored datatype (UPDATED)
+        if not address_list:
+            return {}
+
+        placeholders = ",".join(["?"] * len(address_list))
+        addr_query = f"""
+            SELECT address, address_db, datatype 
+            FROM _redvypr_addresses_ 
+            WHERE tablename = ? AND address IN ({placeholders}) AND state = 0
+        """
+        cur_addrs = self._execute(addr_query, (tablename, *address_list))
+
+        # We store both the DB column name and the datatype string in our map
+        col_map = {row[0]: (row[1], row[2]) for row in cur_addrs.fetchall()}
+
+        result = {}
+        old_row_factory = self.conn.row_factory
+
+        try:
+            # Enforce standard tuple rows for fast array construction
+            self.conn.row_factory = None
+
+            # 3. Query each address individually to isolate its data and strip Nones
+            for logical_addr, (physical_col, datatype) in col_map.items():
+
+                # Base dynamic conditions
+                where_clauses = [f'"{physical_col}" IS NOT NULL']
+                sql_params = []
+
+                if query:
+                    if query.t_start is not None:
+                        where_clauses.append("t >= ?")
+                        sql_params.append(query.t_start)
+                    if query.t_end is not None:
+                        where_clauses.append("t <= ?")
+                        sql_params.append(query.t_end)
+                    if query.t_packet_start is not None:
+                        where_clauses.append("t_packet >= ?")
+                        sql_params.append(query.t_packet_start)
+                    if query.t_packet_end is not None:
+                        where_clauses.append("t_packet <= ?")
+                        sql_params.append(query.t_packet_end)
+
+                # Stitching query fragments safely
+                where_str = f"WHERE {" AND ".join(where_clauses)}"
+                order_str = f"ORDER BY t {query.order if query else 'ASC'}"
+
+                limit_str = ""
+                if query and query.limit is not None:
+                    limit_str = f"LIMIT {query.limit}"
+                    if query.offset is not None:
+                        limit_str += f" OFFSET {query.offset}"
+                elif query and query.offset is not None:
+                    limit_str = f"LIMIT -1 OFFSET {query.offset}"
+
+                # We only pull exactly what belongs to this single address timeline
+                final_query = f'SELECT t, t_packet, numpacket, "{physical_col}" FROM "{phys_table}" {where_str} {order_str} {limit_str}'
+
+                cursor = self._execute(final_query, tuple(sql_params))
+                records = cursor.fetchall()
+
+                # Separate the columns into clean, individual Python lists
+                t_array = []
+                t_packet_array = []
+                numpacket_array = []
+                v_array = []
+
+                for row in records:
+                    t_array.append(row[0])
+                    t_packet_array.append(row[1])
+                    numpacket_array.append(row[2])
+                    # --- AUTOMATIC DESERIALIZATION BASED ON METADATA ---
+                    raw_value = row[3]
+                    clean_value = self.deserialize_value(raw_value, datatype)
+                    v_array.append(clean_value)
+
+                result[logical_addr] = {
+                    "t": t_array,
+                    "t_packet": t_packet_array,
+                    "numpacket": numpacket_array,
+                    "data": v_array
+                }
+
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ Failed address-centric retrieval from '{phys_table}': {e}")
+            return {}
+        finally:
+            self.conn.row_factory = old_row_factory
+
+    def get_data_legacy(
+            self,
+            tablename: str,
+            addresses: Union[str, List[str]],
+            query: Optional[DataQuery] = None
+    ) -> dict:
+        """
+        Retrieve clean, address-centric timeseries datasets.
+
+        Extracts only valid records where data exists for the specific address,
+        completely stripping away unrelated None values and returning localized
+        timelines per metric.
+
+        Parameters
+        ----------
+        tablename : str
+            The logical name of the table as registered in the config.
+        addresses : str or list of str
+            The address string or list of address strings to query.
+        query : DataQuery, optional
+            A DataQuery object defining time windows, limits, offsets, and order.
+
+        Returns
+        -------
+        dict
+            An address-mapped dictionary containing stripped timeline arrays.
+            Format:
+            {
+                "sensor_temperature_A": {
+                    "t": [1779085000.0, 1779085020.0],
+                    "t_packet": [1779085000.1, 1779085020.3],
+                    "v": [23.4, 23.6]
+                }
+            }
+        """
+        if not hasattr(self, 'conn') or self.conn is None:
+            logger.warning("⚠️ No active database connection found.")
+            return {}
+
+        # 1. Resolve table physical name
+        table_info_query = "SELECT tablename_db FROM _redvypr_tables_ WHERE tablename = ? AND state = 0"
+        table_row = self._execute(table_info_query, (tablename,)).fetchone()
+        if not table_row:
+            logger.warning(f"⚠️ Table '{tablename}' is not registered or active.")
+            return {}
+        phys_table = table_row[0]
+
+        # Normalize input to a list
+        address_list = [addresses] if isinstance(addresses, str) else addresses
+
+        # 2. Fetch physical column mappings
+        if not address_list:
+            return {}
+
+        placeholders = ",".join(["?"] * len(address_list))
+        addr_query = f"""
+            SELECT address, address_db 
+            FROM _redvypr_addresses_ 
+            WHERE tablename = ? AND address IN ({placeholders}) AND state = 0
+        """
+        cur_addrs = self._execute(addr_query, (tablename, *address_list))
+        col_map = {row[0]: row[1] for row in cur_addrs.fetchall()}
+
+        result = {}
+        old_row_factory = self.conn.row_factory
+
+        try:
+            # Enforce standard tuple rows for fast array construction
+            self.conn.row_factory = None
+
+            # 3. Query each address individually to isolate its data and strip Nones
+            for logical_addr, physical_col in col_map.items():
+
+                # Base dynamic conditions
+                where_clauses = [f'"{physical_col}" IS NOT NULL']
+                sql_params = []
+
+                if query:
+                    if query.t_start is not None:
+                        where_clauses.append("t >= ?")
+                        sql_params.append(query.t_start)
+                    if query.t_end is not None:
+                        where_clauses.append("t <= ?")
+                        sql_params.append(query.t_end)
+                    if query.t_packet_start is not None:
+                        where_clauses.append("t_packet >= ?")
+                        sql_params.append(query.t_packet_start)
+                    if query.t_packet_end is not None:
+                        where_clauses.append("t_packet <= ?")
+                        sql_params.append(query.t_packet_end)
+
+                # Stitching query fragments safely
+                where_str = f"WHERE {" AND ".join(where_clauses)}"
+                order_str = f"ORDER BY t {query.order if query else 'ASC'}"
+
+                limit_str = ""
+                if query and query.limit is not None:
+                    limit_str = f"LIMIT {query.limit}"
+                    if query.offset is not None:
+                        limit_str += f" OFFSET {query.offset}"
+                elif query and query.offset is not None:
+                    limit_str = f"LIMIT -1 OFFSET {query.offset}"
+
+                # We only pull exactly what belongs to this single address timeline
+                final_query = f'SELECT t, t_packet, "{physical_col}" FROM "{phys_table}" {where_str} {order_str} {limit_str}'
+
+                cursor = self._execute(final_query, tuple(sql_params))
+                records = cursor.fetchall()
+
+                # Separate the columns into clean, individual Python lists
+                # (Great for immediate plotting or passing to numpy/pandas)
+                t_array = []
+                t_packet_array = []
+                v_array = []
+
+                for row in records:
+                    t_array.append(row[0])
+                    t_packet_array.append(row[1])
+                    v_array.append(row[2])
+
+                result[logical_addr] = {
+                    "t": t_array,
+                    "t_packet": t_packet_array,
+                    "v": v_array
+                }
+
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ Failed address-centric retrieval from '{phys_table}': {e}")
+            return {}
+        finally:
+            self.conn.row_factory = old_row_factory
+
+
+
     def __enter__(self):
         """Allows usage: with DatabaseInstance as db:"""
-        self.connect()
+        self.connect_with_file()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -1008,7 +1427,7 @@ class DbSqliteWriter:
 
     def disconnect(self):
         """Closes the connection safely."""
-        if self._connection:
+        if self.conn:
             try:
                 self.conn.close()
             except Exception as e:
@@ -1151,7 +1570,7 @@ class SqliteConfigWidget(QtWidgets.QWidget):
     def update_preview(self):
         """Updates the filename preview."""
         config = self.get_config()
-        preview_path = DbSqliteWriter.format_filename(
+        preview_path = DbSqlite.format_filename(
             base_name=config.filepath,
             file_format=config.file_format,
             file_index=1,
