@@ -355,6 +355,7 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
             logger.debug(funcname + ' Opened file: {:s}'.format(filename))
         except Exception as e:
             logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
+            dataqueue.put(None)
             return None
     else:
         try:
@@ -362,15 +363,23 @@ def packet_read_thread(filename, chunksize, npacket_buf=10, dataqueue=None, comm
             logger.debug(funcname + ' Opened file: {:s}'.format(filename))
         except Exception as e:
             logger.warning(funcname + ' Error opening file:' + filename + ':' + str(e))
+            dataqueue.put(None)
             return None
 
     # Get the size of the data (within the file, this is different to the filesize, which can be gzipped
     fsize = os.path.getsize(filename)
     f = filestream
-    f.seek(0, os.SEEK_END)
-    size = f.tell()
-    datasize = size
-    filestream.seek(0)
+    try:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        datasize = size
+        filestream.seek(0)
+    except (EOFError, OSError) as e:
+        logger.error(f"Aborting: Could not read file:{e}")
+        dataqueue.put(None)
+        return None
+        #filestream.close()
+
 
     filename_base = os.path.basename(filename)
     filename_path = os.path.dirname(filename)
@@ -545,14 +554,14 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     
     #statistics = create_data_statistic_dict()
     
-    bytes_read         = 0
+    bytes_read = 0
     packets_published  = 0
-    dt_packet_sum      = 0
-    bytes_read_total   = 0
+    dt_packet_sum = 0
+    bytes_read_total = 0
     packets_read_total = 0
     
-    tfile           = time.time() # Save the time the file was created
-    tflush          = time.time() # Save the time the file was created
+    tfile = time.time() # Save the time the file was created
+    tflush = time.time() # Save the time the file was created
     FLAG_NEW_FILE = True
     nfile = 0
     packets = []
@@ -608,17 +617,23 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             chunksize = 5000
             npacket_buf = 10
             nfile += 1
-            print('Starting reading thread')
+            logger.info(f'Starting read thread for file:{filename}')
             args = (filename, chunksize, npacket_buf, read_dataqueue, read_commandqueue, statusqueue)
             read_thread = threading.Thread(target=packet_read_thread, args=args, daemon=True)
             read_thread.start()
             read_commandqueue.put(npacket_buf)
             for i in range(npacket_buf):
-                packets.append(read_dataqueue.get())
+                p = read_dataqueue.get(timeout=2)
+                if p is None:
+                    FLAG_NEW_FILE = True
+                    break
+                else:
+                    packets.append(p)
+                    FLAG_NEW_FILE = False
 
-            pnow = packets.pop(0)
-            pnext = packets.pop(0)
-            FLAG_NEW_FILE = False
+            if FLAG_NEW_FILE == False:
+                pnow = packets.pop(0)
+                pnext = packets.pop(0)
 
         # Check if the read thread is still alive
         if not(read_thread.is_alive()):
@@ -627,7 +642,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
         else:
             if len(packets) < npacket_buf:
                 dn = npacket_buf - len(packets)
-                # print('Asking for new packets',dn)
+                print('Asking for new packets',dn)
                 read_commandqueue.put(dn)
                 while True:
                     try:

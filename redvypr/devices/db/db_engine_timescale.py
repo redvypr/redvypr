@@ -182,6 +182,7 @@ class DbTimescaleWriter():
                 config_uuid TEXT,
                 numconfig INTEGER,
                 state INTEGER DEFAULT 0,
+                datatype TEXT,
                 PRIMARY KEY (address, tablename, config_uuid),
                 FOREIGN KEY (config_uuid) REFERENCES "_redvypr_config_"(uuid) ON DELETE CASCADE
             );
@@ -670,16 +671,28 @@ class DbTimescaleWriter():
         # 2. Determine TimescaleDB (PostgreSQL) data type from Python type
         if isinstance(value, int):
             sql_type = "INTEGER"
-        elif isinstance(value, (bytes, bytearray, np.ndarray)):
+            type_str = "int"
+        elif isinstance(value, (bytes, bytearray)):
             sql_type = "BYTEA"
-        elif isinstance(value, (list, dict)):
+            type_str = "bytes"
+        elif isinstance(value, np.ndarray):
+            sql_type = "BYTEA"
+            type_str = "ndarray"
+        elif isinstance(value, list):
             sql_type = "JSONB"
+            type_str = "list"
+        elif isinstance(value, dict):
+            sql_type = "JSONB"
+            type_str = "dict"
         elif isinstance(value, float):
             sql_type = "DOUBLE PRECISION"
+            type_str = "float"
         elif isinstance(value, bool):
             sql_type = "BOOLEAN"
+            type_str = "bool"
         else:
             sql_type = "TEXT"
+            type_str = type(value).__name__
 
         # 3. Physical Schema Check (Does the column actually exist in PostgreSQL?)
         # We query the standard ANSI information_schema instead of SQLite's PRAGMA.
@@ -720,15 +733,16 @@ class DbTimescaleWriter():
             # Standard PostgreSQL upsert using ON CONFLICT instead of INSERT OR REPLACE
             self._execute("""
                 INSERT INTO _redvypr_addresses_ 
-                (address, address_db, tablename, config_uuid, numconfig, state)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                (address, address_db, tablename, config_uuid, numconfig, state, datatype)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (address, tablename, config_uuid) DO UPDATE SET
                     address_db = EXCLUDED.address_db,
                     tablename = EXCLUDED.tablename,
                     numconfig = EXCLUDED.numconfig,
-                    state = EXCLUDED.state
+                    state = EXCLUDED.state,
+                    datatype = EXCLUDED.datatype
             """, (address, address_db, table_name, self.config.write_config.uuid,
-                  self.numconfig, 0))
+                  self.numconfig, 0, type_str))
 
         # 5. Update Local Cache
         if table_name_db not in self._tables_flat:

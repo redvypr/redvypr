@@ -7,8 +7,10 @@ import time
 import logging
 import sys
 import pydantic
-import typing
 import redvypr
+import typing
+from collections import defaultdict
+logger = logging.getLogger(__name__)
 from redvypr.data_packets import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
@@ -41,6 +43,215 @@ class DeviceCustomConfig(pydantic.BaseModel):
                                     description='Constant time between to packets in constant mode')
     replay_mode: typing.Literal["realtime","constant"] = pydantic.Field(default="realtime")
     database: DatabaseConfig = pydantic.Field(default_factory=SqliteConfig, discriminator='dbtype')
+
+
+
+
+
+class DbReader:
+    def __init__(self, backends: typing.List[typing.Any] = None):
+        """
+        Aggregates multiple redvypr database backends (SQLite or TimescaleDB)
+        into a seamless, unified timeseries view.
+
+        Parameters
+        ----------
+        backends : list, optional
+            A list of initialized database backend objects providing 'get_data'
+            and 'get_data_tables' methods.
+        """
+        self.backends = backends if backends is not None else []
+
+    def add_backend(self, backend: typing.Any):
+        """
+        Add a new database instance (SQLite or TimescaleDB) to the reader pipeline.
+
+        Parameters
+        ----------
+        backend : Any
+            The database instance to append.
+        """
+        self.backends.append(backend)
+
+    def get_data_tables(self, tabletype: typing.Literal[
+        'all', 'raw', 'flat'] = 'all') -> dict:
+        """
+        Get registered data tables filtered by their architectural type,
+        merging metadata statistics dynamically across all registered database backends.
+
+        Parameters
+        ----------
+        tabletype : {'all', 'raw', 'flat'}, default 'all'
+            The structural type of the tables to retrieve.
+
+        Returns
+        -------
+        dict
+            A structured dictionary of merged tables, global stats, and containing metrics.
+        """
+        global_tables = {}
+
+        for backend in self.backends:
+            try:
+                backend_tables = backend.get_data_tables(tabletype=tabletype)
+                if not backend_tables:
+                    continue
+
+                for tablename, info in backend_tables.items():
+                    if tablename not in global_tables:
+                        # Initialize structure with the first backend's data
+                        global_tables[tablename] = {
+                            'tablename_db': info.get('tablename_db'),
+                            'tabletype': info.get('tabletype'),
+                            'num_entries': info.get('num_entries', 0),
+                            't_first': info.get('t_first'),
+                            't_last': info.get('t_last'),
+                            't_packet_first': info.get('t_packet_first'),
+                            't_packet_last': info.get('t_packet_last'),
+                            'addresses': {}
+                        }
+                    else:
+                        # Aggregate rows and expand time boundaries (MIN/MAX)
+                        tgt = global_tables[tablename]
+                        tgt['num_entries'] += info.get('num_entries', 0)
+
+                        tgt['t_first'] = min(
+                            filter(None, [tgt['t_first'], info.get('t_first')]),
+                            default=None)
+                        tgt['t_last'] = max(
+                            filter(None, [tgt['t_last'], info.get('t_last')]),
+                            default=None)
+                        tgt['t_packet_first'] = min(filter(None, [tgt['t_packet_first'],
+                                                                  info.get(
+                                                                      't_packet_first')]),
+                                                    default=None)
+                        tgt['t_packet_last'] = max(filter(None, [tgt['t_packet_last'],
+                                                                 info.get(
+                                                                     't_packet_last')]),
+                                                   default=None)
+
+                    # Merge address metrics inside the current table
+                    tgt_addresses = global_tables[tablename]['addresses']
+                    for addr, addr_info in info.get('addresses', {}).items():
+                        if addr not in tgt_addresses:
+                            tgt_addresses[addr] = {
+                                'address_db': addr_info.get('address_db'),
+                                'num_entries': addr_info.get('num_entries', 0),
+                                't_first': addr_info.get('t_first'),
+                                't_last': addr_info.get('t_last'),
+                                't_packet_first': addr_info.get('t_packet_first'),
+                                't_packet_last': addr_info.get('t_packet_last')
+                            }
+                        else:
+                            t_addr = tgt_addresses[addr]
+                            t_addr['num_entries'] += addr_info.get('num_entries', 0)
+                            t_addr['t_first'] = min(filter(None, [t_addr['t_first'],
+                                                                  addr_info.get(
+                                                                      't_first')]),
+                                                    default=None)
+                            t_addr['t_last'] = max(filter(None, [t_addr['t_last'],
+                                                                 addr_info.get(
+                                                                     't_last')]),
+                                                   default=None)
+                            t_addr['t_packet_first'] = min(filter(None, [
+                                t_addr['t_packet_first'],
+                                addr_info.get('t_packet_first')]), default=None)
+                            t_addr['t_packet_last'] = max(filter(None, [
+                                t_addr['t_packet_last'],
+                                addr_info.get('t_packet_last')]), default=None)
+
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ Failed to query data tables from backend {backend}: {e}")
+
+        return global_tables
+
+    def get_data(
+            self,
+            tablename: str,
+            addresses: typing.Union[str, typing.List[str]],
+            query: typing.Optional[typing.Any] = None
+    ) -> dict:
+        """
+        Retrieves, merges, deduplicates, and chronologically sorts datasets
+        across all registered database backends.
+
+        Parameters
+        ----------
+        tablename : str
+            The logical name of the table to query.
+        addresses : str or list of str
+            The address string or list of address strings to query.
+        query : DataQuery, optional
+            A DataQuery object defining time windows, limits, offsets, and order.
+
+        Returns
+        -------
+        dict
+            An address-mapped dictionary containing unified timeline arrays.
+            Format:
+            {
+                "address_string": {
+                    "t": [...],
+                    "t_packet": [...],
+                    "numpacket": [...],
+                    "data": [...]
+                }
+            }
+        """
+        # 1. Collect timeline chunks from all accessible backends
+        raw_chunks = defaultdict(list)
+
+        for backend in self.backends:
+            try:
+                data = backend.get_data(tablename=tablename, addresses=addresses,
+                                        query=query)
+                for addr, timeline in data.items():
+                    if timeline and timeline.get(
+                            "t"):  # Only process chunks containing actual data
+                        raw_chunks[addr].append(timeline)
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to query data from backend {backend}: {e}")
+
+        # 2. Merge, sort and deduplicate timelines per metric address
+        aggregated_result = {}
+
+        for addr, chunks in raw_chunks.items():
+            combined_rows = []
+            for chunk in chunks:
+                combined_rows.extend(
+                    zip(chunk["t"], chunk["t_packet"], chunk["numpacket"],
+                        chunk["data"])
+                )
+
+            if not combined_rows:
+                continue
+
+            # Interlace data by sorting chronologically via system timestamp 't' (Index 0)
+            combined_rows.sort(key=lambda x: x[0])
+
+            # Deduplication pass: Strip overlapping records across partition/backend boundaries
+            deduplicated_rows = []
+            seen_timestamps = set()
+            for row in combined_rows:
+                timestamp_t = row[0]
+                if timestamp_t not in seen_timestamps:
+                    seen_timestamps.add(timestamp_t)
+                    deduplicated_rows.append(row)
+
+            # Unzip rows back into parallel, single-type lists
+            unzipped = list(zip(*deduplicated_rows))
+
+            aggregated_result[addr] = {
+                "t": list(unzipped[0]),
+                "t_packet": list(unzipped[1]),
+                "numpacket": list(unzipped[2]),
+                "data": list(unzipped[3])
+            }
+
+        return aggregated_result
+
+
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
     """
