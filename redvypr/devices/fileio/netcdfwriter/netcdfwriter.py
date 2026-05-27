@@ -15,6 +15,7 @@ import yaml
 import copy
 import gzip
 import os
+import queue
 import netCDF4
 import pydantic
 import typing
@@ -88,6 +89,7 @@ def get_nc_structure(nc_object):
     return status
 
 
+
 def create_logfile(config,count=0):
     funcname = __name__ + '.create_logfile():'
     logger.debug(funcname)
@@ -97,7 +99,7 @@ def create_logfile(config,count=0):
         if os.path.isdir(config['datafolder']):
             filename += config['datafolder'] + os.sep
         else:
-            logger.warning(funcname + ' Data folder {:s} does not exist.'.format(filename))
+            logger.warning(funcname + f' Data folder {config['datafolder']} does not exist.')
             return None
 
     if(len(config['fileprefix'])>0):
@@ -442,7 +444,11 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
                                 #print(f"{numpy.shape(var_k)=},{lent_nc=},{lent_new=}")
                                 if nc_datakey.stack == 1:
-                                    t_write_flat = numpy.concatenate(t_write)
+                                    try:
+                                        t_write_flat = numpy.concatenate(t_write)
+                                    except:
+                                        print(f"Could not concatenate:{k}")
+                                        continue
                                 else:
                                     t_write_flat = t_write
                                 lent_new = len(t_write_flat)
@@ -599,10 +605,10 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.outlabel        = QtWidgets.QLabel("Logfile")
         self.outfilename     = QtWidgets.QLineEdit()
         # Checkboxes
-        self.prefix_check    = QtWidgets.QCheckBox('Prefix')
-        self.date_check      = QtWidgets.QCheckBox('Date/Time')
-        self.count_check     = QtWidgets.QCheckBox('Counter')
-        self.postfix_check   = QtWidgets.QCheckBox('Postfix')
+        self.prefix_check = QtWidgets.QCheckBox('Prefix')
+        self.date_check = QtWidgets.QCheckBox('Date/Time')
+        self.count_check = QtWidgets.QCheckBox('Counter')
+        self.postfix_check = QtWidgets.QCheckBox('Postfix')
         self.extension_check = QtWidgets.QCheckBox('Extension')
 
         try:

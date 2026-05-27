@@ -119,7 +119,7 @@ class DbWriteConfig(pydantic.BaseModel):
 
 
 
-def json_safe_dumps(obj):
+def json_safe_dumps_legacy(obj):
     """
     Convert complex Redvypr packets into JSON-safe text.
     Adds a '__dt__:' prefix to datetime objects to ensure safe restoration.
@@ -148,7 +148,7 @@ def json_safe_dumps(obj):
     return json.dumps(obj, default=default, ensure_ascii=False)
 
 
-def restore_datetimes(data):
+def restore_datetimes_legacy(data):
     """
     Recursively traverses dictionaries and lists to find strings
     starting with '__dt__:' and converts them back to datetime objects.
@@ -171,7 +171,7 @@ def restore_datetimes(data):
     return data
 
 
-def json_safe_loads(json_str):
+def json_safe_loads_legacy(json_str):
     """
     Parses a JSON string and automatically restores datetime objects
     hidden in dictionaries or lists.

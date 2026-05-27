@@ -16,11 +16,10 @@ from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import Datapacket
-from .db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget, DBQueryDialog
-from .db_engines import RedvyprTimescaleDb, DatabaseConfig, DatabaseSettings, TimescaleConfig, SqliteConfig, RedvyprDBFactory
+from .db_engine_sqlite import SqliteConfig, DbSqlite
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.device.db.db_reader')
+logger = logging.getLogger('redvypr.device.db.db_replay')
 logger.setLevel(logging.DEBUG)
 
 redvypr_devicemodule = True
@@ -28,8 +27,8 @@ redvypr_devicemodule = True
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = False
-    description: str = 'Reads data into a database'
-    gui_tablabel_display: str = 'db reader'
+    description: str = 'Replays data from redvypr style database(s)'
+    gui_tablabel_display: str = 'DB Replay'
 
 class DeviceCustomConfig(pydantic.BaseModel):
     size_packetbuffer: int = 100
@@ -42,7 +41,7 @@ class DeviceCustomConfig(pydantic.BaseModel):
     constant_dt: float = pydantic.Field(default=.1,
                                     description='Constant time between to packets in constant mode')
     replay_mode: typing.Literal["realtime","constant"] = pydantic.Field(default="realtime")
-    database: DatabaseConfig = pydantic.Field(default_factory=SqliteConfig, discriminator='dbtype')
+
 
 
 
@@ -250,6 +249,274 @@ class DbReader:
             }
 
         return aggregated_result
+
+
+class DbReaderWidget(QtWidgets.QWidget):
+    def __init__(self, db_reader: 'DbReader', parent: QtWidgets.QWidget = None):
+        super().__init__(parent)
+        self.db_reader = db_reader
+        self.current_tables_data = {}
+
+        self.init_ui()
+        self.load_initial_data()
+
+    def init_ui(self):
+        main_layout = QtWidgets.QVBoxLayout(self)
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        main_layout.addWidget(self.splitter)
+
+        # --- 1. Tabelle: Backends (Files) mit Buttons ---
+        self.backends_group = QtWidgets.QGroupBox("Registered Backends (Files)")
+        backends_layout = QtWidgets.QVBoxLayout(self.backends_group)
+
+        # Die Tabelle selbst
+        self.backends_table = QtWidgets.QTableWidget()
+        self.backends_table.setColumnCount(2)
+        self.backends_table.setHorizontalHeaderLabels(["Index", "Backend Object"])
+        self.backends_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.backends_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.backends_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+
+        # Kontextmenü für Rechtsklick aktivieren
+        self.backends_table.setContextMenuPolicy(
+            QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.backends_table.customContextMenuRequested.connect(
+            self.show_backend_context_menu)
+
+        backends_layout.addWidget(self.backends_table)
+
+        # Button-Leiste für Backends
+        btn_layout = QtWidgets.QHBoxLayout()
+        self.btn_add_backend = QtWidgets.QPushButton("Add Backend...")
+        self.btn_remove_backend = QtWidgets.QPushButton("Remove Selected")
+
+        # Icons hinzufügen (Standard-System-Icons von Qt nutzen)
+        # Verwendet garantiert existierende PyQt6 Standard-Symbole
+        self.btn_add_backend.setIcon(self.style().standardIcon(
+            QtWidgets.QStyle.StandardPixmap.SP_DialogOpenButton))
+        self.btn_remove_backend.setIcon(self.style().standardIcon(
+            QtWidgets.QStyle.StandardPixmap.SP_DialogDiscardButton))
+
+
+        # Signale verbinden
+        self.btn_add_backend.clicked.connect(self.on_add_backend_clicked)
+        self.btn_remove_backend.clicked.connect(self.on_remove_backend_clicked)
+
+        btn_layout.addWidget(self.btn_add_backend)
+        btn_layout.addWidget(self.btn_remove_backend)
+        backends_layout.addLayout(btn_layout)
+
+        self.splitter.addWidget(self.backends_group)
+
+        # --- 2. Tabelle: Tables ---
+        self.tables_group = QtWidgets.QGroupBox("Database Tables")
+        tables_layout = QtWidgets.QVBoxLayout(self.tables_group)
+        self.tables_table = QtWidgets.QTableWidget()
+        self.tables_table.setColumnCount(3)
+        self.tables_table.setHorizontalHeaderLabels(
+            ["Table Name", "Type", "Total Entries"])
+        self.tables_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.tables_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.tables_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tables_table.itemSelectionChanged.connect(self.on_table_selected)
+        tables_layout.addWidget(self.tables_table)
+        self.splitter.addWidget(self.tables_group)
+
+        # --- 3. Tabelle: Data (Addresses & Stats) ---
+        self.data_group = QtWidgets.QGroupBox("Table Data / Addresses")
+        data_layout = QtWidgets.QVBoxLayout(self.data_group)
+        self.data_table = QtWidgets.QTableWidget()
+        self.data_table.setColumnCount(6)
+        self.data_table.setHorizontalHeaderLabels([
+            "Address / Context", "Entries", "First Time (t)", "Last Time (t)",
+            "Packet First", "Packet Last"
+        ])
+        self.data_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        data_layout.addWidget(self.data_table)
+        self.splitter.addWidget(self.data_group)
+
+        self.setWindowTitle("redvypr Database Reader Explorer")
+        self.resize(1200, 600)
+
+    def load_initial_data(self):
+        """Aktualisiert die Backend-Liste und lädt danach die Tabellendaten neu."""
+        # 1. Backends-Tabelle füllen
+        self.backends_table.setRowCount(len(self.db_reader.backends))
+        for row, backend in enumerate(self.db_reader.backends):
+            self.backends_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(row)))
+            self.backends_table.setItem(row, 1,
+                                        QtWidgets.QTableWidgetItem(str(backend)))
+
+        # 2. Globale Tabellenstruktur abfragen
+        self.refresh_tables_and_data()
+
+    def refresh_tables_and_data(self):
+        """Holt die Tabellen-Metadaten neu aus dem db_reader und aktualisiert die UI."""
+        # Aktuell ausgewählte Tabelle merken, um den Fokus nach dem Refresh nicht zu verlieren
+        selected_ranges = self.tables_table.selectedRanges()
+        selected_tablename = None
+        if selected_ranges:
+            row = selected_ranges[0].topRow()
+            item = self.tables_table.item(row, 0)
+            if item:
+                selected_tablename = item.text()
+
+        self.current_tables_data = self.db_reader.get_data_tables(tabletype='all')
+
+        self.tables_table.setRowCount(len(self.current_tables_data))
+        restore_row = -1
+
+        for row, (tablename, info) in enumerate(self.current_tables_data.items()):
+            self.tables_table.setItem(row, 0, QtWidgets.QTableWidgetItem(tablename))
+            self.tables_table.setItem(row, 1, QtWidgets.QTableWidgetItem(
+                str(info.get('tabletype', 'N/A'))))
+            self.tables_table.setItem(row, 2, QtWidgets.QTableWidgetItem(
+                str(info.get('num_entries', 0))))
+
+            if tablename == selected_tablename:
+                restore_row = row
+
+        # Vorherige Auswahl wiederherstellen oder Data-Tabelle leeren
+        if restore_row != -1:
+            self.tables_table.selectRow(restore_row)
+        else:
+            self.data_table.setRowCount(0)
+
+    # --- Backend-Aktionen (Buttons & Menüs) ---
+
+    def show_backend_context_menu(self, pos: QtCore.QPoint):
+        """Erzeugt das Rechtsklick-Kontextmenü für die Backend-Tabelle."""
+        item = self.backends_table.itemAt(pos)
+        menu = QtWidgets.QMenu(self)
+
+        # Aktion: Hinzufügen (immer verfügbar)
+        add_action = menu.addAction("Add New Backend...")
+        add_action.setIcon(self.style().standardIcon(
+            QtWidgets.QStyle.StandardPixmap.SP_DialogOpenButton))
+        add_action.triggered.connect(self.on_add_backend_clicked)
+
+        # Aktion: Entfernen (nur wenn auf eine gültige Zeile geklickt wurde)
+        if item is not None:
+            menu.addSeparator()
+            remove_action = menu.addAction("Remove Selected Backend")
+            remove_action.setIcon(self.style().standardIcon(
+                QtWidgets.QStyle.StandardPixmap.SP_DialogDiscardButton))
+            remove_action.triggered.connect(self.on_remove_backend_clicked)
+
+        menu.exec(self.backends_table.mapToGlobal(pos))
+
+    def on_add_backend_clicked(self):
+        """Wird aufgerufen, wenn ein neues Backend hinzugefügt werden soll."""
+        # Z.B. ein QFileDialog für SQLite-Dateien:
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Select SQLite Database Backend", "",
+            "Database Files (*.db *.sql *.sqlite *.sqlite3);;All Files (*)"
+        )
+
+        if file_path:
+            try:
+                c = SqliteConfig(filepath=file_path)
+                db_sql_reader = DbSqlite(c, mode='read')
+                self.db_reader.add_backend(db_sql_reader)
+
+                # GUI aktualisieren
+                self.load_initial_data()
+
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Error",
+                                               f"Could not add backend:\n{e}")
+
+    def on_remove_backend_clicked(self):
+        """Entfernt das ausgewählte Backend aus dem db_reader Pipeline."""
+        selected_ranges = self.backends_table.selectedRanges()
+        if not selected_ranges:
+            QtWidgets.QMessageBox.information(self, "No Selection",
+                                              "Please select a backend to remove.")
+            return
+
+        row = selected_ranges[0].topRow()
+
+        # Sicherheitsabfrage
+        reply = QtWidgets.QMessageBox.question(
+            self, "Confirm Removal",
+            f"Are you sure you want to remove backend at index {row} from the reader pipeline?",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
+        )
+
+        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            # Aus der Liste im DbReader löschen
+            if 0 <= row < len(self.db_reader.backends):
+                self.db_reader.backends.pop(row)
+
+                # GUI komplett neu laden (Backends und gemergte Tabellen-Stats)
+                self.load_initial_data()
+
+    # --- Daten-Visualisierungs-Methoden (unverändert) ---
+
+    def format_timestamp(self, ts) -> str:
+        if ts is None: return "None"
+        try:
+            if isinstance(ts, (int, float)):
+                return datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+            return str(ts)
+        except Exception:
+            return str(ts)
+
+    def on_table_selected(self):
+        selected_ranges = self.tables_table.selectedRanges()
+        if not selected_ranges:
+            self.data_table.setRowCount(0)
+            return
+
+        row = selected_ranges[0].topRow()
+        tablename_item = self.tables_table.item(row, 0)
+        if not tablename_item: return
+
+        tablename = tablename_item.text()
+        table_info = self.current_tables_data.get(tablename, {})
+
+        self.data_table.setRowCount(0)
+
+        if tablename == "redvypr_datapacket":
+            self.data_table.setRowCount(1)
+            self.data_table.setItem(0, 0,
+                                    QtWidgets.QTableWidgetItem("Global Packet Summary"))
+            self.data_table.setItem(0, 1, QtWidgets.QTableWidgetItem(
+                str(table_info.get('num_entries', 0))))
+            self.data_table.setItem(0, 2, QtWidgets.QTableWidgetItem(
+                self.format_timestamp(table_info.get('t_first'))))
+            self.data_table.setItem(0, 3, QtWidgets.QTableWidgetItem(
+                self.format_timestamp(table_info.get('t_last'))))
+            self.data_table.setItem(0, 4, QtWidgets.QTableWidgetItem(
+                self.format_timestamp(table_info.get('t_packet_first'))))
+            self.data_table.setItem(0, 5, QtWidgets.QTableWidgetItem(
+                self.format_timestamp(table_info.get('t_packet_last'))))
+        else:
+            addresses = table_info.get('addresses', {})
+            self.data_table.setRowCount(len(addresses))
+            for idx, (addr_name, addr_info) in enumerate(addresses.items()):
+                self.data_table.setItem(idx, 0,
+                                        QtWidgets.QTableWidgetItem(str(addr_name)))
+                self.data_table.setItem(idx, 1, QtWidgets.QTableWidgetItem(
+                    str(addr_info.get('num_entries', 0))))
+                self.data_table.setItem(idx, 2, QtWidgets.QTableWidgetItem(
+                    self.format_timestamp(addr_info.get('t_first'))))
+                self.data_table.setItem(idx, 3, QtWidgets.QTableWidgetItem(
+                    self.format_timestamp(addr_info.get('t_last'))))
+                self.data_table.setItem(idx, 4, QtWidgets.QTableWidgetItem(
+                    self.format_timestamp(addr_info.get('t_packet_first'))))
+                self.data_table.setItem(idx, 5, QtWidgets.QTableWidgetItem(
+                    self.format_timestamp(addr_info.get('t_packet_last'))))
+
+        self.data_table.resizeColumnsToContents()
+
 
 
 
@@ -719,115 +986,12 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         super().__init__(*args,**kwargs)
         self.statistics = {}
         self._statistics_items = {}
-        self.device.thread_started.connect(self.thread_start_signal)
         initial_config = self.device.custom_config
-        # 1. Create Settings Button
-        self.settings_button = QtWidgets.QPushButton("Replay/Export Settings")
-        self.settings_button.setIcon(qtawesome.icon('fa5s.cog'))
-        self.settings_button.clicked.connect(self.open_settings)
 
-        # 2. Create the new DBConfigWidget
-        self.db_config_widget = DBConfigWidget(
-            initial_config=initial_config.database)
-        self.db_config_widget.db_type_changed.connect(self.update_config_from_widgets)
-        self.db_config_widget.db_config_changed.connect(self.update_config_from_widgets)
-        self.statustable = QtWidgets.QTableWidget()
-        self.statustable.setRowCount(1)
-        self._statustableheader = ['Packets','Packets read','Packets published']
-        self.statustable.setColumnCount(len(self._statustableheader))
-        self.statustable.setHorizontalHeaderLabels(self._statustableheader)
-        item = QtWidgets.QTableWidgetItem("All")
-        self.statustable.setItem(0, 0, item)
-        self.statustable.resizeColumnsToContents()
+        self.db_reader = DbReader()
+        self.reader_widget = DbReaderWidget(db_reader=self.db_reader)
 
-        # 3. Add the DBConfigWidget to the main content area (self.layout)
-        # We add it at the top of the 'self.widget' (main content area)
-        self.layout.addWidget(self.db_config_widget)
-        # Insert settings widget
-        self.layout.addWidget(self.settings_button)
-        self.layout.addWidget(self.statustable)
+        self.layout.addWidget(self.reader_widget)
         self.layout.addStretch(1)  # Push the DB widget to the top
-
-        self.statustimer_db = QtCore.QTimer()
-        self.statustimer_db.timeout.connect(self.update_status)
-
-    def update_config_from_widgets(self, config_new):
-        print(f"Got new config from widgets:{config_new}")
-        db_config = DatabaseSettings(config_new).root
-        print(f"Got new config from widgets:{db_config}")
-        self.device.custom_config.database = db_config
-
-
-    def open_settings(self):
-        # Always get latest config from the sub-widget (connection params)
-        # combined with our internal custom_config
-        current_cfg = self.device.custom_config
-
-        dialog = ReplaySettingsDialog(current_cfg, self)
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            new_config = dialog.get_updated_config()
-            self.device.custom_config = new_config
-            QtWidgets.QStatusBar().showMessage("Settings updated.", 2000)
-
-
-    def update_status(self):
-        status = self.device.get_thread_status()
-        thread_status = status['thread_running']
-        # Running
-        if (thread_status):
-            pass
-        # Not running
-        else:
-            #print("Thread not running anymore, stopping timer")
-            self.statustimer_db.stop()
-
-        try:
-            data = self.device.statusqueue.get(block=False)
-            #print(" Got status data", data)
-        except:
-            data = None
-
-        if data is not None:
-            try:
-                item_read = QtWidgets.QTableWidgetItem(str(data['packets_read']))
-                item_published = QtWidgets.QTableWidgetItem(
-                    str(data['packets_published']))
-                self.statistics.update(data['statistics'])
-                #print("Statistics",self.statistics)
-                self.statustable.setItem(0,1,item_read)
-                self.statustable.setItem(0, 2, item_published)
-                for row,(k, i) in enumerate(self.statistics.items()):
-                    #print("k",k)
-                    #print("i", i)
-                    k_mod = RedvyprAddress(k).to_address_string(["i","p","h","d"])
-                    try:
-                        item_read = self._statistics_items[k][1]
-                        item_published = self._statistics_items[k][2]
-                        istr = str(i['packets_read'])
-                        item_read.setText(istr)
-                        istr = str(i['packets_published'])
-                        item_published.setText(istr)
-                    except:
-                        logger.info("Could not get data",exc_info=True)
-                        item_addr = QtWidgets.QTableWidgetItem(k_mod)
-                        item_read = QtWidgets.QTableWidgetItem(str(i['packets_read']))
-                        item_published = QtWidgets.QTableWidgetItem(
-                            str(i['packets_published']))
-                        self._statistics_items[k] = (item_addr,item_read,item_published)
-                        nrows = self.statustable.rowCount()
-                        self.statustable.setRowCount(nrows + 1)
-                        self.statustable.setItem(nrows, 0, item_addr)
-                        self.statustable.setItem(nrows, 1, item_read)
-                        self.statustable.setItem(nrows, 2, item_published)
-
-                    #item = self._statistics_items[k]
-
-                self.statustable.resizeColumnsToContents()
-            except:
-                logger.info("Could not update data",exc_info=True)
-
-    def thread_start_signal(self):
-        print("Thread started, starting statustimer")
-        self.statustimer_db.start(500)
 
 

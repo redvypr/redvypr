@@ -235,7 +235,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                                                                 hostinfo, 0, tread,
                                                                 'distribute_data')
                         infoqueue.put_nowait(compacket)
-                        print("send to devices new metadata ...")
+                        #print("send to devices new metadata ...")
                         send_packets_to_devices(devicedict_main, devices, data_packets_fan_out=[compacket],
                                         logger_dist=logger_dist, hostinfo=hostinfo)
                     # Send the packet back to notify function that it was processed
@@ -628,8 +628,6 @@ class Redvypr(QtCore.QObject):
             with open(fname, 'w') as fyaml:
                 yaml.dump(data_save, fyaml)
 
-
-
     def get_devicemodulename_from_str(self, devicename):
         """
         Tries to find a devicemodulename from devicename
@@ -793,7 +791,6 @@ class Redvypr(QtCore.QObject):
                         logger.debug(funcname + "Got metadata, emitting signal")
                         metadata_new = data["deviceinfo_all"]["metadata"]
                         self.metadata_changed_signal.emit()
-
 
                 except:
                     logger.info(funcname + 'Error',exc_info=True)

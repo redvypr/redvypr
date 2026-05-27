@@ -82,8 +82,28 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                                    thread_uuid=device_info[
                                                        'thread_uuid'],
                                                    add_data=True)
+
+            # Save everything that the writer gets
+            if True:
+                # print('Inserting datapacket',datapacket)
+                try:
+                    statistics[addrstr]
+                except:
+                    statistics[addrstr] = {'packet_inserted': 0,
+                                           'packet_inserted_failure': 0}
+                try:
+                    # print("Inserting packet")
+                    db.insert_packet(datapacket)
+                    packet_inserted += 1
+                    statistics[addrstr]['packet_inserted'] += 1
+                except:
+                    logger_thread.info("Could not add data", exc_info=True)
+                    packet_inserted_failure += 1
+                    statistics[addrstr]['packet_inserted_failure'] += 1
+
             if command is not None:
                 paddr = RedvyprAddress(datapacket)
+                packetuuid = paddr.uuid
                 packetid = paddr.packetid
                 publisher = paddr.publisher
                 device = paddr.device
@@ -99,6 +119,15 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 # Check if there is metadata to save
                 elif command == 'info' and packetid == 'metadata':
                     logger.info(f"Info command:{datapacket.keys()}")
+                    # Adding the deviceinfo_all to metadata
+                    try:
+                        db.add_metadata(address=paddr.to_address_string(), uuid=packetuuid,
+                                        metadata_dict=datapacket)
+                        metadata_address_inserted += 1
+                    except:
+                        logger_thread.info("Could not add device_info_all metadata", exc_info=True)
+
+
                     metadata = datapacket["deviceinfo_all"]["metadata"]
                     #print("Metadata", metadata)
                     # add_metadata(self, address: str, uuid: str, metadata_dict: dict,mode: str = "merge"):
@@ -111,7 +140,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                             uuid = None
 
                         if uuid is None:
-                            print("Could not get uuid from metadata, get from host")
+                            print(f"Could not get uuid from metadata with address {metadata_address}, using host uuid")
                             uuid = device_info["hostinfo"]["uuid"]
 
                         try:
@@ -121,22 +150,6 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                         except:
                             logger_thread.info("Could not add metadata",exc_info=True)
 
-            else:  # Only save real data
-                #print('Inserting datapacket',datapacket)
-                try:
-                    statistics[addrstr]
-                except:
-                    statistics[addrstr] = {'packet_inserted': 0,
-                                           'packet_inserted_failure': 0}
-                try:
-                    #print("Inserting packet")
-                    db.insert_packet(datapacket)
-                    packet_inserted += 1
-                    statistics[addrstr]['packet_inserted'] += 1
-                except:
-                    logger_thread.info("Could not add data",exc_info=True)
-                    packet_inserted_failure += 1
-                    statistics[addrstr]['packet_inserted_failure'] += 1
 
             if ((time.time() - t_update) > dt_update):
                 t_update = time.time()

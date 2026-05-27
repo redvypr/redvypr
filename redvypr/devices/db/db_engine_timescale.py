@@ -18,7 +18,8 @@ from abc import ABC, abstractmethod
 from typing import Iterator, Optional, Any, Dict
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import Datapacket
-from .db_config_util import DbWriteConfig, sanitize_name_for_db, json_safe_dumps, json_safe_loads
+from .db_config_util import DbWriteConfig, sanitize_name_for_db
+from redvypr.serialize import serialize_json, deserialize_json
 
 import numpy as np
 
@@ -456,7 +457,7 @@ class DbTimescaleWriter():
         """
 
         # Psycopg natively serializes Python dicts if the column type is JSONB
-        sql_data = (address, uuid, json_safe_dumps(metadata_dict), packetid, device, host)
+        sql_data = (address, uuid, serialize_json(metadata_dict), packetid, device, host)
 
         try:
             self._execute(sql, sql_data)
@@ -637,7 +638,7 @@ class DbTimescaleWriter():
             # Für PostgreSQL/Timescale nutzt man idealerweise JSONB.
             # Wenn du psycopg2 nutzt, kannst du 'from psycopg2.extras import Json' nutzen.
             # Alternativ hier als valider JSON-String (Postgres parst den String im JSONB-Feld):
-            return json.dumps(value)
+            return serialize_json(value)
         elif isinstance(value, (bytes, bytearray)):
             return bytes(value)  # Wird zu BYTEA
         else:
@@ -801,7 +802,7 @@ class DbTimescaleWriter():
             ts_pkt_utc = rv_meta.get('t', -1)
 
             # 2. Prepare data for SQL
-            data_dict_json = json_safe_dumps(data_dict)
+            data_dict_json = serialize_json(data_dict)
 
             # 3. Change placeholders to %s and enforce quoted table names
             sql = f"""

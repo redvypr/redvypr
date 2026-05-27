@@ -642,7 +642,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
         else:
             if len(packets) < npacket_buf:
                 dn = npacket_buf - len(packets)
-                print('Asking for new packets',dn)
+                #print('Asking for new packets',dn)
                 read_commandqueue.put(dn)
                 while True:
                     try:

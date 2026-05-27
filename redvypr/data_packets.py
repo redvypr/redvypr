@@ -291,7 +291,8 @@ class Datapacket(dict):
             elif return_type=='dict':
                 return keys_dict_expand
             else:
-                return (keys_expand, keys_dict_expand)
+                #return (keys_expand, keys_dict_expand)
+                return [keys_expand, keys_dict_expand] # List is easier for serializer like json
 
     def datastreams(self, datakeys=None, expand=True):
         """
