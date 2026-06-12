@@ -2178,6 +2178,7 @@ class RedvyprDeviceTreeWidget(QtWidgets.QWidget):
         return items
 
 
+
 class RedvyprAddressEditWrapper(QtWidgets.QWidget):
     """
     Component wrapping the address input and editing functionality.
