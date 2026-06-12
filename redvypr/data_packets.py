@@ -98,6 +98,9 @@ class Datapacket(dict):
         else:
             dict.__init__(self)
 
+
+        self._cache = {} # For calculated datakeys, etc. ...
+
         if '_redvypr' not in self.keys():
             #create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None, publisher=None, hostinfo=None)
             dataself = create_datadict(packetid=packetid, device=device)
@@ -119,84 +122,55 @@ class Datapacket(dict):
             return super().__getitem__(key)
 
     def __setitem__(self, key, value):
-        # Check if the key is a string but is an "eval" operator
-        if isinstance(key, str):
-            if key.startswith('[') and key.endswith(']'):
-                evalstr = 'self' + key + '=value'
-                # data = self
-                exec(evalstr, None)
-            else:
+        """
+        Sets an item securely. Supports deep nested keys using bracket notation (e.g., '["a"][0]["b"]')
+        or RedvyprAddress objects, safely evaluating paths without dangerous execution functions.
+        """
+        self._cache.clear()
+        # Extract the datakey string if a RedvyprAddress is passed
+        if isinstance(key, RedvyprAddress):
+            key = key.datakey
+
+        if isinstance(key, str) and key.startswith('[') and key.endswith(']'):
+            # Safely extract all tokens inside brackets: matches either "strings" or integers
+            # Example: '["sensors"][0]["temperature"]' -> [('sensors', ''), ('', '0'), ('temperature', '')]
+            tokens = re.findall(r'\[(?:["\'](.*?)["\']|(\d+))\]', key)
+
+            if not tokens:
                 return super().__setitem__(key, value)
-        # Check if the key is a RedvyprAddress
-        elif isinstance(key, RedvyprAddress):
-            datakey = key.datakey
-            if datakey.startswith('[') and datakey.endswith(']'):
-                evalstr = 'self' + datakey  + '=value'
-                exec(evalstr, None)
-            else:
-                return super().__setitem__(datakey, value)
+
+            # Sanitize extracted tokens into valid string keys or integer indices
+            path = [t[0] if t[0] else int(t[1]) for t in tokens]
+
+            # Traverse down the nested dictionary structure safely
+            current = self
+            try:
+                for node in path[:-1]:
+                    current = current[node]
+
+                # Assign the target value to the final element natively
+                current[path[-1]] = value
+            except (KeyError, IndexError, TypeError) as e:
+                logger.error(f"Failed to resolve nested assignment path '{key}': {e}")
+                raise
+
         else:
+            # Fallback for standard key-value assignments
             return super().__setitem__(key, value)
 
-    def __expand_datakeys_recursive__(self, data, keys, level=0, parent_key='f', key_list = [], key_dict = {}, max_level=1000):
-        for k in keys:
-            #print('expand','k',k,level,parent_key)
-            data_k = data[k]
-            # Check if k is a list or a dict
-            if level == 0:
-                strformat = "{}".format(k)
-                key_dict[k] = None
-            else:
-                if isinstance(k, int):
-                    strformat = "[{}]".format(k)
-                    key_dict.append(None)
-                else:
-                    strformat = "['{}']".format(k)
-                    key_dict[k] = None
-            if level < max_level:
-                if isinstance(data_k, list):
-                    data_k_keys = range(0, len(data_k))
-                    parent_key_new = parent_key + strformat
-                    key_dict[k] = []
-                    self.__expand_datakeys_recursive__(data_k, data_k_keys, level=level + 1, parent_key=parent_key_new, key_list=key_list, key_dict = key_dict[k], max_level=max_level)
-                elif isinstance(data_k, dict):
-                    data_k_keys = data_k.keys()
-                    parent_key_new = parent_key + strformat
-                    key_dict[k] = {}
-                    self.__expand_datakeys_recursive__(data_k, data_k_keys, level=level + 1, parent_key=parent_key_new, key_list=key_list, key_dict = key_dict[k], max_level=max_level)
-                elif isinstance(data_k, np.ndarray):
-                    #logger.warning('Found an numpy array, this is not implemented yet')
-                    # Add index type of address if necessary only
-                    if level > 0:
-                        expanded_key = parent_key + strformat
-                        key_list.append(expanded_key)
-                        key_dict[k] = (expanded_key, type(data[k]))
-                    else:
-                        key_list.append(k)
-                        key_dict[k] = (k, type(data[k]))
+    def update(self, *args, **kwargs):
+        self._cache.clear()
+        super().update(*args, **kwargs)
 
-                else: # This is not an iterative element anymore, lets use it
-                    # Add index type of address if necessary only
-                    if level > 0:
-                        expanded_key = parent_key + strformat
-                        key_list.append(expanded_key)
-                        key_dict[k] = (expanded_key,type(data[k]))
-                    else:
-                        key_list.append(k)
-                        key_dict[k] = (k,type(data[k]))
-            else:
-                # Add index type of address if necessary only
-                if level > 0:
-                    expanded_key = parent_key + strformat
-                    key_list.append(expanded_key)
-                else:
-                    key_list.append(k)
+    def clear(self):
+        self._cache.clear()
+        super().clear()
 
+    # --- Core Logic Methods ---
     def datakeys(self, datakeys=None, expand=False, return_type='dict'):
         """
-        Retrieves the data keys from the data packet, with options to expand and format the output. If expand==True the
-        datakeys are in a format that can be used within an "eval" operator, or as an index to the datapacket. Refer
-        to the last example.
+        Retrieves the data keys from the data packet, with options to expand and format the output.
+        If expand==True the datakeys are in a format that can be used within an index to the datapacket.
 
         Examples
         --------
@@ -210,133 +184,513 @@ class Datapacket(dict):
         >>> ar.datakeys(datakeys=["['a'][0]"], expand=True)
         (["['a'][0][0]", "['a'][0][1]", "['a'][0][2]"], {"['a'][0][0]": ("['a'][0][0]", int), "['a'][0][1]": ("['a'][0][1]", int), "['a'][0][2]": ("['a'][0][2]", int)})
 
-        >>> datakeys = ar.datakeys(datakeys=["['a'][1]"], expand=True, return_type='list')
-        >>> print(datakeys)
-        ["['a'][1]"]
-        >>> ar[datakeys[0]]
-        2
-
         Parameters
         ----------
         datakeys : list or str or RedvyprAddress, optional
-            A list of specific data keys to retrieve. If None, all keys in the data packet will be used, if of type str
-            it will be converted to RedvyprAddress(datakeys) and treated as RedvyprAddress. If RedvyprAddress datakeys
-            will be [RedvyprAddress.datakey] or all keys if datakey is "*".
+            A list of specific data keys to retrieve. If None, all root keys in the data packet
+            will be evaluated. If type is str or RedvyprAddress, it is mapped into a predictable key array.
         expand : bool or int, optional
-            If True, recursively expands the data keys up to a default depth of 100. If an integer is provided,
-            it specifies the maximum depth for expansion. Default is False.
+            If True, recursively expands nested dictionary, list, or array structures up to
+            a default depth of 100. If an integer is provided, it dictates the custom recursion limit.
+            Default is False.
         return_type : str, optional
             The format in which to return the data keys. Options are:
-            - 'list': Returns the data keys as a list.
-            - 'dict': Returns the data keys as a dictionary.
-            - Any other value: Returns the data keys as a tuple containing both a list and a dictionary.
+            - 'list': Returns the data keys as a flattened list of bracket strings.
+            - 'dict': Returns a map containing paths linked to (path, data_type) metadata tuples.
+            - Any other value: Returns a combined JSON-friendly list structure containing [list, dict].
             Default is 'dict'.
 
         Returns
         -------
         list or dict or tuple
-            The data keys in the specified format. If `expand` is False, returns a list of keys. If `expand` is True
-            or an integer, returns the expanded keys in the format specified by `return_type`.
-
-        Notes
-        -----
-        This method uses a helper function `__expand_datakeys_recursive__` to handle the recursive expansion
-        of data keys. It also filters out certain predefined keys (`redvypr_data_keys`) from the result.
-
-
+            The target data key map or list in the requested return_type format.
         """
-        if datakeys is None:  # Use all keys
+        # Formulate a stable cache hash key. Lists are unhashable, so map collections to a immutable tuple
+        cache_key = (
+            tuple(datakeys) if isinstance(datakeys, list) else datakeys,
+            expand,
+            return_type
+        )
+
+        # Cache Hit: Instantly return reference if structure hasn't muted
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        # Cache Miss: Calculate output arrays
+        if datakeys is None:
             keys = list(self.keys())
         else:
-            keys = []  # Fill keys list manually
             if isinstance(datakeys, str):
                 datakeys = [RedvyprAddress(datakeys)]
             elif isinstance(datakeys, RedvyprAddress):
                 datakeys = [datakeys]
-            elif isinstance(datakeys, list):
-                pass
-            else:
-                raise ValueError('datakeys must be None, str, RedvyprAdress or list')
+            elif not isinstance(datakeys, list):
+                raise ValueError(
+                    'datakeys must be None, str, RedvyprAddress or list')
 
+            keys = []
             for k in datakeys:
                 if isinstance(k, RedvyprAddress):
-                    #print('data dict ', dict(self))
-                    #print('Datakey expand ',k)
-                    #print('Address call ', k(dict(self)))
-                    #print('Address call list', list(k(dict(self)).keys()))
-                    #keys += list(k(dict(self)).keys())
-                    keys += [k.left_expr]
+                    keys.append(k.left_expr)
+                else:
+                    keys.append(k)
 
-        for key_remove in redvypr_data_keys:
-            try:
-                keys.remove(key_remove)
-            except:
-                pass
+        # High-performance O(1) set comprehension removal of metadata keys
+        filter_set = set(redvypr_data_keys)
+        keys = [k for k in keys if k not in filter_set]
 
-        # Check if the datakey needs to be expanded
-        if expand == False:
+        # Fast exit if recursive resolution is bypassed
+        if not expand:
+            self._cache[cache_key] = keys
             return keys
+
+        # Set maximum iteration boundary
+        max_level = 100 if isinstance(expand, bool) else expand
+        keys_expand = []
+        keys_dict_expand = {"":(self.address.to_address_string(),dict)}
+
+        # Trigger safe recursive tree scanner
+        self.__expand_datakeys_recursive__(
+            self, keys, level=0, parent_key='',
+            key_list=keys_expand, key_dict=keys_dict_expand, max_level=max_level
+        )
+
+        # Align return payload format
+        if return_type == 'list':
+            result = keys_expand
+        elif return_type == 'dict':
+            result = keys_dict_expand
         else:
-            keys_expand = []
-            keys_dict_expand = {}
-            if isinstance(expand, bool):
-                max_level = 100
-            else:
-                max_level = expand
+            result = [keys_expand, keys_dict_expand]
 
-            self.__expand_datakeys_recursive__(self, keys, level=0, parent_key='', key_list=keys_expand, key_dict=keys_dict_expand, max_level=max_level)
+        # Register result in cache map before passing back to execution path
+        self._cache[cache_key] = result
+        return result
 
-            if return_type=='list':
-                return keys_expand
-            elif return_type=='dict':
-                return keys_dict_expand
-            else:
-                #return (keys_expand, keys_dict_expand)
-                return [keys_expand, keys_dict_expand] # List is easier for serializer like json
-
-    def datastreams(self, datakeys=None, expand=True):
+    def datakeys(self, datakeys=None, expand=False, return_type='dict'):
         """
-        Retrieves the datastreams from the data packet as a list of RedvyprAddress objects.
-
-        This method uses the `datakeys` method to obtain the data keys and then converts them into `RedvyprAddress` objects,
-        which represent the datastreams within the data packet.
-
-        Parameters
-        ----------
-        datakeys : list or str or RedvyprAddress, optional
-            A list of specific data keys to retrieve the datastream. If None, all keys in the data packet will be used,
-            if of type str it will be converted to RedvyprAddress(datakeys) and treated as RedvyprAddress. If
-            RedvyprAddress datakeys will be [RedvyprAddress.datakey] or all keys if datakey is "*".
-        expand : bool or int, optional
-            If True, recursively expands the data keys up to a default depth of 100. If an integer is provided,
-            it specifies the maximum depth for expansion. Default is True.
-
-        Returns
-        -------
-        list of RedvyprAddress
-            A list of `RedvyprAddress` objects, each representing a datastream in the data packet.
+        Retrieves the data keys from the data packet, with options to expand and format the output.
+        If expand==True the datakeys are in a format that can be used within an index to the datapacket.
 
         Examples
         --------
         >>> ar = Datapacket({'a': [[2, 3, 4], 2, 3, 4]})
-        >>> datastreams = ar.datastreams(expand=True)
-        >>> for ds in datastreams:
-        ...     print(ds.get_str())
+        >>> ar.datakeys(expand=False)
+        ['a']
 
-        Notes
-        -----
-        The `datastreams` method relies on the `datakeys` method to retrieve the data keys and the `RedvyprAddress` class
-        to create address objects for each datastream. The `expand` parameter is passed to the `datakeys` method to control
-        the depth of key expansion.
+        >>> ar.datakeys(datakeys=["['a'][1]"], expand=True, return_type='dict')
+        {"['a'][1]": ("['a'][1]", int)}
+
+        >>> ar.datakeys(datakeys=["['a'][0]"], expand=True)
+        (["['a'][0][0]", "['a'][0][1]", "['a'][0][2]"], {"['a'][0][0]": ("['a'][0][0]", int), "['a'][0][1]": ("['a'][0][1]", int), "['a'][0][2]": ("['a'][0][2]", int)})
+
+        Parameters
+        ----------
+        datakeys : list or str or RedvyprAddress, optional
+            A list of specific data keys to retrieve. If None, all root keys in the data packet
+            will be evaluated. If type is str or RedvyprAddress, it is mapped into a predictable key array.
+        expand : bool or int, optional
+            If True, recursively expands nested dictionary, list, or array structures up to
+            a default depth of 100. If an integer is provided, it dictates the custom recursion limit.
+            Default is False.
+        return_type : str, optional
+            The format in which to return the data keys. Options are:
+            - 'list': Returns the data keys as a flattened list of bracket strings.
+            - 'dict': Returns a map containing paths linked to (path, data_type) metadata tuples.
+            - Any other value: Returns a combined JSON-friendly list structure containing [list, dict].
+            Default is 'dict'.
+
+        Returns
+        -------
+        list or dict or tuple
+            The target data key map or list in the requested return_type format.
         """
+        # Formulate a stable cache hash key. Lists are unhashable, so map collections to an immutable tuple
+        cache_key = (
+            tuple(datakeys) if isinstance(datakeys, list) else datakeys,
+            expand,
+            return_type
+        )
 
-        datakeys = self.datakeys(datakeys=datakeys, expand=expand,return_type='list')
-        daddresses = []
-        for d in datakeys:
-            daddr = RedvyprAddress(self.address, datakey=d)
-            daddresses.append(daddr)
+        # Cache Hit: Instantly return reference if structure hasn't mutated
+        if cache_key in self._cache:
+            return self._cache[cache_key]
 
-        return daddresses
+        # Cache Miss: Calculate output arrays
+        if datakeys is None:
+            keys = list(self.keys())
+        else:
+            if isinstance(datakeys, str):
+                datakeys = [RedvyprAddress(datakeys)]
+            elif isinstance(datakeys, RedvyprAddress):
+                datakeys = [datakeys]
+            elif not isinstance(datakeys, list):
+                raise ValueError(
+                    'datakeys must be None, str, RedvyprAddress or list')
+
+            keys = []
+            for k in datakeys:
+                if isinstance(k, RedvyprAddress):
+                    keys.append(k.left_expr)
+                else:
+                    keys.append(k)
+
+        # High-performance O(1) set comprehension removal of metadata keys
+        filter_set = set(redvypr_data_keys)
+        keys = [k for k in keys if k not in filter_set]
+
+        # Fast exit if recursive resolution is bypassed
+        if not expand:
+            self._cache[cache_key] = keys
+            return keys
+
+        # Set maximum iteration boundary
+        max_level = 100 if isinstance(expand, bool) else expand
+        keys_expand = []
+        keys_dict_expand = {"": (self.address.to_address_string(), dict)}
+
+        # Trigger safe recursive tree scanner
+        self.__expand_datakeys_recursive__(
+            self, keys, level=0, parent_key='',
+            key_list=keys_expand, key_dict=keys_dict_expand, max_level=max_level
+        )
+
+        # Align return payload format
+        if return_type == 'list':
+            result = keys_expand
+        elif return_type == 'dict':
+            result = keys_dict_expand
+        else:
+            result = [keys_expand, keys_dict_expand]
+
+        # Register result in cache map before passing back to execution path
+        self._cache[cache_key] = result
+        return result
+
+    @staticmethod
+    def datastreams_from_datakeys(datakeys_payload, base_address=None,
+                                  return_type='address', expand=True,
+                                  fallback_types=None):
+        """
+        Generates datastreams from a pre-calculated datakeys payload (list or dict).
+        Automatically extracts the base address if a dict payload is provided.
+
+        Parameters
+        ----------
+        datakeys_payload : list or dict
+            The result from a previous call to `datakeys()`.
+        base_address : RedvyprAddress or str, optional
+            The base address of the datapacket. If a dict payload containing a root
+            key "" is provided, this parameter is automatically resolved.
+        return_type : str, optional
+            The format of the elements in the returned list. Options are:
+            - 'address': Returns a list of pure `RedvyprAddress` objects.
+            - 'address_type': Returns a list of lists containing `[RedvyprAddress, data_type]`.
+            Default is 'address'.
+        expand : bool or int, optional
+            Dictates how deep the nested payload structures will be traversed.
+            If True, recursively unpacks up to a depth of 100. If an integer is
+            provided, it sets a custom recursion limit. Default is True.
+        fallback_types : dict, optional
+            A dictionary mapping flat keys to their types. Only used if
+            datakeys_payload is a flat list and return_type is 'address_type'.
+
+        Returns
+        -------
+        list of RedvyprAddress or list of list
+            A list containing either validated `RedvyprAddress` objects or
+            `[RedvyprAddress, type]` arrays representing addressable tracks.
+        """
+        # If a dictionary is provided, extract the base address from the root "" key
+        #print("datakeys payload",datakeys_payload)
+        if isinstance(datakeys_payload, dict) and "" in datakeys_payload:
+            # The tuple structure is (address_string, data_type) -> extract the string
+            base_address = datakeys_payload[""][0]
+
+        # Establish maximum iteration boundary
+        max_level = 100 if isinstance(expand, bool) else expand
+        if expand is False:
+            max_level = 0
+
+        if return_type == 'address_type':
+            # Fast-exit fallback: payload is a flat list (e.g., when expand=False during generation)
+            if isinstance(datakeys_payload, list):
+                if base_address is None:
+                    raise ValueError(
+                        "base_address is required when payload is a flat list.")
+                fallback_types = fallback_types or {}
+                return [
+                    [RedvyprAddress(base_address, datakey=k),
+                     fallback_types.get(k, type(None))]
+                    for k in datakeys_payload
+                ]
+
+            # Standard tree traversal with depth limitation
+            flat_items = []
+
+            def _extract_items(d, level=0):
+                if level > max_level:
+                    return
+                if isinstance(d, dict):
+                    for k, v in d.items():
+                        if k == "":
+                            continue  # Skip container root metadata node
+                        if isinstance(v, tuple):
+                            flat_items.append(v)
+                        else:
+                            _extract_items(v, level + 1)
+
+            _extract_items(datakeys_payload, level=0)
+
+            return [
+                [RedvyprAddress(base_address, datakey=path), dtype]
+                for path, dtype in flat_items
+            ]
+
+        else:
+            # Fallback/Default: Only pure addresses are requested ('address')
+            if isinstance(datakeys_payload, dict):
+                flat_keys = []
+
+                def _extract_keys(d, level=0):
+                    if level > max_level:
+                        return
+                    if isinstance(d, dict):
+                        for k, v in d.items():
+                            if k == "":
+                                continue
+                            if isinstance(v, tuple):
+                                flat_keys.append(v[0])
+                            else:
+                                _extract_keys(v, level + 1)
+
+                _extract_keys(datakeys_payload, level=0)
+                expanded_keys = flat_keys
+            else:
+                expanded_keys = datakeys_payload
+
+            if base_address is None:
+                raise ValueError(
+                    "base_address is required if it cannot be extracted from the payload.")
+
+            return [RedvyprAddress(base_address, datakey=d) for d in expanded_keys]
+
+    def datastreams(self, datakeys=None, expand=True, return_type='address'):
+        """
+        Retrieves the datastreams from the data packet as a list of RedvyprAddress objects
+        or as pairs of addresses and their corresponding data types.
+        Uses the internal static helper for mapping.
+
+        Parameters
+        ----------
+        datakeys : list or str or RedvyprAddress, optional
+            Target parameter array routed directly to the internal `datakeys` helper.
+        expand : bool or int, optional
+            Recursion depth indicator routed to the internal `datakeys` helper. Default is True.
+        return_type : str, optional
+            The format of the elements in the returned list. Options are:
+            - 'address': Returns a list of pure `RedvyprAddress` objects.
+            - 'address_type': Returns a list of lists containing `[RedvyprAddress, data_type]`.
+            Default is 'address'.
+
+        Returns
+        -------
+        list of RedvyprAddress or list of list
+            A list containing either validated `RedvyprAddress` objects or
+            `[RedvyprAddress, type]` arrays representing addressable tracks.
+        """
+        # Fetch the payload utilizing the instance cache mechanisms
+        if return_type == 'address_type':
+            payload = self.datakeys(datakeys=datakeys, expand=expand,
+                                    return_type='dict')
+        else:
+            payload = self.datakeys(datakeys=datakeys, expand=expand,
+                                    return_type='list')
+
+        # Special fallback handler: if expand resolves to a flat list,
+        # map types directly via instance lookup using type(self[k])
+        fallback_types = None
+        if return_type == 'address_type' and isinstance(payload, list):
+            fallback_types = {k: type(self[k]) for k in payload}
+
+        # Delegate execution path to the static helper method
+        return Datapacket.datastreams_from_datakeys(
+            datakeys_payload=payload,
+            base_address=self.address,
+            return_type=return_type,
+            expand=expand,
+            fallback_types=fallback_types
+        )
+
+    def datastreams_legacy(self, datakeys=None, expand=True, return_type='address'):
+        """
+        Retrieves the datastreams from the data packet.
+        Now uses the static helper method.
+        """
+        # 1. Hol dir den Payload (Nutzt das Caching in self.datakeys)
+        requested_return = 'dict' if return_type == 'address_type' and expand else 'list'
+
+        # Um deinen originalen Code exakt zu spiegeln:
+        if return_type == 'address_type':
+            payload = self.datakeys(datakeys=datakeys, expand=expand,
+                                    return_type='dict')
+        else:
+            payload = self.datakeys(datakeys=datakeys, expand=expand,
+                                    return_type='list')
+
+        # Für den Spezialfall: expand=False UND return_type='address_type'
+        # braucht die statische Methode die Typen aus dem aktuellen Packet
+        fallback_types = None
+        if return_type == 'address_type' and isinstance(payload, list):
+            fallback_types = {k: type(self[k]) for k in payload}
+
+        # 2. Delegiere an die statische Methode
+        return Datapacket.datastreams_from_datakeys(
+            datakeys_payload=payload,
+            base_address=self.address,
+            return_type=return_type,
+            fallback_types=fallback_types
+        )
+
+    @staticmethod
+    def datastreams_from_datakeys_legacy(datakeys_payload, base_address=None,
+                                  return_type='address', fallback_types=None):
+        """
+        Generates datastreams from a pre-calculated datakeys payload.
+        Automatically extracts the base address if a dict payload is provided.
+        """
+        # Falls ein Dict übergeben wurde, ziehen wir die Basis-Adresse direkt aus dem ""-Key
+        if isinstance(datakeys_payload, dict) and "" in datakeys_payload:
+            # Das Tuple ist (address_string, data_type) -> wir nehmen den String
+            base_address = datakeys_payload[""][0]
+
+        if return_type == 'address_type':
+            # Fast-Exit Fallback: Payload ist eine flache Liste (expand=False)
+            if isinstance(datakeys_payload, list):
+                if base_address is None:
+                    raise ValueError(
+                        "base_address is required when payload is a flat list.")
+                fallback_types = fallback_types or {}
+                return [
+                    [RedvyprAddress(base_address, datakey=k),
+                     fallback_types.get(k, type(None))]
+                    for k in datakeys_payload
+                ]
+
+            # Normaler Baum-Durchlauf (expand=True)
+            flat_items = []
+
+            def _extract_items(d):
+                if isinstance(d, dict):
+                    for k, v in d.items():
+                        if k == "":
+                            continue  # Überspringe die Root-Metadaten
+                        if isinstance(v, tuple):
+                            flat_items.append(v)
+                        else:
+                            _extract_items(v)
+
+            _extract_items(datakeys_payload)
+
+            return [
+                [RedvyprAddress(base_address, datakey=path), dtype]
+                for path, dtype in flat_items
+            ]
+
+        else:
+            # Fallback/Default: Es werden nur reine Adressen gewünscht ('address')
+            if isinstance(datakeys_payload, dict):
+                flat_keys = []
+
+                def _extract_keys(d):
+                    if isinstance(d, dict):
+                        for k, v in d.items():
+                            if k == "":
+                                continue
+                            if isinstance(v, tuple):
+                                flat_keys.append(v[0])
+                            else:
+                                _extract_keys(v)
+
+                _extract_keys(datakeys_payload)
+                expanded_keys = flat_keys
+            else:
+                expanded_keys = datakeys_payload
+
+            if base_address is None:
+                raise ValueError(
+                    "base_address is required if it cannot be extracted from the payload.")
+
+            return [RedvyprAddress(base_address, datakey=d) for d in expanded_keys]
+
+    def __expand_datakeys_recursive__(self, data, keys, level=0, parent_key='',
+                                      key_list=None, key_dict=None, max_level=100):
+        """
+        Recursively scans compound types to record explicit access paths and data typings.
+        """
+        if key_list is None: key_list = []
+        if key_dict is None: key_dict = {}
+
+        for k in keys:
+            data_k = data[k]
+
+            # Map structural formats cleanly based on key instance types
+            if level == 0:
+                strformat = str(k)
+            else:
+                strformat = f"[{k}]" if isinstance(k, int) else f"['{k}']"
+
+            # Rebuild compound string components using optimized string interpolation
+            parent_key_new = f"{parent_key}{strformat}" if level > 0 else strformat
+
+            # Tree traversal phase
+            if level < max_level:
+                if isinstance(data_k, list):
+                    # Maintain structural mirroring inside key_dict depending on context layout
+                    if isinstance(key_dict, dict):
+                        key_dict[k] = {"": (parent_key_new, list)}
+                        #key_dict[k] = {}
+                    elif isinstance(key_dict, list):
+                        key_dict.append({"": (parent_key_new, list)})
+                        #key_dict.append({})
+
+                    target = key_dict[k] if isinstance(key_dict, dict) else \
+                    key_dict[-1]
+
+                    self.__expand_datakeys_recursive__(
+                        data_k, range(len(data_k)), level=level + 1,
+                        parent_key=parent_key_new, key_list=key_list,
+                        key_dict=target, max_level=max_level
+                    )
+                    continue
+
+                elif isinstance(data_k, dict):
+                    if isinstance(key_dict, dict):
+                        key_dict[k] = {"": (parent_key_new, dict)}
+                        #key_dict[k] = {}
+                    elif isinstance(key_dict, list):
+                        key_dict.append({"": (parent_key_new, dict)})
+                        #key_dict.append({})
+
+                    target = key_dict[k] if isinstance(key_dict, dict) else \
+                    key_dict[-1]
+
+                    self.__expand_datakeys_recursive__(
+                        data_k, data_k.keys(), level=level + 1,
+                        parent_key=parent_key_new, key_list=key_list,
+                        key_dict=target, max_level=max_level
+                    )
+                    continue
+
+            # Leaf processing phase (Executed if maximum depth is hit or data element is non-iterable)
+            key_list.append(parent_key_new)
+            leaf_metadata = (parent_key_new, type(data_k))
+
+            if isinstance(key_dict, dict):
+                key_dict[k] = leaf_metadata
+            elif isinstance(key_dict, list):
+                key_dict.append(leaf_metadata)
+
 
     def get_addressstr(self,addrformat='k,i'):
         return self.address.to_address_string(addrformat)
@@ -428,6 +782,38 @@ class Datapacket(dict):
 
         #print(f"{data_return=}")
         return data_return
+
+    @staticmethod
+    def get_structure_hash(data):
+        """
+        Computes a stable, structural fingerprint (hash) of any nested data structure.
+        It evaluates dictionary keys and sequence types while completely ignoring
+        the volatile values themselves.
+
+        Parameters
+        ----------
+        data : any
+            The nested structure (dict, list, primitive) to fingerprint.
+
+        Returns
+        -------
+        int
+            A deterministic hash integer representing the data layout's skeleton.
+        """
+
+        def _fingerprint(node):
+            if isinstance(node, dict):
+                # Sort keys to ensure consistent order independent of transmission sequence
+                return tuple((k, _fingerprint(v)) for k, v in sorted(node.items()))
+            elif isinstance(node, list):
+                # Sample the first element's structural type if available, otherwise mark empty
+                return tuple([_fingerprint(node[0])]) if node else ()
+            else:
+                # Store the type name as the structural anchor for primitive values
+                return type(node).__name__
+
+        # Convert the structural tuple representation into a Python built-in hash integer
+        return hash(_fingerprint(data))
 
 
 

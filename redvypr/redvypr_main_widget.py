@@ -20,6 +20,7 @@ import redvypr.widgets.redvyprSubscribeWidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget, RedvyprdevicewidgetSimple, RedvyprdevicewidgetStartonly
 from redvypr.widgets.pydanticConfigWidget import dictQTreeWidget
 from redvypr.widgets.redvyprMetadataWidget import MetadataWidget
+from redvypr.widgets.redvyprAddressWidget import RedvyprAddressTable
 #from redvypr.gui import datastreamWidget # Do we need this?
 import redvypr.gui as gui
 from redvypr.version import version
@@ -1349,9 +1350,9 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
 
         # Help and About menu
         toolMenu = mainMenu.addMenu('&Tools')
-        #toolAction = QtGui.QAction("&Choose Datastreams ", self)
-        #toolAction.setStatusTip('Opens a window to choose datastreams from the available devices')
-        #toolAction.triggered.connect(self.show_deviceselect)
+        datastreamAction = QtGui.QAction("&Show Datastreams ", self)
+        datastreamAction.setStatusTip('Opens a window displaying all datastreams of all devices')
+        datastreamAction.triggered.connect(self.show_datastreams)
         deviceinfoAction = QtGui.QAction("&Show deviceinfos", self)
         deviceinfoAction.setStatusTip('Opens a window that displays deviceinfos (metadata)')
         deviceinfoAction.triggered.connect(self.show_deviceinfos)
@@ -1366,6 +1367,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         #IPAction.triggered.connect(self.open_ipwidget)
         #toolMenu.addAction(toolAction)
         #toolMenu.addAction(IPAction)
+        toolMenu.addAction(datastreamAction)
         toolMenu.addAction(deviceinfoAction)
         toolMenu.addAction(metadataAction)
         toolMenu.addAction(consoleAction)
@@ -1380,6 +1382,10 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
 
         self.resize(width, height)
         self.show()
+
+    def show_datastreams(self):
+        self.datastream_widget = RedvyprAddressTable(redvypr_obj=self.redvypr_widget.redvypr)
+        self.datastream_widget.show()
 
     def show_metadata(self):
         deviceinfo_all = self.redvypr_widget.redvypr.get_deviceinfo()

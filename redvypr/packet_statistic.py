@@ -14,10 +14,17 @@ logger = logging.getLogger('redvypr.base.packet_statistics')
 logger.setLevel(logging.INFO)
 
 # A dictionary for the device_redvypr entry in the statistics
-#device_redvypr_statdict = {'_redvypr': {},'datakeys':[],'datakeys_expanded': {},'packets_received':0,'packets_published':0,'packets_droped':0,'_metadata':{},'_deviceinfo':{},'_keyinfo':{}}
-device_redvypr_statdict = {'_redvypr': {},'datakeys':[],'datakeys_expanded': {},'packets_received':0,'packets_published':0,'packets_dropped':0,'_metadata':{}}
+device_redvypr_statdict = {'_redvypr': {},
+                           'datakeys':[],
+                           'datakeys_expanded': {},
+                           'packets_received':0,
+                           'packets_published':0,
+                           'packets_dropped':0,
+                           '_metadata':{}}
 
 data_statistics_address_format = redvypr_standard_address_filter#["i","p","d","h","u","a"]
+
+STRUCTURE_CACHE = {} # Global variable for redvypr datapacket dictionaries
 
 
 def treat_datadict(data, devicename, hostinfo, numpacket, tpacket, devicemodulename=''):
@@ -294,12 +301,39 @@ def do_metadata(data, metadatadict, auto_add_packetfilter=True):
 
 def do_data_statistics(data, statdict, address_data = None):
     """
-    Fills in the statistics dictionary with the data packet information
-    :param data:
-    :param statdict:
-    :param address_data:
-    :return: statdict
+    Fills in the statistics dictionary with the data packet information.
+
+    Extracts routing information, increments packet publication counts,
+    and maintains flat representations of all encountered sub-keys and
+    addressable datastreams. Uses a global structure cache to optimize
+    the parsing of complex nested layouts.
+
+    Parameters
+    ----------
+    data : dict
+        The incoming raw telemetry data packet containing a '_redvypr'
+        metadata sub-dictionary.
+    statdict : dict
+        The persistent statistics storage registry tracking host and
+        device communication metrics. **This object is mutated in-place.**
+    address_data : RedvyprAddress, optional
+        Pre-calculated routing address. If None, a new `RedvyprAddress`
+        instance will be compiled dynamically from `data`. Default is None.
+
+    Returns
+    -------
+    None
+        The function modifies `statdict` directly in place and does not
+        return a value.
+
+    Notes
+    -----
+    This processing engine leverages a global `STRUCTURE_CACHE` registry.
+    By hashing the skeletal backbone of nested structures via
+    `Datapacket.get_structure_hash`, it bypasses recursive extraction pipelines
+    and heavy class instantiations for previously registered data patterns.
     """
+
     if address_data is None:
         raddr = RedvyprAddress(data)
     else:
@@ -334,14 +368,24 @@ def do_data_statistics(data, statdict, address_data = None):
     statdict['device_redvypr'][address_str]['datakeys'] = datakeys_new
 
     # Deeper check, data types and expanded data types
-    rdata = data_packets.Datapacket(data)
-    datakeys_expanded = rdata.datakeys(expand=True)
-    #print('Datakeys expanded',datakeys_expanded)
+    # Calculate hash first
+    struct_hash = data_packets.Datapacket.get_structure_hash(data)
+    if struct_hash in STRUCTURE_CACHE: # doing nothing
+        datakeys_expanded = STRUCTURE_CACHE[struct_hash]['datakeys_expanded']
+        #datastreams_expanded = STRUCTURE_CACHE[struct_hash]['datastreams_expanded']
+    else:
+        # update cache
+        rdata = data_packets.Datapacket(data)
+        datakeys_expanded = rdata.datakeys(expand=True)
+        #datastreams_expanded = rdata.datastreams(expand=True, return_type = "address_type") # Get datastreams with datatype
+        STRUCTURE_CACHE[struct_hash] = {'datakeys_expanded':datakeys_expanded}
+        #print("Packet first seen")
+        #print("datastreams_expanded",datastreams_expanded)
+        #print("datakeys_expanded", datakeys_expanded)
+        #print("Packet first seen end")
+
     statdict['device_redvypr'][address_str]['datakeys_expanded'].update(datakeys_expanded)
-
-
-    #return statdict
-
+    #statdict['device_redvypr'][address_str]['datastreams_expanded'] = datastreams_expanded
 
 
 def get_keys_from_data(data):
@@ -409,7 +453,7 @@ def get_metadata(statistics,
                 #print(f'Found metadata:{metadata} for address:{astr}')
                 if not(isinstance(metadata,dict)):
                     logger.debug("Metadata is not dict, converting it")
-                    print("Metadata is not dict, converting it")
+                    #print("Metadata is not dict, converting it")
                     metadata = {astr:metadata}
                 if mode == 'merge': # Put everything into the addressstring key
                     metadata_return[raddress.to_address_string()].update(metadata)

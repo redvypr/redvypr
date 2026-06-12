@@ -9,6 +9,8 @@ redvypr changelog
 ### Added
 - Datapacket.expand_data(self, expansion_level=1, address_format='k,i,h,d,p'): Helper function to get individual data entries
 - datapath in redvypr.config
+- added staticmethod `data_packets.Datapacket.datastreams_from_datakeys`
+- added staticmethod `data_packets.Datapacket.get_structure_hash(data)`
 - added `'device_config': device_config,` with `device_config = self.get_config().model_dump()` to `device_info` dict for the start parameter of a device thread
 - db_writer_extended allowing to save single redvypr addresses in flat tables
 - "subscribe","unsubscribe","unsubscribe_all" commands can be sent from the thread
@@ -19,6 +21,8 @@ redvypr changelog
         dataqueue.put(compacket)
      ```
 ### Changed
+- improved data statistics, better self consistency of packet inspection, cached inspection to improve performance. Not every packets gets a deep instpection anymore, only if the structure hash has changed
+- improved `sqlite_writer`: New db setup, better performance on slow sd cards
 - improved `netcdfwriter`: Cleaned layout, fixed metadata for the new api
 - improved `serial_single`: Better configuration
 - improved `RedvyprAddressWidget`: Expansion is not done for time series, as this can be long but can be forced by checkbox

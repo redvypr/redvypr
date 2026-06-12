@@ -28,7 +28,7 @@ import redvypr
 import pydantic
 import typing
 import re
-from redvypr.data_packets import commandpacket, create_datadict
+from redvypr.data_packets import commandpacket, create_datadict, Datapacket
 from redvypr.packet_statistic import do_data_statistics
 from redvypr.redvypr_address import RedvyprAddress, metadata_address
 
@@ -599,7 +599,7 @@ class RedvyprDevice(QtCore.QObject):
         #    'addr'] + '::' + self.redvypr.hostinfo['uuid']
         # self.address = redvypr_address(self.address_str)
         #local_hostinfo = self.redvypr.hostinfo
-        self.address = RedvyprAddress(device=self.name, publisher=self.name)
+        self.address = RedvyprAddress(device=self.name, publisher=self.name, host=self.host["host"], uuid=self.host["uuid"])
         self.address_str = str(self.address)
 
     def config_changed(self):
@@ -1066,7 +1066,7 @@ class RedvyprDevice(QtCore.QObject):
         datakeys.sort()
         return datakeys
 
-    def get_datastreams(self,local=None):
+    def get_datastreams(self, local=None, expand=False, return_type="address"):
         """
         Returns a list of all datastreams this device is providing
         Returns:
@@ -1075,11 +1075,18 @@ class RedvyprDevice(QtCore.QObject):
         devaddrs = self.get_deviceaddresses(local)
         datastreams = []
         for devaddr in devaddrs:
-            dkeys = self.statistics['device_redvypr'][devaddr.to_address_string()]['datakeys']
-            for dkey in dkeys:
-                raddr = RedvyprAddress(devaddr, datakey=dkey)
-                dstr = raddr.to_address_string()
-                datastreams.append(dstr)
+            if return_type == 'address' and expand == False:
+                dkeys = self.statistics['device_redvypr'][devaddr.to_address_string()][
+                    'datakeys']
+                for dkey in dkeys:
+                    raddr = RedvyprAddress(devaddr, datakey=dkey)
+                    dstr = raddr.to_address_string()
+                    datastreams.append(dstr)
+            else:
+                dkeys = self.statistics['device_redvypr'][devaddr.to_address_string()][
+                    'datakeys_expanded']
+                datastreams.extend(Datapacket.datastreams_from_datakeys(dkeys,return_type=return_type, expand=expand))
+
 
         return datastreams
 
@@ -1118,7 +1125,7 @@ class RedvyprDevice(QtCore.QObject):
                 raddr = RedvyprAddress(address)
                 dtmp = copy.deepcopy(self.statistics['device_redvypr'])
                 for a in dtmp.keys():
-                    if a in raddr:
+                    if raddr.matches(a):
                         d = dtmp[a]
                         return d
 
@@ -1164,10 +1171,10 @@ class RedvyprDevice(QtCore.QObject):
 
     def get_subscribed_devices(self):
         """
-        Returns all redvypr_device this device is subscribed to.
+        Returns all redvypr_device objects this device is subscribed to
 
         Returns:
-             List with redvypr_device
+             List with redvypr_device objects
 
         """
         funcname = __name__ + '.get_subscribed_devices()'
@@ -1206,95 +1213,12 @@ class RedvyprDevice(QtCore.QObject):
         #print('subaddresses', subaddresses)
         return subaddresses
             
-    def unsubscribe_all(self):
+    def unsubscribe_all_legacy(self):
         """
         """
         funcname = self.__class__.__name__ + '.unsubscribe_all()'
         self.logger.debug(funcname)
         self.subscribed_addresses = []
-
-    # Deprecated
-    def get_metadata_datakey_legacy(self, address, all_entries=True):
-        """
-        Returns the metadata of the redvypr address
-        """
-        funcname = self.__class__.__name__ + '.get_metadata_datakey():'
-        self.logger.debug(funcname)
-        if isinstance(address,str):
-            daddr = redvypr.RedvyprAddress(address)
-        else:
-            daddr = address
-
-        # d = copy.deepcopy(self.statistics['device_redvypr'])
-        devinfo_all = copy.deepcopy(self.redvypr.deviceinfo_all)
-        # print('Datastream',datastream,daddr)
-        datakeyinfo = {}
-        for hostdevice in devinfo_all:
-            d = devinfo_all[hostdevice]
-            for device in d:
-                # Check first if an ordinary datakey is given, or an eval string to access subunits
-                if daddr.datakeyeval == False: # Standard datakey
-                    for dkey in d[device]['_keyinfo'].keys():
-                        dstreamaddr_info = redvypr.RedvyprAddress(device, datakey=dkey)
-                        # print('dstreamddr_info',dstreamaddr_info)
-                        if daddr in dstreamaddr_info:
-                            try:
-                                datakeyinfo[dstreamaddr_info.get_str()].update(d[device]['_keyinfo'][dkey])
-                            except:
-                                datakeyinfo[dstreamaddr_info.get_str()] = d[device]['_keyinfo'][dkey]
-                else: # Eval string, here things have to be done manually.
-                    self.logger.debug(funcname + 'Found an eval string, searching for matching patterns')
-                    # Split the evalstring into pieces separated by [] brackets and remove them subsequently until something was found
-                    datakey_pieces = re.findall(r"\[.*?\]", daddr.datakey)
-                    datakey_pieces_cumsum = []
-                    for ipiece,piece in enumerate(datakey_pieces):
-                        dtmp = ''
-                        for ipiece2 in range(0,ipiece+1):
-                            dtmp += datakey_pieces[ipiece2]
-
-                        datakey_pieces_cumsum.append(dtmp)
-
-                    datakey_pieces_cumsum.reverse()
-                    #print('datakey pieces', datakey_pieces)
-                    #print('datakey pieces cumsum', datakey_pieces_cumsum)
-                    #for dkey in d[device]['_keyinfo'].keys():
-                    if True:
-                        #print('Daddr',daddr,daddr.datakey)
-                        #print('key',dkey,daddr in dstreamaddr_info)
-                        #print('Keyinfo',d[device]['_keyinfo'])
-                        for keyeval in datakey_pieces_cumsum:
-                            evalstr = '''d[device]['_keyinfo']''' + keyeval
-                            #print('Evalstr',evalstr)
-                            #print(d[device]['_keyinfo'])
-                            try:
-                                keyinfo = eval(evalstr,None)
-                                dstreamaddr_info = redvypr.RedvyprAddress(device, datakey=keyeval)
-                                #print('dstreamddr_info', dstreamaddr_info)
-                                #print('Found something',keyinfo)
-                                try:
-                                    datakeyinfo[dstreamaddr_info.get_str()].update(keyinfo)
-                                except:
-                                    datakeyinfo[dstreamaddr_info.get_str()] = keyinfo
-                                break
-                            except:
-                                #self.logger.info('Eval did not work',exc_info=True)
-                                keyinfo = None
-
-                        #print('Keyinfo',keyinfo)
-
-        # Either return the first entry or all
-        if all_entries == False:
-            k = list(datakeyinfo.keys())
-            if len(k) == 0:
-                datakeyinfo = None
-            else:
-                datakeyinfo = datakeyinfo[k[0]]
-
-            #print('Returning for address', address)
-            #print('Returning datakeyinfo',datakeyinfo)
-            return datakeyinfo
-        else:
-            return datakeyinfo
 
     def get_config(self):
         """

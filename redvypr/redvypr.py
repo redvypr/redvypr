@@ -1344,7 +1344,7 @@ class Redvypr(QtCore.QObject):
         datakeys.sort()
         return datakeys
 
-    def get_datastreams(self,local=None):
+    def get_datastreams(self, local=None, expand=False, return_type="address"):
         """
 
         Args:
@@ -1355,7 +1355,7 @@ class Redvypr(QtCore.QObject):
         """
         datastreams = []
         for dev in self.devices:
-            raddrs_tmp = dev['device'].get_datastreams()
+            raddrs_tmp = dev['device'].get_datastreams(local=local, expand=expand, return_type=return_type)
             datastreams.extend(raddrs_tmp)
 
         return datastreams
