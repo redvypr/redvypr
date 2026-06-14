@@ -338,8 +338,8 @@ class redvyprWidget(QtWidgets.QWidget):
         self.main_layout.addWidget(self.stack)
 
         # 1. Page: Setup
-        self.setup_page = RedvyprInitWidget(hostname=hostname, logo_file=_icon_file)
-        self.setup_page.start_application.connect(self.start_main_application)
+        #self.setup_page = RedvyprInitWidget(hostname=hostname, logo_file=_icon_file)
+        #self.setup_page.start_application.connect(self.start_main_application)
 
         # 2. Page: The redvypr UI
         self.main_app_page = QtWidgets.QWidget()
@@ -348,7 +348,7 @@ class redvyprWidget(QtWidgets.QWidget):
         self.main_app_layout.addWidget(self.devicetabs)
 
         # Add to layout
-        self.stack.addWidget(self.setup_page)
+        #self.stack.addWidget(self.setup_page)
         self.stack.addWidget(self.main_app_page)
 
         # Start on first (setup) page
@@ -359,7 +359,9 @@ class redvyprWidget(QtWidgets.QWidget):
         if ((width is not None) and (height is not None)):
             self.resize(int(width), int(height))
 
-        #self.initialize_redvypr(hostname)
+        # Initialize redvypr
+        self.initialize_redvypr(hostname)
+        #self.start_main_application() # Not using the init_widget anymore
 
     def start_main_application(self):
         """Function is called when the user has configured redvypr"""
@@ -398,7 +400,6 @@ class redvyprWidget(QtWidgets.QWidget):
             height:
             config: Either a string containing a path of a yaml file, or a list with strings of yaml files
         """
-
         c = self.__init_params__
         # Configuration comes later after all widgets are initialized
         self.redvypr = redvypr.Redvypr(hostname=hostname,
@@ -432,12 +433,6 @@ class redvyprWidget(QtWidgets.QWidget):
         self.devicereadtimer = QtCore.QTimer()
         self.devicereadtimer.timeout.connect(self.readguiqueue)
         self.devicereadtimer.start(100)
-        # self.devicereadtimer.start(500)
-
-        #self.layout = QtWidgets.QVBoxLayout(self)
-        #self.layout.addWidget(self.devicetabs)
-
-
         # Add the devices
         self.redvypr.add_devices_from_config(c["config_full"], rename_if_exists=False)
         # Update hostinformation widgets
@@ -452,56 +447,34 @@ class redvyprWidget(QtWidgets.QWidget):
         :return:
         """
         self.__homeWidget = QtWidgets.QTabWidget()
-        self.__homeWidget_layout = QtWidgets.QVBoxLayout(self.__homeWidget)
-        self.__deviceTableWidget = gui.deviceTableWidget(redvyprWidget=self)
+        self.home_widget_layout = QtWidgets.QVBoxLayout(self.__homeWidget)
+        self.device_table_widget = gui.deviceTableWidget(redvyprWidget=self)
         #font = QtGui.QFont('Arial', 20)
         font = QtGui.QFont('Arial')
         font.setBold(True)
         self.__mainLabel = QtWidgets.QLabel('Host information')
         self.__mainLabel.setFont(font)
         self.__mainLabel.setAlignment(QtCore.Qt.AlignCenter)
-        self.__homeWidget_layout.addWidget(self.__mainLabel)
+        self.home_widget_layout.addWidget(self.__mainLabel)
         # The configuration of the redvypr
         self.create_devicepathwidget()
         self.create_statuswidget_compact()
         # self.devicetabs.addTab(self.__devicepathwidget,'Status')
-        self.__homeWidget_layout.addWidget(self.__statuswidget_compact)
+        self.home_widget_layout.addWidget(self.__statuswidget_compact)
 
         # Device path
-        self.__deviceAddButton = QtWidgets.QPushButton('Add device')
-        self.__deviceAddButton.clicked.connect(self.open_add_device_widget)
-        self.__deviceAddButton.setFont(font)
-        #self.__groupAddButton = QtWidgets.QPushButton('Add group')
-        #self.__groupAddButton.clicked.connect(self.__add_group_clicked)
-        #self.__groupAddButton.setFont(font)
-        self.__homeWidget_layout.addWidget(self.__deviceAddButton)
-        #self.__homeWidget_layout.addWidget(self.__groupAddButton)
-        self.__homeWidget_layout.addWidget(self.__deviceTableWidget)
-        ## Configure button
-        #self.__homeWidget_layout.addWidget(self.__host_config_btn)
+        self.add_device_button = QtWidgets.QPushButton('Add Device')
+        self.add_device_button.clicked.connect(self.open_add_device_widget)
+        self.add_device_button.setFont(font)
+        self.edit_metadata_button = QtWidgets.QPushButton('Edit Metadata')
+        self.edit_metadata_button.clicked.connect(self.open_edit_metadata_widget)
+        self.edit_metadata_button.setFont(font)
+        # Add buttons to widget
+        self.home_widget_layout.addWidget(self.edit_metadata_button)
+        self.home_widget_layout.addWidget(self.add_device_button)
+        # Add device table to widget
+        self.home_widget_layout.addWidget(self.device_table_widget)
 
-    def __add_group_clicked(self):
-        funcname = __name__ + '.__add_group_clicked():'
-        logger.debug(funcname)
-        # Create a test group tab
-        tab_index = self.devicetabs.addTab(QtWidgets.QWidget(), '')
-        tabbar = self.devicetabs.tabBar()
-        ind_tab = self.devicetabs.count()
-        button = QtWidgets.QPushButton("G G G")
-        button.setFixedSize(100, 30)  #
-        menu = QtWidgets.QMenu()
-        action1 = QtGui.QAction("Option 1", self)
-        action2 = QtGui.QAction("Option 2", self)
-        menu.addAction(action1)
-        menu.addAction(action2)
-        button.setMenu(menu)
-        print('Ind tab', ind_tab)
-        tabbar.setTabButton(ind_tab - 1, QtWidgets.QTabBar.RightSide, button)
-        self.bbbbb = button
-
-    def open_ipwidget(self):
-        pass
-        #self.ipwidget = redvypr_ip_widget()
 
     def open_console(self):
         """ Opens a pyqtconsole console widget
@@ -607,6 +580,13 @@ class redvyprWidget(QtWidgets.QWidget):
             save_metadata = options['save_metadata']  # Check if metadata shall be saved
 
         self.redvypr.save_config(fname=fname_full, add_metadata=save_metadata, set_loglevel=loglevel_save)
+
+    def open_edit_metadata_widget(self):
+        """
+        Opens a widget to let the user add/edit metadata
+        """
+        self.metadatawidget = MetadataWidget(self.redvypr)
+        self.metadatawidget.show()
 
     def open_add_device_widget(self):
         """
@@ -949,12 +929,6 @@ class redvyprWidget(QtWidgets.QWidget):
         self.__ip_line.setAlignment(QtCore.Qt.AlignRight)
         self.__ip_line.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         self.__ip_line.setText(self.redvypr.hostinfo['addr'])
-        # Configuration
-        #self.__host_config_btn = QtWidgets.QPushButton('Configure')
-        #self.__host_config_btn.clicked.connect(self.__open_configWidget)
-        #self.__host_config_widget = QtWidgets.QWidget()
-        #self.__host_config_widget_layout = QtWidgets.QFormLayout(self.__host_config_widget)
-        # Configuration widgets for detailed configuration, opened when clicked configure button
         # Change the hostname
         self.__hostinfo_opt_btn = QtWidgets.QPushButton('Edit optional information')
         self.__hostinfo_opt_btn.clicked.connect(self.__hostinfo_opt_changed_click)
@@ -969,7 +943,6 @@ class redvyprWidget(QtWidgets.QWidget):
         #layout.addRow(self.__host_config_label,self.__host_config_btn)
         #self.__host_config_widget_layout.addRow(self.__hostinfo_opt_btn)
         #self.__host_config_widget_layout.addRow(self.__statuswidget_pathbtn)
-
 
         logo = QtGui.QPixmap(_logo_file)
         logolabel = QtWidgets.QLabel()

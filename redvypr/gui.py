@@ -6,6 +6,8 @@ import datetime
 import qtawesome
 from pydantic_extra_types import Color as pydColor
 from PyQt6 import QtWidgets, QtCore, QtGui
+
+import redvypr.metadata
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.widgets.redvyprSubscribeWidget import SubscribeWidget
 #from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget,
@@ -685,7 +687,7 @@ class redvypr_deviceInfoWidget(QtWidgets.QWidget):
         funcname = __name__ + '.metadata_clicked():'
         logger.debug(funcname)
         metadata_device = copy.deepcopy(self.device.statistics['metadata'])
-        print(self.device.get_metadata(RedvyprAddress(publisher=self.device.name)))
+        print(redvypr.get_metadata(RedvyprAddress(publisher=self.device.name)))
         print(f"metadata device:{metadata_device=}")
         deviceAddress = RedvyprAddress(device=self.device.name)
         try:

@@ -185,8 +185,7 @@ class CalibrationGeneric(CalibrationBase):
     structure_version: str = '1.1'
     calibration_type: typing.Literal['generic'] = 'generic'
     channel: RedvyprAddress = pydantic.Field(default=RedvyprAddress('@'),
-                                             description='The address of calibrated channel in the datapacket',
-                                             editable=True)
+                                             description='The address of calibrated channel in the datapacket')
     channel_apply: typing.Optional[RedvyprAddress] = pydantic.Field(default=None,
                                                                     description='The address of the channel the calibration should '
                                                           'be applied to. This is optional, if the calibrated '

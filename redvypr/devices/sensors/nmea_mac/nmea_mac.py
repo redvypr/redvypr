@@ -11,6 +11,7 @@ import logging
 import sys
 import pydantic
 import redvypr
+import redvypr.metadata
 from redvypr.data_packets import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
@@ -87,16 +88,16 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                     #print('Publishing',ppub)
                     if True:
                         metaddress = RedvyprAddress(datakey="R",packetid=RedvyprAddress(ppub).packetid)
-                        ppub = redvypr.data_packets.add_metadata2datapacket(datapacket=ppub,
-                                                                            address=metaddress,
-                                                                            datakey='R',
-                                                                            metakey='unit',
-                                                                            metadata='Ohm')
-                        ppub = redvypr.data_packets.add_metadata2datapacket(datapacket=ppub,
-                                                                            address=metaddress,
-                                                                            datakey='R',
-                                                                            metakey='sn',
-                                                                            metadata=ppub['mac'])
+                        ppub = redvypr.metadata.add_metadata2datapacket(datapacket=ppub,
+                                                                        address=metaddress,
+                                                                        datakey='R',
+                                                                        metakey='unit',
+                                                                        metadata='Ohm')
+                        ppub = redvypr.metadata.add_metadata2datapacket(datapacket=ppub,
+                                                                        address=metaddress,
+                                                                        datakey='R',
+                                                                        metakey='sn',
+                                                                        metadata=ppub['mac'])
                         # Create a time vector that is of the same length as the parsed data
                         dt = ppub['ts'][-1] - ppub['ts'][0]
                         torig = ppub['t']

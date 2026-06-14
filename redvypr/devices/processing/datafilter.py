@@ -31,7 +31,7 @@ class FilterConfig(pydantic.BaseModel):
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress('@'), description='The address of the datastream to filter')
     cutoff_freq: float = 10
     filter_type: typing.Literal['butter', 'hat'] = pydantic.Field(default='butter', description='')
-    avg_dimension: typing.Optional[RedvyprAddress] = pydantic.Field(default=None, editable=True)
+    avg_dimension: typing.Optional[RedvyprAddress] = pydantic.Field(default=None)
 
 class AverageFilterConfig(pydantic.BaseModel):
     datastream: RedvyprAddress = pydantic.Field(default=RedvyprAddress('@'), description='The address of the datastream to filter')
@@ -39,7 +39,7 @@ class AverageFilterConfig(pydantic.BaseModel):
     avg_dimension: typing.Literal['n', 't'] = pydantic.Field(default='n', description='The dimension of average, can be either time in seconds [t] or numpackets [n]')
 
 class DeviceCustomConfig(pydantic.BaseModel):
-    filters: typing.List[typing.Union[AverageFilterConfig,FilterConfig]] = pydantic.Field(default=[], editable=True)
+    filters: typing.List[typing.Union[AverageFilterConfig,FilterConfig]] = pydantic.Field(default=[])
 
 
 def create_avg_databuffer(config, datatype=None):

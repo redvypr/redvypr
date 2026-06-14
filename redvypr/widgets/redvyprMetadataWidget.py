@@ -1,15 +1,23 @@
 import json
-
+import datetime
 from PyQt6 import QtWidgets, QtCore, QtGui
 import logging
 import sys
 import qtawesome
+
 import redvypr.files as files
 import redvypr.data_packets as data_packets
+import redvypr.metadata
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.widgets.pydanticConfigWidget import dictQTreeWidget
-from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidgetSimple, datastreamQTreeWidget, RedvyprAddressWidget, RedvyprAddressEditWidget
+from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidgetSimple, \
+    datastreamQTreeWidget, RedvyprAddressWidget, RedvyprAddressEditWidget
 from datetime import datetime, timedelta
+
+# Importiere hier deine zuvor erstellte Funktion
+# from redvypr.metadata_api import add_metadata2datapacket
+
+logger = logging.getLogger(__name__)
 
 
 class MetadataWidget(QtWidgets.QWidget):
@@ -17,19 +25,17 @@ class MetadataWidget(QtWidgets.QWidget):
         super().__init__()
         self.redvypr = redvypr
         self.layout = QtWidgets.QHBoxLayout(self)
-        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
 
         self.metaeshowwidget = QtWidgets.QWidget()
         self.metaeshowwidget_layout = QtWidgets.QVBoxLayout(self.metaeshowwidget)
         self.metaeshowwidget_layout_update = QtWidgets.QVBoxLayout()
         self.placeholder = QtWidgets.QLabel(
             "Select an address and click 'Get metadata' to display details.")
-        self.placeholder.setAlignment(QtCore.Qt.AlignCenter)
+        self.placeholder.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.metaeshowwidget_layout_update.addWidget(self.placeholder)
 
         self.metaeditwidget = QtWidgets.QWidget()
-
-
 
         self.splitter.addWidget(self.metaeditwidget)
         self.splitter.addWidget(self.metaeshowwidget)
@@ -43,12 +49,15 @@ class MetadataWidget(QtWidgets.QWidget):
         self.apply_get_button.clicked.connect(self.get_metadata_clicked)
         self.choose_address_button = QtWidgets.QPushButton("Choose address")
         self.choose_address_button.clicked.connect(self.choose_address_clicked)
+
         # --- Get Metadata Time Constraint Section ---
         self.time_constrain_checkbox_get = QtWidgets.QCheckBox("Add time constraint")
 
-        self.time_constrain_checkbox_show_timeline = QtWidgets.QCheckBox("Show timeline")
+        self.time_constrain_checkbox_show_timeline = QtWidgets.QCheckBox(
+            "Show timeline")
         self.time_constrain_checkbox_show_timeline.setChecked(False)
-        self.time_constrain_checkbox_show_timeline.toggled.connect(self.get_metadata_clicked)
+        self.time_constrain_checkbox_show_timeline.toggled.connect(
+            self.get_metadata_clicked)
 
         self.t1_label_get = QtWidgets.QLabel("Start (t1)")
         self.t1_edit_get = QtWidgets.QDateTimeEdit(QtCore.QDateTime.currentDateTime())
@@ -64,10 +73,9 @@ class MetadataWidget(QtWidgets.QWidget):
         # Mode explicit/merge
         self.radio_expanded = QtWidgets.QRadioButton("Mode: Expanded")
         self.radio_merge = QtWidgets.QRadioButton("Mode: Merge")
-        # Standardwert setzen
         self.radio_expanded.setChecked(True)
         self.radio_merge.toggled.connect(self.get_metadata_clicked)
-        # Create group
+
         self.metadata_group = QtWidgets.QButtonGroup(self)
         self.metadata_group.addButton(self.radio_expanded)
         self.metadata_group.addButton(self.radio_merge)
@@ -78,8 +86,10 @@ class MetadataWidget(QtWidgets.QWidget):
         self.metaeshowwidget_layout_get.addWidget(self.apply_get_button, 0, 2)
         self.metaeshowwidget_layout_get.addWidget(self.radio_merge, 1, 0)
         self.metaeshowwidget_layout_get.addWidget(self.radio_expanded, 1, 1)
-        self.metaeshowwidget_layout_get.addWidget(self.time_constrain_checkbox_get, 2, 0)
-        self.metaeshowwidget_layout_get.addWidget(self.time_constrain_checkbox_show_timeline, 2, 1)
+        self.metaeshowwidget_layout_get.addWidget(self.time_constrain_checkbox_get, 2,
+                                                  0)
+        self.metaeshowwidget_layout_get.addWidget(
+            self.time_constrain_checkbox_show_timeline, 2, 1)
         self.metaeshowwidget_layout_get.addWidget(self.t1_label_get, 3, 0)
         self.metaeshowwidget_layout_get.addWidget(self.t1_edit_get, 3, 1, 1, 2)
         self.metaeshowwidget_layout_get.addWidget(self.t2_label_get, 4, 0)
@@ -110,7 +120,6 @@ class MetadataWidget(QtWidgets.QWidget):
             QtCore.QDateTime.currentDateTime().addDays(7))
         self.t2_edit.setCalendarPopup(True)
 
-        # Initially disable time inputs
         self.toggle_time_inputs(False)
 
         self.apply_button = QtWidgets.QPushButton("Add metadata")
@@ -132,26 +141,30 @@ class MetadataWidget(QtWidgets.QWidget):
         layout.addWidget(self.t2_edit, 7, 1)
 
         layout.addWidget(self.apply_button, 8, 0, 1, 2)
-        layout.addItem(QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Minimum,
-                                             QtWidgets.QSizePolicy.Expanding), 9, 0)
+        layout.addItem(
+            QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Policy.Minimum,
+                                  QtWidgets.QSizePolicy.Policy.Expanding), 9, 0)
 
-        # Fill the table with all metadata
         self.get_metadata_clicked()
+
     def choose_address_clicked(self):
         self.addresswidget = RedvyprAddressWidget(redvypr=self.redvypr)
         self.addresswidget.apply.connect(self.address_choosen)
         self.addresswidget.show()
 
     def address_choosen(self, address_dict):
-        print("Got address",address_dict)
+        # Setzt die ausgewählte Adresse direkt in die Eingabefelder ein
+        if "address_str" in address_dict:
+            self.address_get.setText(address_dict["address_str"])
+            self.address_new.setText(address_dict["address_str"])
+
     def toggle_time_inputs_get(self, checked):
-        """ Enables/Disables time inputs based on checkbox state """
         self.t1_label_get.setEnabled(checked)
         self.t1_edit_get.setEnabled(checked)
         self.t2_label_get.setEnabled(checked)
         self.t2_edit_get.setEnabled(checked)
+
     def toggle_time_inputs(self, checked):
-        """ Enables/Disables time inputs based on checkbox state """
         self.t1_label.setEnabled(checked)
         self.t1_edit.setEnabled(checked)
         self.t2_label.setEnabled(checked)
@@ -159,26 +172,27 @@ class MetadataWidget(QtWidgets.QWidget):
 
     def get_metadata_clicked(self):
         address = self.address_get.text()
-        if self.radio_expanded.isChecked():
-            mode="expanded"
-        else:
-            mode="merge"
-        print(f"Getting metadata for {address=} with {mode=}")
+        mode = "expanded" if self.radio_expanded.isChecked() else "merge"
+
         if self.time_constrain_checkbox_get.isChecked():
-            # Extract Python datetime from QDateTime
             t1 = self.t1_edit_get.dateTime().toPython()
             t2 = self.t2_edit_get.dateTime().toPython()
-
-            print(f"Getting time-constrained metadata: [{t1} to {t2}]")
             metadata_new = self.redvypr.get_metadata_in_range(address=address,
-                                                       t1=t1, t2=t2, mode=mode)
+                                                                       t1=t1, t2=t2,
+                                                                       mode=mode)
         else:
             metadata_new = self.redvypr.get_metadata(address, mode=mode)
 
-        print(f"Metadata new:{metadata_new}")
-        # Clear previous widget if exists
+        # Bereinige vorherige Widgets im Layout
         for i in reversed(range(self.metaeshowwidget_layout_update.count())):
-            self.metaeshowwidget_layout_update.itemAt(i).widget().setParent(None)
+            widget = self.metaeshowwidget_layout_update.itemAt(i).widget()
+            if widget is not None:
+                widget.setParent(None)
+
+        if not metadata_new:
+            self.metaeshowwidget_layout_update.addWidget(
+                QtWidgets.QLabel("No metadata found for this selection."))
+            return
 
         if self.time_constrain_checkbox_show_timeline.isChecked():
             self.timeconstraints = ConstraintTimeline()
@@ -186,83 +200,68 @@ class MetadataWidget(QtWidgets.QWidget):
             self.metaeshowwidget_layout_update.addWidget(self.timeconstraints)
 
         self.metadata_widget = EditableDictQTreeWidget(data=metadata_new,
-                                               dataname=f'Metadata for {address}', mode=mode)
-
+                                                       dataname=f'Metadata for {address}',
+                                                       mode=mode)
         self.metadata_widget.deleteRequested.connect(self.delete_entry)
         self.metadata_widget.expandAll()
         self.metaeshowwidget_layout_update.addWidget(self.metadata_widget)
 
-
-
-    def delete_entry(self,address,delete_dict):
-        print("Deleting entries",address)
-        constraints = delete_dict['constraints']
-        keys = delete_dict['keys']
-        print("Deleting keys", keys)
-        print("Deleting constraints", constraints)
-        self.redvypr.rem_metadata(address,keys,constraints)
-        # Update qtree
+    def delete_entry(self, address, delete_dict):
+        # Sendet die Löschanweisung an die Backend-Pipeline ('_metadata_remove')
+        # Das Backend (`do_metadata`) erwartet die Struktur über ein Datenpaket
+        packet = {
+            '_metadata_remove': {
+                address: {
+                    'keys': delete_dict.get('keys', []),
+                    'mode': 'exact'
+                }
+            }
+        }
+        print(f"Sending delete packet to backend: {packet}")
+        # Aufruf deiner zentralen Verarbeitungsinstanz (z. B. über do_metadata)
+        self.redvypr.process_metadata_packet(packet)
         self.get_metadata_clicked()
+
     def add_metadata_clicked(self):
         address_text = self.address_new.text()
-        raddress = RedvyprAddress(address_text)
+        if not address_text:
+            return
+
         key = self.metadatakey_new.text()
         entry = self.metadataentry_new.text()
-        metadata = {key: entry}
-
+        # Constraints für die neue Struktur aufbauen
         if self.time_constrain_checkbox.isChecked():
-            # Extract Python datetime from QDateTime
-            t1 = self.t1_edit.dateTime().toPython()
-            t2 = self.t2_edit.dateTime().toPython()
-
-            print(f"Adding time-constrained metadata: {metadata} [{t1} to {t2}]")
-            self.redvypr.add_metadata_time_constrained(raddress, metadata=metadata,
-                                                       t1=t1, t2=t2)
+            valid_from = self.t1_edit.dateTime().toPython().isoformat()
+            valid_until = self.t2_edit.dateTime().toPython().isoformat()
         else:
-            print(f"Adding global metadata: {metadata}")
-            self.redvypr.set_metadata(raddress, metadata=metadata)
+            valid_from = None
+            valid_until = None
 
-    def get_constraint_time_bounds(self, constraints):
-        """
-        Extracts the absolute min and max timestamps from metadata constraints.
-        Returns (min_time, max_time). If no constraints exist, returns (None, None).
-        """
-        constrain_times = []
+        # Nutzt das neue einheitliche add_metadata2datapacket Format
 
-        for rule in constraints:
-            for cond in rule.get('conditions', []):
-                if cond.get('field') == 't':
-                    val = cond.get('value')
-                    try:
-                        # Parse ISO string to datetime object
-                        dt = datetime.fromisoformat(val)
-                        # Convert to Unix timestamp (float)
-                        constrain_times.append(dt)
-                    except (ValueError, TypeError):
-                        continue
+        metadata = {key:entry}
+        print(f"Sending new structured metadata packet to backend: {metadata} for address:{address_text}")
+        # Nutzt dieselbe Pipeline wie do_metadata(datapacket, master_storage) im Backend
+        self.redvypr.add_metadata(address_text,metadata,valid_until=valid_until,valid_from=valid_from)
 
-        if not constrain_times:
-            return None, None
-
-        return min(constrain_times), max(constrain_times)
-
+        # UI zurücksetzen und aktualisieren
+        self.metadatakey_new.clear()
+        self.metadataentry_new.clear()
+        self.get_metadata_clicked()
 
 
 class ConstraintTimeline(QtWidgets.QWidget):
-    # Signal, wenn ein Constraint angeklickt wird
     constraintClicked = QtCore.Signal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(120)
-        self.setMouseTracking(True)  # Wichtig für Tooltips ohne Mausklick
-
+        self.setMouseTracking(True)
         self.t1 = None
         self.t2 = None
         self.metadata = {}
-        self.rects = []  # Speicher für Interaktionen: (QRect, rule_dict)
-
-        self.row_height = 30  # Höhe eines einzelnen Balkens
+        self.rects = []
+        self.row_height = 30
         self.address_label_width = 120
         self.bar_color = QtGui.QColor("#4da6ff")
         self.bg_color = QtGui.QColor("#f8f8f8")
@@ -274,7 +273,6 @@ class ConstraintTimeline(QtWidgets.QWidget):
         else:
             self.t1, self.t2 = t1, t2
 
-        # Falls immer noch None (keine Daten), Fallback
         if not self.t1:
             self.t1 = datetime.now()
             self.t2 = self.t1 + timedelta(days=1)
@@ -283,11 +281,12 @@ class ConstraintTimeline(QtWidgets.QWidget):
         self.update()
 
     def update_geometry(self):
-        # Berechnet die benötigte Höhe: Jede Adresse + ihre Anzahl an Constraints
         total_rows = 0
         for addr in self.metadata:
-            constraints = self.metadata[addr].get('_constraints', [])
-            total_rows += max(1, len(constraints))
+            # In der neuen Struktur ist self.metadata[addr] eine Liste von Einträgen
+            entries = self.metadata[addr] if isinstance(self.metadata[addr],
+                                                        list) else []
+            total_rows += max(1, len(entries))
 
         new_height = total_rows * (self.row_height + 5) + 40
         self.setMinimumHeight(new_height)
@@ -305,7 +304,7 @@ class ConstraintTimeline(QtWidgets.QWidget):
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        self.rects = []  # Zurücksetzen für neue Klick-Erkennung
+        self.rects = []
 
         painter.setBrush(self.bg_color)
         painter.drawRect(self.rect())
@@ -313,24 +312,26 @@ class ConstraintTimeline(QtWidgets.QWidget):
         if not self.t1 or not self.t2: return
 
         current_y = 20
-        for address, content in self.metadata.items():
-            constraints = content.get('_constraints', [])
+        for address, entries in self.metadata.items():
+            if not isinstance(entries, list): continue
 
-            # Adresse links zeichnen
-            painter.setPen(QtCore.Qt.black)
+            # Adresse zeichnen
+            painter.setPen(QtCore.Qt.GlobalColor.black)
             font = painter.font()
             font.setBold(True)
             painter.setFont(font)
             painter.drawText(5, current_y, self.address_label_width - 10,
                              self.row_height,
-                             QtCore.Qt.AlignVCenter, address)
+                             QtCore.Qt.AlignmentFlag.AlignVCenter, address)
 
             font.setBold(False)
             painter.setFont(font)
 
-            # Constraints untereinander zeichnen
-            for rule in constraints:
-                r_start, r_end = self.extract_times(rule)
+            # Iteriere über die neuen strukturierten Einträge der Adresse
+            for entry in entries:
+                constraints = entry.get('constraints', {})
+                r_start, r_end = self.extract_times(constraints)
+
                 x_start = max(self.address_label_width,
                               self.time_to_x(r_start or self.t1))
                 x_end = min(self.width() - 10, self.time_to_x(r_end or self.t2))
@@ -338,67 +339,69 @@ class ConstraintTimeline(QtWidgets.QWidget):
                 if x_end > x_start:
                     rect = QtCore.QRect(x_start, current_y, x_end - x_start,
                                         self.row_height - 4)
-                    self.rects.append((rect, rule))  # Für Klick/Tooltip merken
+                    self.rects.append((rect, entry))  # Speichert den kompletten Eintrag
 
                     painter.setBrush(self.bar_color)
-                    painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
+                    painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.white, 1))
                     painter.drawRoundedRect(rect, 4, 4)
 
-                    label = str(rule.get('values', ''))
-                    painter.setPen(QtCore.Qt.black)
-                    painter.drawText(rect, QtCore.Qt.AlignCenter, label)
+                    label = f"{entry.get('key')}: {entry.get('value')}"
+                    painter.setPen(QtCore.Qt.GlobalColor.black)
+                    painter.drawText(rect, QtCore.Qt.AlignmentFlag.AlignCenter, label)
 
-                current_y += self.row_height  # Jedes Constraint eine neue Zeile
+                current_y += self.row_height
 
-            # Trennlinie nach jeder Adresse
             painter.setPen(QtGui.QColor("#d0d0d0"))
             painter.drawLine(0, current_y, self.width(), current_y)
             current_y += 10
 
     def mouseMoveEvent(self, event):
-        # Tooltip anzeigen, wenn über ein Rechteck gehovert wird
-        for rect, rule in self.rects:
+        for rect, entry in self.rects:
             if rect.contains(event.pos()):
-                # Schöner formatierten Tooltip bauen
-                cond_str = "\n".join([f"{c['field']} {c['op']} {c['value']}" for c in
-                                      rule['conditions']])
-                val_str = str(rule['values'])
+                constraints = entry.get('constraints', {})
+                cond_str = f"Valid From: {constraints.get('valid_from', 'None')}\nValid Until: {constraints.get('valid_until', 'None')}"
                 QtWidgets.QToolTip.showText(event.globalPos(),
-                                            f"Conditions:\n{cond_str}\n\nValues:\n{val_str}",
+                                            f"Key: {entry['key']}\nValue: {entry['value']}\n\nConstraints:\n{cond_str}",
                                             self)
                 return
         QtWidgets.QToolTip.hideText()
 
     def mousePressEvent(self, event):
-        # Klick-Erkennung
-        for rect, rule in self.rects:
+        for rect, entry in self.rects:
             if rect.contains(event.pos()):
-                print(f"Constraint clicked: {rule}")
-                self.constraintClicked.emit(rule)
+                self.constraintClicked.emit(entry)
                 break
 
     def calculate_bounds(self, metadata):
         all_times = []
-        for addr_content in metadata.values():
-            if not isinstance(addr_content, dict): continue
-            for rule in addr_content.get('_constraints', []):
-                s, e = self.extract_times(rule)
+        for entries in metadata.values():
+            if not isinstance(entries, list): continue
+            for entry in entries:
+                s, e = self.extract_times(entry.get('constraints', {}))
                 if s: all_times.append(s)
                 if e: all_times.append(e)
         return (min(all_times), max(all_times)) if all_times else (None, None)
 
-    def extract_times(self, rule):
+    def extract_times(self, constraints):
+        # Extrahiert Zeiten aus der flachen, neuen Constraints-Struktur ('valid_from' / 'valid_until')
         r_start, r_end = None, None
-        for cond in rule.get('conditions', []):
-            if cond['field'] == 't':
-                dt = datetime.fromisoformat(cond['value']) if isinstance(cond['value'],
-                                                                         str) else cond[
-                    'value']
-                if cond['op'] in ['>', '>=']:
-                    r_start = dt
-                elif cond['op'] in ['<', '<=']:
-                    r_end = dt
+
+        v_from = constraints.get('valid_from')
+        if v_from:
+            r_start = datetime.fromisoformat(v_from) if isinstance(v_from,
+                                                                   str) else v_from
+
+        v_until = constraints.get('valid_until')
+        if v_until:
+            r_end = datetime.fromisoformat(v_until) if isinstance(v_until,
+                                                                  str) else v_until
+
         return r_start, r_end
+
+
+
+
+
 
 
 class EditableDictQTreeWidget(dictQTreeWidget):

@@ -11,6 +11,8 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 import pydantic
 from pydantic.color import Color as pydColor
 import typing
+
+import redvypr.metadata
 from redvypr.device import RedvyprDevice
 from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidgetSimple, datastreamQTreeWidget, RedvyprAddressWidget, RedvyprAddressEditWidget
 import redvypr.files as files
@@ -1669,7 +1671,7 @@ class datastreamMetadataWidget(datastreamQTreeWidget):
             fstr1 = raddress.get_expand_explicit_str(address_format=address_format)
             raddress_metadata = RedvyprAddress(fstr1)
             logger.debug('Raddress_metadata {}'.format(raddress_metadata))
-            metadata = self.device.get_metadata(raddress_metadata,mode=metadata_mode)
+            metadata = redvypr.get_metadata(raddress_metadata, mode=metadata_mode)
             logger.debug('Got metadata {}'.format(metadata))
 
             metadata_work = copy.deepcopy(metadata)

@@ -2,6 +2,8 @@ import datetime
 from PyQt6 import QtWidgets, QtCore, QtGui
 import logging
 import sys
+
+import redvypr.metadata
 from redvypr.device import RedvyprDeviceCustomConfig, RedvyprDevice
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetStartonly, RedvyprdevicewidgetSimple
 from redvypr.widgets.redvyprMetadataWidget import MetadataWidget
@@ -100,7 +102,7 @@ class Device(RedvyprDevice):
 
         # 2. Fetch all matching metadata from redvypr
         # This returns a dict: {address_string: metadata_dict}
-        all_metadata = self.redvypr.get_metadata(search_pattern)
+        all_metadata = redvypr.get_metadata(search_pattern)
 
         events = []
 

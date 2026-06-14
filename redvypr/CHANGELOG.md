@@ -4,7 +4,7 @@ redvypr changelog
 
 ---
 
-## [unreleased] 
+## [0.9.19] - 2026-06-14
 
 ### Added
 - Datapacket.expand_data(self, expansion_level=1, address_format='k,i,h,d,p'): Helper function to get individual data entries
@@ -21,6 +21,7 @@ redvypr changelog
         dataqueue.put(compacket)
      ```
 ### Changed
+- improved metadata handling a lot
 - improved data statistics, better self consistency of packet inspection, cached inspection to improve performance. Not every packets gets a deep instpection anymore, only if the structure hash has changed
 - improved `sqlite_writer`: New db setup, better performance on slow sd cards
 - improved `netcdfwriter`: Cleaned layout, fixed metadata for the new api

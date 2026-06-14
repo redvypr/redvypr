@@ -53,13 +53,11 @@ class Autocalentry(pydantic.BaseModel):
 
 
 class Autocalconfig(Autocalentry):
-    entries: typing.Optional[typing.List[Autocalentry]] = pydantic.Field(default=[], editable=True)
+    entries: typing.Optional[typing.List[Autocalentry]] = pydantic.Field(default=[])
     start_index: int = pydantic.Field(default=0, description='The index of the entries to start with')
     channel_delta: float = pydantic.Field(default=1.0,
-                                          description='The delta between the next entry if a new is added',
-                                          editable=True)
-    channel_start: float = pydantic.Field(default=0, description='The start value of the parameter',
-                                          editable=True)
+                                          description='The delta between the next entry if a new is added')
+    channel_start: float = pydantic.Field(default=0, description='The start value of the parameter')
     autocalmode: typing.Literal['timer', 'response', 'threshold'] = pydantic.Field(default='timer',
                                                                                    description='The mode, i.e. the way autocal shall behave after the value is set.')
 

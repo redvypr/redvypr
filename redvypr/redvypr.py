@@ -31,9 +31,11 @@ import platform
 import redvypr
 # Import redvypr specific stuff
 import redvypr.data_packets as data_packets
+import redvypr.metadata
 import redvypr.redvypr_address as redvypr_address
 from redvypr.redvypr_address import RedvyprAddress
 import redvypr.packet_statistic as redvypr_packet_statistic
+import redvypr.metadata as redvypr_metadata
 from redvypr.version import version
 import redvypr.files as files
 from redvypr.device import RedvyprDeviceConfig, RedvyprDeviceBaseConfig, RedvyprDevice, RedvyprDeviceScan, RedvyprDeviceParameter, queuesize
@@ -215,7 +217,7 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                 if "_metadata" in redvyprdata.keys() or "_metadata_remove" in redvyprdata.keys():
                     #print("Adding/remove metadata from redvyrqueue")
                     try:
-                        status_statistics = redvypr_packet_statistic.do_metadata(
+                        status_statistics = redvypr.metadata.do_metadata(
                             redvyprdata, deviceinfo_all)
                         #print("Deviceinfo all",deviceinfo_all)
                         #print("Status statistics",status_statistics)
@@ -317,9 +319,11 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                             except:
                                 logger_dist.debug(funcname + ':Statistics:', exc_info=True)
                             try:
-                                status_statistics = redvypr_packet_statistic.do_metadata(
+                                status_statistics = redvypr.metadata.do_metadata(
                                     data, deviceinfo_all)
-                                #print(funcname + 'Metadata done')
+
+                                #print(f"data:{data}")
+                                #print(funcname + f' Metadata done: {status_statistics}')
                             except:
                                 logger_dist.debug(funcname + ':Metadata:', exc_info=True)
                         elif (command == 'info'):  # info command, typically a deviceinfo_all packet
@@ -438,6 +442,8 @@ class Redvypr(QtCore.QObject):
     are started and data is interchanged.
 
     """
+    address: RedvyprAddress
+    address_str: str
     device_path_changed = QtCore.pyqtSignal()  # Signal notifying if the device path was changed
     device_added = QtCore.pyqtSignal(list)  # Signal notifying that a device was added
     device_removed = QtCore.pyqtSignal()  # Signal notifying that a device was removed
@@ -517,13 +523,18 @@ class Redvypr(QtCore.QObject):
             for k in config.metadata.keys():
                 logger.debug(f'Adding {k} metadata entry')
             metadata_init = {'_metadata':config.metadata}
-            status_statistics = redvypr_packet_statistic.do_metadata(
+            status_statistics = redvypr.metadata.do_metadata(
                 metadata_init, self.deviceinfo_all)
             #print("Hallo",self.deviceinfo_all)
             logger.debug(
                 f'Added {len(config.metadata.keys())} entries from config to metadata {len(self.deviceinfo_all['metadata'].keys())} local entries.')
             #print("Metadata done")
 
+
+        # Create the RedvyprAddresses
+        self.address = RedvyprAddress(host=self.hostinfo["host"],
+                                      addr=self.hostinfo["addr"], uuid=self.hostinfo["uuid"])
+        self.address_str = str(self.address)
         # Lets start the distribution!
         self.datadistthread = threading.Thread(target=distribute_data, args=(
         self.devices, self.hostinfo, self.deviceinfo_all, self.datadistinfoqueue, self.redvyprqueue, self.redvyprreplyqueue, self.dt_datadist), daemon=True)
@@ -568,7 +579,7 @@ class Redvypr(QtCore.QObject):
         if use_devices:
             self.add_devices_from_config(redvypr_config, rename_if_exists=False)
         if use_metadata:
-            print(f"Applying metadata:{redvypr_config.metadata=}")
+            logger.debug(f"Applying metadata:{redvypr_config.metadata=}")
             self.set_metadata_from_dict(redvypr_config.metadata)
             logger.debug(funcname + 'Adding metadata done')
 
@@ -1376,68 +1387,23 @@ class Redvypr(QtCore.QObject):
         return packetids
 
     def get_metadata(self, address: None | str | RedvyprAddress = None,
-                    mode: typing.Literal["merge", "expanded"] = "expanded"):
+                    mode: typing.Literal["merge", "expanded"] = "expanded",
+                    context: dict | None = None,
+                    at_time: datetime.datetime | str | None = None,
+                    time_range: tuple[
+                                     datetime.datetime | str, datetime.datetime | str] | None = None
+                     ):
         funcname = __name__ + 'get_metadata():'
         logger.debug(funcname)
         deviceinfo_all = self.get_deviceinfo()
-        #print("Deviceonfi all new",deviceinfo_all)
-        #print("Mode redvypr",mode)
-        metadata = redvypr_packet_statistic.get_metadata(deviceinfo_all, address=address, mode=mode)
+        metadata = redvypr.metadata.get_metadata(deviceinfo_all,
+                                                 address=address,
+                                                 mode=mode,
+                                                 context=context,
+                                                 at_time=at_time,
+                                                 time_range=time_range)
         return metadata
 
-    def get_metadata_in_range(
-            self,
-            address: str | RedvyprAddress,
-            t1: datetime.datetime,
-            t2: datetime.datetime,
-            mode: typing.Literal["merge", "expanded"] = "expanded"
-    ):
-        """
-        Returns all metadata and constraints that were active at any point
-        between t1 and t2.
-        """
-        # 1. Get raw hierarchical metadata
-        raw_data = self.get_metadata(address, mode=mode)
-
-        results = {}
-
-        for addr, content in raw_data.items():
-            # Keep static metadata
-            addr_result = {k: v for k, v in content.items() if k != '_constraints'}
-            addr_result['_constraints'] = []
-
-            constraints = content.get('_constraints', [])
-
-            for rule in constraints:
-                # Extract time boundaries from the rule
-                r_start = None
-                r_end = None
-                for cond in rule['conditions']:
-                    if cond['field'] == 't':
-                        val = cond['value']
-                        dt_val = datetime.datetime.fromisoformat(val) if isinstance(val,
-                                                                                    str) else val
-
-                        if cond['op'] in ['>', '>=']: r_start = dt_val
-                        if cond['op'] in ['<', '<=']: r_end = dt_val
-
-                #print(f"Comparing Rule {r_start} > Query {t2}:{r_start and t2 and r_start > t2}")
-                #print(f"Comparing Rule {r_end} < Query {t1}:{r_end and t1 and r_end < t1}")
-                # Logic for overlap:
-                # A rule is relevant if its start is before our end AND its end is after our start
-                is_relevant = True
-                if r_start and t2 and r_start > t2:
-                    is_relevant = False
-                if r_end and t1 and r_end < t1:
-                    is_relevant = False
-
-                #print("Is relevant",is_relevant)
-                if is_relevant:
-                    addr_result['_constraints'].append(rule)
-
-            results[addr] = addr_result
-
-        return results
 
     def get_metadata_commandpacket(self, device=''):
         funcname = __name__ + 'get_metadata_commandpacket():'
@@ -1449,114 +1415,6 @@ class Redvypr(QtCore.QObject):
         redvypr_packet_statistic.treat_datadict(compacket, '', self.hostinfo, 0, tread,
                                                 'distribute_data')
         return compacket
-
-    def set_metadata(self, address: str | RedvyprAddress, metadata: dict):
-        """
-        Sets the metadata of address.
-        :param address:
-        :param metadata:
-        :return:
-        """
-        funcname = __name__ + '.set_metadata():'
-        logger.debug(funcname)
-        address_str = str(redvypr.RedvyprAddress(address))
-        datapacket = redvypr.data_packets.commandpacket(command='reply') # Arbitrary
-        datapacket['_metadata'] = {}
-        datapacket['_metadata'][address_str] = metadata
-        self.redvyprqueue.put(datapacket)
-        # Wait for the response
-        data = self.redvyprreplyqueue.get()
-        logger.debug(funcname + 'Metadata sent')
-
-    def set_metadata_from_dict(self, metadata: dict):
-        """
-        Sets the metadata of address.
-        :param metadata: metadata dict, keys must be valid RedvyprAddress strings and data must be dictionaries
-        :return:
-        """
-        funcname = __name__ + '.set_metadata_from_dict():'
-        logger.debug(funcname)
-        datapacket = redvypr.data_packets.commandpacket(command='reply')  # Arbitrary
-        datapacket['_metadata'] = {}
-
-        for address,metadata_address in metadata.items():
-            try:
-                address_str = str(redvypr.RedvyprAddress(address))
-            except:
-                raise ValueError("The keys of the metadata dictionary must be a valid RedvyprAddress string")
-
-            if isinstance(metadata_address,dict):
-                datapacket['_metadata'][address_str] = metadata_address
-            else:
-                raise ValueError(
-                    "The data of the metadata dictionary must be a dictionary")
-        self.redvyprqueue.put(datapacket)
-        # Wait for the response
-        data = self.redvyprreplyqueue.get()
-        logger.debug(funcname + 'Metadata sent')
-
-    def add_metadata_time_constrained(
-            self,
-            address: str | RedvyprAddress,
-            metadata: dict,
-            t1: datetime.datetime | str | None = None,
-            t2: datetime.datetime | str | None = None
-    ):
-        """
-        Adds metadata that is only valid within the time range [t1, t2].
-        :param address: Target address.
-        :param metadata: The dictionary of metadata to apply if conditions are met.
-        :param t1: Start timestamp (inclusive). If None, valid from the beginning of time.
-        :param t2: End timestamp (inclusive). If None, valid until the end of time.
-        """
-        funcname = f"{__name__}.add_metadata_time_constrained():"
-        logger.debug(funcname)
-
-        # Ensure we have a consistent string representation of the address
-        address_str = str(redvypr.RedvyprAddress(address))
-
-        conditions = []
-
-        # Helper to convert datetime objects to ISO strings if necessary
-        def format_time(t):
-            return t.isoformat() if hasattr(t, 'isoformat') else t
-
-        # Add start time condition
-        if t1 is not None:
-            conditions.append({
-                'field': 't',
-                'op': '>=',
-                'value': format_time(t1)
-            })
-
-        # Add end time condition
-        if t2 is not None:
-            conditions.append({
-                'field': 't',
-                'op': '<=',
-                'value': format_time(t2)
-            })
-
-        # Create the command packet
-        datapacket = redvypr.data_packets.commandpacket(command='reply')
-
-        # Using a specific key '_metadata_add_constraint' to tell the backend
-        # to append this to the existing list instead of overwriting.
-        constrain = {'conditions': conditions,
-                'values': metadata
-            }
-        metadata_conditions = {'_constraints': [constrain]}
-
-        datapacket['_metadata'] = {}
-        datapacket['_metadata'][address_str] = metadata_conditions
-
-        # Example of sending the packet
-        # self.send(datapacket)
-        print(f"Sent time-constrained metadata for {address_str}")
-        self.redvyprqueue.put(datapacket)
-        # Wait for the response
-        data = self.redvyprreplyqueue.get()
-        logger.debug(funcname + 'Metadata sent')
 
     def rem_metadata(self, address: str | RedvyprAddress, metadata_keys: list | None = None, constraint_entries: list | None = None, mode="exact"):
         """
@@ -1583,6 +1441,65 @@ class Redvypr(QtCore.QObject):
         data = self.redvyprreplyqueue.get()
         logger.debug(funcname + 'Metadata remove sent')
 
+    #
+    # Refurbished metadata api
+    #
+    def add_metadata(
+            self,
+            address: str | RedvyprAddress,
+            metadata: dict,
+            constraints: dict | None = None,
+            valid_from: datetime.datetime | str | None = None,
+            valid_until: datetime.datetime | str | None = None
+    ) -> None:
+        """
+        Adds metadata to a specific address with optional context or time constraints.
+
+        Parameters
+        ----------
+        address : str or RedvyprAddress
+            The target network address or pattern to attach the metadata to.
+        metadata : dict
+            A dictionary of key-value pairs representing the metadata to add.
+        constraints : dict, optional
+            Logical context conditions (e.g., ``{'protocol': 'HTTP'}``) that must
+            be met for this metadata to be considered active.
+        valid_from : datetime.datetime or str, optional
+            The UTC starting timestamp for the metadata validity. If None, it
+            defaults to the host instance startup time (`self.hostinfo.tstart`).
+        valid_until : datetime.datetime or str, optional
+            The UTC ending timestamp for the metadata validity. If None, the
+            metadata remains valid indefinitely until explicitly overwritten or removed.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        This method flattens the metadata dictionary into a standardized list of
+        independent key-value-constraint objects before transmitting them to the
+        backend queue. This prevents state conflicts and ensures chronological mapping.
+        """
+        funcname = f"{__name__}.add_metadata():"
+        logger.debug(funcname)
+
+
+        metadata_dict = redvypr_metadata.create_metadata_dict(address=address,
+                                              metadata=metadata,
+                                              constraints=constraints,
+                                              valid_from=valid_from,
+                                              valid_until=valid_until,
+                                              hostinfo=self.hostinfo)
+
+        datapacket = redvypr.data_packets.commandpacket(command='reply')
+        datapacket['_metadata'] = metadata_dict
+
+        # 3. Transmit packet
+        #print(f"Adding metadata:{datapacket}")
+        self.redvyprqueue.put(datapacket)
+        data = self.redvyprreplyqueue.get()
+        logger.debug(f"{funcname} Metadata sent successfully")
 
     def get_known_devices(self):
         """ List all known devices that can be loaded by redvypr

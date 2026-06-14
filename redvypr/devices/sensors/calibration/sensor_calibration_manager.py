@@ -22,6 +22,8 @@ from pathlib import Path
 from enum import Enum
 from typing import Literal
 from pathlib import Path
+
+import redvypr.metadata
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import check_for_command, commandpacket
 from redvypr.device import RedvyprDevice
@@ -182,7 +184,7 @@ class Device(RedvyprDevice):
         funcname = __name__ + '.create_metadatapacket_from_sensor_list():'
         logger.debug(funcname)
 
-        metadata = self.redvypr.get_metadata()
+        metadata = redvypr.get_metadata()
         self.sensor_lists[list_name] = []
         for maddr,mdata in metadata.items():
             print(mdata)
@@ -301,7 +303,7 @@ class Device(RedvyprDevice):
         funcname = __name__ + '.create_metadatapacket_from_calibration_list():'
         logger.debug(funcname)
 
-        metadata = self.redvypr.get_metadata()
+        metadata = redvypr.get_metadata()
         self.calibration_lists[list_name] = []
         for maddr,mdata in metadata.items():
             print(mdata)

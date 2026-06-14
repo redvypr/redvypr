@@ -9,6 +9,8 @@ import pynmea2
 import pydantic
 import typing
 import copy
+
+import redvypr.metadata
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 import redvypr.data_packets
 import redvypr.data_packets as data_packets
@@ -211,8 +213,8 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                         if sentence_type not in nmea_metadata:
                             metadata = nmea_postprocess.sentence_types[
                                 sentence_type].metadata(baseaddress=raddr)
-                            metadata_packet = redvypr.data_packets.create_metadatapacket(
-                                metadata)
+                            metadata_packet = redvypr.metadata.create_metadatapacket(
+                                metadata, device_info=device_info)
                             print("Metadata post processing",metadata_packet)
                             dataqueue.put(metadata_packet)
                             nmea_status[status_indexname]['packets_published'] += 1

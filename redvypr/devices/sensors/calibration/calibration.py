@@ -17,6 +17,8 @@ import pydantic
 import typing
 from collections.abc import Iterable
 import numpy
+
+import redvypr.metadata
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import check_for_command
 from redvypr.device import RedvyprDevice
@@ -606,7 +608,7 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
                 if self.headerlabel is None:
                     hlabel = "{}:".format(dindex) + daddr.to_address_string('k')
                     if self.device is not None:
-                        metadata = self.device.get_metadata(daddr)
+                        metadata = redvypr.get_metadata(daddr)
                         #print("Metadata of datapaket", rdata)
                         #print("Metadata: ", daddr, metadata)
                         try:
@@ -2261,7 +2263,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
                             datastream = caldata.datastream
                             #logger.debug('Updating datastreams {}'.format(datastream))
                             try:
-                                keyinfo = self.device.redvypr.get_metadata(datastream,mode="merge")
+                                keyinfo = redvypr.get_metadata(datastream, mode="merge")
                             except:
                                 keyinfo = None
                             #keyinfo = self.device.get_metadata(datastream)

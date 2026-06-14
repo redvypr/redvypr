@@ -2,6 +2,8 @@ import datetime
 from PyQt6 import QtWidgets, QtCore, QtGui
 import logging
 import sys
+
+import redvypr.metadata
 from redvypr.device import RedvyprDeviceCustomConfig, RedvyprDevice
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetStartonly, RedvyprdevicewidgetSimple
 from redvypr.widgets.redvyprMetadataWidget import MetadataWidget
@@ -664,7 +666,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetStartonly):
 
     def check_for_remote_measurements(self):
         print("\nGot new metadata, check for new measurements\n")
-        metadata = self.redvypr.get_metadata("!@d:measurement_metadata")
+        metadata = redvypr.get_metadata("!@d:measurement_metadata")
         print("Metadata", metadata)
         if len(metadata.keys()) > 0:
             print("Found a measurement")

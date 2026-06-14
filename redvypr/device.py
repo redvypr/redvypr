@@ -28,6 +28,8 @@ import redvypr
 import pydantic
 import typing
 import re
+
+import redvypr.metadata
 from redvypr.data_packets import commandpacket, create_datadict, Datapacket
 from redvypr.packet_statistic import do_data_statistics
 from redvypr.redvypr_address import RedvyprAddress, metadata_address
@@ -461,6 +463,8 @@ class QueueReaderWorker(QtCore.QObject):
 
 # TODO: properly implement status signal with status dict similar to thread_started/stopped
 class RedvyprDevice(QtCore.QObject):
+    address: RedvyprAddress
+    address_str: str
     new_data = QtCore.pyqtSignal(list)  # Signal emitted when new data is available (either from the start thread or subscribed data)
     thread_started = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
     thread_stopped = QtCore.pyqtSignal(dict)  # Signal notifying that the thread started
@@ -507,8 +511,9 @@ class RedvyprDevice(QtCore.QObject):
         self.thread = None
         self.device_parameter = device_parameter
         # Create a redvypr_address
-        # self.address_str
-        # self.address
+        self.address_str = None
+        self.address = None
+        # Updating the entries
         self.__update_address__()
 
         # Add myself a-priori to the statistics
@@ -1276,7 +1281,7 @@ class RedvyprDevice(QtCore.QObject):
 
         funcname = __name__ + '.get_metadata({},{}):'.format(str(address),str(mode))
         self.logger.debug(funcname)
-        metadata = self.redvypr.get_metadata(address, mode=mode)
+        metadata = redvypr.get_metadata(address, mode=mode)
 
         return metadata
 

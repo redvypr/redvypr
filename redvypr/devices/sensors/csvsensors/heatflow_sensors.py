@@ -7,6 +7,8 @@ import zoneinfo
 from PyQt6 import QtWidgets, QtCore, QtGui
 import pydantic
 import typing
+
+import redvypr.metadata
 from redvypr.devices.plot import XYPlotWidget
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.devices.sensors.calibration.calibration_models import CalibrationHeatFlow, CalibrationNTC
@@ -201,11 +203,11 @@ def add_keyinfo_HF_raw(datapacket):
             unit = 'NA'
 
         # print('Datakeyinfo',unit,macstr,dkey)
-        data_packets.add_metadata2datapacket(datapacket, datakey=dkey,
-                                             unit=unit, description=None,
-                                             infokey='sn', info=macstr)
-        data_packets.add_metadata2datapacket(datapacket, datakey=dkey,
-                                             infokey='sensortype', info='DHFS50')
+        redvypr.metadata.add_metadata2datapacket(datapacket, datakey=dkey,
+                                                 unit=unit, description=None,
+                                                 infokey='sn', info=macstr)
+        redvypr.metadata.add_metadata2datapacket(datapacket, datakey=dkey,
+                                                 infokey='sensortype', info='DHFS50')
     return datapacket
 
 
@@ -295,11 +297,11 @@ def process_IMU_packet(dataline,data, macstr, macs_found):
         for dkey in keys:
             # print(funcname + ' datakey {:s}'.format(dkey))
             unit = 'CNT'
-            data_packets.add_metadata2datapacket(datapacket, datakey=dkey,
-                                                 unit=unit, description=None,
-                                                 infokey='sn', info=macstr)
-            data_packets.add_metadata2datapacket(datapacket, datakey=dkey,
-                                                 infokey='sensortype', info='DHFS50')
+            redvypr.metadata.add_metadata2datapacket(datapacket, datakey=dkey,
+                                                     unit=unit, description=None,
+                                                     infokey='sn', info=macstr)
+            redvypr.metadata.add_metadata2datapacket(datapacket, datakey=dkey,
+                                                     infokey='sensortype', info='DHFS50')
 
         macs_found['IMU'].append(macstr)
     # print('IMU packet',datapacket)
@@ -350,16 +352,16 @@ def process_HF_data(dataline, data, device_info, sensorconfig, config, macs_foun
                                 unit = 'NA'
 
                             # print('Datakeyinfo', unit, macstr, dkey)
-                            data_packets.add_metadata2datapacket(datapacket_HFSI,
-                                                                 datakey=dkey,
-                                                                 unit=unit,
-                                                                 description=None,
-                                                                 infokey='sn',
-                                                                 info=macstr)
-                            data_packets.add_metadata2datapacket(datapacket_HFSI,
-                                                                 datakey=dkey,
-                                                                 infokey='sensortype',
-                                                                 info='DHFS50')
+                            redvypr.metadata.add_metadata2datapacket(datapacket_HFSI,
+                                                                     datakey=dkey,
+                                                                     unit=unit,
+                                                                     description=None,
+                                                                     infokey='sn',
+                                                                     info=macstr)
+                            redvypr.metadata.add_metadata2datapacket(datapacket_HFSI,
+                                                                     datakey=dkey,
+                                                                     infokey='sensortype',
+                                                                     info='DHFS50')
 
                         # print('datapacket', datapacket)
                         macs_found['HFSI'].append(macstr)

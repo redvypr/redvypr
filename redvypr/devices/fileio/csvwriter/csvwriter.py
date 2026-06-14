@@ -22,6 +22,8 @@ import gzip
 import os
 import pydantic
 import typing
+
+import redvypr.metadata
 from redvypr.device import RedvyprDevice
 import redvypr.data_packets as data_packets
 import redvypr.redvypr_address as redvypr_address
@@ -48,7 +50,7 @@ class csv_datastream_strformat(pydantic.BaseModel):
 
 
 class csv_datastream_config(pydantic.BaseModel):
-    address: str = pydantic.Field(default='*', type='redvypr_address',description='The redvypr address string of the datastream')
+    address: str = pydantic.Field(default='*',  json_schema_extra={'type=':'redvypr_address'},description='The redvypr address string of the datastream')
     address_found: str = pydantic.Field(default='', description='The redvypr address string of the datastream that is found for the column')
     strformat: csv_datastream_strformat = pydantic.Field(default=csv_datastream_strformat())
     comment: str= pydantic.Field(default='', description='Comment')
@@ -428,7 +430,7 @@ class Device(RedvyprDevice):
         logger.debug(funcname)
         datastream_addr = datastream
         datastream_str = datastream.to_address_string()
-        metadata = self.redvypr.get_metadata(datastream_addr)
+        metadata = redvypr.get_metadata(datastream_addr)
         #print('Metadata', metadata)
         #print('-------')
         try:
@@ -759,7 +761,7 @@ class initDeviceWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         datastream_addr = datastreamdict['datastream_address']
         datastream_str = datastreamdict['datastream_str']
-        metadata = self.device.redvypr.get_metadata(datastream_addr)
+        metadata = redvypr.get_metadata(datastream_addr)
         #print('Metadata',metadata)
         #print('-------')
         try:

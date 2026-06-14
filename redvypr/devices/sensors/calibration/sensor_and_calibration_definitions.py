@@ -193,8 +193,7 @@ class HeatflowClassicCalibration(BaseModel):
     """Represents the full calibration data (CalibrationGeneric) for a Heatflow Classic sensor."""
 
     model_config = ConfigDict(
-        extra='forbid',
-        json_encoders={datetime: lambda dt: dt.isoformat()}  # ISO-Format für datetime
+        extra='forbid'
     )
 
     # Literal für die Kalibrierungsfamilie

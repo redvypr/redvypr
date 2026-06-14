@@ -16,6 +16,7 @@ import pyqtgraph
 import redvypr.data_packets
 import redvypr.gui
 import redvypr.files as files
+import redvypr.metadata
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidget
 from redvypr.redvypr_address import RedvyprAddress
@@ -70,7 +71,7 @@ class configLine(pydantic.BaseModel,extra='allow'):
     color: pydColor = pydantic.Field(default=pydColor('red'), description='The color of the line')
     linewidth: float = pydantic.Field(default=2.0, description='The linewidth')
     linestyle: typing.Literal['SolidLine','DashLine','DotLine','DashDotLine','DashDotDotLine'] = pydantic.Field(default='SolidLine', description='The linestyle, see also https://doc.qt.io/qt-6/qt.html#PenStyle-enum')
-    databuffer: Databufferline = pydantic.Field(default=Databufferline(), description='The databuffer', editable=False)
+    databuffer: Databufferline = pydantic.Field(default=Databufferline(), description='The databuffer', json_schema_extra={"editable": False})
     databuffer_add_mode: typing.Literal['append', 'clear first'] = pydantic.Field(default='append', description='Behaviour off data handling with add_data()')
     plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_points'] = pydantic.Field(default='all', description='')
     last_N_s: float = pydantic.Field(default=60,
@@ -181,7 +182,7 @@ class ConfigXYplot(pydantic.BaseModel):
     name: str = pydantic.Field(default='', description='The name of the plotWidget')
     xlabel: str = pydantic.Field(default='', description='')
     ylabel: str = pydantic.Field(default='', description='')
-    lines: typing.Optional[typing.List[configLine]] = pydantic.Field(default=[configLine()], editable=True)
+    lines: typing.Optional[typing.List[configLine]] = pydantic.Field(default=[configLine()])
     plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_unit'] = pydantic.Field(default='all', description='')
     last_N_s: float = pydantic.Field(default=10,
                                      description='Plots the last seconds, if plot_mode_x is set to last_N_s')
@@ -1258,7 +1259,7 @@ class XYPlotWidget(QtWidgets.QFrame):
             has_metadata = False
 
         if has_metadata == False or force_update:
-            metadata = self.device.get_metadata(line.y_addr, mode='merge')
+            metadata = self.redvypr.get_metadata(line.y_addr, mode='merge')
             line._metadata = metadata
             self.logger.debug(funcname + ' Datakeyinfo {:s}'.format(str(line._metadata)))
             try:
@@ -1458,7 +1459,7 @@ class XYPlotWidget(QtWidgets.QFrame):
                                 self.logger.debug(funcname + 'Getting metadata for {}'.format(line.y_addr))
                                 # Check for metadata
                                 flag_new_metadata = self.get_metadata_for_line(line, force_update=True)
-                                print(f"Metadata flag:{flag_new_metadata=}")
+                                #print(f"Metadata flag:{flag_new_metadata=}")
                                 if flag_new_metadata:
                                     self.apply_config()
 
@@ -1476,8 +1477,6 @@ class XYPlotWidget(QtWidgets.QFrame):
                         update = False
                         # print('no update')
 
-                    #if len(self.config.lines) > 1:
-                    #    print('Update',update,line.__newdata)
                     if update and line.__newdata:  # We could check here if data was changed above the for given line
                         line._tlastupdate = tnow
                         try:

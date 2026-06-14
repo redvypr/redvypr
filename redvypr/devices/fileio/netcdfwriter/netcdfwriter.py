@@ -14,6 +14,8 @@ import datetime
 import logging
 import numpy
 import netCDF4
+
+import redvypr.metadata
 from redvypr.device import RedvyprDevice
 import redvypr.data_packets as data_packets
 import redvypr.redvypr_address as redvypr_address
@@ -336,7 +338,7 @@ class NetCDFWriter:
                     var = nc_datakey.variables.get(k, None)
                     if var not in self.vars_updated:
                         raddress_tmp = redvypr_address.RedvyprAddress(data)
-                        metadata_tmp = packet_statistics.get_metadata(
+                        metadata_tmp = redvypr.metadata.get_metadata(
                             self.deviceinfo_all, raddress_tmp, mode="merge")
                         if len(metadata_tmp.keys()) > 0:
                             for metakey in metadata_tmp.keys():

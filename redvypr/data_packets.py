@@ -1,13 +1,10 @@
-import copy
 import time
 import logging
 import sys
 import re
-import numpy as np
 import redvypr
 #import redvypr.redvypr_address as redvypr_address
-from redvypr.redvypr_address import RedvyprAddress, redvypr_standard_address_filter
-import collections
+from redvypr.redvypr_address import RedvyprAddress
 import pydantic
 import typing
 from typing import Any, Dict, Optional, Union
@@ -954,74 +951,6 @@ def create_datadict_legacy(data=None,
         datadict[datakey] = data
 
     return datadict
-
-
-def create_metadatapacket(metadict=None):
-    datapacket = {}
-    datapacket['_metadata'] = {}
-    for addr,metadata in metadict.items():
-        if isinstance(addr,str):
-            try:
-                RedvyprAddress(addr) # Test if this is a valid RedvyprAddress
-            except:
-                raise ValueError(f"key {str(addr)} of metadict dictionary must be valid RedvyprAddress string")
-
-            datapacket['_metadata'][addr] = metadata
-        else:
-            raise ValueError(
-                f"key {str(addr)} of metadict dictionary must be valid RedvyprAddress string")
-
-
-
-    return datapacket
-
-def add_metadata2datapacket(datapacket, address=None, datakey=None,
-                            metakey=None, metadata=None, metadict=None):
-    """
-
-    Args:add_metad
-        datapacket:
-        datakey:
-        metakey:
-        metadata:
-
-    Returns:
-
-    """
-    if True:
-        #print('Datapacket',datapacket)
-        if address is not None:
-            raddress = RedvyprAddress(address)
-        if datakey is not None:
-            try: # Try first to create a RedvyprAddress from the datapacket itself
-                raddress = RedvyprAddress(datapacket, datakey=datakey)
-            except:
-                logger.info('Could not create address',exc_info=True)
-                raddress = RedvyprAddress(datakey=datakey)
-
-        #address_str = raddress.to_address_string(redvypr_standard_address_filter)
-        address_str = raddress.to_address_string()
-        try:
-            datapacket['_metadata']
-        except:
-            datapacket['_metadata'] = {}
-
-        try:
-            datapacket['_metadata'][address_str]
-        except:
-            datapacket['_metadata'][address_str] = {}
-
-        if (metadata is not None):
-            datapacket['_metadata'][address_str][metakey] = metadata
-
-        # If a dictionary with metakeys is given
-        if (metadict is not None):
-            datapacket['_metadata'][address_str].update(metadict)
-
-    #print('Metadata datapacket',datapacket)
-    #print('---done----')
-    return datapacket
-
 
 
 def commandpacket(command='stop',device_uuid='',thread_uuid='',packetid=None,devicename=None,publisher=None,host=None,comdata=None,devicemodulename=None):

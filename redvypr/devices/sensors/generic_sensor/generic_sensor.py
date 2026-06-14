@@ -18,6 +18,8 @@ import datetime
 import numbers
 from PyQt6 import QtWidgets, QtCore, QtGui
 import qtawesome
+
+import redvypr.metadata
 from redvypr.data_packets import check_for_command
 from  redvypr.data_packets import create_datadict as redvypr_create_datadict
 #import redvypr.config as redvypr_config
@@ -798,7 +800,7 @@ class SensorWidget(QtWidgets.QWidget):
                     except:
                         raddr_tmp = RedvyprAddress(data,datakey=k)
                         logger.debug(funcname + 'Trying to get metadata for address {}'.format(raddr_tmp))
-                        metadata = self.device.get_metadata(raddr_tmp)
+                        metadata = redvypr.get_metadata(raddr_tmp)
                         #print(funcname + ' Got Metadata ...', metadata)
                         try:
                             self.datakey_units[k] = metadata['unit']

@@ -47,7 +47,7 @@ class PlotConfig(pydantic.BaseModel):
 
 class DeviceCustomConfig(pydantic.BaseModel,extra='allow'):
     #plots: list = pydantic.Field(default=[])
-    plots: typing.Optional[typing.Dict[str,PlotConfig]] = pydantic.Field(default={}, editable=True)
+    plots: typing.Optional[typing.Dict[str,PlotConfig]] = pydantic.Field(default={})
     dockstate: typing.Optional[dict] = pydantic.Field(default=None)
 
 

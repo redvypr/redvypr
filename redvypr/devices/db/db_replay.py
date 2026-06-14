@@ -10,6 +10,9 @@ import pydantic
 import redvypr
 import typing
 from collections import defaultdict
+
+import redvypr.metadata
+
 logger = logging.getLogger(__name__)
 from redvypr.data_packets import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
@@ -592,7 +595,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
                 print("Metadata stat",metainfo)
                 print("Count all", count_all)
-                metadata = db.get_metadata(0,count_all)
+                metadata = redvypr.get_metadata(0, count_all)
                 print("Metadata",metadata)
                 metadata_packet = redvypr.data_packets.create_datadict(device='db_reader',
                                                             packetid='metadata')
@@ -600,9 +603,9 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                     for m in metadata:
                         print("2", m['metadata'])
                         print("1",m['address'])
-                        redvypr.data_packets.add_metadata2datapacket(metadata_packet,
-                                                                     address=m['address'],
-                                                                     metadict=m['metadata'])
+                        redvypr.metadata.add_metadata2datapacket(metadata_packet,
+                                                                 address=m['address'],
+                                                                 metadict=m['metadata'])
                     dataqueue.put(metadata_packet)
                 else:
                     logger_thread.info("No metadata found")

@@ -15,6 +15,7 @@ import typing
 import redvypr.data_packets
 import redvypr.gui
 import redvypr.files as files
+import redvypr.metadata
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from redvypr.widgets.redvyprAddressWidget import RedvyprAddressEditWidget
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
@@ -345,7 +346,7 @@ class TablePlotWidget(QtWidgets.QWidget):
                 dkstr = str(dk)  # Here one could do some formatting
                 # Metadata
                 if self.redvypr is not None and self.config.show_unit:
-                    metadata = self.redvypr.get_metadata(ds)
+                    metadata = redvypr.get_metadata(ds)
                     try:
                         unit = " / {}".format(metadata['unit'])
                         dkstr += unit
