@@ -19,7 +19,7 @@ import redvypr.widgets.redvyprSubscribeWidget
 # Import redvypr specific stuff
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget, RedvyprdevicewidgetSimple, RedvyprdevicewidgetStartonly
 from redvypr.widgets.pydanticConfigWidget import dictQTreeWidget
-from redvypr.widgets.redvyprMetadataWidget import MetadataWidget
+from redvypr.widgets.redvyprMetadataWidget import MetadataWidget, RedvyprMetadataTable
 from redvypr.widgets.redvyprAddressWidget import RedvyprAddressTable
 #from redvypr.gui import datastreamWidget # Do we need this?
 import redvypr.gui as gui
@@ -585,7 +585,8 @@ class redvyprWidget(QtWidgets.QWidget):
         """
         Opens a widget to let the user add/edit metadata
         """
-        self.metadatawidget = MetadataWidget(self.redvypr)
+        #self.metadatawidget = MetadataWidget(self.redvypr)
+        self.metadatawidget = RedvyprMetadataTable(redvypr_instance = self.redvypr)
         self.metadatawidget.show()
 
     def open_add_device_widget(self):

@@ -56,7 +56,7 @@ else:
 # Collect all logger
 logger_all = [data_packets.logger, redvypr_address.logger, redvypr_packet_statistic.logger]
 
-# Platform information str
+# Platform informationstr
 __platform__ = "redvypr (REaltime Data Vi(Y)ewer and PRocessor (in Python))\n"
 __platform__ += "\n\n"
 __platform__ += "Version: {:s}\n".format(str(version))
@@ -1393,7 +1393,33 @@ class Redvypr(QtCore.QObject):
                     time_range: tuple[
                                      datetime.datetime | str, datetime.datetime | str] | None = None
                      ):
-        funcname = __name__ + 'get_metadata():'
+        """
+        Retrieves and filters active metadata for a given address based on
+        chronological and logical context constraints.
+
+        Parameters
+        ----------
+        address : str or RedvyprAddress, optional
+            The query address filter. If None, defaults to "@" (matches everything).
+        mode : {'expanded', 'merge', 'all'}, default 'expanded'
+            Determines the output schema format.
+            'all' returns the complete historical list of matching entries (ignores time).
+            'expanded'/'merge' filter by time and return a transformed dictionary.
+        context : dict, optional
+            A dictionary of key-value pairs representing the current runtime context.
+        at_time : datetime.datetime or str, optional
+            A specific UTC timestamp to query the metadata state for ("time travel").
+            Mutually exclusive with 'time_range'. Ignored if mode='all'.
+        time_range : tuple of (start, end), optional
+            A time window (start_time, end_time) to fetch historical data. Matches any
+            entry that was valid at some point during this window. Ignored if mode='all'.
+
+        Returns
+        -------
+        metadata_return : dict or list
+            A transformed dictionary or the full raw history list (if mode='all').
+        """
+        funcname = __name__ + '.get_metadata():'
         logger.debug(funcname)
         deviceinfo_all = self.get_deviceinfo()
         metadata = redvypr.metadata.get_metadata(deviceinfo_all,

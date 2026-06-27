@@ -30,7 +30,7 @@ dependencies = ['pyaml',
 	     'xarray',
 	     'reportlab',
 	     'pytz',
-	     'psycopg',
+	     'psycopg[binary]',
 	     'pytest',
 	     ]
 requires-python = ">=3.7"
