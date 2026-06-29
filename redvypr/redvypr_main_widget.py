@@ -18,8 +18,9 @@ from pyqtconsole.highlighter import format
 import redvypr.widgets.redvyprSubscribeWidget
 # Import redvypr specific stuff
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget, RedvyprdevicewidgetSimple, RedvyprdevicewidgetStartonly
-from redvypr.widgets.pydanticConfigWidget import dictQTreeWidget
-from redvypr.widgets.redvyprMetadataWidget import MetadataWidget, RedvyprMetadataTable
+from redvypr.widgets.dict_qtree_widget import Dictqtreewidget
+from redvypr.widgets.redvyprMetadataWidget import MetadataWidget
+from redvypr.widgets.redvyprMetadataTable import RedvyprMetadataTable
 from redvypr.widgets.redvyprAddressWidget import RedvyprAddressTable
 #from redvypr.gui import datastreamWidget # Do we need this?
 import redvypr.gui as gui
@@ -1370,7 +1371,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
     def show_deviceinfos(self):
         deviceinfo_all = self.redvypr_widget.redvypr.get_deviceinfo()
         metadata = deviceinfo_all['metadata']
-        self.metadata_widget = dictQTreeWidget(data=deviceinfo_all,dataname='deviceinfos')
+        self.metadata_widget = Dictqtreewidget(data=deviceinfo_all, dataname='deviceinfos')
         self.metadata_widget.show()
 
     def open_console(self):

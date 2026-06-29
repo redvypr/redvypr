@@ -5,9 +5,9 @@ import logging
 import sys
 import qtawesome
 import redvypr.files as files
-import redvypr.data_packets as data_packets
 from redvypr.redvypr_address import RedvyprAddress
-
+from redvypr.data_packets import Datapacket
+from .redvyprMetadataTable import RedvyprMetadataTable
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -16,6 +16,48 @@ _icon_file = files.icon_file
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.widgets.redvyprAddressWidget')
 logger.setLevel(logging.DEBUG)
+
+
+class DataInfoDialog(QtWidgets.QDialog):
+    """ A dialog that displays datakey information inside a clean QTableWidget structure. """
+
+    def __init__(self, data_info, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Data Info")
+        self.resize(500, 300)
+        print("Metadata",data_info)
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Create Table Widget
+        self.table = QtWidgets.QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(["Property", "Value"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+
+        # Populating data into the table view
+        if data_info and isinstance(data_info, dict):
+            self.table.setRowCount(len(data_info))
+            for row, (key, value) in enumerate(data_info.items()):
+                # Property Key Item
+                key_item = QtWidgets.QTableWidgetItem(str(key))
+                key_item.setFlags(key_item.flags() ^ QtCore.Qt.ItemFlag.ItemIsEditable)
+                self.table.setItem(row, 0, key_item)
+
+                # Property Value Item
+                val_item = QtWidgets.QTableWidgetItem(str(value))
+                val_item.setFlags(val_item.flags() ^ QtCore.Qt.ItemFlag.ItemIsEditable)
+                self.table.setItem(row, 1, val_item)
+        else:
+            self.table.setRowCount(1)
+            self.table.setItem(0, 0, QtWidgets.QTableWidgetItem("Info"))
+            self.table.setItem(0, 1, QtWidgets.QTableWidgetItem("No data info available for this item."))
+
+        layout.addWidget(self.table)
+
+        # Close Button
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
 
 
 
@@ -365,505 +407,6 @@ class AddressFilterwidget(QtWidgets.QWidget):
         else:
             self.filter_widget.hide()
             self.btn_showfilter.setText('Show Filter')
-
-
-class RedvyprAddressWidget_legacy(QtWidgets.QWidget):
-    """
-    Widget that lets the user enter a RedvyprAddress.
-    devicelock: The user cannot change the device anymore
-    """
-    apply = QtCore.pyqtSignal(dict)  # Signal notifying if the Apply button was clicked
-    datakey_name_changed = QtCore.pyqtSignal(str)  # Signal notifying if the datakey has changed
-
-    def __init__(self, redvypr, device=None,
-                 device_highlight=None,
-                 datakey=None,
-                 deviceonly=False,
-                 devicelock=False,
-                 subscribed_only=True,
-                 showapplybutton=True,
-                 datastreamstring=None,
-                 closeAfterApply=True,
-                 filter_device = ["@"],
-                 filter_datastream= ["@"],
-                 allow_all_addresses=True,
-                 expansion_level=10,
-                 force_time_series_expansion=False,
-                 manual_address=None):
-        """
-        Args:
-            redvypr:
-            device:
-            device_highlight: The device that is highlighted in the list
-            datakey:
-            deviceonly:
-            devicelock:
-            filter_device: List of RedvyprAdresses the will be checked
-            subscribed_only: Show the subscribed devices only
-            manual_address: String for the manual address
-        """
-
-        super(QtWidgets.QWidget, self).__init__()
-        logger.setLevel(logging.DEBUG)
-        self.setWindowIcon(QtGui.QIcon(_icon_file))
-        self.closeAfterApply = closeAfterApply
-        self.redvypr = redvypr
-        self.allow_all_addresses = allow_all_addresses
-        self.force_time_series_expansion = force_time_series_expansion
-        # For the moment
-        self.external_filter_include = []
-        for f in filter_device:
-            self.external_filter_include.append(RedvyprAddress(f))
-
-        self.external_filter_datastream = []
-        for f in filter_datastream:
-            self.external_filter_datastream.append(RedvyprAddress(f))
-        self.datastreamstring_orig = datastreamstring
-        self.datastreamstring  = datastreamstring
-        self.layout = QtWidgets.QGridLayout(self)
-        self.deviceonly = deviceonly
-        if (device_highlight == None):
-            self.device_highlight = 'Na'
-        else:
-            self.device_highlight = device_highlight
-
-        self.device = device
-        flag_all_devices = (self.device == None) or (subscribed_only == False)  # All devices or only one device?
-        try:
-            self.devicename = device.name
-        except:
-            self.devicename = device
-        if (device is not None):
-            self.devicenamelabel = QtWidgets.QLabel('Device: ' + self.devicename)
-            self.layout.addWidget(self.devicenamelabel)
-        else:
-            self.devicename = ''
-
-        self.expandlevel = expansion_level
-
-        self.addrentries_show_for_publishing_devices = ['h','d','i']  # The entries that are shown for the devices
-        self.devicelist = QtWidgets.QTreeWidget()  # List of available devices
-        self.devicelist.setHeaderLabels(['Datastreams'])
-        self.devicelist.setColumnCount(1)
-        self.devicelist.itemClicked.connect(self.__device_clicked)
-        # Add menus to the qtreewidgetitems
-        self.devicelist.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.devicelist.customContextMenuRequested.connect(self.show_menu_for_treeitem)
-        self.filterWidget = AddressFilterwidget(redvypr = redvypr)
-        # Expansion level
-        expandlayout = QtWidgets.QHBoxLayout()
-        self.expandlevel_spin = QtWidgets.QSpinBox()
-        self.expandlevel_spin.setValue(self.expandlevel)
-        self.expandlevel_spin.valueChanged.connect(self.__expandlevelChanged)
-        expandlayout.addWidget(QtWidgets.QLabel('Expansion level'))
-        expandlayout.addWidget(self.expandlevel_spin)
-        # Force expansion
-        self.force_expand_checkbox = QtWidgets.QCheckBox("Force time series expansion")
-        self.force_expand_checkbox.setChecked(self.force_time_series_expansion)
-        self.force_expand_checkbox.toggled.connect(self.__force_expand_toggled)
-        #
-        self.address_edit = RedvyprAddressEditWidget(datastreamstring)
-        self.address_edit.address_finished.connect(self.done_clicked)
-        # Add widgets to layout
-        # Right/left layout side
-        self.layout_left = QtWidgets.QVBoxLayout()
-        self.layout_right = QtWidgets.QVBoxLayout()
-        # Left side
-        self.layout_left.addWidget(self.devicelist)
-        self.layout_left.addLayout(expandlayout)
-        self.layout_left.addWidget(self.force_expand_checkbox)
-        self.layout_left.addWidget(self.filterWidget)
-        # Right side
-        self.layout_right.addWidget(self.address_edit)
-
-        self.layout.addLayout(self.layout_left,0,0)
-        self.layout.addLayout(self.layout_right,0,1)
-
-        # The datakeys
-        if deviceonly == False:
-            pass
-
-        #if showapplybutton == False:
-        #    self.address_edit.__configwidget_apply.hide()
-
-        self.datakeylist_subscribed = {}
-        if True:
-            self.__update_devicetree_expanded()
-            self.filterWidget.filterChanged.connect(self.__update_devicetree_expanded)
-
-    def show_menu_for_treeitem(self,pos: QtCore.QPoint):
-        tree = self.devicelist
-        item = tree.itemAt(pos)  # Get the item
-
-
-        try:
-            addrentries = item.addrentries
-        except:
-            addrentries = self.addrentries_show_for_publishing_devices
-
-        #print('Item', item,'Addrentries',addrentries)
-        if True:
-            menu = QtWidgets.QMenu(tree)
-            check_all = QtWidgets.QWidget()
-            check_all_layout = QtWidgets.QVBoxLayout(check_all)
-            atmp = RedvyprAddress()
-            all_check = {}
-            #print('Hallo',atmp.__addr_entries_short_r)
-            for k in atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY.keys():
-                entry_tmp = atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k]
-                check = QtWidgets.QCheckBox(k)
-                check.__item = item
-                if entry_tmp in addrentries:
-                    check.setChecked(True)
-                check.stateChanged.connect(self.__update_item)
-                check_all_layout.addWidget(check)
-                all_check[entry_tmp] = check
-                item.all_check = all_check
-            checkAction = QtWidgets.QWidgetAction(self)
-            checkAction.setDefaultWidget(check_all)
-            menu.addAction(checkAction)
-            menu.exec_(tree.mapToGlobal(pos))
-
-    def __force_expand_toggled(self):
-        funcname = __name__ + '._force_expand_toggled():'
-        logger.debug(funcname)
-        self.force_time_series_expansion = self.force_expand_checkbox.isChecked()
-        self.__update_devicetree_expanded()
-    def __expandlevelChanged(self):
-        funcname = __name__ + '.__expandlevelChanged():'
-        logger.debug(funcname)
-        self.expandlevel = self.expandlevel_spin.value()
-        self.__update_devicetree_expanded()
-
-    def __device_clicked(self,item):
-        """
-        Called when an item in the qtree is clicked
-        """
-        funcname = __name__ + '__device_clicked()'
-        logger.debug(funcname)
-        #print('Item',item.isdatastream)
-        #if(item.isdatastream): # If this is a datakey item
-        try:
-            raddress = item.datakey_address
-        except:
-            raddress = item.redvypr_address
-
-        print(funcname + "Setting address to:{}".format(raddress))
-        self.address_edit.setAddress(raddress)
-
-
-    def __update_devicetree_expanded(self):
-        funcname = __name__ + '.__update_devicetree_expanded():'
-        logger.debug(funcname)
-        colgrey = QtGui.QColor(210, 210, 210)
-        colgrey_key = QtGui.QColor(240, 240, 240)
-        def update_recursive(data_new_key, data_new, parent_item, datakey_construct, expandlevel, local_maxexpansionlevel=9999):
-            funcname = __name__ + '.__update_recursive():'
-            logger.debug(funcname)
-            datakey_construct_new = str(data_new_key)
-            if len(datakey_construct_new) == 0:
-                return
-            print('Hallo',data_new_key, data_new,type(data_new))
-            print('Datakey construct new',datakey_construct_new)
-            print("len datakey",len(datakey_construct_new))
-            # Check if we are at an item level that is a datakey to be used as a datastream
-            if isinstance(data_new, tuple) or (expandlevel >= self.expandlevel) or (expandlevel >= local_maxexpansionlevel):
-                #print('Set',data_new,self.expandlevel)
-                #print("data new key",data_new_key)
-                datakey_construct_new = data_new[0]
-                addrstr_expanded = datakey_construct_new
-                if (expandlevel >= self.expandlevel) or (expandlevel >= local_maxexpansionlevel):
-                    print('Level reached',datakey_construct_new)
-                    #addrstr_expanded = datakey_construct_new
-                    addrstr_expanded = data_new_key
-
-                #print('Addresstr expanded',addrstr_expanded)
-                itmk = QtWidgets.QTreeWidgetItem([addrstr_expanded])
-                itmk.isdatastream = True
-                itmk.device = publishing_device
-                itmk.devaddress = devaddress
-                #print('Creating address with devaddress',devaddress)
-                #print('Creating address with devaddress parsed', devaddress.parsed_addrstr)
-                #print('Creating address with datakey', addrstr)
-                itmk.datakey_address = RedvyprAddress(devaddress, datakey=addrstr_expanded)
-                #print('Address',itmk.datakey_address)
-                #print('Address parsed', itmk.datakey_address.parsed_addrstr)
-
-                test_external_filter = False
-                for f in self.external_filter_datastream:
-                    logger.debug(
-                        'Testing datastream: {} matches {}: {}'.format(f, itmk.datakey_address,
-                                                           f.matches(itmk.datakey_address)))
-                    if f.matches(itmk.datakey_address):
-                        test_external_filter = True
-                        break
-                # Test gui filter widget
-                if self.filterWidget.filter_on:
-                    test_filter_widget = self.filterWidget.filter_address.matches(
-                        itmk.datakey_address)
-                    logger.debug(
-                        f'Testing (@tuple): {self.filterWidget.filter_address}.matches({itmk.datakey_address}): {test_filter_widget}')
-                else:
-                    test_filter_widget = True
-
-                if test_external_filter and test_filter_widget:
-                    print("Add item ...\n\n\n",itmk.datakey_address)
-                    parent_item.addChild(itmk)
-                else:
-                    print("Will not add item ...")
-
-            elif isinstance(data_new, list):
-                print("List entry\n")
-                print(f'Parameter:{data_new_key=}, {data_new=},type:{type(data_new)}')
-                print(f'Datakey construct new:{datakey_construct_new}')
-                print(f"Parent address:{parent_item.redvypr_address}")
-                parent_address_datakey = parent_item.redvypr_address.datakey
-                # check if data_new_key is an index, if yes enclose it
-                if parent_address_datakey:
-                    if type(data_new_key) == int:
-                        data_new_key = f'{parent_address_datakey}[{data_new_key}]'
-                    else:
-                        data_new_key = f'{parent_address_datakey}["{data_new_key}"]'
-
-                #if type(data_new_key) == int:
-                #    data_new_key = f'{parent_address_datakey}[{data_new_key}]'
-
-                itmk = QtWidgets.QTreeWidgetItem([data_new_key])
-                itmk.redvypr_address = RedvyprAddress(devaddress, datakey=data_new_key)
-                itmk.isdatastream = True
-                itmk.device = publishing_device
-                itmk.setBackground(0, colgrey_key)
-                itmk.datakey_address = itmk.redvypr_address
-                # Check filter
-                test_external_filter = False
-                for f in self.external_filter_datastream:
-                    logger.debug(
-                        'Testing datastream: {} matches {}: {}'.format(f,
-                                                                       itmk.datakey_address,
-                                                                       f.matches(
-                                                                           itmk.datakey_address)))
-                    if f.matches(itmk.datakey_address):
-                        test_external_filter = True
-                        break
-                # Test gui filter widget
-                if self.filterWidget.filter_on:
-                    test_filter_widget = self.filterWidget.filter_address.matches(
-                        itmk.datakey_address)
-                    logger.debug(
-                        f'Testing (@tuple): {self.filterWidget.filter_address}.matches({itmk.datakey_address}): {test_filter_widget}')
-                else:
-                    test_filter_widget = True
-
-                if test_external_filter and test_filter_widget:
-                    parent_item.addChild(itmk)
-                    for data_new_index, data_new_item in enumerate(data_new):
-                        update_recursive(data_new_index, data_new_item, parent_item=itmk, datakey_construct=datakey_construct_new, expandlevel=expandlevel+1)
-
-            elif isinstance(data_new, dict):
-                print("Dict entry\n")
-                print(f'Parameter:{data_new_key=}, {data_new=},type:{type(data_new)}')
-                print(f'Datakey construct new:{datakey_construct_new}')
-                print(f"Parent address:{parent_item.redvypr_address}")
-                parent_address_datakey = parent_item.redvypr_address.datakey
-                if parent_address_datakey:
-                    if type(data_new_key) == int:
-                        data_new_key = f'{parent_address_datakey}[{data_new_key}]'
-                    else:
-                        data_new_key = f'{parent_address_datakey}["{data_new_key}"]'
-
-                itmk = QtWidgets.QTreeWidgetItem([data_new_key])
-                itmk.redvypr_address = RedvyprAddress(devaddress, datakey=data_new_key)
-                itmk.isdatastream = False
-                itmk.device = publishing_device
-                itmk.setBackground(0, colgrey)
-                parent_item.addChild(itmk)
-                for data_new_key in data_new.keys():
-                    update_recursive(data_new_key, data_new[data_new_key], parent_item=itmk, datakey_construct=datakey_construct_new, expandlevel=expandlevel+1)
-
-        if True:
-            self.devicelist.clear()
-            root = self.devicelist.invisibleRootItem()
-            # self.devices_listDevices.addItem(str(device))
-            publishing_devices = self.redvypr.get_device_objects(publishes=True, subscribes=False)
-            font1 = QtGui.QFont('Arial')
-            font1.setBold(True)
-            font0 = QtGui.QFont('Arial')
-
-            # Fill the qtreewidget
-            #print('data provider',data_provider_all)
-            if (publishing_devices is not None):
-                for publishing_device in publishing_devices:
-                    flag_datastreams = False
-                    if publishing_device == self.device:
-                        continue
-
-                    #print('Device {}'.format(dev.name))
-                    #print('Address', dev.address)
-                    # Check for external filter
-                    test_external_filter = False
-                    for addr_include in self.external_filter_include:
-                        test_external_filter = addr_include.matches(publishing_device.address)
-                        logger.debug('Testing {} not in {}: {}'.format(publishing_device.address, addr_include, test_external_filter))
-                        if test_external_filter:
-                            break
-
-                    if test_external_filter == False:
-                        continue
-                    # Check for filter from filter widget
-                    if self.filterWidget.filter_on:
-                        test_filter = not(self.filterWidget.filter_address).matches_filter(publishing_device.address)
-                        test_filter_sub = True
-                        if test_filter == True:
-                            # Test all devices of publisher in brute force and check if one of them fits
-                            devs_forwarded = publishing_device.get_device_info()
-                            for devaddress in devs_forwarded:
-                                datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
-                                #print('Datakeys', datakey_dict)
-                                devaddress_redvypr = RedvyprAddress(devaddress)
-                                if self.filterWidget.filter_address.matches_filter(devaddress_redvypr):
-                                    test_filter_sub = False
-                                    #print('Filter match for ', devaddress_redvypr)
-                                    continue
-
-                        logger.debug('Testing {} not in {}: {}'.format(publishing_device.address, self.filterWidget.filter_address, test_filter))
-                        if test_filter and test_filter_sub:
-                            #print('No filter match for ', dev.address)
-                            continue
-
-                    # The device itself
-                    itm = QtWidgets.QTreeWidgetItem([publishing_device.name])
-                    itm.setBackground(0, colgrey)
-                    itm.device = publishing_device
-                    itm.redvypr_address = publishing_device.address
-                    itm.datakey_address = RedvyprAddress(publishing_device.address)
-                    itm.isdatastream = False
-                    # Loop over all devices that have published through this device
-                    if True:
-                        devs_forwarded = publishing_device.get_device_info()
-                        #print("\n\nDeviceinfo:\n{}".format(devs_forwarded))
-                        devkeys = list(devs_forwarded.keys())
-                        devkeys.sort()
-                        for devaddress in devkeys:
-                            datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
-                            #print('Datakeys',datakey_dict)
-                            devaddress_redvypr = RedvyprAddress(devaddress)
-                            if self.filterWidget.filter_on:
-                                if not(self.filterWidget.filter_address.matches(devaddress_redvypr)):
-                                    print('No filter match for ', devaddress_redvypr)
-                                    continue
-
-                            #print('Addr', devaddress_redvypr, devaddress_redvypr.get_str())
-                            devicestr = self.get_addressstr_for_item(devaddress_redvypr,self.addrentries_show_for_publishing_devices)
-                            itmf = QtWidgets.QTreeWidgetItem([devicestr])
-                            itmf.setBackground(0, colgrey)
-                            itmf.device = publishing_device
-                            itmf.addrentries = self.addrentries_show_for_publishing_devices
-                            itmf.redvypr_address = devaddress_redvypr
-                            itmf.datakey_address = devaddress_redvypr
-                            itmf.address_forwarded = devaddress
-                            itmf.isdatastream = False
-                            # Check for time and potential length
-
-                            if len(datakey_dict.keys())>0:  # Only add the device if it has some datakey to show
-                                itm.addChild(itmf)
-                                # Check if we have a list of time data
-                                if (isinstance(datakey_dict["t"], list)):
-                                    len_t = len(datakey_dict["t"])
-                                else:
-                                    len_t = None
-                                for key in datakey_dict.keys():
-                                    local_expansion_level = 9999
-                                    if isinstance(datakey_dict[key], list):
-                                        if len_t == len(datakey_dict["t"]) and (self.force_time_series_expansion == False):
-                                            print(f"Setting local expansion level to 0 for {key}")
-                                            local_expansion_level = 0
-
-                                    data_new = datakey_dict[key]
-                                    datakey_construct_new = ''
-                                    update_recursive(key, data_new, parent_item=itmf, datakey_construct=datakey_construct_new, expandlevel=0, local_maxexpansionlevel=local_expansion_level)
-                                    flag_datastreams = True
-
-                    if flag_datastreams:  # If we have datastreams found, add the itm
-                        root.addChild(itm)
-
-            self.devicelist.expandAll()
-            self.devicelist.resizeColumnToContents(0)
-
-    def get_addressstr_for_item(self, raddr, addrentrylist):
-        #self.addrtype_for_publishing_devices = '/{h}\n/{d}\n/{i}'  # The addrtype to show for publishin devices
-        funcname = "get_addressstr_for_item()"
-        #print(funcname)
-        #print("Entries ...:",addrentrylist)
-        devicestr = raddr.to_address_string(addrentrylist)
-        #print("Devicestr", devicestr)
-        return devicestr
-
-    def __update_item(self):
-        try:
-            item = self.sender().__item
-        except:
-            print('No item selected')
-            return
-
-        entries = []
-        for entry in item.all_check:
-            check = item.all_check[entry]
-            if check.isChecked():
-                entries.append(entry)
-
-        item.addrentries = entries
-        raddr = item.redvypr_address
-        devicestr = self.get_addressstr_for_item(raddr,entries)
-        item.setText(0,devicestr)
-
-    def __update_all_items(self):
-        tree = self.devicelist
-        #
-        def iterate_items(parent):
-            for i in range(parent.childCount()):
-                child = parent.child(i)
-                print(child.text(0))
-                iterate_items(child)
-
-
-        for i in range(tree.topLevelItemCount()):
-            root = tree.topLevelItem(i)
-            print(root.text(0))
-            iterate_items(root)
-
-    def get_all_items(self):
-        tree_widget = self.devicelist
-        items = []
-
-        def traverse_items(item):
-            items.append(item)
-            for i in range(item.childCount()):
-                traverse_items(item.child(i))
-
-        # recursively get all items
-        for i in range(tree_widget.topLevelItemCount()):
-            traverse_items(tree_widget.topLevelItem(i))
-
-        return items
-
-    def done_clicked(self,address_dict):
-        funcname = __name__ + '.done_clicked():'
-        #device = self.device
-        #device_address = self.addressline.devaddress
-        datastream_str = address_dict['address_str']
-        datastream_address = address_dict['address']
-        addrformat = address_dict['address_format']
-        #signal_dict_new = {'device': device, 'device_address':device_address,'datastream_str': datastream_str,'datastream_address':datastream_address,'address_format':addrformat}
-        signal_dict_new = {'datastream_str': datastream_str,
-                           'datastream_address': datastream_address, 'address_format': addrformat}
-        #print(funcname + 'Signal dict {}'.format(signal_dict_new))
-        self.redvypr_address = datastream_address
-        self.apply.emit(signal_dict_new)
-        if self.closeAfterApply:
-            self.close()
-
-
-
 
 
 
@@ -1516,669 +1059,6 @@ class RedvyprAddressTable(QtWidgets.QWidget):
 # Tree model
 #
 #
-if False:
-    class RedvyprTreeFilterProxyModel(QtCore.QSortFilterProxyModel):
-        """
-        Hochperformanter Matrix-Filter für QTreeWidgets.
-        Nutzt eine Whitelist-Matrix pro Spalten-Key.
-        """
-
-        def __init__(self, parent=None):
-            super().__init__(parent)
-            # Struktur: { 'column_key_or_index': { 'allowed_val1', 'allowed_val2' } }
-            self._filter_matrix = {}
-            self.column_keys = []
-
-        def update_filter_matrix(self, filter_matrix, column_keys):
-            self._filter_matrix = filter_matrix
-            self.column_keys = column_keys
-            self.invalidateFilter()
-
-        def filterAcceptsRow(self, source_row, source_parent):
-            source_model = self.sourceModel()
-            if not source_model or not self._filter_matrix:
-                return True
-
-            # Index des aktuellen Elements holen
-            index = source_model.index(source_row, 0, source_parent)
-            item = source_model.itemFromIndex(index) if hasattr(source_model,
-                                                                'itemFromIndex') else None
-
-            # Falls direkt mit QTreeWidget gearbeitet wird, nutzen wir das Item-basierte Filtern:
-            if not item:
-                # Bei QTreeWidget greift filterAcceptsRow auf das interne Model zu.
-                # Um es einfach zu halten, prüfen wir den Inhalt der Spalten:
-                for col_idx, allowed_values in self._filter_matrix.items():
-                    col_index_in_tree = col_idx
-                    # Wert der Zelle auslesen
-                    cell_index = source_model.index(source_row, col_index_in_tree,
-                                                    source_parent)
-                    cell_value = source_model.data(cell_index,
-                                                   QtCore.Qt.ItemDataRole.DisplayRole)
-
-                    if cell_value not in allowed_values:
-                        return False
-                return True
-
-            # Falls es sich um einen Parent-Knoten (Device) handelt, prüfen wir,
-            # ob mindestens eines seiner Kinder den Filter erlaubt.
-            if index.model().hasChildren(index):
-                for i in range(index.model().rowCount(index)):
-                    if self.filterAcceptsRow(i, index):
-                        return True
-                return False
-
-            # Validierung des echten Datastreams gegen die Matrix
-            for col_key, allowed_values in self._filter_matrix.items():
-                try:
-                    col_idx = self.column_keys.index(col_key)
-                    cell_index = source_model.index(source_row, col_idx, source_parent)
-                    cell_value = source_model.data(cell_index,
-                                                   QtCore.Qt.ItemDataRole.DisplayRole)
-                    if cell_value not in allowed_values:
-                        return False
-                except ValueError:
-                    continue
-
-            return True
-
-
-
-    class RedvyprFilterDialog(QtWidgets.QDialog):
-        """
-        A standalone dialog window containing the dynamic Excel-like matrix filter interface.
-        """
-
-        def __init__(self, parent_widget):
-            super().__init__(parent_widget)
-            self.p = parent_widget  # Reference back to the main device tree widget
-            self.setWindowTitle("Dynamic Filter Matrix")
-            self.resize(320, 450)
-
-            self.init_ui()
-
-        def init_ui(self):
-            layout = QtWidgets.QVBoxLayout(self)
-
-            # Column Selection Dropdown
-            layout.addWidget(QtWidgets.QLabel("Target Column:"))
-            self.column_selector = QtWidgets.QComboBox()
-            self.column_selector.addItems(self.p.COLUMNS)
-            self.column_selector.currentTextChanged.connect(self.populate_value_checkboxes)
-            layout.addWidget(self.column_selector)
-
-            # Selection Utility Buttons
-            btn_layout = QtWidgets.QHBoxLayout()
-            self.btn_select_all = QtWidgets.QPushButton("Select All")
-            self.btn_deselect_all = QtWidgets.QPushButton("Deselect All")
-            self.btn_select_all.clicked.connect(lambda: self.set_all_checkboxes_state(True))
-            self.btn_deselect_all.clicked.connect(
-                lambda: self.set_all_checkboxes_state(False))
-            btn_layout.addWidget(self.btn_select_all)
-            btn_layout.addWidget(self.btn_deselect_all)
-            layout.addLayout(btn_layout)
-
-            # Scroll Area for dynamic unique value checkboxes
-            layout.addWidget(QtWidgets.QLabel("Allowed Unique Values:"))
-            self.scroll_area = QtWidgets.QScrollArea()
-            self.scroll_area.setWidgetResizable(True)
-            self.scroll_widget = QtWidgets.QWidget()
-            self.checkbox_layout = QtWidgets.QVBoxLayout(self.scroll_widget)
-            self.checkbox_layout.addStretch()  # Anchor layout items to the top
-            self.scroll_area.setWidget(self.scroll_widget)
-            layout.addWidget(self.scroll_area)
-
-            # Close action dialog button
-            self.close_button = QtWidgets.QPushButton("Apply & Close")
-            self.close_button.clicked.connect(self.accept)
-            layout.addWidget(self.close_button)
-
-            # Trigger initial checkbox populating matching parent state
-            current_col = self.column_selector.currentText()
-            self.populate_value_checkboxes(current_col)
-
-        def populate_value_checkboxes(self, active_column):
-            """Clears and re-renders the unique checkbox matrix rows inside the viewport."""
-            for cb in list(self.p.active_rendered_checkboxes.values()):
-                self.checkbox_layout.removeWidget(cb)
-                cb.setParent(None)
-            self.p.active_rendered_checkboxes.clear()
-
-            if not active_column or active_column not in self.p.filter_states:
-                return
-
-            column_value_map = self.p.filter_states[active_column]
-            for val_str, checked_state in sorted(column_value_map.items()):
-                cb = QtWidgets.QCheckBox(val_str)
-                cb.setChecked(checked_state)
-                cb.stateChanged.connect(
-                    lambda state, col=active_column, v=val_str: self.p.on_checkbox_toggled(
-                        col, v, state)
-                )
-                # Insert before the layout stretch anchor element
-                self.checkbox_layout.insertWidget(self.checkbox_layout.count() - 1, cb)
-                self.p.active_rendered_checkboxes[val_str] = cb
-
-        def set_all_checkboxes_state(self, checked_state):
-            """Batch overrides selection states across the active target filter matrix column."""
-            active_column = self.column_selector.currentText()
-            if not active_column or active_column not in self.p.filter_states:
-                return
-
-            for val_str in self.p.filter_states[active_column].keys():
-                self.p.filter_states[active_column][val_str] = checked_state
-
-            for cb in self.p.active_rendered_checkboxes.values():
-                cb.blockSignals(True)
-                cb.setChecked(checked_state)
-                cb.blockSignals(False)
-
-            self.p.apply_calculated_filters()
-
-
-    class RedvyprDeviceTreeWidget(QtWidgets.QWidget):
-        """
-        Component wrapping a multi-column tree view with dynamic,
-        Excel-like column matrix filtering and hierarchy toggles.
-        """
-        # Emits the selected RedvyprAddress (or a list of addresses if multi_select=True)
-        addressSelected = QtCore.pyqtSignal(object)
-
-        # Defined column headers matching the data schema
-        COLUMNS = ["Datastreams", "Host", "Device", "Publisher", "UUID", "Address",
-                   "Datatype"]
-
-        def __init__(self, redvypr, parent=None, multi_select=False, visible_columns=None,
-                     **kwargs):
-            super().__init__(parent)
-            self.redvypr = redvypr
-            self.multi_select = multi_select
-
-            # Configuration extraction with fallback defaults
-            self.external_filter_include = [RedvyprAddress(f) for f in
-                                            kwargs.get('filter_device', ["@"])]
-            self.external_filter_datastream = [RedvyprAddress(f) for f in
-                                               kwargs.get('filter_datastream', ["@"])]
-            self.expandlevel = kwargs.get('expansion_level', 10)
-            self.force_time_series_expansion = kwargs.get('force_time_series_expansion',
-                                                          False)
-            self.addrentries_show_for_publishing_devices = ['h', 'd', 'i']
-
-            # Define default visible columns if none are explicitly provided
-            if visible_columns is None:
-                self.default_visible_columns = ["Datastreams", "Host", "Device",
-                                                "Publisher", "Datatype"]
-            else:
-                self.default_visible_columns = list(visible_columns)
-
-            # Matrix filter state tracking: { 'col_key': { 'value_string': True/False } }
-            self.filter_states = {}
-            self.active_rendered_checkboxes = {}
-
-            self.init_ui()
-            self.update_device_tree()
-
-        def init_ui(self):
-            # Main layout spanning across the entire widget viewport space
-            main_layout = QtWidgets.QVBoxLayout(self)
-            main_layout.setContentsMargins(0, 0, 0, 0)
-
-            # Dropdown menu bar for alternative column visibility toggle
-            self.menu_bar = QtWidgets.QMenuBar()
-            self.view_menu = self.menu_bar.addMenu("Show / Hide Columns")
-            main_layout.addWidget(self.menu_bar)
-
-            # Top Control Bar for structural actions and opening filters
-            control_bar_layout = QtWidgets.QHBoxLayout()
-            self.filter_button = QtWidgets.QPushButton("Filter")
-            self.filter_button.setIcon(self.style().standardIcon(
-                QtWidgets.QStyle.StandardPixmap.SP_FileDialogContentsView))
-            self.filter_button.clicked.connect(self._open_filter_dialog)
-            control_bar_layout.addWidget(self.filter_button)
-            control_bar_layout.addStretch()
-            main_layout.addLayout(control_bar_layout)
-
-            # Tree Widget Core Setup
-            self.device_tree = QtWidgets.QTreeWidget()
-            self.device_tree.setColumnCount(len(self.COLUMNS))
-            self.device_tree.setHeaderLabels(self.COLUMNS)
-
-            # Configure Header View interactions
-            header = self.device_tree.header()
-            header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
-            header.customContextMenuRequested.connect(self._show_header_context_menu)
-            header.setSectionsMovable(True)
-
-            # Enable default column sorting behavior
-            self.device_tree.setSortingEnabled(True)
-            self.device_tree.sortByColumn(0, QtCore.Qt.SortOrder.AscendingOrder)
-
-            if self.multi_select:
-                self.device_tree.setSelectionMode(
-                    QtWidgets.QAbstractItemView.SelectionMode.MultiSelection)
-            else:
-                self.device_tree.itemClicked.connect(self._on_item_clicked)
-
-            # Context menu exclusively dedicated to row content manipulation
-            self.device_tree.setContextMenuPolicy(
-                QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
-            self.device_tree.customContextMenuRequested.connect(
-                self._show_item_context_menu)
-            main_layout.addWidget(self.device_tree, stretch=1)
-
-            # --- BOTTOM BAR: DESIGN CHANGED TO HOUSE TREE LAYOUT OPTIONS ---
-            options_layout = QtWidgets.QHBoxLayout()
-            options_layout.addWidget(QtWidgets.QLabel("Tree Layout Options:"))
-
-            self.allow_all_checkbox = QtWidgets.QCheckBox("Allow device selection")
-            self.allow_all_checkbox.setChecked(False)
-            options_layout.addWidget(self.allow_all_checkbox)
-
-            self.show_devices_checkbox = QtWidgets.QCheckBox("Show devices hierarchy")
-            self.show_devices_checkbox.setChecked(True)
-            self.show_devices_checkbox.toggled.connect(self._on_show_devices_toggled)
-            options_layout.addWidget(self.show_devices_checkbox)
-            options_layout.addStretch()
-
-            main_layout.addLayout(options_layout)
-
-            # Multi-Select Execution Actions Layout (Appears beneath options if multi_select=True)
-            if self.multi_select:
-                self.button_layout = QtWidgets.QHBoxLayout()
-                self.apply_button = QtWidgets.QPushButton("Apply Selection")
-                self.apply_button.clicked.connect(self._on_apply_clicked)
-                self.unselect_button = QtWidgets.QPushButton("Unselect All")
-                self.unselect_button.clicked.connect(self._on_unselect_clicked)
-                self.button_layout.addWidget(self.apply_button)
-                self.button_layout.addWidget(self.unselect_button)
-                self.button_layout.addStretch()
-                main_layout.addLayout(self.button_layout)
-
-            # Apply the initial column visibility based on the init parameter
-            for i, col_name in enumerate(self.COLUMNS):
-                if i == 0:
-                    continue  # Always keep the primary "Datastreams" column visible
-                should_hide = col_name not in self.default_visible_columns
-                self.device_tree.setColumnHidden(i, should_hide)
-
-            self._rebuild_view_menu()
-
-        def _open_filter_dialog(self):
-            """Spawns the dynamic matrix column configuration dialog window context safely."""
-            dialog = RedvyprFilterDialog(self)
-            dialog.exec()
-
-        def build_filter_matrix_states(self):
-            """Analyzes the current tree structure to pre-calculate unique metadata filter whitelists."""
-            old_states = self.filter_states
-            self.filter_states = {col: {} for col in self.COLUMNS}
-
-            def collect_values(item):
-                for col_idx in range(len(self.COLUMNS)):
-                    col_name = self.COLUMNS[col_idx]
-                    val = item.text(col_idx) or ""
-                    # Retain previous check configurations seamlessly if applicable
-                    if old_states and col_name in old_states and val in old_states[
-                        col_name]:
-                        self.filter_states[col_name][val] = old_states[col_name][val]
-                    else:
-                        self.filter_states[col_name][val] = True
-
-                for i in range(item.childCount()):
-                    collect_values(item.child(i))
-
-            root = self.device_tree.invisibleRootItem()
-            for i in range(root.childCount()):
-                collect_values(root.child(i))
-
-        def on_checkbox_toggled(self, col_key, value_str, check_state):
-            """Updates internal status matrices upon checkbox interaction."""
-            is_checked = (check_state == 2 or check_state == QtCore.Qt.CheckState.Checked)
-            self.filter_states[col_key][value_str] = is_checked
-            self.apply_calculated_filters()
-
-        def apply_calculated_filters(self):
-            """Evaluates tree item visibility against active matrix constraints via setHidden."""
-
-            def evaluate_item_visibility(item):
-                row_matches_filter = True
-                for col_idx, col_name in enumerate(self.COLUMNS):
-                    val = item.text(col_idx) or ""
-                    allowed_map = self.filter_states.get(col_name, {})
-                    if allowed_map and not allowed_map.get(val, True):
-                        row_matches_filter = False
-                        break
-
-                any_child_visible = False
-                for i in range(item.childCount()):
-                    child_visible = evaluate_item_visibility(item.child(i))
-                    if child_visible:
-                        any_child_visible = True
-
-                final_visibility = row_matches_filter or any_child_visible
-                item.setHidden(not final_visibility)
-                return final_visibility
-
-            root = self.device_tree.invisibleRootItem()
-            for i in range(root.childCount()):
-                evaluate_item_visibility(root.child(i))
-
-        def _rebuild_view_menu(self):
-            """Dynamically recreates the menu items for the main top drop-down menu bar."""
-            self.view_menu.clear()
-            header = self.device_tree.header()
-
-            for i, col_name in enumerate(self.COLUMNS):
-                if i == 0:
-                    continue
-                action = QtGui.QAction(col_name, self.view_menu, checkable=True)
-                action.setChecked(not header.isSectionHidden(i))
-                action.setData(i)
-                action.triggered.connect(self._toggle_column_visibility)
-                self.view_menu.addAction(action)
-
-        def _show_header_context_menu(self, pos: QtCore.QPoint):
-            """Generates the interactive visibility menu on header view right click."""
-            header = self.device_tree.header()
-            menu = QtWidgets.QMenu(self)
-
-            for i, col_name in enumerate(self.COLUMNS):
-                if i == 0:
-                    continue
-                action = QtGui.QAction(col_name, menu, checkable=True)
-                action.setChecked(not header.isSectionHidden(i))
-                action.setData(i)
-                action.triggered.connect(self._toggle_column_visibility)
-                menu.addAction(action)
-
-            menu.exec_(header.mapToGlobal(pos))
-
-        def _toggle_column_visibility(self):
-            """Applies layout visibility adjustments to the target tree view column index."""
-            action = self.sender()
-            if action:
-                col_index = action.data()
-                is_visible = action.isChecked()
-
-                self.device_tree.setColumnHidden(col_index, not is_visible)
-                if is_visible:
-                    self.device_tree.resizeColumnToContents(col_index)
-                self._rebuild_view_menu()
-
-        def _is_item_selectable(self, item):
-            is_datastream = getattr(item, 'isdatastream', False)
-            return is_datastream or (
-                        self.allow_all_checkbox.isChecked() and self.show_devices_checkbox.isChecked())
-
-        def _on_show_devices_toggled(self):
-            show_devices = self.show_devices_checkbox.isChecked()
-            if not show_devices:
-                self.allow_all_checkbox.setChecked(False)
-                self.allow_all_checkbox.setEnabled(False)
-            else:
-                self.allow_all_checkbox.setEnabled(True)
-            self.update_device_tree()
-
-        def _on_item_clicked(self, item):
-            if not self._is_item_selectable(item):
-                return
-            raddress = getattr(item, 'datakey_address',
-                               getattr(item, 'redvypr_address', None))
-            if raddress:
-                self.addressSelected.emit(raddress)
-
-        def _on_apply_clicked(self):
-            selected_items = self.device_tree.selectedItems()
-            selected_addresses = []
-            for item in selected_items:
-                if self._is_item_selectable(item):
-                    raddress = getattr(item, 'datakey_address',
-                                       getattr(item, 'redvypr_address', None))
-                    if raddress and raddress not in selected_addresses:
-                        selected_addresses.append(raddress)
-            self.addressSelected.emit(selected_addresses)
-
-        def _on_unselect_clicked(self):
-            self.device_tree.clearSelection()
-
-        def _show_item_context_menu(self, pos: QtCore.QPoint):
-            """Context menu specifically built for individual cell item configuration parameters."""
-            item = self.device_tree.itemAt(pos)
-            if not item:
-                return
-
-            addr_entries = getattr(item, 'addrentries',
-                                   self.addrentries_show_for_publishing_devices)
-            menu = QtWidgets.QMenu(self.device_tree)
-            container = QtWidgets.QWidget()
-            container_layout = QtWidgets.QVBoxLayout(container)
-            addr_tmp = RedvyprAddress()
-            all_checks = {}
-
-            for key, short_form in addr_tmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY.items():
-                checkbox = QtWidgets.QCheckBox(key)
-                checkbox.__item = item
-                if short_form in addr_entries:
-                    checkbox.setChecked(True)
-                checkbox.stateChanged.connect(self._update_menu_item)
-                container_layout.addWidget(checkbox)
-                all_checks[short_form] = checkbox
-
-            item.all_check = all_checks
-            action = QtWidgets.QWidgetAction(self)
-            action.setDefaultWidget(container)
-            menu.addAction(action)
-            menu.exec_(self.device_tree.viewport().mapToGlobal(pos))
-
-        def _update_menu_item(self):
-            sender = self.sender()
-            item = getattr(sender, '__item', None)
-            if not item:
-                return
-            entries = [entry for entry, cb in item.all_check.items() if cb.isChecked()]
-            item.addrentries = entries
-            dev_str = self.get_address_string_for_item(item.redvypr_address, entries)
-            item.setText(0, dev_str)
-
-        def get_address_string_for_item(self, raddr, addr_entry_list):
-            return raddr.to_address_string(addr_entry_list)
-
-        def update_device_tree(self):
-            """Builds structural schema data components directly into tree layout coordinates."""
-            logger.debug("Updating device tree elements.")
-            col_grey = QtGui.QColor(210, 210, 210)
-            col_grey_key = QtGui.QColor(240, 240, 240)
-
-            show_devices = self.show_devices_checkbox.isChecked()
-            root = self.device_tree.invisibleRootItem()
-
-            self.device_tree.setSortingEnabled(False)
-            self.device_tree.clear()
-
-            def fill_item_columns(tree_item, raddress, datatype_str=""):
-                if raddress:
-                    tree_item.setText(1, str(getattr(raddress, 'h', 'N/A')))
-                    tree_item.setText(2, str(getattr(raddress, 'd', 'N/A')))
-                    tree_item.setText(3, str(getattr(raddress, 'p', 'N/A')))
-                    tree_item.setText(4, str(getattr(raddress, 'u', 'N/A')))
-                    tree_item.setText(5, raddress.to_address_string() if hasattr(raddress,
-                                                                                 'to_address_string') else str(
-                        raddress))
-                tree_item.setText(6, str(datatype_str))
-
-            def update_recursive(data_new_key, data_new, parent_item, datakey_construct,
-                                 expand_level, local_max_expansion=9999):
-                datakey_construct_new = str(data_new_key)
-                if len(datakey_construct_new) == 0:
-                    return
-
-                if isinstance(data_new, tuple) or (expand_level >= self.expandlevel) or (
-                        expand_level >= local_max_expansion):
-                    addr_str_expanded = data_new[0] if not (
-                        ((expand_level >= self.expandlevel) or (
-                                expand_level >= local_max_expansion))) else data_new_key
-
-                    itm_k = QtWidgets.QTreeWidgetItem([addr_str_expanded])
-                    itm_k.isdatastream = True
-                    itm_k.device = publishing_device
-                    itm_k.devaddress = devaddress
-                    itm_k.datakey_address = RedvyprAddress(devaddress,
-                                                           datakey=addr_str_expanded)
-
-                    dtype = str(data_new[1].__name__) if isinstance(data_new,
-                                                                    tuple) and len(
-                        data_new) > 1 and hasattr(data_new[1], '__name__') else type(
-                        data_new).__name__
-                    fill_item_columns(itm_k, itm_k.datakey_address, dtype)
-
-                    if show_devices:
-                        parent_item.addChild(itm_k)
-                    else:
-                        root.addChild(itm_k)
-
-                elif isinstance(data_new, list):
-                    parent_address_datakey = parent_item.redvypr_address.datakey
-                    if parent_address_datakey:
-                        data_new_key = f'{parent_address_datakey}[{data_new_key}]' if isinstance(
-                            data_new_key,
-                            int) else f'{parent_address_datakey}["{data_new_key}"]'
-
-                    itm_k = QtWidgets.QTreeWidgetItem([data_new_key])
-                    itm_k.redvypr_address = RedvyprAddress(devaddress, datakey=data_new_key)
-                    itm_k.isdatastream = True
-                    itm_k.device = publishing_device
-                    itm_k.setBackground(0, col_grey_key)
-                    itm_k.datakey_address = itm_k.redvypr_address
-
-                    fill_item_columns(itm_k, itm_k.datakey_address, "list")
-
-                    if show_devices:
-                        parent_item.addChild(itm_k)
-                    else:
-                        root.addChild(itm_k)
-
-                    for idx, item_val in enumerate(data_new):
-                        update_recursive(idx, item_val, parent_item=itm_k,
-                                         datakey_construct=datakey_construct_new,
-                                         expand_level=expand_level + 1)
-
-                elif isinstance(data_new, dict):
-                    if not show_devices:
-                        for k in data_new.keys():
-                            update_recursive(k, data_new[k], parent_item=parent_item,
-                                             datakey_construct=datakey_construct_new,
-                                             expand_level=expand_level + 1)
-                        return
-
-                    parent_address_datakey = parent_item.redvypr_address.datakey
-                    if parent_address_datakey:
-                        data_new_key = f'{parent_address_datakey}[{data_new_key}]' if isinstance(
-                            data_new_key,
-                            int) else f'{parent_address_datakey}["{data_new_key}"]'
-
-                    itm_k = QtWidgets.QTreeWidgetItem([data_new_key])
-                    itm_k.redvypr_address = RedvyprAddress(devaddress, datakey=data_new_key)
-                    itm_k.isdatastream = False
-                    itm_k.device = publishing_device
-                    itm_k.setBackground(0, col_grey)
-
-                    fill_item_columns(itm_k, itm_k.redvypr_address, "dict")
-                    parent_item.addChild(itm_k)
-
-                    for k in data_new.keys():
-                        update_recursive(k, data_new[k], parent_item=itm_k,
-                                         datakey_construct=datakey_construct_new,
-                                         expand_level=expand_level + 1)
-
-            publishing_devices = self.redvypr.get_device_objects(publishes=True,
-                                                                 subscribes=False)
-
-            if publishing_devices is not None:
-                for publishing_device in publishing_devices:
-                    flag_datastreams = False
-
-                    test_ext_filter = any(
-                        addr_inc.matches(publishing_device.address) for addr_inc in
-                        self.external_filter_include)
-                    if not test_ext_filter:
-                        continue
-
-                    itm = QtWidgets.QTreeWidgetItem([publishing_device.name])
-                    itm.setBackground(0, col_grey)
-                    itm.device = publishing_device
-                    itm.redvypr_address = publishing_device.address
-                    itm.datakey_address = RedvyprAddress(publishing_device.address)
-                    itm.isdatastream = False
-
-                    fill_item_columns(itm, itm.redvypr_address, "dict")
-
-                    devs_forwarded = publishing_device.get_device_info()
-                    dev_keys = sorted(list(devs_forwarded.keys()))
-
-                    for devaddress in dev_keys:
-                        datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
-                        devaddress_redvypr = RedvyprAddress(devaddress)
-
-                        device_str = self.get_address_string_for_item(devaddress_redvypr,
-                                                                      self.addrentries_show_for_publishing_devices)
-                        itm_f = QtWidgets.QTreeWidgetItem([device_str])
-                        itm_f.setBackground(0, col_grey)
-                        itm_f.device = publishing_device
-                        itm_f.addrentries = self.addrentries_show_for_publishing_devices
-                        itm_f.redvypr_address = devaddress_redvypr
-                        itm_f.datakey_address = devaddress_redvypr
-                        itm_f.address_forwarded = devaddress
-                        itm_f.isdatastream = False
-
-                        fill_item_columns(itm_f, itm_f.redvypr_address, "dict")
-
-                        if len(datakey_dict.keys()) > 0:
-                            if show_devices:
-                                itm.addChild(itm_f)
-
-                            len_t = len(datakey_dict["t"]) if isinstance(
-                                datakey_dict.get("t"), list) else None
-
-                            for key in datakey_dict.keys():
-                                local_expansion = 9999
-                                if isinstance(datakey_dict[key], list) and len_t == len(
-                                        datakey_dict[
-                                            "t"]) and not self.force_time_series_expansion:
-                                    local_expansion = 0
-
-                                current_parent = itm_f if show_devices else itm
-                                update_recursive(key, datakey_dict[key],
-                                                 parent_item=current_parent,
-                                                 datakey_construct='', expand_level=0,
-                                                 local_max_expansion=local_expansion)
-                                flag_datastreams = True
-
-                    if flag_datastreams and show_devices:
-                        root.addChild(itm)
-
-            self.device_tree.setSortingEnabled(True)
-            self.device_tree.sortByColumn(0, QtCore.Qt.SortOrder.AscendingOrder)
-            self.device_tree.expandAll()
-
-            self.build_filter_matrix_states()
-
-            for i in range(len(self.COLUMNS)):
-                if not self.device_tree.isColumnHidden(i):
-                    self.device_tree.resizeColumnToContents(i)
-
-        def get_all_items(self):
-            items = []
-
-            def traverse(item):
-                items.append(item)
-                for i in range(item.childCount()):
-                    traverse(item.child(i))
-
-            for i in range(self.device_tree.topLevelItemCount()):
-                traverse(self.device_tree.topLevelItem(i))
-            return items
-
-
 class RedvyprTreeItem:
     """
     Lightweight, non-GUI data node for the tree hierarchy.
@@ -2649,45 +1529,47 @@ class RedvyprDeviceTreeWidget(QtWidgets.QWidget):
         self.device_tree.clearSelection()
 
     def _show_item_context_menu(self, pos: QtCore.QPoint):
+        print("Opening Menu for item")
         index = self.device_tree.indexAt(pos)
         item = index.internalPointer()
         if not item:
             return
 
-        addr_entries = getattr(item, 'addrentries',
-                               self.addrentries_show_for_publishing_devices)
+        action = None
         menu = QtWidgets.QMenu(self.device_tree)
-        container = QtWidgets.QWidget()
-        container_layout = QtWidgets.QVBoxLayout(container)
-        addr_tmp = RedvyprAddress()
-        all_checks = {}
+        # 1. Action: Metadata (Left blank/disabled for now)
+        metadata_action = menu.addAction("Metadata")
+        #metadata_action.setEnabled(False)
 
-        for key, short_form in addr_tmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY.items():
-            checkbox = QtWidgets.QCheckBox(key)
-            checkbox.__item = item
-            if short_form in addr_entries:
-                checkbox.setChecked(True)
-            checkbox.stateChanged.connect(self._update_menu_item)
-            container_layout.addWidget(checkbox)
-            all_checks[short_form] = checkbox
+        try:
+            data_info = item.data_info
+        except:
+            data_info = None
 
-        item.all_check = all_checks
-        action = QtWidgets.QWidgetAction(self)
-        action.setDefaultWidget(container)
-        menu.addAction(action)
-        menu.exec_(self.device_tree.viewport().mapToGlobal(pos))
+        if data_info:
+            # 2. Action: Data Info
+            datainfo_action = menu.addAction("Data Info")
+            # Display the context menu at the cursor position
 
-    def _update_menu_item(self):
-        sender = self.sender()
-        item = getattr(sender, '__item', None)
-        if not item:
-            return
-        entries = [entry for entry, cb in item.all_check.items() if cb.isChecked()]
-        item.addrentries = entries
-        dev_str = self.get_address_string_for_item(item.redvypr_address, entries)
-        item.setText(0, dev_str)
-        # Notify model data changed to refresh layout
-        self.tree_model.layoutChanged.emit()
+        action = menu.exec(self.device_tree.mapToGlobal(pos))
+
+        # Handle Action Triggers
+        if action:
+            if data_info:
+                if action == datainfo_action:
+                    # Extract the correct datakey string depending on the item structure
+                    # Construct and exhibit the visual table view dialog
+                    dialog = DataInfoDialog(data_info, parent=self)
+                    dialog.exec()
+
+            if action == metadata_action:
+                redvypr_address = item.datakey_address
+                print(f"Getting metdata for:{redvypr_address}")
+                self._metdatawidget_menu = RedvyprMetadataTable(redvypr_instance=self.redvypr, redvypr_address=redvypr_address)
+                self._metdatawidget_menu.show()
+
+
+
 
     def get_address_string_for_item(self, raddr, addr_entry_list):
         return raddr.to_address_string(addr_entry_list)
@@ -2701,30 +1583,22 @@ class RedvyprDeviceTreeWidget(QtWidgets.QWidget):
 
         show_devices = self.show_devices_checkbox.isChecked()
         actual_root = self.tree_model.invisibleRootItem()
+
         if self.show_host == False:
             root = actual_root
         else:
-            if show_devices==False:
+            if show_devices == False:
                 root = actual_root
             else:
-                # Zeile für den Host-Knoten generieren
                 hostinfo = self.redvypr.hostinfo
-                hostinfo_blank = {'host': None, 'tstart': 0, 'addr': None, 'uuid': None}
-                #[host,addr,device,packetid,uuid,datatype]
-                host_row = [hostinfo["host"], hostinfo["addr"], "N/A", "N/A", "N/A", hostinfo["addr"],
-                            "dict"]
+                host_row = [hostinfo["host"], hostinfo["addr"], "N/A", "N/A", "N/A", hostinfo["addr"], "dict"]
                 root_host_item = RedvyprTreeItem(host_row)
                 root_host_item.isdatastream = False
                 root_host_item.device = True
                 root_host_item.redvypr_address = self.redvypr.address
                 root_host_item.datakey_address = self.redvypr.address
-
-                # Den Host an die unsichtbare Qt-Root hängen
                 actual_root.appendChild(root_host_item)
-
-                # Alle folgenden Knoten hängen sich nun an diesen sichtbaren Host!
                 root = root_host_item
-
 
         def make_row_data(p0, raddress, datatype_str=""):
             row = [str(p0), "N/A", "N/A", "N/A", "N/A", "N/A", str(datatype_str)]
@@ -2733,164 +1607,105 @@ class RedvyprDeviceTreeWidget(QtWidgets.QWidget):
                 row[2] = str(getattr(raddress, 'd', 'N/A'))
                 row[3] = str(getattr(raddress, 'p', 'N/A'))
                 row[4] = str(getattr(raddress, 'u', 'N/A'))
-                row[5] = raddress.to_address_string() if hasattr(raddress,
-                                                                 'to_address_string') else str(
-                    raddress)
+                row[5] = raddress.to_address_string() if hasattr(raddress, 'to_address_string') else str(raddress)
             return row
 
-        def update_recursive(data_new_key, data_new, parent_item, datakey_construct,
-                             expand_level, local_max_expansion=9999):
-            datakey_construct_new = str(data_new_key)
-            if len(datakey_construct_new) == 0:
-                return
-
-            if isinstance(data_new, tuple) or (expand_level >= self.expandlevel) or (
-                    expand_level >= local_max_expansion):
-                addr_str_expanded = data_new[0] if not ((
-                            (expand_level >= self.expandlevel) or (
-                                expand_level >= local_max_expansion))) else data_new_key
-
-                dtype = str(data_new[1].__name__) if isinstance(data_new,
-                                                                tuple) and len(
-                    data_new) > 1 and hasattr(data_new[1], '__name__') else type(
-                    data_new).__name__
-                row_data = make_row_data(addr_str_expanded, RedvyprAddress(devaddress,
-                                                                           datakey=addr_str_expanded),
-                                         dtype)
-
-                itm_k = RedvyprTreeItem(row_data)
-                itm_k.isdatastream = True
-                itm_k.device = publishing_device
-                itm_k.devaddress = devaddress
-                itm_k.datakey_address = RedvyprAddress(devaddress,
-                                                       datakey=addr_str_expanded)
-
-                if show_devices:
-                    parent_item.appendChild(itm_k)
-                else:
-                    root.appendChild(itm_k)
-
-            elif isinstance(data_new, list):
-                parent_address_datakey = parent_item.redvypr_address.datakey if hasattr(
-                    parent_item,
-                    'redvypr_address') and parent_item.redvypr_address else None
-                if parent_address_datakey:
-                    data_new_key = f'{parent_address_datakey}[{data_new_key}]' if isinstance(
-                        data_new_key,
-                        int) else f'{parent_address_datakey}["{data_new_key}"]'
-
-                row_data = make_row_data(data_new_key, RedvyprAddress(devaddress,
-                                                                      datakey=data_new_key),
-                                         "list")
-                itm_k = RedvyprTreeItem(row_data)
-                itm_k.redvypr_address = RedvyprAddress(devaddress, datakey=data_new_key)
-                itm_k.isdatastream = True
-                itm_k.device = publishing_device
-                itm_k.datakey_address = itm_k.redvypr_address
-
-                if show_devices:
-                    parent_item.appendChild(itm_k)
-                else:
-                    root.appendChild(itm_k)
-
-                for idx, item_val in enumerate(data_new):
-                    update_recursive(idx, item_val, parent_item=itm_k,
-                                     datakey_construct=datakey_construct_new,
-                                     expand_level=expand_level + 1)
-
-            elif isinstance(data_new, dict):
-                if not show_devices:
-                    for k in data_new.keys():
-                        update_recursive(k, data_new[k], parent_item=parent_item,
-                                         datakey_construct=datakey_construct_new,
-                                         expand_level=expand_level + 1)
-                    return
-
-                parent_address_datakey = parent_item.redvypr_address.datakey if hasattr(
-                    parent_item,
-                    'redvypr_address') and parent_item.redvypr_address else None
-                if parent_address_datakey:
-                    data_new_key = f'{parent_address_datakey}[{data_new_key}]' if isinstance(
-                        data_new_key,
-                        int) else f'{parent_address_datakey}["{data_new_key}"]'
-
-                row_data = make_row_data(data_new_key, RedvyprAddress(devaddress,
-                                                                      datakey=data_new_key),
-                                         "dict")
-                itm_k = RedvyprTreeItem(row_data)
-                itm_k.redvypr_address = RedvyprAddress(devaddress, datakey=data_new_key)
-                itm_k.isdatastream = False
-                itm_k.device = publishing_device
-
-                parent_item.appendChild(itm_k)
-
-                for k in data_new.keys():
-                    update_recursive(k, data_new[k], parent_item=itm_k,
-                                     datakey_construct=datakey_construct_new,
-                                     expand_level=expand_level + 1)
-
-        publishing_devices = self.redvypr.get_device_objects(publishes=True,
-                                                             subscribes=False)
+        publishing_devices = self.redvypr.get_device_objects(publishes=True, subscribes=False)
 
         if publishing_devices is not None:
             for publishing_device in publishing_devices:
                 flag_datastreams = False
 
                 test_ext_filter = any(
-                    addr_inc.matches(publishing_device.address) for addr_inc in
-                    self.external_filter_include)
+                    addr_inc.matches(publishing_device.address) for addr_inc in self.external_filter_include
+                )
                 if not test_ext_filter:
                     continue
 
-                row_data = make_row_data(publishing_device.name,
-                                         publishing_device.address, "")
-                itm = RedvyprTreeItem(row_data)
-                itm.device = publishing_device
-                itm.redvypr_address = publishing_device.address
-                itm.datakey_address = RedvyprAddress(publishing_device.address)
-                itm.isdatastream = False
+                row_data = make_row_data(publishing_device.name, publishing_device.address, "")
+                itm_publishingdevice = RedvyprTreeItem(row_data)
+                itm_publishingdevice.device = publishing_device
+                itm_publishingdevice.redvypr_address = publishing_device.address
+                itm_publishingdevice.datakey_address = RedvyprAddress(publishing_device.address)
+                itm_publishingdevice.isdatastream = False
 
                 devs_forwarded = publishing_device.get_device_info()
-                dev_keys = sorted(list(devs_forwarded.keys()))
-
-                for devaddress in dev_keys:
-                    datakey_dict = devs_forwarded[devaddress]['datakeys_expanded']
-                    devaddress_redvypr = RedvyprAddress(devaddress)
-
+                device_addresses = sorted(list(devs_forwarded.keys()))
+                # Devices
+                for device_address in device_addresses:
+                    print(f"device address:{device_address}")
+                    devaddress_redvypr = RedvyprAddress(device_address)
                     device_str = self.get_address_string_for_item(devaddress_redvypr,
                                                                   self.addrentries_show_for_publishing_devices)
+
                     row_sub_data = make_row_data(device_str, devaddress_redvypr, "")
-                    itm_f = RedvyprTreeItem(row_sub_data)
-                    itm_f.device = publishing_device
-                    itm_f.addrentries = self.addrentries_show_for_publishing_devices
-                    itm_f.redvypr_address = devaddress_redvypr
-                    itm_f.datakey_address = devaddress_redvypr
-                    itm_f.address_forwarded = devaddress
-                    itm_f.isdatastream = False
+                    itm_deviceaddress = RedvyprTreeItem(row_sub_data)
+                    itm_deviceaddress.device = publishing_device
+                    itm_deviceaddress.addrentries = self.addrentries_show_for_publishing_devices
+                    itm_deviceaddress.redvypr_address = devaddress_redvypr
+                    itm_deviceaddress.datakey_address = devaddress_redvypr
+                    itm_deviceaddress.address_forwarded = device_address
+                    itm_deviceaddress.isdatastream = False
 
-                    if len(datakey_dict.keys()) > 0:
+                    datakeys_info = devs_forwarded[device_address]['datakeys_info']
+                    print(f"datakeys_info:{datakeys_info}")
+                    if datakeys_info:
                         if show_devices:
-                            itm.appendChild(itm_f)
+                            itm_publishingdevice.appendChild(itm_deviceaddress)
+                            current_parent_device_node = itm_deviceaddress
+                        else:
+                            current_parent_device_node = root
 
-                        len_t = len(datakey_dict["t"]) if isinstance(
-                            datakey_dict.get("t"), list) else None
+                        # Keep track of generated tree node items to dynamically build their child relationships
+                        created_items = {}
+                        # Sort keys sequentially to ensure parent nodes are generated before child nodes
+                        for key in sorted(datakeys_info.keys()):
+                            # Fetch metadata seamlessly using the hybrid static O(1) classmethod
+                            meta = Datapacket.get_datakey_info_from_dict(datakeys_info, key)
+                            print(f"update_device_tree metadata:{meta}")
 
-                        for key in datakey_dict.keys():
-                            local_expansion = 9999
-                            if isinstance(datakey_dict[key], list) and len_t == len(
-                                    datakey_dict[
-                                        "t"]) and not self.force_time_series_expansion:
-                                local_expansion = 0
+                            # Build tree entry metadata row
+                            row_data = make_row_data(key, RedvyprAddress(device_address, datakey=key), meta["data_type"])
+                            itm_k = RedvyprTreeItem(row_data)
+                            itm_k.data_info = meta # the datastream information
+                            itm_k.redvypr_address = RedvyprAddress(device_address, datakey=key)
+                            itm_k.datakey_address = itm_k.redvypr_address
+                            itm_k.device = publishing_device
 
-                            current_parent = itm_f if show_devices else itm
-                            update_recursive(key, datakey_dict[key],
-                                             parent_item=current_parent,
-                                             datakey_construct='', expand_level=0,
-                                             local_max_expansion=local_expansion)
-                            flag_datastreams = True
+                            # Distinguish flat streaming data vs. structural containers
+                            # This should be refined
+                            print(f"datatype:{meta["data_type"]}")
+                            if ("float" in meta["data_type"]
+                                or "int" in meta["data_type"]
+                                or "str" in meta["data_type"]):
+                                itm_k.isdatastream = True
+                            if (meta["is_concatenated"]
+                                    or "timestamp" in meta["type"]
+                                    or meta["type"] == "single_t_array"
+                                    or meta["type"] == "standard"):
+                                itm_k.isdatastream = True
+                            else:
+                                itm_k.isdatastream = False
+
+                            created_items[key] = itm_k
+
+                            # Figure out where to append this node in the layout hierarchy
+                            parent_key = None
+                            # Reverse lookup to find if this node belongs inside another container's child array
+                            for potential_parent, p_meta in datakeys_info.items():
+                                if "children" in p_meta and key in p_meta["children"]:
+                                    parent_key = potential_parent
+                                    break
+
+                            if parent_key and parent_key in created_items and show_devices:
+                                created_items[parent_key].appendChild(itm_k)
+                            else:
+                                current_parent_device_node.appendChild(itm_k)
+
+                        flag_datastreams = True
 
                 if flag_datastreams and show_devices:
-                    root.appendChild(itm)
+                    root.appendChild(itm_publishingdevice)
 
         # Notify layout updates and trigger auto expansion
         self.tree_model.layoutChanged.emit()
@@ -2903,19 +1718,6 @@ class RedvyprDeviceTreeWidget(QtWidgets.QWidget):
                 self.device_tree.resizeColumnToContents(i)
 
         self.device_tree.setUpdatesEnabled(True)
-
-    def get_all_items(self):
-        items = []
-
-        def traverse(item):
-            items.append(item)
-            for child in item.child_items:
-                traverse(child)
-
-        for child in self.tree_model.invisibleRootItem().child_items:
-            traverse(child)
-        return items
-
 
 
 class RedvyprAddressEditWrapper(QtWidgets.QWidget):

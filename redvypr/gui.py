@@ -11,7 +11,9 @@ import redvypr.metadata
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.widgets.redvyprSubscribeWidget import SubscribeWidget
 #from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget,
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, dictQTreeWidget, datastreamMetadataWidget
+from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, \
+    datastreamMetadataWidget
+from redvypr.widgets.dict_qtree_widget import Dictqtreewidget
 from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidget, RedvyprMultipleAddressesWidget
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.data_packets import RedvyprMetadata, RedvyprDeviceMetadata

@@ -22,7 +22,7 @@ from redvypr.device import RedvyprDevice
 from redvypr.data_packets import check_for_command
 import redvypr.redvypr_address as redvypr_address
 import redvypr.packet_statistic as packet_statistic
-from redvypr.widgets.pydanticConfigWidget import dictQTreeWidget
+from redvypr.widgets.dict_qtree_widget import Dictqtreewidget
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard
 
 
@@ -1036,7 +1036,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.tabwidget = tabwidget
         #self.statuswidget_network = QtWidgets.QWidget()
         #self.tabwidget.addTab(self.statuswidget_network,'Network devices connected')
-        self.statusdictWidget = dictQTreeWidget(self.device.network_status, dataname = 'network status')
+        self.statusdictWidget = Dictqtreewidget(self.device.network_status, dataname ='network status')
         self.device.network_status_changed.connect(self.update_status)
         self.layout.addWidget(self.statusdictWidget)
 

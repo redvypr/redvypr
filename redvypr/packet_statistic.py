@@ -94,7 +94,7 @@ def create_data_statistic_dict():
     statdict['datastreams_info'] = {}
     statdict['hostinfos'] = {}
     # New
-    statdict['datakey_info'] = {}
+    #statdict['datakey_info'] = {}
     statdict['datastream_redvypr'] = {}
     statdict['device_redvypr'] = {}
     statdict['host_redvypr'] = {}
@@ -124,7 +124,102 @@ def rem_device_from_statistics(deviceaddress, statdict):
     return keys_removed
 
 
-def do_data_statistics(data, statdict, address_data = None):
+def do_data_statistics(data, statdict, address_data=None):
+    """
+    Fill in the statistics dictionary with the data packet information.
+
+    Extracts routing information, increments packet publication counts,
+    and maintains flat representations of all encountered sub-keys,
+    expanded paths, and metadata relationships for data streams. Uses a
+    global structure cache to optimize the parsing of complex nested layouts.
+
+    Parameters
+    ----------
+    data : dict
+        The incoming raw telemetry data packet containing a '_redvypr'
+        metadata sub-dictionary.
+    statdict : dict
+        The persistent statistics storage registry tracking host and
+        device communication metrics. **This object is mutated in-place.**
+    address_data : RedvyprAddress, optional
+        Pre-calculated routing address. If None, a new `RedvyprAddress`
+        instance will be compiled dynamically from `data`. Default is None.
+
+    Returns
+    -------
+    None
+        The function modifies `statdict` directly in place and does not
+        return a value.
+
+    Notes
+    -----
+    This processing engine leverages a global `STRUCTURE_CACHE` registry.
+    By hashing the skeletal backbone of nested structures via
+    `Datapacket.get_structure_hash`, it bypasses recursive extraction pipelines,
+    heavy class instantiations, and regex structural scanning for previously
+    registered data patterns.
+    """
+    if address_data is None:
+        raddr = RedvyprAddress(data)
+    else:
+        raddr = address_data
+
+    uuid = raddr.uuid
+    address_str = raddr.to_address_string(data_statistics_address_format)
+
+    # Create a hostinfo information
+    try:
+        statdict['host_redvypr'][uuid].update(data['_redvypr']['host'])
+    except Exception:
+        statdict['host_redvypr'][uuid] = data['_redvypr']['host']
+
+    # Create device_redvypr, dictionary with all devices as keys
+    try:
+        statdict['device_redvypr'][address_str]['packets_published'] += 1
+    except Exception:  # Does not exist yet, create the entry
+        statdict['device_redvypr'][address_str] = copy.deepcopy(device_redvypr_statdict)
+
+    # Get datakeys from datapacket
+    datakeys = get_keys_from_data(data)
+    try:
+        datakeys_new = list(set(statdict['device_redvypr'][address_str]['datakeys'] + datakeys))
+    except Exception as e:
+        logger.exception(e)
+        datakeys_new = datakeys
+
+    statdict['device_redvypr'][address_str]['_redvypr'].update(data['_redvypr'])
+    statdict['device_redvypr'][address_str]['datakeys'] = datakeys_new
+
+    # Deeper check, data types and expanded data types
+    # Calculate hash first to look up the global structural cache
+    struct_hash = data_packets.Datapacket.get_structure_hash(data)
+
+    if struct_hash in STRUCTURE_CACHE:
+        datakeys_expanded = STRUCTURE_CACHE[struct_hash]['datakeys_expanded']
+        datakeys_info = STRUCTURE_CACHE[struct_hash]['datakeys_info']
+    else:
+        # Cache Miss: Parse structure using the Datapacket wrapper
+        rdata = data_packets.Datapacket(data)
+        datakeys_expanded = rdata.datakeys(expand=True)
+        datakeys_info = rdata.datakeys_info()  # Resolves time-alignments and cache results internally
+
+        # Write back payload structures into global cache mapping
+        STRUCTURE_CACHE[struct_hash] = {
+            'datakeys_expanded': datakeys_expanded,
+            'datakeys_info': datakeys_info
+        }
+
+    # Merge expanded structure configurations securely into target dictionary slots
+    statdict['device_redvypr'][address_str]['datakeys_expanded'].update(datakeys_expanded)
+
+    # Ensure datakeys_info entry exists in the device statistical slice
+    if 'datakeys_info' not in statdict['device_redvypr'][address_str]:
+        statdict['device_redvypr'][address_str]['datakeys_info'] = {}
+
+    statdict['device_redvypr'][address_str]['datakeys_info'].update(datakeys_info)
+
+
+def do_data_statistics_legacy(data, statdict, address_data = None):
     """
     Fills in the statistics dictionary with the data packet information.
 

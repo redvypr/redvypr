@@ -364,6 +364,266 @@ class Datapacket(dict):
         self._cache[cache_key] = result
         return result
 
+    def datakeys_info(self) -> dict:
+        """
+        Analyze nested packet keys and extract data stream relations and hierarchies.
+
+        This method inspects all expanded keys within the data packet to determine
+        the underlying structure, timestamp relations, and structural nesting of data
+        streams. It identifies standard single values, arrays with a single timestamp,
+        concatenated data streams, and structural iterables (lists or dicts) that act
+        as containers by tracking their child nodes.
+
+        The resulting metadata dictionary is registered inside the instance `self._cache`
+        to bypass heavy re-calculation over unchanged structures.
+
+        Returns
+        -------
+        dict
+            A dictionary where keys match the expanded bracket notations (e.g.,
+            '["sensors"]["analog"][0]["data"]') and values are dictionaries containing:
+
+            - "type" (str): The identified stream variant. Possible choices:
+              `"standard"`, `"concatenated"`, `"single_t_array"`, `"timestamp_list"`,
+              `"timestamp_single"`, `"iterable_list"`, or `"iterable_dict"`.
+            - "is_concatenated" (bool): True if the element represents or is bound
+              to a multi-point concatenated array stream.
+            - "timestamp_address" (str or None): The explicit path to the matching
+              temporal identifier '["t"]' within the structural hierarchy level.
+            - "children" (list of str, optional): Included only if the element is an
+              iterable container and not concatenated. Contains exact paths of direct
+              subsidiary structural nodes.
+        """
+
+        # Define a stable and distinct cache token mapping
+        cache_key = "datakeys_info_payload"
+
+        # Cache Hit: Instantly yield structural lookup maps if available
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        info = {}
+        # Build strict filtering boundaries using the pre-defined framework layout keys
+        filter_set = set(redvypr_data_keys)
+
+        # We first build our own complete tree map (including containers) to be fully independent
+        all_nodes = {}
+
+        def _scan_packet_recursive(node, parent_path="", level=0):
+            # Use isinstance to correctly support subclasses like Datapacket
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    if level == 0 and k in filter_set:
+                        continue
+
+                    # Formatting path string
+                    strformat = str(k) if level == 0 else (f"[{k}]" if isinstance(k, int) else f"['{k}']")
+                    current_path = f"{parent_path}{strformat}" if level > 0 else strformat
+
+                    all_nodes[current_path] = (current_path, type(v), v)
+                    _scan_packet_recursive(v, current_path, level + 1)
+
+            elif isinstance(node, list):
+                for idx, v in enumerate(node):
+                    strformat = f"[{idx}]"
+                    current_path = f"{parent_path}{strformat}"
+
+                    all_nodes[current_path] = (current_path, type(v), v)
+                    _scan_packet_recursive(v, current_path, level + 1)
+
+        # Start the independent object scanner
+        _scan_packet_recursive(self)
+
+        # Baseline assignment loop
+        for current_key, (path_str, data_type, value) in all_nodes.items():
+            info[current_key] = {
+                "type": "standard",
+                "data_type": data_type.__name__,
+                "is_concatenated": False,
+                "timestamp_address": None
+            }
+
+            # 1. Evaluate Timestamp relations for lists or indexed objects
+            if data_type is list or '[' in current_key:
+                parent_match = re.match(r'(.*)\["?[^"\]]+"?\]$', current_key)
+                expected_t_key = None
+
+                if current_key.endswith("']") or current_key.endswith('"]'):
+                    local_t_key = current_key[:-2] + '_t' + current_key[-2:]
+                    if local_t_key in all_nodes:
+                        expected_t_key = local_t_key
+                # B) for keys on root-level: look for 'sensors_t' with 'sensors'
+                elif '[' not in current_key:
+                    local_t_key = f"{current_key}_t"
+                    if local_t_key in all_nodes:
+                        expected_t_key = local_t_key
+
+                # if no f"{current_key}_t" was found, look for "t"
+                if not expected_t_key and parent_match:
+                    parent_path = parent_match.group(1)
+                    expected_t_key = f'{parent_path}["t"]' if parent_path.endswith(']') else f'{parent_path}["t"]'
+
+                # Fallback to root 't' if no sub-level timestamp is declared
+                root_t = '["t"]' if '["t"]' in all_nodes else ('t' if 't' in all_nodes else None)
+                if not expected_t_key or expected_t_key not in all_nodes:
+                    expected_t_key = root_t
+
+                if expected_t_key and expected_t_key in all_nodes:
+                    t_type = all_nodes[expected_t_key][1]
+                    try:
+                        t_value = self[expected_t_key]
+                        # Matching conditions for compressed multi-point streams
+                        if t_type is list and isinstance(t_value, list) and len(t_value) == len(value):
+                            info[current_key]["type"] = "concatenated"
+                            info[current_key]["is_concatenated"] = True
+                            info[current_key]["timestamp_address"] = expected_t_key
+                            if isinstance(value, list) and len(value) > 0:
+                                inner_type = type(value[0]).__name__
+                                info[current_key]["data_type"] = f"[{inner_type}]"
+                            else:
+                                info[current_key]["data_type"] = "[]"
+                        # We have a list, but only one time stamp, that means that each data point is a single datastream
+                        elif isinstance(value, list):
+                            info[current_key]["type"] = "single_t_array"
+                            info[current_key]["is_concatenated"] = False
+                            info[current_key]["timestamp_address"] = expected_t_key
+                            if isinstance(value, list) and len(value) > 0:
+                                inner_type = type(value[0]).__name__
+                                info[current_key]["data_type"] = f"[{inner_type}]"
+                            else:
+                                info[current_key]["data_type"] = "[]"
+                        else:
+                            info[current_key]["type"] = "standard"
+                            info[current_key]["is_concatenated"] = False
+                            info[current_key]["timestamp_address"] = expected_t_key
+                    except Exception:
+                        pass
+
+            # 2. Specialize non-concatenated iterable containers
+            if not info[current_key]["is_concatenated"] and data_type in (list, dict):
+                info[current_key]["type"] = "iterable_list" if data_type is list else "iterable_dict"
+                info[current_key]["children"] = []
+
+        # 3. Precise Hierarchical Child Mapping
+        for current_key, item in info.items():
+            if "children" in item:
+                # We extract direct keys depending on whether it's a dict or list
+                _, data_type, actual_obj = all_nodes[current_key]
+
+                if data_type is dict:
+                    for k in actual_obj.keys():
+                        strformat = f"[{k}]" if isinstance(k, int) else f"['{k}']"
+                        child_path = f"{current_key}{strformat}"
+                        if child_path in info:
+                            item["children"].append(child_path)
+                elif data_type is list:
+                    for idx in range(len(actual_obj)):
+                        child_path = f"{current_key}[{idx}]"
+                        if child_path in info:
+                            item["children"].append(child_path)
+
+        # 4. Refine tracking configurations for any temporal identifier keys explicitly
+        for current_key, item in list(info.items()):
+            if current_key == 't' or current_key == '["t"]' or current_key.endswith('["t"]'):
+                is_shared_concat = any(
+                    v.get("timestamp_address") == current_key and v.get("is_concatenated") for v in info.values())
+                item["type"] = "timestamp_list" if is_shared_concat else "timestamp_single"
+                item["is_concatenated"] = is_shared_concat
+                item["timestamp_address"] = current_key
+
+        # Commit final structure evaluation to instance cache
+        self._cache[cache_key] = info
+        return info
+
+    @classmethod
+    def get_datakey_info_from_dict(cls, data: dict = None, datakey: str = None) -> dict:
+        """
+        Extract structural information for a specific key out of a dictionary or instance.
+
+        This method supports raw data dictionaries (triggering an on-the-fly calculation),
+        pre-calculated 'datakeys_info' blocks extracted from device statistics, or
+        direct instance calls if the data object is omitted.
+
+        Parameters
+        ----------
+        data : dict or Datapacket, optional
+            The raw data packet, a Datapacket instance, OR a pre-calculated
+            'datakeys_info' sub-dictionary fetched from device statistics.
+            If None, a ValueError is raised unless invoked via the instance wrapper.
+        datakey : str
+            The specific expanded key string to query (e.g., "multisensor[0]").
+
+        Returns
+        -------
+        dict
+            The structural metadata dictionary for the specified key containing
+            'type', 'is_concatenated', 'timestamp_address', and optionally 'children'.
+            Returns a fallback standard layout if the key is missing.
+
+        Raises
+        ------
+        ValueError
+            If both data and instance context are missing.
+
+        Examples
+        --------
+        >>> # Example A: High-performance lookup inside a QTree Widget (using pre-calculated stats)
+        >>> stats_info = device_stats.get('datakeys_info', {})
+        >>> meta = Datapacket.get_datakey_info_from_dict(stats_info, "multisensor[0]")
+
+        >>> # Example B: On-the-fly fallback calculation using a raw data dictionary
+        >>> raw_packet = {"t": 1700000000, "multisensor": [10, 20]}
+        >>> meta = Datapacket.get_datakey_info_from_dict(raw_packet, "multisensor[0]")
+
+        >>> # Example C: Direct instance call using the shortcut method
+        >>> packet = Datapacket(raw_packet)
+        >>> meta = packet.get_datakey_info("multisensor[0]")
+        """
+        if data is None:
+            raise ValueError("A valid data dictionary or instance context must be provided.")
+
+        # Case 1: 'data' is already the pre-calculated 'datakeys_info' dict from stats.
+        # Detected if the requested datakey is found as a direct top-level key inside it.
+        if datakey in data and isinstance(data[datakey], dict) and "type" in data[datakey]:
+            return data[datakey]
+
+        # Case 2: 'data' is the entire device statistics root dictionary ('device_redvypr').
+        if isinstance(data, dict) and "datakeys_info" in data:
+            return data["datakeys_info"].get(datakey, {
+                "type": "standard", "is_concatenated": False, "timestamp_address": None
+            })
+
+        # Case 3: 'data' is a raw packet dictionary or an active instance.
+        # Compute on-the-fly using a temporary instance if it's a raw dict.
+        if not isinstance(data, cls):
+            packet_instance = cls(data)
+        else:
+            packet_instance = data
+
+        return packet_instance.datakeys_info().get(datakey, {
+            "type": "standard", "is_concatenated": False, "timestamp_address": None
+        })
+
+    def get_datakey_info(self, datakey: str) -> dict:
+        """
+        Convenience instance shortcut to extract structural metadata.
+
+        Maps directly to the classmethod, automatically passing 'self'
+        as the data source.
+
+        Parameters
+        ----------
+        datakey : str
+            The specific expanded key string to query (e.g., "multisensor[0]").
+
+        Returns
+        -------
+        dict
+            The structural metadata dictionary for the specified key.
+        """
+        return self.get_datakey_info_from_dict(data=self, datakey=datakey)
+
+
     @staticmethod
     def datastreams_from_datakeys(datakeys_payload, base_address=None,
                                   return_type='address', expand=True,

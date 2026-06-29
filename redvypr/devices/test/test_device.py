@@ -16,6 +16,7 @@ import copy
 from typing import Any, Dict
 
 import redvypr.metadata
+from redvypr.data_packets import Datapacket
 from redvypr.device import RedvyprDeviceCustomConfig
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
@@ -68,6 +69,12 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                        description="Flag if complex data shall be sent")
     complex_freq: float = pydantic.Field(default=1,
                                         description="Frequency of the complex package to be sent")
+    send_multisensor: bool = pydantic.Field(default=True,
+                                        description="Flag if data for multiple sensors should be sent")
+    multisensor_freq: float = pydantic.Field(default=0.5,
+                                        description="Frequency of the multisensor package")
+    multisensor_numsen: int = pydantic.Field(default=2,
+                                             description="Number of sensors")
 
 
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
@@ -92,14 +99,14 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     dataqueue.put(datapacket_info)
     i = 0
     counter = 0
-    t_last_keys = ['sine','rand','fast','fast_merge','latlon','complex']
+    t_last_keys = ['sine','rand','fast','fast_merge','latlon','complex','multisensor']
     t_last = {}
     t_tmp = time.time()
     for k in t_last_keys:
         t_last[k] = t_tmp
 
 
-    print("Config",pdconfig)
+    #print("Config",pdconfig)
     while True:
         time.sleep(pdconfig.delay_s)
         counter += 1
@@ -157,6 +164,21 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                                                                                 metadict=metadata)
                 #print(f"Publishing:{data_sine_packet=}")
                 dataqueue.put(data_sine_packet)
+        if pdconfig.send_multisensor:
+            dt_tmp = t_now - t_last['multisensor']
+            if dt_tmp > (1 / pdconfig.multisensor_freq):
+                t_last['multisensor'] = t_now
+                data_multi = redvypr.data_packets.create_datadict(
+                    device=device_info['device'], packetid="multisensor")
+                rand_data = pdconfig.rand_amp * (np.random.rand(pdconfig.multisensor_numsen) - 0.5)
+                data_multi['t'] = t_now
+                data_multi['multisensor'] = {'sensors':list(rand_data)}
+                dinfo = Datapacket(data_multi).datakeys_info()
+                print("data_multi",data_multi)
+                print(f"{dinfo=}")
+                print(f"Datakey info:{Datapacket(data_multi).get_datakey_info("multisensor")}")
+                dataqueue.put(data_multi)
+
 
         if pdconfig.send_fast_single or pdconfig.send_fast_merged:
             dt_tmp = t_now - t_last['fast']
@@ -269,6 +291,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 "rand_freq_send": "Send Freq",
                 "rand_amp": "Amp",
                 "sine_rand_amp": "Sine Rand Amp"
+            }),
+            "Multiple Sensors": ("send_multisensor", {
+                "multisensor_freq": "Send Freq",
             }),
             "Fast Single": ("send_fast_single", {
                 "fast_freq_single": "Freq",

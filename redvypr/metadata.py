@@ -391,7 +391,7 @@ def get_metadata(
     # 3. Iterate sorted structural matches
     for astr in metadata_keys_sorted:
         raddr = RedvyprAddress(astr)
-
+        #print(f"testing:{raddr} with {raddress}")
         if raddress.matches(raddr):
             stored_list = statistics['metadata'][astr]
 

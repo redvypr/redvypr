@@ -23,7 +23,9 @@ from redvypr.redvypr_address import RedvyprAddress
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 from redvypr.data_packets import RedvyprMetadata, RedvyprDeviceMetadata
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, dictQTreeWidget, datastreamMetadataWidget
+from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, \
+    datastreamMetadataWidget
+from redvypr.widgets.dict_qtree_widget import Dictqtreewidget
 from redvypr.devices.interface.serial_single import SerialDeviceConfigRedvypr, SerialDataShowSendWidget, SerialDeviceWidgetRedvypr, packet_start, packet_delimiter, baud_standard
 from redvypr.devices.interface.serial_single import start as start_serial_single
 

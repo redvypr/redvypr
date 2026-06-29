@@ -384,6 +384,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
 
 
 class DataStreamTableItem(QtWidgets.QTableWidgetItem):
+    """Widget is used for realtime data display"""
     def __init__(self, *args, datastream=None, device=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.datastream = datastream
@@ -451,6 +452,7 @@ class DataStreamTableItem(QtWidgets.QTableWidgetItem):
 
 
 class RealtimedataPlotButton(QtWidgets.QPushButton):
+    """Widget is used for realtime data display"""
     def __init__(self, sdata, device, parent_widget):
         super().__init__("Open Plot")
         self.sdata = sdata

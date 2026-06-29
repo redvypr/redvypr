@@ -21,6 +21,7 @@ import redvypr.data_packets as data_packets
 import redvypr.redvypr_address as redvypr_address
 import redvypr.packet_statistic as packet_statistics
 import redvypr.gui
+from redvypr.widgets import dict_qtree_widget
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.netcdfwriter')
@@ -921,7 +922,7 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.byteslab = QtWidgets.QLabel("Bytes written: ")
         self.packetslab = QtWidgets.QLabel("Packets written: ")
         # Table that displays all datastreams and the format as it is written to the file
-        self.deviceinfoQtree = redvypr.gui.dictQTreeWidget(dataname='file status', show_datatype = False)
+        self.deviceinfoQtree = dict_qtree_widget.Dictqtreewidget(dataname='file status', show_datatype = False)
         # Update layout
         updatelayout = QtWidgets.QHBoxLayout()
         self.update_auto = QtWidgets.QCheckBox('Autoupdate file status')

@@ -7,9 +7,10 @@ redvypr changelog
 ## [unreleased] - 
 
 ### Added
-- 
+- new field `datakeys_info` in `packet_statistics.do_data_statistics` that uses `data_packets.Datapacket.datakeys_info()`
 ### Changed
-- 
+- `get_datakey_info`,`get_datakey_info_from_dict`,`datakeys_info`  in `redvypr.config`
+ 
 ---
 
 ## [0.9.19] - 2026-06-14
