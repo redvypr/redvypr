@@ -17,6 +17,19 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.widgets.redvyprAddressWidget')
 logger.setLevel(logging.DEBUG)
 
+# Reverse mapping including datakeys
+REV_MAP_DATAKEY = {"k": "datakey"}
+REV_MAP_DATAKEY.update({
+    prefix: config["longform"]
+    for prefix, config in RedvyprAddress.META_CONFIG.items()
+})
+
+MAP_DATAKEY = {"datakey": "k"}
+MAP_DATAKEY.update({
+    config["longform"]: prefix
+    for prefix, config in RedvyprAddress.META_CONFIG.items()
+})
+
 
 class DataInfoDialog(QtWidgets.QDialog):
     """ A dialog that displays datakey information inside a clean QTableWidget structure. """
@@ -88,8 +101,8 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
         atmp = RedvyprAddress()
         self.address_entries = {}
         self.address_entries_check = {}
-        for i,k in enumerate(atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY.keys()):
-            entry_tmp = atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k]
+        for i,k in enumerate(REV_MAP_DATAKEY.keys()):
+            entry_tmp = REV_MAP_DATAKEY[k]
             keyedit = QtWidgets.QLineEdit()
             keyedit.editingFinished.connect(self.update_address_from_linedits)
             keycheck = QtWidgets.QCheckBox()
@@ -98,7 +111,7 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
 
             keycheck.stateChanged.connect(self.update_address_from_linedits)
             label = QtWidgets.QLabel(k)
-            label.setToolTip(atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k])
+            label.setToolTip(REV_MAP_DATAKEY[k])
             self.address_entries[k] = keyedit
             self.address_entries_check[k] = keycheck
             self.layout_keys.addWidget(label,i,0)
@@ -128,8 +141,8 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
         logger.debug(funcname)
         self.redvypr_address_full = address
         atmp = RedvyprAddress()
-        for k in atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY.keys():
-            entry_tmp = atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k]
+        for k in REV_MAP_DATAKEY.keys():
+            entry_tmp = REV_MAP_DATAKEY[k]
             keyentry = getattr(address,k)
             if keyentry not in ("", None):
                 self.address_entries[k].blockSignals(True)
@@ -145,15 +158,15 @@ class RedvyprAddressEditWidget(QtWidgets.QWidget):
         addr_input = {}
         addr_input_submit = {}
         addr_input_submit_format = ''
-        for k in atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY.keys():
+        for k in REV_MAP_DATAKEY.keys():
             entry_tmp = self.address_entries[k].text()
             #print("Got text for {}:{}".format(k,entry_tmp))
-            longform = atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k]
+            longform = REV_MAP_DATAKEY[k]
             if entry_tmp not in ("", None):
                 addr_input[longform] = entry_tmp
                 if self.address_entries_check[k].isChecked():
                     addr_input_submit[longform] = entry_tmp
-                    addr_input_submit_format += atmp.REV_LONGFORM_TO_SHORT_MAP_DATAKEY[k] + ','
+                    addr_input_submit_format += REV_MAP_DATAKEY[k] + ','
 
         addr_input_submit_format = addr_input_submit_format.rstrip(',')
         try:
@@ -1836,8 +1849,8 @@ class RedvyprMultipleAddressEditWidget(QtWidgets.QWidget):
         format_widget = QtWidgets.QGroupBox("Address format")
         format_layout = QtWidgets.QHBoxLayout(format_widget)
         atmp = RedvyprAddress()
-        for long_name in atmp.LONGFORM_TO_SHORT_MAP_DATAKEY.keys():
-            short_name = atmp.LONGFORM_TO_SHORT_MAP_DATAKEY[long_name]
+        for long_name in MAP_DATAKEY.keys():
+            short_name = MAP_DATAKEY[long_name]
             cb = QtWidgets.QCheckBox(long_name)
             if short_name in self.addrentries_for_str_format:
                 cb.setChecked(True)

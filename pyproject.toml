@@ -6,7 +6,7 @@ description = "redvypr: REaltime Data Viewer and PRocessor (in PYthon)"
 #long_description_content_type="text/x-rst"
 #url="https://github.com/redvypr/redvypr"
 authors = [
-    {name = "Peter Holtermann", email = "peter.holtermann@io-warnemuende.de"},
+    {name = "Peter Holtermann", email = "peter.holtermann@iow.de"},
 ]
 license = {text = "GPLv03"}
 dependencies = ['pyaml',

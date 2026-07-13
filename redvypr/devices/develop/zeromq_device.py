@@ -15,7 +15,7 @@ Configuration options for a network device:
        serialize: str # yaml,str default yaml
        protocol: tcp # tcp, udp default tcp
        direction: publish # publish, receive default receive
-       data: nmea # dictionary keys, default all
+       data: nmea_0183 # dictionary keys, default all
        tcp_reconnect: True # Try to reconnect to host if connection was closed
        tcp_numreconnect: 10 # The number of reconnection attempts
 """

@@ -78,7 +78,7 @@ def benchmark():
         f"{'Execution (__call__)':<30} | {int(n_exec / t_exec):>15,d} | {t_exec / n_exec * 1e6:>8.2f} µs")
 
     # 3. Matching
-    t_match = timeit.timeit(lambda: addr_obj.matches_filter(test_pkt), number=n_exec)
+    t_match = timeit.timeit(lambda: addr_obj.matches_packetfilter(test_pkt), number=n_exec)
     print(
         f"{'Matching (Filter only)':<30} | {int(n_exec / t_match):>15,d} | {t_match / n_exec * 1e6:>8.2f} µs")
     print("-" * 70)

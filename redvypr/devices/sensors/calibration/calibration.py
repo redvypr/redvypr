@@ -324,7 +324,7 @@ class Device(RedvyprDevice):
         :param folder:
         :return:
         """
-        funcname = __name__ + '__save_calibration__():'
+        funcname = __name__ + 'save_calibration__():'
         overwrite = True
         create_path = True
         fnames_full = self.save_widget_dict['fnames_full']

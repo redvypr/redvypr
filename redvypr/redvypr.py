@@ -147,7 +147,7 @@ def send_packets_to_devices(devicedict, devices, data_packets_fan_out, logger_di
                     numtag_packet = 0
                 # This is the main functionality for distribution, comparing a datapacket with a
                 # print('Testing packet',redvypr_address.RedvyprAddress(data_packet),numtag_packet,(data_packet in addr))
-                if addr.matches_filter(data_packet) and (
+                if addr.matches_packetfilter(data_packet) and (
                         numtag_packet < 2):  # Check if data packet fits with addr and if its not recirculated again
                     try:
                         # print(funcname + 'data to be sent',data)

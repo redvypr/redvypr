@@ -225,7 +225,7 @@ class SubscribeWidget(QtWidgets.QWidget):
                     #print('dev',dev.name,dev.redvypr.hostinfo)
                     for a in self.device.subscribed_addresses:
                         #print("Checking a",a)
-                        subscribed = a.matches_filter(dev.address)
+                        subscribed = a.matches_packetfilter(dev.address)
                         if subscribed:
                             break
 
@@ -251,7 +251,7 @@ class SubscribeWidget(QtWidgets.QWidget):
                             devaddress_redvypr = RedvyprAddress(devaddress)
                             subscribed = False
                             for a in self.device.subscribed_addresses:
-                                subscribed = a.matches_filter(devaddress_redvypr)
+                                subscribed = a.matches_packetfilter(devaddress_redvypr)
                                 if subscribed:
                                     #print('Subscribed',a,devaddress_redvypr)
                                     break

@@ -493,7 +493,7 @@ class DbTimescaleWriter():
                 #print("raddr",raddr)
                 #print(f"{table_name=},{table_type=},{raddr=}")
                 if table_type == "redvypr_datapacket":
-                    if raddr.matches_filter(data):
+                    if raddr.matches_packetfilter(data):
                         #print("Write packet to db table:{table_name}")
                         sql_command = self.get_sql_insert_datapacket(table_name, data)
                         if sql_command:

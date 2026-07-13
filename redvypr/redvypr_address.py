@@ -59,70 +59,44 @@ class SoftPlaceholder:
 
 
 class RedvyprAddress:
+    # Maps short prefixes to internal dunder representation and API-facing longforms.
     META_CONFIG = {
-        "i": {"path": "packetid", "internal": "__packetid__"},
-        "p": {"path": "publisher", "internal": "__publisher__"},
-        "d": {"path": "device", "internal": "__device__"},
-        "u": {"path": "host.uuid", "internal": "__host_uuid__"},
-        "a": {"path": "host.addr", "internal": "__host_addr__"},
-        "h": {"path": "host.host", "internal": "__host_host__"},
-        "ul": {"path": "localhost.uuid", "internal": "__localhost_uuid__"},
-        "al": {"path": "localhost.addr", "internal": "__localhost_addr__"},
-        "hl": {"path": "localhost.host", "internal": "__localhost_host__"},
+        "i": {"path": "packetid", "longform": "packetid", "internal": "__packetid__"},
+        "sn": {"path": "serialnumber", "longform": "serialnumber", "internal": "__serialnumber__"},
+        "p": {"path": "publisher", "longform": "publisher", "internal": "__publisher__"},
+        "d": {"path": "device", "longform": "device", "internal": "__device__"},
+        "u": {"path": "host.uuid", "longform": "uuid", "internal": "__host_uuid__"},
+        "a": {"path": "host.addr", "longform": "addr", "internal": "__host_addr__"},
+        "h": {"path": "host.host", "longform": "host", "internal": "__host_host__"},
+        "ul": {"path": "localhost.uuid", "longform": "uuid_local", "internal": "__localhost_uuid__"},
+        "al": {"path": "localhost.addr", "longform": "addr_local", "internal": "__localhost_addr__"},
+        "hl": {"path": "localhost.host", "longform": "host_local", "internal": "__localhost_host__"},
     }
 
-    # Für deinen Parser (Regex-Ersetzung) extrahieren wir einfach:
+    # 1. PREFIX_MAP (Short prefixes -> __dunder__ names)
+    # Dynamically generated to map shorthand address keys to safe internal fields.
+    # Example: {"i": "__packetid__", "d": "__device__", "u": "__host_uuid__", ...}
     PREFIX_MAP = {k: v["internal"] for k, v in META_CONFIG.items()}
 
-    # 1. PREFIX_MAP (Kurzformen -> __dunder__)
-    # Ergebnis: {"i": "__packetid__", "d": "__device__", ...}
-    PREFIX_MAP = {k: v["internal"] for k, v in META_CONFIG.items()}
+    # 2. LONGFORM_MAP (Longforms -> __dunder__ names)
+    # Dynamically generated to map API/keyword argument longforms to internal fields.
+    # Example: {"packetid": "__packetid__", "device": "__device__", "uuid": "__host_uuid__", ...}
+    LONGFORM_MAP = {v["longform"]: v["internal"] for v in META_CONFIG.values()}
 
-    # 2. LONGFORM_MAP (Langformen -> __dunder__)
-    # Hier korrigiert: Die Werte müssen auf die "__internal__" Namen zeigen!
-    LONGFORM_MAP = {
-        "packetid": "__packetid__",
-        "publisher": "__publisher__",
-        "device": "__device__",
-        "uuid": "__host_uuid__",
-        "host": "__host_host__",
-        "addr": "__host_addr__",
-        "uuid_local": "__localhost_uuid__",
-        "host_local": "__localhost_host__",
-        "addr_local": "__localhost_addr__",
-    }
-
-    # 3. Hilfs-Maps für die String-Repräsentation (Symmetrie)
-    LONGFORM_TO_SHORT_MAP = {
-        "packetid": "i", "publisher": "p", "device": "d",
-        "uuid": "u", "host": "h", "addr": "a",
-        "uuid_local": "ul", "host_local": "hl", "addr_local": "al",
-    }
-
-    # Erweiterte Map inklusive Datakey
-    LONGFORM_TO_SHORT_MAP_DATAKEY = {
-        "datakey": "k",
-        **LONGFORM_TO_SHORT_MAP
-    }
-
-    # Umkehrung für to_address_string ( __dunder__ -> Kurzprefix )
-    # Ergebnis: {"__device__": "d", "__packetid__": "i", ...}
+    # 3. INTERNAL_TO_PREFIX ( __dunder__ names -> Short prefixes )
+    # Used for reversing the process (e.g., inside to_address_string) to construct clean addresses.
+    # Example: {"__packetid__": "i", "__device__": "d", "__host_uuid__": "u", ...}
     INTERNAL_TO_PREFIX = {v["internal"]: k for k, v in META_CONFIG.items()}
 
-
-    common_address_formats = ['k,i', 'k,d,i', 'k', 'd', 'i', 'p', 'p,d', 'p,d,i', 'u,a,h,d,',
+    common_address_formats = ['k,i','k,i,sn', 'k,d,i', 'k', 'd', 'i', 'p', 'p,d', 'p,d,i', 'u,a,h,d,',
                             'u,a,h,d,i', 'k,u,a,h,d', 'k,u,a,h,d,i', 'a,h,d', 'a,h,d,i', 'a,h,p']
-
-    REV_PREFIX_MAP = {v: k for k, v in PREFIX_MAP.items()}
-    REV_LONGFORM_MAP = {v: k for k, v in LONGFORM_MAP.items()}
-    REV_LONGFORM_TO_SHORT_MAP = {v: k for k, v in LONGFORM_TO_SHORT_MAP.items()}
-    REV_LONGFORM_TO_SHORT_MAP_DATAKEY = {v: k for k, v in LONGFORM_TO_SHORT_MAP_DATAKEY.items()}
 
     def __init__(self,
                  expr: Union[str, "RedvyprAddress", dict, None] = None,
                  *,
                  datakey: Optional[str] = None,
                  packetid: Optional[Any] = None,
+                 serialnumber: Optional[Any] = None,
                  device: Optional[Any] = None,
                  publisher: Optional[Any] = None,
                  host: Optional[Any] = None,
@@ -192,6 +166,7 @@ class RedvyprAddress:
         # Keyword args
         kw_map = [
             ("packetid", packetid),
+            ("serialnumber", serialnumber),
             ("device", device),
             ("publisher", publisher),
             ("host", host),  # Mappt via LONGFORM_MAP auf __host_host__
@@ -409,7 +384,7 @@ class RedvyprAddress:
     # -------------------------
     # Eval helpers
     # -------------------------
-    def matches_filter(self, packet, soft_missing=True):
+    def matches_packetfilter(self, packet, soft_missing=True):
         # 0. No Filter
         if self._rhs_ast is None:
             return True
@@ -630,7 +605,7 @@ class RedvyprAddress:
             address = packet
 
         # 1. RHS Filter check
-        match_filter = self.matches_filter(packet, soft_missing=soft_missing)
+        match_filter = self.matches_packetfilter(packet, soft_missing=soft_missing)
         if match_filter == False:
             return False
 
@@ -675,8 +650,8 @@ class RedvyprAddress:
 
         Parameters
         ----------
-        packet : dict or RedvyprAddress
-            The input packet to evaluate. If a `RedvyprAddress` is provided, it is converted
+        packet : dict or RedvyprAddress or str
+            The input packet to evaluate. If a `RedvyprAddress` or str is provided, it is converted
             to a dictionary using `to_redvypr_dict()`. The packet can contain a `_redvypr`
             key for metadata (e.g., `packetid`, `device`, `publisher`), as it is the
             standard for redvypd datapackets.
@@ -739,14 +714,18 @@ class RedvyprAddress:
         >>> addr(packet)
         {'_redvypr': {'device': 'device1'}}
         """
-
+        redvypr_address = None # If input is a redvypr address, save it here
         if isinstance(packet, RedvyprAddress):
+            redvypr_address = packet
             packet = packet.to_redvypr_dict()
+        elif isinstance(packet, str):
+            redvypr_address = packet
+            packet = RedvyprAddress(packet).to_redvypr_dict()
         if self.left_expr is None and self._rhs_ast is None:
             return packet
         SAFE_GLOBALS = {"__builtins__": {}, "True": True, "False": False, "None": None}
         locals_map = dict(packet)
-        if self._rhs_ast and not self.matches_filter(packet,soft_missing=soft_missing):
+        if self._rhs_ast and not self.matches_packetfilter(packet, soft_missing=soft_missing):
             if strict:
                 raise FilterNoMatch("Packet did not match filter")
             else:
@@ -762,8 +741,11 @@ class RedvyprAddress:
                         raise KeyError(
                             "Found datakeys '!' (no-data) was requested")
                     return None
-                return packet  # Empty
-
+                # Return bool, if redvypr address, otherwise packet itself
+                if redvypr_address:
+                    return True
+                else:
+                    return packet  # Empty
 
             try:
                 # 1. Evaluate the expression (e.g., "'test@i:test'" becomes "test@i:test")
@@ -1522,6 +1504,7 @@ class RedvyprAddress:
             'h': self.host,
             'd': self.device,
             'i': self.packetid,
+            'sn': self.serialnumber,
             'p': self.publisher,
             'k': self.datakey,
             'uuid': self.uuid,
@@ -1529,6 +1512,7 @@ class RedvyprAddress:
             'host': self.host,
             'device': self.device,
             'packetid': self.packetid,
+            'serialnumber': self.serialnumber,
             'publisher': self.publisher,
             'datakey': self.datakey,
         }
