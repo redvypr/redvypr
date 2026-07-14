@@ -244,9 +244,6 @@ class RedvyprAddress:
     # -------------------------
     # RHS AST Parsing
     # -------------------------
-    import re
-    import ast
-
     def _parse_rhs(self, rhs: str) -> ast.Expression:
         s = rhs.strip()
         if not s:
