@@ -95,16 +95,7 @@ class RedvyprAddress:
                  expr: Union[str, "RedvyprAddress", dict, None] = None,
                  *,
                  datakey: Optional[str] = None,
-                 packetid: Optional[Any] = None,
-                 serialnumber: Optional[Any] = None,
-                 device: Optional[Any] = None,
-                 publisher: Optional[Any] = None,
-                 host: Optional[Any] = None,
-                 uuid: Optional[Any] = None,
-                 addr: Optional[Any] = None,
-                 host_local: Optional[Any] = None,
-                 uuid_local: Optional[Any] = None,
-                 addr_local: Optional[Any] = None):
+                 **kwargs):  # Alle expliziten Metadaten-Argumente durch **kwargs ersetzt
         self.left_expr: Optional[str] = None
         self._rhs_ast: Optional[ast.Expression] = None
         self.filter_keys: typing.Dict[str, list] = {}
@@ -138,8 +129,6 @@ class RedvyprAddress:
 
                     # Wenn ein Wert gefunden wurde, Constraint hinzufügen
                     if val not in (None, ''):
-                        # Wir speichern es direkt als Python-Vergleichs-String
-                        # e.g. "__packetid__ == 'test'"
                         constraints.append(f"{internal} == {repr(val)}")
                 except (KeyError, TypeError):
                     continue
@@ -152,36 +141,21 @@ class RedvyprAddress:
         # String input
         elif isinstance(expr, str):
             left, right = self._split_left_right_tokens(expr)
-            #print("left",left)
-            #print("right", right)
             self.left_expr = left
             if right:
                 self._rhs_ast = self._parse_rhs(right)
-
 
         # LHS via datakey
         if datakey is not None:
             self.left_expr = datakey
 
-        # Keyword args
-        kw_map = [
-            ("packetid", packetid),
-            ("serialnumber", serialnumber),
-            ("device", device),
-            ("publisher", publisher),
-            ("host", host),  # Mappt via LONGFORM_MAP auf __host_host__
-            ("uuid", uuid),  # Mappt via LONGFORM_MAP auf __host_uuid__
-            ("addr", addr),  # Korrigiert: hieß oben 'address', sollte 'addr' sein
-            ("host_local", host_local),
-            ("uuid_local", uuid_local),
-            ("addr_local", addr_local),
-        ]
-        for red_key, val in kw_map:
+        # DYNAMISCHE KEYWORD ARGS AUS META_CONFIG VERARBEITEN
+        for cfg in self.META_CONFIG.values():
+            longform = cfg["longform"]
+            val = kwargs.get(longform)
             if val not in (None, ''):
-                # delete_filter nutzt jetzt auch die LONGFORM_MAP Auflösung
-                self.delete_filter(red_key)
-                self.add_filter(red_key, "eq", val)
-
+                self.delete_filter(longform)
+                self.add_filter(longform, "eq", val)
 
         self._compiled_left = None
         self._compiled_rhs = None
@@ -1491,7 +1465,7 @@ class RedvyprAddress:
     def get_common_address_formats(self):
         return self.common_address_formats
 
-    def get_str_from_format(self, address_format='{k}@{u} and {a} and {h} and {d} and {p} and {i}'):
+    def get_str_from_format_legacy(self, address_format='{k}@{u} and {a} and {h} and {d} and {p} and {i}'):
         """ Returns a string of the redvypr address from a format string.
         """
         funcname = __name__ + '.get_str_from_format():'
