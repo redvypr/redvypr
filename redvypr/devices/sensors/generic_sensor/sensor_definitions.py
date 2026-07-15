@@ -12,7 +12,7 @@ import numpy
 import copy
 import logging
 import yaml
-from redvypr.redvypr_datadict import create_datadict as redvypr_create_datadict, RedvyprDatadict
+from redvypr.redvypr_datadict import create_redvypr_dict as redvypr_create_datadict, RedvyprDatadict
 from redvypr.metadata import add_metadata2datapacket
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.devices.sensors.calibration.calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationLinearFactor, \

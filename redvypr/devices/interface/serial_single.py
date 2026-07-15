@@ -14,7 +14,7 @@ import threading
 import redvypr
 import yaml
 import redvypr.files as redvypr_files
-from redvypr.redvypr_datadict import check_for_command, create_datadict
+from redvypr.redvypr_datadict import check_for_command, create_redvypr_dict
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.device import RedvyprDevice
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
@@ -309,8 +309,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 if chunksize > 0:
                     FLAG_CHUNK = len(rawdata_all) > chunksize
                     if(FLAG_CHUNK):
-                        data = create_datadict(device=devicename_redvypr,
-                                               packetid=packetid)
+                        data = create_redvypr_dict(device=devicename_redvypr,
+                                                   packetid=packetid)
                         data['t'] = time.time()
                         data['data'] = rawdata_all
                         data['comport'] = comport_device
@@ -329,8 +329,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 sentences_read += 1
                                 raw = rawdata_split[ind] + newpacket # reconstruct the data
                                 #print('raw', raw)
-                                data = create_datadict(device=devicename_redvypr,
-                                                       packetid=packetid)
+                                data = create_redvypr_dict(device=devicename_redvypr,
+                                                           packetid=packetid)
                                 data['t'] = time.time()
                                 data[pdconfig.datakey_recv_raw] = raw
                                 data['comport'] = comport_device

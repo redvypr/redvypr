@@ -132,7 +132,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
             if dt_tmp > (1/pdconfig.rand_freq_send):
                 #print("Sending rand")
                 t_last['rand'] = t_now
-                data = redvypr.data_packets.create_datadict(device = device_info['device'])
+                data = redvypr.data_packets.create_redvypr_dict(device = device_info['device'])
                 rand_data = pdconfig.rand_amp * (np.random.rand(10) - 0.5)
                 data['rand'] = float(rand_data.mean())
                 data['rand_std'] = float(np.std(rand_data))
@@ -168,7 +168,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
             dt_tmp = t_now - t_last['multisensor']
             if dt_tmp > (1 / pdconfig.multisensor_freq):
                 t_last['multisensor'] = t_now
-                data_multi = redvypr.data_packets.create_datadict(
+                data_multi = redvypr.data_packets.create_redvypr_dict(
                     device=device_info['device'], packetid="multisensor")
                 rand_data = pdconfig.rand_amp * (np.random.rand(pdconfig.multisensor_numsen) - 0.5)
                 data_multi['t'] = t_now
@@ -185,7 +185,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
             if dt_tmp > (1 / pdconfig.fast_freq_single):
                 t_last['fast'] = t_now
                 #print("Sending fast")
-                data = redvypr.data_packets.create_datadict(
+                data = redvypr.data_packets.create_redvypr_dict(
                     device=device_info['device'], packetid="fast_single")
                 rand_data = pdconfig.rand_amp * (np.random.rand(10) - 0.5)
                 data['t'] = t_now
@@ -196,7 +196,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                     try:
                         data_fast_merged
                     except:
-                        data_fast_merged = redvypr.data_packets.create_datadict(
+                        data_fast_merged = redvypr.data_packets.create_redvypr_dict(
                             device=device_info['device'], packetid="fast_merged")
                         data_fast_merged['t'] = []
                         data_fast_merged['fast_merged'] = []
@@ -222,7 +222,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
             if dt_tmp > (1 / pdconfig.latlon_freq):
                 t_last['latlon'] = t_now
                 # Create a position packet
-                data_latlon = redvypr.data_packets.create_datadict(packetid='latlon_random',device=device_info['device'])
+                data_latlon = redvypr.data_packets.create_redvypr_dict(packetid='latlon_random', device=device_info['device'])
                 data_latlon['lon'] = float(np.random.rand() - 0.5) * 180
                 data_latlon['lat'] = float(np.random.rand() - 0.5) * 90
                 data_latlon['t'] = time.time()
@@ -235,7 +235,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 t_last['complex'] = t_now
                 #print('Hallo')
                 # Add complex data
-                data = redvypr.data_packets.create_datadict(device='test_complex_data', packetid='complex_data')
+                data = redvypr.data_packets.create_redvypr_dict(device='test_complex_data', packetid='complex_data')
                 if counter == 0:
                     # Add metadata
 

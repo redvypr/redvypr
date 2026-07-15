@@ -13,6 +13,7 @@ redvypr changelog
 - Renamed `Datapacket` into `RedvyprDatadict` and `data_packets.py` into `redvypr_datadict.py`
 - Much cleaner RedvyprAddress init, allowing keywords to be set only by `RedvyprAddress.META_INFO`
 - renamed filenames in widgets folder to follow PEP standard
+- implemented redvypr_datadict cache in `RedvyprAddress`
  
 ---
 

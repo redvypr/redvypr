@@ -1,4 +1,5 @@
 import time
+import copy
 import logging
 import sys
 import re
@@ -98,7 +99,7 @@ class RedvyprDatadict(dict):
 
         if '_redvypr' not in self.keys():
             #create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None, publisher=None, hostinfo=None)
-            dataself = create_datadict(packetid=packetid, device=device)
+            dataself = create_redvypr_dict(packetid=packetid, device=device)
             self.update(dataself)
 
         self.address = RedvyprAddress(self)
@@ -1074,15 +1075,15 @@ class RedvyprDatadict(dict):
 
 
 
-def create_datadict(
+def create_redvypr_dict(
         data: Optional[Any] = None,
         datakey: Optional[str] = None,
         packetid: Optional[Union[str, int]] = None,
-        tu: Optional[float] = None,
+        tu: Optional[float| int | bool] = True,
         device: Optional[str] = None,
         publisher: Optional[str] = None,
+        raddress: Optional[str] = None,
         hostinfo: Optional[Dict[str, Any]] = None,
-        random_host: Optional[bool] = None
 ) -> Dict[str, Any]:
     """
     Creates a datadict dictionary used as the internal data structure in redvypr.
@@ -1104,8 +1105,8 @@ def create_datadict(
     :type packetid: str or int, optional
 
     :param tu: Unix timestamp (time units) for the packet.
-               Defaults to ``time.time()`` if None.
-    :type tu: float, optional
+               Defaults to ``time.time()`` if True.
+    :type tu: float int or None, optional
 
     :param device: Identifier of the source device.
     :type device: str, optional
@@ -1116,10 +1117,6 @@ def create_datadict(
     :param hostinfo: Dictionary containing host-related information.
                      Uses ``redvypr.hostinfo_blank`` if None.
     :type hostinfo: dict, optional
-
-    :param random_host: If True, generates a randomized host information
-                        using ``redvypr.create_hostinfo``.
-    :type random_host: bool, optional
 
     :return: A dictionary containing the ``_redvypr`` metadata header and
              the optional payload data.
@@ -1141,11 +1138,24 @@ def create_datadict(
               'datakey_name': data_payload  # optional
           }
     """
-    if tu is None:
+    if tu is True:
         tu = time.time()
 
     # Initialize the metadata structure
     datadict: Dict[str, Any] = {'_redvypr': {'t': tu}}
+
+    # Add the input from the redvypr-address
+    if raddress is not None:
+        if isinstance(raddress, str):
+            raddress = RedvyprAddress(raddress)
+            if packetid is None:
+                packetid = raddress.packetid
+            if device is None:
+                device = raddress.device
+            if publisher is None:
+                publisher = raddress.publisher
+        rdict = raddress.to_redvypr_dict(include_datakey=False)
+        datadict.update(rdict)
 
     # Set device and packetid logic
     datadict['_redvypr']['device'] = device
@@ -1163,16 +1173,24 @@ def create_datadict(
         # Assuming redvypr is available in the namespace
         datadict['_redvypr']['host'] = redvypr.hostinfo_blank
 
-    if random_host is not None:
-        datadict['_redvypr']['host'] = redvypr.create_hostinfo(random_host)
 
     # Insert payload data if present
     if data is not None:
-        if datakey is None:
-            datakey = 'data'
-        datadict[datakey] = data
+        if isinstance(data, dict) and datakey is None:
+            data_copy = copy.deepcopy(data)
+            data_copy.pop('_redvypr',None)
+            datadict.update(data_copy)
+        else:
+            if datakey is None:
+                datakey = 'data'
+            datadict[datakey] = copy.deepcopy(data)
 
     return datadict
+
+def create_redvypr_dict_random_host(hostname=None, random_host=True):
+    if random_host is not None:
+        datadict['_redvypr']['host'] = redvypr.create_hostinfo(random_host)
+
 
 
 def commandpacket(command='stop',device_uuid='',thread_uuid='',packetid=None,devicename=None,publisher=None,host=None,comdata=None,devicemodulename=None):
@@ -1187,7 +1205,7 @@ def commandpacket(command='stop',device_uuid='',thread_uuid='',packetid=None,dev
     Returns:
          compacket: A redvypr dictionary with the command
     """
-    compacket = create_datadict({'command':command}, datakey='_redvypr_command') # The command
+    compacket = create_redvypr_dict({'command':command}, datakey='_redvypr_command') # The command
     if packetid is not None:
         compacket['_redvypr']['packetid'] = packetid  # The device the command was sent from
     if devicename is not None:

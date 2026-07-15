@@ -18,7 +18,7 @@ import typing
 import re
 
 import redvypr.redvypr_datadict
-from redvypr.redvypr_datadict import check_for_command, create_datadict
+from redvypr.redvypr_datadict import check_for_command, create_redvypr_dict
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files

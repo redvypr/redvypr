@@ -61,10 +61,12 @@ class SoftPlaceholder:
 class RedvyprAddress:
     # Maps short prefixes to internal dunder representation and API-facing longforms.
     META_CONFIG = {
-        "i": {"path": "packetid", "longform": "packetid", "internal": "__packetid__"},
-        "sn": {"path": "serialnumber", "longform": "serialnumber", "internal": "__serialnumber__"},
-        "p": {"path": "publisher", "longform": "publisher", "internal": "__publisher__"},
         "d": {"path": "device", "longform": "device", "internal": "__device__"},
+        "di": {"path": "deviceid", "longform": "deviceid", "internal": "__deviceid__"},
+        "p": {"path": "publisher", "longform": "publisher", "internal": "__publisher__"},
+        "i": {"path": "packetid", "longform": "packetid", "internal": "__packetid__"},
+        "s": {"path": "sensor", "longform": "sensor", "internal": "__sensor__"},
+        "si": {"path": "sensorid", "longform": "sensorid", "internal": "__sensorid__"},
         "u": {"path": "host.uuid", "longform": "uuid", "internal": "__host_uuid__"},
         "a": {"path": "host.addr", "longform": "addr", "internal": "__host_addr__"},
         "h": {"path": "host.host", "longform": "host", "internal": "__host_host__"},
@@ -100,6 +102,9 @@ class RedvyprAddress:
         self._rhs_ast: Optional[ast.Expression] = None
         self.filter_keys: typing.Dict[str, list] = {}
         self.strict_no_datakey = False
+
+        self._redvypr_dict_datakey = None
+        self._redvypr_dict_nodatakey = None
 
         if expr == "":
             expr = None
@@ -188,6 +193,12 @@ class RedvyprAddress:
 
             # Compile the stuff
             self._compiled_left = compile(self._lhs_ast, '<string>', 'eval')
+
+        # Create a redvypr dict, to save processing time
+        self._redvypr_dict_datakey = None
+        self._redvypr_dict_nodatakey = None
+        self._redvypr_dict_datakey = self.to_redvypr_dict(include_datakey=True)
+        self._redvypr_dict_nodatakey = self.to_redvypr_dict(include_datakey=False)
 
 
     def _split_left_right_tokens(self, expr: str):
@@ -922,6 +933,11 @@ class RedvyprAddress:
         >>> addr.to_redvypr_dict(include_datakey=False)
         {'_redvypr': {'packetid': 42}}
         """
+        if include_datakey and self._redvypr_dict_datakey is not None:
+            return copy.deepcopy(self._redvypr_dict_datakey)
+        elif not include_datakey and self._redvypr_dict_nodatakey is not None:
+            return copy.deepcopy(self._redvypr_dict_nodatakey)
+
         # 1. Initialise
         root = {}
 

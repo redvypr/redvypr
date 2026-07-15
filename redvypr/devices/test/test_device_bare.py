@@ -45,7 +45,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 logger.debug('Command is for me: {:s}'.format(str(command)))
                 break
 
-        data = redvypr.data_packets.create_datadict(device = device_info['device'])
+        data = redvypr.data_packets.create_redvypr_dict(device = device_info['device'])
         data['data'] = float(np.random.rand(1)-0.5)
         data['sometext'] = 'Hallo {}'.format(counter)
         dataqueue.put(data)

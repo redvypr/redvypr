@@ -597,8 +597,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                 print("Count all", count_all)
                 metadata = redvypr.get_metadata(0, count_all)
                 print("Metadata",metadata)
-                metadata_packet = redvypr.data_packets.create_datadict(device='db_reader',
-                                                            packetid='metadata')
+                metadata_packet = redvypr.data_packets.create_redvypr_dict(device='db_reader',
+                                                                           packetid='metadata')
                 if len(metadata) > 0:
                     for m in metadata:
                         print("2", m['metadata'])

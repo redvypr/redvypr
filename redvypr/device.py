@@ -30,7 +30,7 @@ import typing
 import re
 
 import redvypr.metadata
-from redvypr.redvypr_datadict import commandpacket, create_datadict, RedvyprDatadict
+from redvypr.redvypr_datadict import commandpacket, create_redvypr_dict, RedvyprDatadict
 from redvypr.packet_statistic import do_data_statistics
 from redvypr.redvypr_address import RedvyprAddress, metadata_address
 
@@ -517,10 +517,10 @@ class RedvyprDevice(QtCore.QObject):
         self.__update_address__()
 
         # Add myself a-priori to the statistics
-        datapacket = create_datadict(device=self.name,
-                                     #packetid=self.name,
-                                     publisher=self.name,
-                                     hostinfo=self.host)
+        datapacket = create_redvypr_dict(device=self.name,
+                                         #packetid=self.name,
+                                         publisher=self.name,
+                                         hostinfo=self.host)
         datapacket['_redvypr']['devicemodulename'] = self.devicemodulename
         do_data_statistics(datapacket, self.statistics)
 

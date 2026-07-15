@@ -220,7 +220,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                             nmea_status[status_indexname]['packets_published'] += 1
                             nmea_metadata[sentence_type] = metadata_packet
                     else:
-                        data_parsed = redvypr.data_packets.create_datadict(data=msg.talker, datakey='talker', device=devname)
+                        data_parsed = redvypr.data_packets.create_redvypr_dict(data=msg.talker, datakey='talker', device=devname)
                         data_parsed['sentence_type'] = sentence_type
 
                         for field in msg.fields:

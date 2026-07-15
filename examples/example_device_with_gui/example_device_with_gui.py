@@ -12,7 +12,7 @@ import sys
 import pydantic
 import typing
 import redvypr.redvypr_datadict
-from redvypr.redvypr_datadict import check_for_command, create_datadict
+from redvypr.redvypr_datadict import check_for_command, create_redvypr_dict
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 import redvypr.widgets.standard_device_widgets #import redvypr_deviceInitWidget, displayDeviceWidget_standard
@@ -41,7 +41,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 logger.debug('Command is for me: {:s}'.format(str(command)))
                 break
 
-        data = redvypr.data_packets.create_datadict(device = device_info['device'])
+        data = redvypr.data_packets.create_redvypr_dict(device = device_info['device'])
         data['data'] = float(np.random.rand(1)-0.5)
         data['sometext'] = 'Hallo {}'.format(counter)
         dataqueue.put(data)

@@ -18,7 +18,7 @@ import redvypr.devices.sensors.generic_sensor.sensor_definitions as sensor_defin
 import redvypr.devices.sensors.calibration.calibration_models as calibration_models
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.devices.sensors.tar import nmea_mac64_utils
-from redvypr.redvypr_datadict import create_datadict as redvypr_create_datadict, RedvyprDatadict
+from redvypr.redvypr_datadict import create_redvypr_dict as redvypr_create_datadict, RedvyprDatadict
 from redvypr.metadata import add_metadata2datapacket
 
 logging.basicConfig(stream=sys.stderr)

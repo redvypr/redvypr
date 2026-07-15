@@ -68,7 +68,7 @@ def convert_HF(datapacket, loggerconfigurations=None):
 
     #datapacketSI = {}
     devicename = 'DHF_SI_' + mac
-    datapacketSI = data_packets.create_datadict(device=devicename, hostinfo=datapacket['_redvypr']['host'], tu=datapacket['t'])
+    datapacketSI = data_packets.create_redvypr_dict(device=devicename, hostinfo=datapacket['_redvypr']['host'], tu=datapacket['t'])
 
 
     datapacketSI['type'] = 'HFSI'
@@ -321,7 +321,7 @@ def process_HF_data(dataline, data, device_info, sensorconfig, config, macs_foun
         devicename = 'DHF_raw_' + macstr
         datapacket['datatype'] = 'raw'
         datapacket['t'] = data['_redvypr']['t']
-        datapacket_HF = data_packets.create_datadict(device=devicename, hostinfo=device_info['hostinfo'], tu=data['t'])
+        datapacket_HF = data_packets.create_redvypr_dict(device=devicename, hostinfo=device_info['hostinfo'], tu=data['t'])
         datapacket_HF.update(datapacket)
         if macstr not in macs_found['HF']:
             logger.debug(funcname + 'New MAC found, will add keyinfo')
@@ -384,7 +384,7 @@ def process_HFS_data(dataline, data, device_info):
     if datapacket is not None:
         macstr = datapacket['sn']
         devicename = 'DHF_SI_' + macstr
-        datapacket_HFSI = data_packets.create_datadict(device=devicename, hostinfo=device_info['hostinfo'], tu=data['t'])
+        datapacket_HFSI = data_packets.create_redvypr_dict(device=devicename, hostinfo=device_info['hostinfo'], tu=data['t'])
         datapacket_HFSI['type'] = 'HFSI'
         datapacket_HFSI['datatype'] = 'converted_' + macstr
         datapacket_HFSI.update(datapacket)

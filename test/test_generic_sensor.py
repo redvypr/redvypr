@@ -4,7 +4,7 @@ import time
 from redvypr.devices.sensors.calibration.calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationLinearFactor, CalibrationPoly
 
 hostinfo = redvypr.create_hostinfo(hostname='generic_sensor_test')
-datapacket = redvypr.data_packets.create_datadict(device='rawdata',hostinfo=hostinfo)
+datapacket = redvypr.data_packets.create_redvypr_dict(device='rawdata', hostinfo=hostinfo)
 datapacket['data'] = sensor_definitions.tar_b2_test1
 datapacket['t'] = time.time()
 print('Datapacket',datapacket)
