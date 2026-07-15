@@ -1,6 +1,6 @@
 import copy
 import datetime
-import redvypr.data_packets as data_packets
+import redvypr.redvypr_datadict as data_packets
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 import numpy
 import pydantic

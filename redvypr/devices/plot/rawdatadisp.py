@@ -10,7 +10,7 @@ import yaml
 import pydantic
 import typing
 from redvypr.device import RedvyprDevice
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.rawdatadisp')

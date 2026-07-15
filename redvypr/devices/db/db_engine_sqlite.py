@@ -20,7 +20,7 @@ from abc import ABC, abstractmethod
 from typing import Union, Iterator, Optional, Any, Dict, List, Literal
 from dataclasses import dataclass
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.data_packets import Datapacket
+from redvypr.redvypr_datadict import RedvyprDatadict
 from redvypr.serialize import serialize_json, deserialize_json
 from .db_config_util import DbWriteConfig, sanitize_name_for_db
 import numpy as np
@@ -807,14 +807,14 @@ class DbSqlite:
                         # and save all datakeys
                         if raddr.datakey is None and isinstance(data_addr,dict):
                             #print("Got a datapacket, expanding")
-                            rdata = Datapacket(data)
+                            rdata = RedvyprDatadict(data)
                             data_expanded = rdata.expand_data()
                             #print("data_expanded all", data_expanded)
                             #print("data_expanded",data_expanded.keys())
                         else:
                             #(t, data, datakey, raddress, address_format='k,i,h,d,p'):
                             data_expanded = {}
-                            data_expanded_tmp = Datapacket.create_expanded_datadict(t=tdata,data=data_addr,datakey=raddr.datakey,raddress=raddr)
+                            data_expanded_tmp = RedvyprDatadict.create_expanded_datadict(t=tdata, data=data_addr, datakey=raddr.datakey, raddress=raddr)
                             data_expanded[data_expanded_tmp['address']] = data_expanded_tmp
                             #print("Data expanded",data_expanded)
                             #data_expanded = {addr:{}}

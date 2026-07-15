@@ -17,7 +17,7 @@ import netCDF4
 
 import redvypr.metadata
 from redvypr.device import RedvyprDevice
-import redvypr.data_packets as data_packets
+import redvypr.redvypr_datadict as data_packets
 import redvypr.redvypr_address as redvypr_address
 import redvypr.packet_statistic as packet_statistics
 import redvypr.gui
@@ -266,7 +266,7 @@ class NetCDFWriter:
             self.data_buffer[hostname][publisher][devicename] = {}
 
         nc_device = self.nc[hostname][publisher][devicename]
-        datakeys = data_packets.Datapacket(data).datakeys()
+        datakeys = data_packets.RedvyprDatadict(data).datakeys()
 
         if 't' in datakeys:
             datakeys.remove('t')

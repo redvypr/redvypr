@@ -25,7 +25,7 @@ import typing
 
 import redvypr.metadata
 from redvypr.device import RedvyprDevice
-import redvypr.data_packets as data_packets
+import redvypr.redvypr_datadict as data_packets
 import redvypr.redvypr_address as redvypr_address
 import redvypr.gui
 

@@ -20,11 +20,11 @@ import numpy
 
 import redvypr.metadata
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 import redvypr.gui
-import redvypr.data_packets
+import redvypr.redvypr_datadict
 from redvypr.devices.plot import XYPlotWidget
 from .calibration_models import CalibrationData, CalibrationPoly, CalibrationNTC, \
     get_calibration_uuid
@@ -563,7 +563,7 @@ class QTableCalibrationWidget(QtWidgets.QTableWidget):
             # self.datastream is defined in the displayWidget
             daddr = redvypr.RedvyprAddress(self.datastream)
             dindex = self.sensorindex
-            rdata = redvypr.data_packets.Datapacket(data)
+            rdata = redvypr.data_packets.RedvyprDatadict(data)
         except:
             logger.info('No datastream yet ',exc_info=True)
             daddr = None

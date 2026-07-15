@@ -12,8 +12,8 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetStartonly, RedvyprdevicewidgetSimple
 import redvypr
 from redvypr.device import RedvyprDevice, device_start_standard
-from redvypr.data_packets import check_for_command
-import redvypr.data_packets as data_packets
+from redvypr.redvypr_datadict import check_for_command
+import redvypr.redvypr_datadict as data_packets
 import redvypr.gui as gui
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.devices.plot import TablePlotWidget

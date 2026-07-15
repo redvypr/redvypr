@@ -12,7 +12,7 @@ import sys
 import threading
 import pydantic
 import typing
-from redvypr.data_packets import check_for_command, create_datadict
+from redvypr.redvypr_datadict import check_for_command, create_datadict
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 

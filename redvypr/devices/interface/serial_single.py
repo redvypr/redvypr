@@ -14,7 +14,7 @@ import threading
 import redvypr
 import yaml
 import redvypr.files as redvypr_files
-from redvypr.data_packets import check_for_command, create_datadict
+from redvypr.redvypr_datadict import check_for_command, create_datadict
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.device import RedvyprDevice
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict

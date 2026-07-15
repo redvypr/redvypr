@@ -1,4 +1,4 @@
-import redvypr.data_packets
+import redvypr.redvypr_datadict
 
 data_packet = {'data': 'Hello World!', 'device': 'test_device_0', 'host': {'hostname': 'redvypr', 'tstart': 1670422195.4220772, 'addr': '192.168.178.26', 'uuid': '20221207150955.421856-93328248922693-013', 'local': True}, 't': 1670422215.8423817, 'numpacket': 3}
 print('Expanding address strings:')

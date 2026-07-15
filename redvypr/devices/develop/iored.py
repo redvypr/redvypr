@@ -105,8 +105,8 @@ import hashlib
 
 import redvypr
 from redvypr.device import RedvyprDevice
-from redvypr.data_packets import check_for_command
-import redvypr.data_packets as data_packets
+from redvypr.redvypr_datadict import check_for_command
+import redvypr.redvypr_datadict as data_packets
 import redvypr.files
 
 

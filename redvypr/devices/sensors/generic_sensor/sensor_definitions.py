@@ -12,7 +12,7 @@ import numpy
 import copy
 import logging
 import yaml
-from redvypr.data_packets import create_datadict as redvypr_create_datadict, Datapacket
+from redvypr.redvypr_datadict import create_datadict as redvypr_create_datadict, RedvyprDatadict
 from redvypr.metadata import add_metadata2datapacket
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.devices.sensors.calibration.calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationLinearFactor, \
@@ -73,7 +73,7 @@ class Sensor(pydantic.BaseModel):
         self.__all_calibrations = calibrations
 
 
-    def find_calibration_for_datapacket(self, rdata: Datapacket):
+    def find_calibration_for_datapacket(self, rdata: RedvyprDatadict):
         """
         Tries to find the right calibration for the datapacket
         :param rdata:
@@ -124,7 +124,7 @@ class Sensor(pydantic.BaseModel):
 
         if data in self.datastream or (check_own_address==False):
         #if True: # self.datastream does not work for binary sensors
-            rdata = Datapacket(data)
+            rdata = RedvyprDatadict(data)
             rdata_addressstr = rdata.get_addressstr('/i')
             # Check if autofindcalibration shall be done
             if self.autofindcalibration:

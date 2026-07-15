@@ -173,7 +173,7 @@ class NMEAMacProcessor():
                 flag_new_packets = False
                 #print('Checking for sensor',sensor)
                 # Check for overflow
-                datapacket = redvypr.Datapacket()
+                datapacket = redvypr.RedvyprDatadict()
                 datapacket['data'] = binary_data
                 datapacket['t'] = time.time()
                 data_packet_processed = None

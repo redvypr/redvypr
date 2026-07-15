@@ -6,7 +6,7 @@ import sys
 import qtawesome
 import redvypr.files as files
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.data_packets import Datapacket
+from redvypr.redvypr_datadict import RedvyprDatadict
 from .redvyprMetadataTable import RedvyprMetadataTable
 
 _logo_file = files.logo_file
@@ -1674,7 +1674,7 @@ class RedvyprDeviceTreeWidget(QtWidgets.QWidget):
                         # Sort keys sequentially to ensure parent nodes are generated before child nodes
                         for key in sorted(datakeys_info.keys()):
                             # Fetch metadata seamlessly using the hybrid static O(1) classmethod
-                            meta = Datapacket.get_datakey_info_from_dict(datakeys_info, key)
+                            meta = RedvyprDatadict.get_datakey_info_from_dict(datakeys_info, key)
                             print(f"update_device_tree metadata:{meta}")
 
                             # Build tree entry metadata row

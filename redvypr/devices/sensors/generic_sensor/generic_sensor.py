@@ -20,8 +20,8 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 import qtawesome
 
 import redvypr.metadata
-from redvypr.data_packets import check_for_command
-from  redvypr.data_packets import create_datadict as redvypr_create_datadict
+from redvypr.redvypr_datadict import check_for_command
+from  redvypr.redvypr_datadict import create_datadict as redvypr_create_datadict
 #import redvypr.config as redvypr_config
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.device import RedvyprDevice
@@ -744,7 +744,7 @@ class SensorWidget(QtWidgets.QWidget):
         #print('Fresh data:',data,type(data))
         if data in self.sensor_address:
             #print(funcname + ' Datapacket fits, Processing data')
-            rdata = redvypr.data_packets.Datapacket(data)
+            rdata = redvypr.data_packets.RedvyprDatadict(data)
             # Packets are sorted according to the packetid, as this is including the serialnumber
             packetid = rdata.address.packetid
             #print('Got data',rdata)

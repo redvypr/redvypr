@@ -14,11 +14,11 @@ from collections import defaultdict
 import redvypr.metadata
 
 logger = logging.getLogger(__name__)
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.data_packets import Datapacket
+from redvypr.redvypr_datadict import RedvyprDatadict
 from .db_engine_sqlite import SqliteConfig, DbSqlite
 
 logging.basicConfig(stream=sys.stderr)

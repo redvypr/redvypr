@@ -21,7 +21,7 @@ import threading
 import copy
 import zmq
 from redvypr.device import RedvyprDevice
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 import influxdb_client
 
 

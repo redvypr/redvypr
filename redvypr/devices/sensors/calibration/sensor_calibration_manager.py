@@ -25,7 +25,7 @@ from pathlib import Path
 
 import redvypr.metadata
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.data_packets import check_for_command, commandpacket
+from redvypr.redvypr_datadict import check_for_command, commandpacket
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple

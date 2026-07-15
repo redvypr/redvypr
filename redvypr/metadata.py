@@ -2,7 +2,7 @@ import typing
 import datetime
 import time
 import deepdiff
-from redvypr.data_packets import logger
+from redvypr.redvypr_datadict import logger
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.packet_statistic import logger
 

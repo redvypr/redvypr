@@ -12,12 +12,12 @@ import sys
 import pydantic
 import redvypr
 import redvypr.metadata
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from . import nmea_mac_process
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.data_packets import Datapacket
+from redvypr.redvypr_datadict import RedvyprDatadict
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.sensors.nmea_mac')
@@ -69,7 +69,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
         # Checking for datakey, if existing, process data
         try:
             #print(config["datastream"])
-            rawdata = Datapacket(datapacket)[config["datastream"]]
+            rawdata = RedvyprDatadict(datapacket)[config["datastream"]]
             #datapacket['t']
             #print("Rawdata",rawdata)
         except:

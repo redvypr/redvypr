@@ -1,8 +1,8 @@
 from .redvypr import *
 from .redvypr_address import RedvyprAddress, metadata_address
 #from .devices import *
-from . import data_packets
-from .data_packets import Datapacket
+from . import redvypr_datadict
+from .redvypr_datadict import RedvyprDatadict
 from . import gui
 from . import logging_utils
 from .widgets import *

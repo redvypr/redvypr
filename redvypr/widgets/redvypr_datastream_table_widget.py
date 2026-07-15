@@ -5,7 +5,7 @@ import logging
 import sys
 import qtawesome
 import redvypr.files as files
-import redvypr.data_packets as data_packets
+import redvypr.redvypr_datadict as data_packets
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.widgets.redvyprAddressWidget import RedvyprMultipleAddressesWidget
 

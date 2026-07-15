@@ -20,7 +20,7 @@ import pympler.asizeof
 import pydantic
 import typing
 from redvypr.device import RedvyprDevice
-import redvypr.data_packets as data_packets
+import redvypr.redvypr_datadict as data_packets
 import redvypr.redvypr_address as redvypr_address
 import redvypr.packet_statistic as packet_statistics
 import redvypr.gui
@@ -367,7 +367,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     except:
                         numpacket = -1
 
-                    datapacket = data_packets.Datapacket(data)
+                    datapacket = data_packets.RedvyprDatadict(data)
                     datakeys = datapacket.datakeys(expand=config['datakey_expansionlevel'],return_type='list')
                     #print('datakeys',datakeys)
                     lineindex = row_firstdata + device_worksheets_indices[packet_address_str]['numline']

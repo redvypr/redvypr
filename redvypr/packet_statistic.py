@@ -2,7 +2,7 @@ import sys
 import logging
 import copy
 from .redvypr_address import RedvyprAddress, redvypr_standard_address_filter
-import redvypr.data_packets as data_packets
+import redvypr.redvypr_datadict as data_packets
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.base.packet_statistics')
@@ -192,14 +192,14 @@ def do_data_statistics(data, statdict, address_data=None):
 
     # Deeper check, data types and expanded data types
     # Calculate hash first to look up the global structural cache
-    struct_hash = data_packets.Datapacket.get_structure_hash(data)
+    struct_hash = data_packets.RedvyprDatadict.get_structure_hash(data)
 
     if struct_hash in STRUCTURE_CACHE:
         datakeys_expanded = STRUCTURE_CACHE[struct_hash]['datakeys_expanded']
         datakeys_info = STRUCTURE_CACHE[struct_hash]['datakeys_info']
     else:
         # Cache Miss: Parse structure using the Datapacket wrapper
-        rdata = data_packets.Datapacket(data)
+        rdata = data_packets.RedvyprDatadict(data)
         datakeys_expanded = rdata.datakeys(expand=True)
         datakeys_info = rdata.datakeys_info()  # Resolves time-alignments and cache results internally
 
@@ -289,13 +289,13 @@ def do_data_statistics_legacy(data, statdict, address_data = None):
 
     # Deeper check, data types and expanded data types
     # Calculate hash first
-    struct_hash = data_packets.Datapacket.get_structure_hash(data)
+    struct_hash = data_packets.RedvyprDatadict.get_structure_hash(data)
     if struct_hash in STRUCTURE_CACHE: # doing nothing
         datakeys_expanded = STRUCTURE_CACHE[struct_hash]['datakeys_expanded']
         #datastreams_expanded = STRUCTURE_CACHE[struct_hash]['datastreams_expanded']
     else:
         # update cache
-        rdata = data_packets.Datapacket(data)
+        rdata = data_packets.RedvyprDatadict(data)
         datakeys_expanded = rdata.datakeys(expand=True)
         #datastreams_expanded = rdata.datastreams(expand=True, return_type = "address_type") # Get datastreams with datatype
         STRUCTURE_CACHE[struct_hash] = {'datakeys_expanded':datakeys_expanded}

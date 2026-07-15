@@ -12,10 +12,10 @@ import copy
 
 import redvypr.metadata
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
-import redvypr.data_packets
-import redvypr.data_packets as data_packets
+import redvypr.redvypr_datadict
+import redvypr.redvypr_datadict as data_packets
 from redvypr.device import RedvyprDevice
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 
 
 logging.basicConfig(stream=sys.stderr)
@@ -161,7 +161,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         #print('Data',data)
         # Check if the datakey is in the datapacket
         if len(config['datakey']) == 0:
-            datakeys = redvypr.data_packets.Datapacket(data).datakeys()
+            datakeys = redvypr.data_packets.RedvyprDatadict(data).datakeys()
         else:
             if config['datakey'] in data.keys():
                 datakeys = [config['datakey']]

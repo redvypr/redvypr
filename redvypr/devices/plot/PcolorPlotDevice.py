@@ -11,7 +11,7 @@ import redvypr
 from redvypr.device import RedvyprDevice, device_start_standard
 from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetStartonly
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 from redvypr.redvypr_address import RedvyprAddress
 import redvypr.files as redvypr_files
 
@@ -338,7 +338,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetStartonly):
             #print('Got data', data)
             print('Datastream', self.device.custom_config.datastream)
             print('Datastream2', self.device.custom_config.datastream(data))
-            rdata = redvypr.data_packets.Datapacket(data)
+            rdata = redvypr.data_packets.RedvyprDatadict(data)
             if self.device.custom_config.datastream(data, strict=False) is not None:
                 self.pcolorplot.update_data(rdata)
 

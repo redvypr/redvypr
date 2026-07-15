@@ -5,7 +5,7 @@ import sys
 import pydantic
 import typing
 import qtawesome
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.redvypr_address import RedvyprAddress
 from .db_util_widgets import DBStatusDialog, TimescaleDbConfigWidget, DBConfigWidget

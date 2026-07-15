@@ -19,11 +19,11 @@ import random
 import pydantic
 import typing
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 import redvypr.files as redvypr_files
 import redvypr.gui
-import redvypr.data_packets
+import redvypr.redvypr_datadict
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from redvypr.gui import RedvyprAddressWidget
 from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly
@@ -403,7 +403,7 @@ class Autocalwidget(QtWidgets.QWidget):
         if data in self._autocal_entry_run.channel:
             #print('Data for autocalibration',data)
             item_value = self.calentrytable.item(self.config.start_index, self.col_value)
-            rdata = redvypr.data_packets.Datapacket(data)
+            rdata = redvypr.data_packets.RedvyprDatadict(data)
             valuedata = rdata[self._autocal_entry_run.channel]
             valuedatastr = str(valuedata)
             item_value.setText(valuedatastr)
@@ -414,7 +414,7 @@ class Autocalwidget(QtWidgets.QWidget):
                 #print('Found steady paramter')
                 steady_true = self._autocal_entry_run.channel_steady_true
                 steady_false = self._autocal_entry_run.channel_steady_false
-                rdata = redvypr.data_packets.Datapacket(data)
+                rdata = redvypr.data_packets.RedvyprDatadict(data)
                 steadydata = rdata[self._autocal_entry_run.channel_steady]
                 #print('Steadydata',steadydata)
                 # Check if steady and at least next_entry_min_time seconds

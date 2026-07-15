@@ -13,7 +13,7 @@ import typing
 import redvypr.metadata
 from redvypr.widgets.redvyprAddressWidget import datastreamQTreeWidget, RedvyprAddressWidget, RedvyprAddressEditWidget
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.data_packets import RedvyprMetadataGeneral
+from redvypr.redvypr_datadict import RedvyprMetadataGeneral
 
 
 logging.basicConfig(stream=sys.stderr)

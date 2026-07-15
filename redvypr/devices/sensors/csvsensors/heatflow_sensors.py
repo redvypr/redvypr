@@ -1,5 +1,5 @@
 import datetime
-import redvypr.data_packets as data_packets
+import redvypr.redvypr_datadict as data_packets
 import numpy
 import logging
 import sys

@@ -16,12 +16,12 @@ import copy
 from typing import Any, Dict
 
 import redvypr.metadata
-from redvypr.data_packets import Datapacket
+from redvypr.redvypr_datadict import RedvyprDatadict
 from redvypr.device import RedvyprDeviceCustomConfig
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
-import redvypr.data_packets
-from redvypr.data_packets import check_for_command
+import redvypr.redvypr_datadict
+from redvypr.redvypr_datadict import check_for_command
 import pydantic
 
 logging.basicConfig(stream=sys.stderr)
@@ -173,10 +173,10 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                 rand_data = pdconfig.rand_amp * (np.random.rand(pdconfig.multisensor_numsen) - 0.5)
                 data_multi['t'] = t_now
                 data_multi['multisensor'] = {'sensors':list(rand_data)}
-                dinfo = Datapacket(data_multi).datakeys_info()
+                dinfo = RedvyprDatadict(data_multi).datakeys_info()
                 print("data_multi",data_multi)
                 print(f"{dinfo=}")
-                print(f"Datakey info:{Datapacket(data_multi).get_datakey_info("multisensor")}")
+                print(f"Datakey info:{RedvyprDatadict(data_multi).get_datakey_info("multisensor")}")
                 dataqueue.put(data_multi)
 
 

@@ -12,7 +12,7 @@ import logging
 import sys
 import pydantic
 import redvypr
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 from redvypr.device import RedvyprDevice
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.devices.sensors.generic_sensor.calibrationWidget import GenericSensorCalibrationWidget
@@ -530,7 +530,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
                             # And now the real data
                             for i, d in enumerate(datatar_show):
-                                rdata = redvypr.Datapacket(data)
+                                rdata = redvypr.RedvyprDatadict(data)
                                 if len(datatar_show) > 1:
                                     datakey = "{}[{}]".format(datatype,i)
                                 else:

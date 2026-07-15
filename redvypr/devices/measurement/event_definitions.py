@@ -1,7 +1,7 @@
 import datetime
 import logging
 import sys
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 import pydantic
 from pydantic import field_validator
 import typing

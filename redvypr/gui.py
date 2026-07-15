@@ -16,7 +16,7 @@ from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticD
 from redvypr.widgets.dict_qtree_widget import Dictqtreewidget
 from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidget, RedvyprMultipleAddressesWidget
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.data_packets import RedvyprMetadata, RedvyprDeviceMetadata
+from redvypr.redvypr_datadict import RedvyprMetadata, RedvyprDeviceMetadata
 import redvypr.files as files
 import redvypr.device as device
 

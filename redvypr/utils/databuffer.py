@@ -95,7 +95,7 @@ class DatapacketAvg:
             return data_ret
 
     def append(self, datapacket):
-        rdata = redvypr.Datapacket(datapacket)
+        rdata = redvypr.RedvyprDatadict(datapacket)
         if datapacket in self.address:
             avg_data = rdata[self.address]
             # Here should e something like a type check

@@ -17,12 +17,12 @@ import pydantic
 import typing
 import re
 
-import redvypr.data_packets
-from redvypr.data_packets import check_for_command, create_datadict
+import redvypr.redvypr_datadict
+from redvypr.redvypr_datadict import check_for_command, create_datadict
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
-from redvypr.data_packets import RedvyprMetadata, RedvyprDeviceMetadata
+from redvypr.redvypr_datadict import RedvyprMetadata, RedvyprDeviceMetadata
 from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, \
     datastreamMetadataWidget
 from redvypr.widgets.dict_qtree_widget import Dictqtreewidget

@@ -12,7 +12,7 @@ import pydantic
 from pydantic.color import Color as pydColor
 #from pydantic_extra_types import Color as pydColor
 import typing
-import redvypr.data_packets
+import redvypr.redvypr_datadict
 import redvypr.gui
 import redvypr.files as files
 import redvypr.metadata
@@ -20,8 +20,8 @@ from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
 from redvypr.widgets.redvyprAddressWidget import RedvyprAddressEditWidget
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.data_packets import Datapacket
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import RedvyprDatadict
+from redvypr.redvypr_datadict import check_for_command
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.TablePlotWidget')
@@ -242,7 +242,7 @@ class TablePlotWidget(QtWidgets.QWidget):
         """
         """
         funcname = __name__ + '.update_data():'
-        rdata = Datapacket(data)
+        rdata = RedvyprDatadict(data)
         if self.config.ignore_command_packets:
             command = check_for_command(data)
             if self.config.ignore_metadata_packets:

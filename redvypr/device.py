@@ -30,7 +30,7 @@ import typing
 import re
 
 import redvypr.metadata
-from redvypr.data_packets import commandpacket, create_datadict, Datapacket
+from redvypr.redvypr_datadict import commandpacket, create_datadict, RedvyprDatadict
 from redvypr.packet_statistic import do_data_statistics
 from redvypr.redvypr_address import RedvyprAddress, metadata_address
 
@@ -1090,7 +1090,7 @@ class RedvyprDevice(QtCore.QObject):
             else:
                 dkeys = self.statistics['device_redvypr'][devaddr.to_address_string()][
                     'datakeys_expanded']
-                datastreams.extend(Datapacket.datastreams_from_datakeys(dkeys,return_type=return_type, expand=expand))
+                datastreams.extend(RedvyprDatadict.datastreams_from_datakeys(dkeys, return_type=return_type, expand=expand))
 
 
         return datastreams

@@ -22,7 +22,7 @@ data_packet_processed = tar_sensor.datapacket_process(datapacket)
 print('Data packet processed (without calibration)',data_packet_processed)
 
 # Get the expanded datastreams
-rdata = redvypr.data_packets.Datapacket(data_packet_processed[0])
+rdata = redvypr.data_packets.RedvyprDatadict(data_packet_processed[0])
 datakeys = rdata.datakeys(expand=True)
 print('Datakeys',datakeys)
 caladdr = redvypr.redvypr_address.RedvyprAddress(datakey=datakeys['TAR'][0][0])

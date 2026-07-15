@@ -2,7 +2,7 @@ import logging
 import numpy as np
 import sys
 from redvypr.redvypr_address import RedvyprAddress
-import redvypr.data_packets as data_packets
+import redvypr.redvypr_datadict as data_packets
 
 
 logging.basicConfig(stream=sys.stderr)

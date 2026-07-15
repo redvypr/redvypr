@@ -3,14 +3,13 @@ import logging
 import sys
 import re
 import redvypr
-#import redvypr.redvypr_address as redvypr_address
 from redvypr.redvypr_address import RedvyprAddress
 import pydantic
 import typing
 from typing import Any, Dict, Optional, Union
 
 logging.basicConfig(stream=sys.stderr)
-logger = logging.getLogger('redvypr.base.data_packets')
+logger = logging.getLogger('redvypr.base.redvypr_datadict')
 logger.setLevel(logging.DEBUG)
 
 regex_symbol_start = '{'
@@ -35,7 +34,7 @@ class RedvyprDatastreamMetadata(pydantic.BaseModel):
 class RedvyprMetadataGeneral(pydantic.BaseModel):
     address: typing.Dict[str, typing.Any] = {}
 
-class Datapacket(dict):
+class RedvyprDatadict(dict):
     """
     The `Datapacket` class extends the built-in `dict` class to include additional functionality for managing
     data packets, including initialization with specific parameters and automatic generation of metadata that is
@@ -44,9 +43,9 @@ class Datapacket(dict):
 
     Examples
     --------
-    >>> from redvypr import Datapacket
+    >>> from redvypr import RedvyprDatadict
     >>> from redvypr import RedvyprAddress
-    >>> ar = Datapacket({'a': [[2, 3, 4], 2, 3, 4]})
+    >>> ar = RedvyprDatadict({'a': [[2, 3, 4], 2, 3, 4]})
     >>> addr = RedvyprAddress('/k:["a"][0]')
     >>> ar[addr]
     [2, 3, 4]
@@ -94,7 +93,6 @@ class Datapacket(dict):
 
         else:
             dict.__init__(self)
-
 
         self._cache = {} # For calculated datakeys, etc. ...
 
@@ -171,7 +169,7 @@ class Datapacket(dict):
 
         Examples
         --------
-        >>> ar = Datapacket({'a': [[2, 3, 4], 2, 3, 4]})
+        >>> ar = RedvyprDatadict({'a': [[2, 3, 4], 2, 3, 4]})
         >>> ar.datakeys(expand=False)
         ['a']
 
@@ -271,7 +269,7 @@ class Datapacket(dict):
 
         Examples
         --------
-        >>> ar = Datapacket({'a': [[2, 3, 4], 2, 3, 4]})
+        >>> ar = RedvyprDatadict({'a': [[2, 3, 4], 2, 3, 4]})
         >>> ar.datakeys(expand=False)
         ['a']
 
@@ -569,14 +567,14 @@ class Datapacket(dict):
         --------
         >>> # Example A: High-performance lookup inside a QTree Widget (using pre-calculated stats)
         >>> stats_info = device_stats.get('datakeys_info', {})
-        >>> meta = Datapacket.get_datakey_info_from_dict(stats_info, "multisensor[0]")
+        >>> meta = RedvyprDatadict.get_datakey_info_from_dict(stats_info, "multisensor[0]")
 
         >>> # Example B: On-the-fly fallback calculation using a raw data dictionary
         >>> raw_packet = {"t": 1700000000, "multisensor": [10, 20]}
-        >>> meta = Datapacket.get_datakey_info_from_dict(raw_packet, "multisensor[0]")
+        >>> meta = RedvyprDatadict.get_datakey_info_from_dict(raw_packet, "multisensor[0]")
 
         >>> # Example C: Direct instance call using the shortcut method
-        >>> packet = Datapacket(raw_packet)
+        >>> packet = RedvyprDatadict(raw_packet)
         >>> meta = packet.get_datakey_info("multisensor[0]")
         """
         if data is None:
@@ -771,7 +769,7 @@ class Datapacket(dict):
             fallback_types = {k: type(self[k]) for k in payload}
 
         # Delegate execution path to the static helper method
-        return Datapacket.datastreams_from_datakeys(
+        return RedvyprDatadict.datastreams_from_datakeys(
             datakeys_payload=payload,
             base_address=self.address,
             return_type=return_type,
@@ -802,7 +800,7 @@ class Datapacket(dict):
             fallback_types = {k: type(self[k]) for k in payload}
 
         # 2. Delegiere an die statische Methode
-        return Datapacket.datastreams_from_datakeys(
+        return RedvyprDatadict.datastreams_from_datakeys(
             datakeys_payload=payload,
             base_address=self.address,
             return_type=return_type,
@@ -1171,42 +1169,6 @@ def create_datadict(
     # Insert payload data if present
     if data is not None:
         if datakey is None:
-            datakey = 'data'
-        datadict[datakey] = data
-
-    return datadict
-
-
-def create_datadict_legacy(data=None,
-                    datakey=None,
-                    packetid=None,
-                    tu=None,
-                    device=None,
-                    publisher=None,
-                    hostinfo=None,
-                    random_host=None):
-    """ Creates a datadict dictionary used as internal datastructure in redvypr
-    """
-    if(tu == None):
-        tu = time.time()
-
-    datadict = {'_redvypr':{'t':tu}}
-    datadict['_redvypr']['device'] = device
-    if (packetid is None):
-            datadict['_redvypr']['packetid'] = device
-    else:
-        datadict['_redvypr']['packetid'] = packetid
-
-    datadict['_redvypr']['publisher'] = publisher
-    if (hostinfo is not None):
-        datadict['_redvypr']['host'] = hostinfo
-    else:
-        datadict['_redvypr']['host'] = redvypr.hostinfo_blank
-    if random_host is not None:
-        datadict['_redvypr']['host'] = redvypr.create_hostinfo(random_host)
-
-    if(data is not None):
-        if (datakey == None):
             datakey = 'data'
         datadict[datakey] = data
 

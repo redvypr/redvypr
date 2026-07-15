@@ -8,11 +8,11 @@ import sys
 import pydantic
 import typing
 import copy
-import redvypr.data_packets
+import redvypr.redvypr_datadict
 from redvypr.device import RedvyprDevice
-import redvypr.data_packets as data_packets
+import redvypr.redvypr_datadict as data_packets
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 
 logging.basicConfig(stream=sys.stderr)
@@ -91,8 +91,8 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
 
             # print('Packet avg raw',packet_avg)
             if packet_avg is not None:
-                data_tmp = redvypr.Datapacket(data)  # packetid=packetid_final)
-                dpublish = redvypr.Datapacket(packetid=data_tmp.address.packetid)  # packetid=packetid_final)
+                data_tmp = redvypr.RedvyprDatadict(data)  # packetid=packetid_final)
+                dpublish = redvypr.RedvyprDatadict(packetid=data_tmp.address.packetid)  # packetid=packetid_final)
                 packet_avg.update(dpublish)
                 print('Packet avg',packet_avg)
                 dataqueue.put(packet_avg)

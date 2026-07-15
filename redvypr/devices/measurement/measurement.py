@@ -8,7 +8,7 @@ from redvypr.device import RedvyprDeviceCustomConfig, RedvyprDevice
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetStartonly, RedvyprdevicewidgetSimple
 from redvypr.widgets.redvyprMetadataWidget import MetadataWidget
 from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidget, RedvyprMultipleAddressesWidget
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 import pydantic
 import typing
 import qtawesome

@@ -6,7 +6,7 @@ import pydantic
 import typing
 import qtawesome
 from redvypr.device import RedvyprDevice
-from redvypr.data_packets import check_for_command, commandpacket
+from redvypr.redvypr_datadict import check_for_command, commandpacket
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple, RedvyprDeviceStartStopKillConfigWidget
 from redvypr.redvypr_address import RedvyprAddress
 from .db_config_util import DbConfigWidget, DbTableConfig

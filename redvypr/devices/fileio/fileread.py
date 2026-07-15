@@ -12,7 +12,7 @@ import typing
 import copy
 import os
 from redvypr.device import RedvyprDevice
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 from redvypr.packet_statistic import do_data_statistics, create_data_statistic_dict
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 

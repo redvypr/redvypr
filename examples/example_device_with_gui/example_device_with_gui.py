@@ -11,8 +11,8 @@ import logging
 import sys
 import pydantic
 import typing
-import redvypr.data_packets
-from redvypr.data_packets import check_for_command, create_datadict
+import redvypr.redvypr_datadict
+from redvypr.redvypr_datadict import check_for_command, create_datadict
 from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 import redvypr.widgets.standard_device_widgets #import redvypr_deviceInitWidget, displayDeviceWidget_standard

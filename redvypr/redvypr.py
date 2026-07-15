@@ -30,7 +30,7 @@ from pyqtconsole.highlighter import format
 import platform
 import redvypr
 # Import redvypr specific stuff
-import redvypr.data_packets as data_packets
+import redvypr.redvypr_datadict as data_packets
 import redvypr.metadata
 import redvypr.redvypr_address as redvypr_address
 from redvypr.redvypr_address import RedvyprAddress

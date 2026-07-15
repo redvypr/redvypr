@@ -12,11 +12,11 @@ import copy
 from collections import defaultdict
 import datetime
 from PyQt6 import QtWidgets, QtCore
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.data_packets import Datapacket
+from redvypr.redvypr_datadict import RedvyprDatadict
 from .db_engine_sqlite import SqliteConfig, DbSqlite, DataQuery
 import redvypr.devices.fileio.netcdfwriter as ncwriter
 

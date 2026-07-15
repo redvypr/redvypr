@@ -34,7 +34,7 @@ print(data)
 
 
 print('And now get the datakeys')
-rdata = redvypr.data_packets.Datapacket(data)
+rdata = redvypr.data_packets.RedvyprDatadict(data)
 (datakeys,datakeys_dict) = rdata.datakeys(expand=True,return_type='both')
 print('Datakeys',datakeys)
 print('Datakeys',datakeys_dict)
@@ -43,5 +43,5 @@ print('Datakeys',datakeys_dict)
 # Create a dictionary with some data, but with a list in 't'
 data2 = {'t':[3.5,4.0,7.,10],'str':'Hello2','x':[3.5*2,4.0*2,7.*1,10*4],'y':20,'z':[1,2,3,4],'u':{'a':[5,6,7],'b':'Hello'}}
 redvypr.redvypr_packet_statistic.treat_datadict(data2, devicename2, hostinfo2, numpacket2, tread2, devicemodulename2)
-rdata2 = redvypr.data_packets.Datapacket(data2)
+rdata2 = redvypr.data_packets.RedvyprDatadict(data2)
 rdata2.expand_data()

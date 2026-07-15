@@ -19,7 +19,7 @@ import copy
 import pydantic
 import typing
 from redvypr.device import RedvyprDevice
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 import redvypr.redvypr_address as redvypr_address
 import redvypr.packet_statistic as packet_statistic
 from redvypr.widgets.dict_qtree_widget import Dictqtreewidget

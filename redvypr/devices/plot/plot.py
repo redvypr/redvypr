@@ -13,7 +13,7 @@ import pyqtgraph.dockarea
 import qtawesome
 import pydantic
 import typing
-import redvypr.data_packets
+import redvypr.redvypr_datadict
 from redvypr.device import RedvyprDevice
 from redvypr.gui import iconnames
 from redvypr.devices.plot.XYPlotWidget import XYPlotWidget, ConfigXYplot
@@ -21,7 +21,7 @@ from redvypr.devices.plot.TablePlotWidget import TablePlotWidget, ConfigTablePlo
 from redvypr.devices.plot.PcolorPlotDevice import PcolorPlotWidget, ConfigPcolorPlot
 import redvypr.files as files
 from redvypr.device import device_start_standard
-from redvypr.data_packets import check_for_command
+from redvypr.redvypr_datadict import check_for_command
 #from redvypr.redvypr_packet_statistic import do_data_statistics, create_data_statistic_dict
 #from redvypr.configdata import configdata, getdata
 
