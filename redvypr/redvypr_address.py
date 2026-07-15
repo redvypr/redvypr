@@ -886,30 +886,64 @@ class RedvyprAddress:
         return flat_data
 
     def to_redvypr_dict(self, include_datakey: bool = True) -> dict:
-        """Führt die Strukturen von LHS und RHS zusammen."""
-        # 1. Metadaten und Root initialisieren
+        """
+        Creates a redvypr dictionary.
+
+        Create a dictionary with the additional '_redvypr' datakey containing information for the
+        datapacket. Dictionaries of this form are the base for the redvypr datadictionaries used
+        to transport data between the redvypr devices and instances.
+
+        Parameters
+        ----------
+        include_datakey : bool, optional
+            Determines whether the data path structure from the datakey
+            should be included in the final dictionary. If False, only the
+            metadata and constraints structure (RHS) is returned.
+            Default is True.
+
+        Returns
+        -------
+        dict
+            The merged dictionary containing the data path structure (if enabled)
+            as well as the metadata under the '_redvypr' key.
+
+        See Also
+        --------
+        RedvyprDatadict : A dictionary of the form generated here with extra functionality to work with RedvyprAddresses.
+
+
+        Examples
+        --------
+        >>> from redvypr import RedvyprAddress
+        >>> addr = RedvyprAddress("payload['y'] @ i:42")
+        >>> addr.to_redvypr_dict()
+        {'payload': {'y': True}, '_redvypr': {'packetid': 42}}
+
+        >>> addr.to_redvypr_dict(include_datakey=False)
+        {'_redvypr': {'packetid': 42}}
+        """
+        # 1. Initialise
         root = {}
 
-        # 2. LHS verarbeiten (Struktur-Pfade)
-        root = self.to_redvypr_dict_lhs()
+        # 2. process LHS
+        if include_datakey:
+            root = self.to_redvypr_dict_lhs()
+        else:
+            root = {}
 
-        # 3. RHS verarbeiten (Constraints und Metadaten)
+        # 3. process RHS
         root_rhs = self.to_redvypr_dict_rhs()
 
-        # Einfaches Mergen der Top-Level Keys
+        # Simple top-level merge of the keys
         for k, v in root_rhs.items():
             if k == "_redvypr":
-                # Metadaten zusammenführen, falls schon was da ist
+                # Merge _redvypr metadata
                 root.setdefault("_redvypr", {}).update(v)
             elif isinstance(v, dict) and k in root and isinstance(root[k], dict):
-                # Tieferes Update für verschachtelte Strukturen im Root
+                # Deep update for complex data in root
                 root[k].update(v)
             else:
                 root[k] = v
-
-        ## 4. Optional: Rohen Datakey-String hinzufügen
-        #if include_datakey and self.left_expr:
-        #    root['datakey'] = self.left_expr
 
         return root
 
