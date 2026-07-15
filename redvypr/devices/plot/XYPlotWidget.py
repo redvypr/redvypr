@@ -17,8 +17,8 @@ import redvypr.redvypr_datadict
 import redvypr.gui
 import redvypr.files as files
 import redvypr.metadata
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
-from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidget
+from redvypr.widgets.pydantic_config_widget import pydanticConfigWidget
+from redvypr.widgets.redvypr_address_widget import RedvyprAddressWidget
 from redvypr.redvypr_address import RedvyprAddress
 
 _logo_file = files.logo_file

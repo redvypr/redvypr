@@ -1,6 +1,6 @@
 from PyQt6 import QtWidgets, QtCore, QtGui
 
-from redvypr.widgets.pydanticConfigWidget import logger
+from redvypr.widgets.pydantic_config_widget import logger
 
 
 class Dictqtreewidget(QtWidgets.QTreeWidget):

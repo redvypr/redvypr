@@ -16,8 +16,8 @@ import redvypr.redvypr_datadict
 import redvypr.gui
 import redvypr.files as files
 import redvypr.metadata
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
-from redvypr.widgets.redvyprAddressWidget import RedvyprAddressEditWidget
+from redvypr.widgets.pydantic_config_widget import pydanticConfigWidget
+from redvypr.widgets.redvypr_address_widget import RedvyprAddressEditWidget
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.redvypr_datadict import RedvyprDatadict

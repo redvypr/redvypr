@@ -19,7 +19,7 @@ import redvypr.metadata
 from redvypr.redvypr_datadict import RedvyprDatadict
 from redvypr.device import RedvyprDeviceCustomConfig
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
-from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
+from redvypr.widgets.pydantic_config_widget import pydanticDeviceConfigWidget
 import redvypr.redvypr_datadict
 from redvypr.redvypr_datadict import check_for_command
 import pydantic

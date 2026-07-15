@@ -7,7 +7,7 @@ import qtawesome
 import redvypr.files as files
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.redvypr_datadict import RedvyprDatadict
-from .redvyprMetadataTable import RedvyprMetadataTable
+from .redvypr_metadata_table import RedvyprMetadataTable
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file

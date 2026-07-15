@@ -15,13 +15,13 @@ import re
 from pyqtconsole.console import PythonConsole
 from pyqtconsole.highlighter import format
 
-import redvypr.widgets.redvyprSubscribeWidget
+import redvypr.widgets.redvypr_subscribe_widget
 # Import redvypr specific stuff
 from redvypr.widgets.standard_device_widgets import displayDeviceWidget_standard, redvypr_deviceInitWidget, RedvyprdevicewidgetSimple, RedvyprdevicewidgetStartonly
 from redvypr.widgets.dict_qtree_widget import Dictqtreewidget
-from redvypr.widgets.redvyprMetadataWidget import MetadataWidget
-from redvypr.widgets.redvyprMetadataTable import RedvyprMetadataTable
-from redvypr.widgets.redvyprAddressWidget import RedvyprAddressTable
+from redvypr.widgets.redvypr_metadata_widget import MetadataWidget
+from redvypr.widgets.redvypr_metadata_table import RedvyprMetadataTable
+from redvypr.widgets.redvypr_address_widget import RedvyprAddressTable
 #from redvypr.gui import datastreamWidget # Do we need this?
 import redvypr.gui as gui
 from redvypr.version import version

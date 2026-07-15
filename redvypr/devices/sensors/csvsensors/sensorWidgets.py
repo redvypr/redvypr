@@ -10,7 +10,7 @@ import json
 import typing
 import pydantic
 import numpy
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
+from redvypr.widgets.pydantic_config_widget import pydanticConfigWidget
 from PyQt6 import QtWidgets, QtCore, QtGui
 import redvypr.gui as gui
 from pathlib import Path

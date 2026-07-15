@@ -7,7 +7,7 @@ import qtawesome
 import redvypr.files as files
 import redvypr.redvypr_datadict as data_packets
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.widgets.redvyprAddressWidget import RedvyprMultipleAddressesWidget
+from redvypr.widgets.redvypr_address_widget import RedvyprMultipleAddressesWidget
 
 class DatastreamTableWidget(QtWidgets.QWidget):
     """Widget to manage datastreams in a table with add/remove functionality."""

@@ -9,12 +9,12 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 
 import redvypr.metadata
 from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
-from redvypr.widgets.redvyprSubscribeWidget import SubscribeWidget
+from redvypr.widgets.redvypr_subscribe_widget import SubscribeWidget
 #from redvypr.widgets.gui_config_widgets import redvypr_ip_widget, configQTreeWidget, configWidget,
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, pydanticDeviceConfigWidget, \
+from redvypr.widgets.pydantic_config_widget import pydanticConfigWidget, pydanticDeviceConfigWidget, \
     datastreamMetadataWidget
 from redvypr.widgets.dict_qtree_widget import Dictqtreewidget
-from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidget, RedvyprMultipleAddressesWidget
+from redvypr.widgets.redvypr_address_widget import RedvyprAddressWidget, RedvyprMultipleAddressesWidget
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.redvypr_datadict import RedvyprMetadata, RedvyprDeviceMetadata
 import redvypr.files as files

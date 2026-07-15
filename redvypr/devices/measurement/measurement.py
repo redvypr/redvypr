@@ -6,8 +6,8 @@ import sys
 import redvypr.metadata
 from redvypr.device import RedvyprDeviceCustomConfig, RedvyprDevice
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetStartonly, RedvyprdevicewidgetSimple
-from redvypr.widgets.redvyprMetadataWidget import MetadataWidget
-from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidget, RedvyprMultipleAddressesWidget
+from redvypr.widgets.redvypr_metadata_widget import MetadataWidget
+from redvypr.widgets.redvypr_address_widget import RedvyprAddressWidget, RedvyprMultipleAddressesWidget
 from redvypr.redvypr_datadict import check_for_command
 import pydantic
 import typing

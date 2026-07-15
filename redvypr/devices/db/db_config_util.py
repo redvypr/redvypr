@@ -11,7 +11,7 @@ import json
 import numpy as np
 from typing import Any, Dict, List, Optional, Iterator
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.widgets.redvyprAddressWidget import RedvyprMultipleAddressesWidget
+from redvypr.widgets.redvypr_address_widget import RedvyprMultipleAddressesWidget
 from datetime import datetime, timezone
 
 logging.basicConfig(stream=sys.stderr)

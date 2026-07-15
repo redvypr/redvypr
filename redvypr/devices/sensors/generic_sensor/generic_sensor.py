@@ -28,7 +28,7 @@ from redvypr.device import RedvyprDevice
 import redvypr.files as redvypr_files
 import redvypr.widgets.standard_device_widgets
 from redvypr.devices.plot.XYPlotWidget import XYPlotWidget, ConfigXYplot
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget, datastreamMetadataWidget
+from redvypr.widgets.pydantic_config_widget import pydanticConfigWidget, datastreamMetadataWidget
 from redvypr.devices.sensors.calibration.calibration_models import calibration_models, CalibrationNTC
 from redvypr.devices.sensors.csvsensors.sensorWidgets import sensorCoeffWidget, sensorConfigWidget
 from redvypr.gui import iconnames

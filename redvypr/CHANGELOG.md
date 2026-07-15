@@ -10,6 +10,9 @@ redvypr changelog
 - new field `datakeys_info` in `packet_statistics.do_data_statistics` that uses `data_packets.Datapacket.datakeys_info()`
 ### Changed
 - `get_datakey_info`,`get_datakey_info_from_dict`,`datakeys_info`  in `redvypr.config`
+- Renamed `Datapacket` into `RedvyprDatadict` and `data_packets.py` into `redvypr_datadict.py`
+- Much cleaner RedvyprAddress init, allowing keywords to be set only by `RedvyprAddress.META_INFO`
+- renamed filenames in widgets folder to follow PEP standard
  
 ---
 

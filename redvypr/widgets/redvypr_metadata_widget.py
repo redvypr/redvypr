@@ -3,7 +3,7 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 import logging
 
 from redvypr.widgets.dict_qtree_widget import EditableDictQTreeWidget
-from redvypr.widgets.redvyprAddressWidget import RedvyprAddressWidget
+from redvypr.widgets.redvypr_address_widget import RedvyprAddressWidget
 from datetime import datetime, timedelta
 
 # Importiere hier deine zuvor erstellte Funktion

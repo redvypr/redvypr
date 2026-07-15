@@ -2,7 +2,7 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 import redvypr.gui
 import sys
 import copy
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
+from redvypr.widgets.pydantic_config_widget import pydanticConfigWidget
 from redvypr.redvypr_address import RedvyprAddress, RedvyprAddressStr
 import pydantic
 import datetime

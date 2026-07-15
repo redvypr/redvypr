@@ -11,7 +11,7 @@ from pydantic.color import Color as pydColor
 import typing
 
 import redvypr.metadata
-from redvypr.widgets.redvyprAddressWidget import datastreamQTreeWidget, RedvyprAddressWidget, RedvyprAddressEditWidget
+from redvypr.widgets.redvypr_address_widget import datastreamQTreeWidget, RedvyprAddressWidget, RedvyprAddressEditWidget
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.redvypr_datadict import RedvyprMetadataGeneral
 

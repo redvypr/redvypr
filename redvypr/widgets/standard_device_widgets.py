@@ -5,9 +5,9 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 import time
 import logging
 import sys
-import redvypr.widgets.redvyprSubscribeWidget
+import redvypr.widgets.redvypr_subscribe_widget
 from redvypr.device import RedvyprDevice
-from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
+from redvypr.widgets.pydantic_config_widget import pydanticDeviceConfigWidget
 from redvypr.gui import iconnames
 import qtawesome
 

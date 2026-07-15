@@ -9,7 +9,7 @@ import numpy
 from PyQt6 import QtWidgets, QtCore, QtGui
 import redvypr
 from redvypr.device import RedvyprDevice, device_start_standard
-from redvypr.widgets.pydanticConfigWidget import pydanticDeviceConfigWidget
+from redvypr.widgets.pydantic_config_widget import pydanticDeviceConfigWidget
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetStartonly
 from redvypr.redvypr_datadict import check_for_command
 from redvypr.redvypr_address import RedvyprAddress

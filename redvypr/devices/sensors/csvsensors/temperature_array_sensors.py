@@ -1,7 +1,7 @@
 import copy
 import datetime
 import redvypr.redvypr_datadict as data_packets
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
+from redvypr.widgets.pydantic_config_widget import pydanticConfigWidget
 import numpy
 import pydantic
 import typing

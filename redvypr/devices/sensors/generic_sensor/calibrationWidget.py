@@ -16,7 +16,7 @@ from typing import Union, Optional
 import redvypr.devices.sensors.calibration.calibration_models
 from redvypr.devices.sensors.calibration.calibration_models import CalibrationList, CalibrationWrapper
 from redvypr.devices.sensors.calibration.calibration_plot_report_widgets import write_report_pdf
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
+from redvypr.widgets.pydantic_config_widget import pydanticConfigWidget
 from PyQt6 import QtWidgets, QtCore, QtGui
 import redvypr.gui as gui
 from pathlib import Path

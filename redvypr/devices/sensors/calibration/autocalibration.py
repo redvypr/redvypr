@@ -24,7 +24,7 @@ from redvypr.device import RedvyprDevice, RedvyprDeviceParameter
 import redvypr.files as redvypr_files
 import redvypr.gui
 import redvypr.redvypr_datadict
-from redvypr.widgets.pydanticConfigWidget import pydanticConfigWidget
+from redvypr.widgets.pydantic_config_widget import pydanticConfigWidget
 from redvypr.gui import RedvyprAddressWidget
 from .calibration_models import CalibrationHeatFlow, CalibrationNTC, CalibrationPoly
 
