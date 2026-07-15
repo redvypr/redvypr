@@ -1295,6 +1295,521 @@ class RedvyprFilterDialog(QtWidgets.QDialog):
 
 class RedvyprDeviceTreeWidget(QtWidgets.QWidget):
     """
+    Component wrapping a multi-column tree view built over an optimized QTreeView.
+
+    Utilizes a dedicated ViewModel layout to handle high-volume processing and
+    dynamic hierarchical device and datastream indexing. The columns shown
+    in the tree are fully generalized and dynamically derived directly from
+    `RedvyprAddress.META_CONFIG`.
+
+    Parameters
+    ----------
+    redvypr : RedvyprInstance
+        The core Redvypr engine instance used to retrieve device info and metadata.
+    parent : QWidget, optional
+        The parent widget in the Qt hierarchy. Default is None.
+    multi_select : bool, optional
+        If True, enables multi-row selection via checkboxes and action buttons.
+        If False, triggers immediate actions on item click. Default is False.
+    visible_columns : list of str, optional
+        A list of column names (e.g. metadata longforms or technical columns)
+        that should be visible upon initialization. If None, a predefined
+        subset is shown. Default is None.
+    show_host : bool, optional
+        Whether the top-level Host node should be rendered in the tree hierarchy.
+        Default is True.
+    **kwargs : dict
+        Additional keyword arguments:
+        - `filter_device` (list of str): Device inclusion filter strings (default `["@"]`).
+        - `filter_datastream` (list of str): Datastream filter strings (default `["@"]`).
+        - `expansion_level` (int): Tree nodes auto-expansion depth (default `10`).
+        - `force_time_series_expansion` (bool): Forces automatic expansion of series (default `False`).
+
+    Attributes
+    ----------
+    addressSelected : pyqtSignal(object)
+        Qt Signal emitted when an address is selected. Emits a single `RedvyprAddress`
+        object in single-select mode, or a `list` of addresses in multi-select mode.
+    META_CONFIG_MAP : dict
+        A dynamically constructed mapping from clean capitalized Column Header names
+        to their corresponding `RedvyprAddress.META_CONFIG` metadata keys (short forms).
+    """
+
+    addressSelected = QtCore.pyqtSignal(object)
+
+    # Dynamically build a map from Column Headers to RedvyprAddress metadata keys
+    # Example: {"Publisher": "p", "Device": "d", "Uuid": "u", "Host": "h", ...}
+    META_CONFIG_MAP = {
+        config_data["longform"].capitalize(): prefix
+        for prefix, config_data in RedvyprAddress.META_CONFIG.items()
+    }
+
+    def __init__(self, redvypr,
+                 parent=None,
+                 multi_select=False,
+                 visible_columns=None,
+                 show_host=True,
+                 **kwargs):
+        super().__init__(parent)
+        self.redvypr = redvypr
+        self.multi_select = multi_select
+        self.show_host = show_host
+        self.external_filter_include = [RedvyprAddress(f) for f in
+                                        kwargs.get('filter_device', ["@"])]
+        self.external_filter_datastream = [RedvyprAddress(f) for f in
+                                           kwargs.get('filter_datastream', ["@"])]
+        self.expandlevel = kwargs.get('expansion_level', 10)
+        self.force_time_series_expansion = kwargs.get('force_time_series_expansion',
+                                                      False)
+        self.addrentries_show_for_publishing_devices = ['h', 'd', 'i']
+
+        # Construct the dynamic columns list based on the extracted metadata fields
+        self.COLUMNS = ["Datastreams"] + list(self.META_CONFIG_MAP.keys()) + ["Address", "Datatype"]
+
+        if visible_columns is None:
+            # Default subset of columns to show (Datastreams, basic metadata, and the Datatype)
+            default_meta_subset = ["Host", "Device", "Publisher"]
+            self.default_visible_columns = ["Datastreams"] + [
+                col for col in default_meta_subset if col in self.META_CONFIG_MAP
+            ] + ["Datatype"]
+        else:
+            self.default_visible_columns = list(visible_columns)
+
+        self.filter_states = {}
+        self.active_rendered_checkboxes = {}
+
+        # Initialize the underlying Item ViewModel using the dynamic columns
+        self.tree_model = RedvyprTreeModel(self.COLUMNS, self)
+
+        self.init_ui()
+        self.update_device_tree()
+
+    def init_ui(self):
+        """
+        Initialize the graphical user interface components and layouts.
+        """
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.menu_bar = QtWidgets.QMenuBar()
+        self.view_menu = self.menu_bar.addMenu("Show / Hide Columns")
+        main_layout.addWidget(self.menu_bar)
+
+        control_bar_layout = QtWidgets.QHBoxLayout()
+        self.filter_button = QtWidgets.QPushButton("Filter")
+        self.filter_button.setIcon(self.style().standardIcon(
+            QtWidgets.QStyle.StandardPixmap.SP_FileDialogContentsView))
+        self.filter_button.clicked.connect(self._open_filter_dialog)
+        control_bar_layout.addWidget(self.filter_button)
+        control_bar_layout.addStretch()
+        main_layout.addLayout(control_bar_layout)
+
+        # Main Tree View component
+        self.device_tree = QtWidgets.QTreeView()
+        self.device_tree.setModel(self.tree_model)
+
+        header = self.device_tree.header()
+        header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_header_context_menu)
+        header.setSectionsMovable(True)
+
+        self.device_tree.setSortingEnabled(True)
+        header.setSortIndicator(0, QtCore.Qt.SortOrder.AscendingOrder)
+
+        if self.multi_select:
+            self.device_tree.setSelectionMode(
+                QtWidgets.QAbstractItemView.SelectionMode.MultiSelection)
+        else:
+            self.device_tree.clicked.connect(self._on_item_clicked)
+
+        self.device_tree.setContextMenuPolicy(
+            QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.device_tree.customContextMenuRequested.connect(
+            self._show_item_context_menu)
+        main_layout.addWidget(self.device_tree, stretch=1)
+
+        options_layout = QtWidgets.QHBoxLayout()
+        options_layout.addWidget(QtWidgets.QLabel("Tree Layout Options:"))
+
+        self.allow_all_checkbox = QtWidgets.QCheckBox("Allow device selection")
+        self.allow_all_checkbox.setChecked(False)
+        options_layout.addWidget(self.allow_all_checkbox)
+
+        self.show_devices_checkbox = QtWidgets.QCheckBox("Show devices hierarchy")
+        self.show_devices_checkbox.setChecked(True)
+        self.show_devices_checkbox.toggled.connect(self._on_show_devices_toggled)
+        options_layout.addWidget(self.show_devices_checkbox)
+        options_layout.addStretch()
+        main_layout.addLayout(options_layout)
+
+        if self.multi_select:
+            self.button_layout = QtWidgets.QHBoxLayout()
+            self.apply_button = QtWidgets.QPushButton("Apply Selection")
+            self.apply_button.clicked.connect(self._on_apply_clicked)
+            self.unselect_button = QtWidgets.QPushButton("Unselect All")
+            self.unselect_button.clicked.connect(self._on_unselect_clicked)
+            self.button_layout.addWidget(self.apply_button)
+            self.button_layout.addWidget(self.unselect_button)
+            self.button_layout.addStretch()
+            main_layout.addLayout(self.button_layout)
+
+        # Apply default visibility rules
+        for i, col_name in enumerate(self.COLUMNS):
+            if i == 0:
+                continue
+            self.device_tree.setColumnHidden(i, col_name not in self.default_visible_columns)
+
+        self._rebuild_view_menu()
+
+    def _open_filter_dialog(self):
+        """Open the column-wise dynamic filtering dialog window."""
+        dialog = RedvyprFilterDialog(self)
+        dialog.exec()
+
+    def build_filter_matrix_states(self):
+        """Build the filter state matrix based on existing tree elements."""
+        old_states = self.filter_states
+        self.filter_states = {col: {} for col in self.COLUMNS}
+
+        def collect_values(item):
+            for col_idx in range(len(self.COLUMNS)):
+                col_name = self.COLUMNS[col_idx]
+                val = item.data(col_idx) or ""
+                if old_states and col_name in old_states and val in old_states[col_name]:
+                    self.filter_states[col_name][val] = old_states[col_name][val]
+                else:
+                    self.filter_states[col_name][val] = True
+
+            for child in item.child_items:
+                collect_values(child)
+
+        collect_values(self.tree_model.invisibleRootItem())
+
+    def on_checkbox_toggled(self, col_key, value_str, check_state):
+        """
+        Handle filter checkbox toggles.
+
+        Parameters
+        ----------
+        col_key : str
+            The column header key.
+        value_str : str
+            The value mapping.
+        check_state : QtCore.Qt.CheckState or int
+            The new selection state.
+        """
+        is_checked = (check_state == 2 or check_state == QtCore.Qt.CheckState.Checked)
+        self.filter_states[col_key][value_str] = is_checked
+        self.apply_calculated_filters()
+
+    def apply_calculated_filters(self):
+        """Apply filters to dynamically hide/show rows matching filter criteria."""
+
+        def evaluate_item_visibility(item):
+            row_matches_filter = True
+            for col_idx, col_name in enumerate(self.COLUMNS):
+                val = item.data(col_idx) or ""
+                allowed_map = self.filter_states.get(col_name, {})
+                if allowed_map and not allowed_map.get(val, True):
+                    row_matches_filter = False
+                    break
+
+            any_child_visible = False
+            for child in item.child_items:
+                if evaluate_item_visibility(child):
+                    any_child_visible = True
+
+            final_visibility = row_matches_filter or any_child_visible
+
+            if item.parent_item and item.parent_item != self.tree_model.invisibleRootItem():
+                p_item = item.parent_item
+                p_index = self.tree_model.createIndex(p_item.row(), 0, p_item)
+                self.device_tree.setRowHidden(item.row(), p_index, not final_visibility)
+            elif item.parent_item:
+                self.device_tree.setRowHidden(item.row(), QtCore.QModelIndex(), not final_visibility)
+
+            return final_visibility
+
+        for top_item in self.tree_model.invisibleRootItem().child_items:
+            evaluate_item_visibility(top_item)
+
+    def _rebuild_view_menu(self):
+        """Rebuild column show/hide window menus."""
+        self.view_menu.clear()
+        for i, col_name in enumerate(self.COLUMNS):
+            if i == 0:
+                continue
+            action = QtGui.QAction(col_name, self.view_menu, checkable=True)
+            action.setChecked(not self.device_tree.isColumnHidden(i))
+            action.setData(i)
+            action.triggered.connect(self._toggle_column_visibility)
+            self.view_menu.addAction(action)
+
+    def _show_header_context_menu(self, pos: QtCore.QPoint):
+        """Show context menu on headers to toggle column visibilities."""
+        menu = QtWidgets.QMenu(self)
+        for i, col_name in enumerate(self.COLUMNS):
+            if i == 0:
+                continue
+            action = QtGui.QAction(col_name, menu, checkable=True)
+            action.setChecked(not self.device_tree.isColumnHidden(i))
+            action.setData(i)
+            action.triggered.connect(self._toggle_column_visibility)
+            menu.addAction(action)
+        menu.exec(self.device_tree.header().mapToGlobal(pos))
+
+    def _toggle_column_visibility(self):
+        """Toggle visibilities of selected column items."""
+        action = self.sender()
+        if action:
+            col_index = action.data()
+            is_visible = action.isChecked()
+            self.device_tree.setColumnHidden(col_index, not is_visible)
+            if is_visible:
+                self.device_tree.resizeColumnToContents(col_index)
+            self._rebuild_view_menu()
+
+    def _is_item_selectable(self, item):
+        """Check if an item within the tree model can be selected."""
+        return item.isdatastream or (
+                self.allow_all_checkbox.isChecked() and self.show_devices_checkbox.isChecked())
+
+    def _on_show_devices_toggled(self):
+        """Trigger update structures when device hierarchy checkbox toggles."""
+        if not self.show_devices_checkbox.isChecked():
+            self.allow_all_checkbox.setChecked(False)
+            self.allow_all_checkbox.setEnabled(False)
+        else:
+            self.allow_all_checkbox.setEnabled(True)
+        self.update_device_tree()
+
+    def _on_item_clicked(self, index):
+        """Handle single-click selection on items."""
+        item = index.internalPointer()
+        if not item or not self._is_item_selectable(item):
+            return
+        raddress = getattr(item, 'datakey_address',
+                           getattr(item, 'redvypr_address', None))
+        if raddress:
+            self.addressSelected.emit(raddress)
+
+    def _on_apply_clicked(self):
+        """Handle bulk selected items in multi-select mode."""
+        selected_indexes = self.device_tree.selectionModel().selectedRows()
+        selected_addresses = []
+        for index in selected_indexes:
+            item = index.internalPointer()
+            if item and self._is_item_selectable(item):
+                raddress = getattr(item, 'datakey_address',
+                                   getattr(item, 'redvypr_address', None))
+                if raddress and raddress not in selected_addresses:
+                    selected_addresses.append(raddress)
+        self.addressSelected.emit(selected_addresses)
+
+    def _on_unselect_clicked(self):
+        """Deselect all selected elements within the tree structure."""
+        self.device_tree.clearSelection()
+
+    def _show_item_context_menu(self, pos: QtCore.QPoint):
+        """Open a context menu showing metadata and detailed metrics."""
+        index = self.device_tree.indexAt(pos)
+        item = index.internalPointer()
+        if not item:
+            return
+
+        menu = QtWidgets.QMenu(self.device_tree)
+        metadata_action = menu.addAction("Metadata")
+
+        try:
+            data_info = item.data_info
+        except:
+            data_info = None
+
+        if data_info:
+            datainfo_action = menu.addAction("Data Info")
+
+        action = menu.exec(self.device_tree.mapToGlobal(pos))
+
+        if action:
+            if data_info and action == datainfo_action:
+                dialog = DataInfoDialog(data_info, parent=self)
+                dialog.exec()
+
+            if action == metadata_action:
+                redvypr_address = item.datakey_address
+                logger.info(f"Getting metadata for: {redvypr_address}")
+                self._metadata_widget_menu = RedvyprMetadataTable(
+                    redvypr_instance=self.redvypr,
+                    redvypr_address=redvypr_address
+                )
+                self._metadata_widget_menu.show()
+
+    def get_address_string_for_item(self, raddr, addr_entry_list):
+        """Get formatted visual address string representation."""
+        return raddr.to_address_string(addr_entry_list)
+
+    def update_device_tree(self):
+        """Constructs data coordinates natively streaming through the custom model layer."""
+        logger.debug("Updating device tree model elements.")
+
+        self.device_tree.setUpdatesEnabled(False)
+        self.tree_model.clear()
+
+        show_devices = self.show_devices_checkbox.isChecked()
+        actual_root = self.tree_model.invisibleRootItem()
+
+        if not self.show_host:
+            root = actual_root
+        else:
+            if not show_devices:
+                root = actual_root
+            else:
+                hostinfo = self.redvypr.hostinfo
+
+                # Dynamic row configuration adjusted to the length of COLUMNS
+                host_row = ["N/A"] * len(self.COLUMNS)
+                host_row[0] = hostinfo["host"]
+
+                # Dynamic lookup of host metadata fields
+                for col_name, prefix in self.META_CONFIG_MAP.items():
+                    # If this metadata field represents host info, we extract it
+                    if prefix == "h":
+                        host_row[self.COLUMNS.index(col_name)] = hostinfo["host"]
+                    elif prefix == "a":
+                        host_row[self.COLUMNS.index(col_name)] = hostinfo["addr"]
+
+                if "Datatype" in self.COLUMNS:
+                    host_row[self.COLUMNS.index("Datatype")] = "dict"
+
+                root_host_item = RedvyprTreeItem(host_row)
+                root_host_item.isdatastream = False
+                root_host_item.device = True
+                root_host_item.redvypr_address = self.redvypr.address
+                root_host_item.datakey_address = self.redvypr.address
+                actual_root.appendChild(root_host_item)
+                root = root_host_item
+
+        def make_row_data(p0, raddress, datatype_str=""):
+            """Generate a normalized metadata row matching self.COLUMNS structure."""
+            row = ["N/A"] * len(self.COLUMNS)
+            row[0] = str(p0)
+
+            if raddress:
+                # Dynamically resolve values based on META_CONFIG_MAP mapping
+                for col_name, prefix in self.META_CONFIG_MAP.items():
+                    col_idx = self.COLUMNS.index(col_name)
+                    # Directly query the attribute matching the RedvyprAddress prefix
+                    row[col_idx] = str(getattr(raddress, prefix, 'N/A'))
+
+                if "Address" in self.COLUMNS:
+                    addr_idx = self.COLUMNS.index("Address")
+                    row[addr_idx] = raddress.to_address_string() if hasattr(raddress, 'to_address_string') else str(
+                        raddress)
+                if "Datatype" in self.COLUMNS:
+                    row[self.COLUMNS.index("Datatype")] = str(datatype_str)
+            return row
+
+        publishing_devices = self.redvypr.get_device_objects(publishes=True, subscribes=False)
+
+        if publishing_devices is not None:
+            for publishing_device in publishing_devices:
+                flag_datastreams = False
+
+                test_ext_filter = any(
+                    addr_inc.matches(publishing_device.address) for addr_inc in self.external_filter_include
+                )
+                if not test_ext_filter:
+                    continue
+
+                row_data = make_row_data(publishing_device.name, publishing_device.address, "")
+                itm_publishingdevice = RedvyprTreeItem(row_data)
+                itm_publishingdevice.device = publishing_device
+                itm_publishingdevice.redvypr_address = publishing_device.address
+                itm_publishingdevice.datakey_address = RedvyprAddress(publishing_device.address)
+                itm_publishingdevice.isdatastream = False
+
+                devs_forwarded = publishing_device.get_device_info()
+                device_addresses = sorted(list(devs_forwarded.keys()))
+
+                for device_address in device_addresses:
+                    devaddress_redvypr = RedvyprAddress(device_address)
+                    device_str = self.get_address_string_for_item(devaddress_redvypr,
+                                                                  self.addrentries_show_for_publishing_devices)
+
+                    row_sub_data = make_row_data(device_str, devaddress_redvypr, "")
+                    itm_deviceaddress = RedvyprTreeItem(row_sub_data)
+                    itm_deviceaddress.device = publishing_device
+                    itm_deviceaddress.addrentries = self.addrentries_show_for_publishing_devices
+                    itm_deviceaddress.redvypr_address = devaddress_redvypr
+                    itm_deviceaddress.datakey_address = devaddress_redvypr
+                    itm_deviceaddress.address_forwarded = device_address
+                    itm_deviceaddress.isdatastream = False
+
+                    datakeys_info = devs_forwarded[device_address]['datakeys_info']
+                    if datakeys_info:
+                        if show_devices:
+                            itm_publishingdevice.appendChild(itm_deviceaddress)
+                            current_parent_device_node = itm_deviceaddress
+                        else:
+                            current_parent_device_node = root
+
+                        created_items = {}
+                        for key in sorted(datakeys_info.keys()):
+                            meta = RedvyprDatadict.get_datakey_info_from_dict(datakeys_info, key)
+
+                            row_data = make_row_data(key, RedvyprAddress(device_address, datakey=key),
+                                                     meta["data_type"])
+                            itm_k = RedvyprTreeItem(row_data)
+                            itm_k.data_info = meta
+                            itm_k.redvypr_address = RedvyprAddress(device_address, datakey=key)
+                            itm_k.datakey_address = itm_k.redvypr_address
+                            itm_k.device = publishing_device
+
+                            # Determine datastream classification flags
+                            if ("float" in meta["data_type"]
+                                    or "int" in meta["data_type"]
+                                    or "str" in meta["data_type"]):
+                                itm_k.isdatastream = True
+                            if (meta["is_concatenated"]
+                                    or "timestamp" in meta["type"]
+                                    or meta["type"] == "single_t_array"
+                                    or meta["type"] == "standard"):
+                                itm_k.isdatastream = True
+                            else:
+                                itm_k.isdatastream = False
+
+                            created_items[key] = itm_k
+
+                            parent_key = None
+                            for potential_parent, p_meta in datakeys_info.items():
+                                if "children" in p_meta and key in p_meta["children"]:
+                                    parent_key = potential_parent
+                                    break
+
+                            if parent_key and parent_key in created_items and show_devices:
+                                created_items[parent_key].appendChild(itm_k)
+                            else:
+                                current_parent_device_node.appendChild(itm_k)
+
+                        flag_datastreams = True
+
+                if flag_datastreams and show_devices:
+                    root.appendChild(itm_publishingdevice)
+
+        self.tree_model.layoutChanged.emit()
+        self.device_tree.expandAll()
+
+        self.build_filter_matrix_states()
+
+        for i in range(len(self.COLUMNS)):
+            if not self.device_tree.isColumnHidden(i):
+                self.device_tree.resizeColumnToContents(i)
+
+        self.device_tree.setUpdatesEnabled(True)
+
+
+class RedvyprDeviceTreeWidget_legacy(QtWidgets.QWidget):
+    """
     Component wrapping a multi-column tree view built over an optimized QTreeView
     architecture using a dedicated ViewModel layout for high volume processing speeds.
     """
