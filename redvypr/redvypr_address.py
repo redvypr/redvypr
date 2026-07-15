@@ -59,6 +59,95 @@ class SoftPlaceholder:
 
 
 class RedvyprAddress:
+    """
+    Representation and parser for Redvypr addressing, routing, and filtering.
+
+    This class serves as the core mechanism to identify, address, and filter
+    Redvypr data packets and their nested content. It parses addressing string
+    expressions containing both logical data keys (Left-Hand Side / LHS) and
+    metadata constraints (Right-Hand Side / RHS), such as host, device, and
+    publisher attributes.
+
+    The class dynamically supports metadata projections and keyword arguments
+    defined in its central `META_CONFIG` specification.
+
+    Parameters
+    ----------
+    expr : str, RedvyprAddress, dict, or None, optional
+        The input expression to initialize or copy the address.
+
+        - If `str`: Parsed into its LHS datakey expression and RHS metadata constraints
+          separated by an `@` boundary.
+        - If `RedvyprAddress`: Performs a deep copy of the address instance.
+        - If `dict`: Resolves structured `_redvypr` metadata payloads (e.g. nested keys
+          like `host.uuid` or `host.host`) into exact equality constraints.
+        - If `None` or `""`: Initializes an empty address.
+    datakey : str, optional
+        Explicitly sets the Left-Hand Side (LHS) datakey, overriding any datakey
+        extracted from the `expr` parameter. Default is None.
+    **kwargs : dict or list of keywords
+        Dynamic keyword arguments corresponding to any longform metadata keys registered
+        in `META_CONFIG` (e.g., `device="my_device"`, `publisher="pub_1"`, `uuid="..."`).
+        Passing these dynamically appends equality (`eq`) filters to the address.
+        See also `RedvyprAddress.META_CONFIG` for a complete list of possible keywords.
+
+    Attributes
+    ----------
+    META_CONFIG : dict
+        A central definition of supported metadata fields. Maps short prefix codes
+        (e.g., ``"d"``, ``"h"``) to their internal payload paths, human-readable
+        API longforms, and safe execution dunder fields.
+    PREFIX_MAP : dict
+        A dynamically generated mapping from shorthand prefix keys to internal dunder
+        names. Example: ``{"d": "__device__", "h": "__host_host__"}``.
+    LONGFORM_MAP : dict
+        A dynamically generated mapping from API keyword longforms to internal dunder
+        names. Example: ``{"device": "__device__", "host": "__host_host__"}``.
+    INTERNAL_TO_PREFIX : dict
+        Reverse mapping from internal dunder representation back to short prefixes
+        used to generate clean address strings.
+    left_expr : str or None
+        The uncompiled string representation of the Left-Hand Side (LHS) datakey
+        or boolean selector.
+    filter_keys : dict of (str -> list)
+        A structured registry mapping longform metadata fields to their active
+        evaluation constraints (e.g., operators and comparison values).
+    strict_no_datakey : bool
+        If True, enforces that the address is treated purely as a device-level or
+        metadata-only query without data keys. Default is False.
+
+    Notes
+    -----
+    The addressing syntax consists of an optional Left-Hand Side (LHS) representing
+    data-keys or boolean conditions, and a Right-Hand Side (RHS) specifying
+    metadata routing filters, delimited by an `@` character.
+
+    Example format:
+    ``"temperature_sensor @ d:device_01 and p:publisher_01"``
+
+    See Also
+    --------
+    RedvyprDatadict : An improved dictionary that is able to be indexed with RedvyprAddresses
+
+    Examples
+    --------
+    Show all filterkeys
+
+    >>> addr = RedvyprAddress("@")
+    >>> addr.META_CONFIG
+
+    Initializing an address from a composite query string:
+
+    >>> addr = RedvyprAddress("temp_degC @ d:sensor_hub and h:local_node")
+    >>> addr.left_expr
+    'temp_degC'
+
+    Initializing an address dynamically using keyword arguments:
+
+    >>> addr = RedvyprAddress(datakey="pressure", device="pump_01", host="cluster_a")
+    >>> addr.to_address_string()
+    'pressure@d:pump_01 and h:cluster_a'
+    """
     # Maps short prefixes to internal dunder representation and API-facing longforms.
     META_CONFIG = {
         "d": {"path": "device", "longform": "device", "internal": "__device__"},
@@ -965,13 +1054,61 @@ class RedvyprAddress:
 
     def to_redvypr_dict_lhs(self) -> dict:
         """
-        Extrahiert die reine Pfadstruktur der linken Seite (LHS)
-        und bildet sie als verschachteltes Dictionary ab.
+        Extract the pure path structure of the Left-Hand Side (LHS)
+        and represent it as a nested dictionary.
+
+        This method parses the logical datakey path expression (LHS)
+        and builds a hierarchical dictionary structure representing
+        the nested data coordinates. The returned dictionary can be
+        indexed by the left hand side.
+
+        Returns
+        -------
+        dict
+            A nested dictionary mapping the hierarchical key path structure
+            defined on the Left-Hand Side of the address.
+
+        Examples
+        --------
+        If the Left-Hand Side expression is ``"['payload']['sensor']['temperature']"``:
+
+        >>> addr.to_redvypr_dict_lhs()
+        {'payload': {'sensor': {'temperature': True}}}
         """
+
         result_root = {}
 
         def add_to_target(key_path, value, target):
-            """Hilfsfunktion zum Aufbau verschachtelter Dicts."""
+            """
+            Recursively insert a value into a nested dictionary structure at a specified key path.
+
+            This helper function navigates down a sequence of keys (`key_path`) inside the
+            `target` dictionary. It ensures intermediate dictionaries are dynamically created
+            if they do not exist, and finally assigns the target `value` to the deepest leaf node.
+
+            Parameters
+            ----------
+            key_path : list of (str or int)
+                A sequence of dictionary keys representing the hierarchical path where the
+                value should be inserted.
+            value : Any
+                The value to assign to the final leaf node in the target nested dictionary.
+            target : dict
+                The reference dictionary into which the nested structures and value are mutated.
+
+            Returns
+            -------
+            None
+                Modifies the `target` dictionary in-place.
+
+            Examples
+            --------
+            >>> target_dict = {}
+            >>> add_to_target(["payload", "sensor", "temperature"], True, target_dict)
+            >>> target_dict
+            {'payload': {'sensor': {'temperature': True}}}
+            """
+
             cur = target
             for i in range(len(key_path) - 1):
                 p = key_path[i]
@@ -981,7 +1118,36 @@ class RedvyprAddress:
             cur[key_path[-1]] = value
 
         def get_path(node):
-            """Extrahiert den Variablenpfad aus einem AST-Knoten."""
+            """
+            Extract the evaluation path sequence from an Abstract Syntax Tree (AST) node.
+
+            This helper traverses down common AST node types (such as attribute accesses,
+            subscripts/slicing, and identifiers) to resolve a sequential list of keys,
+            attributes, or index offsets. It supports multi-version compatibility
+            (e.g., handling both legacy `ast.Index` nodes and modern Python `ast.Constant` values).
+
+            Parameters
+            ----------
+            node : ast.AST or None
+                The syntax tree node to extract the access path from. Usually starts
+                with an `ast.Expression` or the underlying body of the parsed AST.
+
+            Returns
+            -------
+            list of (str or int) or None
+                A flat list of string attributes/keys and integer indices representing
+                the resolved identifier path in order of evaluation. Returns `None`
+                if the node type is unsupported or cannot be resolved.
+
+            Examples
+            --------
+            For an expression node parsed from ``"['payload']['sensor'][0]"``:
+
+            >>> node = ast.parse("['payload']['sensor'][0]", mode="eval")
+            >>> get_path(node)
+            ['payload', 'sensor', 0]
+            """
+
             # Falls der Baum in ein Expression-Objekt gewrappt ist
             if isinstance(node, ast.Expression):
                 node = node.body
@@ -1017,9 +1183,46 @@ class RedvyprAddress:
 
     def to_redvypr_dict_rhs(self, include_datakey: bool = True) -> dict:
         """
-        Reverse process: Converts the AST back into a standard nested dictionary.
-        Internal __dunder__ keys are moved back into the '_redvypr' block.
+        Convert the parsed AST representations back into a standard nested dictionary.
+
+        This method performs a reverse mapping of the abstract syntax trees (LHS and RHS)
+        and reconstructs the underlying structured data query. Internal representation
+        variables (such as double-underscore dunder attributes) are mapped back to their
+        original nested metadata fields inside a dedicated ``"_redvypr"`` key block.
+
+        Parameters
+        ----------
+        include_datakey : bool, optional
+            Whether to include logical Left-Hand Side (LHS) datakeys inside the
+            reconstructed dictionary output. Default is True.
+
+        Returns
+        -------
+        dict
+            A reconstructed dictionary containing the resolved ``"_redvypr"`` metadata
+            block alongside other extracted root-level query constraints.
+
+        See Also
+        --------
+        to_redvypr_dict_lhs : Extracting purely the Left-Hand Side structure.
+
+        Examples
+        --------
+        Assuming an address initialized with metadata variables:
+
+        >>> addr = RedvyprAddress("temp @ d:device_01 and h:local_host")
+        >>> addr.to_redvypr_dict_rhs()
+        {
+            '_redvypr': {
+                'device': 'device_01',
+                'host': {
+                    'host': 'local_host'
+                }
+            }
+        }
         """
+
+
         result_metadata = {}
         result_root = {}
 
@@ -1147,7 +1350,7 @@ class RedvyprAddress:
 
 
     # -------------------------
-    # Lesbare RHS / get_str
+    # Readable RHS / get_str
     # -------------------------
     def _ast_to_rhs_string(self, node: ast.AST) -> str:
         """
@@ -1255,11 +1458,41 @@ class RedvyprAddress:
 
     def to_address_string(self, keys: Union[str, List[str]] = None) -> str:
         """
-        Erstellt die lesbare Adresse. Berücksichtigt:
-        1. Filterung nach 'keys' (Pruning)
-        2. Linke Seite (left_expr / datakey)
-        3. Rückwandlung von Dunder-Namen zu Präfixen (i:, d: etc.)
-        4. @-Symbol Symmetrie
+        Generate the human-readable address string representation.
+
+        This method reconstructs the standardized address string by combining the Left-Hand
+        Side (LHS / datakey) and the Right-Hand Side (RHS / metadata filters) using the
+        proper ``"@"`` delimiter syntax. It handles:
+        1. Filtering/pruning of active metadata attributes based on the allowed `keys`.
+        2. Output formatting of the Left-Hand Side (LHS) expression.
+        3. Reverse translation of internal dunder attributes back to their shorthand
+           prefixes (e.g., mapping ``"__device__"`` back to ``"d:"``).
+        4. Symmetric structure formatting around the ``"@"`` boundary symbol.
+
+        Parameters
+        ----------
+        keys : str or list of str, optional
+            Shorthand prefixes (e.g., ``"d"``, ``"p"``) or longforms to filter the output.
+            If specified, only these metadata dimensions will be preserved in the
+            reconstructed address string. Default is None.
+
+        Returns
+        -------
+        str
+            The formatted, human-readable address string.
+
+        Examples
+        --------
+        Basic reconstruction with LHS and RHS:
+
+        >>> addr = RedvyprAddress("temperature @ d:sensor_01 and h:local_node")
+        >>> addr.to_address_string()
+        'temperature@d:sensor_01 and h:local_node'
+
+        Pruning the address to only include specific metadata keys (e.g., device ``"d"``):
+
+        >>> addr.to_address_string(keys=["d"])
+        'temperature@d:sensor_01'
         """
         # --- 1. Vorbereitung der Key-Filterung ---
         allowed_keys_set = None
@@ -1361,63 +1594,46 @@ class RedvyprAddress:
 
         return f"{left} @ {rhs_str}" if left else f"@{rhs_str}"
 
-    def to_address_string_newold(self, keys: Union[str, List[str]] = None) -> str:
-        if not self._rhs_ast:
-            return ""
-
-        # 1. Vorbereitung für die Rückumwandlung der Dunder-Namen
-        DUNDER_TO_PREFIX = {v["internal"]: k for k, v in self.META_CONFIG.items()}
-
-        # 2. AST in einen String umwandeln
-        # Wir arbeiten auf einer Kopie, falls wir den Baum transformieren wollen
-        tree_copy = copy.deepcopy(self._rhs_ast)
-
-        # Optional: Hier könnte ein NodeTransformer Namen anpassen
-        # Für den Moment nutzen wir den direkten Weg:
-        raw_str = ast.unparse(tree_copy)
-
-        # 3. Aufräumen der internen Dunder-Namen und Operatoren
-        # Wir wandeln "__device__ == 'hello'" -> "d:'hello'"
-        for dunder, prefix in DUNDER_TO_PREFIX.items():
-            # Ersetzt: __device__ == 'value' -> d:'value'
-            raw_str = re.sub(rf'{dunder}\s*==\s*', f'{prefix}:', raw_str)
-            # Ersetzt: __device__ (falls einzeln stehend) -> d
-            raw_str = re.sub(rf'\b{dunder}\b', prefix, raw_str)
-
-        # 4. Funktions-Namen zurückdrehen
-        raw_str = raw_str.replace("_dt(", "dt(")
-
-        # 5. DIE KLAMMERN ENTFERNEN
-        # Wir entfernen Klammern um einfache Zuweisungen wie (manufacturer_sn == '0856')
-        # aber NUR wenn sie innerhalb einer 'and/or' Kette stehen und kein komplexes Nesting haben
-        # Dieser Regex sucht nach (Wort == Wert) und entfernt die Klammern
-        raw_str = re.sub(r'\(([\w\.]+ == [^()]+)\)', r'\1', raw_str)
-
-        # Falls d:hello immer noch in Klammern steht: (d:'hello') -> d:'hello'
-        for prefix in DUNDER_TO_PREFIX.values():
-            raw_str = re.sub(rf'\({prefix}:([^()]+)\)', rf'{prefix}:\1', raw_str)
-
-        # 6. Doppelte Leerzeichen bereinigen, falls entstanden
-        raw_str = re.sub(r'\s+', ' ', raw_str)
-
-        return f"@{raw_str.strip()}"
-
 
     def to_address_string_pure_python(self, keys: Union[str, List[str]] = None) -> str:
         """
-        Returns a Python-evaluable version of the Redvypr address.
+        Return a valid, evaluable Python expression representing the address filters.
 
-        Converts Redvypr-style filters into Python expressions that can be evaluated.
-        Examples:
-            - i:test -> _redvypr['packetid'] == 'test'
-            - d:cam  -> _redvypr['device'] == 'cam'
+        Translates Redvypr addressing constraints and shorthand notation stored
+        within the AST into a standard Python boolean expression string. The resulting
+        string evaluates properties against a root ``_redvypr`` metadata dictionary.
+        Additionally, custom timestamp functions like ``_dt('ISO_STRING')`` are
+        explicitly converted into inline ``datetime.datetime(...)`` object instantiations.
 
-        Optional:
-            Only include certain keys if `keys` is provided.
+        Parameters
+        ----------
+        keys : str or list of str, optional
+            Shorthand prefixes (e.g., ``"i"``, ``"d"``) or metadata longforms. If
+            provided, only filters matching these keys are translated and preserved
+            in the output string. Default is None.
 
-        Additionally:
-            - Any `_dt('ISO_STRING')` in the AST is converted to a `datetime.datetime(...)` object.
+        Returns
+        -------
+        str
+            A valid Python boolean expression string suitable for dynamic evaluation
+            (e.g., using ``eval()``) against an environment containing a
+            ``_redvypr`` context dict.
+
+        Examples
+        --------
+        Translating standard shorthand filters to standard Python expressions:
+
+        >>> addr = RedvyprAddress("@ i:test and d:cam")
+        >>> addr.to_address_string_pure_python()
+        "_redvypr['packetid'] == 'test' and _redvypr['device'] == 'cam'"
+
+        Translating custom datetime helpers to native Python datetime constructors:
+
+        >>> addr = RedvyprAddress("@ i:metadata and ts > _dt('2026-07-15T12:00:00')")
+        >>> addr.to_address_string_pure_python()
+        "_redvypr['packetid'] == 'metadata' and ts > datetime.datetime(2026, 7, 15, 12, 0)"
         """
+
         if not self._rhs_ast:
             return f"{self.left_expr}@" if self.left_expr else "@"
 
@@ -1514,42 +1730,6 @@ class RedvyprAddress:
 
     def get_common_address_formats(self):
         return self.common_address_formats
-
-    def get_str_from_format_legacy(self, address_format='{k}@{u} and {a} and {h} and {d} and {p} and {i}'):
-        """ Returns a string of the redvypr address from a format string.
-        """
-        funcname = __name__ + '.get_str_from_format():'
-        vals = {
-            'u': self.uuid,
-            'a': self.addr,
-            'h': self.host,
-            'd': self.device,
-            'i': self.packetid,
-            'sn': self.serialnumber,
-            'p': self.publisher,
-            'k': self.datakey,
-            'uuid': self.uuid,
-            'address': self.addr,
-            'host': self.host,
-            'device': self.device,
-            'packetid': self.packetid,
-            'serialnumber': self.serialnumber,
-            'publisher': self.publisher,
-            'datakey': self.datakey,
-        }
-
-        #filtered_vals = {k: f"{k}:{v}" for k, v in vals.items() if v is not None}
-        # Treat None as empty string
-        filtered_vals = {}
-        for k, v in vals.items():
-            if v is not None:
-                v_print = v
-            else:
-                v_print = ""
-            filtered_vals[k] = f"{k}:{v_print}"
-        #print("Address format",address_format,filtered_vals)
-        retstr = address_format.format(**filtered_vals)
-        return retstr
 
     def __getattr__(self, name):
         #print("\n__getattr__")
