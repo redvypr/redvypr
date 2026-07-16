@@ -14,7 +14,9 @@ redvypr changelog
 - Much cleaner RedvyprAddress init, allowing keywords to be set only by `RedvyprAddress.META_INFO`
 - renamed filenames in widgets folder to follow PEP standard
 - implemented redvypr_datadict cache in `RedvyprAddress`
-- Made `RedvyprDeviceTreeWidget` more generic to use the filterkeys directly from `RedvyprAddress.META_CONFIG` 
+- Made `RedvyprDeviceTreeWidget` more generic to use the filterkeys directly from `RedvyprAddress.META_CONFIG`
+- Allows `RedvyprAddress` bracket style: `['e']@` is the same as `e@`
+
  
 ---
 

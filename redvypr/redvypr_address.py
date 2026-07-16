@@ -260,6 +260,25 @@ class RedvyprAddress:
                     self.delete_filter(longform)
                     self.add_filter(longform, "eq", val)
 
+        # New syntax, allowing brackes
+        # Am Anfang von __init__, bevor expr verarbeitet wird:
+        self._use_bracket_style = False
+        if self.left_expr is not None:
+            if self.left_expr.startswith("[") and self.left_expr.count("]") >= 1:
+                # Matcht z.B. "['f'][1]" -> extrahiert 'f' und das '[1]'
+                self._bracket_style_orig = self.left_expr
+                match = re.match(r"^\[(['\"])([a-zA-Z0-9_]+)\1\](.*)", self.left_expr)
+                if match:
+                    quote_char = match.group(1) # " or ' or """"
+                    key = match.group(2)  # "f"
+                    rest = match.group(3)  # "[1]"
+                    self.left_expr = f"{key}{rest}"  # wird zu "f[1]"
+                    self._bracket_style = {
+                        "quote": quote_char,
+                        "key": key
+                    }
+                    self._use_bracket_style = True
+
         self._compiled_left = None
         self._compiled_rhs = None
         self._compile_expressions()
@@ -1056,6 +1075,8 @@ class RedvyprAddress:
                 if not isinstance(root.get("_redvypr"), dict):
                     root["_redvypr"] = {}
                 root.setdefault("_redvypr", {}).update(v)
+            # Note 16.07.2026: This was stricter in the older version, if this makes problems, reconsider to check type of root[k] again.
+            #elif isinstance(v, dict) and k in root and isinstance(root[k], dict):
             elif isinstance(v, dict) and k in root:
                 if not isinstance(root[k], dict):
                     root[k] = {}
@@ -1598,6 +1619,16 @@ class RedvyprAddress:
 
         # --- 4. Finaler String-Zusammenbau ---
         left = self.left_expr if (self.left_expr and show_left) else ""
+
+        # Check for bracket style
+        if self._use_bracket_style:
+            key = self._bracket_style["key"]
+            quote = self._bracket_style["quote"]
+            bracket_replacement = f"[{quote}{key}{quote}]"
+            # Replace with key + bracket
+            if left.startswith(key):
+                # Only first occurence
+                left = left.replace(key, bracket_replacement, 1)
 
         if not rhs_str:
             # Kein Filter vorhanden oder weggefiltert
