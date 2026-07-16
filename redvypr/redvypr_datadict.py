@@ -162,16 +162,31 @@ class RedvyprDatadict(dict):
             #create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None, publisher=None, hostinfo=None)
             dataself = create_redvypr_dict(packetid=packetid, device=device, hostinfo=hostinfo, raddress=raddress)
             self.update(dataself)
-        else: # Update the redvypr dict
+        else:
+            # Case B: Standardize and merge into the existing metadata block
+            # Using dict.__getitem__ instead of self['_redvypr'] (override own __getitem__ during init)
+            target_metadata = dict.__getitem__(self, '_redvypr')
+            if not isinstance(target_metadata, dict):
+                self['_redvypr'] = {}
+                target_metadata = dict.__getitem__(self, '_redvypr')
+
             if raddress is not None:
+                if isinstance(raddress, str):
+                    raddress = RedvyprAddress(raddress)
                 rdict = raddress.to_redvypr_dict(include_datakey=False)
-                deep_merge(self['_redvypr'], rdict.get('_redvypr', {}))
-            if hostinfo is not None: # Update hostinfo, if present
-                self['_redvypr']['host'] = hostinfo
+                deep_merge(target_metadata, rdict.get('_redvypr', {}))
+
+            if hostinfo is not None:
+                if 'host' in target_metadata and isinstance(target_metadata['host'], dict):
+                    deep_merge(target_metadata['host'], hostinfo)
+                else:
+                    target_metadata['host'] = copy.deepcopy(hostinfo)
+
             if device is not None:
-                self['_redvypr']['device'] = device
+                target_metadata['device'] = device
             if packetid is not None:
-                self['_redvypr']['packetid'] = packetid
+                target_metadata['packetid'] = packetid
+
 
         self.address = RedvyprAddress(self)
 
@@ -912,6 +927,8 @@ class RedvyprDatadict(dict):
 
     def set_filterkeys(self, **kwargs):
         set_filterkeys(self, **kwargs)
+        self._cache.clear()
+        self.address = RedvyprAddress(self)
 
     @staticmethod
     def get_structure_hash(data):
@@ -1198,18 +1215,15 @@ def set_filterkeys(datapacket: dict, **kwargs) -> dict:
     Sets metadata filter keys inside the nested '_redvypr' block of a data packet,
     safely merging nested dictionaries (like 'host') instead of overwriting them.
     """
-    # 1. Use RedvyprAddress to generate the new metadata dict.
-    #    to_redvypr_dict(include_datakey=False) yields e.g., {'_redvypr': {'host': {'host': 'peter'}}}
     from_address = RedvyprAddress(**kwargs).to_redvypr_dict(include_datakey=False)
     new_metadata = from_address.get('_redvypr', {})
 
-    # 2. Ensure the '_redvypr' header exists in the target packet
-    if '_redvypr' not in datapacket:
+    # FEHLERBEHEBUNG: Nutze dict.__contains__ und dict.__getitem__,
+    # um die magische __getitem__ von RedvyprDatadict zu umgehen!
+    if not dict.__contains__(datapacket, '_redvypr'):
         datapacket['_redvypr'] = {}
 
-    target_metadata = datapacket['_redvypr']
-
-    # Execute the recursive update on the '_redvypr' level
+    target_metadata = dict.__getitem__(datapacket, '_redvypr')
     deep_merge(target_metadata, new_metadata)
 
     return datapacket

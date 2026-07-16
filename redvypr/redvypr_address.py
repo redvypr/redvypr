@@ -84,6 +84,9 @@ class RedvyprAddress:
     datakey : str, optional
         Explicitly sets the Left-Hand Side (LHS) datakey, overriding any datakey
         extracted from the `expr` parameter. Default is None.
+    hostinfo : dict, optional
+        Sets the filterkeys of the host (host, uuid, addr) with a hostinfo dictionary,
+        as created with `redvypr.create_hostinfo()`
     **kwargs : dict or list of keywords
         Dynamic keyword arguments corresponding to any longform metadata keys registered
         in `META_CONFIG` (e.g., `device="my_device"`, `publisher="pub_1"`, `uuid="..."`).
@@ -185,6 +188,7 @@ class RedvyprAddress:
                  expr: Union[str, "RedvyprAddress", dict, None] = None,
                  *,
                  datakey: Optional[str] = None,
+                 hostinfo: Optional[dict] = None,
                  **kwargs):  # Alle expliziten Metadaten-Argumente durch **kwargs ersetzt
         self.left_expr: Optional[str] = None
         self._rhs_ast: Optional[ast.Expression] = None
@@ -249,6 +253,12 @@ class RedvyprAddress:
             if val not in (None, ''):
                 self.delete_filter(longform)
                 self.add_filter(longform, "eq", val)
+            # Check also in hostinfo
+            if hostinfo is not None:
+                val = hostinfo.get(longform)
+                if val not in (None, ''):
+                    self.delete_filter(longform)
+                    self.add_filter(longform, "eq", val)
 
         self._compiled_left = None
         self._compiled_rhs = None

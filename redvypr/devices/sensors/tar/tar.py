@@ -25,7 +25,7 @@ from redvypr.utils.databuffer import DatapacketAvg
 
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.device.tar')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 redvypr_devicemodule = True
 

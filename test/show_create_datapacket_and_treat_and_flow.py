@@ -22,7 +22,7 @@ redvypr.redvypr_packet_statistic.treat_datadict(data, devicename, hostinfo, nump
 print('Data after being received by the redvypr main thread and garnished with additional information:')
 print(data)
 
-print('And now send the packet through a second redvypr instance')
+print('Send the packet through a second redvypr instance (i.e. through a network device)')
 devicename2 = 'otherdevice'
 packetid2 = 'otherid'
 devicemodulename2 = 'otherdevicemodulename'

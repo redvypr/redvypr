@@ -471,7 +471,7 @@ class SensorFactory:
         Registers a new sensor model class to the factory.
         """
         cls._registry[sensor_type] = model_class
-        print(f"Registered sensor type: '{sensor_type}' as {model_class.__name__}")
+        #print(f"Registered sensor type: '{sensor_type}' as {model_class.__name__}")
 
     @classmethod
     def create(cls, data: Dict[str, Any]) -> pydantic.BaseModel:
@@ -530,8 +530,8 @@ class CalibrationFactory:
         Registers a new calibration model class.
         """
         cls._registry[calibration_type] = model_class
-        print(
-            f"Registered calibration type: '{calibration_type}' as {model_class.__name__}")
+        #print(
+        #    f"Registered calibration type: '{calibration_type}' as {model_class.__name__}")
 
     @classmethod
     def create(cls, data: Dict[str, Any]) -> pydantic.BaseModel:
