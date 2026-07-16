@@ -191,12 +191,13 @@ class RedvyprDatadict(dict):
         self.address = RedvyprAddress(self)
 
     def __getitem__(self, key):
-        # Check if the key is a string but is a RedvyprAddress
-        if isinstance(key,str):
-            addr = RedvyprAddress(key)
-            data = addr(dict(self),strict=False)
-            return data
         # Check if the key is a RedvyprAddress
+        if isinstance(key, str):
+            print("Addr",key)
+            addr = RedvyprAddress(key)
+            data = addr(dict(self), strict=False)
+            print("Data",data)
+            return data
         elif isinstance(key, RedvyprAddress):
             data = key(dict(self))
             return data

@@ -289,7 +289,7 @@ class TablePlotWidget(QtWidgets.QWidget):
             if not d.matches_packetfilter(data):
                 return
             else:
-                #print('d in data',d)
+                print('d in data',d,type(d))
                 datakeys = rdata.datakeys([d], expand=expand_level,return_type='list')
                 datastreams = rdata.datastreams([d], expand=expand_level)
                 data_table_datastreams_new += datastreams

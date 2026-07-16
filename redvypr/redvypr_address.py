@@ -1045,6 +1045,7 @@ class RedvyprAddress:
         else:
             root = {}
 
+
         # 3. process RHS
         root_rhs = self.to_redvypr_dict_rhs()
 
@@ -1052,8 +1053,12 @@ class RedvyprAddress:
         for k, v in root_rhs.items():
             if k == "_redvypr":
                 # Merge _redvypr metadata
+                if not isinstance(root.get("_redvypr"), dict):
+                    root["_redvypr"] = {}
                 root.setdefault("_redvypr", {}).update(v)
-            elif isinstance(v, dict) and k in root and isinstance(root[k], dict):
+            elif isinstance(v, dict) and k in root:
+                if not isinstance(root[k], dict):
+                    root[k] = {}
                 # Deep update for complex data in root
                 root[k].update(v)
             else:
@@ -1084,7 +1089,6 @@ class RedvyprAddress:
         >>> addr.to_redvypr_dict_lhs()
         {'payload': {'sensor': {'temperature': True}}}
         """
-
         result_root = {}
 
         def add_to_target(key_path, value, target):
@@ -1230,8 +1234,6 @@ class RedvyprAddress:
             }
         }
         """
-
-
         result_metadata = {}
         result_root = {}
 

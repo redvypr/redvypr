@@ -1,5 +1,7 @@
 import datetime
 import queue
+from sys import exc_info
+
 from PyQt6 import QtWidgets, QtCore, QtGui
 import time
 import numpy as np
@@ -104,17 +106,28 @@ class configLine(pydantic.BaseModel,extra='allow'):
     def add_data(self, data):
         inx = self.x_addr.matches_packetfilter(data)
         iny = self.y_addr.matches_packetfilter(data)
-        #print("append line", self.x_addr, self.y_addr)
-        #print("append line",inx,iny)
+        print("in",inx,iny)
         if inx and iny:
             if self.databuffer_add_mode == "clear first":
                 self.databuffer.clear()
+
             rdata = redvypr.data_packets.RedvyprDatadict(data)
             # data can be a single float or a list, if its a list add it item by item
             #newt = data['t']  # Add also the time of the packet
             newt = data['_redvypr']['t']  # Add also the time of the packet
             newx = self.x_addr(rdata)
-            newy = self.y_addr(rdata)
+            #newy = self.y_addr(rdata)
+            try:
+                print("Rufe y_addr auf...")
+                newy = self.y_addr(rdata)
+                print("newy", newy)
+            except Exception as e:
+                # Das hier wird dir genau zeigen, warum es schiefgeht!
+                print(f"!!! CRASH in y_addr: {e}")
+                import traceback;
+                traceback.print_exc()
+                print("Addresse:",self.y_addr)
+
 
             if (type(newx) is not list):
                 newx = [newx]
@@ -1445,8 +1458,8 @@ class XYPlotWidget(QtWidgets.QFrame):
                         line.add_data(data)
                         line.__newdata = True
                     except:
-                        continue
-                        #self.logger.debug('Could not add data', exc_info=True)
+                        #continue
+                        self.logger.debug('Could not add data', exc_info=True)
                         #pass
 
                     #print('Added data',data['t'],data['_redvypr'])
