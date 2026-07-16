@@ -24,7 +24,6 @@ logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.base.redvypr_address')
 logger.setLevel(logging.DEBUG)
 
-#metadata_address = '/d:/p:/i:metadata/k:_redvypr_command'
 metadata_address = "_redvypr_command@i:metadata"
 
 

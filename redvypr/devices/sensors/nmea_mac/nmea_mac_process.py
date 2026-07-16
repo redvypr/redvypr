@@ -60,13 +60,13 @@ if True:
     # t
     nmeamac_t = (
         br'^'  # Start of the string
-        b'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs (not likely but can happen)
-        b'\$(?P<mac>[0-9A-F]+),'  # The mac 
-        b't,'
-        b'(?P<tp>[0-9.]+),'
-        b'(?P<np>[0-9]+),'
-        b'(?P<nsamples>[0-9]+),'
-        b'(?P<ts>.*)\n'
+        br'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs (not likely but can happen)
+        br'\$(?P<mac>[0-9A-F]+),'  # The mac 
+        br't,'
+        br'(?P<tp>[0-9.]+),'
+        br'(?P<np>[0-9]+),'
+        br'(?P<nsamples>[0-9]+),'
+        br'(?P<ts>.*)\n'
     )
     nmeamac_t_str_format = {'mac': 'str', 'tp': 'float', 'np': 'int', 'nsamples': 'int', 'ts': 'array'}
     nmeamac_t_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
@@ -77,13 +77,13 @@ if True:
     # T
     nmeamac_T = (
         br'^'  # Start of the string
-        b'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs (not likely but can happen)
-        b'\$(?P<mac>[0-9A-F]+),'  # The mac 
-        b'T,'
-        b'(?P<tp>[0-9.]+),'
-        b'(?P<np>[0-9]+),'
-        b'(?P<nsamples>[0-9]+),'        
-        b'(?P<T>.*)\n'
+        br'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs (not likely but can happen)
+        br'\$(?P<mac>[0-9A-F]+),'  # The mac 
+        br'T,'
+        br'(?P<tp>[0-9.]+),'
+        br'(?P<np>[0-9]+),'
+        br'(?P<nsamples>[0-9]+),'        
+        br'(?P<T>.*)\n'
     )
     nmeamac_T_str_format = {'mac': 'str', 'tp': 'float', 'np': 'int','nsamples': 'int', 'T': 'array'}
     nmeamac_T_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
@@ -93,13 +93,13 @@ if True:
     # R
     nmeamac_R = (
         br'^'  # Start of the string
-        b'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs (not likely but can happen)
-        b'\$(?P<mac>[0-9A-F]+),'  # The mac 
-        b'R,'
-        b'(?P<tp>[0-9.]+),'
-        b'(?P<np>[0-9]+),'
-        b'(?P<nsamples>[0-9]+),'
-        b'(?P<R>.*)\n'
+        br'(?P<macparents>(?:\$[0-9A-F]+:)*)'  # Optional parent macs (not likely but can happen)
+        br'\$(?P<mac>[0-9A-F]+),'  # The mac 
+        br'R,'
+        br'(?P<tp>[0-9.]+),'
+        br'(?P<np>[0-9]+),'
+        br'(?P<nsamples>[0-9]+),'
+        br'(?P<R>.*)\n'
     )
     nmeamac_R_str_format = {'mac': 'str', 'tp': 'float', 'np': 'int', 'nsamples': 'int', 'R': 'array'}
     nmeamac_R_datakey_metadata = {'mac': {'unit': 'mac64', 'description': 'mac of the sensor'},
@@ -238,8 +238,7 @@ class NMEAMacProcessor():
                         data_packet_merge["ts"] = data_packet_merge.pop("ts")
                         data_packets_merged.append(data_packet_merge)
                         packetid = data_packet_merge["mac"] + "__merged"
-                        redvypr.data_packets.set_packetid(data_packet_merge,packetid=packetid)
-                        redvypr.data_packets.set_device(data_packet_merge, device=packetid)
+                        redvypr.data_packets.set_filterkeys(data_packet_merge,packetid=packetid,device=packetid)
                     except:
                         logger.warning("Could not merge packet:{}".format(data_packets_merged),exc_info=True)
 

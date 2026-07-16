@@ -35,62 +35,123 @@ class RedvyprDatastreamMetadata(pydantic.BaseModel):
 class RedvyprMetadataGeneral(pydantic.BaseModel):
     address: typing.Dict[str, typing.Any] = {}
 
-class RedvyprDatadict(dict):
+
+# 3. Recursive merge helper function (deep update)
+def deep_merge(target: dict, source: dict):
     """
-    The `Datapacket` class extends the built-in `dict` class to include additional functionality for managing
-    data packets, including initialization with specific parameters and automatic generation of metadata that is
-    used by redvypr to identify a datapacket.
-    A main functionality is to retrieve data using redvypr addresses.
+    Recursively merge keys and values from a source dictionary into a target dictionary.
+
+    This helper function traverses both dictionaries. If a key exists in both
+    and its value on both sides is a dictionary, the function recurses deeper
+    to merge their keys. Otherwise, the value in the `target` dictionary is
+    directly overwritten by the value from the `source` dictionary.
+
+    Parameters
+    ----------
+    target : dict
+        The destination dictionary that will be mutated in-place.
+    source : dict
+        The dictionary containing updates, new keys, or nested structures
+        to merge into the `target`.
+
+    Returns
+    -------
+    None
+        The `target` dictionary is modified in-place.
 
     Examples
     --------
-    >>> from redvypr import RedvyprDatadict
-    >>> from redvypr import RedvyprAddress
+    >>> target_dict = {
+    ...     "device": "sensor_01",
+    ...     "host": {"host": "host", "addr": "127.0.0.1"}
+    ... }
+    >>> source_dict = {
+    ...     "host": {"host": "new_host", "uuid": "abc-123"}
+    ... }
+    >>> deep_merge(target_dict, source_dict)
+    >>> target_dict
+    {
+        'device': 'sensor_01',
+        'host': {
+            'host': 'new_host',
+            'addr': '127.0.0.1',
+            'uuid': 'abc-123'
+        }
+    }
+    """
+    for key, value in source.items():
+        if isinstance(value, dict) and key in target and isinstance(target[key], dict):
+            # If both sides are dicts, descend one level deeper
+            deep_merge(target[key], value)
+        else:
+            # Otherwise (value is a string, int, None, etc.), overwrite directly
+            target[key] = value
+
+class RedvyprDatadict(dict):
+    """
+    An extension of the built-in `dict` class that implements Redvypr data packets.
+
+    This class wraps standard payload dictionaries and automatically injects,
+    manages, and updates metadata structures under the ``_redvypr`` key.
+    It facilitates seamless data retrieval and address resolution using
+    ``RedvyprAddress`` representations.
+
+    Examples
+    --------
+    >>> from redvypr import RedvyprDatadict, RedvyprAddress
     >>> ar = RedvyprDatadict({'a': [[2, 3, 4], 2, 3, 4]})
-    >>> addr = RedvyprAddress('/k:["a"][0]')
+    >>> addr = RedvyprAddress('["a"][0]@')
     >>> ar[addr]
     [2, 3, 4]
 
     Attributes
     ----------
     address : RedvyprAddress
-        An address object associated with the data packet, initialized using the data packet's contents.
-
-    Methods
-    -------
-    __init__(self, *args, device=None, packetid=None, **kwargs):
-        Initializes a new instance of the Datapacket class.
-
-    Notes
-    -----
-    The `Datapacket` class is designed to work with the `redvypr` framework, utilizing helper functions like
-    `create_datadict` to populate initial data and `RedvyprAddress` to manage addressing.
+        An address object associated with the data packet, initialized
+        dynamically from the packet's current contents.
     """
-    def __init__(self, *args, device=None, packetid=None, **kwargs):
+    def __init__(self, *args,
+                 device=None,
+                 packetid=None,
+                 raddress: Optional[Union[str, RedvyprAddress]] = None,
+                 hostinfo: Optional[Dict[str, Any]] = None,
+                 **kwargs):
         """
-        Initializes a new instance of the Datapacket class.
+        Initialize a new instance of the RedvyprDatadict class.
 
         Parameters
         ----------
         *args : tuple
-            Variable length argument list. If the first argument is a dictionary, it is used to initialize
-            the data packet.
+            Variable length argument list. If the first argument is a dictionary,
+            it is used to initialize the underlying dictionary content.
         device : str, optional
-            The device associated with the data packet. Used to populate the '_redvypr' metadata.
-        packetid : str, optional
-            A unique identifier for the data packet. Used to populate the '_redvypr' metadata.
+            The source device associated with this packet. Used to populate or
+            override the underlying ``_redvypr`` metadata. Default is None.
+        packetid : str or int, optional
+            A unique identifier for the packet. Used to populate or override
+            the underlying ``_redvypr`` metadata. Default is None.
+        raddress : str or RedvyprAddress, optional
+            An address containing metadata query contexts. If provided, its
+            filter dimensions are parsed and integrated into the packet.
+            Default is None.
+        hostinfo : dict, optional
+            Dictionary containing host system properties (e.g., hostnames, IPs).
+            Default is None.
         **kwargs : dict
-            Additional keyword arguments that can be used to initialize the data packet.
+            Additional keyword arguments parsed directly as root-level payload
+            keys in the dictionary.
 
         Notes
         -----
-        If the data packet does not contain the key '_redvypr', it is automatically populated using the
-        `create_datadict` function. The `address` attribute is also initialized using the data packet's contents.
+        If the data packet is initialized without an existing ``_redvypr`` key,
+        one is automatically generated using the `create_redvypr_dict` helper.
+        Otherwise, existing metadata is safely updated in place.
         """
+
         if len(args)>0:
             # Check if the datapacket is created from a dictionary, without kwargs
             if isinstance(args[0],dict):
-                dict.__init__(self, *args,**kwargs)
+                dict.__init__(self, *args, **kwargs)
 
         else:
             dict.__init__(self)
@@ -99,8 +160,18 @@ class RedvyprDatadict(dict):
 
         if '_redvypr' not in self.keys():
             #create_datadict(data=None, datakey=None, packetid=None, tu=None, device=None, publisher=None, hostinfo=None)
-            dataself = create_redvypr_dict(packetid=packetid, device=device)
+            dataself = create_redvypr_dict(packetid=packetid, device=device, hostinfo=hostinfo, raddress=raddress)
             self.update(dataself)
+        else: # Update the redvypr dict
+            if raddress is not None:
+                rdict = raddress.to_redvypr_dict(include_datakey=False)
+                deep_merge(self['_redvypr'], rdict.get('_redvypr', {}))
+            if hostinfo is not None: # Update hostinfo, if present
+                self['_redvypr']['host'] = hostinfo
+            if device is not None:
+                self['_redvypr']['device'] = device
+            if packetid is not None:
+                self['_redvypr']['packetid'] = packetid
 
         self.address = RedvyprAddress(self)
 
@@ -163,106 +234,6 @@ class RedvyprDatadict(dict):
         super().clear()
 
     # --- Core Logic Methods ---
-    def datakeys(self, datakeys=None, expand=False, return_type='dict'):
-        """
-        Retrieves the data keys from the data packet, with options to expand and format the output.
-        If expand==True the datakeys are in a format that can be used within an index to the datapacket.
-
-        Examples
-        --------
-        >>> ar = RedvyprDatadict({'a': [[2, 3, 4], 2, 3, 4]})
-        >>> ar.datakeys(expand=False)
-        ['a']
-
-        >>> ar.datakeys(datakeys=["['a'][1]"], expand=True, return_type='dict')
-        {"['a'][1]": ("['a'][1]", int)}
-
-        >>> ar.datakeys(datakeys=["['a'][0]"], expand=True)
-        (["['a'][0][0]", "['a'][0][1]", "['a'][0][2]"], {"['a'][0][0]": ("['a'][0][0]", int), "['a'][0][1]": ("['a'][0][1]", int), "['a'][0][2]": ("['a'][0][2]", int)})
-
-        Parameters
-        ----------
-        datakeys : list or str or RedvyprAddress, optional
-            A list of specific data keys to retrieve. If None, all root keys in the data packet
-            will be evaluated. If type is str or RedvyprAddress, it is mapped into a predictable key array.
-        expand : bool or int, optional
-            If True, recursively expands nested dictionary, list, or array structures up to
-            a default depth of 100. If an integer is provided, it dictates the custom recursion limit.
-            Default is False.
-        return_type : str, optional
-            The format in which to return the data keys. Options are:
-            - 'list': Returns the data keys as a flattened list of bracket strings.
-            - 'dict': Returns a map containing paths linked to (path, data_type) metadata tuples.
-            - Any other value: Returns a combined JSON-friendly list structure containing [list, dict].
-            Default is 'dict'.
-
-        Returns
-        -------
-        list or dict or tuple
-            The target data key map or list in the requested return_type format.
-        """
-        # Formulate a stable cache hash key. Lists are unhashable, so map collections to a immutable tuple
-        cache_key = (
-            tuple(datakeys) if isinstance(datakeys, list) else datakeys,
-            expand,
-            return_type
-        )
-
-        # Cache Hit: Instantly return reference if structure hasn't muted
-        if cache_key in self._cache:
-            return self._cache[cache_key]
-
-        # Cache Miss: Calculate output arrays
-        if datakeys is None:
-            keys = list(self.keys())
-        else:
-            if isinstance(datakeys, str):
-                datakeys = [RedvyprAddress(datakeys)]
-            elif isinstance(datakeys, RedvyprAddress):
-                datakeys = [datakeys]
-            elif not isinstance(datakeys, list):
-                raise ValueError(
-                    'datakeys must be None, str, RedvyprAddress or list')
-
-            keys = []
-            for k in datakeys:
-                if isinstance(k, RedvyprAddress):
-                    keys.append(k.left_expr)
-                else:
-                    keys.append(k)
-
-        # High-performance O(1) set comprehension removal of metadata keys
-        filter_set = set(redvypr_data_keys)
-        keys = [k for k in keys if k not in filter_set]
-
-        # Fast exit if recursive resolution is bypassed
-        if not expand:
-            self._cache[cache_key] = keys
-            return keys
-
-        # Set maximum iteration boundary
-        max_level = 100 if isinstance(expand, bool) else expand
-        keys_expand = []
-        keys_dict_expand = {"":(self.address.to_address_string(),dict)}
-
-        # Trigger safe recursive tree scanner
-        self.__expand_datakeys_recursive__(
-            self, keys, level=0, parent_key='',
-            key_list=keys_expand, key_dict=keys_dict_expand, max_level=max_level
-        )
-
-        # Align return payload format
-        if return_type == 'list':
-            result = keys_expand
-        elif return_type == 'dict':
-            result = keys_dict_expand
-        else:
-            result = [keys_expand, keys_dict_expand]
-
-        # Register result in cache map before passing back to execution path
-        self._cache[cache_key] = result
-        return result
-
     def datakeys(self, datakeys=None, expand=False, return_type='dict'):
         """
         Retrieves the data keys from the data packet, with options to expand and format the output.
@@ -778,106 +749,6 @@ class RedvyprDatadict(dict):
             fallback_types=fallback_types
         )
 
-    def datastreams_legacy(self, datakeys=None, expand=True, return_type='address'):
-        """
-        Retrieves the datastreams from the data packet.
-        Now uses the static helper method.
-        """
-        # 1. Hol dir den Payload (Nutzt das Caching in self.datakeys)
-        requested_return = 'dict' if return_type == 'address_type' and expand else 'list'
-
-        # Um deinen originalen Code exakt zu spiegeln:
-        if return_type == 'address_type':
-            payload = self.datakeys(datakeys=datakeys, expand=expand,
-                                    return_type='dict')
-        else:
-            payload = self.datakeys(datakeys=datakeys, expand=expand,
-                                    return_type='list')
-
-        # Für den Spezialfall: expand=False UND return_type='address_type'
-        # braucht die statische Methode die Typen aus dem aktuellen Packet
-        fallback_types = None
-        if return_type == 'address_type' and isinstance(payload, list):
-            fallback_types = {k: type(self[k]) for k in payload}
-
-        # 2. Delegiere an die statische Methode
-        return RedvyprDatadict.datastreams_from_datakeys(
-            datakeys_payload=payload,
-            base_address=self.address,
-            return_type=return_type,
-            fallback_types=fallback_types
-        )
-
-    @staticmethod
-    def datastreams_from_datakeys_legacy(datakeys_payload, base_address=None,
-                                  return_type='address', fallback_types=None):
-        """
-        Generates datastreams from a pre-calculated datakeys payload.
-        Automatically extracts the base address if a dict payload is provided.
-        """
-        # Falls ein Dict übergeben wurde, ziehen wir die Basis-Adresse direkt aus dem ""-Key
-        if isinstance(datakeys_payload, dict) and "" in datakeys_payload:
-            # Das Tuple ist (address_string, data_type) -> wir nehmen den String
-            base_address = datakeys_payload[""][0]
-
-        if return_type == 'address_type':
-            # Fast-Exit Fallback: Payload ist eine flache Liste (expand=False)
-            if isinstance(datakeys_payload, list):
-                if base_address is None:
-                    raise ValueError(
-                        "base_address is required when payload is a flat list.")
-                fallback_types = fallback_types or {}
-                return [
-                    [RedvyprAddress(base_address, datakey=k),
-                     fallback_types.get(k, type(None))]
-                    for k in datakeys_payload
-                ]
-
-            # Normaler Baum-Durchlauf (expand=True)
-            flat_items = []
-
-            def _extract_items(d):
-                if isinstance(d, dict):
-                    for k, v in d.items():
-                        if k == "":
-                            continue  # Überspringe die Root-Metadaten
-                        if isinstance(v, tuple):
-                            flat_items.append(v)
-                        else:
-                            _extract_items(v)
-
-            _extract_items(datakeys_payload)
-
-            return [
-                [RedvyprAddress(base_address, datakey=path), dtype]
-                for path, dtype in flat_items
-            ]
-
-        else:
-            # Fallback/Default: Es werden nur reine Adressen gewünscht ('address')
-            if isinstance(datakeys_payload, dict):
-                flat_keys = []
-
-                def _extract_keys(d):
-                    if isinstance(d, dict):
-                        for k, v in d.items():
-                            if k == "":
-                                continue
-                            if isinstance(v, tuple):
-                                flat_keys.append(v[0])
-                            else:
-                                _extract_keys(v)
-
-                _extract_keys(datakeys_payload)
-                expanded_keys = flat_keys
-            else:
-                expanded_keys = datakeys_payload
-
-            if base_address is None:
-                raise ValueError(
-                    "base_address is required if it cannot be extracted from the payload.")
-
-            return [RedvyprAddress(base_address, datakey=d) for d in expanded_keys]
 
     def __expand_datakeys_recursive__(self, data, keys, level=0, parent_key='',
                                       key_list=None, key_dict=None, max_level=100):
@@ -1039,6 +910,9 @@ class RedvyprDatadict(dict):
         #print(f"{data_return=}")
         return data_return
 
+    def set_filterkeys(self, **kwargs):
+        set_filterkeys(self, **kwargs)
+
     @staticmethod
     def get_structure_hash(data):
         """
@@ -1082,62 +956,86 @@ def create_redvypr_dict(
         tu: Optional[float| int | bool] = True,
         device: Optional[str] = None,
         publisher: Optional[str] = None,
-        raddress: Optional[str] = None,
+        raddress: Optional[Union[str, RedvyprAddress]] = None,
         hostinfo: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Creates a datadict dictionary used as the internal data structure in redvypr.
+    Create a datadict dictionary used as the internal data structure in redvypr.
 
-    This function wraps payload data and adds a standardized metadata header
-    under the ``_redvypr`` key. If no timestamp is provided, the current
-    system time is used.
+    This function wraps payload data and attaches a standardized metadata header
+    under the ``_redvypr`` key. If no explicit timestamp is provided, the current
+    system epoch time is used by default.
 
-    :param data: The actual payload data to be stored.
-                 If provided, it is stored under the key specified by ``datakey``.
-    :type data: Any, optional
+    Parameters
+    ----------
+    data : Any, optional
+        The actual payload data to be stored. If provided and `datakey` is set,
+        it is stored under the specified key. If `data` is a dictionary and
+        no `datakey` is specified, its keys are merged directly into the root level
+        of the output dictionary (excluding any existing ``_redvypr`` metadata).
+        Default is None.
+    datakey : str, optional
+        The dictionary key used for the payload data. Defaults to ``'data'``
+        if `data` is present but `datakey` is None, unless `data` is a dictionary.
+        Default is None.
+    packetid : str or int, optional
+        Unique identifier for the data packet. If None, it defaults to the
+        value of `device`. Default is None.
+    tu : float, int, or bool, optional
+        Unix timestamp (time units) for the packet. If set to ``True``, it defaults
+        to the current system time using ``time.time()``. Default is True.
+    device : str, optional
+        Identifier of the source device. Default is None.
+    publisher : str, optional
+        Identifier of the publishing entity. Default is None.
+    raddress : str or RedvyprAddress, optional
+        An address string or `RedvyprAddress` object used to populate missing
+        metadata fields (such as `packetid`, `device`, `deviceid`, or `publisher`).
+        Default is None.
+    hostinfo : dict, optional
+        Dictionary containing host-related information. If None, falls back to
+        ``redvypr.hostinfo_blank``. Default is None.
 
-    :param datakey: The dictionary key used for the payload data.
-                    Defaults to 'data' if ``data`` is present but ``datakey`` is None.
-    :type datakey: str, optional
+    Returns
+    -------
+    dict
+        A structured dictionary containing the ``_redvypr`` metadata header block
+        and the optional payload data.
 
-    :param packetid: Unique identifier for the packet.
-                     Defaults to the value of ``device`` if None.
-    :type packetid: str or int, optional
+    Notes
+    -----
+    The resulting dictionary structure conforms to:
 
-    :param tu: Unix timestamp (time units) for the packet.
-               Defaults to ``time.time()`` if True.
-    :type tu: float int or None, optional
+    .. code-block:: python
 
-    :param device: Identifier of the source device.
-    :type device: str, optional
+        {
+            '_redvypr': {
+                't': float,
+                'device': str,
+                'packetid': str,
+                'publisher': str,
+                'host': dict
+            },
+            'datakey_name': data_payload  # optional root-level payload
+        }
 
-    :param publisher: Identifier of the publishing entity.
-    :type publisher: str, optional
+    Examples
+    --------
+    Create a basic data dictionary with default metadata and payload:
 
-    :param hostinfo: Dictionary containing host-related information.
-                     Uses ``redvypr.hostinfo_blank`` if None.
-    :type hostinfo: dict, optional
-
-    :return: A dictionary containing the ``_redvypr`` metadata header and
-             the optional payload data.
-    :rtype: dict[str, Any]
-
-    .. note::
-       The resulting dictionary structure is:
-
-       .. code-block:: python
-
-          {
-              '_redvypr': {
-                  't': float,
-                  'device': str,
-                  'packetid': str,
-                  'publisher': str,
-                  'host': dict
-              },
-              'datakey_name': data_payload  # optional
-          }
+    >>> create_redvypr_dict(data=23.5, datakey="temperature", device="sensor_01")
+    {
+        '_redvypr': {
+            't': 1718123456.789,
+            'device': 'sensor_01',
+            'packetid': 'sensor_01',
+            'publisher': None,
+            'host': {...}
+        },
+        'temperature': 23.5
+    }
     """
+
     if tu is True:
         tu = time.time()
 
@@ -1295,37 +1193,25 @@ def check_for_command(datapacket=None,uuid=None,thread_uuid=None,add_data=False)
             return command
 
 
-def set_packetid(datapacket,packetid):
+def set_filterkeys(datapacket: dict, **kwargs) -> dict:
     """
-    Sets the packetid of a dictionary or a redypr datapacket
-    Parameters
-    ----------
-    datapacket
-    packetid
-
-    Returns
-    -------
-
+    Sets metadata filter keys inside the nested '_redvypr' block of a data packet,
+    safely merging nested dictionaries (like 'host') instead of overwriting them.
     """
-    datapacket["_redvypr"]["packetid"] = packetid
+    # 1. Use RedvyprAddress to generate the new metadata dict.
+    #    to_redvypr_dict(include_datakey=False) yields e.g., {'_redvypr': {'host': {'host': 'peter'}}}
+    from_address = RedvyprAddress(**kwargs).to_redvypr_dict(include_datakey=False)
+    new_metadata = from_address.get('_redvypr', {})
+
+    # 2. Ensure the '_redvypr' header exists in the target packet
+    if '_redvypr' not in datapacket:
+        datapacket['_redvypr'] = {}
+
+    target_metadata = datapacket['_redvypr']
+
+    # Execute the recursive update on the '_redvypr' level
+    deep_merge(target_metadata, new_metadata)
+
     return datapacket
 
-
-def set_device(datapacket,device):
-    """
-    Sets the device of a dictionary or a redypr datapacket
-    Parameters
-    ----------
-    datapacket
-    device
-
-    Returns
-    -------
-
-    """
-    datapacket["_redvypr"]["device"] = device
-    return datapacket
-
-#__rdvpraddr__ = redvypr_address('tmp')
-#addresstypes  = __rdvpraddr__.get_strtypes() # A list of all addresstypes
 
