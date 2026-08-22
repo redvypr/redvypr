@@ -22,6 +22,7 @@ from redvypr.widgets.dict_qtree_widget import Dictqtreewidget
 from redvypr.widgets.redvypr_metadata_widget import MetadataWidget
 from redvypr.widgets.redvypr_metadata_table import RedvyprMetadataTable
 from redvypr.widgets.redvypr_address_widget import RedvyprAddressTable
+from redvypr.widgets.redvypr_subscribe_widget import SubscribeWidget
 #from redvypr.gui import datastreamWidget # Do we need this?
 import redvypr.gui as gui
 from redvypr.version import version
@@ -832,17 +833,6 @@ class redvyprWidget(QtWidgets.QWidget):
             pass
             #logger.debug(funcname + ':finalize_init():' + str(e))
 
-    def connect_device_gui(self):
-        """ Wrapper for the gui
-        """
-        # Get the current tab
-        curtab = self.devicetabs.currentWidget()
-        try:
-            device = curtab.device
-        except:
-            device = None
-        self.open_connect_widget(device=device)
-
     def connect_device(self, device):
         """ Handles the connect signal from devices, called when the connection between the device shall be changed
         """
@@ -854,9 +844,8 @@ class redvyprWidget(QtWidgets.QWidget):
     def open_connect_widget(self, device=None):
         funcname = __name__ + '.open_connect_widget()'
         logger.debug(funcname + ':' + str(device))
-        # self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
-        self.__con_widget = redvypr.widgets.redvyprSubscribeWidget.SubscribeWidget(redvypr=self.redvypr, device=device)
-        self.__con_widget.show()
+        self.__subscribe_widget = SubscribeWidget(redvypr=self.redvypr, device=device)
+        self.__subscribe_widget.show()
 
     def __hostname_changed_click(self):
         hostname, ok = QtWidgets.QInputDialog.getText(self, 'redvypr hostname', 'Enter new hostname:')
@@ -1299,10 +1288,6 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         devcurAction.setStatusTip('Go to the home tab')
         devcurAction.triggered.connect(self.goto_home_tab)
 
-        conAction = QtGui.QAction("&Subscribe devices", self)
-        conAction.setStatusTip('Subscribe the datastreams of the different devices')
-        conAction.triggered.connect(self.connect_device_gui)
-
         loglevelAction = QtGui.QAction("&Loglevel", self)
         loglevelAction.setStatusTip('Change the logging level')
         loglevelAction.triggered.connect(self.redvypr_widget.show_loglevelwidget)
@@ -1318,7 +1303,6 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         deviceMenu = mainMenu.addMenu('&Devices')
         deviceMenu.addAction(devcurAction)
         deviceMenu.addAction(deviceAction)
-        deviceMenu.addAction(conAction)
 
         settingsMenu = mainMenu.addMenu('&Settings')
         settingsMenu.addAction(pathAction)
@@ -1383,9 +1367,6 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
 
     def goto_home_tab(self):
         self.redvypr_widget.devicetabs.setCurrentWidget(self.redvypr_widget.__homeWidget)
-
-    def connect_device_gui(self):
-        self.redvypr_widget.connect_device_gui()
 
     def about(self):
         """
