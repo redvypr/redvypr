@@ -4,11 +4,20 @@ redvypr changelog
 
 ---
 
-## [unreleased] - 
+## [unreleased] -
+
+### Added
+- ?
+### Changed
+- ?
+
+## [0.9.20] - 2026-08-22
 
 ### Added
 - new field `datakeys_info` in `packet_statistics.do_data_statistics` that uses `data_packets.Datapacket.datakeys_info()`
 ### Changed
+- bug fixes in autostart option in save config
+- improved console logging for serial, serial_single, rawdatawriter and sqlite_writer
 - `get_datakey_info`,`get_datakey_info_from_dict`,`datakeys_info`  in `redvypr.config`
 - Renamed `Datapacket` into `RedvyprDatadict` and `data_packets.py` into `redvypr_datadict.py`
 - Much cleaner RedvyprAddress init, allowing keywords to be set only by `RedvyprAddress.META_INFO`

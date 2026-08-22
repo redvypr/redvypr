@@ -617,7 +617,7 @@ class Redvypr(QtCore.QObject):
     def save_config(self, fname=None, autostart=False, add_metadata=True, set_loglevel:typing.Optional[typing.Literal["DEBUG","INFO","WARNING"]]=None):
         config = self.get_config()
         data_save = config.model_dump()
-        print('Data save',data_save)
+        logger.info(f"Data save:{data_save}")
         if not(fname):
             tstr = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
             fname = 'config_' + self.hostinfo[

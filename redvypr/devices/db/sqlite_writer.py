@@ -3,6 +3,7 @@ import time
 import logging
 import sys
 import pydantic
+import datetime
 import typing
 import qtawesome
 from redvypr.device import RedvyprDevice
@@ -35,6 +36,10 @@ initial_config.write_config.tables["redvypr_flat"] = flat_table
 class DeviceCustomConfig(pydantic.BaseModel):
     auto_create_table: bool = pydantic.Field(default=True, description="Create redvypr tables automatically at start, if not existing")
     database: SqliteConfig = pydantic.Field(default=initial_config)
+    dt_update_gui: float = pydantic.Field(default=1,
+                                              description='Time in seconds for an update of the device status in the gui')
+    dt_update_console: float = pydantic.Field(default=10,
+                                              description='Time in seconds for an update of the device status on the console')
 
 def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=None):
     """
@@ -44,21 +49,23 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     logger_thread = logging.getLogger('redvypr.device.sqlite_writer.start')
     logger_thread.setLevel(logging.DEBUG)
     logger_thread.debug(funcname)
-    dt_update = 1  # Update interval in seconds
+    device_config = DeviceCustomConfig(**config)
     dt_update_db = 10  # Update interval in seconds
     packet_inserted = 0
     packet_inserted_failure = 0
     metadata_address_inserted = 0
-    t_update = time.time() - dt_update
     t_update_db = time.time() - dt_update_db
-    print("Config",config)
-    print("device_info", device_info)
+    #print("Config",config)
+    #print("device_info", device_info)
+
+    dt_update_gui = device_config.dt_update_gui  # Update interval in seconds
+    dt_update_console = device_config.dt_update_console  # Update interval in seconds for a logger string
+    t_update_gui = time.time()
+    t_update_console = time.time()
 
 
-
-    device_config = DeviceCustomConfig(**config)
     dbconfig = device_config.database
-    print("Database tables",dbconfig)
+    logger_thread.info(f"Database tables:{dbconfig}")
     addresses_subscribe = []
     for table_name, t_cfg in dbconfig.write_config.tables.items():
         for addr in t_cfg.addresses:
@@ -150,9 +157,13 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                         except:
                             logger_thread.info("Could not add metadata",exc_info=True)
 
+            if ((time.time() - t_update_console) > dt_update_console) and (dt_update_console > 0):
+                tstr = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+                logger_thread.info(f"{tstr}:{db.filepath}:size:{db.get_memory_usage()},packets:{packet_inserted}")
+                t_update_console = time.time()
 
-            if ((time.time() - t_update) > dt_update):
-                t_update = time.time()
+            if ((time.time() - t_update_gui) > dt_update_gui):
+                t_update_gui = time.time()
                 # print("Updating")
                 data = {}
                 data['t'] = time.time()

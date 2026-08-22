@@ -577,10 +577,11 @@ class redvyprWidget(QtWidgets.QWidget):
         if dialog.exec():
             fname_full = dialog.selectedFiles()
             options = dialog.get_custom_option()
+            autostart_save = options['autostart']
             loglevel_save = options['loglevel']
             save_metadata = options['save_metadata']  # Check if metadata shall be saved
 
-        self.redvypr.save_config(fname=fname_full, add_metadata=save_metadata, set_loglevel=loglevel_save)
+        self.redvypr.save_config(fname=fname_full, add_metadata=save_metadata, set_loglevel=loglevel_save, autostart=autostart_save)
 
     def open_edit_metadata_widget(self):
         """

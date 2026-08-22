@@ -45,6 +45,10 @@ class DeviceCustomConfig(pydantic.BaseModel):
     filedateformat: str = pydantic.Field(default='%Y-%m-%d_%H%M%S', description='Dateformat used in the filename, must be understood by datetime.strftime')
     filecountformat: str = pydantic.Field(default='04', description='Format of the counter. Add zero if trailing zeros are wished, followed by number of digits. 04 becomes {:04d}')
     filegzipformat: str = pydantic.Field(default='gz', description='If empty, no compression done')
+    dt_update_gui: float = pydantic.Field(default=1,
+                                              description='Time in seconds for an update of the device status in the gui')
+    dt_update_console: float = pydantic.Field(default=10,
+                                              description='Time in seconds for an update of the device status on the console')
 
 
 def create_logfile(config,count=0):
@@ -105,7 +109,17 @@ def create_logfile(config,count=0):
 
 def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start()'
-    logger.debug(funcname + ':Opening writing:')
+    logger_start = logging.getLogger('redvypr.device.rawdatawriter.start')
+    loglevel = device_info['device_config']['base_config']['loglevel']
+    # print("Loglevel",loglevel)
+    logger_start.setLevel(loglevel)
+    logger_start.debug(funcname + ':Opening writing:')
+    pdconfig = DeviceCustomConfig.model_validate(config)
+    dt_update_gui = pdconfig.dt_update_gui # Update interval in seconds
+    dt_update_console = pdconfig.dt_update_console  # Update interval in seconds for a logger string
+    t_update_gui = time.time()
+    t_update_console = time.time()
+
     #print('Config',config)
     if config['clearqueue']:
         while (datainqueue.empty() == False):
@@ -128,14 +142,14 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 dtfac = 0
                 
             dtnews     = dtneworig * dtfac
-            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
+            logger_start.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['dt_newfile'],config['dt_newfile_unit']))
         except Exception as e:
-            logger.exception(e)
+            logger_start.exception(e)
             dtnews = 0
             
         try:
-            sizeneworig  = config['size_newfile']
-            sizeunit     = config['size_newfile_unit']
+            sizeneworig = config['size_newfile']
+            sizeunit = config['size_newfile_unit']
             if(sizeunit.lower() == 'kb'):
                 sizefac = 1000.0
             elif(sizeunit.lower() == 'mb'):            
@@ -145,12 +159,11 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
             else:
                 sizefac = 0
                 
-            sizenewb     = sizeneworig * sizefac # Size in bytes
-            logger.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
+            sizenewb = sizeneworig * sizefac # Size in bytes
+            logger_start.info(funcname + ' Will create new file every {:d} {:s}.'.format(config['size_newfile'],config['size_newfile_unit']))
         except Exception as e:
-            logger.exception(e)
+            logger_start.exception(e)
             sizenewb = 0  # Size in bytes
-            
             
     try:
         config['dt_sync']
@@ -175,16 +188,13 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
     if(f == None):
        return None
     
-
-    
-    tfile           = time.time() # Save the time the file was created
-    tflush          = time.time() # Save the time the file was created
-    tupdate         = time.time() # Save the time for the update timing
+    tfile = time.time() # Save the time the file was created
+    tflush = time.time() # Save the time the file was created
     FLAG_RUN = True
     while FLAG_RUN:
-        tcheck      = time.time()
+        tcheck = time.time()
         if True:
-            file_age      = tcheck - tfile
+            file_age = tcheck - tfile
             FLAG_TIME = (dtnews > 0)  and (file_age >= dtnews)
             FLAG_SIZE = (sizenewb > 0) and (bytes_written >= sizenewb)
             if(FLAG_TIME or FLAG_SIZE):
@@ -200,8 +210,8 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 count += 1
                 statistics = create_data_statistic_dict()
                 tfile = tcheck   
-                bytes_written         = 0
-                packets_written       = 0
+                bytes_written = 0
+                packets_written = 0
                 data_stat = {'_deviceinfo': {}}
                 data_stat['_deviceinfo']['filename'] = filename
                 data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
@@ -209,8 +219,6 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                 data_stat['_deviceinfo']['bytes_written'] = bytes_written
                 data_stat['_deviceinfo']['packets_written'] = packets_written
                 dataqueue.put(data_stat)
-
-
 
         time.sleep(0.05)
         while(datainqueue.empty() == False):
@@ -221,7 +229,7 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     #logger.debug('Got a command: {:s}'.format(str(data)))
                     if (command is not None):
                         if(command == 'stop'):
-                            logger.debug(funcname + ' Stop command')
+                            logger_start.debug(funcname + ' Stop command')
                             FLAG_RUN = False
                             f.close()
                             data_stat = {'_deviceinfo': {}}
@@ -235,9 +243,9 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
 
                 do_data_statistics(data,statistics)
                 yamlstr = yaml.dump(data,explicit_end=True,explicit_start=True)
-                bytes_written         += len(yamlstr)
-                packets_written       += 1
-                bytes_written_total   += len(yamlstr)
+                bytes_written += len(yamlstr)
+                packets_written += 1
+                bytes_written_total += len(yamlstr)
                 packets_written_total += 1
                 f.write(yamlstr.encode('utf-8'))
                 f.write(b'\0')
@@ -246,21 +254,26 @@ def start(device_info, config, dataqueue=None, datainqueue=None, statusqueue=Non
                     os.fsync(f.fileno())
                     tflush = time.time()
 
-
-                # Send statistics
-                if ((time.time() - tupdate) > config['dt_update']):
-                    tupdate = time.time()
-                    data_stat = {'_deviceinfo':{}}
-                    data_stat['_deviceinfo']['filename']        = filename
-                    data_stat['_deviceinfo']['filename_full']   = os.path.realpath(filename)
-                    data_stat['_deviceinfo']['bytes_written']   = bytes_written
-                    data_stat['_deviceinfo']['packets_written'] = packets_written
-                    dataqueue.put(data_stat)
-
             except Exception as e:
                 logger.exception(e)
                 logger.debug(funcname + ':Exception:' + str(e))
                 #print(data)
+
+        # Print statistics
+        if ((time.time() - t_update_console) > dt_update_console) and (dt_update_console > 0):
+            t_update_console = time.time()
+            tstr = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+            logger_start.info(
+                f"{tstr}:{filename},size:{bytes_written},packets:{packets_written}")
+        # Send statistics
+        if ((time.time() - t_update_gui) > dt_update_gui):
+            tupdate_gui = time.time()
+            data_stat = {'_deviceinfo': {}}
+            data_stat['_deviceinfo']['filename'] = filename
+            data_stat['_deviceinfo']['filename_full'] = os.path.realpath(filename)
+            data_stat['_deviceinfo']['bytes_written'] = bytes_written
+            data_stat['_deviceinfo']['packets_written'] = packets_written
+            dataqueue.put(data_stat)
 
 #
 #

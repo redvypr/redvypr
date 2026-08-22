@@ -32,7 +32,7 @@ from redvypr.devices.interface.serial_single import start as start_serial_single
 
 _logo_file = redvypr_files.logo_file
 _icon_file = redvypr_files.icon_file
-description = 'Reading data from serveral serial devices'
+description = 'Reading and sending data of serial devices'
 
 
 logging.basicConfig(stream=sys.stderr)

@@ -109,6 +109,10 @@ class SerialDeviceConfigRedvypr(SerialDeviceConfig):
     command_history: list = pydantic.Field(default_factory=list,
                                            description='List of command data sent to the device')
 
+    dt_update_console: float = pydantic.Field(default=10,description='Time in seconds for an update of the device status on the console')
+    dt_update_gui: float = pydantic.Field(default=1,
+                                              description='Time in seconds for an update of the device status of the gui')
+
 class DeviceBaseConfig(pydantic.BaseModel):
     publishes: bool = True
     subscribes: bool = True
@@ -189,13 +193,17 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     chunksize = pdconfig.chunksize #The maximum amount of bytes read with one chunk
     dt_poll = pdconfig.dt_poll
     devicename_redvypr = device_info['device']
+    #print("config",config)
+    logger_str = f"device.serial_single(COM:{config['comport_device_short']})"
 
-    logger_start = logging.getLogger('redvypr.device.serial_single.start')
+    serial_device_str = f"manufacturer:{config['manufacturer']},SN:{config['serial_number']},VID:{config['vid']},PID:{config['pid']},COM:{config['comport_device_short']}"
+    #logger_start = logging.getLogger('redvypr.device.serial_single.start')
+    logger_start = logging.getLogger(logger_str)
 
     loglevel = device_info['device_config']['base_config']['loglevel']
     #print("Loglevel",loglevel)
     logger_start.setLevel(loglevel)
-    logger_start.debug(f"Starting ...\n")
+    logger_start.info(f"Starting device {serial_device_str}")
     logger_start.debug(f"Starting with device_info:{device_info}")
     logger_start.debug(f"Starting with config:{config}")
     logger_start.debug(f"Starting ...\n")
@@ -221,8 +229,13 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     if(type(newpacket) is not bytes):
         newpacket = newpacket.encode('utf-8')
         
+
+    dt_update_gui = pdconfig.dt_update_gui # Update interval in seconds
+    dt_update_console = pdconfig.dt_update_console  # Update interval in seconds for a logger string
+    t_update_gui = time.time()
+    t_update_console = time.time()
+
     rawdata_all = b''
-    dt_update = 1 # Update interval in seconds
     bytes_read = 0
     sentences_read = 0
     bytes_sent = 0
@@ -238,7 +251,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
     logger_start.debug('Starting serial read/write thread of comport: {serial_name}')
     serial_thread.start()
 
-    t_update = time.time()
+
     while True:
         try:
             data = datainqueue.get(block=False)
@@ -341,11 +354,20 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
                                 dataqueue.put(data)
 
                             rawdata_all = rawdata_split[-1]
-        
-        if((time.time() - t_update) > dt_update):
+
+        # Status
+        if ((time.time() - t_update_console) > dt_update_console) and (dt_update_console > 0):
             dbytes = bytes_read - bytes_read_old
             bytes_read_old = bytes_read
-            bps = dbytes/dt_update# bytes per second
+            bps = dbytes / dt_update_gui  # bytes per second
+            tstr = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+            logger_start.info(f"{tstr}:{serial_device_str}:bytes read: {bytes_read},sentences read: {sentences_read},bps: {bps}")
+            t_update_console = time.time()
+
+        if((time.time() - t_update_gui) > dt_update_gui) and (dt_update_gui > 0):
+            dbytes = bytes_read - bytes_read_old
+            bytes_read_old = bytes_read
+            bps = dbytes/dt_update_gui# bytes per second
             # Send status message
             data = {'t': time.time()}
             data['status'] = comport_device
@@ -358,7 +380,7 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             dataqueue.put(data)
             #print('ndata',len(rawdata_all),'rawdata',rawdata_all,type(rawdata_all))
             #print('bps',bps)
-            t_update = time.time()
+            t_update_gui = time.time()
 
 
 class Device(RedvyprDevice):
