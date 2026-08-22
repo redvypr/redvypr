@@ -370,8 +370,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
             bps = dbytes/dt_update_gui# bytes per second
             # Send status message
             data = {'t': time.time()}
-            data['status'] = comport_device
-            data['comport'] = comport_device
+            data['status'] = pdconfig.comport_device
+            data['comport'] = pdconfig.comport_device
             data['bytes_read'] = bytes_read
             data['sentences_read'] = sentences_read
             data['bytes_sent'] = bytes_sent
