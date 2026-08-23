@@ -104,7 +104,8 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
             #print("Processing data:")
             #print(f"{datapacket['data']=}")
-            merged_packets = tar_processor.process_rawdata(datapacket['data'])
+            tpacket = datapacket['t']
+            merged_packets = tar_processor.process_rawdata(datapacket['data'],t=tpacket)
             if merged_packets['metadata'] is not None:
                 for ppub in merged_packets['metadata']:
                     #print("Publishing metadata!",ppub)

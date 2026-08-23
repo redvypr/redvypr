@@ -709,7 +709,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
 #
 #
 class initDeviceWidget(QtWidgets.QWidget):
-    connect      = QtCore.pyqtSignal(RedvyprDevice) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+    connect = QtCore.pyqtSignal(RedvyprDevice) # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
     def __init__(self,device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout        = QtWidgets.QGridLayout(self)

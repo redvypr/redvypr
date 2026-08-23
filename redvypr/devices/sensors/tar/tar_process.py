@@ -516,7 +516,7 @@ class TarProcessor():
         self.datatypes.append('IMU')
 
 
-    def process_rawdata(self, binary_data):
+    def process_rawdata(self, binary_data, t=None):
         packets = {'merged_packets':[],'merged_tar_chain':[],'metadata':None}
         #print(f"\nProcessing rawdata:{binary_data}")
         for sensor, datatype in zip(self.sensors, self.datatypes):
@@ -524,7 +524,11 @@ class TarProcessor():
             # Check for overflow
             datapacket = redvypr.RedvyprDatadict()
             datapacket['data'] = binary_data
-            datapacket['t'] = time.time()
+            if t is not None:
+                datapacket['t'] = t
+            else:
+                datapacket['t'] = time.time()
+
             try:
                 if b'..\n' in binary_data:
                     data_packets_processed = None

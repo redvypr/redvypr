@@ -210,7 +210,7 @@ class redvypr_deviceInitWidget(QtWidgets.QWidget):
     def subscribe_clicked(self):
         button = self.sender()
         # self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
-        self.__subscribeWidget = redvypr.widgets.redvyprSubscribeWidget.SubscribeWidget(redvypr=self.redvypr, device=self.device)
+        self.__subscribeWidget = redvypr.widgets.redvypr_subscribe_widget.SubscribeWidget(redvypr=self.redvypr, device=self.device)
         self.__subscribeWidget.show()
         self.subscribed.emit(self.device)
 
@@ -369,7 +369,7 @@ class RedvyprdevicewidgetSimple(QtWidgets.QWidget):
     def subscribe_clicked(self):
         button = self.sender()
         # self.__con_widget = redvyprConnectWidget(devices=self.redvypr.devices, device=device)
-        self.__subscribeWidget = redvypr.widgets.redvyprSubscribeWidget.SubscribeWidget(redvypr=self.redvypr, device=self.device)
+        self.__subscribeWidget = redvypr.widgets.redvypr_subscribe_widget.SubscribeWidget(redvypr=self.redvypr, device=self.device)
         self.__subscribeWidget.show()
         self.subscribed.emit(self.device)
 
