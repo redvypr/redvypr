@@ -350,6 +350,7 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
     tfile = time.time()  # Save the time the file was created
     tflush = time.time()  # Save the time the file was created
     FLAG_NEW_FILE = True
+    FLAG_PAUSED = False
     nfile = 0
     # These are (re)created for every file inside the FLAG_NEW_FILE block below.
     # Initialized to None here so a 'stop' command arriving before the first
@@ -390,6 +391,27 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                     except:
                         logger.debug('stopping read thread failed:', exc_info=True)
                     break
+                elif command == 'pause':
+                    logger.debug('Pausing')
+                    FLAG_PAUSED = True
+                    try:
+                        statusqueue.put_nowait(sstr)
+                    except:
+                        pass
+                elif command == 'resume':
+                    logger.debug('Resuming')
+                    FLAG_PAUSED = False
+                    try:
+                        statusqueue.put_nowait(sstr)
+                    except:
+                        pass
+
+        if FLAG_PAUSED:
+            # Keep all replay state (current file, buffered packets, file
+            # position) untouched so replay continues exactly where it left
+            # off once resumed, instead of restarting like start/stop does.
+            time.sleep(0.1)
+            continue
 
         if FLAG_NEW_FILE:
             packets = []
@@ -613,6 +635,14 @@ class initDeviceWidget(QtWidgets.QWidget):
         self.startbtn.setCheckable(True)
         self.startbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
 
+        # Pauses the running replay in place (unlike stop, resuming continues
+        # from the exact same file/position instead of starting over)
+        self.pausebtn = QtWidgets.QPushButton("Pause")
+        self.pausebtn.clicked.connect(self.pause_clicked)
+        self.pausebtn.setCheckable(True)
+        self.pausebtn.setEnabled(False)
+        self.pausebtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+
         layout.addWidget(self.label, 0, 0, 1, -1)
 
         layout.addWidget(self.addfilesbtn, 1, 0, 1, -1)
@@ -624,7 +654,8 @@ class initDeviceWidget(QtWidgets.QWidget):
         layout.addWidget(self.replace_time_checkbox, 6, 1)
         layout.addWidget(self.speedup_label, 6, 2, 1, 1, QtCore.Qt.AlignRight)
         layout.addWidget(self.speedup_edit, 6, 3, 1, 1, QtCore.Qt.AlignRight)
-        layout.addWidget(self.startbtn, 7, 0, 2, -1)
+        layout.addWidget(self.startbtn, 7, 0, 2, 2)
+        layout.addWidget(self.pausebtn, 7, 2, 2, 2)
 
         # Update the widgets depending on the configuration
         self.update_filenamelist()
@@ -936,6 +967,22 @@ class initDeviceWidget(QtWidgets.QWidget):
             logger.debug(funcname + 'button released')
             self.device.thread_stop()
 
+    def pause_clicked(self):
+        """ Pauses/resumes the running replay in place. Unlike stop/start,
+        this does not reset the file index or read position: the replay
+        thread simply idles and continues from the same spot on resume.
+        """
+        funcname = self.__class__.__name__ + '.pause_clicked():'
+        logger.debug(funcname)
+        if self.pausebtn.isChecked():
+            logger.debug(funcname + 'button pressed, pausing')
+            self.pausebtn.setText('Resume')
+            self.device.thread_command('pause')
+        else:
+            logger.debug(funcname + 'button released, resuming')
+            self.pausebtn.setText('Pause')
+            self.device.thread_command('resume')
+
     def update_buttons(self):
         """ Updating all buttons depending on the thread status (if its alive, graying out things)
         """
@@ -949,6 +996,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             self.startbtn.setChecked(True)
             for w in self.config_widgets:
                 w.setEnabled(False)
+            self.pausebtn.setEnabled(True)
         # Not running
         else:
             self.startbtn.setText('Start')
@@ -959,6 +1007,13 @@ class initDeviceWidget(QtWidgets.QWidget):
             if (self.startbtn.isChecked()):
                 self.startbtn.setChecked(False)
             # self.conbtn.setEnabled(True)
+
+            # Pause has no meaning while stopped: disable it and reset its
+            # state so the next start always begins unpaused.
+            self.pausebtn.setEnabled(False)
+            if self.pausebtn.isChecked():
+                self.pausebtn.setChecked(False)
+            self.pausebtn.setText('Pause')
 
 
 class displayDeviceWidget(QtWidgets.QWidget):
@@ -978,20 +1033,47 @@ class displayDeviceWidget(QtWidgets.QWidget):
         self.__statusheader__ = ['Time', 'Filename', 'Filesize', 'Bytes read', 'Bytes total', '%', 'Packets read']
         self.statustable.setColumnCount(len(self.__statusheader__))
         self.statustable.setHorizontalHeaderLabels(self.__statusheader__)
-        self.statustable.setRowCount(1)
         self.statustable.verticalHeader().setVisible(False)
         self.statustable.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.col_filename = 1
+        # Maps a file's basename (as reported in status dicts) to its row
+        self.row_for_filename = {}
+        self.populate_file_table()
+        # Tracks the thread's running state so the file table is only
+        # rebuilt on a start/stop transition (the file list can only change
+        # while stopped, since initDeviceWidget disables it while running).
+        self.thread_was_running = self.device.get_thread_status()['thread_running']
 
         hlayout.addRow(self.statuslab)
-        layout.addWidget(self.statustable, 1)
+        layout.addWidget(self.statustable, 2)
         layout.addLayout(hlayout)
-        layout.addWidget(self.text, 5)
-        layout.addWidget(self.scrollchk, 1)
+        layout.addWidget(self.text, 1)
+        layout.addWidget(self.scrollchk, 0)
         self.statustimer = QtCore.QTimer()
         self.statustimer.timeout.connect(self.update)
         self.statustimer.start(500)
 
+    def populate_file_table(self):
+        """ Fills the status table with one row per configured file, so all
+        files are visible even before any status update for them arrived.
+        """
+        files = list(self.device.custom_config.files)
+        self.statustable.setRowCount(len(files))
+        self.row_for_filename = {}
+        for row, f in enumerate(files):
+            basename = os.path.basename(f)
+            self.row_for_filename[basename] = row
+            item = QtWidgets.QTableWidgetItem(basename)
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.statustable.setItem(row, self.col_filename, item)
+        self.statustable.resizeColumnsToContents()
+
     def update(self):
+        thread_running = self.device.get_thread_status()['thread_running']
+        if thread_running != self.thread_was_running:
+            self.populate_file_table()
+            self.thread_was_running = thread_running
+
         statusqueue = self.device.statusqueue
         while (statusqueue.empty() == False):
             try:
@@ -1002,11 +1084,20 @@ class displayDeviceWidget(QtWidgets.QWidget):
             if type(data) == dict:
                 # print('data',data)
                 statuskeys = ['time', 'filename', 'filesize', 'seek', 'datasize', 'pc', 'packets_num']
+                filename = data.get('filename')
+                row = self.row_for_filename.get(filename)
+                if row is None:
+                    # Not one of the files known at widget creation (e.g. the
+                    # file list changed after this widget was built): append
+                    # a row for it instead of dropping the update.
+                    row = self.statustable.rowCount()
+                    self.statustable.setRowCount(row + 1)
+                    self.row_for_filename[filename] = row
                 for i, k in enumerate(statuskeys):
                     datastr = str(data[k])
                     dataitem = QtWidgets.QTableWidgetItem(datastr)
-                    self.statustable.setItem(0, i, dataitem)
-                    self.statustable.resizeColumnsToContents()
+                    self.statustable.setItem(row, i, dataitem)
+                self.statustable.resizeColumnsToContents()
             else:
                 # Original position of scrollbar
                 pos = self.text.verticalScrollBar().value()
