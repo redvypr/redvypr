@@ -428,59 +428,91 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                 try:
                     p = read_dataqueue.get(timeout=2)
                     packets.append(p)
-                    FLAG_NEW_FILE = False
                 except queue.Empty:
-                    # File has fewer than npacket_buf packets (or is broken):
-                    # move on instead of raising an unhandled exception here.
-                    FLAG_NEW_FILE = True
+                    # File has fewer than npacket_buf packets (or is broken).
                     break
 
-            if FLAG_NEW_FILE == False:
+            # A file needs at least two packets to form a pnow/pnext pair
+            # from which the inter-packet dt can be computed. Files with
+            # fewer than npacket_buf packets are still replayed as long as
+            # at least two were read; only 0 or 1 packets cause a skip.
+            if len(packets) >= 2:
+                FLAG_NEW_FILE = False
                 pnow = packets.pop(0)
                 pnext = packets.pop(0)
+            else:
+                if len(packets) == 1:
+                    logger.warning(funcname + ': File {:s} contains only a single packet, skipping it '
+                                               '(no dt can be computed).'.format(filename))
+                FLAG_NEW_FILE = True
 
-        # Check if the read thread is still alive
-        if not (read_thread.is_alive()):
+        # Check if the read thread is still alive. Packets it already queued
+        # are drained below regardless of its status, so nothing it read
+        # right before finishing gets discarded.
+        thread_alive = read_thread.is_alive()
+        if thread_alive and len(packets) < npacket_buf:
+            dn = npacket_buf - len(packets)
+            # print('Asking for new packets',dn)
+            read_commandqueue.put(dn)
+        while True:
+            try:
+                packets.append(read_dataqueue.get_nowait())
+            except queue.Empty:
+                break
+
+        if len(packets) > 1:
+            t_pnow = pnow['_redvypr']['t']
+            t_pnext = pnext['_redvypr']['t']
+            dt = t_pnext - t_pnow
+            t_now = time.time()
+            if config['replace_time']:
+                pnow['t'] = t_now
+                pnow['_redvypr']['t'] = t_now
+
+            # print('sending',pnow)
+            dataqueue.put(pnow)
+            pnow = pnext
+            pnext = packets.pop(0)
+            packets_published += 1
+            dt_packet = dt / speedup
+            dt_packet_sum += dt_packet
+
+            if (dt_packet < 0):
+                dt_packet = 0
+            if (dt_packet > 10):
+                logger.warning(funcname + ' Long dt_packet of {:f} seconds'.format(dt_packet))
+
+            # print('sleeping dt_packet',dt_packet)
+            time.sleep(dt_packet)
+            t_sent = time.time()
+        elif not thread_alive:
+            # The file is exhausted and at most one packet is left in
+            # packets, so the normal pnow/pnext advance above can no longer
+            # run. Flush pnow, pnext and that leftover packet here instead
+            # of dropping them, then move on to the next file.
             logger.debug(funcname + ' Reading thread finished')
-            FLAG_NEW_FILE = True
-        else:
-            if len(packets) < npacket_buf:
-                dn = npacket_buf - len(packets)
-                # print('Asking for new packets',dn)
-                read_commandqueue.put(dn)
-                while True:
-                    try:
-                        packets.append(read_dataqueue.get_nowait())
-                    except:
-                        break
-            if len(packets) > 1:
-                if True:
-                    t_pnow = pnow['_redvypr']['t']
-                    t_pnext = pnext['_redvypr']['t']
-                    dt = t_pnext - t_pnow
+            remaining = [pnow, pnext] + packets
+            packets = []
+            for i, p in enumerate(remaining):
+                if config['replace_time']:
                     t_now = time.time()
-                    if config['replace_time']:
-                        pnow['t'] = t_now
-                        pnow['_redvypr']['t'] = t_now
-
-                    # print('sending',pnow)
-                    dataqueue.put(pnow)
-                    pnow = pnext
-                    pnext = packets.pop(0)
-                    packets_published += 1
+                    p['t'] = t_now
+                    p['_redvypr']['t'] = t_now
+                dataqueue.put(p)
+                packets_published += 1
+                if i < len(remaining) - 1:
+                    dt = remaining[i + 1]['_redvypr']['t'] - p['_redvypr']['t']
                     dt_packet = dt / speedup
                     dt_packet_sum += dt_packet
-
                     if (dt_packet < 0):
                         dt_packet = 0
                     if (dt_packet > 10):
                         logger.warning(funcname + ' Long dt_packet of {:f} seconds'.format(dt_packet))
-
-                    # print('sleeping dt_packet',dt_packet)
                     time.sleep(dt_packet)
-                    t_sent = time.time()
-            else:
-                time.sleep(0.1)
+            t_sent = time.time()
+            FLAG_NEW_FILE = True
+        else:
+            time.sleep(0.1)
 
         # Status update
         if (time.time() - t_status) > dt_status:
