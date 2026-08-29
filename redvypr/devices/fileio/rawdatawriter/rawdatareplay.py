@@ -405,6 +405,19 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
                         statusqueue.put_nowait(sstr)
                     except:
                         pass
+                elif command == 'speedup':
+                    try:
+                        comdata = data['_redvypr_command']['data']
+                        speedup = float(comdata['speedup'])
+                        sstr = funcname + ': Speedup changed to {:.2f}'.format(speedup)
+                        logger.debug(sstr)
+                    except Exception as e:
+                        sstr = funcname + ': Could not apply speedup change: ' + str(e)
+                        logger.warning(sstr)
+                    try:
+                        statusqueue.put_nowait(sstr)
+                    except:
+                        pass
 
         if FLAG_PAUSED:
             # Keep all replay state (current file, buffered packets, file
@@ -557,25 +570,28 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
 
 #
 #
-# The init widget
+# Reusable file-selection/replay-config widget. Works on any
+# DeviceCustomConfig-like object (files, replay_index, loop, speedup,
+# replace_time), not just a full RedvyprDevice, so it can be embedded both
+# in rawdatareplay's own initDeviceWidget and elsewhere (e.g. a future
+# "subscribe from file" UI on another device).
 #
 #
-class initDeviceWidget(QtWidgets.QWidget):
-    connect = QtCore.pyqtSignal(
-        RedvyprDevice)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+class FileReplayConfigWidget(QtWidgets.QWidget):
+    speedupChanged = QtCore.pyqtSignal(float)
+    loopChanged = QtCore.pyqtSignal(bool)
+    replaceTimeChanged = QtCore.pyqtSignal(bool)
+    filesChanged = QtCore.pyqtSignal()
 
-    def __init__(self, device=None):
-        super(QtWidgets.QWidget, self).__init__()
+    def __init__(self, custom_config, parent=None):
+        super().__init__(parent)
+        self.custom_config = custom_config
         layout = QtWidgets.QGridLayout(self)
         self.file_statistics = {}
         # Background quick_scan jobs started by inspect_data_thread(), each entry is a
         # dict {'thread', 'queue', 'row', 'filename'}. Polled by update_table_from_thread().
         self.inspect_threads = []
-        self.device = device
-        self.label = QtWidgets.QLabel("rawdatareplay setup")
-        self.label.setAlignment(QtCore.Qt.AlignCenter)
-        self.label.setStyleSheet(''' font-size: 24px; font: bold''')
-        self.config_widgets = []  # A list of all widgets that can only be used of the device is not started yet
+        self.config_widgets = []  # A list of all widgets that can only be used while not replaying
         # Input output widget
         self.inlabel = QtWidgets.QLabel("Filenames")
         self.inlabel.setStyleSheet(''' font-size: 20px; font: bold''')
@@ -613,65 +629,55 @@ class initDeviceWidget(QtWidgets.QWidget):
 
         # Looping the data?
         self.loop_checkbox = QtWidgets.QCheckBox('Loop')
-        loopflag = bool(self.device.custom_config.loop)
+        loopflag = bool(self.custom_config.loop)
         self.loop_checkbox.setChecked(loopflag)
-        self.loop_checkbox.stateChanged.connect(self.speedup_changed)
+        self.loop_checkbox.stateChanged.connect(self.values_changed)
         self.replace_time_checkbox = QtWidgets.QCheckBox('Replace time')
-        replace_time_flag = bool(self.device.custom_config.replace_time)
+        replace_time_flag = bool(self.custom_config.replace_time)
         self.replace_time_checkbox.setChecked(replace_time_flag)
-        self.replace_time_checkbox.stateChanged.connect(self.speedup_changed)
+        self.replace_time_checkbox.stateChanged.connect(self.values_changed)
         # Speedup
         self.speedup_edit = QtWidgets.QLineEdit(self)
         onlyDouble = QtGui.QDoubleValidator()
         self.speedup_edit.setValidator(onlyDouble)
         self.speedup_edit.setToolTip('Speedup of the packet replay.')
         self.speedup_label = QtWidgets.QLabel("Speedup factor")
-        speedup = float(self.device.custom_config.speedup)
+        speedup = float(self.custom_config.speedup)
         self.speedup_edit.setText("{:.1f}".format(speedup))
-        self.speedup_edit.textChanged.connect(self.speedup_changed)
+        self.speedup_edit.textChanged.connect(self.values_changed)
 
-        self.startbtn = QtWidgets.QPushButton("Start replay")
-        self.startbtn.clicked.connect(self.start_clicked)
-        self.startbtn.setCheckable(True)
-        self.startbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
-
-        # Pauses the running replay in place (unlike stop, resuming continues
-        # from the exact same file/position instead of starting over)
-        self.pausebtn = QtWidgets.QPushButton("Pause")
-        self.pausebtn.clicked.connect(self.pause_clicked)
-        self.pausebtn.setCheckable(True)
-        self.pausebtn.setEnabled(False)
-        self.pausebtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
-
-        layout.addWidget(self.label, 0, 0, 1, -1)
-
-        layout.addWidget(self.addfilesbtn, 1, 0, 1, -1)
-        layout.addWidget(self.remfilesbtn, 2, 0, 1, -1)
-        layout.addWidget(self.scanfilesbtn, 3, 0, 1, -1)
-        layout.addWidget(self.inlabel, 4, 0, 1, -1, QtCore.Qt.AlignCenter)
-        layout.addWidget(self.inlist, 5, 0, 1, -1)
-        layout.addWidget(self.loop_checkbox, 6, 0)
-        layout.addWidget(self.replace_time_checkbox, 6, 1)
-        layout.addWidget(self.speedup_label, 6, 2, 1, 1, QtCore.Qt.AlignRight)
-        layout.addWidget(self.speedup_edit, 6, 3, 1, 1, QtCore.Qt.AlignRight)
-        layout.addWidget(self.startbtn, 7, 0, 2, 2)
-        layout.addWidget(self.pausebtn, 7, 2, 2, 2)
+        layout.addWidget(self.addfilesbtn, 0, 0, 1, -1)
+        layout.addWidget(self.remfilesbtn, 1, 0, 1, -1)
+        layout.addWidget(self.scanfilesbtn, 2, 0, 1, -1)
+        layout.addWidget(self.inlabel, 3, 0, 1, -1, QtCore.Qt.AlignCenter)
+        layout.addWidget(self.inlist, 4, 0, 1, -1)
+        layout.addWidget(self.loop_checkbox, 5, 0)
+        layout.addWidget(self.replace_time_checkbox, 5, 1)
+        layout.addWidget(self.speedup_label, 5, 2, 1, 1, QtCore.Qt.AlignRight)
+        layout.addWidget(self.speedup_edit, 5, 3, 1, 1, QtCore.Qt.AlignRight)
 
         # Update the widgets depending on the configuration
         self.update_filenamelist()
-        self.statustimer = QtCore.QTimer()
-        self.statustimer.timeout.connect(self.update_buttons)
-        self.statustimer.start(500)
 
-    def speedup_changed(self):
-        funcname = self.__class__.__name__ + '.speedup_changed()'
+    def values_changed(self):
+        """ Called whenever loop/replace_time/speedup are edited: writes the
+        new values into custom_config and emits signals so an embedding
+        widget can react (e.g. push a live speedup update to a running
+        thread). Also called explicitly by callers that need custom_config
+        guaranteed up to date right before starting a replay.
+        """
+        funcname = self.__class__.__name__ + '.values_changed()'
         logger.debug(funcname)
-        # Speedup
-        self.device.custom_config.speedup = float(self.speedup_edit.text())
+        speedup = float(self.speedup_edit.text())
+        self.custom_config.speedup = speedup
         loopflag = self.loop_checkbox.isChecked()
         replace_time_flag = self.replace_time_checkbox.isChecked()
-        self.device.custom_config.loop = loopflag
-        self.device.custom_config.replace_time = replace_time_flag
+        self.custom_config.loop = loopflag
+        self.custom_config.replace_time = replace_time_flag
+
+        self.speedupChanged.emit(speedup)
+        self.loopChanged.emit(loopflag)
+        self.replaceTimeChanged.emit(replace_time_flag)
 
     def table_changed(self, row, col):
         funcname = self.__class__.__name__ + '.table_changed()'
@@ -686,7 +692,7 @@ class initDeviceWidget(QtWidgets.QWidget):
                 istart = int(rs[0])
                 iend = int(rs[1])
                 istep = int(rs[2])
-                self.device.custom_config.replay_index[item.replay_index] = rindex
+                self.custom_config.replay_index[item.replay_index] = rindex
                 item.replay_index_str = rindex
             except Exception as e:
                 logger.exception(e)
@@ -712,15 +718,15 @@ class initDeviceWidget(QtWidgets.QWidget):
                 pass
             self.inlist.clear()
             self.inlist.setHorizontalHeaderLabels(self.__filelistheader__)
-            nfiles = len(self.device.custom_config.files)
+            nfiles = len(self.custom_config.files)
             self.inlist.setRowCount(nfiles)
             rows = []
-            for i, f in enumerate(self.device.custom_config.files):
-                if len(self.device.custom_config.replay_index) < (i + 1):
-                    self.device.custom_config.replay_index.append(self.device.custom_config.replay_index[-1])
-                    replayindex = self.device.custom_config.replay_index[-1]
+            for i, f in enumerate(self.custom_config.files):
+                if len(self.custom_config.replay_index) < (i + 1):
+                    self.custom_config.replay_index.append(self.custom_config.replay_index[-1])
+                    replayindex = self.custom_config.replay_index[-1]
                 else:
-                    replayindex = self.device.custom_config.replay_index[i]
+                    replayindex = self.custom_config.replay_index[i]
 
                 item = QtWidgets.QTableWidgetItem(str(replayindex))
                 item.replay_index = i
@@ -741,27 +747,21 @@ class initDeviceWidget(QtWidgets.QWidget):
                 rows.append(i)
 
             self.inlist.resizeColumnsToContents()
-            # for i, f in enumerate(self.device.config.files):
+            # for i, f in enumerate(self.custom_config.files):
             #    self.scan_file(str(f), i)
 
             self.inlist.resizeColumnsToContents()
 
             # Loop flag
-            loop = bool(self.device.custom_config.loop)
+            loop = bool(self.custom_config.loop)
             self.loop_checkbox.setChecked(loop)
-            speedupstr = "{:.1f}".format(float(self.device.custom_config.speedup))
+            speedupstr = "{:.1f}".format(float(self.custom_config.speedup))
             self.speedup_edit.setText(speedupstr)
             ## Add the packetnumber etc etc
             # self.scan_files(rows)
             self.inlist.cellChanged.connect(self.table_changed)
         except Exception as e:
             logger.exception(e)
-
-    def finalize_init(self):
-        """ Util function that is called by redvypr after initializing all config (i.e. the configuration from a yaml file)
-        """
-        funcname = self.__class__.__name__ + '.finalize_init()'
-        logger.debug(funcname)
 
     def scan_all_files_clicked(self):
         """ Scans every file currently in the list, regardless of selection.
@@ -906,16 +906,18 @@ class initDeviceWidget(QtWidgets.QWidget):
         """
         funcname = self.__class__.__name__ + '.remove_all_files_clicked()'
         logger.debug(funcname)
-        self.device.custom_config.files.clear()
+        self.custom_config.files.clear()
         self.update_filenamelist()
+        self.filesChanged.emit()
 
     def remove_file_row(self, row):
         """ Called by a per-row 'Remove' button click; removes just that row's file.
         """
         funcname = self.__class__.__name__ + '.remove_file_row()'
         logger.debug(funcname)
-        self.device.custom_config.files.pop(row)
+        self.custom_config.files.pop(row)
         self.update_filenamelist()
+        self.filesChanged.emit()
 
     def add_files(self):
         """ Opens a dialog to choose file to add
@@ -927,23 +929,172 @@ class initDeviceWidget(QtWidgets.QWidget):
                                                               "redvypr raw gzip (*.redvypr_yaml.gz);;redvypr raw (*.redvypr_yaml);;All Files (*)")
         for f in filenames:
             if regex_indexfile.match(f) is None:
-                self.device.custom_config.files.append(f)
+                self.custom_config.files.append(f)
             else:
                 logger.info('Found index file {}, will not use it'.format(f))
 
         self.update_filenamelist()
         self.inlist.sortItems(self.col_fname, QtCore.Qt.AscendingOrder)
+        self.filesChanged.emit()
 
     def resort_files(self):
         """ Resorts the files in config['files'] according to the sorting in the table
         """
         files_new = []
-        nfiles = len(self.device.custom_config.files)
+        nfiles = len(self.custom_config.files)
         for i in range(nfiles):
             filename = self.inlist.item(i, self.col_fname).text()
             files_new.append(filename)
 
-        self.device.custom_config.files = files_new
+        self.custom_config.files = files_new
+
+
+#
+#
+# Reusable status table + log view for a file replay. Takes a statusqueue
+# directly (not a device), so it can be driven by rawdatareplay's own
+# device.statusqueue or by a dedicated queue belonging to some other
+# mechanism (e.g. a future per-device file subscription).
+#
+#
+class FileReplayStatusWidget(QtWidgets.QWidget):
+    def __init__(self, statusqueue, files=None, parent=None):
+        super().__init__(parent)
+        self.statusqueue = statusqueue
+        layout = QtWidgets.QVBoxLayout(self)
+        hlayout = QtWidgets.QFormLayout()
+        self.text = QtWidgets.QPlainTextEdit(self)
+        self.text.setReadOnly(True)
+        self.scrollchk = QtWidgets.QCheckBox('Scroll to end')
+        self.scrollchk.setChecked(True)
+        self.statuslab = QtWidgets.QLabel("Status")
+        self.text.setMaximumBlockCount(10000)
+        # Add a table
+        self.statustable = QtWidgets.QTableWidget()
+        self.__statusheader__ = ['Time', 'Filename', 'Filesize', 'Bytes read', 'Bytes total', '%', 'Packets read']
+        self.statustable.setColumnCount(len(self.__statusheader__))
+        self.statustable.setHorizontalHeaderLabels(self.__statusheader__)
+        self.statustable.verticalHeader().setVisible(False)
+        self.statustable.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.col_filename = 1
+        # Maps a file's basename (as reported in status dicts) to its row
+        self.row_for_filename = {}
+        self.populate_file_table(files or [])
+
+        hlayout.addRow(self.statuslab)
+        layout.addWidget(self.statustable, 2)
+        layout.addLayout(hlayout)
+        layout.addWidget(self.text, 1)
+        layout.addWidget(self.scrollchk, 0)
+        self.statustimer = QtCore.QTimer()
+        self.statustimer.timeout.connect(self.update)
+        self.statustimer.start(500)
+
+    def populate_file_table(self, files):
+        """ Fills the status table with one row per given file, so all files
+        are visible even before any status update for them arrived. Callers
+        re-invoke this (e.g. on a start/stop transition) if the file list
+        may have changed since the widget was created.
+        """
+        self.statustable.setRowCount(len(files))
+        self.row_for_filename = {}
+        for row, f in enumerate(files):
+            basename = os.path.basename(f)
+            self.row_for_filename[basename] = row
+            item = QtWidgets.QTableWidgetItem(basename)
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.statustable.setItem(row, self.col_filename, item)
+        self.statustable.resizeColumnsToContents()
+
+    def update(self):
+        while (self.statusqueue.empty() == False):
+            try:
+                data = self.statusqueue.get(block=False)
+            except:
+                break
+
+            if type(data) == dict:
+                # print('data',data)
+                statuskeys = ['time', 'filename', 'filesize', 'seek', 'datasize', 'pc', 'packets_num']
+                filename = data.get('filename')
+                row = self.row_for_filename.get(filename)
+                if row is None:
+                    # Not one of the files known at widget creation (e.g. the
+                    # file list changed after this widget was built): append
+                    # a row for it instead of dropping the update.
+                    row = self.statustable.rowCount()
+                    self.statustable.setRowCount(row + 1)
+                    self.row_for_filename[filename] = row
+                for i, k in enumerate(statuskeys):
+                    datastr = str(data[k])
+                    dataitem = QtWidgets.QTableWidgetItem(datastr)
+                    self.statustable.setItem(row, i, dataitem)
+                self.statustable.resizeColumnsToContents()
+            else:
+                # Original position of scrollbar
+                pos = self.text.verticalScrollBar().value()
+                self.text.moveCursor(QtGui.QTextCursor.End)
+                self.text.insertPlainText(str(data) + '\n')
+                if (self.scrollchk.isChecked()):
+                    self.text.verticalScrollBar().setValue(self.text.verticalScrollBar().maximum())
+                else:
+                    self.text.verticalScrollBar().setValue(pos)
+
+
+#
+#
+# The init widget
+#
+#
+class initDeviceWidget(QtWidgets.QWidget):
+    connect = QtCore.pyqtSignal(
+        RedvyprDevice)  # Signal requesting a connect of the datainqueue with available dataoutqueues of other devices
+
+    def __init__(self, device=None):
+        super(QtWidgets.QWidget, self).__init__()
+        layout = QtWidgets.QGridLayout(self)
+        self.device = device
+        self.label = QtWidgets.QLabel("rawdatareplay setup")
+        self.label.setAlignment(QtCore.Qt.AlignCenter)
+        self.label.setStyleSheet(''' font-size: 24px; font: bold''')
+
+        self.file_config = FileReplayConfigWidget(self.device.custom_config)
+        self.file_config.speedupChanged.connect(self.speedup_changed_live)
+
+        self.startbtn = QtWidgets.QPushButton("Start replay")
+        self.startbtn.clicked.connect(self.start_clicked)
+        self.startbtn.setCheckable(True)
+        self.startbtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+
+        # Pauses the running replay in place (unlike stop, resuming continues
+        # from the exact same file/position instead of starting over)
+        self.pausebtn = QtWidgets.QPushButton("Pause")
+        self.pausebtn.clicked.connect(self.pause_clicked)
+        self.pausebtn.setCheckable(True)
+        self.pausebtn.setEnabled(False)
+        self.pausebtn.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+
+        layout.addWidget(self.label, 0, 0, 1, -1)
+        layout.addWidget(self.file_config, 1, 0, 1, -1)
+        layout.addWidget(self.startbtn, 2, 0, 2, 2)
+        layout.addWidget(self.pausebtn, 2, 2, 2, 2)
+
+        self.statustimer = QtCore.QTimer()
+        self.statustimer.timeout.connect(self.update_buttons)
+        self.statustimer.start(500)
+
+    def speedup_changed_live(self, speedup):
+        # The running thread got its own copy of the config at start time,
+        # so it will not pick up custom_config.speedup on its own. Push the
+        # new value to it directly so the speedup can be changed live.
+        if self.device.get_thread_status()['thread_running']:
+            self.device.thread_command('speedup', comdata={'speedup': speedup})
+
+    def finalize_init(self):
+        """ Util function that is called by redvypr after initializing all config (i.e. the configuration from a yaml file)
+        """
+        funcname = self.__class__.__name__ + '.finalize_init()'
+        logger.debug(funcname)
 
     def con_clicked(self):
         funcname = self.__class__.__name__ + '.con_clicked():'
@@ -960,7 +1111,7 @@ class initDeviceWidget(QtWidgets.QWidget):
             logger.debug(funcname + "button pressed")
             # Update the config for replay
             # update loop, replace_time and speedup
-            self.speedup_changed()
+            self.file_config.values_changed()
             # Replay index
             self.device.thread_start()
         else:
@@ -994,13 +1145,13 @@ class initDeviceWidget(QtWidgets.QWidget):
         if (thread_status):
             self.startbtn.setText('Stop')
             self.startbtn.setChecked(True)
-            for w in self.config_widgets:
+            for w in self.file_config.config_widgets:
                 w.setEnabled(False)
             self.pausebtn.setEnabled(True)
         # Not running
         else:
             self.startbtn.setText('Start')
-            for w in self.config_widgets:
+            for w in self.file_config.config_widgets:
                 w.setEnabled(True)
 
             # Check if an error occured and the startbutton
@@ -1020,91 +1171,21 @@ class displayDeviceWidget(QtWidgets.QWidget):
     def __init__(self, device=None):
         super(QtWidgets.QWidget, self).__init__()
         layout = QtWidgets.QVBoxLayout(self)
-        hlayout = QtWidgets.QFormLayout()
         self.device = device
-        self.text = QtWidgets.QPlainTextEdit(self)
-        self.text.setReadOnly(True)
-        self.scrollchk = QtWidgets.QCheckBox('Scroll to end')
-        self.scrollchk.setChecked(True)
-        self.statuslab = QtWidgets.QLabel("Status")
-        self.text.setMaximumBlockCount(10000)
-        # Add a table
-        self.statustable = QtWidgets.QTableWidget()
-        self.__statusheader__ = ['Time', 'Filename', 'Filesize', 'Bytes read', 'Bytes total', '%', 'Packets read']
-        self.statustable.setColumnCount(len(self.__statusheader__))
-        self.statustable.setHorizontalHeaderLabels(self.__statusheader__)
-        self.statustable.verticalHeader().setVisible(False)
-        self.statustable.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        self.col_filename = 1
-        # Maps a file's basename (as reported in status dicts) to its row
-        self.row_for_filename = {}
-        self.populate_file_table()
+        self.status_widget = FileReplayStatusWidget(self.device.statusqueue,
+                                                     files=list(self.device.custom_config.files))
+        layout.addWidget(self.status_widget)
         # Tracks the thread's running state so the file table is only
         # rebuilt on a start/stop transition (the file list can only change
         # while stopped, since initDeviceWidget disables it while running).
         self.thread_was_running = self.device.get_thread_status()['thread_running']
-
-        hlayout.addRow(self.statuslab)
-        layout.addWidget(self.statustable, 2)
-        layout.addLayout(hlayout)
-        layout.addWidget(self.text, 1)
-        layout.addWidget(self.scrollchk, 0)
         self.statustimer = QtCore.QTimer()
-        self.statustimer.timeout.connect(self.update)
+        self.statustimer.timeout.connect(self.check_thread_transition)
         self.statustimer.start(500)
 
-    def populate_file_table(self):
-        """ Fills the status table with one row per configured file, so all
-        files are visible even before any status update for them arrived.
-        """
-        files = list(self.device.custom_config.files)
-        self.statustable.setRowCount(len(files))
-        self.row_for_filename = {}
-        for row, f in enumerate(files):
-            basename = os.path.basename(f)
-            self.row_for_filename[basename] = row
-            item = QtWidgets.QTableWidgetItem(basename)
-            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
-            self.statustable.setItem(row, self.col_filename, item)
-        self.statustable.resizeColumnsToContents()
-
-    def update(self):
+    def check_thread_transition(self):
         thread_running = self.device.get_thread_status()['thread_running']
         if thread_running != self.thread_was_running:
-            self.populate_file_table()
+            self.status_widget.populate_file_table(list(self.device.custom_config.files))
             self.thread_was_running = thread_running
-
-        statusqueue = self.device.statusqueue
-        while (statusqueue.empty() == False):
-            try:
-                data = statusqueue.get(block=False)
-            except:
-                break
-
-            if type(data) == dict:
-                # print('data',data)
-                statuskeys = ['time', 'filename', 'filesize', 'seek', 'datasize', 'pc', 'packets_num']
-                filename = data.get('filename')
-                row = self.row_for_filename.get(filename)
-                if row is None:
-                    # Not one of the files known at widget creation (e.g. the
-                    # file list changed after this widget was built): append
-                    # a row for it instead of dropping the update.
-                    row = self.statustable.rowCount()
-                    self.statustable.setRowCount(row + 1)
-                    self.row_for_filename[filename] = row
-                for i, k in enumerate(statuskeys):
-                    datastr = str(data[k])
-                    dataitem = QtWidgets.QTableWidgetItem(datastr)
-                    self.statustable.setItem(row, i, dataitem)
-                self.statustable.resizeColumnsToContents()
-            else:
-                # Original position of scrollbar
-                pos = self.text.verticalScrollBar().value()
-                self.text.moveCursor(QtGui.QTextCursor.End)
-                self.text.insertPlainText(str(data) + '\n')
-                if (self.scrollchk.isChecked()):
-                    self.text.verticalScrollBar().setValue(self.text.verticalScrollBar().maximum())
-                else:
-                    self.text.verticalScrollBar().setValue(pos)
 
