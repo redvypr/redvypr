@@ -17,6 +17,7 @@ PACKET_TAGS = {
     50003: "gnss",
     50004: "raw",
     50005: "ntc",
+    50006: "board_temp",
 }
 
 # Map keys (cbor_key_t)
@@ -45,6 +46,7 @@ KEYS = {
     50: "ntc_raw",
     51: "ntc_ohm",
     52: "ntc_temp",
+    60: "board_temp_c",
 }
 
 # cbor_source_id_t
