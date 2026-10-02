@@ -70,6 +70,9 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                                                        'status, 0 = only on request')
     console_show_commands: bool = pydantic.Field(default=False, description='Show the traffic of internal '
                                                                             'ot commands in the console')
+    dataset_tlvs: str = pydantic.Field(default='', description='Active operational dataset (hex TLVs) used to '
+                                                               'provision nodes. Contains the network key!')
+    node_comport: str = pydantic.Field(default='', description='Serial port of a node to be provisioned')
     firmware_image: str = pydantic.Field(default='', description='Signed firmware image (zephyr.signed.bin)')
     firmware_force: bool = pydantic.Field(default=False, description='Flash even if the image is already installed')
 
@@ -207,12 +210,39 @@ class _Gateway:
                 tlvs = ot_cli.active_dataset_tlvs(self.cli)
                 # Not published as data (contains the network key), only as command result
                 self.result(command, True, 'Active dataset', dataset_tlvs=tlvs)
+            elif command == 'provision':
+                self.provision(args.get('port', ''), args.get('dataset', ''))
             elif command == 'flash':
                 self.flash(args.get('image', ''), bool(args.get('force', False)))
             else:
                 self.result(command, False, f'Unknown command {command!r}')
         except (ot_cli.OtError, TimeoutError, smp_serial.SmpError, OSError, ValueError) as exc:
             self.result(command, False, str(exc))
+
+    def provision(self, port, dataset):
+        """Store the dataset on a node (own port or a second serial port) and start Thread."""
+        if not dataset:
+            raise ValueError('No dataset available, read it from the gateway first')
+        if not port or port == self.config.comport:
+            node_cli, node_ser, label = self.cli, None, 'this device'
+        else:
+            node_ser = serial.Serial(port, self.config.baud, timeout=0.05)
+            label = port
+            node_cli = ot_cli.OtCli(node_ser, ot_cli.LineReader(),
+                                    lambda line, is_resp: self.on_line(f'[{port}] {line}', is_resp))
+        try:
+            self.result('provision', True, f'Provisioning {label} ...')
+            st = ot_cli.provision_node(node_cli, dataset)
+            if st['attached']:
+                self.result('provision', True, f"{label} joined the network as {st['state']} "
+                                               f"(extaddr {st['extaddr']})")
+            else:
+                self.result('provision', False, f"{label}: dataset stored, but not attached yet "
+                                                f"(state {st['state']!r}). Out of range or no "
+                                                f"leader running?")
+        finally:
+            if node_ser is not None:
+                node_ser.close()
 
     def read_status(self):
         status = ot_cli.read_status(self.cli)
@@ -458,20 +488,102 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         form_btn.clicked.connect(self.form_network)
         status_btn = QtWidgets.QPushButton('Read status')
         status_btn.clicked.connect(lambda: self.device.thread_command('ot_status', {}))
-        dataset_btn = QtWidgets.QPushButton('Show active dataset')
-        dataset_btn.clicked.connect(lambda: self.device.thread_command('dataset', {}))
-        for b in (form_btn, status_btn, dataset_btn):
+        for b in (form_btn, status_btn):
             btn_row.addWidget(b)
-        self.run_widgets.extend([form_btn, status_btn, dataset_btn])
+        self.run_widgets.extend([form_btn, status_btn])
 
         self.status_tree = QtWidgets.QTreeWidget()
         self.status_tree.setHeaderLabels(['Item', 'Value'])
         self.status_tree.setColumnWidth(0, 160)
 
+        prov_box = QtWidgets.QGroupBox('Provision nodes (the dataset contains the network key)')
+        prov = QtWidgets.QGridLayout(prov_box)
+        self.dataset_label = QtWidgets.QLabel()
+        read_ds = QtWidgets.QPushButton('Read dataset from gateway')
+        read_ds.clicked.connect(lambda: self.device.thread_command('dataset', {}))
+        copy_ds = QtWidgets.QPushButton('Copy')
+        copy_ds.clicked.connect(lambda: QtWidgets.QApplication.clipboard().setText(self.cfg.dataset_tlvs))
+        self.node_port = QtWidgets.QComboBox()
+        self.node_port.setEditable(True)
+        self.node_port.currentTextChanged.connect(self.node_port_changed)
+        node_refresh = QtWidgets.QPushButton('Refresh')
+        node_refresh.clicked.connect(self.refresh_node_ports)
+        prov_btn = QtWidgets.QPushButton('Provision node via UART')
+        prov_btn.clicked.connect(self.provision_node)
+        export_btn = QtWidgets.QPushButton('Export autoexec.txt ...')
+        export_btn.clicked.connect(self.export_autoexec)
+        prov.addWidget(QtWidgets.QLabel('Dataset'), 0, 0)
+        prov.addWidget(self.dataset_label, 0, 1)
+        prov.addWidget(read_ds, 0, 2)
+        prov.addWidget(copy_ds, 0, 3)
+        prov.addWidget(QtWidgets.QLabel('Node port'), 1, 0)
+        prov.addWidget(self.node_port, 1, 1)
+        prov.addWidget(node_refresh, 1, 2)
+        prov.addWidget(prov_btn, 1, 3)
+        prov.addWidget(export_btn, 2, 2, 1, 2)
+        prov.addWidget(QtWidgets.QLabel('Node port = gateway port provisions the device on this port '
+                                        '(e.g. after reconnecting the cable to a node).'), 3, 0, 1, 4)
+        self.run_widgets.extend([read_ds, prov_btn])
+        self.refresh_node_ports()
+        self.update_dataset_label()
+
         lay.addWidget(form_box)
         lay.addLayout(btn_row)
+        lay.addWidget(prov_box)
         lay.addWidget(self.status_tree, 1)
         return w
+
+    def refresh_node_ports(self):
+        current = self.cfg.node_comport
+        self.node_port.blockSignals(True)
+        self.node_port.clear()
+        for p in serial.tools.list_ports.comports():
+            self.node_port.addItem(f'{p.device}  ({p.description})', p.device)
+        idx = self.node_port.findData(current)
+        if idx >= 0:
+            self.node_port.setCurrentIndex(idx)
+        else:
+            self.node_port.setEditText(current)
+        self.node_port.blockSignals(False)
+
+    def node_port_changed(self, text):
+        data = self.node_port.currentData()
+        self.cfg.node_comport = data if data else text.split()[0] if text.strip() else ''
+
+    def update_dataset_label(self):
+        if not self.cfg.dataset_tlvs:
+            self.dataset_label.setText('none - read it from the gateway')
+            return
+        try:
+            info = ot_cli.parse_dataset_tlvs(self.cfg.dataset_tlvs)
+            self.dataset_label.setText(f"{info['network_name']}, channel {info['channel']}, "
+                                       f"PAN ID {info['panid']}"
+                                       + ('' if info['has_networkkey'] else ' (no network key!)'))
+        except ValueError as exc:
+            self.dataset_label.setText(f'invalid dataset: {exc}')
+
+    def provision_node(self):
+        port = self.cfg.node_comport
+        target = 'the device on the gateway port' if not port or port == self.cfg.comport else port
+        answer = QtWidgets.QMessageBox.question(
+            self, 'Provision node',
+            f'Store the Thread dataset on {target}? The node leaves its current network.')
+        if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.device.thread_command('provision', {'port': port, 'dataset': self.cfg.dataset_tlvs})
+
+    def export_autoexec(self):
+        if not self.cfg.dataset_tlvs:
+            QtWidgets.QMessageBox.warning(self, 'Export autoexec.txt', 'Read the dataset from the gateway first.')
+            return
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Save autoexec.txt (copy to the SD card root)',
+                                                        'autoexec.txt', 'Text files (*.txt)')
+        if not path:
+            return
+        try:
+            with open(path, 'w', newline='\n') as f:
+                f.write(ot_cli.autoexec_text(self.cfg.dataset_tlvs))
+        except (OSError, ValueError) as exc:
+            QtWidgets.QMessageBox.critical(self, 'Export autoexec.txt', str(exc))
 
     def generate_credentials(self):
         self.net_key.setText(secrets.token_hex(16))
@@ -623,10 +735,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         text = f"[{data.get('command')}] {'OK' if data.get('ok') else 'ERROR'}: {data.get('message', '')}"
         self.console_text.appendPlainText(text)
         if data.get('command') == 'dataset' and data.get('ok'):
-            QtWidgets.QInputDialog.getText(self, 'Active operational dataset',
-                                           'TLVs (contain the network key!), e.g. for '
-                                           '"ot dataset set active <tlvs>":',
-                                           QtWidgets.QLineEdit.EchoMode.Normal, data.get('dataset_tlvs', ''))
+            self.cfg.dataset_tlvs = data.get('dataset_tlvs', '')
+            self.update_dataset_label()
         elif data.get('command') == 'flash' and not data.get('ok'):
             self.fw_log.appendPlainText(text)
 
