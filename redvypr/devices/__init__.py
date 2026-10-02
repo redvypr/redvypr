@@ -7,6 +7,7 @@ from . import interface
 from . import sensors
 from . import db
 from . import measurement
+from . import norlog
 
 redvypr_devicemodule = True
 

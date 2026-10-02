@@ -64,6 +64,7 @@ class NetCDFWriter:
         self.device_info = device_info
         self.config = config
         self.file_count = 0
+        self.time_string = None # The datestr for the file
 
         self.flag_zlib = config.get('zlib', False)
         self.packets_written = 0
@@ -120,7 +121,11 @@ class NetCDFWriter:
             filename += self.config['fileprefix']
 
         if len(self.config['filedateformat']) > 0:
-            t_str = datetime.datetime.now().strftime(self.config['filedateformat'])
+            if self.file_count == 0 and self.time_string is None:
+                t_str = datetime.datetime.now().strftime(self.config['filedateformat'])
+                self.time_string = t_str
+            else:
+                t_str = self.time_string
             filename += '_' + t_str
 
         if len(self.config['filecountformat']) > 0:

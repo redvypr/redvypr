@@ -532,7 +532,16 @@ class RedvyprDevice(QtCore.QObject):
         self.thread_communication = self.datainqueue
 
         self.subscribed_addresses = []
-        
+
+        # State for an optional "file subscription": a background thread
+        # replaying raw data file(s) directly into this device's own
+        # datainqueue, bypassing the normal publish/subscribe routing.
+        # See start_file_subscription().
+        self._filesub_thread = None
+        self._filesub_thread_uuid = None
+        self._filesub_commandqueue = None
+        self._filesub_statusqueue = None
+
         self.logger = logging.getLogger('redvypr.' + self.name)
         self.logger.setLevel(device_parameter.loglevel)
         # Some placeholder attribute, that will be filled by redvypr_main_widget, if the gui is used
@@ -1000,6 +1009,95 @@ class RedvyprDevice(QtCore.QObject):
                         self.logger.warning(funcname + 'Could not start thread.',exc_info=True)
 
                         return None
+
+    def start_file_subscription(self, files, replay_index=None, loop=False, speedup=1.0, replace_time=False):
+        """
+        Replays one or more redvypr raw data files directly into this
+        device's own datainqueue, bypassing the normal publish/subscribe
+        routing (distribute_data()/subscribed_addresses) entirely -- only
+        this device receives the replayed packets.
+
+        This simply runs rawdatareplay.start() (the plain function used by
+        the standalone rawdatareplay device) in a background thread, with
+        its "dataqueue" output argument pointed at self.datainqueue instead
+        of a device's own outgoing queue. A private command/status queue
+        pair, unrelated to self.thread_communication, is used to control
+        pause/resume/stop/speedup for this replay independently of the
+        device's own thread.
+
+        Only one file subscription can be active at a time; starting a new
+        one stops a previous one first.
+
+        Args:
+            files: list of filenames to replay
+            replay_index: optional list of 'start,end,step' strings, one per file
+            loop: loop over all files if set
+            speedup: speedup factor of the replay
+            replace_time: replace the packet's original time with the replay time
+
+        Returns:
+            The thread_uuid identifying this file subscription.
+        """
+        funcname = __name__ + '.start_file_subscription():'
+        self.logger.debug(funcname)
+        # Lazy import: device.py is core redvypr code and should not hard-depend
+        # on a specific device plugin at import time.
+        from redvypr.devices.fileio.rawdatawriter import rawdatareplay
+
+        self.stop_file_subscription()
+
+        if replay_index is None:
+            replay_index = ['0,-1,1'] * len(files)
+
+        config = {
+            'files': list(files),
+            'replay_index': list(replay_index),
+            'loop': loop,
+            'speedup': speedup,
+            'replace_time': replace_time,
+        }
+        thread_uuid = 'filesub_' + str(uuid.uuid1())
+        device_info = {'thread_uuid': thread_uuid}
+        self._filesub_thread_uuid = thread_uuid
+        self._filesub_commandqueue = queue.Queue()
+        self._filesub_statusqueue = queue.Queue()
+        args = (device_info, config, self.datainqueue, self._filesub_commandqueue, self._filesub_statusqueue)
+        self._filesub_thread = threading.Thread(target=rawdatareplay.start, args=args, daemon=True)
+        self._filesub_thread.start()
+        return thread_uuid
+
+    def _file_subscription_command(self, command, comdata=None):
+        """ Sends a command to the currently running file subscription thread, if any. """
+        if self._filesub_thread is None or not self._filesub_thread.is_alive():
+            self.logger.warning(__name__ + '._file_subscription_command(): no file subscription running, doing nothing')
+            return
+        command_packet = commandpacket(command=command, comdata=comdata, thread_uuid=self._filesub_thread_uuid)
+        self._filesub_commandqueue.put(command_packet)
+
+    def pause_file_subscription(self):
+        self._file_subscription_command('pause')
+
+    def resume_file_subscription(self):
+        self._file_subscription_command('resume')
+
+    def stop_file_subscription(self, join_timeout=2.0):
+        """ Stops a currently running file subscription, if any, and waits
+        briefly for its thread to finish. """
+        if self._filesub_thread is not None and self._filesub_thread.is_alive():
+            self._file_subscription_command('stop')
+            self._filesub_thread.join(timeout=join_timeout)
+        self._filesub_thread = None
+
+    def set_file_subscription_speedup(self, speedup):
+        self._file_subscription_command('speedup', comdata={'speedup': speedup})
+
+    def file_subscription_running(self):
+        return self._filesub_thread is not None and self._filesub_thread.is_alive()
+
+    def get_file_subscription_statusqueue(self):
+        """ Returns the statusqueue of the currently (or most recently)
+        started file subscription, or None if none was ever started. """
+        return self._filesub_statusqueue
 
     def __str__(self):
         return self.description

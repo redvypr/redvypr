@@ -229,12 +229,16 @@ class RedvyprdevicewidgetSimple(QtWidgets.QWidget):
     subscribed = QtCore.pyqtSignal(
         RedvyprDevice)  # Signal displaying a subscription
 
-    def __init__(self, device=None, redvypr=None):
+    def __init__(self, device=None, redvypr=None, file_subscription_button=True):
         """
         Simple devicewidget
 
         Args:
             device:
+            file_subscription_button: If True (default), show a "From file" button that
+                lets the user replay raw redvypr data file(s) directly into this
+                device's datainqueue (see RedvyprDevice.start_file_subscription()).
+                Pass False from a subclass's __init__ to hide it.
         """
         funcname = __name__ + '.__init__():'
         logger.debug(funcname)
@@ -279,6 +283,12 @@ class RedvyprdevicewidgetSimple(QtWidgets.QWidget):
                 self.config_widgets.append(self.subscribe_button)
                 self.layout_buttons.addWidget(self.subscribe_button, 2, 0, 1, 2)
         self.layout_buttons.addWidget(self.configure_button, 2, 2, 1, 2)
+        self.filesub_button = None
+        if device and file_subscription_button:
+            self.filesub_button = QtWidgets.QPushButton("From file")
+            self.filesub_button.clicked.connect(self.filesub_clicked)
+            self.config_widgets.append(self.filesub_button)
+            self.layout_buttons.addWidget(self.filesub_button, 1, 0, 1, 4)
         if (self.device.mp == 'multiprocess')  or (self.device.mp == 'qthread'):
             self.layout_buttons.addWidget(self.startbutton, 3, 0, 1, 3)
             self.layout_buttons.addWidget(self.killbutton, 3, 3)
@@ -372,6 +382,14 @@ class RedvyprdevicewidgetSimple(QtWidgets.QWidget):
         self.__subscribeWidget = redvypr.widgets.redvypr_subscribe_widget.SubscribeWidget(redvypr=self.redvypr, device=self.device)
         self.__subscribeWidget.show()
         self.subscribed.emit(self.device)
+
+    def filesub_clicked(self):
+        # Lazy import: this base widget is used by many device modules that
+        # have nothing to do with file replay, so avoid a hard dependency on
+        # the rawdatareplay device module at import time.
+        from redvypr.devices.fileio.rawdatawriter.rawdatareplay import FileSubscriptionWidget
+        self.__filesubWidget = FileSubscriptionWidget(device=self.device)
+        self.__filesubWidget.show()
 
     def configure_clicked(self):
         button = self.sender()

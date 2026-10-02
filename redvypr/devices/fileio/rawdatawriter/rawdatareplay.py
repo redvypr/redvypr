@@ -366,8 +366,8 @@ def start(device_info, config={'filename': ''}, dataqueue=None, datainqueue=None
             data = None
         if (data is not None):
             command = check_for_command(data, thread_uuid=device_info['thread_uuid'])
-            logger.debug('Got a command: {:s}'.format(str(data)))
-            if (command is not None):
+            if command is not None:
+                logger.debug('Got a command: {:s}'.format(str(data)))
                 sstr = funcname + ': Command is for me: {:s}'.format(str(command))
                 logger.debug(sstr)
                 if command == 'stop':
@@ -1188,4 +1188,109 @@ class displayDeviceWidget(QtWidgets.QWidget):
         if thread_running != self.thread_was_running:
             self.status_widget.populate_file_table(list(self.device.custom_config.files))
             self.thread_was_running = thread_running
+
+
+#
+#
+# Standalone dialog letting the user feed raw redvypr data file(s) directly
+# into an arbitrary device's own datainqueue (RedvyprDevice.
+# start_file_subscription()), bypassing the normal publish/subscribe
+# routing entirely. Opened from a "From file" button on any device that
+# uses RedvyprdevicewidgetSimple -- unrelated to SubscribeWidget, since the
+# file source never goes through subscribed_addresses/distribute_data().
+#
+#
+class FileSubscriptionWidget(QtWidgets.QWidget):
+    def __init__(self, device=None, parent=None):
+        super().__init__(parent)
+        self.device = device
+        devicename = device.name if device is not None else ''
+        self.setWindowTitle('Replay file(s) into "{:s}"'.format(devicename))
+
+        layout = QtWidgets.QVBoxLayout(self)
+        label = QtWidgets.QLabel('Replay file(s) into "{:s}"'.format(devicename))
+        label.setAlignment(QtCore.Qt.AlignCenter)
+        label.setStyleSheet(''' font-size: 20px; font: bold''')
+        layout.addWidget(label)
+
+        # Standalone config, not tied to any device's own custom_config --
+        # the target device generally has nothing to do with file replay.
+        self.custom_config = DeviceCustomConfig()
+        self.file_config = FileReplayConfigWidget(self.custom_config)
+        self.file_config.speedupChanged.connect(self.speedup_changed_live)
+        layout.addWidget(self.file_config)
+
+        btn_layout = QtWidgets.QHBoxLayout()
+        self.startbtn = QtWidgets.QPushButton("Start")
+        self.startbtn.setCheckable(True)
+        self.startbtn.clicked.connect(self.start_clicked)
+        self.pausebtn = QtWidgets.QPushButton("Pause")
+        self.pausebtn.setCheckable(True)
+        self.pausebtn.setEnabled(False)
+        self.pausebtn.clicked.connect(self.pause_clicked)
+        btn_layout.addWidget(self.startbtn)
+        btn_layout.addWidget(self.pausebtn)
+        layout.addLayout(btn_layout)
+
+        # No status queue exists until the first Start click; a fresh empty
+        # queue is a harmless placeholder (status_widget just stays empty).
+        self.status_widget = FileReplayStatusWidget(queue.Queue())
+        layout.addWidget(self.status_widget)
+
+        self.statustimer = QtCore.QTimer()
+        self.statustimer.timeout.connect(self.update_buttons)
+        self.statustimer.start(500)
+
+    def speedup_changed_live(self, speedup):
+        if self.device is not None and self.device.file_subscription_running():
+            self.device.set_file_subscription_speedup(speedup)
+
+    def start_clicked(self):
+        if self.device is None:
+            return
+        if self.startbtn.isChecked():
+            self.file_config.values_changed()
+            self.device.start_file_subscription(
+                files=list(self.custom_config.files),
+                replay_index=list(self.custom_config.replay_index),
+                loop=self.custom_config.loop,
+                speedup=self.custom_config.speedup,
+                replace_time=self.custom_config.replace_time,
+            )
+            # Rebind to the fresh statusqueue this run just created.
+            self.status_widget.statusqueue = self.device.get_file_subscription_statusqueue()
+            self.status_widget.populate_file_table(list(self.custom_config.files))
+        else:
+            self.device.stop_file_subscription()
+
+    def pause_clicked(self):
+        if self.device is None:
+            return
+        if self.pausebtn.isChecked():
+            self.pausebtn.setText('Resume')
+            self.device.pause_file_subscription()
+        else:
+            self.pausebtn.setText('Pause')
+            self.device.resume_file_subscription()
+
+    def update_buttons(self):
+        if self.device is None:
+            return
+        running = self.device.file_subscription_running()
+        if running:
+            self.startbtn.setText('Stop')
+            self.startbtn.setChecked(True)
+            for w in self.file_config.config_widgets:
+                w.setEnabled(False)
+            self.pausebtn.setEnabled(True)
+        else:
+            self.startbtn.setText('Start')
+            for w in self.file_config.config_widgets:
+                w.setEnabled(True)
+            if self.startbtn.isChecked():
+                self.startbtn.setChecked(False)
+            self.pausebtn.setEnabled(False)
+            if self.pausebtn.isChecked():
+                self.pausebtn.setChecked(False)
+            self.pausebtn.setText('Pause')
 
