@@ -139,6 +139,19 @@ def read_status(cli: OtCli) -> dict:
             status["routers"] = []
     else:
         status["routers"] = []
+    # Direct neighbors with RSSI (also works on a child: shows its parent)
+    try:
+        status["neighbors"] = parse_table(cli.command("neighbor table"))
+    except (OtError, TimeoutError):
+        status["neighbors"] = []
+    status["leader_router_id"] = None
+    if status["state"] in ("child", "router", "leader"):
+        try:
+            for line in cli.command("leaderdata"):
+                if line.startswith("Leader Router ID:"):
+                    status["leader_router_id"] = int(line.split(":", 1)[1])
+        except (OtError, TimeoutError, ValueError):
+            pass
     return status
 
 

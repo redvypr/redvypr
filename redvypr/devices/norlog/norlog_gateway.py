@@ -30,12 +30,13 @@ import typing
 import pydantic
 import serial
 import serial.tools.list_ports
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from redvypr.device import RedvyprDeviceCustomConfig
 from redvypr.redvypr_datadict import check_for_command, create_redvypr_dict
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 
+from . import device_list
 from . import norlog_cbor
 from . import ot_cli
 from . import smp_serial
@@ -66,8 +67,9 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
     extpanid: str = pydantic.Field(default='', description='Extended PAN ID (16 hex digits), empty for random')
     networkkey: str = pydantic.Field(default='', description='Network key (32 hex digits), empty for random. '
                                                              'Stored in plain text in the redvypr configuration!')
-    status_interval_s: float = pydantic.Field(default=0.0, description='Interval for reading the Thread '
-                                                                       'status, 0 = only on request')
+    status_interval_s: float = pydantic.Field(default=10.0, description='Interval for reading the Thread '
+                                                                        'status and device list, '
+                                                                        '0 = only on request')
     console_show_commands: bool = pydantic.Field(default=False, description='Show the traffic of internal '
                                                                             'ot commands in the console')
     dataset_tlvs: str = pydantic.Field(default='', description='Active operational dataset (hex TLVs) used to '
@@ -95,6 +97,8 @@ class _Gateway:
         self.cli = None
         self.stop_requested = False
         self.npackets = 0
+        self.last_rx = None             # time.monotonic() of the last line from the gateway
+        self.data_sources = {}          # '#NLD' source -> {'last_seen', 'packets', 'mac'}
 
     # --- publishing ---
 
@@ -110,6 +114,10 @@ class _Gateway:
         self.publish('command_result', {'command': command, 'ok': ok, 'message': message, **extra})
 
     # --- incoming lines ---
+
+    def on_gateway_line(self, line, is_response=False):
+        self.last_rx = time.monotonic()
+        self.on_line(line, is_response)
 
     def on_line(self, line, is_response=False):
         if line.startswith(DATA_PREFIX):
@@ -141,11 +149,16 @@ class _Gateway:
         self.dataqueue.put(data)
         self.npackets += 1
 
+        src = self.data_sources.setdefault(source, {'packets': 0})
+        src['packets'] += 1
+        src['last_seen'] = time.time()
+        src['mac'] = pkt.get('mac', '')
+
     # --- serial ---
 
     def open(self):
         self.ser = serial.Serial(self.config.comport, self.config.baud, timeout=0.05)
-        self.cli = ot_cli.OtCli(self.ser, self.reader, self.on_line)
+        self.cli = ot_cli.OtCli(self.ser, self.reader, self.on_gateway_line)
 
     def close(self):
         if self.ser is not None:
@@ -156,7 +169,7 @@ class _Gateway:
 
     def poll_serial(self):
         for line in self.reader.feed(self.ser.read(512)):
-            self.on_line(line)
+            self.on_gateway_line(line)
 
     # --- commands ---
 
@@ -247,7 +260,10 @@ class _Gateway:
     def read_status(self):
         status = ot_cli.read_status(self.cli)
         status['packets_received'] = self.npackets
-        self.publish('thread_status', {'thread_status': status})
+        rx_age = None if self.last_rx is None else time.monotonic() - self.last_rx
+        devices = device_list.build_device_list(status, gateway_port=self.config.comport,
+                                                serial_rx_age_s=rx_age, data_sources=self.data_sources)
+        self.publish('thread_status', {'thread_status': status, 'devices': devices})
 
     # --- firmware update ---
 
@@ -361,6 +377,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.run_widgets = []       # only enabled while the thread is running
 
         self.tabs = QtWidgets.QTabWidget()
+        self.tabs.addTab(self._build_devices_tab(), 'Devices')
         self.tabs.addTab(self._build_console_tab(), 'Console')
         self.tabs.addTab(self._build_thread_tab(), 'Thread network')
         self.tabs.addTab(self._build_firmware_tab(), 'Firmware')
@@ -414,6 +431,81 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def port_changed(self, text):
         data = self.port_combo.currentData()
         self.cfg.comport = data if data else text.split()[0] if text.strip() else ''
+
+    # --- devices ---
+
+    DEVICE_COLUMNS = ['Device', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
+                      'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets']
+
+    QUALITY_COLORS = {
+        device_list.QUALITY_GOOD: '#7bc96f',
+        device_list.QUALITY_FAIR: '#f2c14e',
+        device_list.QUALITY_POOR: '#e8743b',
+        device_list.QUALITY_NONE: '#d64545',
+    }
+
+    def _build_devices_tab(self):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+        row = QtWidgets.QHBoxLayout()
+        refresh = QtWidgets.QPushButton('Refresh now')
+        refresh.clicked.connect(lambda: self.device.thread_command('ot_status', {}))
+        self.devices_info = QtWidgets.QLabel('No data yet (refreshed with the Thread status)')
+        row.addWidget(refresh)
+        row.addWidget(self.devices_info, 1)
+        self.devices_table = QtWidgets.QTableWidget(0, len(self.DEVICE_COLUMNS))
+        self.devices_table.setHorizontalHeaderLabels(self.DEVICE_COLUMNS)
+        self.devices_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.devices_table.horizontalHeader().setStretchLastSection(True)
+        self.devices_table.verticalHeader().setVisible(False)
+        legend = QtWidgets.QLabel('Quality: Thread links from link quality (0-3) and average RSSI '
+                                  '(good >= -70 dBm, fair >= -85 dBm); multi-hop routers from the path '
+                                  'cost (good <= 3, fair <= 6, 16 = unreachable); serial = data from the gateway within 30 s.')
+        legend.setWordWrap(True)
+        legend.setStyleSheet('color: gray;')
+        lay.addLayout(row)
+        lay.addWidget(self.devices_table, 1)
+        lay.addWidget(legend)
+        self.run_widgets.append(refresh)
+        return w
+
+    @staticmethod
+    def _fmt_pair(a, b):
+        if a is None and b is None:
+            return ''
+        return f"{'' if a is None else a} / {'' if b is None else b}"
+
+    def show_devices(self, devices):
+        self.devices_table.setRowCount(len(devices))
+        for row, d in enumerate(devices):
+            name = d.get('extaddr') or d.get('mac') or d.get('id', '')
+            if d.get('connection') == device_list.CONNECTION_SERIAL and d.get('port'):
+                name = f"{name} ({d['port']})" if d.get('extaddr') else d['port']
+            seen = d.get('age_s')
+            if seen is None:
+                seen = d.get('last_data_s')
+            cells = [
+                name,
+                d.get('rloc16', ''),
+                d.get('connection', ''),
+                d.get('role', ''),
+                d.get('thread_role', ''),
+                d.get('link', ''),
+                d.get('quality', ''),
+                self._fmt_pair(d.get('rssi_avg'), d.get('rssi_last')),
+                self._fmt_pair(d.get('lq_in'), d.get('lq_out')),
+                '' if d.get('path_cost') is None else str(d['path_cost']),
+                '' if seen is None else f'{seen:.0f}',
+                str(d.get('packets', 0) or ''),
+            ]
+            for col, text in enumerate(cells):
+                item = QtWidgets.QTableWidgetItem(str(text))
+                if col == 6 and d.get('quality') in self.QUALITY_COLORS:
+                    item.setBackground(QtGui.QColor(self.QUALITY_COLORS[d['quality']]))
+                self.devices_table.setItem(row, col, item)
+        self.devices_table.resizeColumnsToContents()
+        members = len(devices) - 1
+        self.devices_info.setText(f'{members} member(s), updated {time.strftime("%H:%M:%S")}')
 
     # --- console ---
 
@@ -722,6 +814,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 self.console_text.appendPlainText(data.get('line', ''))
             elif packetid == 'thread_status':
                 self.show_status(data.get('thread_status', {}))
+                if 'devices' in data:
+                    self.show_devices(data['devices'])
             elif packetid == 'flash_status':
                 if 'progress' in data:
                     self.fw_progress.setValue(int(data['progress']))
