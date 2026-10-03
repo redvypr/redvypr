@@ -18,6 +18,7 @@ Decoded packets are published with the packetid "norlog_<mac>".
 """
 
 import base64
+import collections
 import binascii
 import json
 import logging
@@ -92,6 +93,36 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
 # --------------------------------------------------------------------------
 # Device thread
 # --------------------------------------------------------------------------
+
+class RateMeter:
+    """
+    Transfer rate over a sliding window. The clock starts with the first progress
+    report, so waiting times before the transfer (e.g. erasing slot 0) do not count.
+    """
+
+    def __init__(self, window_s=5.0):
+        self.window_s = window_s
+        self.samples = collections.deque()
+        self.first = None
+
+    def update(self, done):
+        """Add a progress value (bytes); returns the current rate in KB/s."""
+        now = time.monotonic()
+        if self.first is None:
+            self.first = (now, done)
+        self.samples.append((now, done))
+        while len(self.samples) > 2 and now - self.samples[0][0] > self.window_s:
+            self.samples.popleft()
+        t, d = self.samples[0]
+        return (done - d) / (now - t) / 1024 if now > t else 0.0
+
+    def average(self):
+        """Average rate in KB/s from the first to the last progress report."""
+        if self.first is None or len(self.samples) < 1:
+            return 0.0
+        (t0, d0), (t1, d1) = self.first, self.samples[-1]
+        return (d1 - d0) / (t1 - t0) / 1024 if t1 > t0 else 0.0
+
 
 class _Gateway:
     """State of the running device thread."""
@@ -378,7 +409,6 @@ class _Gateway:
     # --- files (SD card) and firmware update over Thread ---
 
     GATEWAY_XFER_FILE = '/fw/push.bin'      # firmware image on the gateway's SD card for 'fs push'
-    DIRECT_CHUNK = 240                      # bytes per 'norlog coap put' line without gateway SD card
 
     def target_address(self, target):
         """None for the gateway itself, otherwise the RLOC address of the member (target = RLOC16)."""
@@ -404,8 +434,7 @@ class _Gateway:
 
     def fs_write_direct(self, address, data, remote, progress=None):
         """Write a file to a member block by block through the gateway (no SD card on the gateway)."""
-        return ot_cli.fs_upload(self.cli, address, data, remote, progress, resume=True,
-                                chunk=self.DIRECT_CHUNK)
+        return ot_cli.fs_upload(self.cli, address, data, remote, progress, resume=True)
 
     def fs_command(self, args):
         """File operations on the SD card of the gateway (target 'gateway') or of a member."""
@@ -476,17 +505,21 @@ class _Gateway:
                 status('done', 'This version is already installed, nothing to do', 100)
                 return
 
-            t0 = time.monotonic()
             last = [0.0]
 
             def progress(share_from, share_to, label):
+                meter = RateMeter()
+
                 def cb(done, total):
                     now = time.monotonic()
+                    rate = meter.update(done)
                     if now - last[0] >= 1.0 or done >= total:
                         last[0] = now
                         pct = share_from + (share_to - share_from) * done // max(total, 1)
-                        rate = done / max(now - t0, 1e-3) / 1024
-                        status('upload', f'{label}: {done // 1024}/{total // 1024} KB, {rate:.1f} KB/s', pct)
+                        text = f'{label}: {done // 1024}/{total // 1024} KB, {rate:.1f} KB/s'
+                        if done >= total:
+                            text += f' (average {meter.average():.1f} KB/s)'
+                        status('upload', text, pct)
                 return cb
 
             if self.gateway_has_sd():
@@ -500,7 +533,6 @@ class _Gateway:
                 else:
                     ot_cli.fs_upload_local(self.cli, image, self.GATEWAY_XFER_FILE,
                                            progress(0, 30, 'PC -> gateway SD'))
-                t0 = time.monotonic()
                 res = ot_cli.fs_push(self.cli, address, self.GATEWAY_XFER_FILE, '/fw/update.bin',
                                      progress(30, 95, 'Gateway -> node over Thread'), resume=True)
                 resumed = f', resumed after {res["resumed"] // 1024} KB' if res.get('resumed') else ''
@@ -548,14 +580,14 @@ class _Gateway:
                 self.flash_status('done', 'Image already installed, nothing to do', progress=100)
                 return
 
-            t0 = time.monotonic()
             last = [0.0]
+            meter = RateMeter()
 
             def progress(off, size):
                 now = time.monotonic()
+                rate = meter.update(off)    # first call: after erasing slot 0
                 if now - last[0] >= 0.5 or off >= size:
                     last[0] = now
-                    rate = off / max(now - t0, 1e-3) / 1024
                     self.flash_status('upload', f'{off // 1024}/{size // 1024} KB, {rate:.1f} KB/s',
                                       progress=off * 100 // size)
 
@@ -564,7 +596,8 @@ class _Gateway:
             images = smp.image_state()
             slot0 = next((i for i in images if i.get('image', 0) == 0 and i.get('slot', 0) == 0), {})
             smp.reset()
-            self.flash_status('done', f'Installed version {slot0.get("version", "?")}, rebooting', progress=100)
+            self.flash_status('done', f'Installed version {slot0.get("version", "?")}, rebooting '
+                                      f'(upload average {meter.average():.1f} KB/s)', progress=100)
         except smp_serial.SmpCancelled:
             self.flash_status('cancelled', 'Cancelled. The loader restarts the app after 5 min '
                                            '(or press RESET).')

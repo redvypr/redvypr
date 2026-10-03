@@ -88,14 +88,21 @@ class OtCli:
         self.reader = reader
         self.on_line = on_line
 
+    # Lines up to this length go out in one piece: the shell RX ring buffer of the
+    # firmware holds 1024 (since 0.4.0) or 2048 bytes. Longer lines are paced.
+    WRITE_UNPACED_MAX = 900
+
     def write_line(self, text: str):
-        """Send a line in small chunks so long commands do not overrun the shell RX buffer."""
+        """Send a line; very long lines in small chunks so they do not overrun the shell RX buffer."""
         data = (text + "\r\n").encode()
+        if len(data) <= self.WRITE_UNPACED_MAX:
+            self.ser.write(data)
+            self.ser.flush()
+            return
         for i in range(0, len(data), 32):
             self.ser.write(data[i:i + 32])
             self.ser.flush()
-            if len(data) > 32:
-                time.sleep(0.005)
+            time.sleep(0.005)
 
     def command(self, cmd: str, timeout: float = 3.0):
         """Run 'ot <cmd>' and return the response lines (without echo/Done)."""
@@ -195,18 +202,26 @@ def coap_get(cli: OtCli, address: str, uri: str, timeout: float = 10.0) -> bytes
 
 
 def coap_request(cli: OtCli, method: str, address: str, uri: str, payload: bytes = b"",
-                 timeout: float = 10.0) -> bytes:
+                 timeout: float = 10.0, b64: bool = False) -> bytes:
     """
     CoAP GET/PUT/POST/DELETE through the gateway ('norlog coap <method>').
     uri may contain a query: 'fs?op=ls&p=/fw'. Raises OtError on a non-2.xx code.
+    b64: send the payload as "b64:<base64>" (gateway firmware >= 0.4.1) instead of hex.
     """
+    import base64
     method = method.lower()
     if method == "get":
         cmd = f"norlog coap get {address} {uri} {int(timeout)}"
     elif method == "delete":
         cmd = f"norlog coap delete {address} {uri} {int(timeout)}"
     else:
-        cmd = f"norlog coap {method} {address} {uri} {payload.hex() if payload else '-'} {int(timeout)}"
+        if not payload:
+            data = "-"
+        elif b64:
+            data = "b64:" + base64.b64encode(payload).decode()
+        else:
+            data = payload.hex()
+        cmd = f"norlog coap {method} {address} {uri} {data} {int(timeout)}"
     rest = cli.shell_query(cmd, COAP_PREFIX, timeout=timeout + 4.0)
     ok, code, data, truncated = parse_coap_line(rest)
     if not ok and code == "4.04" and not data:
@@ -224,7 +239,10 @@ def coap_request(cli: OtCli, method: str, address: str, uri: str, payload: bytes
 # --- Files on the SD card: local (gateway shell) and remote (CoAP 'fs') ---
 
 FS_PREFIX = "#NLF "
-FS_LOCAL_CHUNK = 384        # bytes per 'norlog fs write' line (512 base64 chars, shell buffer 640)
+FS_LOCAL_CHUNK = 512        # bytes per 'norlog fs write' line (684 base64 chars, shell buffer 1024)
+FS_LOCAL_CHUNK_OLD = 384    # gateway firmware 0.4.0 (shell buffer 640)
+FS_DIRECT_CHUNK = 512       # bytes per 'norlog coap put' with base64 payload (firmware >= 0.4.1)
+FS_DIRECT_CHUNK_OLD = 240   # hex payload, gateway firmware 0.4.0
 FS_REMOTE_CHUNK = 512       # bytes per CoAP read
 FS_CRC_MAX = 64 * 1024
 
@@ -246,12 +264,26 @@ def fs_local(cli: OtCli, *args, timeout: float = 10.0):
     return json.loads(rest)
 
 
+def _retry_garbled(fn, attempts: int = 3):
+    """
+    Repeat a CoAP file request whose answer line could not be parsed (e.g. a log
+    message of an older gateway firmware inside the line). The file requests are
+    idempotent: reading, or writing the same block at the same offset again.
+    """
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except ValueError:      # json.JSONDecodeError, bad hex
+            if attempt == attempts - 1:
+                raise OtError("unreadable answer from the gateway (repeated)") from None
+
+
 def fs_remote(cli: OtCli, address: str, op: str, path: str, timeout: float = 10.0, **params):
     """CoAP file operation on a member: op in stat, ls, crc, mkdir, rm (JSON answer)."""
     import json
     query = f"fs?op={op}&p={_fs_quote(path)}" + "".join(f"&{k}={v}" for k, v in params.items())
     method = "post" if op in ("mkdir", "rm") else "get"
-    return json.loads(coap_request(cli, method, address, query, timeout=timeout).decode())
+    return _retry_garbled(lambda: json.loads(coap_request(cli, method, address, query, timeout=timeout).decode()))
 
 
 def fs_list(cli: OtCli, address, path: str):
@@ -291,11 +323,13 @@ def fs_crc(cli: OtCli, address, path: str, off: int = 0, length: int = None):
             return crc, size
 
 
-def fs_write_block(cli: OtCli, address, path: str, off: int, data: bytes, trunc: bool = False) -> int:
+def fs_write_block(cli: OtCli, address, path: str, off: int, data: bytes, trunc: bool = False,
+                   b64: bool = False) -> int:
     """
     Write one block at off (overwrite or append, no holes). trunc cuts the file to off
-    first (off=0: new empty file). Max. FS_LOCAL_CHUNK (gateway) / 240 bytes (member,
-    limited by the gateway's shell line). Returns the new file size.
+    first (off=0: new empty file). Max. FS_LOCAL_CHUNK (gateway) / FS_DIRECT_CHUNK with
+    b64 resp. FS_DIRECT_CHUNK_OLD as hex (member, limited by the gateway's shell line).
+    Returns the new file size.
     """
     import base64
     import json
@@ -304,7 +338,8 @@ def fs_write_block(cli: OtCli, address, path: str, off: int, data: bytes, trunc:
         res = fs_local(cli, *(args + ["trunc"] if trunc else args))
     else:
         uri = f"fs?op=write&p={_fs_quote(path)}&off={off}" + ("&trunc=1" if trunc else "")
-        res = json.loads(coap_request(cli, "put", address, uri, data, timeout=8.0).decode())
+        res = _retry_garbled(lambda: json.loads(
+            coap_request(cli, "put", address, uri, data, timeout=8.0, b64=b64).decode()))
     return res["size"]
 
 
@@ -314,8 +349,8 @@ def fs_read_block(cli: OtCli, address, path: str, off: int, length: int) -> byte
     if address is None:
         text = fs_local(cli, "read", _fs_quote(path), off, min(length, FS_LOCAL_CHUNK))
         return b"" if text == "-" else base64.b64decode(text)
-    return coap_request(cli, "get", address,
-                        f"fs?op=read&p={_fs_quote(path)}&off={off}&len={min(length, FS_REMOTE_CHUNK)}")
+    return _retry_garbled(lambda: coap_request(cli, "get", address,
+                        f"fs?op=read&p={_fs_quote(path)}&off={off}&len={min(length, FS_REMOTE_CHUNK)}"))
 
 
 def _resume_offset(cli: OtCli, address, path: str, data: bytes) -> int:
@@ -341,14 +376,32 @@ def fs_upload(cli: OtCli, address, data: bytes, path: str, progress=None, resume
     existing file. Returns the number of bytes skipped by resuming.
     """
     import zlib
-    chunk = chunk or (FS_LOCAL_CHUNK if address is None else 240)
+    # Large blocks need gateway firmware >= 0.4.1 (shell buffer 1024, base64 payload);
+    # an older gateway rejects the truncated line -> fall back once to the small blocks
+    big = chunk is None and getattr(cli, "fs_big_blocks", True)
+    if chunk is None:
+        if address is None:
+            chunk = FS_LOCAL_CHUNK if big else FS_LOCAL_CHUNK_OLD
+        else:
+            chunk = FS_DIRECT_CHUNK if big else FS_DIRECT_CHUNK_OLD
     if address is not None and path.count("/") > 1:
         fs_remote(cli, address, "mkdir", path.rsplit("/", 1)[0])
     start = _resume_offset(cli, address, path, data) if resume else 0
     off, first = start, True
     while off < len(data) or first:
         block = data[off:off + chunk]
-        fs_write_block(cli, address, path, off, block, trunc=first)    # first block: cut the rest
+        try:
+            # first block: cut the rest of an older, longer file
+            size = fs_write_block(cli, address, path, off, block, trunc=first, b64=big and address is not None)
+            if size < off + len(block):
+                # line cut by an older gateway (shell buffer 640), but still valid base64
+                raise OtError(f"invalid: block at {off} written incompletely ({size - off}/{len(block)} bytes)")
+        except OtError as exc:
+            if not (big and first and "invalid" in str(exc)):
+                raise
+            cli.fs_big_blocks = big = False
+            chunk = FS_LOCAL_CHUNK_OLD if address is None else FS_DIRECT_CHUNK_OLD
+            continue
         first = False
         off += len(block)
         if progress:
