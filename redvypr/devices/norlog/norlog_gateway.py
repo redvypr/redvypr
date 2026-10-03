@@ -142,6 +142,7 @@ class _Gateway:
         self.data_sources = {}          # '#NLD' source -> {'last_seen', 'packets', 'mac'}
         self.infos = {}                 # 'gateway' or RLOC16 -> info dict (norlog info / CoAP /info)
         self.info_times = {}            # 'gateway' or RLOC16 -> time.time() of the last successful read
+        self.props_cache = {}           # hwid (or 'gateway'/RLOC16) -> user properties (sn, desc, loc, ...)
         self.last_status = {}
 
     # --- publishing ---
@@ -271,7 +272,11 @@ class _Gateway:
                 self.query_info(args.get('targets', 'all'))
             elif command == 'refresh':
                 self.read_status()
-                self.query_info('all')
+                self.query_info('all', refresh_props=True)
+            elif command == 'props_read':
+                self.props_command(args.get('target', 'gateway'), {})
+            elif command == 'props_set':
+                self.props_command(args.get('target', 'gateway'), args.get('values', {}))
             elif command == 'fs':
                 self.fs_command(args)
             elif command == 'fw_update_node':
@@ -351,6 +356,11 @@ class _Gateway:
             key = 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16')
             if key in self.info_times:
                 d['info_age_s'] = now - self.info_times[key]
+            props = self.props_cache.get(d.get('hwid')) or self.props_cache.get(key) or {}
+            d['props'] = props
+            for name in ('sn', 'desc', 'loc'):
+                if props.get(name):
+                    d[name] = props[name]
         return devices
 
     def publish_devices(self):
@@ -365,12 +375,27 @@ class _Gateway:
             last = {k: v for k, v in (self.infos.get(key) or {}).items() if k != 'error'}
             self.infos[key] = {**last, 'error': error}
 
-    def query_info(self, targets='all', report=True):
+    def _props_key(self, key):
+        """Properties are cached per hardware ID (the RLOC16 of a node can change)."""
+        return (self.infos.get(key) or {}).get('hwid') or key
+
+    def update_props(self, key, address, force=False):
+        """Read the user properties of a device once (or again with force) into the cache."""
+        pk = self._props_key(key)
+        if pk in self.props_cache and not force:
+            return
+        try:
+            self.props_cache[pk] = ot_cli.props_read(self.cli, address)
+        except (ot_cli.OtError, TimeoutError, ValueError):
+            self.props_cache[pk] = {}       # e.g. firmware without properties: do not ask on every poll
+
+    def query_info(self, targets='all', report=True, refresh_props=False):
         """
         Read the device info: gateway via 'norlog info json' (UART), members via
         CoAP GET /info ('norlog coap get' on the gateway).
         targets: 'all' or a list of keys ('gateway' or RLOC16 like '0xc001').
         report: publish a command result (False for the periodic poll).
+        refresh_props: read the user properties again (otherwise only once per device).
         """
         if not self.last_status:
             self.read_status()
@@ -380,6 +405,7 @@ class _Gateway:
         if wanted is None or 'gateway' in wanted:
             try:
                 self.store_info('gateway', json.loads(self.cli.shell_query('norlog info json', '#NLI ')))
+                self.update_props('gateway', None, refresh_props)
                 done += 1
             except (TimeoutError, ValueError) as exc:
                 self.store_info('gateway', error=str(exc))
@@ -395,6 +421,7 @@ class _Gateway:
                     addr = ot_cli.rloc_address(prefix, rloc)
                     payload = ot_cli.coap_get(self.cli, addr, 'info', timeout=self.config.coap_timeout_s)
                     self.store_info(rloc, json.loads(payload.decode(errors='replace')))
+                    self.update_props(rloc, addr, refresh_props)
                     done += 1
                 except (ot_cli.OtError, TimeoutError, ValueError) as exc:
                     self.store_info(rloc, error=str(exc))
@@ -435,6 +462,23 @@ class _Gateway:
     def fs_write_direct(self, address, data, remote, progress=None):
         """Write a file to a member block by block through the gateway (no SD card on the gateway)."""
         return ot_cli.fs_upload(self.cli, address, data, remote, progress, resume=True)
+
+    def props_command(self, target, values):
+        """Set (values: {name: text}, '' deletes) and/or read the user properties of a device."""
+        try:
+            address = self.target_address(target)
+            for name, value in values.items():
+                ot_cli.props_write(self.cli, name, value, address)
+            props = ot_cli.props_read(self.cli, address)
+            self.props_cache[self._props_key(target)] = props
+            self.publish('props', {'target': target, 'ok': True, 'props': props,
+                                   'message': f'{len(values)} propert(y/ies) saved' if values else 'read'})
+            if values:
+                self.query_info([target], report=False)     # serial number in the device list
+            else:
+                self.publish_devices()
+        except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+            self.publish('props', {'target': target, 'ok': False, 'message': str(exc)})
 
     def fs_command(self, args):
         """File operations on the SD card of the gateway (target 'gateway') or of a member."""
@@ -725,7 +769,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     # --- devices ---
 
-    DEVICE_COLUMNS = ['', 'Device', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
+    DEVICE_COLUMNS = ['', 'Device', 'SN', 'Description', 'Location', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
                       'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets',
                       'Firmware', 'Battery', 'Board temp [C]', 'Info age [s]']
 
@@ -819,6 +863,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         if entry is not None:
             dlg.update_entry(entry)
         dlg.update_run_state(self.device.get_thread_status()['thread_running'])
+        if dlg.running and not dlg.props_loaded:
+            dlg.read_props()
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
@@ -859,9 +905,18 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         text = f"{d['battery_mv'] / 1000:.2f} V"
         if d.get('battery_soc') is not None:
             text += f" {d['battery_soc']} %"
-        if d.get('battery_charging'):
-            text += ' (charging)'
+        ma = d.get('battery_current_ma')
+        if ma is not None:
+            # firmware: positive current = charging, "charging" from the current direction
+            text += f", {'chg' if d.get('battery_charging') else 'dischg'} {abs(ma)} mA"
+        elif d.get('battery_charging'):
+            text += ', chg'
         return text
+
+    @staticmethod
+    def _short(text, n=32):
+        """Long property texts shortened for the table (full text as tooltip)."""
+        return text if len(text) <= n else text[:n - 1] + '\u2026'
 
     @staticmethod
     def _fmt_pair(a, b):
@@ -884,6 +939,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 seen = d.get('last_data_s')
             cells = [
                 name,
+                d.get('sn', ''),
+                self._short(d.get('desc', '')),
+                self._short(d.get('loc', '')),
                 d.get('rloc16', ''),
                 d.get('connection', ''),
                 d.get('role', ''),
@@ -903,8 +961,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             cols = self.DEVICE_COLUMNS
             stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'Info age [s]')]
             self.devices_table.setCellWidget(row, 0, self._settings_button(d))
+            full_text = {cols.index('Description'): d.get('desc', ''), cols.index('Location'): d.get('loc', '')}
             for col, text in enumerate([''] + cells):
                 item = QtWidgets.QTableWidgetItem(str(text))
+                if full_text.get(col) and full_text[col] != text:
+                    item.setToolTip(full_text[col])
                 if cols[col] == 'Quality' and d.get('quality') in self.QUALITY_COLORS:
                     item.setBackground(QtGui.QColor(self.QUALITY_COLORS[d['quality']]))
                 if col in stale_cols and d.get('info_error'):
@@ -1177,6 +1238,12 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                            else [] if data.get('target') else self.serial_dialogs())
                 for dlg in dialogs:
                     dlg.on_flash_status(data)
+            elif packetid == 'props':
+                dlg = self.settings_dialogs.get(data.get('target'))
+                if dlg is not None:
+                    dlg.on_props(data)
+                if not data.get('ok'):
+                    self.console_text.appendPlainText(f"[props {data.get('target')}] ERROR: {data.get('message')}")
             elif packetid in ('fs_progress', 'fs_result'):
                 dlg = self.settings_dialogs.get(data.get('target'))
                 if dlg is not None:
@@ -1236,10 +1303,13 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.running = False
         self.setWindowTitle(f'norlog settings: {key}')
         self.setWindowIcon(qtawesome.icon(iconnames['settings']))
-        self.resize(600, 560)
+        # Höchstens 85 % der Bildschirmhöhe; der Inhalt der Reiter scrollt
+        screen = QtWidgets.QApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen is not None else None
+        self.resize(640, min(720, int(avail.height() * 0.85)) if avail is not None else 720)
 
         self.tabs = QtWidgets.QTabWidget()
-        self.tabs.addTab(self._build_general_tab(), 'General')
+        self.tabs.addTab(self._scrollable(self._build_general_tab()), 'General')
         self.fw_tab_index = self.tabs.addTab(self._build_firmware_tab(), 'Firmware')
         self.files_tab_index = self.tabs.addTab(self._build_files_tab(), 'Files')
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
@@ -1247,6 +1317,16 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         lay = QtWidgets.QVBoxLayout(self)
         lay.addWidget(self.tabs)
         lay.addWidget(buttons)
+
+    @staticmethod
+    def _scrollable(widget):
+        """Wrap a tab in a scroll area (vertical scrollbar when the window is too small)."""
+        area = QtWidgets.QScrollArea()
+        area.setWidgetResizable(True)
+        area.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        area.setWidget(widget)
+        return area
 
     def is_serial(self):
         return self.entry.get('connection') == device_list.CONNECTION_SERIAL
@@ -1276,10 +1356,94 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         row.addWidget(self.info_error, 1)
         lay.addLayout(form)
         lay.addLayout(row)
+        lay.addWidget(self._build_props_box())
         lay.addWidget(self._build_battery_box())
         lay.addWidget(self._build_usb_box())
         lay.addStretch(1)
         return w
+
+    def _build_props_box(self):
+        box = QtWidgets.QGroupBox('Properties (stored on the device)')
+        lay = QtWidgets.QVBoxLayout(box)
+        self.props_table = QtWidgets.QTableWidget(0, 2)
+        self.props_table.setHorizontalHeaderLabels(['Name', 'Value'])
+        self.props_table.horizontalHeader().setStretchLastSection(True)
+        self.props_table.verticalHeader().setVisible(False)
+        self.props_table.setToolTip('sn: serial number (max. 64 bytes), desc: description, loc: location '
+                                    '(max. 256 bytes). Further names: a-z, 0-9, _ (max. 16). '
+                                    'An empty value deletes the property.')
+        self.props_table.setMaximumHeight(150)
+        row = QtWidgets.QHBoxLayout()
+        self.props_read_btn = QtWidgets.QPushButton('Read')
+        self.props_read_btn.clicked.connect(self.read_props)
+        self.props_add_btn = QtWidgets.QPushButton('Add row')
+        self.props_add_btn.clicked.connect(lambda: self._props_add_row('', ''))
+        self.props_save_btn = QtWidgets.QPushButton('Save')
+        self.props_save_btn.clicked.connect(self.save_props)
+        self.props_note = QtWidgets.QLabel('')
+        self.props_note.setStyleSheet('color: gray;')
+        self.props_note.setWordWrap(True)
+        for w in (self.props_read_btn, self.props_add_btn, self.props_save_btn):
+            row.addWidget(w)
+        row.addWidget(self.props_note, 1)
+        lay.addWidget(self.props_table)
+        lay.addLayout(row)
+        self.props_loaded = False
+        self.props_device = {}
+        self.show_props({})
+        return box
+
+    def _props_add_row(self, name, value, name_editable=True):
+        r = self.props_table.rowCount()
+        self.props_table.insertRow(r)
+        item = QtWidgets.QTableWidgetItem(name)
+        if not name_editable:
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+        self.props_table.setItem(r, 0, item)
+        self.props_table.setItem(r, 1, QtWidgets.QTableWidgetItem(value))
+        if name_editable and not name:
+            self.props_table.editItem(item)
+
+    def show_props(self, props):
+        self.props_device = dict(props)
+        self.props_table.setRowCount(0)
+        for name in ot_cli.STANDARD_PROPS:
+            self._props_add_row(name, props.get(name, ''), name_editable=False)
+        for name in sorted(set(props) - set(ot_cli.STANDARD_PROPS)):
+            self._props_add_row(name, props[name], name_editable=False)
+        self.props_table.resizeColumnToContents(0)
+
+    def read_props(self):
+        self.props_note.setText('reading ...')
+        self.device.thread_command('props_read', {'target': self.key})
+
+    def save_props(self):
+        values = {}
+        for r in range(self.props_table.rowCount()):
+            name = (self.props_table.item(r, 0).text() if self.props_table.item(r, 0) else '').strip()
+            value = (self.props_table.item(r, 1).text() if self.props_table.item(r, 1) else '').strip()
+            if not name:
+                continue
+            if value != self.props_device.get(name, ''):
+                try:
+                    ot_cli._prop_check(name, value)
+                except ValueError as exc:
+                    self.props_note.setText(str(exc))
+                    return
+                values[name] = value
+        if not values:
+            self.props_note.setText('nothing changed')
+            return
+        self.props_note.setText(f'saving {", ".join(values)} ...')
+        self.device.thread_command('props_set', {'target': self.key, 'values': values})
+
+    def on_props(self, data):
+        if data.get('ok'):
+            self.props_loaded = True
+            self.show_props(data.get('props', {}))
+            self.props_note.setText(data.get('message', ''))
+        else:
+            self.props_note.setText(f"Error: {data.get('message', '')}")
 
     def _build_battery_box(self):
         box = QtWidgets.QGroupBox('Battery model (state of charge via nRF Fuel Gauge)')
@@ -1370,8 +1534,6 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.setWindowTitle(f'norlog settings: {name}'
                             + (f" ({entry['rloc16']})" if entry.get('rloc16') else ''))
         batt = RedvyprDeviceWidget._fmt_battery(entry)
-        if (info.get('battery') or {}).get('current_ma') is not None:
-            batt += f", {info['battery']['current_ma']} mA"
         uptime = info.get('uptime_s')
         values = {
             'Device': name,
@@ -1486,6 +1648,8 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
     def update_run_state(self, running):
         self.running = running
         self.read_info_btn.setEnabled(running)
+        for w in (self.props_read_btn, self.props_add_btn, self.props_save_btn):
+            w.setEnabled(running)
         for w in (self.usb_mode, self.usb_msc_on, self.usb_msc_off, self.bat_model, self.bat_upload):
             w.setEnabled(running and self.is_serial())
         self.fw_flash.setEnabled(running)

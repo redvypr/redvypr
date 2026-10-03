@@ -486,6 +486,51 @@ def fw_status_remote(cli: OtCli, address: str) -> dict:
     return json.loads(coap_request(cli, "get", address, "fw").decode())
 
 
+# --- User properties (sn, desc, loc, ...; firmware >= 0.4.3) ---
+
+PROP_PREFIX = "#NLP "
+PROP_SN_MAX = 64
+PROP_VALUE_MAX = 256
+STANDARD_PROPS = ("sn", "desc", "loc")
+
+
+def _prop_check(name: str, value: str) -> bytes:
+    if not re.fullmatch(r"[a-z0-9_]{1,16}", name or ""):
+        raise ValueError(f"invalid property name {name!r} (a-z, 0-9, _, max. 16)")
+    data = value.encode()
+    limit = PROP_SN_MAX if name == "sn" else PROP_VALUE_MAX
+    if len(data) > limit:
+        raise ValueError(f"{name}: max. {limit} bytes ({len(data)} given)")
+    if any(b < 0x20 for b in data):
+        raise ValueError(f"{name}: no control characters (line breaks) allowed")
+    return data
+
+
+def props_read(cli: OtCli, address=None) -> dict:
+    """All properties of the gateway (address None) or of a member."""
+    import json
+    if address is None:
+        rest = cli.shell_query("norlog prop json", PROP_PREFIX, timeout=2.0)
+        if rest.startswith("err"):
+            raise OtError(f"norlog prop json: {rest}")
+        return json.loads(rest)
+    return _retry_garbled(lambda: json.loads(coap_request(cli, "get", address, "prop").decode()))
+
+
+def props_write(cli: OtCli, name: str, value: str, address=None):
+    """Set a property (empty value deletes it) on the gateway or a member; stored on the device."""
+    import base64
+    data = _prop_check(name, value)
+    if address is None:
+        # base64: any characters (UTF-8, quotes) pass the shell unchanged
+        payload = base64.b64encode(data).decode() if data else "-"
+        rest = cli.shell_query(f"norlog prop setb64 {name} {payload}", PROP_PREFIX, timeout=5.0)
+        if not rest.startswith("ok"):
+            raise OtError(f"{name}: {rest}")
+        return
+    coap_request(cli, "post", address, f"prop?n={name}", data, b64=getattr(cli, "fs_big_blocks", True))
+
+
 def fw_install_remote(cli: OtCli, address: str) -> dict:
     import json
     return json.loads(coap_request(cli, "post", address, "fw?op=install").decode())

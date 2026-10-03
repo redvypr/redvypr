@@ -100,10 +100,13 @@ def _apply_info(entry, info):
         if len(info) == 1:
             return
     entry["firmware"] = info.get("image") or info.get("firmware", "")
+    if info.get("sn"):
+        entry["sn"] = info["sn"]
     batt = info.get("battery") or {}
     entry["battery_mv"] = batt.get("mv")
     entry["battery_soc"] = batt.get("soc")
     entry["battery_charging"] = batt.get("charging")
+    entry["battery_current_ma"] = batt.get("current_ma")
     entry["board_temp_c"] = info.get("board_temp_c")
     if info.get("hwid"):
         entry["hwid"] = info["hwid"]
