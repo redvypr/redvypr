@@ -19,6 +19,7 @@ Decoded packets are published with the packetid "norlog_<mac>".
 
 import base64
 import binascii
+import json
 import logging
 import pathlib
 import queue
@@ -99,6 +100,8 @@ class _Gateway:
         self.npackets = 0
         self.last_rx = None             # time.monotonic() of the last line from the gateway
         self.data_sources = {}          # '#NLD' source -> {'last_seen', 'packets', 'mac'}
+        self.infos = {}                 # 'gateway' or RLOC16 -> info dict (norlog info / CoAP /info)
+        self.last_status = {}
 
     # --- publishing ---
 
@@ -168,7 +171,7 @@ class _Gateway:
                 pass
 
     def poll_serial(self):
-        for line in self.reader.feed(self.ser.read(512)):
+        for line in self.reader.drain(self.ser):
             self.on_gateway_line(line)
 
     # --- commands ---
@@ -223,14 +226,20 @@ class _Gateway:
                 tlvs = ot_cli.active_dataset_tlvs(self.cli)
                 # Not published as data (contains the network key), only as command result
                 self.result(command, True, 'Active dataset', dataset_tlvs=tlvs)
+            elif command == 'read_device_info':
+                self.query_info(args.get('targets', 'all'))
             elif command == 'provision':
                 self.provision(args.get('port', ''), args.get('dataset', ''))
             elif command == 'flash':
                 self.flash(args.get('image', ''), bool(args.get('force', False)))
             else:
-                self.result(command, False, f'Unknown command {command!r}')
+                # e.g. redvypr's own 'info' broadcast: not for us, ignore quietly
+                logger.debug(f'Ignoring command {command!r}')
         except (ot_cli.OtError, TimeoutError, smp_serial.SmpError, OSError, ValueError) as exc:
             self.result(command, False, str(exc))
+        except Exception as exc:    # never let a single command kill the device thread
+            logger.exception(f'Command {command!r} failed')
+            self.result(command, False, f'Internal error: {exc!r}')
 
     def provision(self, port, dataset):
         """Store the dataset on a node (own port or a second serial port) and start Thread."""
@@ -260,10 +269,54 @@ class _Gateway:
     def read_status(self):
         status = ot_cli.read_status(self.cli)
         status['packets_received'] = self.npackets
+        self.last_status = status
+        self.publish_devices()
+
+    def build_devices(self):
         rx_age = None if self.last_rx is None else time.monotonic() - self.last_rx
-        devices = device_list.build_device_list(status, gateway_port=self.config.comport,
-                                                serial_rx_age_s=rx_age, data_sources=self.data_sources)
-        self.publish('thread_status', {'thread_status': status, 'devices': devices})
+        return device_list.build_device_list(self.last_status, gateway_port=self.config.comport,
+                                             serial_rx_age_s=rx_age, data_sources=self.data_sources,
+                                             infos=self.infos)
+
+    def publish_devices(self):
+        self.publish('thread_status', {'thread_status': self.last_status, 'devices': self.build_devices()})
+
+    def query_info(self, targets='all'):
+        """
+        Read the device info: gateway via 'norlog info json' (UART), members via
+        CoAP GET /info through the gateway's OpenThread CLI.
+        targets: 'all' or a list of keys ('gateway' or RLOC16 like '0xc001').
+        """
+        if not self.last_status:
+            self.read_status()
+        wanted = None if targets == 'all' else set(targets)
+        done, failed = 0, 0
+
+        if wanted is None or 'gateway' in wanted:
+            try:
+                self.infos['gateway'] = json.loads(self.cli.shell_query('norlog info json', '#NLI '))
+                done += 1
+            except (TimeoutError, ValueError) as exc:
+                self.infos['gateway'] = {'error': str(exc)}
+                failed += 1
+
+        members = [d for d in self.build_devices()[1:]
+                   if d.get('rloc16') and (wanted is None or d['rloc16'] in wanted)]
+        if members:
+            prefix = self.cli.value('meshlocalprefix')
+            for d in members:
+                rloc = d['rloc16']
+                try:
+                    addr = ot_cli.rloc_address(prefix, rloc)
+                    payload = ot_cli.coap_get(self.cli, addr, 'info')
+                    self.infos[rloc] = json.loads(payload.decode(errors='replace'))
+                    done += 1
+                except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+                    self.infos[rloc] = {'error': str(exc)}
+                    failed += 1
+
+        self.publish_devices()
+        self.result('read_device_info', failed == 0, f'Device info read: {done} ok, {failed} failed')
 
     # --- firmware update ---
 
@@ -435,7 +488,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     # --- devices ---
 
     DEVICE_COLUMNS = ['Device', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
-                      'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets']
+                      'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets',
+                      'Firmware', 'Battery', 'Board temp [C]']
 
     QUALITY_COLORS = {
         device_list.QUALITY_GOOD: '#7bc96f',
@@ -450,9 +504,16 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         row = QtWidgets.QHBoxLayout()
         refresh = QtWidgets.QPushButton('Refresh now')
         refresh.clicked.connect(lambda: self.device.thread_command('ot_status', {}))
+        info_all = QtWidgets.QPushButton('Read info (all)')
+        info_all.clicked.connect(lambda: self.device.thread_command('read_device_info', {'targets': 'all'}))
+        info_sel = QtWidgets.QPushButton('Read info (selected)')
+        info_sel.clicked.connect(self.read_info_selected)
         self.devices_info = QtWidgets.QLabel('No data yet (refreshed with the Thread status)')
         row.addWidget(refresh)
+        row.addWidget(info_all)
+        row.addWidget(info_sel)
         row.addWidget(self.devices_info, 1)
+        self.current_devices = []
         self.devices_table = QtWidgets.QTableWidget(0, len(self.DEVICE_COLUMNS))
         self.devices_table.setHorizontalHeaderLabels(self.DEVICE_COLUMNS)
         self.devices_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -463,11 +524,60 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                                   'cost (good <= 3, fair <= 6, 16 = unreachable); serial = data from the gateway within 30 s.')
         legend.setWordWrap(True)
         legend.setStyleSheet('color: gray;')
+        self.devices_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.devices_table.itemSelectionChanged.connect(self.show_device_details)
+        self.device_details = QtWidgets.QPlainTextEdit()
+        self.device_details.setReadOnly(True)
+        self.device_details.setPlaceholderText('Select a device; "Read info" fills in firmware, battery, '
+                                               'hardware, SD and Thread details (norlog info / CoAP /info).')
+        split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        split.addWidget(self.devices_table)
+        split.addWidget(self.device_details)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 1)
         lay.addLayout(row)
-        lay.addWidget(self.devices_table, 1)
+        lay.addWidget(split, 1)
         lay.addWidget(legend)
-        self.run_widgets.append(refresh)
+        self.run_widgets.extend([refresh, info_all, info_sel])
         return w
+
+    @staticmethod
+    def _device_key(d):
+        return 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16', '')
+
+    def selected_devices(self):
+        rows = sorted({i.row() for i in self.devices_table.selectedIndexes()})
+        return [self.current_devices[r] for r in rows if r < len(self.current_devices)]
+
+    def read_info_selected(self):
+        keys = [self._device_key(d) for d in self.selected_devices()]
+        keys = [k for k in keys if k]
+        if keys:
+            self.device.thread_command('read_device_info', {'targets': keys})
+
+    def show_device_details(self):
+        sel = self.selected_devices()
+        if not sel:
+            return
+        d = sel[0]
+        if d.get('info_error'):
+            text = f"Info error: {d['info_error']}"
+        elif d.get('info'):
+            text = json.dumps(d['info'], indent=2, ensure_ascii=False)
+        else:
+            text = 'No info read yet (button "Read info").'
+        self.device_details.setPlainText(text)
+
+    @staticmethod
+    def _fmt_battery(d):
+        if d.get('battery_mv') is None:
+            return ''
+        text = f"{d['battery_mv'] / 1000:.2f} V"
+        if d.get('battery_soc') is not None:
+            text += f" {d['battery_soc']} %"
+        if d.get('battery_charging'):
+            text += ' (charging)'
+        return text
 
     @staticmethod
     def _fmt_pair(a, b):
@@ -476,6 +586,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         return f"{'' if a is None else a} / {'' if b is None else b}"
 
     def show_devices(self, devices):
+        selected_ids = {d.get('id') for d in self.selected_devices()}
+        self.current_devices = devices
+        self.devices_table.blockSignals(True)
+        self.devices_table.clearSelection()
         self.devices_table.setRowCount(len(devices))
         for row, d in enumerate(devices):
             name = d.get('extaddr') or d.get('mac') or d.get('id', '')
@@ -497,13 +611,21 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 '' if d.get('path_cost') is None else str(d['path_cost']),
                 '' if seen is None else f'{seen:.0f}',
                 str(d.get('packets', 0) or ''),
+                d.get('firmware') or ('error' if d.get('info_error') else ''),
+                self._fmt_battery(d),
+                '' if d.get('board_temp_c') is None else f"{d['board_temp_c']:.1f}",
             ]
             for col, text in enumerate(cells):
                 item = QtWidgets.QTableWidgetItem(str(text))
                 if col == 6 and d.get('quality') in self.QUALITY_COLORS:
                     item.setBackground(QtGui.QColor(self.QUALITY_COLORS[d['quality']]))
                 self.devices_table.setItem(row, col, item)
+        for row, d in enumerate(devices):
+            if d.get('id') in selected_ids:
+                self.devices_table.selectRow(row)
+        self.devices_table.blockSignals(False)
         self.devices_table.resizeColumnsToContents()
+        self.show_device_details()
         members = len(devices) - 1
         self.devices_info.setText(f'{members} member(s), updated {time.strftime("%H:%M:%S")}')
 

@@ -10,6 +10,7 @@ callback so it can be shown in a console.
 
 import re
 import time
+from collections import deque
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 PROMPT_RE = re.compile(r"^(?:\S*:~\$ ?)+")
@@ -29,10 +30,16 @@ def clean_line(raw: bytes) -> str:
 
 
 class LineReader:
-    """Splits a byte stream into cleaned text lines."""
+    """
+    Splits a byte stream into cleaned text lines.
+
+    Lines that a consumer has not taken yet (e.g. lines after "Done" in the
+    same read) stay in 'pending' for the next consumer, so nothing is lost.
+    """
 
     def __init__(self):
         self._buf = bytearray()
+        self.pending = deque()
 
     def feed(self, data: bytes):
         lines = []
@@ -50,6 +57,23 @@ class LineReader:
 
     def reset(self):
         self._buf.clear()
+        self.pending.clear()
+
+    def read_line(self, ser, deadline: float):
+        """Next line (pending first), reading from ser until the monotonic deadline."""
+        while True:
+            if self.pending:
+                return self.pending.popleft()
+            if time.monotonic() >= deadline:
+                return None
+            self.pending.extend(self.feed(ser.read(512)))
+
+    def drain(self, ser):
+        """All pending lines plus whatever is available now (non-blocking-ish)."""
+        self.pending.extend(self.feed(ser.read(512)))
+        lines = list(self.pending)
+        self.pending.clear()
+        return lines
 
 
 class OtCli:
@@ -80,24 +104,83 @@ class OtCli:
 
         result = []
         end = time.monotonic() + timeout
-        while time.monotonic() < end:
-            for line in self.reader.feed(self.ser.read(512)):
-                if LOG_RE.match(line) or line.startswith("#NLD "):
-                    self.on_line(line, False)     # asynchronous output, not part of the response
-                    continue
-                self.on_line(line, True)
-                if line.endswith(full):
-                    continue                      # echo of the command
-                if line == "Done":
-                    return result
-                if line.startswith("Error"):
-                    raise OtError(f"'{full}': {line}")
-                result.append(line)
-        raise TimeoutError(f"'{full}': no 'Done' within {timeout} s")
+        while True:
+            line = self.reader.read_line(self.ser, end)
+            if line is None:
+                raise TimeoutError(f"'{full}': no 'Done' within {timeout} s")
+            if LOG_RE.match(line) or line.startswith("#NLD "):
+                self.on_line(line, False)     # asynchronous output, not part of the response
+                continue
+            self.on_line(line, True)
+            if line.endswith(full):
+                continue                      # echo of the command
+            if line == "Done":
+                return result                 # later lines stay pending
+            if line.startswith("Error"):
+                raise OtError(f"'{full}': {line}")
+            result.append(line)
 
     def value(self, cmd: str) -> str:
         lines = self.command(cmd)
         return lines[0].strip() if lines else ""
+
+    def wait_line(self, match, timeout: float):
+        """Wait for a line for which match(line) is true; other lines go to on_line."""
+        end = time.monotonic() + timeout
+        while True:
+            line = self.reader.read_line(self.ser, end)
+            if line is None:
+                return None
+            if match(line):
+                return line
+            self.on_line(line, False)
+
+    def shell_query(self, cmd: str, prefix: str, timeout: float = 4.0) -> str:
+        """Send a (non-ot) shell command and return the text after 'prefix' of its answer line."""
+        self.write_line(cmd)
+        line = self.wait_line(lambda l: l.startswith(prefix), timeout)
+        if line is None:
+            raise TimeoutError(f"'{cmd}': no '{prefix.strip()}' answer within {timeout} s")
+        self.on_line(line, True)
+        return line[len(prefix):]
+
+
+_COAP_RESPONSE = "coap response from "
+_COAP_ERROR = "coap receive response error"
+
+
+def _is_coap_answer(line: str) -> bool:
+    return line.startswith(_COAP_RESPONSE) or line.startswith(_COAP_ERROR)
+
+
+def coap_get(cli: OtCli, address: str, uri: str, timeout: float = 8.0) -> bytes:
+    """
+    CoAP GET (confirmable) through the OpenThread CLI of the gateway.
+    Returns the response payload; the CLI prints it as hex.
+    """
+    lines = cli.command(f"coap get {address} {uri} con")
+    answer = next((l for l in lines if _is_coap_answer(l)), None)   # very fast response
+    if answer is None:
+        answer = cli.wait_line(_is_coap_answer, timeout)
+    if answer is None:
+        raise TimeoutError(f"CoAP GET {uri} from {address}: no response within {timeout} s")
+    if answer.startswith(_COAP_ERROR):
+        raise OtError(answer)
+    if " with payload: " not in answer:
+        return b""
+    return bytes.fromhex(answer.split(" with payload: ", 1)[1].strip())
+
+
+def rloc_address(mesh_local_prefix: str, rloc16: str) -> str:
+    """Mesh-local RLOC address: <prefix>:0:ff:fe00:<rloc16>."""
+    import ipaddress
+    parts = (mesh_local_prefix or "").strip().split()
+    if not parts:
+        raise ValueError("no mesh-local prefix (Thread not running?)")
+    net = ipaddress.IPv6Network(parts[0], strict=False)
+    rloc = int(str(rloc16), 16)
+    iid = (0x00ff << 32) | (0xfe00 << 16) | rloc
+    return str(ipaddress.IPv6Address(int(net.network_address) | iid))
 
 
 def parse_table(lines):

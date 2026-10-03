@@ -89,13 +89,33 @@ def worst(*qualities):
     return max(known, key=_ORDER.index) if known else QUALITY_UNKNOWN
 
 
-def build_device_list(status, gateway_port="", serial_rx_age_s=None, data_sources=None, now=None):
+def _apply_info(entry, info):
+    """Copy the main fields of a norlog info (norlog info json / CoAP /info) into an entry."""
+    if not info:
+        return
+    entry["info"] = info
+    if "error" in info:
+        entry["info_error"] = info["error"]
+        return
+    entry["firmware"] = info.get("image") or info.get("firmware", "")
+    batt = info.get("battery") or {}
+    entry["battery_mv"] = batt.get("mv")
+    entry["battery_soc"] = batt.get("soc")
+    entry["battery_charging"] = batt.get("charging")
+    entry["board_temp_c"] = info.get("board_temp_c")
+    if info.get("hwid"):
+        entry["hwid"] = info["hwid"]
+
+
+def build_device_list(status, gateway_port="", serial_rx_age_s=None, data_sources=None, now=None,
+                      infos=None):
     """
     Args:
         status: dict from ot_cli.read_status() (may be empty)
         gateway_port: serial port of the gateway
         serial_rx_age_s: seconds since the last byte from the gateway
         data_sources: {source: {"last_seen": t, "packets": n, "mac": ...}} from '#NLD' lines
+        infos: {"gateway" or RLOC16: info dict from 'norlog info json' / CoAP /info}
     Returns:
         list of device dicts, gateway first, then members sorted by RLOC16
     """
@@ -227,6 +247,12 @@ def build_device_list(status, gateway_port="", serial_rx_age_s=None, data_source
             if e["lq_out"] is not None:
                 q.append(quality_from_lq(e["lq_out"]))
             e["quality"] = worst(*q)
+
+    # --- device info (norlog info / CoAP /info), keyed 'gateway' or RLOC16 ---
+    infos = infos or {}
+    _apply_info(gateway, infos.get("gateway"))
+    for e in members.values():
+        _apply_info(e, infos.get(e["rloc16"]))
 
     ordered = sorted(members.values(), key=lambda e: (e["rloc16"] or "~", e["id"]))
     return [gateway] + ordered
