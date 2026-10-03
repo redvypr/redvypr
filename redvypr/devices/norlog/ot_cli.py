@@ -324,7 +324,7 @@ def fs_crc(cli: OtCli, address, path: str, off: int = 0, length: int = None):
 
 
 def fs_write_block(cli: OtCli, address, path: str, off: int, data: bytes, trunc: bool = False,
-                   b64: bool = False) -> int:
+                   b64: bool = False, total: int = None) -> int:
     """
     Write one block at off (overwrite or append, no holes). trunc cuts the file to off
     first (off=0: new empty file). Max. FS_LOCAL_CHUNK (gateway) / FS_DIRECT_CHUNK with
@@ -337,7 +337,8 @@ def fs_write_block(cli: OtCli, address, path: str, off: int, data: bytes, trunc:
         args = ["write", _fs_quote(path), off, base64.b64encode(data).decode() if data else "-"]
         res = fs_local(cli, *(args + ["trunc"] if trunc else args))
     else:
-        uri = f"fs?op=write&p={_fs_quote(path)}&off={off}" + ("&trunc=1" if trunc else "")
+        uri = (f"fs?op=write&p={_fs_quote(path)}&off={off}" + (f"&tot={total}" if total else "")
+               + ("&trunc=1" if trunc else ""))
         res = _retry_garbled(lambda: json.loads(
             coap_request(cli, "put", address, uri, data, timeout=8.0, b64=b64).decode()))
     return res["size"]
@@ -392,7 +393,8 @@ def fs_upload(cli: OtCli, address, data: bytes, path: str, progress=None, resume
         block = data[off:off + chunk]
         try:
             # first block: cut the rest of an older, longer file
-            size = fs_write_block(cli, address, path, off, block, trunc=first, b64=big and address is not None)
+            size = fs_write_block(cli, address, path, off, block, trunc=first, b64=big and address is not None,
+                                  total=len(data))
             if size < off + len(block):
                 # line cut by an older gateway (shell buffer 640), but still valid base64
                 raise OtError(f"invalid: block at {off} written incompletely ({size - off}/{len(block)} bytes)")

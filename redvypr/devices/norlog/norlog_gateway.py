@@ -1218,7 +1218,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
     so far; for Thread members the firmware tab is disabled.
     """
 
-    GENERAL_FIELDS = ['Device', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Image', 'Firmware', 'Build',
+    GENERAL_FIELDS = ['Device', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Thread', 'Image', 'Firmware', 'Build',
                       'Board', 'HW ID', 'Battery', 'Board temp', 'Uptime', 'Reset cause', 'Hardware', 'SD card',
                       'Battery model', 'USB', 'TX power', 'Log level', 'Info age']
 
@@ -1391,6 +1391,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             'Hardware': self._yes_no(info.get('hw')),
             'SD card': self._yes_no(info.get('sd')),
             'USB': self._fmt_usb(info.get('usb')),
+            'Thread': self._fmt_thread(info.get('thread')),
             'Battery model': self._fmt_battery_model(info.get('battery')),
             'TX power': self._fmt_radio(info.get('radio')),
             'Log level': str(info.get('log', '')),
@@ -1429,6 +1430,24 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             self.fw_auto.setChecked(bool(info['fw_auto']))
             self.fw_auto.blockSignals(False)
         self.update_run_state(self.running)
+
+    @staticmethod
+    def _fmt_thread(th):
+        if not th:
+            return ''
+        if not th.get('commissioned'):
+            return f"not commissioned ({th.get('role', '?')})"
+        parts = [f"{th.get('role', '?')}, {th.get('network', '')}, channel {th.get('channel', '?')}"]
+        if th.get('panid'):
+            parts.append(f"PAN {th['panid']}")
+        if 'partition' in th:
+            parts.append(f"partition {th['partition']}, leader ID {th.get('leader_id', '?')}")
+            parts.append(f"{th.get('neighbors', 0)} neighbor(s), {th.get('children', 0)} child(ren)")
+        parent = th.get('parent')
+        if parent:
+            parts.append(f"parent {parent.get('rloc16', '?')} ({parent.get('rssi', '?')} dBm, "
+                         f"LQ {parent.get('lq_in', '?')})")
+        return '\n'.join(parts)
 
     @staticmethod
     def _fmt_battery_model(batt):
