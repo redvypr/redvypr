@@ -240,6 +240,8 @@ class _Gateway:
             elif command == 'refresh':
                 self.read_status()
                 self.query_info('all')
+            elif command == 'battery_upload':
+                self.battery_upload(args.get('path', ''))
             elif command == 'provision':
                 self.provision(args.get('port', ''), args.get('dataset', ''))
             elif command == 'flash':
@@ -252,6 +254,25 @@ class _Gateway:
         except Exception as exc:    # never let a single command kill the device thread
             logger.exception(f'Command {command!r} failed')
             self.result(command, False, f'Internal error: {exc!r}')
+
+    def battery_upload(self, path):
+        """Load a battery model (.inc from nPM PowerUP) into the gateway norlog (serial)."""
+        p = pathlib.Path(path)
+        if not p.is_file():
+            raise ValueError(f'Battery model not found: {path}')
+        text = p.read_text(errors='replace')
+        last = [0.0]
+
+        def progress(done, total):
+            if time.monotonic() - last[0] >= 1.0 or done >= total:
+                last[0] = time.monotonic()
+                self.result('battery_upload', True, f'{p.name}: {done * 100 // total} %',
+                            progress=done * 100 // total)
+
+        name = ot_cli.upload_battery_model(self.cli, text, progress=progress)
+        self.result('battery_upload', True, f'Battery model "{name}" loaded and active (custom)',
+                    progress=100, done=True)
+        self.query_info(['gateway'], report=False)
 
     def provision(self, port, dataset):
         """Store the dataset on a node (own port or a second serial port) and start Thread."""
@@ -985,6 +1006,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         if data.get('command') == 'dataset' and data.get('ok'):
             self.cfg.dataset_tlvs = data.get('dataset_tlvs', '')
             self.update_dataset_label()
+        elif data.get('command') == 'battery_upload':
+            for dlg in self.serial_dialogs():
+                dlg.on_battery_upload(data)
         elif data.get('command') == 'flash' and not data.get('ok'):
             for dlg in self.serial_dialogs():
                 dlg.fw_log.appendPlainText(text)
@@ -1006,9 +1030,11 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
 
     GENERAL_FIELDS = ['Device', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Image', 'Firmware', 'Build',
                       'Board', 'HW ID', 'Battery', 'Board temp', 'Uptime', 'Reset cause', 'Hardware', 'SD card',
-                      'USB', 'TX power', 'Log level', 'Info age']
+                      'Battery model', 'USB', 'TX power', 'Log level', 'Info age']
 
     USB_MODES = ['auto', 'manual', 'off']
+    # Battery models built into the firmware ('custom' = loaded with "Load .inc")
+    BATTERY_MODELS = ['akyga_lp805080', 'nordic_example', 'custom']
 
     def __init__(self, widget, key):
         super().__init__(widget)
@@ -1059,9 +1085,53 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         row.addWidget(self.info_error, 1)
         lay.addLayout(form)
         lay.addLayout(row)
+        lay.addWidget(self._build_battery_box())
         lay.addWidget(self._build_usb_box())
         lay.addStretch(1)
         return w
+
+    def _build_battery_box(self):
+        box = QtWidgets.QGroupBox('Battery model (state of charge via nRF Fuel Gauge)')
+        grid = QtWidgets.QGridLayout(box)
+        self.bat_model = QtWidgets.QComboBox()
+        self.bat_model.addItems(self.BATTERY_MODELS)
+        self.bat_model.setToolTip('Battery model used for the state of charge (stored on the device). '
+                                  '"custom" is the model loaded last with "Load .inc ...".')
+        self.bat_model.activated.connect(
+            lambda i: self.usb_command(f'norlog battery model {self.BATTERY_MODELS[i]}'))
+        self.bat_upload = QtWidgets.QPushButton('Load .inc ...')
+        self.bat_upload.setToolTip('Load a battery model exported by nPM PowerUP (.inc) into the device; '
+                                   'it becomes the model "custom"')
+        self.bat_upload.clicked.connect(self.upload_battery_model)
+        self.bat_progress = QtWidgets.QProgressBar()
+        self.bat_progress.setRange(0, 100)
+        self.bat_progress.setVisible(False)
+        self.bat_note = QtWidgets.QLabel('')
+        self.bat_note.setStyleSheet('color: gray;')
+        self.bat_note.setWordWrap(True)
+        grid.addWidget(QtWidgets.QLabel('Model'), 0, 0)
+        grid.addWidget(self.bat_model, 0, 1)
+        grid.addWidget(self.bat_upload, 0, 2)
+        grid.addWidget(self.bat_progress, 1, 0, 1, 3)
+        grid.addWidget(self.bat_note, 2, 0, 1, 3)
+        return box
+
+    def upload_battery_model(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Battery model (nPM PowerUP)', '',
+                                                        'Battery models (*.inc);;All files (*)')
+        if not path:
+            return
+        self.bat_progress.setValue(0)
+        self.bat_progress.setVisible(True)
+        self.bat_note.setText(f'Loading {pathlib.Path(path).name} ...')
+        self.device.thread_command('battery_upload', {'path': path})
+
+    def on_battery_upload(self, data):
+        if 'progress' in data:
+            self.bat_progress.setValue(int(data['progress']))
+        if not data.get('ok') or data.get('done'):
+            self.bat_progress.setVisible(False)
+            self.bat_note.setText(('' if data.get('ok') else 'Error: ') + data.get('message', ''))
 
     def _build_usb_box(self):
         box = QtWidgets.QGroupBox('USB (SD card as mass storage)')
@@ -1130,12 +1200,20 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             'Hardware': self._yes_no(info.get('hw')),
             'SD card': self._yes_no(info.get('sd')),
             'USB': self._fmt_usb(info.get('usb')),
+            'Battery model': self._fmt_battery_model(info.get('battery')),
             'TX power': self._fmt_radio(info.get('radio')),
             'Log level': str(info.get('log', '')),
             'Info age': '' if entry.get('info_age_s') is None else f"{entry['info_age_s']:.0f} s",
         }
         for k, v in values.items():
             self.general_labels[k].setText(str(v))
+        batt = info.get('battery') or {}
+        if batt.get('model') in self.BATTERY_MODELS:
+            self.bat_model.setCurrentIndex(self.BATTERY_MODELS.index(batt['model']))
+        if not self.is_serial():
+            self.bat_note.setText('Battery model settings over Thread are not available yet (serial only)')
+        elif info and not batt.get('model'):
+            self.bat_note.setText('No battery model info (firmware without fuel gauge?)')
         usb = info.get('usb') or {}
         if usb.get('mode') in self.USB_MODES:
             self.usb_mode.setCurrentIndex(self.USB_MODES.index(usb['mode']))
@@ -1154,6 +1232,19 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         if not serial_ok and self.tabs.currentIndex() == self.fw_tab_index:
             self.tabs.setCurrentIndex(0)
         self.update_run_state(self.running)
+
+    @staticmethod
+    def _fmt_battery_model(batt):
+        if not batt or not batt.get('model'):
+            return ''
+        text = batt['model']
+        if not batt.get('gauge'):
+            text += ' (no fuel gauge result yet, SoC from voltage)'
+        elif batt.get('tte_min') is not None:
+            text += f", remaining {batt['tte_min'] // 60} h {batt['tte_min'] % 60} min"
+        elif batt.get('ttf_min') is not None:
+            text += f", full in {batt['ttf_min'] // 60} h {batt['ttf_min'] % 60} min"
+        return text
 
     @staticmethod
     def _fmt_radio(radio):
@@ -1179,7 +1270,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
     def update_run_state(self, running):
         self.running = running
         self.read_info_btn.setEnabled(running)
-        for w in (self.usb_mode, self.usb_msc_on, self.usb_msc_off):
+        for w in (self.usb_mode, self.usb_msc_on, self.usb_msc_off, self.bat_model, self.bat_upload):
             w.setEnabled(running and self.is_serial())
         self.fw_flash.setEnabled(running and self.is_serial())
         self.fw_cancel.setEnabled(running and self.is_serial())

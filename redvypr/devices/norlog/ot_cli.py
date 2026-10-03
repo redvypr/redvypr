@@ -194,6 +194,40 @@ def coap_get(cli: OtCli, address: str, uri: str, timeout: float = 10.0) -> bytes
     return data
 
 
+BATTERY_PREFIX = "#NLB "
+BATTERY_CHUNK = 160     # bytes of .inc text per line (320 hex chars, shell buffer 416)
+
+
+def upload_battery_model(cli: OtCli, inc_text: str, progress=None) -> str:
+    """
+    Load a battery model (.inc from nPM PowerUP) into a norlog over the shell
+    ('norlog battery inc begin|<hex>|end'). The firmware parses, stores and
+    activates it as model 'custom'. Returns the model name.
+    progress: optional callback(done_bytes, total_bytes)
+    """
+    data = inc_text.encode()
+
+    def query(cmd):
+        answer = cli.shell_query(cmd, BATTERY_PREFIX, timeout=5.0)
+        if not answer.startswith("ok"):
+            raise OtError(f"battery model upload: {answer}")
+        return answer
+
+    query("norlog battery inc begin")
+    try:
+        for off in range(0, len(data), BATTERY_CHUNK):
+            query("norlog battery inc " + data[off:off + BATTERY_CHUNK].hex())
+            if progress:
+                progress(min(off + BATTERY_CHUNK, len(data)), len(data))
+    except Exception:
+        try:
+            cli.shell_query("norlog battery inc abort", BATTERY_PREFIX, timeout=2.0)
+        except TimeoutError:
+            pass
+        raise
+    return query("norlog battery inc end")[len("ok end"):].strip()
+
+
 def rloc_address(mesh_local_prefix: str, rloc16: str) -> str:
     """Mesh-local RLOC address: <prefix>:0:ff:fe00:<rloc16>."""
     import ipaddress
