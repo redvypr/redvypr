@@ -29,11 +29,13 @@ import time
 import typing
 
 import pydantic
+import qtawesome
 import serial
 import serial.tools.list_ports
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from redvypr.device import RedvyprDeviceCustomConfig
+from redvypr.gui import iconnames
 from redvypr.redvypr_datadict import check_for_command, create_redvypr_dict
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 
@@ -71,6 +73,12 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
     status_interval_s: float = pydantic.Field(default=10.0, description='Interval for reading the Thread '
                                                                         'status and device list, '
                                                                         '0 = only on request')
+    info_interval_s: float = pydantic.Field(default=10.0, ge=0, description='Interval for reading the device '
+                                                                            'info (battery, temperature, '
+                                                                            'firmware) of all devices, '
+                                                                            '0 = only on request')
+    coap_timeout_s: int = pydantic.Field(default=5, ge=1, le=60, description='Timeout of a CoAP request to a '
+                                                                             'Thread member')
     console_show_commands: bool = pydantic.Field(default=False, description='Show the traffic of internal '
                                                                             'ot commands in the console')
     dataset_tlvs: str = pydantic.Field(default='', description='Active operational dataset (hex TLVs) used to '
@@ -101,6 +109,7 @@ class _Gateway:
         self.last_rx = None             # time.monotonic() of the last line from the gateway
         self.data_sources = {}          # '#NLD' source -> {'last_seen', 'packets', 'mac'}
         self.infos = {}                 # 'gateway' or RLOC16 -> info dict (norlog info / CoAP /info)
+        self.info_times = {}            # 'gateway' or RLOC16 -> time.time() of the last successful read
         self.last_status = {}
 
     # --- publishing ---
@@ -228,6 +237,9 @@ class _Gateway:
                 self.result(command, True, 'Active dataset', dataset_tlvs=tlvs)
             elif command == 'read_device_info':
                 self.query_info(args.get('targets', 'all'))
+            elif command == 'refresh':
+                self.read_status()
+                self.query_info('all')
             elif command == 'provision':
                 self.provision(args.get('port', ''), args.get('dataset', ''))
             elif command == 'flash':
@@ -274,18 +286,34 @@ class _Gateway:
 
     def build_devices(self):
         rx_age = None if self.last_rx is None else time.monotonic() - self.last_rx
-        return device_list.build_device_list(self.last_status, gateway_port=self.config.comport,
-                                             serial_rx_age_s=rx_age, data_sources=self.data_sources,
-                                             infos=self.infos)
+        devices = device_list.build_device_list(self.last_status, gateway_port=self.config.comport,
+                                                serial_rx_age_s=rx_age, data_sources=self.data_sources,
+                                                infos=self.infos)
+        now = time.time()
+        for d in devices:
+            key = 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16')
+            if key in self.info_times:
+                d['info_age_s'] = now - self.info_times[key]
+        return devices
 
     def publish_devices(self):
         self.publish('thread_status', {'thread_status': self.last_status, 'devices': self.build_devices()})
 
-    def query_info(self, targets='all'):
+    def store_info(self, key, info=None, error=None):
+        """Store a read info; on error the last good values are kept and marked with the error."""
+        if error is None:
+            self.infos[key] = info
+            self.info_times[key] = time.time()
+        else:
+            last = {k: v for k, v in (self.infos.get(key) or {}).items() if k != 'error'}
+            self.infos[key] = {**last, 'error': error}
+
+    def query_info(self, targets='all', report=True):
         """
         Read the device info: gateway via 'norlog info json' (UART), members via
-        CoAP GET /info through the gateway's OpenThread CLI.
+        CoAP GET /info ('norlog coap get' on the gateway).
         targets: 'all' or a list of keys ('gateway' or RLOC16 like '0xc001').
+        report: publish a command result (False for the periodic poll).
         """
         if not self.last_status:
             self.read_status()
@@ -294,29 +322,30 @@ class _Gateway:
 
         if wanted is None or 'gateway' in wanted:
             try:
-                self.infos['gateway'] = json.loads(self.cli.shell_query('norlog info json', '#NLI '))
+                self.store_info('gateway', json.loads(self.cli.shell_query('norlog info json', '#NLI ')))
                 done += 1
             except (TimeoutError, ValueError) as exc:
-                self.infos['gateway'] = {'error': str(exc)}
+                self.store_info('gateway', error=str(exc))
                 failed += 1
 
         members = [d for d in self.build_devices()[1:]
                    if d.get('rloc16') and (wanted is None or d['rloc16'] in wanted)]
         if members:
-            prefix = self.cli.value('meshlocalprefix')
+            prefix = ot_cli.mesh_local_prefix(self.cli, self.last_status.get('ipaddr'))
             for d in members:
                 rloc = d['rloc16']
                 try:
                     addr = ot_cli.rloc_address(prefix, rloc)
-                    payload = ot_cli.coap_get(self.cli, addr, 'info')
-                    self.infos[rloc] = json.loads(payload.decode(errors='replace'))
+                    payload = ot_cli.coap_get(self.cli, addr, 'info', timeout=self.config.coap_timeout_s)
+                    self.store_info(rloc, json.loads(payload.decode(errors='replace')))
                     done += 1
                 except (ot_cli.OtError, TimeoutError, ValueError) as exc:
-                    self.infos[rloc] = {'error': str(exc)}
+                    self.store_info(rloc, error=str(exc))
                     failed += 1
 
         self.publish_devices()
-        self.result('read_device_info', failed == 0, f'Device info read: {done} ok, {failed} failed')
+        if report:
+            self.result('read_device_info', failed == 0, f'Device info read: {done} ok, {failed} failed')
 
     # --- firmware update ---
 
@@ -395,6 +424,7 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     logger.info(funcname + f'Opened {pdconfig.comport} with {pdconfig.baud} baud')
     gw.result('start', True, f'Connected to {pdconfig.comport}')
     t_status = time.monotonic()
+    t_info = None                   # first info read right after the first status
 
     try:
         while not gw.stop_requested:
@@ -414,6 +444,14 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                     gw.read_status()
                 except (ot_cli.OtError, TimeoutError) as exc:
                     logger.debug(funcname + f'Status poll failed: {exc}')
+
+            interval = gw.config.info_interval_s
+            if interval > 0 and (t_info is None or time.monotonic() - t_info >= interval):
+                t_info = time.monotonic()
+                try:
+                    gw.query_info('all', report=False)
+                except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+                    logger.debug(funcname + f'Info poll failed: {exc}')
     finally:
         gw.close()
         logger.info(funcname + 'Stopped')
@@ -428,12 +466,12 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         super().__init__(*args, **kwargs)
         self.cfg = self.device.custom_config
         self.run_widgets = []       # only enabled while the thread is running
+        self.settings_dialogs = {}  # device key -> open DeviceSettingsDialog
 
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self._build_devices_tab(), 'Devices')
         self.tabs.addTab(self._build_console_tab(), 'Console')
         self.tabs.addTab(self._build_thread_tab(), 'Thread network')
-        self.tabs.addTab(self._build_firmware_tab(), 'Firmware')
         self.tabs.addTab(self._build_data_tab(), 'Data')
         self.layout.addWidget(self._build_port_row())
         self.layout.addWidget(self.tabs)
@@ -487,9 +525,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     # --- devices ---
 
-    DEVICE_COLUMNS = ['Device', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
+    DEVICE_COLUMNS = ['', 'Device', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
                       'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets',
-                      'Firmware', 'Battery', 'Board temp [C]']
+                      'Firmware', 'Battery', 'Board temp [C]', 'Info age [s]']
 
     QUALITY_COLORS = {
         device_list.QUALITY_GOOD: '#7bc96f',
@@ -502,16 +540,23 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
         row = QtWidgets.QHBoxLayout()
-        refresh = QtWidgets.QPushButton('Refresh now')
-        refresh.clicked.connect(lambda: self.device.thread_command('ot_status', {}))
-        info_all = QtWidgets.QPushButton('Read info (all)')
-        info_all.clicked.connect(lambda: self.device.thread_command('read_device_info', {'targets': 'all'}))
+        refresh = QtWidgets.QPushButton('Refresh')
+        refresh.setToolTip('Read the Thread status and the info (battery, temperature, firmware) of all devices')
+        refresh.clicked.connect(lambda: self.device.thread_command('refresh', {}))
         info_sel = QtWidgets.QPushButton('Read info (selected)')
         info_sel.clicked.connect(self.read_info_selected)
+        self.info_interval = QtWidgets.QSpinBox()
+        self.info_interval.setRange(0, 3600)
+        self.info_interval.setSuffix(' s')
+        self.info_interval.setSpecialValueText('off')
+        self.info_interval.setToolTip('Interval for reading the info of all devices (CoAP /info), 0 = off')
+        self.info_interval.setValue(int(self.cfg.info_interval_s))
+        self.info_interval.valueChanged.connect(self.info_interval_changed)
         self.devices_info = QtWidgets.QLabel('No data yet (refreshed with the Thread status)')
         row.addWidget(refresh)
-        row.addWidget(info_all)
         row.addWidget(info_sel)
+        row.addWidget(QtWidgets.QLabel('Auto info'))
+        row.addWidget(self.info_interval)
         row.addWidget(self.devices_info, 1)
         self.current_devices = []
         self.devices_table = QtWidgets.QTableWidget(0, len(self.DEVICE_COLUMNS))
@@ -528,7 +573,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.devices_table.itemSelectionChanged.connect(self.show_device_details)
         self.device_details = QtWidgets.QPlainTextEdit()
         self.device_details.setReadOnly(True)
-        self.device_details.setPlaceholderText('Select a device; "Read info" fills in firmware, battery, '
+        self.device_details.setPlaceholderText('Select a device to see its info: firmware, battery, '
                                                'hardware, SD and Thread details (norlog info / CoAP /info).')
         split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         split.addWidget(self.devices_table)
@@ -538,12 +583,49 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         lay.addLayout(row)
         lay.addWidget(split, 1)
         lay.addWidget(legend)
-        self.run_widgets.extend([refresh, info_all, info_sel])
+        self.run_widgets.extend([refresh, info_sel])
         return w
+
+    def info_interval_changed(self, value):
+        self.cfg.info_interval_s = float(value)
+        if self.device.get_thread_status()['thread_running']:
+            self.device.thread_command('config', {'config': self.cfg.model_dump()})
 
     @staticmethod
     def _device_key(d):
         return 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16', '')
+
+    @classmethod
+    def device_key(cls, d):
+        """Key of a device in the info/settings bookkeeping ('gateway', RLOC16 or id)."""
+        return cls._device_key(d) or d.get('id', '')
+
+    def _settings_button(self, d):
+        btn = QtWidgets.QPushButton()
+        btn.setIcon(qtawesome.icon(iconnames['settings']))
+        btn.setToolTip('Settings and firmware update of this device')
+        btn.setFlat(True)
+        key = self.device_key(d)
+        btn.clicked.connect(lambda checked=False, k=key: self.open_settings(k))
+        return btn
+
+    def open_settings(self, key):
+        dlg = self.settings_dialogs.get(key)
+        if dlg is None:
+            dlg = DeviceSettingsDialog(self, key)
+            dlg.finished.connect(lambda _r, k=key: self.settings_dialogs.pop(k, None))
+            self.settings_dialogs[key] = dlg
+        entry = next((d for d in self.current_devices if self.device_key(d) == key), None)
+        if entry is not None:
+            dlg.update_entry(entry)
+        dlg.update_run_state(self.device.get_thread_status()['thread_running'])
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
+    def serial_dialogs(self):
+        """Open settings dialogs of devices connected via serial (the flash target)."""
+        return [dlg for dlg in self.settings_dialogs.values() if dlg.is_serial()]
 
     def selected_devices(self):
         rows = sorted({i.row() for i in self.devices_table.selectedIndexes()})
@@ -560,12 +642,14 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         if not sel:
             return
         d = sel[0]
-        if d.get('info_error'):
-            text = f"Info error: {d['info_error']}"
-        elif d.get('info'):
-            text = json.dumps(d['info'], indent=2, ensure_ascii=False)
-        else:
-            text = 'No info read yet (button "Read info").'
+        info = {k: v for k, v in (d.get('info') or {}).items() if k != 'error'}
+        text = f"Last read failed: {d['info_error']}\n" if d.get('info_error') else ''
+        if info:
+            if d.get('info_error'):
+                text += 'Last good info:\n'
+            text += json.dumps(info, indent=2, ensure_ascii=False)
+        elif not text:
+            text = 'No info read yet (button "Refresh").'
         self.device_details.setPlainText(text)
 
     @staticmethod
@@ -614,11 +698,19 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 d.get('firmware') or ('error' if d.get('info_error') else ''),
                 self._fmt_battery(d),
                 '' if d.get('board_temp_c') is None else f"{d['board_temp_c']:.1f}",
+                '' if d.get('info_age_s') is None else f"{d['info_age_s']:.0f}",
             ]
-            for col, text in enumerate(cells):
+            cols = self.DEVICE_COLUMNS
+            stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'Info age [s]')]
+            self.devices_table.setCellWidget(row, 0, self._settings_button(d))
+            for col, text in enumerate([''] + cells):
                 item = QtWidgets.QTableWidgetItem(str(text))
-                if col == 6 and d.get('quality') in self.QUALITY_COLORS:
+                if cols[col] == 'Quality' and d.get('quality') in self.QUALITY_COLORS:
                     item.setBackground(QtGui.QColor(self.QUALITY_COLORS[d['quality']]))
+                if col in stale_cols and d.get('info_error'):
+                    # Last read failed: older values in gray, error as tooltip
+                    item.setForeground(QtGui.QColor('gray'))
+                    item.setToolTip(f"Last read failed: {d['info_error']}")
                 self.devices_table.setItem(row, col, item)
         for row, d in enumerate(devices):
             if d.get('id') in selected_ids:
@@ -626,6 +718,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.devices_table.blockSignals(False)
         self.devices_table.resizeColumnsToContents()
         self.show_device_details()
+        for key, dlg in self.settings_dialogs.items():
+            entry = next((d for d in devices if self.device_key(d) == key), None)
+            if entry is not None:
+                dlg.update_entry(entry)
         members = len(devices) - 1
         self.devices_info.setText(f'{members} member(s), updated {time.strftime("%H:%M:%S")}')
 
@@ -833,69 +929,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     QtWidgets.QTreeWidgetItem(child, [k, v])
         self.status_tree.expandToDepth(0)
 
-    # --- firmware ---
-
-    def _build_firmware_tab(self):
-        w = QtWidgets.QWidget()
-        lay = QtWidgets.QVBoxLayout(w)
-        row = QtWidgets.QHBoxLayout()
-        self.fw_path = QtWidgets.QLineEdit(self.cfg.firmware_image)
-        self.fw_path.setPlaceholderText('.../build/norlog_firmware_v0_X_rev02/zephyr/zephyr.signed.bin')
-        self.fw_path.textChanged.connect(lambda t: setattr(self.cfg, 'firmware_image', t))
-        browse = QtWidgets.QPushButton('Browse ...')
-        browse.clicked.connect(self.browse_image)
-        row.addWidget(QtWidgets.QLabel('Image'))
-        row.addWidget(self.fw_path, 1)
-        row.addWidget(browse)
-        self.fw_info = QtWidgets.QLabel('')
-        self.fw_force = QtWidgets.QCheckBox('Flash even if this image is already installed')
-        self.fw_force.setChecked(self.cfg.firmware_force)
-        self.fw_force.toggled.connect(lambda v: setattr(self.cfg, 'firmware_force', v))
-        btn_row = QtWidgets.QHBoxLayout()
-        self.fw_flash = QtWidgets.QPushButton('Flash gateway')
-        self.fw_flash.clicked.connect(self.flash)
-        self.fw_cancel = QtWidgets.QPushButton('Cancel')
-        self.fw_cancel.clicked.connect(lambda: self.device.thread_command('flash_cancel', {}))
-        btn_row.addWidget(self.fw_flash)
-        btn_row.addWidget(self.fw_cancel)
-        self.fw_progress = QtWidgets.QProgressBar()
-        self.fw_progress.setRange(0, 100)
-        self.fw_log = QtWidgets.QPlainTextEdit()
-        self.fw_log.setReadOnly(True)
-        lay.addLayout(row)
-        lay.addWidget(self.fw_info)
-        lay.addWidget(self.fw_force)
-        lay.addLayout(btn_row)
-        lay.addWidget(self.fw_progress)
-        lay.addWidget(self.fw_log, 1)
-        self.run_widgets.extend([self.fw_flash, self.fw_cancel])
-        self.fw_path.textChanged.connect(self.update_image_info)
-        self.update_image_info()
-        return w
-
-    def browse_image(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Signed firmware image', self.fw_path.text(),
-                                                        'MCUboot images (*.signed.bin);;All files (*)')
-        if path:
-            self.fw_path.setText(path)
-
-    def update_image_info(self):
-        path = pathlib.Path(self.fw_path.text())
-        if not path.is_file():
-            self.fw_info.setText('')
-            return
-        try:
-            info = smp_serial.image_info(path.read_bytes())
-            self.fw_info.setText(f'Version {info["version"]}, {info["size"] // 1024} KB, '
-                                 f'hash {info["hash"].hex()[:16]}...')
-        except (ValueError, OSError, TypeError) as exc:
-            self.fw_info.setText(f'Invalid image: {exc}')
-
-    def flash(self):
-        self.fw_progress.setValue(0)
-        self.fw_log.clear()
-        self.device.thread_command('flash', {'image': self.cfg.firmware_image, 'force': self.cfg.firmware_force})
-
     # --- data ---
 
     def _build_data_tab(self):
@@ -939,9 +972,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 if 'devices' in data:
                     self.show_devices(data['devices'])
             elif packetid == 'flash_status':
-                if 'progress' in data:
-                    self.fw_progress.setValue(int(data['progress']))
-                self.fw_log.appendPlainText(f"[{data.get('state')}] {data.get('message', '')}")
+                for dlg in self.serial_dialogs():
+                    dlg.on_flash_status(data)
             elif packetid == 'command_result':
                 self.show_result(data)
             elif str(packetid).startswith('norlog_') and 'packet_type' in data:
@@ -954,9 +986,252 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             self.cfg.dataset_tlvs = data.get('dataset_tlvs', '')
             self.update_dataset_label()
         elif data.get('command') == 'flash' and not data.get('ok'):
-            self.fw_log.appendPlainText(text)
+            for dlg in self.serial_dialogs():
+                dlg.fw_log.appendPlainText(text)
 
     def update_run_state(self):
         running = self.device.get_thread_status()['thread_running']
         for w in self.run_widgets:
             w.setEnabled(running)
+        for dlg in self.settings_dialogs.values():
+            dlg.update_run_state(running)
+
+
+class DeviceSettingsDialog(QtWidgets.QDialog):
+    """
+    Settings of one norlog of the device table: general info and firmware
+    update. Firmware updates are only possible over serial (the gateway port)
+    so far; for Thread members the firmware tab is disabled.
+    """
+
+    GENERAL_FIELDS = ['Device', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Image', 'Firmware', 'Build',
+                      'Board', 'HW ID', 'Battery', 'Board temp', 'Uptime', 'Reset cause', 'Hardware', 'SD card',
+                      'USB', 'Log level', 'Info age']
+
+    USB_MODES = ['auto', 'manual', 'off']
+
+    def __init__(self, widget, key):
+        super().__init__(widget)
+        self.widget = widget
+        self.device = widget.device
+        self.cfg = widget.cfg
+        self.key = key
+        self.entry = {}
+        self.running = False
+        self.setWindowTitle(f'norlog settings: {key}')
+        self.setWindowIcon(qtawesome.icon(iconnames['settings']))
+        self.resize(600, 560)
+
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.addTab(self._build_general_tab(), 'General')
+        self.fw_tab_index = self.tabs.addTab(self._build_firmware_tab(), 'Firmware')
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.addWidget(self.tabs)
+        lay.addWidget(buttons)
+
+    def is_serial(self):
+        return self.entry.get('connection') == device_list.CONNECTION_SERIAL
+
+    # --- general ---
+
+    def _build_general_tab(self):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+        form = QtWidgets.QFormLayout()
+        self.general_labels = {}
+        for name in self.GENERAL_FIELDS:
+            label = QtWidgets.QLabel('')
+            label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+            label.setWordWrap(True)
+            self.general_labels[name] = label
+            form.addRow(name, label)
+        row = QtWidgets.QHBoxLayout()
+        self.read_info_btn = QtWidgets.QPushButton('Read info')
+        self.read_info_btn.setToolTip('Read the info of this device now (norlog info / CoAP /info)')
+        self.read_info_btn.clicked.connect(
+            lambda: self.device.thread_command('read_device_info', {'targets': [self.key]}))
+        self.info_error = QtWidgets.QLabel('')
+        self.info_error.setStyleSheet('color: #d64545;')
+        self.info_error.setWordWrap(True)
+        row.addWidget(self.read_info_btn)
+        row.addWidget(self.info_error, 1)
+        lay.addLayout(form)
+        lay.addLayout(row)
+        lay.addWidget(self._build_usb_box())
+        lay.addStretch(1)
+        return w
+
+    def _build_usb_box(self):
+        box = QtWidgets.QGroupBox('USB (SD card as mass storage)')
+        grid = QtWidgets.QGridLayout(box)
+        self.usb_mode = QtWidgets.QComboBox()
+        self.usb_mode.addItems(self.USB_MODES)
+        self.usb_mode.setToolTip('auto: a connected computer gets the SD card (logging stops)\n'
+                                 'manual: USB only powers/charges, release the card with "SD card to USB"\n'
+                                 'off: never mass storage, only power/charging\n'
+                                 'Stored on the device (norlog usb mode).')
+        self.usb_mode.activated.connect(self.set_usb_mode)
+        self.usb_msc_on = QtWidgets.QPushButton('SD card to USB')
+        self.usb_msc_on.setToolTip('Stop logging and give the SD card to the connected computer '
+                                   '(until "SD card back" or the cable is unplugged)')
+        self.usb_msc_on.clicked.connect(lambda: self.usb_command('norlog usb msc on'))
+        self.usb_msc_off = QtWidgets.QPushButton('SD card back')
+        self.usb_msc_off.setToolTip('Take the SD card back from the computer and continue logging')
+        self.usb_msc_off.clicked.connect(lambda: self.usb_command('norlog usb msc off'))
+        self.usb_note = QtWidgets.QLabel('')
+        self.usb_note.setStyleSheet('color: gray;')
+        grid.addWidget(QtWidgets.QLabel('Mode'), 0, 0)
+        grid.addWidget(self.usb_mode, 0, 1)
+        grid.addWidget(self.usb_msc_on, 0, 2)
+        grid.addWidget(self.usb_msc_off, 0, 3)
+        grid.addWidget(self.usb_note, 1, 0, 1, 4)
+        return box
+
+    def usb_command(self, text):
+        # USB settings work over the serial shell only (Thread: no CoAP command yet)
+        self.device.thread_command('send', {'text': text})
+        self.device.thread_command('read_device_info', {'targets': [self.key]})
+
+    def set_usb_mode(self, index):
+        self.usb_command(f'norlog usb mode {self.USB_MODES[index]}')
+
+    @staticmethod
+    def _yes_no(d):
+        return ', '.join(f"{k}: {v if not isinstance(v, bool) else ('yes' if v else 'no')}"
+                         for k, v in (d or {}).items())
+
+    def update_entry(self, entry):
+        self.entry = entry
+        info = {k: v for k, v in (entry.get('info') or {}).items() if k != 'error'}
+        name = entry.get('extaddr') or entry.get('mac') or entry.get('port') or entry.get('id', '')
+        self.setWindowTitle(f'norlog settings: {name}'
+                            + (f" ({entry['rloc16']})" if entry.get('rloc16') else ''))
+        batt = RedvyprDeviceWidget._fmt_battery(entry)
+        if (info.get('battery') or {}).get('current_ma') is not None:
+            batt += f", {info['battery']['current_ma']} mA"
+        uptime = info.get('uptime_s')
+        values = {
+            'Device': name,
+            'RLOC16': entry.get('rloc16', ''),
+            'Connection': entry.get('connection', '') + (f" ({entry['port']})" if entry.get('port') else ''),
+            'Role': entry.get('role', ''),
+            'Thread role': entry.get('thread_role', ''),
+            'Image': info.get('image', ''),
+            'Firmware': info.get('firmware', ''),
+            'Build': info.get('build', ''),
+            'Board': info.get('board', ''),
+            'HW ID': info.get('hwid', ''),
+            'Battery': batt,
+            'Board temp': '' if info.get('board_temp_c') is None else f"{info['board_temp_c']:.2f} \u00b0C",
+            'Uptime': '' if uptime is None else f"{uptime // 3600} h {uptime // 60 % 60} min {uptime % 60} s",
+            'Reset cause': str(info.get('reset_cause', '')),
+            'Hardware': self._yes_no(info.get('hw')),
+            'SD card': self._yes_no(info.get('sd')),
+            'USB': self._fmt_usb(info.get('usb')),
+            'Log level': str(info.get('log', '')),
+            'Info age': '' if entry.get('info_age_s') is None else f"{entry['info_age_s']:.0f} s",
+        }
+        for k, v in values.items():
+            self.general_labels[k].setText(str(v))
+        usb = info.get('usb') or {}
+        if usb.get('mode') in self.USB_MODES:
+            self.usb_mode.setCurrentIndex(self.USB_MODES.index(usb['mode']))
+        if not self.is_serial():
+            self.usb_note.setText('USB settings over Thread are not available yet (serial only)')
+        elif not usb:
+            self.usb_note.setText('No USB info (firmware without "norlog usb"?)')
+        else:
+            self.usb_note.setText('')
+        self.info_error.setText(f"Last read failed: {entry['info_error']}" if entry.get('info_error') else '')
+
+        serial_ok = self.is_serial()
+        self.tabs.setTabEnabled(self.fw_tab_index, serial_ok)
+        self.tabs.setTabToolTip(self.fw_tab_index, '' if serial_ok else
+                                'Firmware update over Thread is not available yet (serial only)')
+        if not serial_ok and self.tabs.currentIndex() == self.fw_tab_index:
+            self.tabs.setCurrentIndex(0)
+        self.update_run_state(self.running)
+
+    @staticmethod
+    def _fmt_usb(usb):
+        if not usb:
+            return ''
+        return (f"mode {usb.get('mode', '?')}, cable {'connected' if usb.get('vbus') else 'not connected'}, "
+                f"SD card {'on USB (logging stopped)' if usb.get('msc') else 'logger'}")
+
+    def update_run_state(self, running):
+        self.running = running
+        self.read_info_btn.setEnabled(running)
+        for w in (self.usb_mode, self.usb_msc_on, self.usb_msc_off):
+            w.setEnabled(running and self.is_serial())
+        self.fw_flash.setEnabled(running and self.is_serial())
+        self.fw_cancel.setEnabled(running and self.is_serial())
+
+    # --- firmware ---
+
+    def _build_firmware_tab(self):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+        row = QtWidgets.QHBoxLayout()
+        self.fw_path = QtWidgets.QLineEdit(self.cfg.firmware_image)
+        self.fw_path.setPlaceholderText('.../build/norlog_firmware_v0_X_rev02/zephyr/zephyr.signed.bin')
+        self.fw_path.textChanged.connect(lambda t: setattr(self.cfg, 'firmware_image', t))
+        browse = QtWidgets.QPushButton('Browse ...')
+        browse.clicked.connect(self.browse_image)
+        row.addWidget(QtWidgets.QLabel('Image'))
+        row.addWidget(self.fw_path, 1)
+        row.addWidget(browse)
+        self.fw_info = QtWidgets.QLabel('')
+        self.fw_force = QtWidgets.QCheckBox('Flash even if this image is already installed')
+        self.fw_force.setChecked(self.cfg.firmware_force)
+        self.fw_force.toggled.connect(lambda v: setattr(self.cfg, 'firmware_force', v))
+        btn_row = QtWidgets.QHBoxLayout()
+        self.fw_flash = QtWidgets.QPushButton('Flash device')
+        self.fw_flash.clicked.connect(self.flash)
+        self.fw_cancel = QtWidgets.QPushButton('Cancel')
+        self.fw_cancel.clicked.connect(lambda: self.device.thread_command('flash_cancel', {}))
+        btn_row.addWidget(self.fw_flash)
+        btn_row.addWidget(self.fw_cancel)
+        self.fw_progress = QtWidgets.QProgressBar()
+        self.fw_progress.setRange(0, 100)
+        self.fw_log = QtWidgets.QPlainTextEdit()
+        self.fw_log.setReadOnly(True)
+        lay.addLayout(row)
+        lay.addWidget(self.fw_info)
+        lay.addWidget(self.fw_force)
+        lay.addLayout(btn_row)
+        lay.addWidget(self.fw_progress)
+        lay.addWidget(self.fw_log, 1)
+        self.fw_path.textChanged.connect(self.update_image_info)
+        self.update_image_info()
+        return w
+
+    def browse_image(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Signed firmware image', self.fw_path.text(),
+                                                        'MCUboot images (*.signed.bin);;All files (*)')
+        if path:
+            self.fw_path.setText(path)
+
+    def update_image_info(self):
+        path = pathlib.Path(self.fw_path.text())
+        if not path.is_file():
+            self.fw_info.setText('')
+            return
+        try:
+            info = smp_serial.image_info(path.read_bytes())
+            self.fw_info.setText(f'Version {info["version"]}, {info["size"] // 1024} KB, '
+                                 f'hash {info["hash"].hex()[:16]}...')
+        except (ValueError, OSError, TypeError) as exc:
+            self.fw_info.setText(f'Invalid image: {exc}')
+
+    def flash(self):
+        self.fw_progress.setValue(0)
+        self.fw_log.clear()
+        self.device.thread_command('flash', {'image': self.cfg.firmware_image, 'force': self.cfg.firmware_force})
+
+    def on_flash_status(self, data):
+        if 'progress' in data:
+            self.fw_progress.setValue(int(data['progress']))
+        self.fw_log.appendPlainText(f"[{data.get('state')}] {data.get('message', '')}")

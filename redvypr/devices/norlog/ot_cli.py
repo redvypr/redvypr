@@ -138,11 +138,16 @@ class OtCli:
     def shell_query(self, cmd: str, prefix: str, timeout: float = 4.0) -> str:
         """Send a (non-ot) shell command and return the text after 'prefix' of its answer line."""
         self.write_line(cmd)
-        line = self.wait_line(lambda l: l.startswith(prefix), timeout)
-        if line is None:
-            raise TimeoutError(f"'{cmd}': no '{prefix.strip()}' answer within {timeout} s")
-        self.on_line(line, True)
-        return line[len(prefix):]
+        end = time.monotonic() + timeout
+        while True:
+            line = self.reader.read_line(self.ser, end)
+            if line is None:
+                raise TimeoutError(f"'{cmd}': no '{prefix.strip()}' answer within {timeout} s")
+            if line.startswith(prefix):
+                self.on_line(line, True)
+                return line[len(prefix):]
+            # Echo of the command belongs to the response, everything else is asynchronous output
+            self.on_line(line, line.endswith(cmd))
 
 
 COAP_PREFIX = "#NLC "
@@ -199,6 +204,30 @@ def rloc_address(mesh_local_prefix: str, rloc16: str) -> str:
     rloc = int(str(rloc16), 16)
     iid = (0x00ff << 32) | (0xfe00 << 16) | rloc
     return str(ipaddress.IPv6Address(int(net.network_address) | iid))
+
+
+def mesh_local_prefix(cli: OtCli, ipaddrs=None) -> str:
+    """
+    Mesh-local prefix (e.g. 'fd1e:48dd:8e5f:397f::/64'). Taken from the own RLOC
+    address (<prefix>:0:ff:fe00:xxxx) if known; otherwise asked with
+    'ot prefix meshlocal' (newer OpenThread) or 'ot meshlocalprefix' (older).
+    """
+    import ipaddress
+    for a in ipaddrs or []:
+        try:
+            addr = int(ipaddress.IPv6Address(a.strip()))
+        except ValueError:
+            continue
+        if (addr >> 16) & 0xFFFFFFFFFFFF == 0x0000_00FF_FE00 and (addr >> 120) == 0xFD:
+            return str(ipaddress.IPv6Network((addr >> 64 << 64, 64)))
+    for cmd in ("prefix meshlocal", "meshlocalprefix"):
+        try:
+            value = cli.value(cmd)
+        except OtError:
+            continue
+        if value:
+            return value
+    raise ValueError("no mesh-local prefix (Thread not running?)")
 
 
 def parse_table(lines):

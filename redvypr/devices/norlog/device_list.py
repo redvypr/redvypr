@@ -95,8 +95,10 @@ def _apply_info(entry, info):
         return
     entry["info"] = info
     if "error" in info:
+        # The last good values (if any) are kept next to the error of the last read
         entry["info_error"] = info["error"]
-        return
+        if len(info) == 1:
+            return
     entry["firmware"] = info.get("image") or info.get("firmware", "")
     batt = info.get("battery") or {}
     entry["battery_mv"] = batt.get("mv")
