@@ -1006,7 +1006,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
 
     GENERAL_FIELDS = ['Device', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Image', 'Firmware', 'Build',
                       'Board', 'HW ID', 'Battery', 'Board temp', 'Uptime', 'Reset cause', 'Hardware', 'SD card',
-                      'USB', 'Log level', 'Info age']
+                      'USB', 'TX power', 'Log level', 'Info age']
 
     USB_MODES = ['auto', 'manual', 'off']
 
@@ -1130,6 +1130,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             'Hardware': self._yes_no(info.get('hw')),
             'SD card': self._yes_no(info.get('sd')),
             'USB': self._fmt_usb(info.get('usb')),
+            'TX power': self._fmt_radio(info.get('radio')),
             'Log level': str(info.get('log', '')),
             'Info age': '' if entry.get('info_age_s') is None else f"{entry['info_age_s']:.0f} s",
         }
@@ -1153,6 +1154,20 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         if not serial_ok and self.tabs.currentIndex() == self.fw_tab_index:
             self.tabs.setCurrentIndex(0)
         self.update_run_state(self.running)
+
+    @staticmethod
+    def _fmt_radio(radio):
+        if not radio:
+            return ''
+        text = f"{radio.get('antenna_dbm', '?')} dBm at the antenna"
+        details = []
+        if radio.get('txpower_dbm') is not None and radio.get('txpower_dbm') != radio.get('antenna_dbm'):
+            details.append(f"set {radio['txpower_dbm']} dBm")
+        if radio.get('soc_dbm') is not None:
+            details.append(f"nRF {radio['soc_dbm']} dBm + PA {radio.get('pa_gain_db', 0)} dB")
+        if radio.get('max_dbm') is not None:
+            details.append(f"max {radio['max_dbm']} dBm")
+        return text + (f" ({', '.join(details)})" if details else '')
 
     @staticmethod
     def _fmt_usb(usb):
