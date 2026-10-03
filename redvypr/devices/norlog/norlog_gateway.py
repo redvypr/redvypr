@@ -27,6 +27,7 @@ import secrets
 import sys
 import time
 import typing
+import zlib
 
 import pydantic
 import qtawesome
@@ -240,6 +241,10 @@ class _Gateway:
             elif command == 'refresh':
                 self.read_status()
                 self.query_info('all')
+            elif command == 'fs':
+                self.fs_command(args)
+            elif command == 'fw_update_node':
+                self.fw_update_node(args.get('target', ''), args.get('image', ''), bool(args.get('force', False)))
             elif command == 'battery_upload':
                 self.battery_upload(args.get('path', ''))
             elif command == 'provision':
@@ -369,6 +374,147 @@ class _Gateway:
             self.result('read_device_info', failed == 0, f'Device info read: {done} ok, {failed} failed')
 
     # --- firmware update ---
+
+    # --- files (SD card) and firmware update over Thread ---
+
+    GATEWAY_XFER_FILE = '/fw/push.bin'      # firmware image on the gateway's SD card for 'fs push'
+    DIRECT_CHUNK = 240                      # bytes per 'norlog coap put' line without gateway SD card
+
+    def target_address(self, target):
+        """None for the gateway itself, otherwise the RLOC address of the member (target = RLOC16)."""
+        if not target or target == 'gateway':
+            return None
+        if not self.last_status:
+            self.read_status()
+        prefix = ot_cli.mesh_local_prefix(self.cli, self.last_status.get('ipaddr'))
+        return ot_cli.rloc_address(prefix, target)
+
+    def gateway_has_sd(self):
+        try:
+            ot_cli.fs_local(self.cli, 'stat', '/')
+            return True
+        except (ot_cli.OtError, TimeoutError):
+            return False
+
+    def fs_progress(self, target, op, done, total):
+        self.publish('fs_progress', {'target': target, 'op': op, 'done': done, 'total': total})
+
+    def fs_result(self, target, op, ok, message='', **extra):
+        self.publish('fs_result', {'target': target, 'op': op, 'ok': ok, 'message': message, **extra})
+
+    def fs_write_direct(self, address, data, remote, progress=None):
+        """Write a file to a member block by block through the gateway (no SD card on the gateway)."""
+        return ot_cli.fs_upload(self.cli, address, data, remote, progress, resume=True,
+                                chunk=self.DIRECT_CHUNK)
+
+    def fs_command(self, args):
+        """File operations on the SD card of the gateway (target 'gateway') or of a member."""
+        target, op, path = args.get('target', 'gateway'), args.get('op', ''), args.get('path', '/')
+        try:
+            address = self.target_address(target)
+            if op == 'ls':
+                self.fs_result(target, op, True, path=path, entries=ot_cli.fs_list(self.cli, address, path))
+            elif op in ('stat', 'mkdir', 'rm'):
+                res = (ot_cli.fs_local(self.cli, op, ot_cli._fs_quote(path)) if address is None
+                       else ot_cli.fs_remote(self.cli, address, op, path))
+                self.fs_result(target, op, True, f'{op} {path}', path=path, data=res)
+            elif op == 'crc':
+                crc, size = ot_cli.fs_crc(self.cli, address, path)
+                self.fs_result(target, op, True, f'{path}: {size} bytes, CRC32 0x{crc:08x}', path=path,
+                               crc=crc, size=size)
+            elif op == 'upload':
+                data = pathlib.Path(args['local']).read_bytes()
+                progress = lambda d, t: self.fs_progress(target, op, d, t)
+                if address is None:
+                    skipped = ot_cli.fs_upload_local(self.cli, data, path, progress)
+                elif self.gateway_has_sd():
+                    tmp = '/fw/xfer.tmp'
+                    ot_cli.fs_local(self.cli, 'mkdir', '/fw')
+                    ot_cli.fs_upload_local(self.cli, data, tmp, lambda d, t: progress(d // 2, t))
+                    res = ot_cli.fs_push(self.cli, address, tmp, path,
+                                         lambda d, t: progress(len(data) // 2 + d // 2, len(data)), resume=True)
+                    skipped = res.get('resumed', 0)
+                    ot_cli.fs_local(self.cli, 'rm', tmp)
+                else:
+                    skipped = self.fs_write_direct(address, data, path, progress)
+                note = f', resumed after {skipped} bytes' if skipped else ''
+                self.fs_result(target, op, True, f'{len(data)} bytes written to {path} (CRC verified{note})',
+                               path=path)
+            elif op == 'download':
+                data = ot_cli.fs_download(self.cli, address, path,
+                                          lambda d, t: self.fs_progress(target, op, d, t))
+                pathlib.Path(args['local']).write_bytes(data)
+                self.fs_result(target, op, True, f'{len(data)} bytes saved to {args["local"]}', path=path)
+            else:
+                raise ValueError(f'unknown file operation {op!r}')
+        except (ot_cli.OtError, TimeoutError, OSError, ValueError, KeyError) as exc:
+            self.fs_result(target, op, False, str(exc), path=path)
+
+    def fw_update_node(self, target, image_path, force):
+        """
+        Firmware update of a member over Thread: image -> /fw/update.bin on the member
+        (through the gateway's SD card and 'norlog fs push', or chunk by chunk without
+        gateway SD card), then POST fw?op=install; the member's loader installs it.
+        """
+        def status(state, message, progress=None):
+            self.flash_status(state, message, progress, target=target)
+
+        try:
+            path = pathlib.Path(image_path)
+            if not path.is_file():
+                raise ValueError(f'Image not found: {image_path}')
+            image = path.read_bytes()
+            info = smp_serial.image_info(image)
+            address = self.target_address(target)
+            if address is None:
+                raise ValueError('Use the serial flash for the gateway')
+            status('start', f'{path.name}: version {info["version"]}, {len(image) // 1024} KB -> {target}')
+
+            fw = ot_cli.fw_status_remote(self.cli, address)
+            status('loader', f'Node runs {fw.get("running", "?")}, auto update {"on" if fw.get("auto") else "off"}')
+            if fw.get('running') == info['version'] and not force:
+                status('done', 'This version is already installed, nothing to do', 100)
+                return
+
+            t0 = time.monotonic()
+            last = [0.0]
+
+            def progress(share_from, share_to, label):
+                def cb(done, total):
+                    now = time.monotonic()
+                    if now - last[0] >= 1.0 or done >= total:
+                        last[0] = now
+                        pct = share_from + (share_to - share_from) * done // max(total, 1)
+                        rate = done / max(now - t0, 1e-3) / 1024
+                        status('upload', f'{label}: {done // 1024}/{total // 1024} KB, {rate:.1f} KB/s', pct)
+                return cb
+
+            if self.gateway_has_sd():
+                ot_cli.fs_local(self.cli, 'mkdir', '/fw')
+                try:
+                    crc, size = ot_cli.fs_crc(self.cli, None, self.GATEWAY_XFER_FILE)
+                except ot_cli.OtError:
+                    crc, size = None, None
+                if size == len(image) and crc == zlib.crc32(image):
+                    status('upload', 'Image already on the gateway SD card', 30)
+                else:
+                    ot_cli.fs_upload_local(self.cli, image, self.GATEWAY_XFER_FILE,
+                                           progress(0, 30, 'PC -> gateway SD'))
+                t0 = time.monotonic()
+                res = ot_cli.fs_push(self.cli, address, self.GATEWAY_XFER_FILE, '/fw/update.bin',
+                                     progress(30, 95, 'Gateway -> node over Thread'), resume=True)
+                resumed = f', resumed after {res["resumed"] // 1024} KB' if res.get('resumed') else ''
+                status('upload', f'Node has the image ({res.get("seconds", "?")} s, CRC {res.get("crc")}'
+                                 f'{resumed})', 95)
+            else:
+                status('upload', 'Gateway without SD card: sending directly (slower)', 0)
+                self.fs_write_direct(address, image, '/fw/update.bin', progress(0, 95, 'PC -> node over Thread'))
+
+            ot_cli.fw_install_remote(self.cli, address)
+            status('done', 'Installing: the node reboots into its loader and starts the new firmware '
+                           '(about 1 min, check the version with "Read info")', 100)
+        except (ot_cli.OtError, TimeoutError, OSError, ValueError, smp_serial.SmpError) as exc:
+            status('error', str(exc))
 
     def flash_status(self, state, message='', progress=None, **extra):
         payload = {'state': state, 'message': message}
@@ -993,8 +1139,19 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 if 'devices' in data:
                     self.show_devices(data['devices'])
             elif packetid == 'flash_status':
-                for dlg in self.serial_dialogs():
+                # Thread update: dialog of that member; serial flash: dialog of the serial device
+                dialogs = ([self.settings_dialogs[data['target']]] if data.get('target') in self.settings_dialogs
+                           else [] if data.get('target') else self.serial_dialogs())
+                for dlg in dialogs:
                     dlg.on_flash_status(data)
+            elif packetid in ('fs_progress', 'fs_result'):
+                dlg = self.settings_dialogs.get(data.get('target'))
+                if dlg is not None:
+                    dlg.on_fs_message(packetid, data)
+                if packetid == 'fs_result':
+                    self.console_text.appendPlainText(
+                        f"[fs {data.get('op')} {data.get('target')}] {'OK' if data.get('ok') else 'ERROR'}: "
+                        f"{data.get('message', '')}")
             elif packetid == 'command_result':
                 self.show_result(data)
             elif str(packetid).startswith('norlog_') and 'packet_type' in data:
@@ -1051,6 +1208,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self._build_general_tab(), 'General')
         self.fw_tab_index = self.tabs.addTab(self._build_firmware_tab(), 'Firmware')
+        self.files_tab_index = self.tabs.addTab(self._build_files_tab(), 'Files')
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay = QtWidgets.QVBoxLayout(self)
@@ -1225,12 +1383,18 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             self.usb_note.setText('')
         self.info_error.setText(f"Last read failed: {entry['info_error']}" if entry.get('info_error') else '')
 
-        serial_ok = self.is_serial()
-        self.tabs.setTabEnabled(self.fw_tab_index, serial_ok)
-        self.tabs.setTabToolTip(self.fw_tab_index, '' if serial_ok else
-                                'Firmware update over Thread is not available yet (serial only)')
-        if not serial_ok and self.tabs.currentIndex() == self.fw_tab_index:
-            self.tabs.setCurrentIndex(0)
+        if self.is_serial():
+            self.fw_method.setText('Serial: the gateway reboots into its loader, upload via MCUmgr (UART).')
+            self.fw_flash.setText('Flash device')
+        else:
+            self.fw_method.setText('Thread: the image is copied to the node\'s SD card (/fw/update.bin, through '
+                                   'the gateway\'s SD card if present), then the node installs it with its loader. '
+                                   'The node needs an SD card.')
+            self.fw_flash.setText('Update over Thread')
+        if 'fw_auto' in info:
+            self.fw_auto.blockSignals(True)
+            self.fw_auto.setChecked(bool(info['fw_auto']))
+            self.fw_auto.blockSignals(False)
         self.update_run_state(self.running)
 
     @staticmethod
@@ -1272,8 +1436,11 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.read_info_btn.setEnabled(running)
         for w in (self.usb_mode, self.usb_msc_on, self.usb_msc_off, self.bat_model, self.bat_upload):
             w.setEnabled(running and self.is_serial())
-        self.fw_flash.setEnabled(running and self.is_serial())
+        self.fw_flash.setEnabled(running)
         self.fw_cancel.setEnabled(running and self.is_serial())
+        self.fw_auto.setEnabled(running and self.is_serial())
+        for w in self.files_run_widgets:
+            w.setEnabled(running)
 
     # --- firmware ---
 
@@ -1290,6 +1457,14 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         row.addWidget(self.fw_path, 1)
         row.addWidget(browse)
         self.fw_info = QtWidgets.QLabel('')
+        self.fw_method = QtWidgets.QLabel('')
+        self.fw_method.setWordWrap(True)
+        self.fw_method.setStyleSheet('color: gray;')
+        self.fw_auto = QtWidgets.QCheckBox('Auto update at power-up: install a newer /fw/update.bin '
+                                           '(or /fw/zephyr.signed.bin) from the SD card')
+        self.fw_auto.setToolTip('Stored on the device (norlog fw auto on|off); serial only for now')
+        self.fw_auto.toggled.connect(
+            lambda on: self.device.thread_command('send', {'text': f'norlog fw auto {"on" if on else "off"}'}))
         self.fw_force = QtWidgets.QCheckBox('Flash even if this image is already installed')
         self.fw_force.setChecked(self.cfg.firmware_force)
         self.fw_force.toggled.connect(lambda v: setattr(self.cfg, 'firmware_force', v))
@@ -1306,7 +1481,9 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.fw_log.setReadOnly(True)
         lay.addLayout(row)
         lay.addWidget(self.fw_info)
+        lay.addWidget(self.fw_method)
         lay.addWidget(self.fw_force)
+        lay.addWidget(self.fw_auto)
         lay.addLayout(btn_row)
         lay.addWidget(self.fw_progress)
         lay.addWidget(self.fw_log, 1)
@@ -1335,7 +1512,150 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
     def flash(self):
         self.fw_progress.setValue(0)
         self.fw_log.clear()
-        self.device.thread_command('flash', {'image': self.cfg.firmware_image, 'force': self.cfg.firmware_force})
+        if self.is_serial():
+            self.device.thread_command('flash', {'image': self.cfg.firmware_image,
+                                                 'force': self.cfg.firmware_force})
+        else:
+            self.device.thread_command('fw_update_node', {'target': self.key, 'image': self.cfg.firmware_image,
+                                                          'force': self.cfg.firmware_force})
+
+    # --- files (SD card) ---
+
+    def _build_files_tab(self):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+        row = QtWidgets.QHBoxLayout()
+        self.files_path = QtWidgets.QLineEdit('/')
+        self.files_path.returnPressed.connect(self.files_list)
+        up = QtWidgets.QPushButton('Up')
+        up.clicked.connect(self.files_up)
+        refresh = QtWidgets.QPushButton('List')
+        refresh.clicked.connect(self.files_list)
+        row.addWidget(QtWidgets.QLabel('Directory'))
+        row.addWidget(self.files_path, 1)
+        row.addWidget(up)
+        row.addWidget(refresh)
+        self.files_table = QtWidgets.QTableWidget(0, 2)
+        self.files_table.setHorizontalHeaderLabels(['Name', 'Size'])
+        self.files_table.horizontalHeader().setStretchLastSection(True)
+        self.files_table.verticalHeader().setVisible(False)
+        self.files_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.files_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.files_table.cellDoubleClicked.connect(self.files_open)
+        btns = QtWidgets.QHBoxLayout()
+        actions = [('Upload ...', self.files_upload), ('Download ...', self.files_download),
+                   ('New folder ...', self.files_mkdir), ('Delete', self.files_delete),
+                   ('CRC', self.files_crc)]
+        self.files_run_widgets = [up, refresh]
+        for label, fn in actions:
+            b = QtWidgets.QPushButton(label)
+            b.clicked.connect(fn)
+            btns.addWidget(b)
+            self.files_run_widgets.append(b)
+        self.files_progress = QtWidgets.QProgressBar()
+        self.files_progress.setRange(0, 100)
+        self.files_progress.setVisible(False)
+        self.files_status = QtWidgets.QLabel('SD card of this device; for Thread members over CoAP via the gateway.')
+        self.files_status.setWordWrap(True)
+        self.files_status.setStyleSheet('color: gray;')
+        lay.addLayout(row)
+        lay.addWidget(self.files_table, 1)
+        lay.addLayout(btns)
+        lay.addWidget(self.files_progress)
+        lay.addWidget(self.files_status)
+        self.files_entries = []
+        return w
+
+    def _files_cmd(self, op, **args):
+        self.files_status.setText(f'{op} ...')
+        self.device.thread_command('fs', {'target': self.key, 'op': op, **args})
+
+    def _files_selected(self):
+        rows = sorted({i.row() for i in self.files_table.selectedIndexes()})
+        return [self.files_entries[r] for r in rows if r < len(self.files_entries)]
+
+    def _files_join(self, name):
+        base = self.files_path.text().rstrip('/')
+        return f'{base}/{name}' if base else f'/{name}'
+
+    def files_list(self):
+        path = self.files_path.text().strip() or '/'
+        self._files_cmd('ls', path=path)
+
+    def files_up(self):
+        path = self.files_path.text().rstrip('/')
+        self.files_path.setText(path.rsplit('/', 1)[0] or '/')
+        self.files_list()
+
+    def files_open(self, row, _col):
+        if row < len(self.files_entries) and self.files_entries[row].get('d'):
+            self.files_path.setText(self._files_join(self.files_entries[row]['n']))
+            self.files_list()
+
+    def files_upload(self):
+        local, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Upload file to the SD card')
+        if local:
+            self.files_progress.setValue(0)
+            self.files_progress.setVisible(True)
+            self._files_cmd('upload', local=local, path=self._files_join(pathlib.Path(local).name))
+
+    def files_download(self):
+        sel = [e for e in self._files_selected() if not e.get('d')]
+        if not sel:
+            return
+        local, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Save file', sel[0]['n'])
+        if local:
+            self.files_progress.setValue(0)
+            self.files_progress.setVisible(True)
+            self._files_cmd('download', path=self._files_join(sel[0]['n']), local=local)
+
+    def files_mkdir(self):
+        name, ok = QtWidgets.QInputDialog.getText(self, 'New folder', 'Name')
+        if ok and name.strip():
+            self._files_cmd('mkdir', path=self._files_join(name.strip()))
+
+    def files_delete(self):
+        sel = self._files_selected()
+        if not sel:
+            return
+        names = ', '.join(e['n'] for e in sel)
+        if QtWidgets.QMessageBox.question(self, 'Delete', f'Delete {names} on the device?') == \
+                QtWidgets.QMessageBox.StandardButton.Yes:
+            for e in sel:
+                self._files_cmd('rm', path=self._files_join(e['n']))
+
+    def files_crc(self):
+        for e in self._files_selected():
+            if not e.get('d'):
+                self._files_cmd('crc', path=self._files_join(e['n']))
+
+    def show_files(self, path, entries):
+        self.files_path.setText(path)
+        self.files_entries = sorted(entries, key=lambda e: (not e.get('d'), e.get('n', '').lower()))
+        self.files_table.setRowCount(len(self.files_entries))
+        for row, e in enumerate(self.files_entries):
+            self.files_table.setItem(row, 0, QtWidgets.QTableWidgetItem(e['n'] + ('/' if e.get('d') else '')))
+            self.files_table.setItem(row, 1, QtWidgets.QTableWidgetItem('' if e.get('d') else str(e.get('s', ''))))
+        self.files_table.resizeColumnsToContents()
+
+    def on_fs_message(self, packetid, data):
+        if packetid == 'fs_progress':
+            total = max(int(data.get('total', 0)), 1)
+            self.files_progress.setVisible(True)
+            self.files_progress.setValue(int(data.get('done', 0)) * 100 // total)
+            return
+        self.files_progress.setVisible(False)
+        op = data.get('op')
+        if not data.get('ok'):
+            self.files_status.setText(f'{op} failed: {data.get("message", "")}')
+            return
+        if op == 'ls':
+            self.show_files(data.get('path', '/'), data.get('entries', []))
+            self.files_status.setText(f'{len(data.get("entries", []))} entries')
+        else:
+            self.files_status.setText(data.get('message', 'OK'))
+            if op in ('upload', 'mkdir', 'rm'):
+                self.files_list()
 
     def on_flash_status(self, data):
         if 'progress' in data:

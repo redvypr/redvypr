@@ -194,6 +194,248 @@ def coap_get(cli: OtCli, address: str, uri: str, timeout: float = 10.0) -> bytes
     return data
 
 
+def coap_request(cli: OtCli, method: str, address: str, uri: str, payload: bytes = b"",
+                 timeout: float = 10.0) -> bytes:
+    """
+    CoAP GET/PUT/POST/DELETE through the gateway ('norlog coap <method>').
+    uri may contain a query: 'fs?op=ls&p=/fw'. Raises OtError on a non-2.xx code.
+    """
+    method = method.lower()
+    if method == "get":
+        cmd = f"norlog coap get {address} {uri} {int(timeout)}"
+    elif method == "delete":
+        cmd = f"norlog coap delete {address} {uri} {int(timeout)}"
+    else:
+        cmd = f"norlog coap {method} {address} {uri} {payload.hex() if payload else '-'} {int(timeout)}"
+    rest = cli.shell_query(cmd, COAP_PREFIX, timeout=timeout + 4.0)
+    ok, code, data, truncated = parse_coap_line(rest)
+    if not ok and code == "4.04" and not data:
+        # Without text the node's CoAP stack itself answered: the resource does not exist
+        resource = uri.split("?", 1)[0]
+        raise OtError(f"CoAP {method.upper()} {uri} at {address}: the node has no '{resource}' service "
+                      f"(firmware too old? Update it once over serial or SD card)")
+    if not ok:
+        raise OtError(f"CoAP {method.upper()} {uri} at {address}: {code} {data.decode(errors='replace')}".strip())
+    if truncated:
+        raise OtError(f"CoAP {method.upper()} {uri} at {address}: response truncated by the gateway")
+    return data
+
+
+# --- Files on the SD card: local (gateway shell) and remote (CoAP 'fs') ---
+
+FS_PREFIX = "#NLF "
+FS_LOCAL_CHUNK = 384        # bytes per 'norlog fs write' line (512 base64 chars, shell buffer 640)
+FS_REMOTE_CHUNK = 512       # bytes per CoAP read
+FS_CRC_MAX = 64 * 1024
+
+
+def _fs_quote(path: str) -> str:
+    if not path.startswith("/") or ".." in path or any(c in path for c in ' &=?"\\'):
+        raise ValueError(f"invalid path {path!r} (absolute, no spaces or &=?\"\\)")
+    return path
+
+
+def fs_local(cli: OtCli, *args, timeout: float = 10.0):
+    """Run 'norlog fs <args>' on the gateway; returns the parsed JSON (or base64 text for read)."""
+    import json
+    rest = cli.shell_query("norlog fs " + " ".join(str(a) for a in args), FS_PREFIX, timeout=timeout)
+    if rest.startswith("err"):
+        raise OtError(f"norlog fs {args[0]}: {rest[4:]}")
+    if args[0] == "read":
+        return rest
+    return json.loads(rest)
+
+
+def fs_remote(cli: OtCli, address: str, op: str, path: str, timeout: float = 10.0, **params):
+    """CoAP file operation on a member: op in stat, ls, crc, mkdir, rm (JSON answer)."""
+    import json
+    query = f"fs?op={op}&p={_fs_quote(path)}" + "".join(f"&{k}={v}" for k, v in params.items())
+    method = "post" if op in ("mkdir", "rm") else "get"
+    return json.loads(coap_request(cli, method, address, query, timeout=timeout).decode())
+
+
+def fs_list(cli: OtCli, address, path: str):
+    """Directory listing (address None = gateway itself); follows 'next' for long directories."""
+    entries, start = [], 0
+    while True:
+        res = (fs_local(cli, "ls", _fs_quote(path), start) if address is None
+               else fs_remote(cli, address, "ls", path, i=start))
+        entries.extend(res.get("entries", []))
+        start = res.get("next", 0)
+        if not start:
+            return entries
+
+
+def fs_crc(cli: OtCli, address, path: str, off: int = 0, length: int = None):
+    """
+    CRC32 (zlib) of a file or of the range [off, off+length): (crc, file size).
+    address None = gateway itself.
+    """
+    if address is None:
+        args = ["crc", _fs_quote(path)]
+        if off or length is not None:
+            args += [off, length if length is not None else 0xFFFFFFFF]
+        res = fs_local(cli, *args, timeout=60.0)
+        return int(res["crc"], 16), res["size"]
+    if length == 0:
+        return 0, fs_remote(cli, address, "stat", path)["size"]
+    crc, done, size = 0, 0, 0
+    while True:
+        want = FS_CRC_MAX if length is None else min(FS_CRC_MAX, length - done)
+        if want <= 0:
+            return crc, size
+        res = fs_remote(cli, address, "crc", path, off=off + done, len=want, seed=f"0x{crc:08x}")
+        crc, size = int(res["crc"], 16), res["size"]
+        done += res["n"]
+        if res["n"] < want or (length is None and off + done >= size):
+            return crc, size
+
+
+def fs_write_block(cli: OtCli, address, path: str, off: int, data: bytes, trunc: bool = False) -> int:
+    """
+    Write one block at off (overwrite or append, no holes). trunc cuts the file to off
+    first (off=0: new empty file). Max. FS_LOCAL_CHUNK (gateway) / 240 bytes (member,
+    limited by the gateway's shell line). Returns the new file size.
+    """
+    import base64
+    import json
+    if address is None:
+        args = ["write", _fs_quote(path), off, base64.b64encode(data).decode() if data else "-"]
+        res = fs_local(cli, *(args + ["trunc"] if trunc else args))
+    else:
+        uri = f"fs?op=write&p={_fs_quote(path)}&off={off}" + ("&trunc=1" if trunc else "")
+        res = json.loads(coap_request(cli, "put", address, uri, data, timeout=8.0).decode())
+    return res["size"]
+
+
+def fs_read_block(cli: OtCli, address, path: str, off: int, length: int) -> bytes:
+    """Read one block (max. FS_LOCAL_CHUNK from the gateway, FS_REMOTE_CHUNK from a member)."""
+    import base64
+    if address is None:
+        text = fs_local(cli, "read", _fs_quote(path), off, min(length, FS_LOCAL_CHUNK))
+        return b"" if text == "-" else base64.b64decode(text)
+    return coap_request(cli, "get", address,
+                        f"fs?op=read&p={_fs_quote(path)}&off={off}&len={min(length, FS_REMOTE_CHUNK)}")
+
+
+def _resume_offset(cli: OtCli, address, path: str, data: bytes) -> int:
+    """Length of the already present, matching beginning of the file (0 if none)."""
+    import zlib
+    try:
+        st = (fs_local(cli, "stat", _fs_quote(path)) if address is None
+              else fs_remote(cli, address, "stat", path))
+    except OtError:
+        return 0
+    have = st.get("size", 0) if st.get("type") == "file" else 0
+    if have == 0 or have > len(data):
+        return 0
+    crc, _ = fs_crc(cli, address, path, 0, have)
+    return have if crc == zlib.crc32(data[:have]) else 0
+
+
+def fs_upload(cli: OtCli, address, data: bytes, path: str, progress=None, resume: bool = True,
+              chunk: int = None) -> int:
+    """
+    Write a whole file block by block (gateway: 'norlog fs write', member: CoAP PUT through
+    the gateway) and verify the CRC. resume: continue after the matching beginning of an
+    existing file. Returns the number of bytes skipped by resuming.
+    """
+    import zlib
+    chunk = chunk or (FS_LOCAL_CHUNK if address is None else 240)
+    if address is not None and path.count("/") > 1:
+        fs_remote(cli, address, "mkdir", path.rsplit("/", 1)[0])
+    start = _resume_offset(cli, address, path, data) if resume else 0
+    off, first = start, True
+    while off < len(data) or first:
+        block = data[off:off + chunk]
+        fs_write_block(cli, address, path, off, block, trunc=first)    # first block: cut the rest
+        first = False
+        off += len(block)
+        if progress:
+            progress(off, len(data))
+        if not block:
+            break
+    crc, size = fs_crc(cli, address, path)
+    if size != len(data) or crc != zlib.crc32(data):
+        raise OtError(f"upload to {path}: verification failed (size {size}/{len(data)}, "
+                      f"crc 0x{crc:08x}/0x{zlib.crc32(data):08x})")
+    return start
+
+
+def fs_upload_local(cli: OtCli, data: bytes, path: str, progress=None, resume: bool = True) -> int:
+    """Write data to a file on the gateway's SD card and verify the CRC (see fs_upload)."""
+    return fs_upload(cli, None, data, path, progress, resume)
+
+
+def fs_download(cli: OtCli, address, path: str, progress=None) -> bytes:
+    """Read a whole file (address None = gateway) and verify its CRC."""
+    import zlib
+    st = (fs_local(cli, "stat", _fs_quote(path)) if address is None
+          else fs_remote(cli, address, "stat", path))
+    if st.get("type") != "file":
+        raise OtError(f"{path} is not a file")
+    size, data = st["size"], bytearray()
+    while len(data) < size:
+        chunk = fs_read_block(cli, address, path, len(data), FS_REMOTE_CHUNK)
+        if not chunk:
+            break
+        data.extend(chunk)
+        if progress:
+            progress(len(data), size)
+    crc, _ = fs_crc(cli, address, path)
+    if len(data) != size or crc != zlib.crc32(bytes(data)):
+        raise OtError(f"download of {path}: verification failed")
+    return bytes(data)
+
+
+def fs_push(cli: OtCli, address: str, local: str, remote: str, progress=None, stall_timeout: float = 30.0,
+            off: int = None, length: int = None, resume: bool = False):
+    """
+    Let the gateway send a file (or the range off/length) from its own SD card to a
+    member ('norlog fs push'). resume: continue after the matching beginning on the
+    member. The gateway verifies the CRC. Returns the result dict
+    {"off","len","size","crc","resumed","seconds"}.
+    """
+    import json
+    cmd = f"norlog fs push {address} {_fs_quote(local)} {_fs_quote(remote)}"
+    if off is not None:
+        cmd += f" -o {off}"
+    if length is not None:
+        cmd += f" -n {length}"
+    if resume:
+        cmd += " -r"
+    cli.write_line(cmd)
+    resumed = 0
+    while True:
+        line = cli.wait_line(lambda l: l.startswith(FS_PREFIX), stall_timeout)
+        if line is None:
+            raise TimeoutError(f"'{cmd}': no progress for {stall_timeout:.0f} s")
+        cli.on_line(line, True)
+        rest = line[len(FS_PREFIX):]
+        if rest.startswith("resume "):
+            resumed = int(rest.split()[1])
+        elif rest.startswith("progress "):
+            done, total = (int(x) for x in rest.split()[1:3])
+            if progress:
+                progress(done, total)
+        elif rest.startswith("ok "):
+            res = json.loads(rest[3:])
+            res.setdefault("resumed", resumed)
+            return res
+        elif rest.startswith("err"):
+            raise OtError(f"push to {address}: {rest[4:]}")
+
+
+def fw_status_remote(cli: OtCli, address: str) -> dict:
+    import json
+    return json.loads(coap_request(cli, "get", address, "fw").decode())
+
+
+def fw_install_remote(cli: OtCli, address: str) -> dict:
+    import json
+    return json.loads(coap_request(cli, "post", address, "fw?op=install").decode())
+
+
 BATTERY_PREFIX = "#NLB "
 BATTERY_CHUNK = 160     # bytes of .inc text per line (320 hex chars, shell buffer 416)
 
