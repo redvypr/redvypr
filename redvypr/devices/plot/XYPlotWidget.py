@@ -71,9 +71,9 @@ class configLine(pydantic.BaseModel,extra='allow'):
     x_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress('t'), description='The realtimedata address of the x-axis')
     y_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress('data@d:somedevice'), description='The realtimedata address of the x-axis')
     error_addr: RedvyprAddress = pydantic.Field(default=RedvyprAddress(''), description='The realtimedata address for an optional error band around the line')
-    error_mode: typing.Literal['off', 'standard', 'factor', 'constant'] = pydantic.Field(default='off', description='')
-    error_factor: float = pydantic.Field(default=1.1, description='')
-    error_constant: float = pydantic.Field(default=.01, description='')
+    error_mode: typing.Literal['off', 'standard', 'factor', 'constant'] = pydantic.Field(default='off', description='Error band: off, standard (from error_addr), factor (relative to y), constant')
+    error_factor: float = pydantic.Field(default=1.1, description='Relative error for error_mode factor: error = |y| * (error_factor - 1), e.g. 1.1 = +-10 %')
+    error_constant: float = pydantic.Field(default=.01, description='Error for error_mode constant')
     color: pydColor = pydantic.Field(default=pydColor('red'), description='The color of the line')
     linewidth: float = pydantic.Field(default=2.0, description='The linewidth')
     linestyle: typing.Literal['SolidLine','DashLine','DotLine','DashDotLine','DashDotDotLine'] = pydantic.Field(default='SolidLine', description='The linestyle, see also https://doc.qt.io/qt-6/qt.html#PenStyle-enum')
@@ -139,27 +139,22 @@ class configLine(pydantic.BaseModel,extra='allow'):
             if (type(newy) is not list):
                 newy = [newy]
 
-            if self.error_mode != 'off':
-                error_mode: typing.Literal['off', 'standard', 'factor', 'constant'] = pydantic.Field(
-                    default='standard', description='')
-                error_factor: float = pydantic.Field(default=1.1, description='')
-                error_constant: float = pydantic.Field(default=.01, description='')
-                # print('errordata',error_raddr.datakey)
-                if len(self.error_addr) > 0 and self.error_mode == 'standard':
-                    # logger.debug('Error standard')
-                    newerror = self.error_addr(data)
-                    if (type(newerror) is not list):
-                        newerror = [newerror]
-                    # print('newerror',newerror)
-                elif self.error_mode == 'factor':
-                    # print('Error factor')
-                    errdata = np.asarray(newy)
-                    errdata_factor = errdata * self.error_factor - errdata.mean()
-                    newerror = errdata_factor.tolist()
-                elif self.error_mode == 'constant':
-                    # print('Error constant')
-                    newerror = [self.error_constant] * len(newx)
+            # An empty address has no datakey (len() is not defined for RedvyprAddress)
+            if self.error_mode == 'standard' and getattr(self.error_addr, 'datakey', None):
+                # Error from its own address (same packet access as x and y)
+                newerror = self.error_addr(rdata)
+                if (type(newerror) is not list):
+                    newerror = [newerror]
+            elif self.error_mode == 'factor':
+                # Relative error: error_factor 1.1 -> +-10 % of |y|
+                try:
+                    newerror = [abs(float(v)) * (self.error_factor - 1.0) for v in newy]
+                except (TypeError, ValueError) as e:
+                    raise LineDataConversionError(f'y={self.y_addr}: {newy!r} not numeric ({e})') from None
+            elif self.error_mode == 'constant':
+                newerror = [self.error_constant] * len(newx)
             else:
+                # 'off', or 'standard' without an error address
                 newerror = [0] * len(newx)
 
             if (len(newx) != len(newy)) or (len(newx) != len(newerror)):
@@ -182,11 +177,17 @@ class configLine(pydantic.BaseModel,extra='allow'):
                 self.databuffer.xdata.append(xval)
                 self.databuffer.ydata.append(yval)
                 self.databuffer.errordata.append(errval)
-                while len(self.databuffer.tdata) > self.buffersize:
-                    self.databuffer.tdata.pop(0)
-                    self.databuffer.xdata.pop(0)
-                    self.databuffer.ydata.pop(0)
-                    self.databuffer.errordata.pop(0)
+
+            # Trim the buffer in steps: up to 10 % (min. 100 values) above buffersize are
+            # allowed, then it is cut back to buffersize at once. pop(0) for every new
+            # value moved the whole list each time (slow for 20000 values).
+            nmax = self.buffersize + max(100, self.buffersize // 10)
+            if len(self.databuffer.tdata) > nmax:
+                ncut = len(self.databuffer.tdata) - self.buffersize
+                del self.databuffer.tdata[:ncut]
+                del self.databuffer.xdata[:ncut]
+                del self.databuffer.ydata[:ncut]
+                del self.databuffer.errordata[:ncut]
 
         else:
             raise ValueError('Datapacket does not contain data for address xaddr:{}:{}, yadd:{}:{}'.format(self.x_addr,inx,self.y_addr,iny))
@@ -209,7 +210,7 @@ class ConfigXYplot(pydantic.BaseModel):
     xlabel: str = pydantic.Field(default='', description='')
     ylabel: str = pydantic.Field(default='', description='')
     lines: typing.Optional[typing.List[configLine]] = pydantic.Field(default=[configLine()])
-    plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_unit'] = pydantic.Field(default='all', description='')
+    plot_mode_x: typing.Literal['all', 'last_N_s', 'last_N_points'] = pydantic.Field(default='all', description='x-axis: autoscale, the last N seconds or the last N points')
     last_N_s: float = pydantic.Field(default=10,
                                      description='Plots the last seconds, if plot_mode_x is set to last_N_s')
     last_N_points: int = pydantic.Field(default=1000,
@@ -303,28 +304,28 @@ class XYDataTable(QtWidgets.QTableWidget):
         self.setItem(1, self.col_y, item)
 
         for irow, t_data in enumerate(t):
-            t_str = datetime.datetime.utcfromtimestamp(t_data).strftime('%Y-%m-%d %H:%M:%S.%f')
+            t_str = datetime.datetime.fromtimestamp(t_data, tz=datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')
             item = QtWidgets.QTableWidgetItem(t_str)
-            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
             self.setItem(irow + rowoff, self.col_t, item)
 
         for irow,x_data in enumerate(x):
             x_str = str(x_data)
             item = QtWidgets.QTableWidgetItem(x_str)
-            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
             self.setItem(irow+rowoff,self.col_x,item)
 
         for irow, y_data in enumerate(y):
             y_str = str(y_data)
             item = QtWidgets.QTableWidgetItem(y_str)
-            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
             self.setItem(irow+rowoff, self.col_y, item)
 
         self.resizeColumnsToContents()
 
     def keyPressEvent(self, event):
         # Prüfen, ob Strg+C gedrückt wurde
-        if event.key() == QtCore.Qt.Key_C and (event.modifiers() & QtCore.Qt.ControlModifier):
+        if event.key() == QtCore.Qt.Key.Key_C and (event.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier):
             self.handle_copy_event()
         else:
             # Standardverhalten für andere Tasten
@@ -372,8 +373,8 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.description = 'XY plot'
         self.tlastupdate_metadata = 0
         self._interactive_mode = ''
-        self.x_min = 0
-        self.x_max = 0
+        self.x_min = np.inf     # smallest/largest x value plotted so far
+        self.x_max = -np.inf
         if (config == None):  # Create a config from the template
             self.config = ConfigXYplot()
         else:
@@ -471,21 +472,33 @@ class XYPlotWidget(QtWidgets.QFrame):
             xMenuWidget_layout = QtWidgets.QVBoxLayout(xMenuWidget)
             self._xaxis_radio_auto = QtWidgets.QRadioButton('Autoscale')
             self._xaxis_radio_lasts = QtWidgets.QRadioButton('Last N-Seconds')
+            self._xaxis_radio_lastn = QtWidgets.QRadioButton('Last N-Points')
 
-            if self.config.plot_mode_x == 'all':
-                self._xaxis_radio_auto.setChecked(True)
-            else:
+            if self.config.plot_mode_x == 'last_N_s':
                 self._xaxis_radio_lasts.setChecked(True)
+            elif self.config.plot_mode_x == 'last_N_points':
+                self._xaxis_radio_lastn.setChecked(True)
+            else:
+                self._xaxis_radio_auto.setChecked(True)
 
-            self._xaxis_radio_auto.toggled.connect(self.xAxisLimitsChanged)
             self._xaxis_spin_lasts = QtWidgets.QDoubleSpinBox()
-            self._xaxis_spin_lasts.setValue(self.config.last_N_s)
             self._xaxis_spin_lasts.setMinimum(0)
             self._xaxis_spin_lasts.setMaximum(1e12)
+            self._xaxis_spin_lasts.setValue(self.config.last_N_s)
+            self._xaxis_spin_lastn = QtWidgets.QSpinBox()
+            self._xaxis_spin_lastn.setMinimum(1)
+            self._xaxis_spin_lastn.setMaximum(10000000)
+            self._xaxis_spin_lastn.setValue(self.config.last_N_points)
+            # Connect after setting the values (otherwise the handler runs during construction)
+            for radio in (self._xaxis_radio_auto, self._xaxis_radio_lasts, self._xaxis_radio_lastn):
+                radio.toggled.connect(self.xAxisLimitsChanged)
             self._xaxis_spin_lasts.valueChanged.connect(self.xAxisLimitsChanged)
+            self._xaxis_spin_lastn.valueChanged.connect(self.xAxisLimitsChanged)
             xMenuWidget_layout.addWidget(self._xaxis_radio_auto)
             xMenuWidget_layout.addWidget(self._xaxis_radio_lasts)
             xMenuWidget_layout.addWidget(self._xaxis_spin_lasts)
+            xMenuWidget_layout.addWidget(self._xaxis_radio_lastn)
+            xMenuWidget_layout.addWidget(self._xaxis_spin_lastn)
             xAction.setDefaultWidget(xMenuWidget)
             xMenu.addAction(xAction)
             #xMenu.triggered.connect(self.pyqtgraphXMenuAction)
@@ -623,12 +636,16 @@ class XYPlotWidget(QtWidgets.QFrame):
         funcname = __name__ + '.xAxisLimitsChanged():'
         logger.debug(funcname)
         self.config.last_N_s = self._xaxis_spin_lasts.value()
+        self.config.last_N_points = self._xaxis_spin_lastn.value()
         if self._xaxis_radio_auto.isChecked():
             logger.debug(funcname + 'Enabling auto scaling')
             self.config.plot_mode_x = 'all'
         if self._xaxis_radio_lasts.isChecked():
             logger.debug(funcname + 'Enabling last s range')
             self.config.plot_mode_x = 'last_N_s'
+        if self._xaxis_radio_lastn.isChecked():
+            logger.debug(funcname + 'Enabling last N points range')
+            self.config.plot_mode_x = 'last_N_points'
 
         # Update if it is existing already ...
         try:
@@ -643,13 +660,27 @@ class XYPlotWidget(QtWidgets.QFrame):
         if self.config.plot_mode_x == 'all':
             self.plotWidget.enableAutoRange(axis='x')
             self.plotWidget.setAutoVisible(x=True)
-        elif self.config.plot_mode_x == 'last_N_s':
-            xmin = self.x_max - self.config.last_N_s
-            xmax = self.x_max
-            self.plotWidget.setXRange(xmin, xmax)
+        else:
+            xrange = self._x_range()
+            if xrange is not None:
+                self.plotWidget.setXRange(*xrange)
 
         self.plotWidget.enableAutoRange(axis='y')
         self.plotWidget.setAutoVisible(y=True)
+
+    def _x_range(self):
+        """x range for the modes last_N_s and last_N_points, None without data."""
+        if not np.isfinite(self.x_max):
+            return None
+        if self.config.plot_mode_x == 'last_N_s':
+            return self.x_max - self.config.last_N_s, self.x_max
+        if self.config.plot_mode_x == 'last_N_points':
+            # Start at the N-th last point of the line reaching back the furthest
+            starts = [line.databuffer.xdata[-min(self.config.last_N_points, len(line.databuffer.xdata))]
+                      for line in self.config.lines if len(line.databuffer.xdata) > 0]
+            if starts:
+                return min(starts), self.x_max
+        return None
 
     def pyqtgraphdataSelectionAction(self):
         funcname = __name__ + '.pyqtgraphdataSelectionAction():'
@@ -693,7 +724,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         logger.debug(funcname)
         newline = configLine()
         self.__newline = newline
-        self.addLineConfigWidget = pydanticConfigWidget(newline, configname='new line', redvypr=self.device.redvypr)
+        self.addLineConfigWidget = pydanticConfigWidget(newline, configname='new line', redvypr=self.redvypr)
         self.addLineConfigWidget.setWindowTitle('Add line')
         self.addLineConfigWidget.config_editing_done.connect(self.pyqtgraphAddLineDone)
         self.addLineConfigWidget.show()
@@ -749,7 +780,7 @@ class XYPlotWidget(QtWidgets.QFrame):
         elif 'settings' in config_mode.lower():
             linename = self.sender()._linename
             lineConfig = self.sender()._line
-            self.lineConfigWidget = pydanticConfigWidget(lineConfig, configname=linename, redvypr=self.device.redvypr)
+            self.lineConfigWidget = pydanticConfigWidget(lineConfig, configname=linename, redvypr=self.redvypr)
             self.lineConfigWidget.setWindowTitle('Config {}'.format(linename))
             self.lineConfigWidget.config_editing_done.connect(self.apply_config)
             self.lineConfigWidget.show()
@@ -872,7 +903,8 @@ class XYPlotWidget(QtWidgets.QFrame):
                     self.interactive_rectangle['scatter'] = pyqtgraph.ScatterPlotItem()
                     self.plotWidget.addItem(self.interactive_rectangle['scatter'])
                     #self.interactive_rectangle['scatter'].setData(points)
-                    self.plotWidget.scene().sigMouseMoved.connect(self.mouse_moved)
+                    # mouse_moved is connected once in apply_config(); connecting it here
+                    # again added one more call per mouse move with every selection
                 elif len(points) == 2:
                     #print('Two points, getting data')
                     xlim = np.sort([self.interactive_rectangle['points'][0]['pos'][0],
@@ -1084,25 +1116,6 @@ class XYPlotWidget(QtWidgets.QFrame):
             #line.databuffer.error_factor = line.error_factor
             #line.databuffer.error_constant = line.error_constant
 
-            # Creating the correct addresses first
-            try:
-                self.logger.debug('Line {},{}'.format(line,iline))
-                # Error address
-                error_addr = None
-                if line.error_mode != 'off':
-                    self.logger.debug('Error mode 1')
-                    errorplot = pyqtgraph.ErrorBarItem(name=line._name_applied,pen=pen)
-                    line._errorplot = errorplot  # Add the line as an attribute to the configuration
-                    errorplot._line_config = line
-                    plot.addItem(errorplot)
-                else:
-                    self.logger.debug('Error mode 2')
-                    line._errorplot = None
-                    # print('Set pen 1')
-            except:
-                self.logger.debug(funcname + 'Could not update addresses',exc_info=True)
-                continue
-
             # print('Line',line)
             # FLAG_HAVE_LINE = False
             #self.get_metadata_for_line(line, force_update=False) # This is updating the unit
@@ -1144,6 +1157,17 @@ class XYPlotWidget(QtWidgets.QFrame):
                 #print('COLOR!!!!', color, type(color), linewidth)
                 pen = pyqtgraph.mkPen(color, width=float(linewidth),style=style)
                 line._lineplot.setPen(pen)
+                # Error band: only now the pen and the name of the line exist. An old
+                # error band (from a previous apply_config) is removed first.
+                if getattr(line, '_errorplot', None) is not None:
+                    plot.removeItem(line._errorplot)
+                if line.error_mode != 'off':
+                    errorplot = pyqtgraph.ErrorBarItem(pen=pyqtgraph.mkPen(color, width=1.0))
+                    errorplot._line_config = line
+                    plot.addItem(errorplot)
+                    line._errorplot = errorplot
+                else:
+                    line._errorplot = None
                 # Check if the addresses changed and clear the buffer if necessary
                 try:
                     line._xdata_addr_old
@@ -1169,7 +1193,7 @@ class XYPlotWidget(QtWidgets.QFrame):
                 self.legendWidget.addItem(line._lineplot, line.label)
                 self.logger.debug('Setting the data')
                 line._lineplot.setData(name=line.label,x=[],y=[])
-                if self.config.automatic_subscription:
+                if self.config.automatic_subscription and self.device is not None:
                     self.logger.debug(funcname + 'Subscribing to x address {}'.format(line.x_addr))
                     self.device.subscribe_address(line.x_addr)
                     self.logger.debug(funcname + 'Subscribing to y address {}'.format(line.y_addr))
@@ -1275,6 +1299,8 @@ class XYPlotWidget(QtWidgets.QFrame):
         #metadata = self.device.get_metadata(line.y_addr)
         #print("Metadata for line",metadata)
         funcname = __name__ + '.get_metadata_for_line():'
+        if self.redvypr is None:    # widget used without a redvypr device: no metadata
+            return None
         iline = self.config.lines.index(line)
         self.logger.debug(funcname + 'Getting metadata for {}'.format(line.y_addr))
 
@@ -1513,8 +1539,9 @@ class XYPlotWidget(QtWidgets.QFrame):
                         try:
                             [x,y,err]= self.__get_data_for_line(line)
                             line._lineplot.setData(x=x, y=y)
-                            self.x_min = min(self.x_min,min(x))
-                            self.x_max = max(self.x_max, max(x))
+                            if len(x) > 0:
+                                self.x_min = min(self.x_min, min(x))
+                                self.x_max = max(self.x_max, max(x))
                             something_updated = True
                             if line._errorplot is not None:
                                 beamwidth = None
@@ -1527,10 +1554,10 @@ class XYPlotWidget(QtWidgets.QFrame):
                 if something_updated:
                     try:
                         # Check if ranges need to be changed
-                        if self.config.plot_mode_x == 'last_N_s':
-                            xmin = self.x_max - self.config.last_N_s
-                            xmax = self.x_max
-                            self.plotWidget.setXRange(xmin,xmax)
+                        if self.config.plot_mode_x != 'all':
+                            xrange = self._x_range()
+                            if xrange is not None:
+                                self.plotWidget.setXRange(*xrange)
                     except:
                         logger.info(funcname,exc_info=True)
 
