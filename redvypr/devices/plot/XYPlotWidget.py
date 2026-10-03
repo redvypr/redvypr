@@ -110,7 +110,7 @@ class configLine(pydantic.BaseModel,extra='allow'):
     def add_data(self, data):
         inx = self.x_addr.matches_packetfilter(data)
         iny = self.y_addr.matches_packetfilter(data)
-        print("in",inx,iny)
+        #print("in",inx,iny)
         if inx and iny:
             if self.databuffer_add_mode == "clear first":
                 self.databuffer.clear()
@@ -122,15 +122,16 @@ class configLine(pydantic.BaseModel,extra='allow'):
             newx = self.x_addr(rdata)
             #newy = self.y_addr(rdata)
             try:
-                print("Rufe y_addr auf...")
+                #print("Rufe y_addr auf...")
                 newy = self.y_addr(rdata)
-                print("newy", newy)
+                #print("newy", newy)
             except Exception as e:
                 # Das hier wird dir genau zeigen, warum es schiefgeht!
-                print(f"!!! CRASH in y_addr: {e}")
-                import traceback;
-                traceback.print_exc()
-                print("Addresse:",self.y_addr)
+                #print(f"!!! CRASH in y_addr: {e}")
+                #import traceback;
+                #traceback.print_exc()
+                #print("Addresse:",self.y_addr)
+                raise
 
 
             if (type(newx) is not list):
