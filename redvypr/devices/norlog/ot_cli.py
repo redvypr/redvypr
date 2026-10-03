@@ -145,30 +145,48 @@ class OtCli:
         return line[len(prefix):]
 
 
-_COAP_RESPONSE = "coap response from "
-_COAP_ERROR = "coap receive response error"
+COAP_PREFIX = "#NLC "
 
 
-def _is_coap_answer(line: str) -> bool:
-    return line.startswith(_COAP_RESPONSE) or line.startswith(_COAP_ERROR)
-
-
-def coap_get(cli: OtCli, address: str, uri: str, timeout: float = 8.0) -> bytes:
+def parse_coap_line(rest: str):
     """
-    CoAP GET (confirmable) through the OpenThread CLI of the gateway.
-    Returns the response payload; the CLI prints it as hex.
+    Parse the answer of 'norlog coap get' (without the '#NLC ' prefix):
+        ok <addr> <code> txt|hex[+] <payload>
+        err <addr> <code|timeout|...> [...]
+    Returns (ok, code, payload_bytes, truncated).
     """
-    lines = cli.command(f"coap get {address} {uri} con")
-    answer = next((l for l in lines if _is_coap_answer(l)), None)   # very fast response
-    if answer is None:
-        answer = cli.wait_line(_is_coap_answer, timeout)
-    if answer is None:
-        raise TimeoutError(f"CoAP GET {uri} from {address}: no response within {timeout} s")
-    if answer.startswith(_COAP_ERROR):
-        raise OtError(answer)
-    if " with payload: " not in answer:
-        return b""
-    return bytes.fromhex(answer.split(" with payload: ", 1)[1].strip())
+    parts = rest.split(" ", 4)
+    if len(parts) < 3:
+        raise OtError(f"malformed CoAP answer: {rest!r}")
+    status, _addr, code = parts[0], parts[1], parts[2]
+    fmt = parts[3] if len(parts) > 3 else ""
+    payload = parts[4] if len(parts) > 4 else ""
+    truncated = fmt.endswith("+")
+    fmt = fmt.rstrip("+")
+    if fmt == "hex":
+        data = bytes.fromhex(payload.strip())
+    else:
+        data = payload.encode()
+    return status == "ok", code, data, truncated
+
+
+def coap_get(cli: OtCli, address: str, uri: str, timeout: float = 10.0) -> bytes:
+    """
+    CoAP GET through the gateway firmware ('norlog coap get'): the gateway
+    waits for the response and prints it as one line, so nothing is lost
+    (unlike the asynchronous output of 'ot coap get').
+    """
+    try:
+        rest = cli.shell_query(f"norlog coap get {address} {uri} {int(timeout)}", COAP_PREFIX,
+                               timeout=timeout + 4.0)
+    except TimeoutError as exc:
+        raise TimeoutError(f"{exc} (gateway firmware with 'norlog coap get' required)") from None
+    ok, code, data, truncated = parse_coap_line(rest)
+    if not ok:
+        raise OtError(f"CoAP GET {uri} from {address}: {code} {data.decode(errors='replace')}".strip())
+    if truncated:
+        raise OtError(f"CoAP GET {uri} from {address}: response truncated by the gateway")
+    return data
 
 
 def rloc_address(mesh_local_prefix: str, rloc16: str) -> str:
