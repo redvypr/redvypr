@@ -35,6 +35,10 @@ logger.setLevel(logging.DEBUG)
 
 colors = ['red','blue','green','gray','yellow','purple']
 
+class LineDataConversionError(TypeError):
+    """A packet matches the line, but its x/y values are not numbers."""
+
+
 class Databufferline(pydantic.BaseModel):
     model_config = {'extra': 'allow'}
     skip_bufferdata_when_serialized: bool = pydantic.Field(default=True, description='Do not save the buffer data when serialized')
@@ -160,15 +164,23 @@ class configLine(pydantic.BaseModel,extra='allow'):
             if (len(newx) != len(newy)) or (len(newx) != len(newerror)):
                 raise ValueError('lengths of x, y and error data different (x:{:d}, y:{:d}, err:{:d})'.format(len(newx), len(newy), len(newerror)))
 
-            for inew in range(len(newx)):  # TODO this can be optimized using indices instead of a loop
-                if isinstance(newt, Iterable):
-                    self.databuffer.tdata.append(float(newt[inew]))
-                else:
-                    self.databuffer.tdata.append(float(newt))
+            # Convert everything first and append afterwards: if a value cannot be
+            # converted (e.g. y is None or text), nothing is appended. Otherwise x
+            # would already be in the buffer and x/y get different lengths for good.
+            newvalues = []
+            try:
+                for inew in range(len(newx)):
+                    tval = float(newt[inew]) if isinstance(newt, Iterable) else float(newt)
+                    newvalues.append((tval, float(newx[inew]), float(newy[inew]), float(newerror[inew])))
+            except (TypeError, ValueError) as e:
+                raise LineDataConversionError(
+                    f'x={self.x_addr}: {newx!r}, y={self.y_addr}: {newy!r} not numeric ({e})') from None
 
-                self.databuffer.xdata.append(float(newx[inew]))
-                self.databuffer.ydata.append(float(newy[inew]))
-                self.databuffer.errordata.append(float(newerror[inew]))
+            for tval, xval, yval, errval in newvalues:
+                self.databuffer.tdata.append(tval)
+                self.databuffer.xdata.append(xval)
+                self.databuffer.ydata.append(yval)
+                self.databuffer.errordata.append(errval)
                 while len(self.databuffer.tdata) > self.buffersize:
                     self.databuffer.tdata.pop(0)
                     self.databuffer.xdata.pop(0)
@@ -1457,6 +1469,11 @@ class XYPlotWidget(QtWidgets.QFrame):
                     try:
                         line.add_data(data)
                         line.__newdata = True
+                    except LineDataConversionError as e:
+                        # Matching packet with non-numeric values: report once per line and cause
+                        if getattr(line, '_last_conversion_warning', None) != str(e):
+                            line._last_conversion_warning = str(e)
+                            self.logger.warning('Line {}: data not added, {}'.format(line.label or line.name, e))
                     except:
                         #continue
                         self.logger.debug('Could not add data', exc_info=True)
