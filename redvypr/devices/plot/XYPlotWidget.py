@@ -33,7 +33,8 @@ logger = logging.getLogger('redvypr.device.XYPlotWidget(base)')
 logger.setLevel(logging.DEBUG)
 #logger.setLevel(logging.INFO)
 
-colors = ['red','blue','green','gray','yellow','purple']
+# Colors of new lines (yellow was hardly visible on the light background)
+colors = ['red','blue','green','orange','purple','gray','cyan','magenta']
 
 class LineDataConversionError(TypeError):
     """A packet matches the line, but its x/y values are not numbers."""
@@ -722,7 +723,7 @@ class XYPlotWidget(QtWidgets.QFrame):
     def pyqtgraphAddLineAction(self):
         funcname = __name__ + '.pyqtgraphAddLineAction()'
         logger.debug(funcname)
-        newline = configLine()
+        newline = configLine(color=pydColor(self._next_color()))
         self.__newline = newline
         self.addLineConfigWidget = pydanticConfigWidget(newline, configname='new line', redvypr=self.redvypr)
         self.addLineConfigWidget.setWindowTitle('Add line')
@@ -966,10 +967,8 @@ class XYPlotWidget(QtWidgets.QFrame):
             self.logger.debug('Redvypr error-address')
             error_addr = redvypr.RedvyprAddress(error_addr)
         #print('add line',y_addr,color)
-        if color is None: # No color defined, take color from the colors list
-            nlines = len(self.config.lines) - 1
-            colind = nlines % len(colors)
-            color = colors[colind]
+        if color is None: # No color defined, take the next free color of the colors list
+            color = self._next_color(exclude_index=index)
             self.logger.debug('Color')
 
         if index is None:
@@ -993,6 +992,25 @@ class XYPlotWidget(QtWidgets.QFrame):
         #self.config.lines[index].databuffer.ydata_addr = y_addr
         #self.config.lines[index].databuffer.errordata_addr = error_addr
         self.apply_config()
+
+    def _next_color(self, exclude_index=None):
+        """
+        Color for a new line: the first color of the list that no other line uses,
+        if all are used, the colors are repeated.
+        exclude_index: line that gets the color (its old color does not count).
+        """
+        used = set()
+        for i, line in enumerate(self.config.lines):
+            if i != exclude_index:
+                try:
+                    used.add(pydColor(line.color).as_hex())
+                except Exception:
+                    pass
+        for c in colors:
+            if pydColor(c).as_hex() not in used:
+                return c
+        n = len(self.config.lines) if exclude_index is None else exclude_index
+        return colors[n % len(colors)]
 
     def construct_labelname(self, line, labelformat=None):
         name = line.name
@@ -1192,7 +1210,18 @@ class XYPlotWidget(QtWidgets.QFrame):
                     self.logger.debug(funcname + ' Could not remove line')
                 self.legendWidget.addItem(line._lineplot, line.label)
                 self.logger.debug('Setting the data')
-                line._lineplot.setData(name=line.label,x=[],y=[])
+                # Show the data of the buffer (empty if the address changed): an empty line
+                # would stay empty until the next packet of that line arrives
+                x, y, err = [], [], []
+                if len(line.databuffer.xdata) > 0:
+                    try:
+                        x, y, err = self.__get_data_for_line(line)
+                    except Exception:
+                        self.logger.debug(funcname + ' Could not get the buffer data', exc_info=True)
+                line._lineplot.setData(name=line.label, x=x, y=y)
+                if line._errorplot is not None and len(x) > 0:
+                    line._errorplot.setData(x=np.asarray(x), y=np.asarray(y), top=np.asarray(err),
+                                            bottom=np.asarray(err))
                 if self.config.automatic_subscription and self.device is not None:
                     self.logger.debug(funcname + 'Subscribing to x address {}'.format(line.x_addr))
                     self.device.subscribe_address(line.x_addr)
@@ -1321,7 +1350,8 @@ class XYPlotWidget(QtWidgets.QFrame):
                 self.logger.debug(funcname + 'Did not find a unit', exc_info=True)
                 unit = None
 
-            if unit is not None:
+            # Only a changed unit is new (apply_config() is called for it)
+            if unit is not None and unit != self.config.lines[iline].unit_y:
                 self.config.lines[iline].unit_y = unit
                 return True
 
@@ -1506,19 +1536,20 @@ class XYPlotWidget(QtWidgets.QFrame):
                         self.logger.debug('Could not add data', exc_info=True)
                         #pass
 
-                    #print('Added data',data['t'],data['_redvypr'])
-                    if True:
-                        # Show the unit in the legend, if wished by the user, and we have access to the device that can give us the metainformation
-                        if (self.config.show_units) and (self.device is not None):
-                            dt_metadata = tnow - self.tlastupdate_metadata
-                            if dt_metadata > self.config.dt_update_metadata:
-                                self.tlastupdate_metadata = tnow
-                                self.logger.debug(funcname + 'Getting metadata for {}'.format(line.y_addr))
-                                # Check for metadata
-                                flag_new_metadata = self.get_metadata_for_line(line, force_update=True)
-                                #print(f"Metadata flag:{flag_new_metadata=}")
-                                if flag_new_metadata:
-                                    self.apply_config()
+                # Show the unit in the legend, if wished by the user, and we have access to the
+                # device that can give us the metainformation. All lines are checked together
+                # (the timer is shared); apply_config() only if a unit changed.
+                if (self.config.show_units) and (self.device is not None):
+                    dt_metadata = tnow - self.tlastupdate_metadata
+                    if dt_metadata > self.config.dt_update_metadata:
+                        self.tlastupdate_metadata = tnow
+                        flag_new_metadata = False
+                        for line in self.config.lines:
+                            self.logger.debug(funcname + 'Getting metadata for {}'.format(line.y_addr))
+                            if self.get_metadata_for_line(line, force_update=True):
+                                flag_new_metadata = True
+                        if flag_new_metadata:
+                            self.apply_config()
 
                 # Update the lines plot
                 something_updated = False
