@@ -39,9 +39,10 @@ the same header. Messages about a node keep its key ('gateway' or RLOC16) in
 The info packet contains the info JSON as it is (nested) plus 'link': the radio
 link as seen from the gateway (RSSI, LQ, role, next hop, ...). Metadata is
 attached to the addresses '@di:<hwid>' (user properties, board, firmware) and
-'<key>@di:<hwid>' (units); it is sent with the first info packet of a device,
-again when it changes and completely when the device name changes (redvypr
-stores metadata with the device of the packet).
+'<key>@di:<hwid>' (units); it is sent with the first info packet of a device
+and again when it changes. These addresses name the norlog (deviceid), so redvypr
+does not bind them to the device name or packetid: they stay valid after a
+change of the serial number and apply to the '#NLD' data as well.
 """
 
 import base64
@@ -179,7 +180,6 @@ class _Gateway:
         self.last_status = {}
         self.meta_sent = {}             # hwid -> device metadata sent last
         self.units_sent = {}            # hwid -> set of keys whose unit was sent
-        self.meta_device = {}           # hwid -> device name the metadata was sent with
 
     # --- publishing ---
 
@@ -475,13 +475,6 @@ class _Gateway:
         data.update({k: v for k, v in info.items() if k != 'error'})
         data['link'] = {f: entry.get(f) for f in self.LINK_FIELDS}
         data['t'] = t
-
-        # redvypr stores metadata with the device of the packet: new device name
-        # (serial number changed) -> send all metadata again
-        if self.meta_device.get(hwid) != device:
-            self.meta_device[hwid] = device
-            self.meta_sent.pop(hwid, None)
-            self.units_sent.pop(hwid, None)
 
         # Device metadata: user properties, board and firmware; sent again on changes.
         # A deleted property is sent once with an empty value.
