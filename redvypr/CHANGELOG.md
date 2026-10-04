@@ -11,6 +11,28 @@ redvypr changelog
 ### Changed
 - ?
 
+## [0.9.21] - 2026-10-04
+
+### Added
+- norlog gateway device (`devices/norlog`): console of the norlog shell, Thread network (form, status, provisioning),
+  device list with link quality, periodic device info, settings window per norlog (properties sn/desc/loc, battery
+  model, USB mode, TX power), file browser for the SD cards, firmware update over UART and over Thread
+- norlog device info as redvypr packets: one device per norlog (`device` = `norlog_<sn>`, `deviceid` = hardware ID,
+  `sensorid` = serial number, `packetid` = `info`) with metadata (properties, units) at `@di:<hwid>`
+- norlog gateway option `publish_raw_data` (default off): publish also console, command results and Thread status;
+  otherwise they go only to the device window (statusqueue)
+- `create_redvypr_dict()`: arguments `sensorid`, `deviceid` and `sensor`, always set in the header (None if unknown)
+- XYplot: x-axis mode `last_N_points`; new lines get the first color not used by another line
+- "from files" functionality in devices, pause in `rawdatareplay.py`
+### Changed
+- `redvypr_standard_address_filter` (key of the packet statistics) contains `di`, `s` and `si`: devices with the same
+  name but different deviceid/sensorid were merged; the datastream widget shows deviceid and sensorid
+- `create_redvypr_dict()`: `raddress` no longer replaces the header (the time was lost), a `RedvyprAddress` object
+  works like a string, the host dict is copied, `tu=None` leaves the time to redvypr
+- XYplot: no blank plot every `dt_update_metadata` with units, x/y buffers stay the same length, error bands
+  (factor = relative error), PyQt6 data table, buffer trimmed in steps, works without a redvypr device
+- bug fixes in SubscribeWidget, TAR time variable and serial_single info
+
 ## [0.9.20] - 2026-08-22
 
 ### Added
