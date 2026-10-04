@@ -30,6 +30,7 @@ KEYS = {
     5: "source_id",
     6: "set",
     7: "packet_num_sensor",
+    8: "boot",
     10: "batt_mv",
     11: "batt_soc",
     12: "batt_charging",
