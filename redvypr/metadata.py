@@ -1,10 +1,80 @@
 import typing
 import datetime
 import time
-import deepdiff
-from redvypr.redvypr_datadict import logger
+import logging
 from redvypr.redvypr_address import RedvyprAddress
-from redvypr.packet_statistic import logger
+
+logger = logging.getLogger('redvypr.metadata')
+
+# Constraint keys that describe the validity period or the origin of an entry.
+# All other constraint keys are its context (e.g. 'site'): entries with the same
+# key, value and context describe the same metadata.
+TIME_KEYS = ('valid_from', 'valid_until')
+NON_CONTEXT_KEYS = TIME_KEYS + ('hostinfo',)
+
+# Address entries naming the source of a datastream
+SOURCE_KEYS = ('device', 'deviceid', 'sensorid', 'sensor')
+
+# Parsed stored addresses (address string -> (RedvyprAddress, specificity, source)),
+# get_metadata() does not parse every stored address again for every query
+_ADDRESS_CACHE = {}
+_ADDRESS_CACHE_MAX = 100000
+
+
+def to_datetime(t):
+    """
+    Time of a constraint as timezone aware UTC datetime (None stays None).
+    Accepts datetime (naive = UTC), ISO strings (also with 'Z') and unix time.
+    """
+    if t is None:
+        return None
+    if isinstance(t, datetime.datetime):
+        dt = t
+    elif isinstance(t, (int, float)):
+        return datetime.datetime.fromtimestamp(t, datetime.timezone.utc)
+    else:
+        dt = datetime.datetime.fromisoformat(str(t).strip().replace('Z', '+00:00'))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(datetime.timezone.utc)
+
+
+def to_isotime(t):
+    """Canonical ISO string (UTC) of a constraint time, None stays None."""
+    dt = to_datetime(t)
+    return None if dt is None else dt.isoformat()
+
+
+def get_context(constraints):
+    """The context of an entry: its constraints without validity period and hostinfo."""
+    return {k: v for k, v in (constraints or {}).items() if k not in NON_CONTEXT_KEYS}
+
+
+def get_source(raddress):
+    """The source entries (device, deviceid, sensorid, sensor) an address names."""
+    source = {}
+    for k in SOURCE_KEYS:
+        try:
+            v = getattr(raddress, k)
+        except Exception:
+            v = None
+        if v is not None:
+            source[k] = v
+    return source
+
+
+def _parsed_address(address_str):
+    """Cached (RedvyprAddress, number of datakey entries, source) of a stored address."""
+    try:
+        return _ADDRESS_CACHE[address_str]
+    except KeyError:
+        pass
+    raddr = RedvyprAddress(address_str)
+    parsed = (raddr, len(raddr.get_datakeyentries()), get_source(raddr))
+    if len(_ADDRESS_CACHE) >= _ADDRESS_CACHE_MAX:
+        _ADDRESS_CACHE.clear()
+    _ADDRESS_CACHE[address_str] = parsed
+    return parsed
 
 
 def create_metadata_dict(
@@ -57,14 +127,8 @@ def create_metadata_dict(
     if constraints:
         final_constraints.update(constraints)
 
-    # Helper for ISO timestamps
-    def format_time(t):
-        if hasattr(t, 'isoformat'):
-            # Falls das übergebene Objekt "naiv" ist (keine TZ hat), verpassen wir ihm UTC
-            if t.tzinfo is None:
-                t = t.replace(tzinfo=datetime.timezone.utc)
-            return t.isoformat()
-        return t
+    # Helper for ISO timestamps (canonical UTC form, naive = UTC)
+    format_time = to_isotime
 
 
     # Set up timeline bounds
@@ -111,10 +175,19 @@ def add_metadata_to_entries(
     """
     Merges incoming metadata updates into a target metadata storage structure.
 
-    Handles RedVypr address filtration based on a reference packet address,
-    performs deep constraint hash comparisons to prevent exact duplicates,
-    and automatically historizes existing keys if their value changes by setting
-    the 'valid_until' boundary.
+    An entry describes the period in which a value was valid. Entries with the
+    same key, value and context (constraints without valid_from, valid_until and
+    hostinfo) are the same metadata:
+
+    - same value, periods overlapping or touching: merged into one entry (no
+      new entry, the begin moves back / the end moves forward if needed); sending
+      the same metadata again (or after a restart) does not add anything
+    - same value after a gap (A -> B -> A): new entry (history)
+    - other value: the open entry of the same context ends at the begin of the new
+      one (valid_until), or the new one ends at the begin of a later entry
+    - entries of another context are not touched
+
+    Only the entries of the same address are looked at.
 
     Parameters
     ----------
@@ -125,7 +198,9 @@ def add_metadata_to_entries(
         The target storage dictionary (e.g., `metadata_dict['metadata']`) to modify.
     packetfilter_address : str or dict, optional
         A fallback or context packet/address used to dynamically inherit missing
-        routing metrics (UUID, device, packetid) via RedvyprAddress merging.
+        routing metrics (UUID, device, packetid) via RedvyprAddress merging. An
+        address that names its source itself (device, deviceid or sensorid) only
+        gets the UUID: it is valid for all packets of that source.
 
     Returns
     -------
@@ -135,21 +210,22 @@ def add_metadata_to_entries(
     """
     funcname = f"{__name__}.add_metadata_to_entries():"
     status = {'metadata_changed': False}
-    #print(f"\nMetadata entries:{metadata_entries}")
 
     try:
+        raddress_data = RedvyprAddress(packetfilter_address) if packetfilter_address else None
         for address_str_work, incoming_entries in metadata.items():
 
             # Apply dynamic address / packet filtering path matching
-            if packetfilter_address:
+            if raddress_data is not None:
                 raddress = RedvyprAddress(address_str_work)
-                raddress_data = RedvyprAddress(packetfilter_address)
-
                 uuid = raddress_data.uuid if (raddress.uuid is None) else None
-                device = raddress_data.device if (raddress.device is None) else None
-                packetid = raddress_data.packetid if (
-                            raddress.packetid is None) else None
-
+                if raddress.device is None and raddress.deviceid is None and raddress.sensorid is None:
+                    device = raddress_data.device
+                    packetid = raddress_data.packetid if (raddress.packetid is None) else None
+                else:
+                    # The address names its source: valid for all its packets
+                    device = None
+                    packetid = None
                 raddress_final = RedvyprAddress(
                     raddress, uuid=uuid, device=device, packetid=packetid
                 )
@@ -157,59 +233,79 @@ def add_metadata_to_entries(
             else:
                 address_str = address_str_work
 
-            # Ensure address slice exists in central storage
-            if address_str not in metadata_entries:
-                metadata_entries[address_str] = []
-
-            stored_list = metadata_entries[address_str]
-            #print(f"Testing:{address_str_work} ({address_str})")
+            stored_list = metadata_entries.setdefault(address_str, [])
             for new_entry in incoming_entries:
-                new_key = new_entry['key']
-                new_value = new_entry['value']
-                new_constraints = new_entry['constraints']
-                new_valid_from = new_constraints.get('valid_from')
-
-                is_duplicate = False
-
-                for existing_entry in stored_list:
-                    #print(f"Testing:{existing_entry['key']=},{new_key=},{existing_entry['value']=},{new_value=}")
-                    # Case A: Same key, same value -> Check constraints for duplication
-                    if existing_entry['key'] == new_key and existing_entry[
-                        'value'] == new_value:
-                        existing_hash = \
-                        deepdiff.DeepHash(existing_entry['constraints'])[
-                            existing_entry['constraints']
-                        ]
-                        incoming_hash = deepdiff.DeepHash(new_constraints)[
-                            new_constraints
-                        ]
-                        if existing_hash == incoming_hash:
-                            is_duplicate = True
-                            break
-
-                    # Case B: Same key, different value -> Set chronological expiration
-                    if existing_entry['key'] == new_key and existing_entry[
-                        'value'] != new_value:
-                        if existing_entry['constraints'].get('valid_until') is None:
-                            existing_entry['constraints'][
-                                'valid_until'] = new_valid_from
-                            status['metadata_changed'] = True
-                            #print("Change:True!\n")
-
-                # Append entry if it represents a unique mutation/state. Stored with its own
-                # constraints dict, 'valid_until' is set in it later (historization).
-                if not is_duplicate:
-                    new_entry = dict(new_entry)
-                    new_entry['constraints'] = dict(new_constraints)
-                    stored_list.append(new_entry)
+                if _merge_entry(stored_list, new_entry):
                     status['metadata_changed'] = True
-                    logger.debug(
-                        f"Added entry: {new_key}={new_value} for {address_str}")
+                    logger.debug(f"{funcname} {new_entry['key']}={new_entry['value']!r} for {address_str}")
+
+            if not stored_list:
+                metadata_entries.pop(address_str, None)
 
     except Exception:
         logger.warning(f"{funcname} Could not update metadata", exc_info=True)
 
     return status
+
+
+def _merge_entry(stored_list, new_entry):
+    """
+    Merge one entry into the entries of an address (rules see
+    add_metadata_to_entries()). Returns True if the stored entries changed.
+    """
+    key = new_entry['key']
+    value = new_entry['value']
+    new_constraints = dict(new_entry.get('constraints') or {})
+    context = get_context(new_constraints)
+    new_from = to_datetime(new_constraints.get('valid_from'))
+    if new_from is None:
+        new_from = datetime.datetime.now(datetime.timezone.utc)
+    new_until = to_datetime(new_constraints.get('valid_until'))
+
+    same = [e for e in stored_list
+            if e['key'] == key and get_context(e.get('constraints')) == context]
+
+    # 1. Same value with an overlapping or touching period: one entry
+    for e in same:
+        if e['value'] != value:
+            continue
+        c = e['constraints']
+        e_from, e_until = to_datetime(c.get('valid_from')), to_datetime(c.get('valid_until'))
+        if (e_from is None or new_until is None or e_from <= new_until) and \
+                (e_until is None or e_until >= new_from):
+            changed = False
+            if e_from is not None and new_from < e_from:
+                c['valid_from'] = new_from.isoformat()
+                changed = True
+            if e_until is not None and (new_until is None or new_until > e_until):
+                if new_until is None:
+                    c.pop('valid_until', None)
+                else:
+                    c['valid_until'] = new_until.isoformat()
+                changed = True
+            return changed
+
+    # 2. Other value: the open entry before ends now, a later entry ends the new one
+    for e in same:
+        if e['value'] == value:
+            continue
+        c = e['constraints']
+        e_from, e_until = to_datetime(c.get('valid_from')), to_datetime(c.get('valid_until'))
+        if e_from is None or e_from <= new_from:
+            if e_until is None or e_until > new_from:
+                c['valid_until'] = new_from.isoformat()
+        elif new_until is None or new_until > e_from:
+            new_until = e_from      # inserted before a later value
+
+    new_constraints['valid_from'] = new_from.isoformat()
+    if new_until is None:
+        new_constraints.pop('valid_until', None)
+    else:
+        new_constraints['valid_until'] = new_until.isoformat()
+    stored = dict(new_entry)
+    stored['constraints'] = new_constraints
+    stored_list.append(stored)
+    return True
 
 
 def do_metadata(
@@ -276,7 +372,7 @@ def do_metadata(
                 if len(remove_keys) == 0:
                     metadata_dict['metadata'].pop(addr)
                     status['metadata_changed'] = True
-                    print(f"Completely removed address from metadata storage: {addr}")
+                    logger.info(f"{funcname} Completely removed address from metadata storage: {addr}")
                 else:
                     original_len = len(metadata_dict['metadata'][addr])
 
@@ -287,7 +383,7 @@ def do_metadata(
 
                     if len(metadata_dict['metadata'][addr]) != original_len:
                         status['metadata_changed'] = True
-                        print(f"Hard-removed keys {remove_keys} from {addr}")
+                        logger.info(f"{funcname} Hard-removed keys {remove_keys} from {addr}")
 
                     if len(metadata_dict['metadata'][addr]) == 0:
                         metadata_dict['metadata'].pop(addr)
@@ -366,14 +462,19 @@ def get_metadata(
         raddress = RedvyprAddress("@")
     else:
         raddress = RedvyprAddress(address)
+    # A query naming its source (e.g. d:ctd_01) gets only metadata of addresses whose
+    # source entries it names too: '@di:A1B2C3' must not apply to 'temp@d:ctd_01' just
+    # because neither address contradicts the other. A query without a source
+    # ('@', 'temp@') gets all matching metadata.
+    query_source = get_source(raddress)
 
     if mode == 'merge':
         metadata_return[raddress.to_address_string()] = {}
 
-    # 1. Sort by specificity using DSU
+    # 1. Sort by specificity using DSU (parsed addresses are cached)
     decorated = [
-        (len(RedvyprAddress(astr).get_datakeyentries()), astr)
-        for astr in statistics.get('metadata', {}).keys()
+        (_parsed_address(astr)[1], astr)
+        for astr in list(statistics.get('metadata', {}).keys())
     ]
     decorated.sort()
     metadata_keys_sorted = [astr for nentries, astr in decorated]
@@ -384,21 +485,23 @@ def get_metadata(
     range_end = None
 
     if mode != 'all':
+        # Compared as datetimes ('Z' and '+00:00', naive = UTC)
         if time_range:
-            range_start = time_range[0].isoformat() if hasattr(time_range[0], 'isoformat') else time_range[0]
-            range_end = time_range[1].isoformat() if hasattr(time_range[1], 'isoformat') else time_range[1]
+            range_start = to_datetime(time_range[0])
+            range_end = to_datetime(time_range[1])
         else:
             if at_time is None:
-                target_time = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                target_time = datetime.datetime.now(datetime.timezone.utc)
             else:
-                target_time = at_time.isoformat() if hasattr(at_time, 'isoformat') else at_time
+                target_time = to_datetime(at_time)
 
     # 3. Iterate sorted structural matches
     for astr in metadata_keys_sorted:
-        raddr = RedvyprAddress(astr)
-        #print(f"testing:{raddr} with {raddress}")
+        raddr, _, stored_source = _parsed_address(astr)
+        if query_source and any(query_source.get(k) != v for k, v in stored_source.items()):
+            continue
         if raddress.matches(raddr):
-            stored_list = statistics['metadata'][astr]
+            stored_list = statistics['metadata'].get(astr)
 
             if not isinstance(stored_list, list):
                 continue
@@ -410,8 +513,8 @@ def get_metadata(
 
                 # --- A. TIME DIMENSION FILTER (wird bei 'all' übersprungen) ---
                 if mode != 'all':
-                    valid_from = constraints.get('valid_from')
-                    valid_until = constraints.get('valid_until')
+                    valid_from = to_datetime(constraints.get('valid_from'))
+                    valid_until = to_datetime(constraints.get('valid_until'))
 
                     if time_range:
                         if valid_from and valid_from > range_end:
@@ -419,9 +522,10 @@ def get_metadata(
                         if valid_until and valid_until < range_start:
                             continue
                     else:
+                        # valid_until is the begin of the next value (exclusive)
                         if valid_from and target_time < valid_from:
                             continue
-                        if valid_until and target_time > valid_until:
+                        if valid_until and target_time >= valid_until:
                             continue
 
                 # --- B. LOGICAL CONTEXT FILTER ---
@@ -466,6 +570,28 @@ def get_metadata(
         return metadata_return
 
 
+def normalize_metadata(metadata, hostinfo=None):
+    """
+    Metadata of a configuration in the storage format {address: [entries]}.
+
+    Accepts the storage format (as saved by Redvypr.save_config(), with history
+    and constraints) and the simple format {address: {key: value}} (e.g. written
+    by hand or by older redvypr versions); simple values get the default
+    constraints of create_metadata_dict().
+    """
+    result = {}
+    for addr, md in (metadata or {}).items():
+        if isinstance(md, list):
+            entries = [dict(e) for e in md if isinstance(e, dict) and 'key' in e and 'value' in e]
+            result.setdefault(addr, []).extend(entries)
+        elif isinstance(md, dict):
+            for addr_tmp, entries in create_metadata_dict(addr, md, hostinfo=hostinfo).items():
+                result.setdefault(addr_tmp, []).extend(entries)
+        else:
+            raise ValueError(f"metadata of {addr!r} must be a list of entries or a dict, not {type(md).__name__}")
+    return result
+
+
 def create_metadatapacket(metadict=None, hostinfo=None, device_info=None):
     if device_info:
         hostinfo = device_info["hostinfo"]
@@ -486,9 +612,6 @@ def create_metadatapacket(metadict=None, hostinfo=None, device_info=None):
                 f"key {str(addr)} of metadict dictionary must be valid RedvyprAddress string")
 
     return datapacket
-
-
-import datetime
 
 
 def add_metadata2datapacket(
@@ -534,10 +657,20 @@ def add_metadata2datapacket(
         datapacket['_metadata'][address_str] = []
 
     # 4. Standard-Constraints vorbereiten (z.B. für Historisierung)
-    if constraints is None:
-        constraints = {}
+    constraints = dict(constraints) if constraints else {}
     if hostinfo:
         constraints['hostinfo'] = hostinfo
+    # Valid from the time of the packet: a changed value ends the old one there.
+    # Sending the same metadata again does not add an entry (add_metadata_to_entries).
+    if constraints.get('valid_from') is None:
+        try:
+            constraints['valid_from'] = to_isotime(float(datapacket['_redvypr']['t']))
+        except (KeyError, TypeError, ValueError):
+            constraints['valid_from'] = to_isotime(time.time())
+    else:
+        constraints['valid_from'] = to_isotime(constraints['valid_from'])
+    if constraints.get('valid_until') is not None:
+        constraints['valid_until'] = to_isotime(constraints['valid_until'])
 
     # 5. Daten standardisiert in die Liste pushen
     # Fall A: Einzelner Metadaten-Eintrag (metakey + metadata)

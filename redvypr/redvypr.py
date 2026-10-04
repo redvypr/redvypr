@@ -526,7 +526,9 @@ class Redvypr(QtCore.QObject):
         if config.metadata and len(config.metadata.keys()) > 0:
             for k in config.metadata.keys():
                 logger.debug(f'Adding {k} metadata entry')
-            metadata_init = {'_metadata':config.metadata}
+            # Storage format {address: [entries]} or simple {address: {key: value}}
+            metadata_init = {'_metadata': redvypr.metadata.normalize_metadata(config.metadata,
+                                                                             hostinfo=self.hostinfo)}
             status_statistics = redvypr.metadata.do_metadata(
                 metadata_init, self.deviceinfo_all)
             #print("Hallo",self.deviceinfo_all)
@@ -635,8 +637,9 @@ class Redvypr(QtCore.QObject):
                     d['base_config']['loglevel'] = set_loglevel
 
         if add_metadata:
-            metadata = self.get_metadata()
-            data_save['metadata'] = metadata
+            # The stored entries with their history and constraints (get_metadata()
+            # would give only the current values); loaded again by normalize_metadata()
+            data_save['metadata'] = self._copy_metadata()
 
         if fname:
             logger.debug('Saving to file {:s}'.format(fname))
@@ -1425,8 +1428,7 @@ class Redvypr(QtCore.QObject):
         """
         funcname = __name__ + '.get_metadata():'
         logger.debug(funcname)
-        deviceinfo_all = self.get_deviceinfo()
-        metadata = redvypr.metadata.get_metadata(deviceinfo_all,
+        metadata = redvypr.metadata.get_metadata({'metadata': self._copy_metadata()},
                                                  address=address,
                                                  mode=mode,
                                                  context=context,
@@ -1434,6 +1436,38 @@ class Redvypr(QtCore.QObject):
                                                  time_range=time_range)
         return metadata
 
+
+    def _copy_metadata(self):
+        """
+        Copy of the metadata storage {address: [entries]}. Only the metadata is copied
+        (the distribution thread changes it), not the whole deviceinfo_all with the
+        statistics of all devices.
+        """
+        for _ in range(5):
+            try:
+                return copy.deepcopy(self.deviceinfo_all.get('metadata', {}))
+            except RuntimeError:    # changed by the distribution thread while copying
+                time.sleep(0.001)
+        return copy.deepcopy(self.get_deviceinfo().get('metadata', {}))
+
+    def set_metadata_from_dict(self, metadata: dict) -> None:
+        """
+        Adds metadata of several addresses, e.g. from a configuration.
+
+        Parameters
+        ----------
+        metadata : dict
+            Storage format {address: [entries]} (as saved by save_config(), with
+            history and constraints) or simple format {address: {key: value}}.
+        """
+        funcname = f"{__name__}.set_metadata_from_dict():"
+        if not metadata:
+            return
+        datapacket = redvypr.data_packets.commandpacket(command='reply')
+        datapacket['_metadata'] = redvypr.metadata.normalize_metadata(metadata, hostinfo=self.hostinfo)
+        self.redvyprqueue.put(datapacket)
+        self.redvyprreplyqueue.get()
+        logger.debug(f"{funcname} {len(datapacket['_metadata'])} addresses sent")
 
     def get_metadata_commandpacket(self, device=''):
         funcname = __name__ + 'get_metadata_commandpacket():'

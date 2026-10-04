@@ -7,9 +7,21 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
-- ?
+- Documentation of the metadata system (`doc/source/metadata.rst`), `redvypr.metadata` in the API reference
+- `Redvypr.set_metadata_from_dict()` (was called, but missing), `metadata.normalize_metadata()`
 ### Changed
-- ?
+- Metadata entries describe the period in which a value was valid: the same key, value and context again (other
+  `valid_from`, restart, sent with every packet) does not add an entry; overlapping periods are merged, a new value
+  ends the old one; entries of different contexts do not end each other
+- Metadata from datapackets are valid from the time of the packet; an address naming its source (`d`, `di`, `si`) is
+  no longer bound to device and packetid of the packet
+- `get_metadata()`: a query naming its source only gets metadata of addresses with the same source entries; parsed
+  addresses are cached (1000 addresses: 2 ms instead of 320 ms per query); times compared as datetimes
+- `save_config()` saves the metadata entries with history; loading accepts them and the simple form
+  `{address: {key: value}}` (before nothing was loaded and `load_config(use_metadata=True)` failed)
+- Fixed: shared constraints of `create_metadata_dict()`, nested `create_metadatapacket()`, metadata of other redvypr
+  instances lost (and the other packets of that distribution round)
+- norlog gateway: no full resend of the metadata after a serial number change
 
 ## [0.9.21] - 2026-10-04
 
