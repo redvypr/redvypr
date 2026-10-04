@@ -294,7 +294,7 @@ def _main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("catalog", help="show catalog.dat").add_argument("file")
     sub.add_parser("index", help="show a .idx file").add_argument("file")
-    v = sub.add_parser("verify", help="check a .idx file against its data file")
+    v = sub.add_parser("verify", help="check a .idx file against its data file (give the .cbor, the .idx or both)")
     v.add_argument("data")
     v.add_argument("index", nargs="?")
     b = sub.add_parser("build", help="create the .idx file of a data file")
@@ -308,6 +308,12 @@ def _main(argv=None):
 
     def idx_path(p):
         return pathlib.Path(str(p)[:-5] + ".idx") if str(p).endswith(".cbor") else pathlib.Path(p + ".idx")
+
+    def read(path, what):
+        path = pathlib.Path(path)
+        if not path.is_file():
+            raise SystemExit(f"{what} not found: {path}")
+        return path.read_bytes()
 
     if a.cmd == "catalog":
         cat = parse_catalog(pathlib.Path(a.file).read_bytes())
@@ -324,8 +330,16 @@ def _main(argv=None):
             print(f"{rec['offset']:9d}  {_ts(rec['rtc_time'])}  uptime {rec['uptime_s']:7d} s"
                   f"  packet {rec['packet_num']}")
     elif a.cmd == "verify":
-        data = pathlib.Path(a.data).read_bytes()
-        index = pathlib.Path(a.index or idx_path(a.data)).read_bytes()
+        # data file and index in any order; one of them is enough if they lie side by side
+        names = [a.data] + ([a.index] if a.index else [])
+        idx_name = next((n for n in names if n.endswith(".idx")), None)
+        data_name = next((n for n in names if not n.endswith(".idx")), None)
+        if data_name is None:
+            data_name = idx_name[:-4] + ".cbor"
+        if idx_name is None:
+            idx_name = idx_path(data_name)
+        data = read(data_name, "data file")
+        index = read(idx_name, "index")
         problems = verify_index(data, index)
         n = len(parse_index(index)["records"])
         print(f"{len(data)} bytes, {sum(1 for _ in iter_packets(data))} packets, {n} entry points: "
