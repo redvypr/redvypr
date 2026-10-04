@@ -15,6 +15,20 @@ Data lines from the gateway firmware (planned, not yet implemented there):
 
 <source> identifies the sending node (e.g. its RLOC16 or IPv6 address).
 Decoded packets are published with the packetid "norlog_<mac>".
+
+Device info (gateway: 'norlog info json', members: CoAP GET /info) is
+published as one redvypr packet per norlog:
+
+    device   = hardware ID (hwid, FICR device ID of the nRF52840, unique per chip)
+    packetid = 'info'
+    sensorid = serial number (user property 'sn'), if set
+    publisher = this gateway device (set by redvypr)
+
+The packet contains the info JSON as it is (nested) plus 'link': the radio
+link as seen from the gateway (RSSI, LQ, role, next hop, ...). Metadata is
+attached to the addresses '@d:<hwid>' (user properties, board, firmware) and
+'<key>@d:<hwid>' (units); it is sent with the first info packet of a device
+and again when it changes.
 """
 
 import base64
@@ -36,6 +50,7 @@ import serial
 import serial.tools.list_ports
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+import redvypr.metadata
 from redvypr.device import RedvyprDeviceCustomConfig
 from redvypr.gui import iconnames
 from redvypr.redvypr_datadict import check_for_command, create_redvypr_dict
@@ -144,6 +159,8 @@ class _Gateway:
         self.info_times = {}            # 'gateway' or RLOC16 -> time.time() of the last successful read
         self.props_cache = {}           # hwid (or 'gateway'/RLOC16) -> user properties (sn, desc, loc, ...)
         self.last_status = {}
+        self.meta_sent = {}             # hwid -> device metadata sent last
+        self.units_sent = {}            # hwid -> set of keys whose unit was sent
 
     # --- publishing ---
 
@@ -366,6 +383,68 @@ class _Gateway:
     def publish_devices(self):
         self.publish('thread_status', {'thread_status': self.last_status, 'devices': self.build_devices()})
 
+    # --- info packets (one redvypr device per norlog, device = hwid) ---
+
+    # Radio link as seen from the gateway (entry of the device list) -> 'link'
+    LINK_FIELDS = ('rloc16', 'extaddr', 'connection', 'link', 'thread_role', 'quality', 'rssi_avg',
+                   'rssi_last', 'lq_in', 'lq_out', 'path_cost', 'next_hop', 'age_s')
+    # Units of the info values, sent once per device as metadata
+    INFO_UNITS = {
+        "uptime_s": 's', "board_temp_c": 'degC',
+        "battery['mv']": 'mV', "battery['soc']": '%', "battery['current_ma']": 'mA',
+        "battery['tte_min']": 'min', "battery['ttf_min']": 'min',
+        "radio['txpower_dbm']": 'dBm', "radio['antenna_dbm']": 'dBm', "radio['soc_dbm']": 'dBm',
+        "radio['pa_gain_db']": 'dB', "radio['max_dbm']": 'dBm',
+        "thread['parent']['rssi']": 'dBm',
+        "link['rssi_avg']": 'dBm', "link['rssi_last']": 'dBm', "link['age_s']": 's',
+    }
+
+    @staticmethod
+    def _has_key(data, key):
+        """True if the (nested) key "a['b']['c']" exists in data."""
+        node = data
+        for part in key.replace("']", '').split("['"):
+            if not isinstance(node, dict) or part not in node:
+                return False
+            node = node[part]
+        return True
+
+    def publish_info(self, entry):
+        """Publish the info of one device (entry of build_devices()) as packet 'info'."""
+        info = entry.get('info') or {}
+        hwid = info.get('hwid')
+        if not hwid or (len(info) == 1 and 'error' in info):
+            return
+        key = 'gateway' if entry.get('role') == device_list.ROLE_GATEWAY else entry.get('rloc16')
+        props = entry.get('props') or {}
+        sn = props.get('sn') or info.get('sn') or None
+
+        t = self.info_times.get(key) or time.time()
+        data = create_redvypr_dict(device=hwid, packetid='info', tu=t)
+        data['_redvypr']['sensorid'] = sn
+        data.update({k: v for k, v in info.items() if k != 'error'})
+        data['link'] = {f: entry.get(f) for f in self.LINK_FIELDS}
+        data['t'] = t
+
+        # Device metadata: user properties, board and firmware; sent again on changes.
+        # A deleted property is sent once with an empty value.
+        meta = {'hwid': hwid, 'board': info.get('board', ''), 'firmware': info.get('image') or
+                info.get('firmware', ''), **{k: v for k, v in props.items() if v not in (None, '')}}
+        for k in self.meta_sent.get(hwid, {}):
+            meta.setdefault(k, '')
+        if meta != self.meta_sent.get(hwid):
+            redvypr.metadata.add_metadata2datapacket(data, address=f'@d:{hwid}', metadict=meta)
+            self.meta_sent[hwid] = {k: v for k, v in meta.items() if v != ''}
+
+        # Units of the values present (once per device and key)
+        sent = self.units_sent.setdefault(hwid, set())
+        for datakey, unit in self.INFO_UNITS.items():
+            if datakey not in sent and self._has_key(data, datakey):
+                redvypr.metadata.add_metadata2datapacket(data, address=f'{datakey}@d:{hwid}',
+                                                         metadict={'unit': unit})
+                sent.add(datakey)
+        self.dataqueue.put(data)
+
     def store_info(self, key, info=None, error=None):
         """Store a read info; on error the last good values are kept and marked with the error."""
         if error is None:
@@ -401,11 +480,13 @@ class _Gateway:
             self.read_status()
         wanted = None if targets == 'all' else set(targets)
         done, failed = 0, 0
+        read_ok = set()     # keys whose info was read now -> 'info' packets
 
         if wanted is None or 'gateway' in wanted:
             try:
                 self.store_info('gateway', json.loads(self.cli.shell_query('norlog info json', '#NLI ')))
                 self.update_props('gateway', None, refresh_props)
+                read_ok.add('gateway')
                 done += 1
             except (TimeoutError, ValueError) as exc:
                 self.store_info('gateway', error=str(exc))
@@ -422,12 +503,18 @@ class _Gateway:
                     payload = ot_cli.coap_get(self.cli, addr, 'info', timeout=self.config.coap_timeout_s)
                     self.store_info(rloc, json.loads(payload.decode(errors='replace')))
                     self.update_props(rloc, addr, refresh_props)
+                    read_ok.add(rloc)
                     done += 1
                 except (ot_cli.OtError, TimeoutError, ValueError) as exc:
                     self.store_info(rloc, error=str(exc))
                     failed += 1
 
-        self.publish_devices()
+        devices = self.build_devices()
+        self.publish('thread_status', {'thread_status': self.last_status, 'devices': devices})
+        for d in devices:
+            key = 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16')
+            if key in read_ok:
+                self.publish_info(d)
         if report:
             self.result('read_device_info', failed == 0, f'Device info read: {done} ok, {failed} failed')
 
