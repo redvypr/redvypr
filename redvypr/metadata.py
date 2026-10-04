@@ -85,13 +85,15 @@ def create_metadata_dict(
     # Attach audit telemetry
     final_constraints['hostinfo'] = hostinfo
 
-    # 2. Package into standardized flat list structure
+    # 2. Package into standardized flat list structure. Every entry gets its own
+    # constraints dict: a later change of one key sets 'valid_until' in the
+    # constraints of that entry only (a shared dict expired all keys of the call).
     metadata_list = []
     for key, value in metadata.items():
         metadata_list.append({
             'key': key,
             'value': value,
-            'constraints': final_constraints
+            'constraints': dict(final_constraints)
         })
 
     metadata_dict = {
@@ -194,8 +196,11 @@ def add_metadata_to_entries(
                             status['metadata_changed'] = True
                             #print("Change:True!\n")
 
-                # Append entry if it represents a unique mutation/state
+                # Append entry if it represents a unique mutation/state. Stored with its own
+                # constraints dict, 'valid_until' is set in it later (historization).
                 if not is_duplicate:
+                    new_entry = dict(new_entry)
+                    new_entry['constraints'] = dict(new_constraints)
                     stored_list.append(new_entry)
                     status['metadata_changed'] = True
                     logger.debug(
@@ -473,8 +478,9 @@ def create_metadatapacket(metadict=None, hostinfo=None, device_info=None):
             except:
                 raise ValueError(f"key {str(addr)} of metadict dictionary must be valid RedvyprAddress string")
 
+            # create_metadata_dict() returns {address: [entries]}, the format of '_metadata'
             metadata_address = create_metadata_dict(addr, metadata, hostinfo=hostinfo)
-            datapacket['_metadata'][addr] = metadata_address
+            datapacket['_metadata'].update(metadata_address)
         else:
             raise ValueError(
                 f"key {str(addr)} of metadict dictionary must be valid RedvyprAddress string")

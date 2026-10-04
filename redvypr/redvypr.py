@@ -327,18 +327,22 @@ def distribute_data(devices, hostinfo, deviceinfo_all, infoqueue, redvyprqueue, 
                             except:
                                 logger_dist.debug(funcname + ':Metadata:', exc_info=True)
                         elif (command == 'info'):  # info command, typically a deviceinfo_all packet
-                            metadata_remote = data['deviceinfo_all']['metadata']
-                            # Updating the metadata
-                            for remote_device_name,remote_device_metadata in metadata_remote.items():
-                                # Change the publisher to the local device and the uuid if its not existing
-                                for addr_metadata, metadata_tmp in remote_device_metadata.items():
+                            # Metadata of another redvypr instance: {address: [entries]}
+                            try:
+                                metadata_remote = data['deviceinfo_all']['metadata']
+                                for addr_metadata, metadata_tmp in metadata_remote.items():
+                                    # Change the publisher to the local device and the uuid if its not existing
                                     raddr_metadata = redvypr_address.RedvyprAddress(addr_metadata,publisher=raddr.publisher)
                                     if raddr_metadata.uuid is None:
                                         raddr_metadata.add_filter(key="uuid",op="eq",value=raddr.uuid)
                                     rstr_tmp = raddr_metadata.to_address_string()
-                                    deviceinfo_all['metadata'][rstr_tmp] = metadata_tmp
-
-                            status_statistics['metadata_changed'] = True
+                                    # Only a real change is announced; otherwise two connected
+                                    # instances would send their metadata back and forth forever
+                                    if deviceinfo_all['metadata'].get(rstr_tmp) != metadata_tmp:
+                                        deviceinfo_all['metadata'][rstr_tmp] = copy.deepcopy(metadata_tmp)
+                                        status_statistics['metadata_changed'] = True
+                            except Exception:
+                                logger_dist.info(funcname + ':Remote metadata:', exc_info=True)
                         elif (command == 'reply'):  # status update
                             device.distribute_data_replyqueue.put_nowait(data)
                         elif command == 'subscribe' or command == 'unsubscribe':  # subscribe/unsubscribe command
