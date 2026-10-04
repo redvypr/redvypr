@@ -37,7 +37,8 @@ CATALOG_MAGIC = b"NLCT"
 INDEX_HEADER = struct.Struct("<4sHHQIIII")       # 32 bytes
 INDEX_RECORD = struct.Struct("<IIII")            # 16 bytes
 CATALOG_HEADER = struct.Struct("<4sHHQ")         # 16 bytes
-CATALOG_RECORD = struct.Struct("<IIIIIIII48s")   # 80 bytes
+CATALOG_RECORD_V1 = struct.Struct("<IIIIIIII48s")     # 80 bytes (version 1)
+CATALOG_RECORD = struct.Struct("<IIIIIIIIIIII48s")    # 96 bytes (version 2: packet number and uptime range)
 
 CATALOG_FLAG_CLOSED = 0x01
 
@@ -99,24 +100,31 @@ def parse_index(data: bytes):
 
 def parse_catalog(data: bytes):
     """
-    Parse /log/catalog.dat. Returns {'version', 'hwid', 'files': [{'file_index',
-    'boot', 'first_rtc', 'last_rtc', 'packets', 'size', 'closed', 'name'}, ...]}.
-    A file still open (or open at a power loss) has closed=False; its packets and
-    size are those of the last index entry point.
+    Parse /log/catalog.dat (version 1 or 2). Returns {'version', 'hwid', 'files':
+    [{'file_index', 'boot', 'first_rtc', 'last_rtc', 'packets', 'size', 'closed',
+    'min_packet', 'max_packet', 'min_uptime_s', 'max_uptime_s', 'name'}, ...]}.
+    The packet number and uptime ranges are None in version 1 (and before the
+    first packet). A file still open (or open at a power loss) has closed=False;
+    its values are those of the last index entry point.
     """
     if len(data) < CATALOG_HEADER.size:
         raise LogIndexError("catalog too short")
     magic, version, rec_size, hwid = CATALOG_HEADER.unpack_from(data)
     if magic != CATALOG_MAGIC:
         raise LogIndexError(f"no norlog catalog (magic {magic!r})")
-    if rec_size != CATALOG_RECORD.size:
+    rec = {CATALOG_RECORD.size: CATALOG_RECORD, CATALOG_RECORD_V1.size: CATALOG_RECORD_V1}.get(rec_size)
+    if rec is None:
         raise LogIndexError(f"unknown record size {rec_size}")
     files = []
     for pos in range(CATALOG_HEADER.size, len(data) - rec_size + 1, rec_size):
-        fi, boot, t0, t1, packets, size, flags, _res, name = CATALOG_RECORD.unpack_from(data, pos)
+        v = rec.unpack_from(data, pos)
+        fi, boot, t0, t1, packets, size, flags, _res = v[:8]
+        ranges = v[8:12] if (rec is CATALOG_RECORD and packets > 0) else (None,) * 4
         files.append({"file_index": fi, "boot": boot, "first_rtc": t0, "last_rtc": t1,
                       "packets": packets, "size": size, "closed": bool(flags & CATALOG_FLAG_CLOSED),
-                      "name": name.split(b"\0", 1)[0].decode(errors="replace")})
+                      "min_packet": ranges[0], "max_packet": ranges[1],
+                      "min_uptime_s": ranges[2], "max_uptime_s": ranges[3],
+                      "name": v[-1].split(b"\0", 1)[0].decode(errors="replace")})
     return {"version": version, "hwid": f"{hwid:016X}", "files": files}
 
 
@@ -130,6 +138,23 @@ def files_in_span(catalog, t0=None, t1=None):
         if t1 is not None and f["first_rtc"] > t1:
             continue
         if t0 is not None and f["last_rtc"] < t0:
+            continue
+        result.append(f)
+    return result
+
+
+def files_in_packets(catalog, boot, p0=None, p1=None, key="packet"):
+    """
+    Files of one boot (packet numbers and uptime start again with every boot)
+    with packets in [p0, p1]. key: 'packet' (packet numbers) or 'uptime_s'.
+    Works without a set RTC; needs catalog version 2.
+    """
+    lo, hi = ("min_packet", "max_packet") if key == "packet" else ("min_uptime_s", "max_uptime_s")
+    result = []
+    for f in catalog["files"]:
+        if f["boot"] != boot or f[lo] is None:
+            continue
+        if (p1 is not None and f[lo] > p1) or (p0 is not None and f[hi] < p0):
             continue
         result.append(f)
     return result
@@ -316,12 +341,14 @@ def _main(argv=None):
         return path.read_bytes()
 
     if a.cmd == "catalog":
-        cat = parse_catalog(pathlib.Path(a.file).read_bytes())
-        print(f"hwid {cat['hwid']}, {len(cat['files'])} file(s)")
+        cat = parse_catalog(read(a.file, "catalog"))
+        print(f"catalog version {cat['version']}, hwid {cat['hwid']}, {len(cat['files'])} file(s)")
         for f in cat["files"]:
+            pn = f"{f['min_packet']}-{f['max_packet']}" if f["min_packet"] is not None else "-"
+            up = f"{f['min_uptime_s']}-{f['max_uptime_s']} s" if f["min_uptime_s"] is not None else "-"
             print(f"{f['file_index']:5d} boot {f['boot']:4d}  {_ts(f['first_rtc'])} .. {_ts(f['last_rtc'])}"
-                  f"  {f['packets']:8d} packets {f['size']:9d} B  {'closed' if f['closed'] else 'open  '}"
-                  f"  {f['name']}")
+                  f"  {f['packets']:8d} packets ({pn}, uptime {up}) {f['size']:9d} B"
+                  f"  {'closed' if f['closed'] else 'open  '}  {f['name']}")
     elif a.cmd == "index":
         idx = parse_index(pathlib.Path(a.file).read_bytes())
         recs = idx.pop("records")
