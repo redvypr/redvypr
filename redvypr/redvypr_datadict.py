@@ -976,6 +976,9 @@ def create_redvypr_dict(
         publisher: Optional[str] = None,
         raddress: Optional[Union[str, RedvyprAddress]] = None,
         hostinfo: Optional[Dict[str, Any]] = None,
+        sensorid: Optional[Union[str, int]] = None,
+        deviceid: Optional[Union[str, int]] = None,
+        sensor: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create a datadict dictionary used as the internal data structure in redvypr.
@@ -1001,18 +1004,33 @@ def create_redvypr_dict(
         value of `device`. Default is None.
     tu : float, int, or bool, optional
         Unix timestamp (time units) for the packet. If set to ``True``, it defaults
-        to the current system time using ``time.time()``. Default is True.
+        to the current system time using ``time.time()``. If None or False, no
+        time is set and redvypr adds the time when the packet is published.
+        Default is True.
     device : str, optional
         Identifier of the source device. Default is None.
     publisher : str, optional
         Identifier of the publishing entity. Default is None.
     raddress : str or RedvyprAddress, optional
         An address string or `RedvyprAddress` object used to populate missing
-        metadata fields (such as `packetid`, `device`, `deviceid`, or `publisher`).
+        metadata fields (such as `packetid`, `device`, `deviceid`, `sensor`,
+        `sensorid`, `publisher` or the host). Explicitly given arguments take precedence.
         Default is None.
     hostinfo : dict, optional
         Dictionary containing host-related information. If None, falls back to
-        ``redvypr.hostinfo_blank``. Default is None.
+        the host of `raddress` (if any) or ``redvypr.hostinfo_blank``. The
+        dictionary is copied. Default is None.
+    sensorid : str or int, optional
+        Identifier of the sensor (e.g. a serial number). Default is None.
+    deviceid : str or int, optional
+        Unique, constant identifier of the device (e.g. a hardware ID), while
+        `device` can be a readable name. Default is None.
+    sensor : str, optional
+        Type of the sensor. Default is None.
+
+    `sensorid`, `deviceid` and `sensor` are always set in the header (None if
+    unknown): an address filtering on ``si:``, ``di:`` or ``s:`` treats a
+    missing field as a match.
 
     Returns
     -------
@@ -1030,7 +1048,10 @@ def create_redvypr_dict(
             '_redvypr': {
                 't': float,
                 'device': str,
+                'deviceid': str,
                 'packetid': str,
+                'sensor': str,
+                'sensorid': str,
                 'publisher': str,
                 'host': dict
             },
@@ -1058,20 +1079,33 @@ def create_redvypr_dict(
         tu = time.time()
 
     # Initialize the metadata structure
-    datadict: Dict[str, Any] = {'_redvypr': {'t': tu}}
+    datadict: Dict[str, Any] = {'_redvypr': {}}
 
-    # Add the input from the redvypr-address
+    # Add the input from the redvypr-address (explicit arguments take precedence)
+    raddress_host = None
     if raddress is not None:
         if isinstance(raddress, str):
             raddress = RedvyprAddress(raddress)
-            if packetid is None:
-                packetid = raddress.packetid
-            if device is None:
-                device = raddress.device
-            if publisher is None:
-                publisher = raddress.publisher
-        rdict = raddress.to_redvypr_dict(include_datakey=False)
-        datadict.update(rdict)
+        if packetid is None:
+            packetid = raddress.packetid
+        if device is None:
+            device = raddress.device
+        if publisher is None:
+            publisher = raddress.publisher
+        if sensorid is None:
+            sensorid = raddress.sensorid
+        if deviceid is None:
+            deviceid = raddress.deviceid
+        if sensor is None:
+            sensor = raddress.sensor
+        # Merge (not replace) the header of the address
+        rdict = raddress.to_redvypr_dict(include_datakey=False).get('_redvypr', {})
+        raddress_host = rdict.pop('host', None)
+        datadict['_redvypr'].update(rdict)
+
+    # No time (tu None/False): redvypr adds it when the packet is published
+    if tu is not None and tu is not False:
+        datadict['_redvypr']['t'] = tu
 
     # Set device and packetid logic
     datadict['_redvypr']['device'] = device
@@ -1081,13 +1115,18 @@ def create_redvypr_dict(
         datadict['_redvypr']['packetid'] = packetid
 
     datadict['_redvypr']['publisher'] = publisher
+    datadict['_redvypr']['deviceid'] = deviceid
+    datadict['_redvypr']['sensor'] = sensor
+    datadict['_redvypr']['sensorid'] = sensorid
 
-    # Handle host information
+    # Handle host information (copied, the packet must not share the dict with others)
     if hostinfo is not None:
-        datadict['_redvypr']['host'] = hostinfo
+        datadict['_redvypr']['host'] = dict(hostinfo)
     else:
         # Assuming redvypr is available in the namespace
-        datadict['_redvypr']['host'] = redvypr.hostinfo_blank
+        datadict['_redvypr']['host'] = dict(redvypr.hostinfo_blank)
+        if isinstance(raddress_host, dict):
+            datadict['_redvypr']['host'].update(raddress_host)
 
 
     # Insert payload data if present

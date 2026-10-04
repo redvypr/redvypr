@@ -17,7 +17,7 @@ device_redvypr_statdict = {'_redvypr': {},
                            'packets_dropped':0,
                            '_metadata':{}}
 
-data_statistics_address_format = redvypr_standard_address_filter#["i","p","d","h","u","a"]
+data_statistics_address_format = redvypr_standard_address_filter
 
 STRUCTURE_CACHE = {} # Global variable for redvypr datapacket dictionaries
 

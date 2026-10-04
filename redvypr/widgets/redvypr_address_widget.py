@@ -1361,7 +1361,7 @@ class RedvyprDeviceTreeWidget(QtWidgets.QWidget):
         self.expandlevel = kwargs.get('expansion_level', 10)
         self.force_time_series_expansion = kwargs.get('force_time_series_expansion',
                                                       False)
-        self.addrentries_show_for_publishing_devices = ['h', 'd', 'i']
+        self.addrentries_show_for_publishing_devices = ['h', 'd', 'di', 'si', 'i']
 
         # Construct the dynamic columns list based on the extracted metadata fields
         self.COLUMNS = ["Datastreams"] + list(self.META_CONFIG_MAP.keys()) + ["Address", "Datatype"]
@@ -1834,7 +1834,7 @@ class RedvyprDeviceTreeWidget_legacy(QtWidgets.QWidget):
         self.expandlevel = kwargs.get('expansion_level', 10)
         self.force_time_series_expansion = kwargs.get('force_time_series_expansion',
                                                       False)
-        self.addrentries_show_for_publishing_devices = ['h', 'd', 'i']
+        self.addrentries_show_for_publishing_devices = ['h', 'd', 'di', 'si', 'i']
 
         if visible_columns is None:
             self.default_visible_columns = ["Datastreams", "Host", "Device",

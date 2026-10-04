@@ -27,7 +27,10 @@ logger.setLevel(logging.DEBUG)
 metadata_address = "_redvypr_command@i:metadata"
 
 
-redvypr_standard_address_filter = ["i","p","d","h","u","a"]
+# Address entries that identify a datastream (e.g. the key of the packet statistics).
+# deviceid, sensor and sensorid are needed to separate devices with the same name;
+# packets without them get the same address as before.
+redvypr_standard_address_filter = ["i","p","d","h","u","a","di","s","si"]
 
 
 # Exceptions
