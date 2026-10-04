@@ -14,18 +14,29 @@ Data lines from the gateway firmware (planned, not yet implemented there):
     #NLD <source> <base64 encoded norlog CBOR packet>
 
 <source> identifies the sending node (e.g. its RLOC16 or IPv6 address).
-Decoded packets are published with the packetid "norlog_<mac>".
 
-Device info (gateway: 'norlog info json', members: CoAP GET /info) is
-published as one redvypr packet per norlog:
+All packets carry the norlog they belong to in the header:
 
-    device   = 'norlog_<sn>', or 'norlog' without serial number
-    deviceid = hardware ID (hwid, FICR device ID of the nRF52840, unique per chip)
-    packetid = 'info'
+    device   = 'norlog_<sn>', or 'norlog' without serial number (or before
+               the info of the norlog was read)
+    deviceid = hardware ID (hwid, FICR device ID of the nRF52840, unique per
+               chip; the 'mac' of the CBOR packets), None if not known yet
     sensorid = serial number (user property 'sn'), if set
     publisher = this gateway device (set by redvypr)
 
-The packet contains the info JSON as it is (nested) plus 'link': the radio
+Published packets (packetid = type of the packet):
+
+    info            device info (gateway: 'norlog info json', members: CoAP GET /info)
+    <packet_type>   decoded '#NLD' data packet (e.g. 'board_temp')
+
+The messages for the GUI of this device (console, command_result,
+thread_status with the device list, flash_status, props, fs_progress,
+fs_result) go through the statusqueue of the device to its widget. They are
+published as well only with the option publish_raw_data (default off), with
+the same header. Messages about a node keep its key ('gateway' or RLOC16) in
+'target'.
+
+The info packet contains the info JSON as it is (nested) plus 'link': the radio
 link as seen from the gateway (RSSI, LQ, role, next hop, ...). Metadata is
 attached to the addresses '@di:<hwid>' (user properties, board, firmware) and
 '<key>@di:<hwid>' (units); it is sent with the first info packet of a device,
@@ -35,6 +46,7 @@ stores metadata with the device of the packet).
 
 import base64
 import collections
+import copy
 import binascii
 import json
 import logging
@@ -100,6 +112,9 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                                                              'Thread member')
     console_show_commands: bool = pydantic.Field(default=False, description='Show the traffic of internal '
                                                                             'ot commands in the console')
+    publish_raw_data: bool = pydantic.Field(default=False, description='Publish also the raw data of the gateway: '
+                                                                       'console lines, command results, Thread '
+                                                                       'status with device list, transfer status')
     dataset_tlvs: str = pydantic.Field(default='', description='Active operational dataset (hex TLVs) used to '
                                                                'provision nodes. Contains the network key!')
     node_comport: str = pydantic.Field(default='', description='Serial port of a node to be provisioned')
@@ -144,12 +159,13 @@ class RateMeter:
 class _Gateway:
     """State of the running device thread."""
 
-    def __init__(self, device_info, pdconfig, dataqueue, datainqueue):
+    def __init__(self, device_info, pdconfig, dataqueue, datainqueue, statusqueue=None):
         self.device_info = device_info
         self.device = device_info['device']
         self.config = pdconfig
         self.dataqueue = dataqueue
         self.datainqueue = datainqueue
+        self.statusqueue = statusqueue  # messages for the GUI (not published)
         self.ser = None
         self.reader = ot_cli.LineReader()
         self.cli = None
@@ -167,16 +183,46 @@ class _Gateway:
 
     # --- publishing ---
 
-    def publish(self, packetid, payload):
-        data = create_redvypr_dict(device=self.device, packetid=packetid)
+    def identity(self, target='gateway', hwid=None):
+        """
+        device, deviceid and sensorid of a norlog for the packet header.
+        target: 'gateway' or RLOC16 (its read info gives the hwid), or hwid directly.
+        """
+        key = target or 'gateway'
+        info = self.infos.get(key) or {}
+        hwid = hwid or info.get('hwid')
+        props = (self.props_cache.get(hwid) if hwid else None) or self.props_cache.get(key) or {}
+        if not info and hwid:
+            info = next((i for i in self.infos.values() if i and i.get('hwid') == hwid), {})
+        sn = props.get('sn') or info.get('sn') or None
+        return (f'norlog_{sn}' if sn else 'norlog'), hwid, sn
+
+    def to_gui(self, packetid, payload):
+        """
+        Message for the GUI of this device (console, results, device list, ...). It goes
+        through the statusqueue and is not published as redvypr data. Same form as a
+        packet, the header names the norlog payload['target'] (default: the gateway).
+        """
+        device, hwid, sn = self.identity(payload.get('target', 'gateway'))
+        data = create_redvypr_dict(device=device, deviceid=hwid, sensorid=sn, packetid=packetid)
         data.update(payload)
-        self.dataqueue.put(data)
+        if self.config.publish_raw_data:
+            # Own header for the published copy: redvypr changes it when distributing
+            pub = dict(data)
+            pub['_redvypr'] = copy.deepcopy(data['_redvypr'])
+            self.dataqueue.put(pub)
+        if self.statusqueue is None:
+            return
+        try:
+            self.statusqueue.put_nowait(data)
+        except queue.Full:
+            logger.debug('statusqueue full, GUI message dropped')
 
     def console(self, line):
-        self.publish('console', {'line': line})
+        self.to_gui('console', {'line': line})
 
     def result(self, command, ok, message='', **extra):
-        self.publish('command_result', {'command': command, 'ok': ok, 'message': message, **extra})
+        self.to_gui('command_result', {'command': command, 'ok': ok, 'message': message, **extra})
 
     # --- incoming lines ---
 
@@ -206,9 +252,11 @@ class _Gateway:
         if pkt is None:
             return
         pkt['source'] = source
-        mac = pkt.get('mac', source)
         t = pkt.get('rtc_time') or pkt.get('gps_time') or time.time()
-        data = create_redvypr_dict(device=self.device, packetid=f'norlog_{mac}', tu=t)
+        # 'mac' of the CBOR packets is the hwid of the sending norlog
+        device, hwid, sn = self.identity(device_list.norm_rloc16(source), hwid=pkt.get('mac'))
+        data = create_redvypr_dict(device=device, deviceid=hwid, sensorid=sn,
+                                   packetid=pkt.get('packet_type', 'data'), tu=t)
         data.update(pkt)
         data['t'] = t
         self.dataqueue.put(data)
@@ -384,7 +432,7 @@ class _Gateway:
         return devices
 
     def publish_devices(self):
-        self.publish('thread_status', {'thread_status': self.last_status, 'devices': self.build_devices()})
+        self.to_gui('thread_status', {'thread_status': self.last_status, 'devices': self.build_devices()})
 
     # --- info packets (one redvypr device per norlog, device = hwid) ---
 
@@ -420,8 +468,7 @@ class _Gateway:
             return
         key = 'gateway' if entry.get('role') == device_list.ROLE_GATEWAY else entry.get('rloc16')
         props = entry.get('props') or {}
-        sn = props.get('sn') or info.get('sn') or None
-        device = f'norlog_{sn}' if sn else 'norlog'
+        device, hwid, sn = self.identity(key, hwid=hwid)
 
         t = self.info_times.get(key) or time.time()
         data = create_redvypr_dict(device=device, deviceid=hwid, packetid='info', sensorid=sn, tu=t)
@@ -520,7 +567,7 @@ class _Gateway:
                     failed += 1
 
         devices = self.build_devices()
-        self.publish('thread_status', {'thread_status': self.last_status, 'devices': devices})
+        self.to_gui('thread_status', {'thread_status': self.last_status, 'devices': devices})
         for d in devices:
             key = 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16')
             if key in read_ok:
@@ -551,10 +598,10 @@ class _Gateway:
             return False
 
     def fs_progress(self, target, op, done, total):
-        self.publish('fs_progress', {'target': target, 'op': op, 'done': done, 'total': total})
+        self.to_gui('fs_progress', {'target': target, 'op': op, 'done': done, 'total': total})
 
     def fs_result(self, target, op, ok, message='', **extra):
-        self.publish('fs_result', {'target': target, 'op': op, 'ok': ok, 'message': message, **extra})
+        self.to_gui('fs_result', {'target': target, 'op': op, 'ok': ok, 'message': message, **extra})
 
     def fs_write_direct(self, address, data, remote, progress=None):
         """Write a file to a member block by block through the gateway (no SD card on the gateway)."""
@@ -568,14 +615,14 @@ class _Gateway:
                 ot_cli.props_write(self.cli, name, value, address)
             props = ot_cli.props_read(self.cli, address)
             self.props_cache[self._props_key(target)] = props
-            self.publish('props', {'target': target, 'ok': True, 'props': props,
+            self.to_gui('props', {'target': target, 'ok': True, 'props': props,
                                    'message': f'{len(values)} propert(y/ies) saved' if values else 'read'})
             if values:
                 self.query_info([target], report=False)     # serial number in the device list
             else:
                 self.publish_devices()
         except (ot_cli.OtError, TimeoutError, ValueError) as exc:
-            self.publish('props', {'target': target, 'ok': False, 'message': str(exc)})
+            self.to_gui('props', {'target': target, 'ok': False, 'message': str(exc)})
 
     def fs_command(self, args):
         """File operations on the SD card of the gateway (target 'gateway') or of a member."""
@@ -694,7 +741,7 @@ class _Gateway:
         if progress is not None:
             payload['progress'] = progress
         payload.update(extra)
-        self.publish('flash_status', payload)
+        self.to_gui('flash_status', payload)
 
     def flash(self, image_path, force):
         path = pathlib.Path(image_path)
@@ -751,7 +798,7 @@ class _Gateway:
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     funcname = __name__ + '.start():'
     pdconfig = DeviceCustomConfig.model_validate(config)
-    gw = _Gateway(device_info, pdconfig, dataqueue, datainqueue)
+    gw = _Gateway(device_info, pdconfig, dataqueue, datainqueue, statusqueue)
 
     if not pdconfig.comport:
         gw.result('start', False, 'No serial port configured')
@@ -763,6 +810,11 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         return
 
     logger.info(funcname + f'Opened {pdconfig.comport} with {pdconfig.baud} baud')
+    # Info of the gateway first: its hwid and serial number go into the header of all packets
+    try:
+        gw.query_info(['gateway'], report=False)
+    except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+        logger.debug(funcname + f'Gateway info not read: {exc}')
     gw.result('start', True, f'Connected to {pdconfig.comport}')
     t_status = time.monotonic()
     t_info = None                   # first info read right after the first status
@@ -817,7 +869,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.layout.addWidget(self._build_port_row())
         self.layout.addWidget(self.tabs)
 
-        self.device.new_data.connect(self.on_new_data)
+        self.device.new_data.connect(self.on_new_data)       # published data ('#NLD')
+        self.status_timer = QtCore.QTimer()                  # messages of the device thread
+        self.status_timer.timeout.connect(self.read_statusqueue)
+        self.status_timer.start(100)
         self.run_timer = QtCore.QTimer()
         self.run_timer.timeout.connect(self.update_run_state)
         self.run_timer.start(500)
@@ -841,6 +896,14 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         lay.addWidget(self.port_refresh)
         lay.addWidget(QtWidgets.QLabel('Baud'))
         lay.addWidget(self.baud_edit)
+        # Can be changed while running (sent to the device thread)
+        self.publish_raw = QtWidgets.QCheckBox('Publish raw data')
+        self.publish_raw.setToolTip('Publish also the console lines, command results, Thread status with '
+                                    'device list and transfer status of the gateway as redvypr data '
+                                    '(otherwise only for this window)')
+        self.publish_raw.setChecked(self.cfg.publish_raw_data)
+        self.publish_raw.toggled.connect(self.publish_raw_changed)
+        lay.addWidget(self.publish_raw)
         self.refresh_ports()
         self.port_combo.currentTextChanged.connect(self.port_changed)
         # Disabled while the thread is running (handled by the base class)
@@ -859,6 +922,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         else:
             self.port_combo.setEditText(current)
         self.port_combo.blockSignals(False)
+
+    def publish_raw_changed(self, checked):
+        self.cfg.publish_raw_data = bool(checked)
+        if self.device.get_thread_status()['thread_running']:
+            self.device.thread_command('config', {'config': self.cfg.model_dump()})
 
     def port_changed(self, text):
         data = self.port_combo.currentData()
@@ -1317,6 +1385,22 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     # --- data from the device thread ---
 
+    def read_statusqueue(self):
+        """Messages of the device thread for the GUI (not published as data)."""
+        q = getattr(self.device, 'statusqueue', None)
+        if q is None:
+            return
+        messages = []
+        while len(messages) < 1000:
+            try:
+                messages.append(q.get_nowait())
+            except queue.Empty:
+                break
+            except Exception:
+                break
+        if messages:
+            self.on_new_data(messages)
+
     def on_new_data(self, data_list):
         for data in data_list:
             try:
@@ -1351,7 +1435,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                         f"{data.get('message', '')}")
             elif packetid == 'command_result':
                 self.show_result(data)
-            elif str(packetid).startswith('norlog_') and 'packet_type' in data:
+            elif 'packet_type' in data:     # decoded '#NLD' data packet
                 self.show_data(data)
 
     def show_result(self, data):
