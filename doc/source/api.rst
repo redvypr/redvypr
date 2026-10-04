@@ -10,7 +10,8 @@ ___________
    :recursive:
 
    redvypr.redvypr_address
-   redvypr.Datapacket
+   redvypr.metadata
+   redvypr.redvypr_datadict
 
 
    
