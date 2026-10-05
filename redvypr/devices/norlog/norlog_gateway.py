@@ -47,6 +47,7 @@ change of the serial number and apply to the '#NLD' data as well.
 
 import base64
 import collections
+import datetime
 import copy
 import binascii
 import json
@@ -426,12 +427,28 @@ class _Gateway:
             key = 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16')
             if key in self.info_times:
                 d['info_age_s'] = now - self.info_times[key]
+                d['clock_offset_s'] = self._clock_offset(d.get('info'), self.info_times[key])
             props = self.props_cache.get(d.get('hwid')) or self.props_cache.get(key) or {}
             d['props'] = props
             for name in ('sn', 'desc', 'loc'):
                 if props.get(name):
                     d[name] = props[name]
         return devices
+
+    @staticmethod
+    def _clock_offset(info, read_time):
+        """
+        Device clock (info 'time', whole seconds) minus the PC time when the info
+        was read; None without a time. Resolution about 1-2 s (seconds, transfer).
+        """
+        t = (info or {}).get('time')
+        if not t or t == '-':
+            return None
+        try:
+            dt = datetime.datetime.fromisoformat(t.replace('Z', '+00:00'))
+        except ValueError:
+            return None
+        return dt.timestamp() - read_time
 
     def publish_devices(self):
         self.to_gui('thread_status', {'thread_status': self.last_status, 'devices': self.build_devices()})
@@ -660,6 +677,8 @@ class _Gateway:
             self.to_gui('time_result', result)
         self.result('set_time', failed == 0,
                     f'Clock set: {done} ok, {skipped} skipped (GNSS), {failed} failed')
+        if done:
+            self.query_info(targets, report=False)      # RTC column of the device table
 
     def props_command(self, target, values):
         """Set (values: {name: text}, '' deletes) and/or read the user properties of a device."""
@@ -990,7 +1009,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     DEVICE_COLUMNS = ['', 'Device', 'SN', 'Description', 'Location', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
                       'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets',
-                      'Firmware', 'Battery', 'Board temp [C]', 'Info age [s]']
+                      'Firmware', 'Battery', 'Board temp [C]', 'RTC', 'Info age [s]']
 
     QUALITY_COLORS = {
         device_list.QUALITY_GOOD: '#7bc96f',
@@ -1143,6 +1162,31 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             return ''
         return f"{'' if a is None else a} / {'' if b is None else b}"
 
+    CLOCK_OK_S = 2.0    # info time has whole seconds and a transfer delay
+
+    def _fmt_clock(self, d):
+        """(text, quality color key, tooltip) of the RTC column."""
+        info = d.get('info') or {}
+        if 'time' not in info:
+            return '', None, ''
+        rtc = info.get('rtc') or {}
+        off = d.get('clock_offset_s')
+        tip = (f"Device clock {info.get('time')}, RTC {rtc.get('time', '-')} "
+               f"({'valid' if rtc.get('valid') else 'not valid'}) at the last info read")
+        no_rtc = '' if rtc.get('present', True) else ', no RTC'
+        if no_rtc:
+            tip += '\nNo RTC chip: the time is lost at a restart'
+        try:
+            year_ok = info['time'][:4].isdigit() and int(info['time'][:4]) >= 2025
+        except (TypeError, ValueError):
+            year_ok = False
+        if off is None or not year_ok:
+            return 'not set' + no_rtc, device_list.QUALITY_NONE, tip + '\nSet it with "Set clock" in the settings'
+        tip += f'\nOffset to this PC: {off:+.1f} s (resolution about {self.CLOCK_OK_S:.0f} s)'
+        if abs(off) <= self.CLOCK_OK_S:
+            return 'ok' + no_rtc, device_list.QUALITY_GOOD, tip
+        return f'{off:+.0f} s' + no_rtc, device_list.QUALITY_FAIR, tip
+
     def show_devices(self, devices):
         selected_ids = {d.get('id') for d in self.selected_devices()}
         self.current_devices = devices
@@ -1175,10 +1219,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 d.get('firmware') or ('error' if d.get('info_error') else ''),
                 self._fmt_battery(d),
                 '' if d.get('board_temp_c') is None else f"{d['board_temp_c']:.1f}",
+                self._fmt_clock(d)[0],
                 '' if d.get('info_age_s') is None else f"{d['info_age_s']:.0f}",
             ]
             cols = self.DEVICE_COLUMNS
-            stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'Info age [s]')]
+            stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'RTC', 'Info age [s]')]
             self.devices_table.setCellWidget(row, 0, self._settings_button(d))
             full_text = {cols.index('Description'): d.get('desc', ''), cols.index('Location'): d.get('loc', '')}
             for col, text in enumerate([''] + cells):
@@ -1187,6 +1232,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     item.setToolTip(full_text[col])
                 if cols[col] == 'Quality' and d.get('quality') in self.QUALITY_COLORS:
                     item.setBackground(QtGui.QColor(self.QUALITY_COLORS[d['quality']]))
+                if cols[col] == 'RTC':
+                    _text, quality, tip = self._fmt_clock(d)
+                    if quality in self.QUALITY_COLORS:
+                        item.setBackground(QtGui.QColor(self.QUALITY_COLORS[quality]))
+                    item.setToolTip(tip)
                 if col in stale_cols and d.get('info_error'):
                     # Last read failed: older values in gray, error as tooltip
                     item.setForeground(QtGui.QColor('gray'))
