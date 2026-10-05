@@ -22,6 +22,7 @@ redvypr changelog
   leader weight and partition ID in the Thread status
 - norlog gateway: "Import autoexec.txt ..." in the network parameters (counterpart of the export): network name,
   channel, PAN IDs, network key and the dataset for provisioning
+- norlog gateway: "Provision node via UART" also without a running gateway (directly on the node port)
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)

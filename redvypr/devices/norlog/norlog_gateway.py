@@ -1504,7 +1504,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         prov.addWidget(export_btn, 2, 2, 1, 2)
         prov.addWidget(QtWidgets.QLabel('Node port = gateway port provisions the device on this port '
                                         '(e.g. after reconnecting the cable to a node).'), 3, 0, 1, 4)
-        self.run_widgets.extend([read_ds, prov_btn])
+        self.prov_btn = prov_btn
+        self.provision_worker = None
+        # Provisioning works also without a running gateway (directly on the node port)
+        self.run_widgets.append(read_ds)
         self.refresh_node_ports()
         self.update_dataset_label()
 
@@ -1544,13 +1547,40 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             self.dataset_label.setText(f'invalid dataset: {exc}')
 
     def provision_node(self):
-        port = self.cfg.node_comport
-        target = 'the device on the gateway port' if not port or port == self.cfg.comport else port
+        if not self.cfg.dataset_tlvs:
+            QtWidgets.QMessageBox.warning(self, 'Provision node', 'No dataset: read it from the gateway or '
+                                                                  'import an autoexec.txt first.')
+            return
+        port = self.cfg.node_comport or self.cfg.comport
+        running = self.device.get_thread_status()['thread_running']
+        target = 'the device on the gateway port' if running and port == self.cfg.comport else port
+        if not port:
+            QtWidgets.QMessageBox.warning(self, 'Provision node', 'Choose the node port first.')
+            return
         answer = QtWidgets.QMessageBox.question(
             self, 'Provision node',
             f'Store the Thread dataset on {target}? The node leaves its current network.')
-        if answer == QtWidgets.QMessageBox.StandardButton.Yes:
-            self.device.thread_command('provision', {'port': port, 'dataset': self.cfg.dataset_tlvs})
+        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        if running:
+            # The gateway thread has the gateway port (and opens a second port itself)
+            self.device.thread_command('provision', {'port': self.cfg.node_comport, 'dataset': self.cfg.dataset_tlvs})
+            return
+        # Gateway not running: directly on the node port
+        self.provision_worker = ProvisionWorker(port, self.cfg.baud, self.cfg.dataset_tlvs, parent=self)
+        self.provision_worker.message.connect(
+            lambda ok, text: self.console_text.appendPlainText(f"[provision] {'OK' if ok else 'ERROR'}: {text}"))
+        self.provision_worker.finished_result.connect(self.on_provision_done)
+        self.prov_btn.setEnabled(False)
+        self.provision_worker.start()
+
+    def on_provision_done(self, ok, text):
+        self.provision_worker = None
+        self.prov_btn.setEnabled(True)
+        if ok:
+            QtWidgets.QMessageBox.information(self, 'Provision node', text)
+        else:
+            QtWidgets.QMessageBox.warning(self, 'Provision node', text)
 
     def export_autoexec(self):
         if not self.cfg.dataset_tlvs:
@@ -1767,6 +1797,40 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             w.setEnabled(running)
         for dlg in self.settings_dialogs.values():
             dlg.update_run_state(running)
+
+
+class ProvisionWorker(QtCore.QThread):
+    """Stores the dataset on a node at a serial port (gateway not running), without blocking the GUI."""
+    message = QtCore.pyqtSignal(bool, str)              # ok, text (progress for the console)
+    finished_result = QtCore.pyqtSignal(bool, str)      # ok, text
+
+    def __init__(self, port, baud, dataset, parent=None):
+        super().__init__(parent)
+        self.port, self.baud, self.dataset = port, baud, dataset
+
+    def run(self):
+        try:
+            ser = serial.Serial(self.port, self.baud, timeout=0.05)
+        except (serial.SerialException, OSError) as exc:
+            self.finished_result.emit(False, f'Could not open {self.port}: {exc}')
+            return
+        try:
+            cli = ot_cli.OtCli(ser, ot_cli.LineReader(), lambda line, is_resp: None)
+            self.message.emit(True, f'Provisioning {self.port} ...')
+            st = ot_cli.provision_node(cli, self.dataset)
+            if st['attached']:
+                text = f"{self.port} joined the network as {st['state']} (extaddr {st['extaddr']})"
+            else:
+                text = (f"{self.port}: dataset stored, but not attached yet (state {st['state']!r}). "
+                        f"Out of range or no leader running?")
+            self.message.emit(st['attached'], text)
+            self.finished_result.emit(st['attached'], text)
+        except Exception as exc:        # shown in the GUI, the GUI must not die
+            text = f'{self.port}: {type(exc).__name__}: {exc}'
+            self.message.emit(False, text)
+            self.finished_result.emit(False, text)
+        finally:
+            ser.close()
 
 
 class ConvertWorker(QtCore.QThread):
