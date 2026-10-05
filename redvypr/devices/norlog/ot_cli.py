@@ -685,7 +685,18 @@ def read_status(cli: OtCli) -> dict:
     except (OtError, TimeoutError):
         status["neighbors"] = []
     status["leader_router_id"] = None
+    status["leader_weight"] = None
+    status["partition_id"] = None
+    if status["state"] in ("router", "leader"):
+        try:
+            status["leader_weight"] = int(cli.value("leaderweight"))
+        except (OtError, TimeoutError, ValueError):
+            pass
     if status["state"] in ("child", "router", "leader"):
+        try:
+            status["partition_id"] = cli.value("partitionid")
+        except (OtError, TimeoutError):
+            pass
         try:
             for line in cli.command("leaderdata"):
                 if line.startswith("Leader Router ID:"):
@@ -693,6 +704,44 @@ def read_status(cli: OtCli) -> dict:
         except (OtError, TimeoutError, ValueError):
             pass
     return status
+
+
+# Leader weight of a gateway that shall be leader (OpenThread default 64): when two
+# partitions meet, the one whose leader has the higher weight wins
+LEADER_WEIGHT_PREFERRED = 72
+
+
+def ensure_leader_weight(cli: OtCli, weight: int = LEADER_WEIGHT_PREFERRED) -> bool:
+    """Set the leader weight of the connected node (lost at a restart). True if it was changed."""
+    if int(cli.value("leaderweight")) == weight:
+        return False
+    cli.command(f"leaderweight {int(weight)}")
+    return True
+
+
+def make_leader(cli: OtCli, weight: int = LEADER_WEIGHT_PREFERRED, timeout: float = 15.0) -> dict:
+    """
+    Make the connected node (router capable, attached) the leader: leader weight
+    higher than the default of the other nodes, then 'state leader'. The node starts
+    a new partition; the other partitions join it because of its higher weight (the
+    network is interrupted shortly, RLOC16 addresses may change).
+    Returns {'state', 'leader': bool, 'leader_weight', 'partition_id'} after the timeout
+    or as soon as the node is leader.
+    """
+    state = cli.value("state")
+    if state not in ("child", "router", "leader"):
+        raise OtError(f"Thread not attached (state {state!r}), start the network first")
+    ensure_leader_weight(cli, weight)
+    if state != "leader":
+        cli.command("state leader")
+    end = time.monotonic() + timeout
+    while True:
+        state = cli.value("state")
+        if state == "leader" or time.monotonic() >= end:
+            break
+        time.sleep(1.0)
+    return {"state": state, "leader": state == "leader", "leader_weight": int(cli.value("leaderweight")),
+            "partition_id": cli.value("partitionid")}
 
 
 def form_network(cli: OtCli, network_name="", channel=None, panid="", extpanid="", networkkey=""):

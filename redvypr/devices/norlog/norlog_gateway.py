@@ -136,6 +136,11 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
     node_comport: str = pydantic.Field(default='', description='Serial port of a node to be provisioned')
     firmware_image: str = pydantic.Field(default='', description='Signed firmware image (zephyr.signed.bin)')
     firmware_force: bool = pydantic.Field(default=False, description='Flash even if the image is already installed')
+    prefer_leader: bool = pydantic.Field(default=False, description='The gateway prefers the Thread leader role: '
+                                                                    'leader weight 72 (default 64, set again after '
+                                                                    'a restart of the gateway); if it is not '
+                                                                    'leader, it becomes leader again (at most '
+                                                                    'every 10 minutes)')
 
 
 # --------------------------------------------------------------------------
@@ -343,6 +348,8 @@ class _Gateway:
                 self.ser.flush()
             elif command == 'ot_status':
                 self.read_status()
+            elif command == 'make_leader':
+                self.make_leader()
             elif command == 'form_network':
                 ot_cli.form_network(self.cli, network_name=args.get('network_name', ''),
                                     channel=args.get('channel'), panid=args.get('panid', ''),
@@ -431,11 +438,45 @@ class _Gateway:
             if node_ser is not None:
                 node_ser.close()
 
-    def read_status(self):
+    # Automatic leader role (prefer_leader): at most one attempt in this time [s]
+    LEADER_RETRY_S = 600
+
+    def make_leader(self, automatic=False):
+        """Make the gateway the Thread leader (button, or prefer_leader)."""
+        self.t_leader_attempt = time.monotonic()
+        what = 'Gateway is not leader (prefer leader role): ' if automatic else ''
+        self.result('make_leader', True, what + 'becoming leader, the network is interrupted shortly ...')
+        res = ot_cli.make_leader(self.cli)
+        if res['leader']:
+            self.result('make_leader', True, f"Gateway is leader (leader weight {res['leader_weight']}, "
+                                             f"partition {res['partition_id']})")
+        else:
+            self.result('make_leader', False, f"Gateway is not leader yet (state {res['state']!r}), "
+                                              f"see 'Read status' later")
+        self.read_status(check_leader=False)
+
+    def check_prefer_leader(self, status):
+        """prefer_leader: leader weight after a restart of the gateway, leader role again."""
+        if not self.config.prefer_leader or status.get('state') not in ('child', 'router', 'leader'):
+            return False
+        if status.get('state') in ('router', 'leader') and status.get('leader_weight') is not None \
+                and status['leader_weight'] != ot_cli.LEADER_WEIGHT_PREFERRED:
+            ot_cli.ensure_leader_weight(self.cli)
+            self.result('make_leader', True, f'Leader weight set to {ot_cli.LEADER_WEIGHT_PREFERRED} '
+                                             f'(prefer leader role)')
+        last = getattr(self, 't_leader_attempt', None)
+        if status.get('state') != 'leader' and (last is None or time.monotonic() - last >= self.LEADER_RETRY_S):
+            self.make_leader(automatic=True)
+            return True
+        return False
+
+    def read_status(self, check_leader=True):
         status = ot_cli.read_status(self.cli)
         status['packets_received'] = self.npackets
         self.last_status = status
         self.publish_devices()
+        if check_leader and self.check_prefer_leader(status):
+            return
 
     def build_devices(self):
         rx_age = None if self.last_rx is None else time.monotonic() - self.last_rx
@@ -1406,9 +1447,23 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         form_btn.clicked.connect(self.form_network)
         status_btn = QtWidgets.QPushButton('Read status')
         status_btn.clicked.connect(lambda: self.device.thread_command('ot_status', {}))
-        for b in (form_btn, status_btn):
+        leader_btn = QtWidgets.QPushButton('Make gateway leader')
+        leader_btn.setToolTip('The gateway becomes the leader of the Thread network (leader weight '
+                              f'{ot_cli.LEADER_WEIGHT_PREFERRED}, the nodes have 64). The network is '
+                              'interrupted shortly, RLOC16 addresses may change.')
+        leader_btn.clicked.connect(self.make_leader)
+        self.prefer_leader = QtWidgets.QCheckBox('Gateway prefers leader role')
+        self.prefer_leader.setToolTip('While redvypr is connected: leader weight '
+                                      f'{ot_cli.LEADER_WEIGHT_PREFERRED} also after a restart of the '
+                                      'gateway, and the gateway becomes leader again if it is not '
+                                      '(checked with the status, at most every 10 minutes)')
+        self.prefer_leader.setChecked(self.cfg.prefer_leader)
+        self.prefer_leader.toggled.connect(self.prefer_leader_changed)
+        for b in (form_btn, status_btn, leader_btn):
             btn_row.addWidget(b)
-        self.run_widgets.extend([form_btn, status_btn])
+        btn_row.addWidget(self.prefer_leader)
+        btn_row.addStretch(1)
+        self.run_widgets.extend([form_btn, status_btn, leader_btn])
 
         self.status_tree = QtWidgets.QTreeWidget()
         self.status_tree.setHeaderLabels(['Item', 'Value'])
@@ -1519,10 +1574,24 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             'network_name': self.cfg.network_name, 'channel': self.cfg.channel,
             'panid': self.cfg.panid, 'extpanid': self.cfg.extpanid, 'networkkey': self.cfg.networkkey})
 
+    def make_leader(self):
+        answer = QtWidgets.QMessageBox.question(
+            self, 'Make gateway leader',
+            'The gateway becomes the leader of the Thread network. It starts a new partition that the '
+            'other devices join; the network is interrupted shortly (seconds up to about a minute), '
+            'RLOC16 addresses may change and running transfers can fail. Continue?')
+        if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.device.thread_command('make_leader', {})
+
+    def prefer_leader_changed(self, checked):
+        self.cfg.prefer_leader = bool(checked)
+        if self.device.get_thread_status()['thread_running']:
+            self.device.thread_command('config', {'config': self.cfg.model_dump()})
+
     def show_status(self, status):
         self.status_tree.clear()
         for key in ('state', 'network_name', 'channel', 'panid', 'extpanid', 'rloc16', 'extaddr',
-                    'packets_received'):
+                    'leader_weight', 'partition_id', 'packets_received'):
             QtWidgets.QTreeWidgetItem(self.status_tree, [key, str(status.get(key, ''))])
         ip = QtWidgets.QTreeWidgetItem(self.status_tree, ['ipaddr', str(len(status.get('ipaddr', [])))])
         for a in status.get('ipaddr', []):

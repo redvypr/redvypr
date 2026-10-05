@@ -17,6 +17,9 @@ redvypr changelog
 - Widgets to add/edit data sources and select datastreams (`redvypr.widgets.datasource_widgets`)
 - norlog_convert: units of the values and hardware ID/serial number of the norlog as metadata in the database;
   the "Convert to SQLite" button adds the database as data source of redvypr
+- norlog gateway: hardware ID column in the device table; "Make gateway leader" (leader weight 72, `state leader`)
+  and "Gateway prefers leader role" (weight again after a restart, leader again at most every 10 minutes);
+  leader weight and partition ID in the Thread status
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)
