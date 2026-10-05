@@ -1008,11 +1008,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         refresh.clicked.connect(lambda: self.device.thread_command('refresh', {}))
         info_sel = QtWidgets.QPushButton('Read info (selected)')
         info_sel.clicked.connect(self.read_info_selected)
-        set_clock = QtWidgets.QPushButton('Set clock')
-        set_clock.setToolTip('Set the clock of the gateway and of the selected devices (all if none is '
-                             'selected) to the time of this PC, check it and set it again if it is more than '
-                             '0.5 s off. Devices with a GNSS time are skipped (Shift+click: set them too).')
-        set_clock.clicked.connect(self.set_clock_clicked)
         self.info_interval = QtWidgets.QSpinBox()
         self.info_interval.setRange(0, 3600)
         self.info_interval.setSuffix(' s')
@@ -1023,7 +1018,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.devices_info = QtWidgets.QLabel('No data yet (refreshed with the Thread status)')
         row.addWidget(refresh)
         row.addWidget(info_sel)
-        row.addWidget(set_clock)
         row.addWidget(QtWidgets.QLabel('Auto info'))
         row.addWidget(self.info_interval)
         row.addWidget(self.devices_info, 1)
@@ -1052,7 +1046,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         lay.addLayout(row)
         lay.addWidget(split, 1)
         lay.addWidget(legend)
-        self.run_widgets.extend([refresh, info_sel, set_clock])
+        self.run_widgets.extend([refresh, info_sel])
         return w
 
     def info_interval_changed(self, value):
@@ -1101,16 +1095,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def selected_devices(self):
         rows = sorted({i.row() for i in self.devices_table.selectedIndexes()})
         return [self.current_devices[r] for r in rows if r < len(self.current_devices)]
-
-    def set_clock_clicked(self):
-        """Gateway plus the selected devices; all devices if none (or only the gateway) is selected."""
-        keys = [k for k in (self._device_key(d) for d in self.selected_devices()) if k]
-        if not [k for k in keys if k != 'gateway']:
-            keys = [k for k in (self._device_key(d) for d in self.current_devices) if k]
-        keys = ['gateway'] + [k for k in keys if k != 'gateway']
-        force = bool(QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier)
-        self.console_text.appendPlainText(f"[clock] setting {len(keys)} device(s) to the time of this PC ...")
-        self.device.thread_command('set_time', {'targets': keys, 'force': force})
 
     def read_info_selected(self):
         keys = [self._device_key(d) for d in self.selected_devices()]
@@ -1506,6 +1490,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             elif packetid == 'time_result':
                 state = 'OK' if data.get('ok') else 'ERROR'
                 self.console_text.appendPlainText(f"[clock {data.get('target')}] {state}: {data.get('message', '')}")
+                dlg = self.settings_dialogs.get(data.get('target'))
+                if dlg is not None:
+                    dlg.on_time_result(data)
             elif packetid == 'command_result':
                 self.show_result(data)
             elif 'packet_type' in data:     # decoded '#NLD' data packet
@@ -1610,11 +1597,42 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         row.addWidget(self.info_error, 1)
         lay.addLayout(form)
         lay.addLayout(row)
+        lay.addWidget(self._build_clock_box())
         lay.addWidget(self._build_props_box())
         lay.addWidget(self._build_battery_box())
         lay.addWidget(self._build_usb_box())
         lay.addStretch(1)
         return w
+
+    def _build_clock_box(self):
+        box = QtWidgets.QGroupBox('Clock')
+        lay = QtWidgets.QHBoxLayout(box)
+        self.clock_btn = QtWidgets.QPushButton('Set clock')
+        self.clock_btn.setToolTip('Set the clock of this device to the time of this PC (system clock in ms, '
+                                  'RTC in whole seconds), read it back and set it again if it is more than '
+                                  '0.5 s off. Needs firmware >= 0.4.4.')
+        self.clock_btn.clicked.connect(self.set_clock)
+        self.clock_gnss = QtWidgets.QCheckBox('also if the time comes from GNSS')
+        self.clock_gnss.setToolTip('Without: a device whose clock was set by GNSS within the last 2 minutes '
+                                   'is not changed')
+        self.clock_status = QtWidgets.QLabel('')
+        self.clock_status.setWordWrap(True)
+        self.clock_status.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        lay.addWidget(self.clock_btn)
+        lay.addWidget(self.clock_gnss)
+        lay.addWidget(self.clock_status, 1)
+        return box
+
+    def set_clock(self):
+        self.clock_status.setStyleSheet('')
+        self.clock_status.setText('Setting ...')
+        self.clock_btn.setEnabled(False)
+        self.device.thread_command('set_time', {'targets': [self.key], 'force': self.clock_gnss.isChecked()})
+
+    def on_time_result(self, data):
+        self.clock_btn.setEnabled(self.running)
+        self.clock_status.setStyleSheet('' if data.get('ok') else 'color: #d64545;')
+        self.clock_status.setText(data.get('message', ''))
 
     def _build_props_box(self):
         box = QtWidgets.QGroupBox('Properties (stored on the device)')
@@ -1902,6 +1920,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
     def update_run_state(self, running):
         self.running = running
         self.read_info_btn.setEnabled(running)
+        self.clock_btn.setEnabled(running)
         for w in (self.props_read_btn, self.props_add_btn, self.props_save_btn):
             w.setEnabled(running)
         for w in (self.usb_mode, self.usb_msc_on, self.usb_msc_off, self.bat_model, self.bat_upload):
