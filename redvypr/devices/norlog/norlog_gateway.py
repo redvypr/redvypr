@@ -1986,9 +1986,10 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.radio_status = QtWidgets.QLabel('')
         self.radio_status.setWordWrap(True)
         self.radio_status.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
-        note = QtWidgets.QLabel('Observe the permitted transmit power (EIRP incl. antenna gain) of the country, '
-                                'e.g. EU 2.4 GHz: 20 dBm (100 mW). A lower power of a node can also break its '
-                                'link to the network.')
+        note = QtWidgets.QLabel('Observe the permitted transmit power of the country. BMD-345 data sheet '
+                                '(PA gain 24 dB): CE-RED (EU) at most -16 dBm of the nRF52840, i.e. about 8 dBm '
+                                'here; FCC/ISED -8 dBm, i.e. about 16 dBm (channel 26: bypass mode only). A lower '
+                                'power of a node can also break its link to the network.')
         note.setWordWrap(True)
         note.setStyleSheet('color: gray;')
         grid.addWidget(QtWidgets.QLabel('At the antenna'), 0, 0)
