@@ -31,6 +31,16 @@ redvypr changelog
 - Database writers: packets are written in batches (`batch_size`, `dt_commit`) instead of one transaction per row;
   the address string is cached per source (SQLite: 10000 instead of 1000 packets/s)
 - SQLite `get_redvypr_datapackets()`: failed with `json_safe_loads` not defined; returns deviceid and sensorid
+- `RedvyprAddress` reimplemented: the filter is parsed once into a filter tree (no Python AST evaluation per packet),
+  datakeys are resolved as key/index paths; same syntax and results (incl. comparisons on the packet content like
+  `@ data > 2`, `dt()`, lists, `?:`, regular expressions). 20-100 times faster (address of a packet 221 -> 5 us,
+  matches 254 -> 2 us), norlog gateway -> writer 550 -> 11000 packets/s. The previous version is kept as
+  `redvypr_address_legacy` for comparison (`test/test_redvypr_address_legacy_compat.py`)
+- `RedvyprAddress` fixed: address strings with lists, `?:` and regular expressions are re-parseable, parentheses
+  (`@d:a and (d:b or d:c)`) are kept; an error in one condition (e.g. comparing a list) only affects that condition
+- `RedvyprAddress`: removed `r:` root keys, `extract()`, `to_address_string_pure_python()`
+- Devices without `DeviceBaseConfig` / custom config (`test_device_bare`, `test_device_receive`) could not be
+  added or started
 
 ## [0.9.21] - 2026-10-04
 

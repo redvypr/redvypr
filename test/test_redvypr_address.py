@@ -191,8 +191,9 @@ def test_datakey_manipulation():
 
     # String-Generierung prüfen
     apkt1.add_datakey("x")
-    assert apkt1.to_address_string("d,i") == "@i:'test' and d:'cam'"
-    assert apkt1.to_address_string("k,d,i") == "x @ i:'test' and d:'cam'"
+    # The filter keeps the order of the packet header (not of the requested keys)
+    assert apkt1.to_address_string("d,i") == "@d:'cam' and i:'test'"
+    assert apkt1.to_address_string("k,d,i") == "x @ d:'cam' and i:'test'"
 
 
 # ==============================================================================
@@ -204,7 +205,6 @@ def test_attributes_and_meta():
 
     # Redvypr Dict & Python Representation
     assert "packetid" in apkt1.to_redvypr_dict()["_redvypr"]
-    assert "__packetid__" in apkt1.to_address_string_pure_python()
 
     # Attributeauslesung
     assert apkt1.device == pkt1['_redvypr']['device']

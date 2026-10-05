@@ -1,28 +1,36 @@
 """
 Redvypr addresses are the base to identify and address redvypr data packets and their content.
 see also the documentation here: :ref:`design_addressing`.
+
+An address has a left side (the datakey, e.g. ``data['temp'][0]``) and a right side
+(the filter, e.g. ``d:'cam' and i:'test'`` or ``data > 2``), separated by ``@``.
+
+Implementation: the right side is parsed once (cached per string) into a small
+filter tree that is evaluated directly on the packet, without eval(); the common
+case, metadata equality joined by ``and``, is a list of (path, value) checks. The
+left side is a key/index path traversed directly; other Python expressions on the
+left side (slices, calculations) are evaluated with eval(). The address string is
+generated from the tree and cached per format.
 """
 
 import re
 import copy
-import time
 import logging
 import sys
-import yaml
-import pydantic
-import pydantic_core
+import operator
 import typing
 from datetime import datetime
-from typing import Any, List, Tuple, Optional, Union
-from pydantic import BaseModel, Field, TypeAdapter
-from pydantic_core import SchemaSerializer, core_schema
+from typing import Any, List, Optional, Union
 import ast
 import tokenize
 import io
 
+import pydantic
+from pydantic_core import core_schema
+
 logging.basicConfig(stream=sys.stderr)
 logger = logging.getLogger('redvypr.base.redvypr_address')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 metadata_address = "_redvypr_command@i:metadata"
 
@@ -35,16 +43,16 @@ redvypr_standard_address_filter = ["i","p","d","h","u","a","di","s","si"]
 
 # Exceptions
 class FilterNoMatch(Exception):
-    """Raised when a packet does not match the filter expression."""
     pass
 
+
 class FilterFieldMissing(Exception):
-    """Raised when a required key is missing in the packet."""
     pass
 
 
 class SoftPlaceholder:
-    """Returns soft_missing value for any comparison to avoid NameErrors and False negatives."""
+    """Value of a missing field in a fallback (eval) filter: every comparison gives sm_value."""
+    __slots__ = ("val",)
 
     def __init__(self, sm_value):
         self.val = sm_value
@@ -56,8 +64,36 @@ class SoftPlaceholder:
     def __gt__(self, other): return self.val
     def __ge__(self, other): return self.val
     def __bool__(self): return self.val
-
+    def __hash__(self): return 0
     def __call__(self, *args, **kwargs): return self
+
+
+_MISSING = object()
+
+_CMP_OPS = {ast.Eq: ("==", operator.eq), ast.NotEq: ("!=", operator.ne), ast.Lt: ("<", operator.lt),
+            ast.LtE: ("<=", operator.le), ast.Gt: (">", operator.gt), ast.GtE: (">=", operator.ge),
+            ast.In: ("in", lambda a, b: a in b), ast.NotIn: ("not in", lambda a, b: a not in b),
+            ast.Is: ("is", operator.is_), ast.IsNot: ("is not", operator.is_not)}
+_OP_FUNC = {sym: f for sym, f in _CMP_OPS.values()}
+
+# Parsed strings: expr -> (left_expr, rhs tree, bracket style or None)
+_PARSE_CACHE = {}
+_PARSE_CACHE_MAX = 20000
+
+
+def _parse_cache_put(key, value):
+    if len(_PARSE_CACHE) >= _PARSE_CACHE_MAX:
+        _PARSE_CACHE.clear()
+    _PARSE_CACHE[key] = value
+
+
+def _copy_struct(obj):
+    """Fast copy of nested dicts/lists (to_redvypr_dict results)."""
+    if isinstance(obj, dict):
+        return {k: _copy_struct(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_copy_struct(v) for v in obj]
+    return obj
 
 
 class RedvyprAddress:
@@ -70,88 +106,45 @@ class RedvyprAddress:
     metadata constraints (Right-Hand Side / RHS), such as host, device, and
     publisher attributes.
 
-    The class dynamically supports metadata projections and keyword arguments
-    defined in its central `META_CONFIG` specification.
-
     Parameters
     ----------
     expr : str, RedvyprAddress, dict, or None, optional
         The input expression to initialize or copy the address.
 
-        - If `str`: Parsed into its LHS datakey expression and RHS metadata constraints
-          separated by an `@` boundary.
-        - If `RedvyprAddress`: Performs a deep copy of the address instance.
-        - If `dict`: Resolves structured `_redvypr` metadata payloads (e.g. nested keys
-          like `host.uuid` or `host.host`) into exact equality constraints.
-        - If `None` or `""`: Initializes an empty address.
+        - If `str`: Parsed into its LHS datakey expression and RHS filter, separated
+          by an `@` boundary.
+        - If `RedvyprAddress`: Copy of the address.
+        - If `dict`: The `_redvypr` header of a packet (device, packetid, host, ...)
+          becomes equality filters.
+        - If `None` or `""`: An empty address.
     datakey : str, optional
-        Explicitly sets the Left-Hand Side (LHS) datakey, overriding any datakey
-        extracted from the `expr` parameter. Default is None.
+        Sets the Left-Hand Side (LHS) datakey, overriding any datakey of `expr`.
     hostinfo : dict, optional
         Sets the filterkeys of the host (host, uuid, addr) with a hostinfo dictionary,
         as created with `redvypr.create_hostinfo()`
-    **kwargs : dict or list of keywords
-        Dynamic keyword arguments corresponding to any longform metadata keys registered
-        in `META_CONFIG` (e.g., `device="my_device"`, `publisher="pub_1"`, `uuid="..."`).
-        Passing these dynamically appends equality (`eq`) filters to the address.
-        See also `RedvyprAddress.META_CONFIG` for a complete list of possible keywords.
-
-    Attributes
-    ----------
-    META_CONFIG : dict
-        A central definition of supported metadata fields. Maps short prefix codes
-        (e.g., ``"d"``, ``"h"``) to their internal payload paths, human-readable
-        API longforms, and safe execution dunder fields.
-    PREFIX_MAP : dict
-        A dynamically generated mapping from shorthand prefix keys to internal dunder
-        names. Example: ``{"d": "__device__", "h": "__host_host__"}``.
-    LONGFORM_MAP : dict
-        A dynamically generated mapping from API keyword longforms to internal dunder
-        names. Example: ``{"device": "__device__", "host": "__host_host__"}``.
-    INTERNAL_TO_PREFIX : dict
-        Reverse mapping from internal dunder representation back to short prefixes
-        used to generate clean address strings.
-    left_expr : str or None
-        The uncompiled string representation of the Left-Hand Side (LHS) datakey
-        or boolean selector.
-    filter_keys : dict of (str -> list)
-        A structured registry mapping longform metadata fields to their active
-        evaluation constraints (e.g., operators and comparison values).
-    strict_no_datakey : bool
-        If True, enforces that the address is treated purely as a device-level or
-        metadata-only query without data keys. Default is False.
+    **kwargs
+        Longform metadata keys of `META_CONFIG` (e.g. ``device="my_device"``,
+        ``publisher="pub_1"``, ``uuid="..."``): equality filters, replacing existing
+        filters of that key. Other keywords are ignored.
 
     Notes
     -----
-    The addressing syntax consists of an optional Left-Hand Side (LHS) representing
-    data-keys or boolean conditions, and a Right-Hand Side (RHS) specifying
-    metadata routing filters, delimited by an `@` character.
+    Filter syntax of the right side:
 
-    Example format:
-    ``"temperature_sensor @ d:device_01 and p:publisher_01"``
-
-    See Also
-    --------
-    RedvyprDatadict : An improved dictionary that is able to be indexed with RedvyprAddresses
+    - metadata: ``d:cam``, ``i:'test'``, ``i:42``, lists ``i:[a,b,3]``, existence ``d?:``,
+      regular expressions ``i:~/^ch\\d+$/i``
+    - packet content: ``data > 2``, ``payload['x'] <= 1.5``, ``td == dt(2000-01-01)``,
+      existence ``lon?:``
+    - combined with ``and``, ``or``, ``not`` and parentheses
 
     Examples
     --------
-    Show all filterkeys
-
-    >>> addr = RedvyprAddress("@")
-    >>> addr.META_CONFIG
-
-    Initializing an address from a composite query string:
-
     >>> addr = RedvyprAddress("temp_degC @ d:sensor_hub and h:local_node")
     >>> addr.left_expr
     'temp_degC'
-
-    Initializing an address dynamically using keyword arguments:
-
     >>> addr = RedvyprAddress(datakey="pressure", device="pump_01", host="cluster_a")
     >>> addr.to_address_string()
-    'pressure@d:pump_01 and h:cluster_a'
+    "pressure @ d:'pump_01' and h:'cluster_a'"
     """
     # Maps short prefixes to internal dunder representation and API-facing longforms.
     META_CONFIG = {
@@ -169,187 +162,273 @@ class RedvyprAddress:
         "hl": {"path": "localhost.host", "longform": "host_local", "internal": "__localhost_host__"},
     }
 
-    # 1. PREFIX_MAP (Short prefixes -> __dunder__ names)
-    # Dynamically generated to map shorthand address keys to safe internal fields.
-    # Example: {"i": "__packetid__", "d": "__device__", "u": "__host_uuid__", ...}
+    # Short prefixes -> internal dunder names, e.g. {"i": "__packetid__", ...}
     PREFIX_MAP = {k: v["internal"] for k, v in META_CONFIG.items()}
-
-    # 2. LONGFORM_MAP (Longforms -> __dunder__ names)
-    # Dynamically generated to map API/keyword argument longforms to internal fields.
-    # Example: {"packetid": "__packetid__", "device": "__device__", "uuid": "__host_uuid__", ...}
+    # Longforms -> internal names, e.g. {"packetid": "__packetid__", ...}
     LONGFORM_MAP = {v["longform"]: v["internal"] for v in META_CONFIG.values()}
-
-    # 3. INTERNAL_TO_PREFIX ( __dunder__ names -> Short prefixes )
-    # Used for reversing the process (e.g., inside to_address_string) to construct clean addresses.
-    # Example: {"__packetid__": "i", "__device__": "d", "__host_uuid__": "u", ...}
+    # Internal names -> short prefixes
     INTERNAL_TO_PREFIX = {v["internal"]: k for k, v in META_CONFIG.items()}
+    # Internal names -> path in the _redvypr header, e.g. "__host_uuid__": ("host", "uuid")
+    INTERNAL_TO_PATH = {v["internal"]: tuple(v["path"].split(".")) for v in META_CONFIG.values()}
+    # Order of the header fields (from a packet)
+    _META_ORDER = tuple((v["internal"], tuple(v["path"].split("."))) for v in META_CONFIG.values())
 
-    common_address_formats = ['k,i','k,i,sn', 'k,d,i', 'k', 'd', 'i', 'p', 'p,d', 'p,d,i', 'u,a,h,d,',
-                            'u,a,h,d,i', 'k,u,a,h,d', 'k,u,a,h,d,i', 'a,h,d', 'a,h,d,i', 'a,h,p']
+    common_address_formats = ['k,i', 'k,i,si', 'k,d,i', 'k', 'd', 'i', 'p', 'p,d', 'p,d,i', 'u,a,h,d',
+                              'u,a,h,d,i', 'k,u,a,h,d', 'k,u,a,h,d,i', 'a,h,d', 'a,h,d,i', 'a,h,p']
 
     def __init__(self,
                  expr: Union[str, "RedvyprAddress", dict, None] = None,
                  *,
                  datakey: Optional[str] = None,
                  hostinfo: Optional[dict] = None,
-                 **kwargs):  # Alle expliziten Metadaten-Argumente durch **kwargs ersetzt
+                 **kwargs):
         self.left_expr: Optional[str] = None
-        self._rhs_ast: Optional[ast.Expression] = None
-        self.filter_keys: typing.Dict[str, list] = {}
+        self._rhs = None                  # filter tree (tuples), None = no filter
         self.strict_no_datakey = False
-
-        self._redvypr_dict_datakey = None
-        self._redvypr_dict_nodatakey = None
+        self._bracket_style = None        # {"quote", "key"} of "['f'][1]" datakeys
+        self._use_bracket_style = False
 
         if expr == "":
             expr = None
 
-        # Kopieren von einem RedvyprAddress
         if isinstance(expr, RedvyprAddress):
             self.left_expr = expr.left_expr
-            self._rhs_ast = copy.deepcopy(expr._rhs_ast)
-            self.filter_keys = {k: list(v) for k, v in expr.filter_keys.items()}
-
-        # Dict input (_redvypr mapping)
+            self._rhs = expr._rhs
+            self._bracket_style = expr._bracket_style
+            self._use_bracket_style = expr._use_bracket_style
+            if datakey is not None:
+                self._use_bracket_style = False
         elif isinstance(expr, dict):
-            _redvypr = expr.get("_redvypr", {})
-            constraints = []
-
-            # Wir iterieren über die zentrale META_CONFIG
-            for cfg in self.META_CONFIG.values():
-                path = cfg["path"]
-                internal = cfg["internal"]
-
-                # Pfad im Paket auflösen (z.B. "host.uuid")
-                parts = path.split(".")
-                val = _redvypr
-                try:
-                    for part in parts:
-                        val = val[part]
-
-                    # Wenn ein Wert gefunden wurde, Constraint hinzufügen
-                    if val not in (None, ''):
-                        constraints.append(f"{internal} == {repr(val)}")
-                except (KeyError, TypeError):
-                    continue
-
-            # Zu einem einzigen RHS-String zusammenfügen
-            if constraints:
-                self._rhs_str = " and ".join(constraints)
-                self._rhs_ast = ast.parse(self._rhs_str, mode="eval")
-
-        # String input
+            self._rhs = self._rhs_from_header(expr.get("_redvypr") or {})
         elif isinstance(expr, str):
-            left, right = self._split_left_right_tokens(expr)
-            self.left_expr = left
-            if right:
-                self._rhs_ast = self._parse_rhs(right)
+            cached = _PARSE_CACHE.get(expr)
+            if cached is None:
+                cached = self._parse_string(expr)
+                _parse_cache_put(expr, cached)
+            self.left_expr, self._rhs, self._bracket_style = cached
+            self._use_bracket_style = self._bracket_style is not None
+        elif expr is not None:
+            raise TypeError(f"RedvyprAddress from {type(expr).__name__} not supported")
 
-        # LHS via datakey
         if datakey is not None:
             self.left_expr = datakey
+            self._bracket_style = None
+            self._use_bracket_style = False
+            self._apply_bracket_style()
 
-        # DYNAMISCHE KEYWORD ARGS AUS META_CONFIG VERARBEITEN
         for cfg in self.META_CONFIG.values():
             longform = cfg["longform"]
-            val = kwargs.get(longform)
-            if val not in (None, ''):
-                self.delete_filter(longform)
-                self.add_filter(longform, "eq", val)
-            # Check also in hostinfo
-            if hostinfo is not None:
-                val = hostinfo.get(longform)
+            # as before: a value of hostinfo wins over the keyword argument
+            for val in (kwargs.get(longform), hostinfo.get(longform) if hostinfo is not None else None):
                 if val not in (None, ''):
-                    self.delete_filter(longform)
-                    self.add_filter(longform, "eq", val)
+                    self._replace_eq(cfg["internal"], val)
 
-        # New syntax, allowing brackes
-        # Am Anfang von __init__, bevor expr verarbeitet wird:
-        self._use_bracket_style = False
-        if self.left_expr is not None:
-            if self.left_expr.startswith("[") and self.left_expr.count("]") >= 1:
-                # Matcht z.B. "['f'][1]" -> extrahiert 'f' und das '[1]'
-                self._bracket_style_orig = self.left_expr
-                match = re.match(r"^\[(['\"])([a-zA-Z0-9_]+)\1\](.*)", self.left_expr)
-                if match:
-                    quote_char = match.group(1) # " or ' or """"
-                    key = match.group(2)  # "f"
-                    rest = match.group(3)  # "[1]"
-                    self.left_expr = f"{key}{rest}"  # wird zu "f[1]"
-                    self._bracket_style = {
-                        "quote": quote_char,
-                        "key": key
-                    }
-                    self._use_bracket_style = True
+        self._compile_left()
 
-        self._compiled_left = None
-        self._compiled_rhs = None
-        self._compile_expressions()
+    # ------------------------------------------------------------------
+    # Construction helpers
+    # ------------------------------------------------------------------
+    @classmethod
+    def _rhs_from_header(cls, rv):
+        leaves = []
+        for internal, path in cls._META_ORDER:
+            val = rv
+            for part in path:
+                if not isinstance(val, dict):
+                    val = None
+                    break
+                val = val.get(part)
+                if val is None:
+                    break
+            if val not in (None, ''):
+                leaves.append(("eqm", internal, path, val))
+        if not leaves:
+            return None
+        return leaves[0] if len(leaves) == 1 else ("and", tuple(leaves))
 
-    def _compile_expressions(self):
-        self._compiled_left = None
-        self._compiled_rhs = None
-        self._lhs_ast = None  # Neu: Speicher für den AST der linken Seite
+    def _parse_string(self, expr):
+        left, right = self._split_left_right_tokens(expr)
+        rhs = None
+        if right:
+            py_ast = self._parse_rhs(right)
+            rhs = self._to_node(py_ast.body) if py_ast is not None else None
+        self.left_expr = left
+        self._bracket_style = None
+        self._apply_bracket_style()
+        return self.left_expr, rhs, self._bracket_style
 
-        if self._rhs_ast:
-            self._compiled_rhs = compile(self._rhs_ast, '<string>', 'eval')
+    def _apply_bracket_style(self):
+        """"['f'][1]" is stored as "f[1]" and printed in the original style."""
+        if self.left_expr is not None and self.left_expr.startswith("[") and self.left_expr.count("]") >= 1:
+            match = re.match(r"^\[(['\"])([a-zA-Z0-9_]+)\1\](.*)", self.left_expr)
+            if match:
+                self.left_expr = f"{match.group(2)}{match.group(3)}"
+                self._bracket_style = {"quote": match.group(1), "key": match.group(2)}
+                self._use_bracket_style = True
 
-        if self.left_expr and self.left_expr != "!":
-            try:
-                # Wir parsen den String erst in einen AST
-                self._lhs_ast = ast.parse(self.left_expr, mode='eval')
-            except SyntaxError as e:
-                print(f"\n[LHS Debug] SyntaxError in left_expr")
-                print(f"Content:  '{self.left_expr}'")
-                print(f"Message:  {e.msg}")
-                # e.offset tells us the character position where it failed
-                if e.offset is not None:
-                    indicator = " " * (e.offset - 1) + "^"
-                    print(f"Position: {indicator} (offset: {e.offset})")
-                print("-" * 30)
+    def _compile_left(self):
+        """Left side: a key/index path (fast) or a compiled Python expression."""
+        self._left_path = None
+        self._left_code = None
+        self._left_const = None
+        self._lhs_ast = None
+        self._cache = {}
+        if not self.left_expr or self.left_expr == "!":
+            return
+        try:
+            tree = ast.parse(self.left_expr, mode="eval")
+        except SyntaxError as e:
+            raise ValueError(f"Invalid datakey expression {self.left_expr!r}: {e.msg}") from None
+        self._lhs_ast = tree
+        node = tree.body
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            self._left_const = node.value
+            return
+        path = self._path_of(node)
+        if path is not None:
+            self._left_path = tuple(path)
+        else:
+            self._left_code = compile(tree, "<redvypr_address>", "eval")
 
-            except Exception as e:
-                print(f"[LHS Debug] Unexpected Error: {e}")
+    @staticmethod
+    def _path_of(node):
+        """[key, index, ...] of a Name/Subscript chain with constant keys, None otherwise."""
+        keys = []
+        while isinstance(node, ast.Subscript):
+            slc = node.slice
+            if isinstance(slc, ast.Constant) and not isinstance(slc.value, (bool, type(None))):
+                keys.append(slc.value)
+            elif (isinstance(slc, ast.UnaryOp) and isinstance(slc.op, ast.USub)
+                  and isinstance(slc.operand, ast.Constant) and isinstance(slc.operand.value, int)):
+                keys.append(-slc.operand.value)
+            else:
+                return None
+            node = node.value
+        if isinstance(node, ast.Name):
+            keys.append(node.id)
+            return keys[::-1]
+        return None
 
-            # Compile the stuff
-            self._compiled_left = compile(self._lhs_ast, '<string>', 'eval')
+    # ------------------------------------------------------------------
+    # RHS: python AST -> filter tree
+    # ------------------------------------------------------------------
+    def _operand(self, node):
+        """Operand of a comparison: ("m", internal, path) | ("p", keys, src) | ("l", value, src)."""
+        if isinstance(node, ast.Name):
+            if node.id in self.INTERNAL_TO_PATH:
+                return ("m", node.id, self.INTERNAL_TO_PATH[node.id])
+            if node.id in ("True", "False", "None"):
+                return ("l", {"True": True, "False": False, "None": None}[node.id], node.id)
+            return ("p", (node.id,), node.id)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_dt" \
+                and len(node.args) == 1 and isinstance(node.args[0], ast.Constant):
+            iso = node.args[0].value
+            return ("l", datetime.fromisoformat(str(iso).replace("Z", "+00:00")), f"dt({iso!r})")
+        path = self._path_of(node)
+        if path is not None:
+            return ("p", tuple(path), ast.unparse(node))
+        try:
+            val = ast.literal_eval(node)
+        except (ValueError, SyntaxError, TypeError):
+            return None
+        return ("l", val, ast.unparse(node))
 
-        # Create a redvypr dict, to save processing time
-        self._redvypr_dict_datakey = None
-        self._redvypr_dict_nodatakey = None
-        self._redvypr_dict_datakey = self.to_redvypr_dict(include_datakey=True)
-        self._redvypr_dict_nodatakey = self.to_redvypr_dict(include_datakey=False)
+    def _to_node(self, node):
+        if isinstance(node, ast.BoolOp):
+            kind = "and" if isinstance(node.op, ast.And) else "or"
+            children = []
+            for v in node.values:
+                c = self._to_node(v)
+                if c[0] == kind:
+                    children.extend(c[1])
+                else:
+                    children.append(c)
+            return (kind, tuple(children))
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            return ("not", self._to_node(node.operand))
+        if isinstance(node, ast.Compare):
+            operands = [self._operand(x) for x in [node.left] + list(node.comparators)]
+            if all(o is not None for o in operands) and all(type(op) in _CMP_OPS for op in node.ops):
+                ops = tuple(_CMP_OPS[type(op)][0] for op in node.ops)
+                left, right = operands[0], operands[-1]
+                if len(operands) == 2 and left[0] == "m" and right[0] == "l":
+                    if ops[0] == "==":
+                        try:
+                            hash(right[1])
+                            return ("eqm", left[1], left[2], right[1])
+                        except TypeError:
+                            pass
+                    elif ops[0] == "in" and isinstance(right[1], (list, tuple)):
+                        return ("inm", left[1], left[2], tuple(right[1]))
+                return ("cmp", tuple(operands), ops)
+            return self._py_node(node)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            fname = node.func.id
+            if fname == "_exists" and len(node.args) == 1:
+                arg = node.args[0]
+                key = arg.value if isinstance(arg, ast.Constant) else getattr(arg, "id", None)
+                if isinstance(key, str):
+                    if key in self.INTERNAL_TO_PATH:
+                        return ("ex", ("m", key, self.INTERNAL_TO_PATH[key]))
+                    return ("ex", ("p", (key,), key))
+            if fname == "_regex" and len(node.args) >= 2:
+                target = self._operand(node.args[0])
+                try:
+                    pat = ast.literal_eval(node.args[1])
+                    flags = ast.literal_eval(node.args[2]) if len(node.args) > 2 else ""
+                except (ValueError, SyntaxError):
+                    target = None
+                if target is not None and target[0] in ("m", "p"):
+                    return ("re", target, self._compile_regex(pat, flags), pat, flags)
+        if isinstance(node, ast.Constant) and node.value is True:
+            return ("true",)
+        operand = self._operand(node)
+        if operand is not None and operand[0] in ("m", "p"):
+            return ("truthy", operand)
+        return self._py_node(node)
 
+    @staticmethod
+    def _compile_regex(pat, flags):
+        f = 0
+        if "i" in flags:
+            f |= re.IGNORECASE
+        if "m" in flags:
+            f |= re.MULTILINE
+        if "s" in flags:
+            f |= re.DOTALL
+        return re.compile(pat, f)
 
+    def _py_node(self, node):
+        """Fallback: any other expression, evaluated with eval() like before."""
+        expr = ast.Expression(body=node)
+        ast.fix_missing_locations(expr)
+        names = tuple({n.id for n in ast.walk(expr) if isinstance(n, ast.Name)})
+        return ("py", compile(expr, "<redvypr_address>", "eval"), ast.unparse(node), names)
+
+    # ------------------------------------------------------------------
+    # Parsing of the address string (DSL -> python expression)
+    # ------------------------------------------------------------------
     def _split_left_right_tokens(self, expr: str):
         """
         Split a Redvypr address string into (left, right) at the first @ outside quotes.
         Uses slicing on the original string to preserve formatting.
         """
-        # Use io.StringIO to make the string compatible with the tokenizer
+        if "@" not in expr:
+            return expr.strip() or None, None
+        if "'" not in expr and '"' not in expr:
+            split_at = expr.index("@")
+            return expr[:split_at].strip() or None, expr[split_at + 1:].strip() or None
         readline = io.StringIO(expr).readline
-        tokens = tokenize.generate_tokens(readline)
-
-        for tok_type, tok_str, start, end, _ in tokens:
-            # Check for the '@' operator
-            if tok_type == tokenize.OP and tok_str == "@":
-                # start[1] is the character offset where '@' begins
-                split_at = start[1]
-
-                left_part = expr[:split_at].strip() or None
-                # split_at + 1 skips the '@' character itself
-                right_part = expr[split_at + 1:].strip() or None
-
-                return left_part, right_part
-
-        # Fallback if no '@' is found outside of strings
+        try:
+            for tok_type, tok_str, start, end, _ in tokenize.generate_tokens(readline):
+                if tok_type == tokenize.OP and tok_str == "@":
+                    split_at = start[1]
+                    return expr[:split_at].strip() or None, expr[split_at + 1:].strip() or None
+        except (tokenize.TokenError, IndentationError):
+            pass
         return expr.strip() or None, None
 
-
-    # -------------------------
-    # RHS AST Parsing
-    # -------------------------
-    def _parse_rhs(self, rhs: str) -> ast.Expression:
+    def _parse_rhs(self, rhs: str):
         s = rhs.strip()
         if not s:
             return None
@@ -359,445 +438,251 @@ class RedvyprAddress:
 
         def safe_sub(pattern, repl_func, text):
             combined = f"{STRING_PATTERN}|{pattern}"
-            return re.sub(combined,
-                          lambda m: m.group(1) if m.group(1) else repl_func(m), text)
+            return re.sub(combined, lambda m: m.group(1) if m.group(1) else repl_func(m), text)
 
         # 1. dt("ISO") literal conversion
         def repl_dt(m):
             iso = m.group(2) or m.group(3)
             return f"_dt({repr(iso)})"
 
-        dt_pattern = r"dt\(\s*(?:['\"](.*?)['\"]|([0-9T:\-\.\+Z ]+))\s*\)"
-        rhs = safe_sub(dt_pattern, repl_dt, rhs)
+        rhs = safe_sub(r"dt\(\s*(?:['\"](.*?)['\"]|([0-9T:\-\.\+Z ]+))\s*\)", repl_dt, rhs)
 
-        # 2. Existence Check (key?:)
+        # 2. Existence check (key?:)
         def replace_exists(match):
             key = match.group(2)
-            # Use the internal __dunder__ name if it exists in PREFIX_MAP
-            target = self.PREFIX_MAP.get(key, key)
-            self.filter_keys.setdefault(target, []).append("exists")
-            # Optimization: We pass the RAW identifier for metadata
-            # but keep repr() for root keys to ensure _exists handles both.
-            # However, for our new logic, _exists(target) where target is Name works best.
-            return f"_exists({repr(target)})"
+            return f"_exists({repr(self.PREFIX_MAP.get(key, key))})"
 
         rhs = safe_sub(r'([A-Za-z0-9_]+)\?:', replace_exists, rhs)
 
-        # 3. r: forms (Root keys - no dunder transformation)
-        def repl_r_list(m):
-            key, content = m.group(2), m.group(3)
-            self.filter_keys.setdefault(key, []).append("in")
-            return f"{key} in {self._list_to_python(content)}"
-
-        rhs = safe_sub(r'r:([A-Za-z0-9_]+):\[((?:[^\]]*))\]', repl_r_list, rhs)
-
-        def repl_r_regex(m):
-            key, pat, flags = m.group(2), m.group(3), m.group(4) or ""
-            self.filter_keys.setdefault(key, []).append("regex")
-            return f"_regex({key}, {repr(pat)}, {repr(flags)})"
-
-        rhs = safe_sub(r'r:([A-Za-z0-9_]+):~/(.*?)/([a-zA-Z]*)', repl_r_regex, rhs)
-
-        def repl_r_eq(m):
-            key, val = m.group(2), m.group(3)
-            self.filter_keys.setdefault(key, []).append("eq")
-            return f"{key} == {self._literal_to_python(val)}"
-
-        rhs = safe_sub(r'r:([A-Za-z0-9_]+):(".*?"|\'.*?\'|[^\s()]+)', repl_r_eq, rhs)
-
-        # 4. Prefixes (Metadata keys - transformed to __dunder__ names)
+        # 3. Prefixes (metadata keys -> __dunder__ names)
         prefixes = sorted(self.PREFIX_MAP.keys(), key=lambda x: -len(x))
         prefix_group = "|".join([re.escape(p) for p in prefixes])
 
         def repl_pref_list(m):
             key, content = m.group(2), m.group(3)
-            internal_name = self.PREFIX_MAP.get(key, key)
-            self.filter_keys.setdefault(internal_name, []).append("in")
-            # Returns: (__packetid__ in [val1, val2])
-            return f"{internal_name} in {self._list_to_python(content)}"
+            return f"{self.PREFIX_MAP.get(key, key)} in {self._list_to_python(content)}"
 
-        rhs = safe_sub(rf'({prefix_group}):\[((?:[^\]]*))\]', repl_pref_list, rhs)
+        rhs = safe_sub(rf'\b({prefix_group}):\[((?:[^\]]*))\]', repl_pref_list, rhs)
 
         def repl_pref_regex(m):
             key, pat, flags = m.group(2), m.group(3), m.group(4) or ""
-            internal_name = self.PREFIX_MAP.get(key, key)
-            self.filter_keys.setdefault(internal_name, []).append("regex")
-            # Pass internal_name as a Variable (no quotes)
-            return f"_regex({internal_name}, {repr(pat)}, {repr(flags)})"
+            return f"_regex({self.PREFIX_MAP.get(key, key)}, {repr(pat)}, {repr(flags)})"
 
-        rhs = safe_sub(rf'({prefix_group}):~/(.*?)/([a-zA-Z]*)', repl_pref_regex, rhs)
+        rhs = safe_sub(rf'\b({prefix_group}):~/(.*?)/([a-zA-Z]*)', repl_pref_regex, rhs)
 
         def repl_pref_eq(m):
             key, val = m.group(2), m.group(3)
-            internal_name = self.PREFIX_MAP.get(key, key)
             py_val = self._literal_to_python(val)
             if py_val == '' or py_val is None:
                 return 'True'
-            self.filter_keys.setdefault(internal_name, []).append("eq")
-            # Returns: (__packetid__ == 'test_val')
-            return f"{internal_name} == {py_val}"
+            return f"{self.PREFIX_MAP.get(key, key)} == {py_val}"
 
-        rhs = safe_sub(rf'({prefix_group}):((".*?"|\'.*?\'|[^\s()]+))', repl_pref_eq,
-                       rhs)
-
-        #print(f"{rhs=}")
-        return ast.parse(rhs, mode="eval")
+        rhs = safe_sub(rf'\b({prefix_group}):((".*?"|\'.*?\'|[^\s()]+))', repl_pref_eq, rhs)
+        try:
+            return ast.parse(rhs, mode="eval")
+        except SyntaxError as e:
+            raise ValueError(f"Invalid address filter {s!r}: {e.msg}") from None
 
     def _literal_to_python(self, token: str) -> str:
         """
-        Converts a Domain Specific Language (DSL) token into a valid Python literal string.
-
-        This method ensures that:
-        1. Numeric strings are kept as raw numbers (int/float).
-        2. Already quoted strings (e.g., "'value'") are returned as-is.
-        3. Unquoted strings (e.g., "value") are safely wrapped in quotes.
-        4. Empty inputs return None.
-
-        Args:
-            token (str): The raw string extracted from the address RHS.
-
-        Returns:
-            str: A string that can be safely embedded into a Python eval() expression.
+        Converts a token of the address syntax into a Python literal string: numbers stay
+        numbers, quoted strings stay as they are, bare words become quoted strings.
         """
         t = token.strip()
-
-        # 1. Handle empty input
         if not t:
             return None
-
-        # 2. Check if it's already a quoted string ('...' or "...")
-        # This prevents double-quoting which causes match failures
-        if (t.startswith("'") and t.endswith("'")) or \
-                (t.startswith('"') and t.endswith('"')):
+        if (t.startswith("'") and t.endswith("'")) or (t.startswith('"') and t.endswith('"')):
             return t
-
-        # 3. Check if it's a numeric literal (integer or float)
         if re.fullmatch(r'-?\d+(\.\d*)?', t):
             return t
-
-        # 4. For everything else (bare words), turn it into a string literal
-        # Using repr() is safer than f"'{t}'" as it handles internal escapes
         return repr(t)
 
     def _list_to_python(self, content: str) -> str:
         parts = [p.strip() for p in content.split(",")] if content.strip() else []
         return "[" + ",".join([self._literal_to_python(p) for p in parts]) + "]"
 
-    # -------------------------
-    # Eval helpers
-    # -------------------------
-    def matches_packetfilter(self, packet, soft_missing=True):
-        # 0. No Filter
-        if self._rhs_ast is None:
-            return True
+    # ------------------------------------------------------------------
+    # Evaluation of the filter
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _meta_get(rv, path):
+        val = rv
+        for part in path:
+            if not isinstance(val, dict) or part not in val:
+                return _MISSING
+            val = val[part]
+        return val
 
-        # 1. Daten normalisieren
-        p_data = packet.to_redvypr_dict() if hasattr(packet,
-                                                     "to_redvypr_dict") else packet
-
-        # 2. Daten flachklopfen (Metadata -> __dunder__)
-        flat_data = self._to_redvypr_dict_flat(p_data)
-
-        # 3. Locals vorbereiten
-        placeholder = SoftPlaceholder(soft_missing)
-        # Erst alle Namen aus dem AST mit Placeholdern füllen
-        locals_map = {node.id: placeholder for node in ast.walk(self._rhs_ast)
-                      if isinstance(node, ast.Name)}
-
-        # 4. WICHTIG: Die echten Daten müssen die Placeholder ÜBERSCHREIBEN
-        locals_map.update(flat_data)
-
-        # 5. Hilfsfunktionen laden (wie _dt)
-        locals_map.update(self._build_eval_locals(p_data, soft_missing))
-
-
-        try:
-            if True:
-                return bool(eval(self._compiled_rhs, {"__builtins__": {}}, locals_map))
-            else:
-                code = compile(self._rhs_ast, filename="<ast>", mode="eval")
-                return bool(eval(code, {"__builtins__": {}}, locals_map))
-        except Exception:
-            return soft_missing
-
-    def _coerce_datetime(self, v):
-        if hasattr(v, "year") and hasattr(v, "month") and hasattr(v, "day"):
-            return v
-        if isinstance(v, str):
-            # cheap ISO-datetime heuristic
-            # YYYY-MM-DD or YYYY-MM-DDTHH:MM
-            if len(v) < 10 or v[4] != "-" or v[7] != "-":
-                return v
-
-            if "T" not in v and ":" not in v:
-                return v
+    @staticmethod
+    def _path_get(root, keys):
+        val = root
+        for k in keys:
             try:
-                return datetime.fromisoformat(v)
-            except Exception:
-                pass
-        return v
+                val = val[k]
+            except (KeyError, IndexError, TypeError):
+                return _MISSING
+        return val
 
-    def _build_eval_locals(self, packet: dict, soft_missing: bool):
-        locals_map = {}
-        INTERNAL_TO_PATH = {v["internal"]: v["path"] for v in self.META_CONFIG.values()}
+    def _value(self, operand, pkt, rv):
+        kind = operand[0]
+        if kind == "m":
+            return self._meta_get(rv, operand[2])
+        if kind == "p":
+            return self._path_get(pkt, operand[1])
+        return operand[1]
 
-        def _dt(iso):
-            from datetime import datetime
-            return datetime.fromisoformat(iso)
-
-        def _resolve_val(k_or_v):
-            """
-            Hilfsfunktion: Wenn k_or_v ein SoftPlaceholder oder der Wert selbst ist,
-            geben wir ihn zurück. Wenn es ein String-Pfad ist (altes System), lösen wir ihn auf.
-            """
-            if isinstance(k_or_v, SoftPlaceholder):
-                return k_or_v
-            # Wenn es ein String ist, der ein Key sein könnte (kein Dunder, keine Metadaten),
-            # und er NICHT im Paket als Wert existiert, behandeln wir ihn als Pfad.
-            # Aber im neuen System ist k_or_v meistens schon der fertige Wert aus der locals_map.
-            return k_or_v
-
-        # -------------------------
-        # In / Regex / Exists
-        # -------------------------
-        def _in(val, list_obj):
-            # val ist hier bereits der Wert der Variable (z.B. __packetid__)
-            return val in list_obj
-
-        def _regex(val, pat, flags=""):
-            # val ist der Inhalt der Variable
-            f = 0
-            if "i" in flags: f |= re.IGNORECASE
-            if "m" in flags: f |= re.MULTILINE
-            if "s" in flags: f |= re.DOTALL
-            return re.search(pat, str(val), f) is not None
-
-        def _exists(name: str) -> bool:
-            # Hier bleibt name ein String (z.B. '__device__'), da wir _exists('__device__') rufen
-            if name in INTERNAL_TO_PATH:
-                path = INTERNAL_TO_PATH[name]
-                meta = packet.get('_redvypr', {})
-                val = meta
-                try:
-                    for part in path.split('.'):
-                        val = val[part]
-                    return True
-                except (KeyError, TypeError):
+    def _eval(self, node, pkt, rv, soft):
+        kind = node[0]
+        if kind == "eqm":
+            val = self._meta_get(rv, node[2])
+            return soft if val is _MISSING else val == node[3]
+        if kind == "and":
+            for c in node[1]:
+                if not self._eval(c, pkt, rv, soft):
                     return False
-
-            # Root-Key check
-            return name in packet and name != '_redvypr'
-
-        # -------------------------
-        # Mapping
-        # -------------------------
-        locals_map.update({
-            "_dt": _dt,
-            "_in": _in,
-            "_regex": _regex,
-            "_exists": _exists,
-            # Die alten _eq, _ne etc. werden eigentlich nicht mehr gebraucht,
-            # da wir jetzt natives (a == b) im AST nutzen.
-            # Wir lassen sie für Notfälle drin, mappen sie aber auf Standard-Logik:
-            "_eq": lambda a, b: a == b,
-            "True": True,
-            "False": False,
-            "None": None,
-            "packet": packet,
-        })
-
-        return locals_map
-
-
-    def _traverse_path(self, root: dict, parts: list):
-        cur = root
-        for p in parts:
-            if not isinstance(cur, dict) or p not in cur:
-                return False, None
-            cur = cur[p]
-        return True, cur
-
-    def _get_val(self, packet, key, soft_missing_val=True):
-        if packet is None:
-            raise FilterFieldMissing(f"_redvypr missing key '{key}'")
-        parts = key.split(".") if "." in key else [key]
-        if "_redvypr" in packet:
-            found, val = self._traverse_path(packet["_redvypr"], parts)
-            if found:
-                return self._coerce_datetime(val)
-        found, val = self._traverse_path(packet, parts)
-        if found:
-            return self._coerce_datetime(val)
-
-        return SoftPlaceholder(soft_missing_val)
-        #raise FilterFieldMissing(f"missing key '{key}'")
-
-    def _exists_val(self, packet, key):
-        if packet is None:
+            return True
+        if kind == "or":
+            for c in node[1]:
+                if self._eval(c, pkt, rv, soft):
+                    return True
             return False
-        parts = key.split(".") if "." in key else [key]
-        if "_redvypr" in packet:
-            found, _ = self._traverse_path(packet["_redvypr"], parts)
-            if found:
-                return True
-        found, _ = self._traverse_path(packet, parts)
-        return bool(found)
+        if kind == "not":
+            return not self._eval(node[1], pkt, rv, soft)
+        if kind == "inm":
+            val = self._meta_get(rv, node[2])
+            return soft if val is _MISSING else val in node[3]
+        if kind == "cmp":
+            operands, ops = node[1], node[2]
+            left = self._value(operands[0], pkt, rv)
+            for op, operand in zip(ops, operands[1:]):
+                right = self._value(operand, pkt, rv)
+                if left is _MISSING or right is _MISSING:
+                    return soft
+                try:
+                    if not _OP_FUNC[op](left, right):
+                        return False
+                except Exception:
+                    return soft
+                left = right
+            return True
+        if kind == "ex":
+            operand = node[1]
+            if operand[0] == "m":
+                found = self._meta_get(rv, operand[2]) is not _MISSING
+            else:
+                key = operand[1][0]
+                found = key in pkt and key != "_redvypr"
+            return found or (soft and len(node) > 2)
+        if kind == "re":
+            val = self._value(node[1], pkt, rv)
+            if val is _MISSING:
+                return False
+            return node[2].search(str(val)) is not None
+        if kind == "truthy":
+            val = self._value(node[1], pkt, rv)
+            return soft if val is _MISSING else bool(val)
+        if kind == "true":
+            return True
+        if kind == "py":
+            return self._eval_py(node, pkt, rv, soft)
+        raise ValueError(f"unknown filter node {kind!r}")
 
-    # -------------------------
+    def _eval_py(self, node, pkt, rv, soft):
+        """Fallback filter expression: eval() with the packet content and the metadata fields."""
+        placeholder = SoftPlaceholder(soft)
+        locals_map = {name: placeholder for name in node[3]}
+        locals_map.update({k: v for k, v in pkt.items() if k != "_redvypr"})
+        for internal, path in self._META_ORDER:
+            val = self._meta_get(rv, path)
+            if val is not _MISSING:
+                locals_map[internal] = val
+        locals_map.update({"_dt": lambda iso: datetime.fromisoformat(str(iso).replace("Z", "+00:00")),
+                           "True": True, "False": False, "None": None, "packet": pkt})
+        try:
+            return bool(eval(node[1], {"__builtins__": {}}, locals_map))
+        except Exception:
+            return soft
+
+    def matches_packetfilter(self, packet, soft_missing=True):
+        """True if the filter (right side) matches the packet (or the dict of an address)."""
+        rhs = self._rhs
+        if rhs is None:
+            return True
+        if isinstance(packet, RedvyprAddress):
+            packet = packet._redvypr_dict(True)
+        elif not isinstance(packet, dict):
+            packet = packet.to_redvypr_dict() if hasattr(packet, "to_redvypr_dict") else packet
+        rv = packet.get("_redvypr") or {}
+        if rhs[0] == "eqm":
+            val = self._meta_get(rv, rhs[2])
+            return soft_missing if val is _MISSING else val == rhs[3]
+        return bool(self._eval(rhs, packet, rv, soft_missing))
+
+    # ------------------------------------------------------------------
     # Matching & LHS
-    # -------------------------
+    # ------------------------------------------------------------------
     def matches(self, packet: Union[dict, "RedvyprAddress"], soft_missing: bool = True):
         """
         Determines if this Address (the Subject/Filter) matches the provided
         packet or Address (the Target).
 
-        The logic is based on Hierarchical Subsumption. It follows these rules:
-
-        1. Filter Consistency:
-           The Host, Device, and Publisher must match. If filter fails,
-           the result is False immediately.
-
-        2. Wildcard Logic (Broad Filter vs. Specific Data):
-           A filter with no specific datakey acts as a wildcard for that device.
-           Example:
-           >>> a0 = RedvyprAddress("@d:test_device")
-           >>> atest2 = RedvyprAddress("sine[0]")
-           >>> a0.matches(atest2) # True (Device match is enough for a0)
-
-        3. Parent-Child Compatibility:
-           A filter for a parent key matches a target that is a specific child/index.
-           Example:
-           >>> a1 = RedvyprAddress("sine@d:test_device")
-           >>> atest2 = RedvyprAddress("sine[0]")
-           >>> a1.matches(atest2) # True (sine[0] is part of sine)
-
-        4. Specificity Constraint (Specific Filter vs. Broad Data):
-           A filter that is 'more specific' than the target will fail if the
-           target cannot satisfy the structural requirement.
-           Example:
-           >>> atest0 = RedvyprAddress("sine@d:test_device")
-           >>> a2 = RedvyprAddress("sine[0]@d:test_device")
-           >>> atest0.matches(a2) # False (atest0 wants 'sine', but a2 only provides 'sine[0]')
-
-        Test Matrix Summary:
-        --------------------
-        - atest0.matches(a0) -> True  (atest0: 'sine@dev' finds a0: '@dev' via filter)
-        - atest0.matches(a1) -> True  (Exact match: 'sine' vs 'sine')
-        - atest0.matches(a2) -> False (atest0: 'sine' is too broad for target a2: 'sine[0]')
-        - a0.matches(atest2) -> True  (a0: '@dev' is a wildcard for any key on dev)
-        - a1.matches(atest2) -> True  (a1: 'sine' subsumes target 'sine[0]')
-        - a2.matches(atest2) -> True  (Exact index match)
+        1. Filter consistency: the filter (right side) must match, otherwise False.
+        2. A filter with no datakey acts as a wildcard for its packets:
+           ``RedvyprAddress("@d:test_device").matches(RedvyprAddress("sine[0]"))`` is True.
+        3. Parent-child: ``"sine@d:test_device"`` matches the target ``"sine[0]"``.
+        4. Specificity: ``"sine@d:test_device"`` does not match ``"sine[0]@d:test_device"``
+           as a filter of ``"sine"`` (the target only provides ``sine[0]``).
 
         Parameters
         ----------
         packet : dict or RedvyprAddress
             The data packet or address to test against.
         soft_missing : bool
-            If True, missing keys in evaluation return False instead of raising.
-
-        Returns
-        -------
-        bool
-            True if the Subject filter matches the Target.
+            If True, a filter field missing in the target counts as a match.
         """
-
-        if isinstance(packet, dict):
-            address = RedvyprAddress(packet)
-        else:
-            address = packet
-
-        # 1. RHS Filter check
-        match_filter = self.matches_packetfilter(packet, soft_missing=soft_missing)
-        if match_filter == False:
+        if not self.matches_packetfilter(packet, soft_missing=soft_missing):
             return False
 
-        # 2. Handle the "Explicit No Data" case (!)
         if self.left_expr == "!":
-            # We need to check if the target actually HAS data
-            # If it has a key like 'data', this must return False
             try:
                 self.__call__(packet, strict=True)
                 return True
             except (KeyError, FilterNoMatch):
                 return False
 
-        # 3. Specific key or Subsumption logic,
-        # try if datakey(s) match, here also more complex datapackets are treated properly
         try:
             self.__call__(packet)
             return True
-        except:
-            # If this is a packet, the address is without a datakey, but the __call__ did not find any data
-            # so it does not match
+        except Exception:
+            # A packet without the data of the datakey does not match
             if isinstance(packet, dict):
                 return False
-            else:
-                pass
 
-        # 4. Wildcard logic: If I don't care about the key, any key matches
-        # (provided the filter above matched)
-        if address.datakey is None:
-            return True
-
-        return False
+        # Wildcard: the target has no datakey (filter matched above)
+        return getattr(packet, "left_expr", None) is None
 
     def __call__(self, packet, strict=True, soft_missing=True):
         """
-        Evaluates the Redvypr address expression on a given packet and returns the result.
-
-        This method is the core of the Redvypr address system. It processes the packet
-        according to the address's left-hand side (LHS) expression and right-hand side (RHS)
-        filter constraints. The method supports dynamic evaluation of expressions, metadata
-        filtering, and strict/soft handling of missing keys.
+        Evaluates the address on a packet: checks the filter (right side) and returns
+        the data of the datakey (left side).
 
         Parameters
         ----------
         packet : dict or RedvyprAddress or str
-            The input packet to evaluate. If a `RedvyprAddress` or str is provided, it is converted
-            to a dictionary using `to_redvypr_dict()`. The packet can contain a `_redvypr`
-            key for metadata (e.g., `packetid`, `device`, `publisher`), as it is the
-            standard for redvypd datapackets.
+            The packet. An address (or address string) is converted with `to_redvypr_dict()`.
         strict : bool, optional
-            If `True`, raises exceptions for missing keys or failed evaluations.
-            If `False`, returns `None` for missing keys or failed evaluations.
-            Default is `True`.
+            If True, raise an exception if the filter does not match (FilterNoMatch) or the
+            datakey is missing (KeyError); otherwise return None.
         soft_missing : bool, optional
-            If `True`, missing keys in the packet are treated as `None` without raising an error.
-            If `False`, missing keys may raise a `KeyError` or `FilterNoMatch` depending on `strict`.
-            Default is `True`.
+            If True, filter fields missing in the packet count as a match.
 
         Returns
         -------
-        dict or Any or None
-            - If the address has no LHS expression and no RHS filter, the original `packet` is returned.
-            - If the RHS filter does not match the packet and `strict=True`, a `FilterNoMatch` is raised.
-            - If the LHS expression is `"!"` (no-data), returns the packet if it contains no data keys
-              (only metadata), otherwise raises a `KeyError` or returns `None` depending on `strict`.
-            - If the LHS expression is evaluated successfully, returns the result of the evaluation:
-              - If the result is a string and matches a key in the packet, returns the value of that key.
-              - Otherwise, returns the evaluated result (e.g., a string, number, or other value).
-            - If evaluation fails and `strict=False`, returns `None`.
-
-        Raises
-        ------
-        FilterNoMatch
-            Raised if the packet does not match the RHS filter and `strict=True`.
-        KeyError
-            Raised if a required key is missing and `strict=True`, or if the LHS expression is `"!"`
-            but the packet contains data keys.
-        NameError
-            Raised if a variable in the LHS expression is undefined and `strict=True`.
-        TypeError
-            Raised if an operation in the LHS expression is invalid (e.g., indexing a non-list) and `strict=True`.
-        Exception
-            Any other exception raised during evaluation is propagated if `strict=True`.
-
-        Notes
-        -----
-        - The LHS expression is compiled to a Python AST for efficient repeated evaluation.
-        - If the LHS expression is a string and matches a key in the packet, the corresponding value
-          is returned. This allows for dynamic key access (e.g., `datakey@d:device`).
-        - The RHS filter is evaluated first. If it fails, the LHS expression is not evaluated.
+        - no datakey and no filter: the packet
+        - filter only: the packet (if the filter matches)
+        - ``"!"``: the packet if it has no data keys (True for an address)
+        - otherwise the data of the datakey; a string result that is a key of the packet
+          returns the value of that key
 
         Examples
         --------
@@ -805,1051 +690,488 @@ class RedvyprAddress:
         >>> packet = {"temperature": 25.5, "_redvypr": {"device": "device1"}}
         >>> addr(packet)
         25.5
-
-        >>> addr = RedvyprAddress("@d:device1 and i:123")
-        >>> packet = {"data": "value", "_redvypr": {"device": "device1", "packetid": 123}}
-        >>> addr(packet)
-        {'data': 'value', '_redvypr': {...}}
-
-        >>> addr = RedvyprAddress("!")
-        >>> packet = {"_redvypr": {"device": "device1"}}  # No data keys
-        >>> addr(packet)
-        {'_redvypr': {'device': 'device1'}}
         """
-        redvypr_address = None # If input is a redvypr address, save it here
+        redvypr_address = None
         if isinstance(packet, RedvyprAddress):
             redvypr_address = packet
             packet = packet.to_redvypr_dict()
         elif isinstance(packet, str):
             redvypr_address = packet
             packet = RedvyprAddress(packet).to_redvypr_dict()
-        if self.left_expr is None and self._rhs_ast is None:
+        if self.left_expr is None and self._rhs is None:
             return packet
-        SAFE_GLOBALS = {"__builtins__": {}, "True": True, "False": False, "None": None}
-        locals_map = dict(packet)
-        if self._rhs_ast and not self.matches_packetfilter(packet, soft_missing=soft_missing):
+        if self._rhs is not None and not self.matches_packetfilter(packet, soft_missing=soft_missing):
             if strict:
                 raise FilterNoMatch("Packet did not match filter")
-            else:
+            return None
+        if not self.left_expr:
+            return packet
+        if self.left_expr == "!":
+            if any(k != "_redvypr" for k in packet.keys()):
+                if strict:
+                    raise KeyError("Found datakeys '!' (no-data) was requested")
                 return None
-        if self.left_expr:
-            if self.left_expr == "!":
-                # We check if the packet contains any data keys other than metadata.
-                # In your system, 'no datakey' typically means that only
-                # the metadata (_redvypr) is present.
-                data_keys = [k for k in packet.keys() if k != "_redvypr"]
-                if len(data_keys) > 0:
-                    if strict:
-                        raise KeyError(
-                            "Found datakeys '!' (no-data) was requested")
-                    return None
-                # Return bool, if redvypr address, otherwise packet itself
-                if redvypr_address:
-                    return True
-                else:
-                    return packet  # Empty
+            return True if redvypr_address else packet
 
+        if self._left_path is not None:
+            val = packet
             try:
-                # 1. Evaluate the expression (e.g., "'test@i:test'" becomes "test@i:test")
-                if self._compiled_left is not None:
-                    val =  eval(self._compiled_left, SAFE_GLOBALS, locals_map)
-                else:
-                    val = eval(self.left_expr, SAFE_GLOBALS, locals_map)
-
-                # 2. If the result is a string AND it's a key in our packet,
-                # we probably want the value from the packet.
-                if isinstance(val, str) and val in packet:
-                    return packet[val]
-
-                return val
-            except (NameError, KeyError, TypeError) as e:
-                # NameError: variable data3 doesn't exist
-                # TypeError: e.g. trying to index something that isn't a list
+                for k in self._left_path:
+                    val = val[k]
+            except (KeyError, TypeError) as e:
                 if strict:
-                    raise KeyError(
-                        f"Key or Expression {self.left_expr!r} failed: {e}")
+                    raise KeyError(f"Key or Expression {self.left_expr!r} failed: {e!r}") from None
                 return None
-            except Exception as e:
+            except IndexError:
                 if strict:
-                    raise e
+                    raise
                 return None
-
-        return packet
-
-    # -------------------------
-    # Filter Manipulation (AST)
-    # -------------------------
-    def add_filter(self, key, op, value=None, flags=""):
-        # 1. Den internen Dunder-Namen finden (__device__, etc.)
-        internal_key = None
-        if key in self.PREFIX_MAP:
-            internal_key = self.PREFIX_MAP[key]
-        elif key in self.LONGFORM_MAP:
-            internal_key = self.LONGFORM_MAP[key]
+        elif self._left_const is not None:
+            val = self._left_const
         else:
-            internal_key = key
+            try:
+                val = eval(self._left_code, {"__builtins__": {}, "True": True, "False": False, "None": None},
+                           dict(packet))
+            except (NameError, KeyError, TypeError) as e:
+                if strict:
+                    raise KeyError(f"Key or Expression {self.left_expr!r} failed: {e}") from None
+                return None
+            except Exception:
+                if strict:
+                    raise
+                return None
+        if isinstance(val, str):
+            try:
+                if val in packet:
+                    return packet[val]
+            except TypeError:
+                pass
+        return val
 
-        # 2. Den Python-Ausdruck basierend auf dem Operator bauen
+    # ------------------------------------------------------------------
+    # Filter manipulation
+    # ------------------------------------------------------------------
+    def _internal(self, key):
+        return self.PREFIX_MAP.get(key, self.LONGFORM_MAP.get(key, key))
+
+    def _append(self, leaf):
+        if self._rhs is None:
+            self._rhs = leaf
+        elif self._rhs[0] == "and":
+            self._rhs = ("and", self._rhs[1] + (leaf,))
+        else:
+            self._rhs = ("and", (self._rhs, leaf))
+        self._cache = {}
+
+    def _replace_eq(self, internal, value):
+        self._remove(internal)
+        self._append(("eqm", internal, self.INTERNAL_TO_PATH[internal], value))
+
+    def add_filter(self, key, op, value=None, flags=""):
+        """Adds a filter (and): op in 'eq', 'in', 'regex', 'exists'."""
+        internal = self._internal(key)
+        meta = internal in self.INTERNAL_TO_PATH
+        operand = ("m", internal, self.INTERNAL_TO_PATH[internal]) if meta else ("p", (internal,), internal)
         if op == "eq":
-            expr_str = f"{internal_key} == {repr(value)}"
+            if meta:
+                leaf = ("eqm", internal, operand[2], value)
+            else:
+                leaf = ("cmp", (operand, ("l", value, repr(value))), ("==",))
         elif op == "in":
-            val_list = value if isinstance(value, list) else [value]
-            expr_str = f"{internal_key} in {repr(val_list)}"
+            vals = tuple(value) if isinstance(value, (list, tuple)) else (value,)
+            leaf = ("inm", internal, operand[2], vals) if meta else \
+                ("cmp", (operand, ("l", list(vals), repr(list(vals)))), ("in",))
         elif op == "regex":
-            expr_str = f"_regex({internal_key}, {repr(value)}, {repr(flags)})"
+            leaf = ("re", operand, self._compile_regex(value, flags), value, flags)
         elif op == "exists":
-            expr_str = f"_exists({internal_key})"
+            # As before: add_filter(..., "exists") counts a missing field as a match with
+            # soft_missing (unlike "key?:" in an address string)
+            leaf = ("ex", operand, "soft")
         else:
             raise ValueError(f"Unsupported operation '{op}'")
+        self._append(leaf)
 
-        # parse erzeugt Knoten MIT lineno
-        new_ast = ast.parse(expr_str, mode="eval")
+    @staticmethod
+    def _target(node):
+        """Internal name / root key a leaf filters on (None: not a single key)."""
+        kind = node[0]
+        if kind in ("eqm", "inm"):
+            return node[1]
+        if kind in ("ex", "re", "truthy"):
+            operand = node[1]
+            return operand[1] if operand[0] == "m" else (operand[1][0] if len(operand[1]) == 1 else None)
+        if kind == "cmp":
+            first = node[1][0]
+            if first[0] == "m":
+                return first[1]
+            if first[0] == "p" and len(first[1]) == 1:
+                return first[1][0]
+        return None
 
-        # 3. In den bestehenden RHS-AST integrieren
-        if self._rhs_ast is None:
-            self._rhs_ast = new_ast
-        else:
-            current_body = self._rhs_ast.body
-            new_node = new_ast.body
+    def _remove(self, internal):
+        def walk(node):
+            if node[0] in ("and", "or"):
+                children = tuple(c for c in (walk(v) for v in node[1]) if c is not None)
+                if not children:
+                    return None
+                return children[0] if len(children) == 1 else (node[0], children)
+            return None if self._target(node) == internal else node
 
-            if isinstance(current_body, ast.BoolOp) and isinstance(current_body.op,
-                                                                   ast.And):
-                current_body.values.append(new_node)
-            else:
-                # WICHTIG: Manuell erstellte Knoten haben keine lineno!
-                combined_body = ast.BoolOp(op=ast.And(),
-                                           values=[current_body, new_node])
-                self._rhs_ast = ast.Expression(body=combined_body)
-
-        # 4. REPARATUR: Füllt lineno/col_offset rekursiv für alle Knoten nach
-        ast.fix_missing_locations(self._rhs_ast)
-
-        self._compile_expressions()
+        if self._rhs is not None:
+            self._rhs = walk(self._rhs)
+        self._cache = {}
 
     def delete_filter(self, key):
-        if not self._rhs_ast:
-            return
+        """Removes all filters of key (prefix, longform or root key)."""
+        self._remove(self._internal(key))
 
-        # Internen Namen ermitteln
-        internal_target = self.PREFIX_MAP.get(key, self.LONGFORM_MAP.get(key, key))
+    @property
+    def filter_keys(self) -> dict:
+        """{internal name or root key: [ops]} of the filter."""
+        result = {}
+        ops = {"eqm": "eq", "inm": "in", "ex": "exists", "re": "regex", "cmp": "cmp", "truthy": "truthy"}
 
-        def _should_remove(node):
-            # Fall A: Vergleich (__device__ == 'val')
-            if isinstance(node, ast.Compare):
-                if isinstance(node.left, ast.Name) and node.left.id == internal_target:
-                    return True
-            # Fall B: Funktionsaufruf (_regex(__device__, ...))
-            elif isinstance(node, ast.Call):
-                if node.args and isinstance(node.args[0], ast.Name) and node.args[
-                    0].id == internal_target:
-                    return True
-            return False
+        def walk(node):
+            if node[0] in ("and", "or"):
+                for c in node[1]:
+                    walk(c)
+            elif node[0] == "not":
+                walk(node[1])
+            else:
+                target = self._target(node)
+                if target is not None:
+                    result.setdefault(target, []).append(ops.get(node[0], node[0]))
 
-        def _walk_and_filter(node):
-            if isinstance(node, ast.BoolOp):
-                new_vals = [nv for nv in (_walk_and_filter(v) for v in node.values) if
-                            nv is not None]
-                if not new_vals: return None
-                if len(new_vals) == 1: return new_vals[0]
-                node.values = new_vals
-                return node
+        if self._rhs is not None:
+            walk(self._rhs)
+        return result
 
-            return None if _should_remove(node) else node
-
-        new_root = _walk_and_filter(self._rhs_ast.body)
-        self._rhs_ast = ast.Expression(new_root) if new_root else None
-        self._compile_expressions()
-
-    def extract(self, keys: Optional[List[str]] = None) -> Optional["RedvyprAddress"]:
-        if not self._rhs_ast:
-            return None
-        if keys is None:
-            keys = list(self.filter_keys.keys())
-        new_rva = RedvyprAddress()
-        for k in keys:
-            if k in self.filter_keys:
-                for op in self.filter_keys[k]:
-                    new_rva.add_filter(k, op)
-        return new_rva
-
-    # -------------------------
-    # LHS Manipulation
-    # -------------------------
+    # ------------------------------------------------------------------
+    # LHS manipulation
+    # ------------------------------------------------------------------
     def add_datakey(self, datakey: str, overwrite: bool = True):
         if "@" in datakey:
             raise ValueError("datakey must not contain '@'.")
         if self.left_expr is None or overwrite:
             self.left_expr = datakey
-
-        self._compile_expressions()
+            self._bracket_style = None
+            self._use_bracket_style = False
+            self._apply_bracket_style()
+        self._compile_left()
 
     def delete_datakey(self):
         self.left_expr = None
-        self._compile_expressions()
+        self._bracket_style = None
+        self._use_bracket_style = False
+        self._compile_left()
 
-    # -------------------------
-    # String / Dict Conversion
-    # -------------------------
-    def _to_redvypr_dict_flat(self, p_data: dict) -> dict:
-        """
-        Converts a nested packet dictionary into a flat dictionary for eval().
-        Maps metadata fields to safe internal names (e.g., __packetid__)
-        to prevent collisions with root user data.
-        """
-        # 1. Copy root data but exclude the metadata block itself
-        flat_data = {k: v for k, v in p_data.items() if k != '_redvypr'}
-
-        if '_redvypr' in p_data:
-            meta = p_data['_redvypr']
-            for cfg in self.META_CONFIG.values():
-                path = cfg["path"]
-                internal_name = cfg["internal"]
-
-                # Path traversal for dot notation (e.g., "host.uuid")
-                parts = path.split(".")
-                current_val = meta
-                try:
-                    for part in parts:
-                        current_val = current_val[part]
-                    flat_data[internal_name] = current_val
-                except (KeyError, TypeError):
-                    continue
-        return flat_data
-
+    # ------------------------------------------------------------------
+    # Dict conversion
+    # ------------------------------------------------------------------
     def to_redvypr_dict(self, include_datakey: bool = True) -> dict:
         """
-        Creates a redvypr dictionary.
+        Creates a redvypr dictionary: the path of the datakey (values True) and the filter
+        values in the '_redvypr' header (metadata) or the root (packet content).
 
-        Create a dictionary with the additional '_redvypr' datakey containing information for the
-        datapacket. Dictionaries of this form are the base for the redvypr datadictionaries used
-        to transport data between the redvypr devices and instances.
-
-        Parameters
-        ----------
-        include_datakey : bool, optional
-            Determines whether the data path structure from the datakey
-            should be included in the final dictionary. If False, only the
-            metadata and constraints structure (RHS) is returned.
-            Default is True.
-
-        Returns
-        -------
-        dict
-            The merged dictionary containing the data path structure (if enabled)
-            as well as the metadata under the '_redvypr' key.
-
-        See Also
-        --------
-        RedvyprDatadict : A dictionary of the form generated here with extra functionality to work with RedvyprAddresses.
-
-
-        Examples
-        --------
-        >>> from redvypr import RedvyprAddress
-        >>> addr = RedvyprAddress("payload['y'] @ i:42")
-        >>> addr.to_redvypr_dict()
+        >>> RedvyprAddress("payload['y'] @ i:42").to_redvypr_dict()
         {'payload': {'y': True}, '_redvypr': {'packetid': 42}}
-
-        >>> addr.to_redvypr_dict(include_datakey=False)
+        >>> RedvyprAddress("payload['y'] @ i:42").to_redvypr_dict(include_datakey=False)
         {'_redvypr': {'packetid': 42}}
         """
-        if include_datakey and self._redvypr_dict_datakey is not None:
-            return copy.deepcopy(self._redvypr_dict_datakey)
-        elif not include_datakey and self._redvypr_dict_nodatakey is not None:
-            return copy.deepcopy(self._redvypr_dict_nodatakey)
+        return _copy_struct(self._redvypr_dict(include_datakey))
 
-        # 1. Initialise
-        root = {}
+    def _redvypr_dict(self, include_datakey):
+        """Cached (not copied) dict of to_redvypr_dict()."""
+        key = ("dict", include_datakey)
+        try:
+            return self._cache[key]
+        except KeyError:
+            pass
+        root = self._lhs_dict() if include_datakey else {}
+        meta, root_rhs = {}, {}
 
-        # 2. process LHS
-        if include_datakey:
-            root = self.to_redvypr_dict_lhs()
-        else:
-            root = {}
+        def add(path, value, target):
+            cur = target
+            for p in path[:-1]:
+                if p not in cur or not isinstance(cur[p], dict):
+                    cur[p] = {}
+                cur = cur[p]
+            cur[path[-1]] = value
 
+        def add_operand(operand, value):
+            if operand[0] == "m":
+                add(list(operand[2]), value, meta)
+            elif operand[0] == "p":
+                keys = list(operand[1])
+                if keys[0] == "_redvypr" and len(keys) > 1:
+                    add(keys[1:], value, meta)
+                else:
+                    add(keys, value, root_rhs)
 
-        # 3. process RHS
-        root_rhs = self.to_redvypr_dict_rhs()
+        def walk(node):
+            kind = node[0]
+            if kind in ("and", "or"):
+                for c in node[1]:
+                    walk(c)
+            elif kind == "not":
+                walk(node[1])
+            elif kind == "eqm":
+                add(list(node[2]), node[3], meta)
+            elif kind == "inm":
+                add(list(node[2]), list(node[3]), meta)
+            elif kind == "cmp" and node[1][0][0] in ("m", "p") and node[1][1][0] == "l"                     and not node[1][1][2].startswith("dt("):          # as before: no dt() values
+                value = node[1][1][1]
+                add_operand(node[1][0], list(value) if isinstance(value, tuple) else value)
+            elif kind == "ex":
+                add_operand(node[1], True)
+            elif kind == "re":
+                add_operand(node[1], node[3])
 
-        # Simple top-level merge of the keys
-        for k, v in root_rhs.items():
+        if self._lhs_ast is not None and not isinstance(self._lhs_ast.body, (ast.Name, ast.Subscript)):
+            # A comparison as datakey (e.g. "payload['x'] > 1.5") adds its value like a filter
+            for n in ast.walk(self._lhs_ast):
+                if isinstance(n, ast.Compare):
+                    try:
+                        walk(self._to_node(n))
+                    except Exception:
+                        pass
+        if self._rhs is not None:
+            walk(self._rhs)
+        result = {"_redvypr": meta, **root_rhs}
+        for k, v in result.items():
             if k == "_redvypr":
-                # Merge _redvypr metadata
                 if not isinstance(root.get("_redvypr"), dict):
                     root["_redvypr"] = {}
-                root.setdefault("_redvypr", {}).update(v)
-            # Note 16.07.2026: This was stricter in the older version, if this makes problems, reconsider to check type of root[k] again.
-            #elif isinstance(v, dict) and k in root and isinstance(root[k], dict):
+                root["_redvypr"].update(v)
             elif isinstance(v, dict) and k in root:
                 if not isinstance(root[k], dict):
                     root[k] = {}
-                # Deep update for complex data in root
                 root[k].update(v)
             else:
                 root[k] = v
-
+        self._cache[key] = root
         return root
 
-    def to_redvypr_dict_lhs(self) -> dict:
-        """
-        Extract the pure path structure of the Left-Hand Side (LHS)
-        and represent it as a nested dictionary.
+    def _lhs_dict(self):
+        """Nested dict of the datakey path: data['temp'][0] -> {'data': {'temp': {0: True}}}."""
+        if self._lhs_ast is None:
+            return {}
+        path = self._lhs_path_loose(self._lhs_ast.body)
+        if not path:
+            return {}
+        root = cur = {}
+        for p in path[:-1]:
+            cur[p] = {}
+            cur = cur[p]
+        cur[path[-1]] = True
+        return root
 
-        This method parses the logical datakey path expression (LHS)
-        and builds a hierarchical dictionary structure representing
-        the nested data coordinates. The returned dictionary can be
-        indexed by the left hand side.
+    @staticmethod
+    def _lhs_path_loose(node):
+        """Path of the datakey; a non constant index (slice) ends the path."""
+        if isinstance(node, ast.Name):
+            return [node.id]
+        if isinstance(node, ast.Attribute):
+            base = RedvyprAddress._lhs_path_loose(node.value)
+            return base + [node.attr] if base else [node.attr]
+        if isinstance(node, ast.Subscript):
+            base = RedvyprAddress._lhs_path_loose(node.value)
+            try:
+                idx = ast.literal_eval(node.slice)
+                return base + [idx] if base else [idx]
+            except Exception:
+                return base
+        return None
 
-        Returns
-        -------
-        dict
-            A nested dictionary mapping the hierarchical key path structure
-            defined on the Left-Hand Side of the address.
+    def get_datakeyentries(self):
+        """Keys of the datakey path: "data['temp'][0]" -> ['data', 'temp', 0]."""
+        if not self.left_expr or self.left_expr == "!":
+            return []
+        node = self._lhs_ast.body
+        path = []
+        while isinstance(node, ast.Subscript):
+            if isinstance(node.slice, ast.Constant):
+                path.append(node.slice.value)
+            node = node.value
+        if isinstance(node, ast.Name):
+            path.append(node.id)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            path.append(node.value)
+        else:
+            path.append(ast.unparse(node))
+        return path[::-1]
 
-        Examples
-        --------
-        If the Left-Hand Side expression is ``"['payload']['sensor']['temperature']"``:
+    # ------------------------------------------------------------------
+    # Address string
+    # ------------------------------------------------------------------
+    def _operand_str(self, operand):
+        if operand[0] == "m":
+            return self.INTERNAL_TO_PREFIX[operand[1]]
+        return operand[2]
 
-        >>> addr.to_redvypr_dict_lhs()
-        {'payload': {'sensor': {'temperature': True}}}
-        """
-        result_root = {}
+    def _node_str(self, node, parent=None):
+        kind = node[0]
+        if kind in ("and", "or"):
+            text = f" {kind} ".join(self._node_str(c, kind) for c in node[1])
+            if (parent == "and" and kind == "or") or parent == "not":
+                return f"({text})"
+            return text
+        if kind == "not":
+            return f"not {self._node_str(node[1], 'not')}"
+        if kind == "eqm":
+            return f"{self.INTERNAL_TO_PREFIX[node[1]]}:{node[3]!r}"
+        if kind == "inm":
+            return f"{self.INTERNAL_TO_PREFIX[node[1]]}:{list(node[3])!r}"
+        if kind == "cmp":
+            pieces = [self._operand_str(node[1][0])]
+            for op, operand in zip(node[2], node[1][1:]):
+                pieces += [op, self._operand_str(operand)]
+            return " ".join(pieces)
+        if kind == "ex":
+            operand = node[1]
+            name = self.INTERNAL_TO_PREFIX[operand[1]] if operand[0] == "m" else operand[2]
+            return f"{name}?:"
+        if kind == "re":
+            return f"{self._operand_str(node[1])}:~/{node[3]}/{node[4]}"
+        if kind == "truthy":
+            return self._operand_str(node[1])
+        if kind == "true":
+            return "True"
+        if kind == "py":
+            return node[2]
+        return "?"
 
-        def add_to_target(key_path, value, target):
-            """
-            Recursively insert a value into a nested dictionary structure at a specified key path.
-
-            This helper function navigates down a sequence of keys (`key_path`) inside the
-            `target` dictionary. It ensures intermediate dictionaries are dynamically created
-            if they do not exist, and finally assigns the target `value` to the deepest leaf node.
-
-            Parameters
-            ----------
-            key_path : list of (str or int)
-                A sequence of dictionary keys representing the hierarchical path where the
-                value should be inserted.
-            value : Any
-                The value to assign to the final leaf node in the target nested dictionary.
-            target : dict
-                The reference dictionary into which the nested structures and value are mutated.
-
-            Returns
-            -------
-            None
-                Modifies the `target` dictionary in-place.
-
-            Examples
-            --------
-            >>> target_dict = {}
-            >>> add_to_target(["payload", "sensor", "temperature"], True, target_dict)
-            >>> target_dict
-            {'payload': {'sensor': {'temperature': True}}}
-            """
-
-            cur = target
-            for i in range(len(key_path) - 1):
-                p = key_path[i]
-                if p not in cur or not isinstance(cur[p], dict):
-                    cur[p] = {}
-                cur = cur[p]
-            cur[key_path[-1]] = value
-
-        def get_path(node):
-            """
-            Extract the evaluation path sequence from an Abstract Syntax Tree (AST) node.
-
-            This helper traverses down common AST node types (such as attribute accesses,
-            subscripts/slicing, and identifiers) to resolve a sequential list of keys,
-            attributes, or index offsets. It supports multi-version compatibility
-            (e.g., handling both legacy `ast.Index` nodes and modern Python `ast.Constant` values).
-
-            Parameters
-            ----------
-            node : ast.AST or None
-                The syntax tree node to extract the access path from. Usually starts
-                with an `ast.Expression` or the underlying body of the parsed AST.
-
-            Returns
-            -------
-            list of (str or int) or None
-                A flat list of string attributes/keys and integer indices representing
-                the resolved identifier path in order of evaluation. Returns `None`
-                if the node type is unsupported or cannot be resolved.
-
-            Examples
-            --------
-            For an expression node parsed from ``"['payload']['sensor'][0]"``:
-
-            >>> node = ast.parse("['payload']['sensor'][0]", mode="eval")
-            >>> get_path(node)
-            ['payload', 'sensor', 0]
-            """
-
-            # Falls der Baum in ein Expression-Objekt gewrappt ist
-            if isinstance(node, ast.Expression):
-                node = node.body
-
-            if isinstance(node, ast.Name):
-                return [node.id]
-            if isinstance(node, ast.Attribute):
-                base = get_path(node.value)
-                return base + [node.attr] if base else [node.attr]
-            if isinstance(node, ast.Subscript):
-                base = get_path(node.value)
-                try:
-                    # Holt den Index/Key (z.B. 0 oder 'temp')
-                    slc = node.slice
-                    # Kompatibilität für verschiedene Python Versionen (Index vs Constant)
-                    if isinstance(slc, ast.Index):
-                        slc = slc.value
-                    idx = ast.literal_eval(slc)
-                    return base + [idx] if base else [idx]
-                except:
-                    return base
+    def _prune(self, node, allowed):
+        if node[0] in ("and", "or"):
+            children = tuple(c for c in (self._prune(v, allowed) for v in node[1]) if c is not None)
+            if not children:
+                return None
+            return children[0] if len(children) == 1 else (node[0], children)
+        if node[0] == "not":
+            inner = self._prune(node[1], allowed)
+            return None if inner is None else ("not", inner)
+        target = self._target(node)
+        if target is not None and target not in allowed:
             return None
+        return node
 
-        # Verarbeiten des LHS AST
-        if self._lhs_ast:
-            # Wir holen den Pfad (z.B. data['temp'][0] -> ['data', 'temp', 0])
-            path = get_path(self._lhs_ast)
-            if path:
-                # Wir markieren die Existenz dieses Pfades mit True
-                add_to_target(path, True, result_root)
-
-        return result_root
-
-    def to_redvypr_dict_rhs(self, include_datakey: bool = True) -> dict:
+    def to_address_string(self, keys: Union[str, List[str]] = None) -> str:
         """
-        Convert the parsed AST representations back into a standard nested dictionary.
-
-        This method performs a reverse mapping of the abstract syntax trees (LHS and RHS)
-        and reconstructs the underlying structured data query. Internal representation
-        variables (such as double-underscore dunder attributes) are mapped back to their
-        original nested metadata fields inside a dedicated ``"_redvypr"`` key block.
+        The address string: datakey and filter, separated by ``@``.
 
         Parameters
         ----------
-        include_datakey : bool, optional
-            Whether to include logical Left-Hand Side (LHS) datakeys inside the
-            reconstructed dictionary output. Default is True.
+        keys : str or list of str, optional
+            Prefixes (e.g. ``"d,i"``) or longforms of the metadata to keep; ``"k"`` keeps
+            the datakey. Default: everything.
 
-        Returns
-        -------
-        dict
-            A reconstructed dictionary containing the resolved ``"_redvypr"`` metadata
-            block alongside other extracted root-level query constraints.
-
-        See Also
-        --------
-        to_redvypr_dict_lhs : Extracting purely the Left-Hand Side structure.
-
-        Examples
-        --------
-        Assuming an address initialized with metadata variables:
-
-        >>> addr = RedvyprAddress("temp @ d:device_01 and h:local_host")
-        >>> addr.to_redvypr_dict_rhs()
-        {
-            '_redvypr': {
-                'device': 'device_01',
-                'host': {
-                    'host': 'local_host'
-                }
-            }
-        }
+        >>> addr = RedvyprAddress("temperature @ d:sensor_01 and h:local_node")
+        >>> addr.to_address_string()
+        "temperature @ d:'sensor_01' and h:'local_node'"
+        >>> addr.to_address_string("d")
+        "@d:'sensor_01'"
         """
-        result_metadata = {}
-        result_root = {}
-
-        # Map internal names back to their original metadata paths
-        # e.g., "__host_uuid__": "host.uuid"
-        REVERSE_META = {v["internal"]: v["path"] for v in self.META_CONFIG.values()}
-
-        def add_to_target(key_path, value, target):
-            """Helper to build nested dictionaries from a list of path parts."""
-            cur = target
-            for i in range(len(key_path) - 1):
-                p = key_path[i]
-                if p not in cur or not isinstance(cur[p], dict):
-                    cur[p] = {}
-                cur = cur[p]
-            cur[key_path[-1]] = value
-
-        def get_path(node):
-            """Extracts the variable path from an AST node."""
-            if isinstance(node, ast.Name): return [node.id]
-            if isinstance(node, ast.Attribute):
-                base = get_path(node.value)
-                return base + [node.attr] if base else [node.attr]
-            if isinstance(node, ast.Subscript):
-                base = get_path(node.value)
-                try:
-                    idx = ast.literal_eval(node.slice)
-                    return base + [idx] if base else [idx]
-                except:
-                    return base
-            return None
-
-        def process_node(node):
-            """Walks the AST to find filter constraints."""
-            if isinstance(node, ast.Compare):
-                path = get_path(node.left)
-                if not path: return
-
-                try:
-                    # Basic literal value extraction
-                    comp = node.comparators[0]
-                    val = ast.literal_eval(comp)
-
-                    # Check if this is one of our internal metadata dunder names
-                    if path[0] in REVERSE_META:
-                        meta_path = REVERSE_META[path[0]].split(".")
-                        add_to_target(meta_path, val, result_metadata)
-                    elif path[0] == "_redvypr":
-                        add_to_target(path[1:], val, result_metadata)
-                    else:
-                        add_to_target(path, val, result_root)
-                except:
-                    pass
-
-            elif isinstance(node, ast.Call):
-                # Handle special helper functions if they are still used in AST
-                func_name = getattr(node.func, 'id', '')
-                if func_name in ("_eq", "_regex", "_exists", "_in"):
-                    try:
-                        # In our new design, the first arg is often a Name node or string
-                        arg0 = node.args[0]
-                        key_str = arg0.id if isinstance(arg0,
-                                                        ast.Name) else ast.literal_eval(
-                            arg0)
-
-                        val = True if func_name == "_exists" else ast.literal_eval(
-                            node.args[1])
-
-                        if key_str in REVERSE_META:
-                            meta_path = REVERSE_META[key_str].split(".")
-                            add_to_target(meta_path, val, result_metadata)
-                        else:
-                            add_to_target(key_str.split("."), val, result_root)
-                    except:
-                        pass
-
-        # Walk through both LHS and RHS ASTs
-        for tree in [self._lhs_ast, self._rhs_ast]:
-            if tree:
-                for node in ast.walk(tree):
-                    process_node(node)
-
-        return {"_redvypr": result_metadata, **result_root}
-
-    def get_datakeyentries(self):
-        expr = self.left_expr
-        if not expr or expr == "!":
-            return []
-
+        cache_key = keys if isinstance(keys, (str, type(None))) else tuple(keys)
         try:
-            # Parse the expression into an AST node
-            node = ast.parse(expr.strip(), mode='eval').body
+            return self._cache[("str", cache_key)]
+        except (KeyError, TypeError):
+            pass
+        result = self._to_address_string(keys)
+        try:
+            self._cache[("str", cache_key)] = result
+        except TypeError:
+            pass
+        return result
 
-            path = []
-            # Walk "down" the tree for expressions like foo['bar'][2]
-            while isinstance(node, ast.Subscript):
-                # The index is node.slice (Python 3.9+)
-                index_node = node.slice
-                if isinstance(index_node, ast.Constant):  # e.g., 'bar' or 2
-                    path.append(index_node.value)
-                elif isinstance(index_node, ast.Index):  # Older Python 3.x
-                    if isinstance(index_node.value, ast.Constant):
-                        path.append(index_node.value.value)
+    def _to_address_string(self, keys):
+        allowed = None
+        show_left = True
+        if keys is not None:
+            allowed_keys = [k.strip() for k in keys.split(",") if k.strip()] if isinstance(keys, str) else keys
+            if len(allowed_keys) == 0:
+                return "@"
+            allowed = {self._internal(k) for k in allowed_keys}
+            if not any(k in allowed_keys for k in ("k", "datakey")):
+                show_left = False
 
-                node = node.value
+        rhs_str = ""
+        if self._rhs is not None:
+            rhs = self._rhs if allowed is None else self._prune(self._rhs, allowed)
+            if rhs is not None:
+                rhs_str = self._node_str(rhs)
 
-            # Now we are at the "base" node (the left-most part)
-            if isinstance(node, ast.Name):
-                path.append(node.id)
-            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-                path.append(node.value)
-            else:
-                # Fallback for unexpected node types
-                path.append(ast.unparse(node) if hasattr(ast, 'unparse') else str(node))
+        left = self.left_expr if (self.left_expr and show_left) else ""
+        if self._use_bracket_style and left:
+            key = self._bracket_style["key"]
+            quote = self._bracket_style["quote"]
+            if left.startswith(key):
+                left = left.replace(key, f"[{quote}{key}{quote}]", 1)
 
-            # Reverse the path because we walked from right to left
-            return path[::-1]
-
-        except Exception as e:
-            # Fallback to your regex if AST fails, or raise a cleaner error
-            raise ValueError(f"Could not parse data path from {expr!r}: {e}")
+        if not rhs_str:
+            return f"{left}" if (left and not keys) else (f"{left} @ " if left else "@")
+        return f"{left} @ {rhs_str}" if left else f"@{rhs_str}"
 
     def __repr__(self):
         return self.to_address_string()
 
-
-    # -------------------------
-    # Readable RHS / get_str
-    # -------------------------
-    def _ast_to_rhs_string(self, node: ast.AST) -> str:
-        """
-        Converts an AST (Abstract Syntax Tree) back into a human-readable Redvypr address string.
-
-        This function recursively traverses the AST nodes and converts them into a string
-        representation that uses short prefixes for Redvypr fields. It supports the following:
-
-        - `_eq`, `_in`, `_regex`, `_exists` function calls.
-        - `_dt(...)` calls are converted into Python datetime objects.
-        - Boolean operations (`and`, `or`) are handled recursively.
-        - Comparison operations (`==`, `!=`, `<`, `<=`, `>`, `>=`) are handled.
-        - Constant values and names are converted directly.
-
-        Special notes:
-        - `_dt('ISO_STRING')` inside a comparison (or as standalone) is replaced with
-          a `datetime.datetime` object using `datetime.fromisoformat()`.
-        - BoolOps are flattened into `and` / `or` joined strings.
-        - Comparisons with multiple comparators (like `a < b < c`) are reconstructed
-          in the correct order.
-
-        Parameters
-        ----------
-        node : ast.AST
-            The AST node to convert into a human-readable string.
-
-        Returns
-        -------
-        str
-            The reconstructed Redvypr address string.
-        """
-        if node is None:
-            return ""
-
-        # Expression → traverse to body
-        if isinstance(node, ast.Expression):
-            return self._ast_to_rhs_string(node.body)
-
-        # Boolean operations: recursively handle each operand
-        elif isinstance(node, ast.BoolOp):
-            op_str = " and " if isinstance(node.op, ast.And) else " or "
-            return op_str.join([self._ast_to_rhs_string(v) for v in node.values])
-
-        # Call nodes: _eq, _in, _regex, _exists, _dt
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            func_name = node.func.id
-            if func_name in ("_eq", "_in", "_regex", "_exists"):
-                key = ast.literal_eval(node.args[0])
-                field_prefix = self.REV_PREFIX_MAP.get(key, key)
-                if func_name == "_eq":
-                    val = ast.literal_eval(node.args[1])
-                    return f"{field_prefix}:{val}"
-                elif func_name == "_in":
-                    vals = ast.literal_eval(node.args[1])
-                    return f"{field_prefix}:[{','.join(map(str, vals))}]"
-                elif func_name == "_regex":
-                    pat = ast.literal_eval(node.args[1])
-                    flags = ast.literal_eval(node.args[2]) if len(node.args) > 2 else ""
-                    return f"{field_prefix}:~/{pat}/{flags}"
-                elif func_name == "_exists":
-                    return f"{field_prefix}?:"
-            elif func_name == "_dt":
-                val = ast.literal_eval(node.args[0])
-                dt_obj = datetime.fromisoformat(val)
-                dt_str = f"dt({dt_obj.isoformat()})"
-                # return repr(dt_obj)
-                return dt_str
-
-        # Comparison nodes: e.g., calibration_date == _dt(...)
-        elif isinstance(node, ast.Compare):
-            left = self._ast_to_rhs_string(node.left)
-            comparators = [self._ast_to_rhs_string(c) for c in node.comparators]
-            ops = []
-            for op in node.ops:
-                if isinstance(op, ast.Eq):
-                    ops.append("==")
-                elif isinstance(op, ast.NotEq):
-                    ops.append("!=")
-                elif isinstance(op, ast.Lt):
-                    ops.append("<")
-                elif isinstance(op, ast.LtE):
-                    ops.append("<=")
-                elif isinstance(op, ast.Gt):
-                    ops.append(">")
-                elif isinstance(op, ast.GtE):
-                    ops.append(">=")
-                else:
-                    ops.append("?")
-            # reconstruct chained comparisons
-            pieces = [left]
-            for o, c in zip(ops, comparators):
-                pieces.append(o)
-                pieces.append(c)
-            return " ".join(pieces)
-
-        # Names and constants
-        elif isinstance(node, ast.Name):
-            return node.id
-        elif isinstance(node, ast.Constant):
-            return repr(node.value)
-
-        # fallback: unparse any other node
-        else:
-            return ast.unparse(node)
-
-    def to_address_string(self, keys: Union[str, List[str]] = None) -> str:
-        """
-        Generate the human-readable address string representation.
-
-        This method reconstructs the standardized address string by combining the Left-Hand
-        Side (LHS / datakey) and the Right-Hand Side (RHS / metadata filters) using the
-        proper ``"@"`` delimiter syntax. It handles:
-        1. Filtering/pruning of active metadata attributes based on the allowed `keys`.
-        2. Output formatting of the Left-Hand Side (LHS) expression.
-        3. Reverse translation of internal dunder attributes back to their shorthand
-           prefixes (e.g., mapping ``"__device__"`` back to ``"d:"``).
-        4. Symmetric structure formatting around the ``"@"`` boundary symbol.
-
-        Parameters
-        ----------
-        keys : str or list of str, optional
-            Shorthand prefixes (e.g., ``"d"``, ``"p"``) or longforms to filter the output.
-            If specified, only these metadata dimensions will be preserved in the
-            reconstructed address string. Default is None.
-
-        Returns
-        -------
-        str
-            The formatted, human-readable address string.
-
-        Examples
-        --------
-        Basic reconstruction with LHS and RHS:
-
-        >>> addr = RedvyprAddress("temperature @ d:sensor_01 and h:local_node")
-        >>> addr.to_address_string()
-        'temperature@d:sensor_01 and h:local_node'
-
-        Pruning the address to only include specific metadata keys (e.g., device ``"d"``):
-
-        >>> addr.to_address_string(keys=["d"])
-        'temperature@d:sensor_01'
-        """
-        # --- 1. Vorbereitung der Key-Filterung ---
-        allowed_keys_set = None
-        show_left = True
-
-        if keys is not None:
-            if isinstance(keys, str):
-                allowed_keys = [k.strip() for k in keys.split(",") if k.strip()]
-            else:
-                allowed_keys = keys
-
-            if len(allowed_keys) == 0:
-                return "@"
-
-            # Expand keys (Mapping von kurz zu lang/intern)
-            expanded = set()
-            for k in allowed_keys:
-                if k in getattr(self, 'LONGFORM_MAP', {}):
-                    expanded.add(self.LONGFORM_MAP[k])
-                elif k in self.PREFIX_MAP:
-                    expanded.add(self.PREFIX_MAP[k])
-                elif k in getattr(self, 'REV_PREFIX_MAP', {}):
-                    expanded.add(k)
-                else:
-                    expanded.add(k)
-
-            allowed_keys_set = expanded
-            # Wenn 'k' oder 'datakey' nicht explizit verlangt wird, linke Seite verstecken
-            if not any(k in allowed_keys for k in ("k", "datakey")):
-                show_left = False
-
-        # --- 2. AST Pruning (Filterung der RHS) ---
-        def prune_ast(node):
-            if node is None: return None
-            if isinstance(node, ast.Expression):
-                node.body = prune_ast(node.body)
-                return node if node.body else None
-
-            if isinstance(node, ast.BoolOp):
-                new_vals = [prune_ast(v) for v in node.values]
-                new_vals = [v for v in new_vals if v is not None]
-                if not new_vals: return None
-                node.values = new_vals
-                return node
-
-            # Prüfung auf Name-Ebene (für __packetid__ etc) oder Call-Ebene
-            target_key = None
-            if isinstance(node, ast.Compare) and isinstance(node.left, ast.Name):
-                target_key = node.left.id
-            elif isinstance(node, ast.Call) and node.args:
-                try:
-                    # Handhabt _exists('__device__') oder _regex(__device__, ...)
-                    arg0 = node.args[0]
-                    target_key = arg0.id if isinstance(arg0,
-                                                       ast.Name) else ast.literal_eval(
-                        arg0)
-                except:
-                    pass
-
-            if allowed_keys_set and target_key and target_key not in allowed_keys_set:
-                return None
-
-            return node
-
-        # --- 3. AST Transformation & Unparsing ---
-        rhs_str = ""
-        if self._rhs_ast:
-            # Kopie ziehen und filtern
-            working_ast = copy.deepcopy(self._rhs_ast)
-            if allowed_keys_set:
-                working_ast = prune_ast(working_ast)
-
-            if working_ast:
-                # Namen zurücktauschen (__device__ -> d)
-                DUNDER_TO_PREFIX = {v["internal"]: k for k, v in
-                                    self.META_CONFIG.items()}
-                for node in ast.walk(working_ast):
-                    if isinstance(node, ast.Name) and node.id in DUNDER_TO_PREFIX:
-                        node.id = DUNDER_TO_PREFIX[node.id]
-
-                # String generieren
-                rhs_str = ast.unparse(working_ast)
-
-                # Kosmetik
-                rhs_str = rhs_str.replace("_dt(", "dt(")
-                # d == 'val' -> d:'val'
-                for prefix in DUNDER_TO_PREFIX.values():
-                    rhs_str = re.sub(rf'\b({prefix})\s*==\s*', r'\1:', rhs_str)
-                # Klammern um einfache Terme entfernen
-                rhs_str = re.sub(r'\(([\w\.]+:[^()]+)\)', r'\1', rhs_str)
-                rhs_str = rhs_str.strip()
-
-        # --- 4. Finaler String-Zusammenbau ---
-        left = self.left_expr if (self.left_expr and show_left) else ""
-
-        # Check for bracket style
-        if self._use_bracket_style:
-            key = self._bracket_style["key"]
-            quote = self._bracket_style["quote"]
-            bracket_replacement = f"[{quote}{key}{quote}]"
-            # Replace with key + bracket
-            if left.startswith(key):
-                # Only first occurence
-                left = left.replace(key, bracket_replacement, 1)
-
-        if not rhs_str:
-            # Kein Filter vorhanden oder weggefiltert
-            return f"{left}" if (left and not keys) else (f"{left} @ " if left else "@")
-
-        return f"{left} @ {rhs_str}" if left else f"@{rhs_str}"
-
-
-    def to_address_string_pure_python(self, keys: Union[str, List[str]] = None) -> str:
-        """
-        Return a valid, evaluable Python expression representing the address filters.
-
-        Translates Redvypr addressing constraints and shorthand notation stored
-        within the AST into a standard Python boolean expression string. The resulting
-        string evaluates properties against a root ``_redvypr`` metadata dictionary.
-        Additionally, custom timestamp functions like ``_dt('ISO_STRING')`` are
-        explicitly converted into inline ``datetime.datetime(...)`` object instantiations.
-
-        Parameters
-        ----------
-        keys : str or list of str, optional
-            Shorthand prefixes (e.g., ``"i"``, ``"d"``) or metadata longforms. If
-            provided, only filters matching these keys are translated and preserved
-            in the output string. Default is None.
-
-        Returns
-        -------
-        str
-            A valid Python boolean expression string suitable for dynamic evaluation
-            (e.g., using ``eval()``) against an environment containing a
-            ``_redvypr`` context dict.
-
-        Examples
-        --------
-        Translating standard shorthand filters to standard Python expressions:
-
-        >>> addr = RedvyprAddress("@ i:test and d:cam")
-        >>> addr.to_address_string_pure_python()
-        "_redvypr['packetid'] == 'test' and _redvypr['device'] == 'cam'"
-
-        Translating custom datetime helpers to native Python datetime constructors:
-
-        >>> addr = RedvyprAddress("@ i:metadata and ts > _dt('2026-07-15T12:00:00')")
-        >>> addr.to_address_string_pure_python()
-        "_redvypr['packetid'] == 'metadata' and ts > datetime.datetime(2026, 7, 15, 12, 0)"
-        """
-
-        if not self._rhs_ast:
-            return f"{self.left_expr}@" if self.left_expr else "@"
-
-        # Process allowed keys if specified
-        allowed_keys = None
-        if keys is not None:
-            if isinstance(keys, str):
-                allowed_keys = [k.strip() for k in keys.split(",") if k.strip()]
-            else:
-                allowed_keys = keys
-
-        def ast_to_python(node: ast.AST) -> str:
-            if node is None:
-                return ""
-
-            if isinstance(node, ast.Expression):
-                return ast_to_python(node.body)
-
-            elif isinstance(node, ast.BoolOp):
-                op_str = ' and ' if isinstance(node.op, ast.And) else ' or '
-                return op_str.join([ast_to_python(v) for v in node.values])
-
-            elif isinstance(node, ast.Compare):
-                left = ast_to_python(node.left)
-                comparators = [ast_to_python(c) for c in node.comparators]
-                ops = []
-                for op in node.ops:
-                    if isinstance(op, ast.Eq):
-                        ops.append("==")
-                    elif isinstance(op, ast.NotEq):
-                        ops.append("!=")
-                    elif isinstance(op, ast.Lt):
-                        ops.append("<")
-                    elif isinstance(op, ast.LtE):
-                        ops.append("<=")
-                    elif isinstance(op, ast.Gt):
-                        ops.append(">")
-                    elif isinstance(op, ast.GtE):
-                        ops.append(">=")
-                    else:
-                        ops.append("?")
-                pieces = [left]
-                for o, c in zip(ops, comparators):
-                    pieces.append(o)
-                    pieces.append(c)
-                return " ".join(pieces)
-
-            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                func_name = node.func.id
-                key = ast.literal_eval(node.args[0])
-
-                # skip keys not allowed
-                if allowed_keys and key not in [self.PREFIX_MAP.get(k, k) for k in
-                                                allowed_keys]:
-                    return ""
-
-                # nested dictionary access
-                key_parts = key.split(".")
-                dict_access = "_redvypr"
-                for part in key_parts:
-                    dict_access += f"['{part}']"
-
-                # handle standard Redvypr operators
-                if func_name == "_eq":
-                    val = ast.literal_eval(node.args[1])
-                    return f"{dict_access} == {repr(val)}"
-                elif func_name == "_in":
-                    vals = ast.literal_eval(node.args[1])
-                    return f"{dict_access} in {repr(vals)}"
-                elif func_name == "_regex":
-                    pat = ast.literal_eval(node.args[1])
-                    flags = ast.literal_eval(node.args[2]) if len(node.args) > 2 else ""
-                    return f"re.search({repr(pat)}, str({dict_access}), {repr(flags)})"
-                elif func_name == "_exists":
-                    return f"'{key_parts[-1]}' in {dict_access.rsplit('[', 1)[0]}"
-                elif func_name == "_dt":
-                    # convert _dt('ISO_STRING') to datetime.datetime(...)
-                    val = ast.literal_eval(node.args[0])
-                    return f"datetime.fromisoformat('{val}')"
-
-            elif isinstance(node, ast.Name):
-                return node.id
-            elif isinstance(node, ast.Constant):
-                return repr(node.value)
-
-            else:
-                return ast.unparse(node)
-
-        rhs_python = ast_to_python(self._rhs_ast)
-        if self.left_expr:
-            return f"{self.left_expr} @ {rhs_python}" if rhs_python else self.left_expr
-        return f"@{rhs_python}" if rhs_python else "@"
-
-
     def get_common_address_formats(self):
         return self.common_address_formats
 
+    # ------------------------------------------------------------------
+    # Attributes: datakey and metadata values
+    # ------------------------------------------------------------------
     def __getattr__(self, name):
-        #print("\n__getattr__")
-        # 1. Spezialfall für Datakey
         if name in ('datakey', 'k'):
-            return self.left_expr
-
-        # 2. Key-Auflösung (Kurzform oder Longform zu Dunder-Name)
+            return self.__dict__.get("left_expr")
+        if name.startswith("_"):
+            raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
         cls = type(self)
-        if name in cls.PREFIX_MAP:
-            internal_key = cls.PREFIX_MAP[name]
-        elif name in cls.LONGFORM_MAP:
-            internal_key = cls.LONGFORM_MAP[name]
-        else:
-            # Wenn es weder ein bekannter Präfix noch ein Dunder-Name ist
-            raise AttributeError(
-                f"{type(self).__name__!r} object has no attribute {name!r}")
-
-        # 3. Wenn kein Filter da ist oder der Key nicht im Filter vorkommt
-        if not self._rhs_ast:
-            return None
-
+        internal = cls.PREFIX_MAP.get(name) or cls.LONGFORM_MAP.get(name)
+        if internal is None:
+            raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
+        cache = self.__dict__.get("_cache")
+        if cache is not None and ("attr", internal) in cache:
+            return cache[("attr", internal)]
         values = []
-        #print(f"{name=},{internal_key=}")
-        # 4. AST nach Werten für diesen internen Key durchsuchen
-        # Wir suchen nach: key == value ODER key in [list]
-        for node in ast.walk(self._rhs_ast):
-            #print(f"{ast.dump(node)}")
-            # Fall A: Vergleich (__device__ == 'cam')
-            if isinstance(node, ast.Compare):
-                # Prüfen ob die linke Seite unser gesuchter Key ist
-                if isinstance(node.left, ast.Name) and node.left.id == internal_key:
 
-                    for op, comparator in zip(node.ops, node.comparators):
-                        try:
-                            val = ast.literal_eval(comparator)
-                            # Bei == fügen wir den Wert hinzu
-                            if isinstance(op, ast.Eq):
-                                values.append(val)
-                            # Bei 'in' fügen wir die Elemente der Liste hinzu
-                            elif isinstance(op, ast.In) and isinstance(val, list):
-                                values.extend(val)
-                        except (ValueError, SyntaxError):
-                            # Falls es kein einfaches Literal ist (z.B. ein Funktionsaufruf)
-                            continue
+        def walk(node):
+            kind = node[0]
+            if kind in ("and", "or"):
+                for c in node[1]:
+                    walk(c)
+            elif kind == "eqm" and node[1] == internal:
+                values.append(node[3])
+            elif kind == "inm" and node[1] == internal:
+                values.extend(node[3])
+            elif kind == "cmp" and node[1][0][0] == "m" and node[1][0][1] == internal and node[1][1][0] == "l":
+                if node[2][0] == "==":
+                    values.append(node[1][1][1])
+                elif node[2][0] == "in" and isinstance(node[1][1][1], (list, tuple)):
+                    values.extend(node[1][1][1])
 
-            # Fall B: Funktionsaufrufe (z.B. _in(__device__, ['a', 'b']))
-            elif isinstance(node, ast.Call):
-                func_name = getattr(node.func, 'id', '')
-                if func_name in ('_in', '_eq') and node.args:
-                    arg0 = node.args[0]
-                    # Prüfen ob das erste Argument unser Key ist
-                    target_match = False
-                    if isinstance(arg0, ast.Name) and arg0.id == internal_key:
-                        target_match = True
-                    elif isinstance(arg0, ast.Constant) and arg0.value == internal_key:
-                        target_match = True
+        rhs = self.__dict__.get("_rhs")
+        if rhs is not None:
+            walk(rhs)
+        result = values[0] if len(values) == 1 else (values or None)
+        if cache is not None:
+            cache[("attr", internal)] = result
+        return result
 
-                    if target_match and len(node.args) > 1:
-                        try:
-                            val = ast.literal_eval(node.args[1])
-                            if func_name == '_in' and isinstance(val, list):
-                                values.extend(val)
-                            else:
-                                values.append(val)
-                        except (ValueError, SyntaxError):
-                            continue
+    def __deepcopy__(self, memo):
+        return RedvyprAddress(self)
 
-        # 5. Rückgabe-Logik
-        if len(values) == 1:
-            return values[0]
-        elif values:
-            return values
-        return None
+    def __copy__(self):
+        return RedvyprAddress(self)
 
+    def __getstate__(self):
+        return {"address": self.to_address_string()}
+
+    def __setstate__(self, state):
+        self.__init__(state["address"])
+
+    # ------------------------------------------------------------------
+    # pydantic
+    # ------------------------------------------------------------------
     @classmethod
     def __get_pydantic_core_schema__(
         cls,
@@ -1857,19 +1179,12 @@ class RedvyprAddress:
         _handler: pydantic.GetCoreSchemaHandler,
     ) -> core_schema.CoreSchema:
         """
-        Modified from here:
-        https://docs.pydantic.dev/latest/concepts/types/#handling-third-party-types
-        We return a pydantic_core.CoreSchema that behaves in the following ways:
-
-        * strs will be parsed as `RedvyprAddress` instances
-        * `RedvyprAddress` instances will be parsed as `RedvyprAddress` instances without any changes
-        * Nothing else will pass validation
-        * Serialization will always return just a str
+        strs are parsed as `RedvyprAddress` instances, instances are taken unchanged,
+        serialization gives the address string.
         """
 
-        def validate_from_str(value: str) -> RedvyprAddress:
-            result = RedvyprAddress(value)
-            return result
+        def validate_from_str(value: str) -> "RedvyprAddress":
+            return RedvyprAddress(value)
 
         from_str_schema = core_schema.chain_schema(
             [
@@ -1882,7 +1197,6 @@ class RedvyprAddress:
             json_schema=from_str_schema,
             python_schema=core_schema.union_schema(
                 [
-                    # check if it's an instance first before doing any further work
                     core_schema.is_instance_schema(RedvyprAddress),
                     from_str_schema,
                 ]
@@ -1896,8 +1210,4 @@ class RedvyprAddress:
     def __get_pydantic_json_schema__(
         cls, _core_schema: core_schema.CoreSchema, handler: pydantic.GetJsonSchemaHandler
     ) -> pydantic.json_schema.JsonSchemaValue:
-        # Use the same schema that would be used for `str`
         return handler(core_schema.str_schema())
-
-
-
