@@ -20,6 +20,8 @@ redvypr changelog
 - norlog gateway: hardware ID column in the device table; "Make gateway leader" (leader weight 72, `state leader`)
   and "Gateway prefers leader role" (weight again after a restart, leader again at most every 10 minutes);
   leader weight and partition ID in the Thread status
+- norlog gateway: "Import autoexec.txt ..." in the network parameters (counterpart of the export): network name,
+  channel, PAN IDs, network key and the dataset for provisioning
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)

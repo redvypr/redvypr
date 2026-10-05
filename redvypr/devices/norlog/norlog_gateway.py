@@ -1441,6 +1441,14 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         form.addRow('PAN ID', self.net_panid)
         form.addRow('Ext. PAN ID', self.net_extpanid)
         form.addRow('Network key', key_row)
+        import_btn = QtWidgets.QPushButton('Import autoexec.txt ...')
+        import_btn.setToolTip('Take the network parameters (and the dataset for provisioning) from an '
+                              'autoexec.txt, e.g. one exported here or from the SD card of a node')
+        import_btn.clicked.connect(self.import_autoexec)
+        import_row = QtWidgets.QHBoxLayout()
+        import_row.addWidget(import_btn)
+        import_row.addStretch(1)
+        form.addRow('', import_row)
 
         btn_row = QtWidgets.QHBoxLayout()
         form_btn = QtWidgets.QPushButton('Form network')
@@ -1557,6 +1565,44 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 f.write(ot_cli.autoexec_text(self.cfg.dataset_tlvs))
         except (OSError, ValueError) as exc:
             QtWidgets.QMessageBox.critical(self, 'Export autoexec.txt', str(exc))
+
+    def import_autoexec(self):
+        """Network parameters (and dataset) from an autoexec.txt, counterpart of export_autoexec()."""
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Import autoexec.txt', 'autoexec.txt',
+                                                        'Text files (*.txt);;All files (*)')
+        if not path:
+            return
+        try:
+            with open(path, encoding='utf-8', errors='replace') as f:
+                net = ot_cli.parse_autoexec(f.read())
+        except (OSError, ValueError) as exc:
+            QtWidgets.QMessageBox.critical(self, 'Import autoexec.txt', str(exc))
+            return
+        if net['network_name'] is not None:
+            self.net_name.setText(net['network_name'])
+        if net['channel'] is not None:
+            self.net_channel.setValue(int(net['channel']))
+        if net['panid'] is not None:
+            self.net_panid.setText(net['panid'])
+        if net['extpanid'] is not None:
+            self.net_extpanid.setText(net['extpanid'])
+        if net['networkkey'] is not None:
+            self.net_key.setText(net['networkkey'])
+        found = [name for name, key in (('network name', 'network_name'), ('channel', 'channel'),
+                                         ('PAN ID', 'panid'), ('ext. PAN ID', 'extpanid'),
+                                         ('network key', 'networkkey')) if net[key] is not None]
+        text = f'Taken from {pathlib.Path(path).name}: {", ".join(found)}.'
+        if net['dataset_tlvs']:
+            # The complete dataset (also mesh-local prefix, PSKc, ...): for provisioning nodes
+            self.cfg.dataset_tlvs = net['dataset_tlvs']
+            self.update_dataset_label()
+            text += ('\n\nThe complete dataset is now used for provisioning nodes. To start the gateway '
+                     'itself in exactly this network (instead of "Form network", which creates new values '
+                     'for the other parameters), use "Provision node via UART" with the gateway port as '
+                     'node port.')
+        else:
+            text += '\n\nThe file has no complete dataset; "Form network" creates a network with these parameters.'
+        QtWidgets.QMessageBox.information(self, 'Import autoexec.txt', text)
 
     def generate_credentials(self):
         self.net_key.setText(secrets.token_hex(16))

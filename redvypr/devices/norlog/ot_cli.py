@@ -779,10 +779,11 @@ def active_dataset_tlvs(cli: OtCli) -> str:
 _TLV_CHANNEL, _TLV_PANID, _TLV_EXTPANID, _TLV_NETWORK_NAME, _TLV_NETWORK_KEY = 0, 1, 2, 3, 5
 
 
-def parse_dataset_tlvs(tlvs_hex: str) -> dict:
+def parse_dataset_tlvs(tlvs_hex: str, include_key: bool = False) -> dict:
     """
     Extract the non-secret parameters of an operational dataset (hex TLVs).
-    The network key is only reported as present/absent.
+    The network key is only reported as present/absent, with include_key also as
+    'networkkey' (hex).
     """
     data = bytes.fromhex(tlvs_hex.strip())
     info = {"network_name": "", "channel": None, "panid": "", "extpanid": "", "has_networkkey": False}
@@ -802,6 +803,8 @@ def parse_dataset_tlvs(tlvs_hex: str) -> dict:
             info["network_name"] = value.decode(errors="replace")
         elif t == _TLV_NETWORK_KEY and length == 16:
             info["has_networkkey"] = True
+            if include_key:
+                info["networkkey"] = value.hex()
         pos += 2 + length
     return info
 
@@ -833,6 +836,53 @@ def provision_node(cli: OtCli, tlvs_hex: str, attach_timeout: float = 20.0) -> d
             break
         time.sleep(1.0)
     return {"state": state, "extaddr": cli.value("extaddr"), "attached": state in ("child", "router", "leader")}
+
+
+# Single commands of an autoexec.txt: 'ot dataset <name> <value>' or 'ot <name> <value>'
+_AUTOEXEC_PARAMS = {"networkname": "network_name", "channel": "channel", "panid": "panid",
+                    "extpanid": "extpanid", "networkkey": "networkkey"}
+
+
+def parse_autoexec(text: str) -> dict:
+    """
+    Thread network of an autoexec.txt (the counterpart of autoexec_text()): the dataset
+    of 'ot dataset set active <hex>' and/or the single parameters ('ot dataset
+    networkname ...', 'ot dataset channel ...', also without 'dataset').
+    Returns {'dataset_tlvs' ('' without), 'network_name', 'channel', 'panid', 'extpanid',
+    'networkkey'}; parameters not in the file are None. Raises ValueError without any.
+    """
+    result = {"dataset_tlvs": "", "network_name": None, "channel": None, "panid": None, "extpanid": None,
+              "networkkey": None}
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip() if not raw.lstrip().startswith("#") else ""
+        words = line.split()
+        if len(words) < 3 or words[0] != "ot":
+            continue
+        args = words[2:] if words[1] == "dataset" else words[1:]
+        if words[1] == "dataset" and words[2:4] == ["set", "active"] and len(words) >= 5:
+            tlvs = words[4]
+            try:
+                info = parse_dataset_tlvs(tlvs, include_key=True)
+            except ValueError as exc:
+                raise ValueError(f"invalid dataset in 'ot dataset set active': {exc}") from None
+            result["dataset_tlvs"] = tlvs
+            for key in ("network_name", "channel", "panid", "extpanid", "networkkey"):
+                if info.get(key) not in (None, ""):
+                    result[key] = info[key]
+        elif len(args) >= 2 and args[0] in _AUTOEXEC_PARAMS:
+            key = _AUTOEXEC_PARAMS[args[0]]
+            value = " ".join(args[1:]) if key == "network_name" else args[1]
+            if key == "channel":
+                value = int(value, 0)
+            elif key == "panid":
+                value = f"0x{int(value, 16):04x}"
+            elif key in ("extpanid", "networkkey"):
+                value = value.lower().removeprefix("0x")
+                bytes.fromhex(value)                                # validates the hex string
+            result[key] = value
+    if not result["dataset_tlvs"] and all(result[k] is None for k in _AUTOEXEC_PARAMS.values()):
+        raise ValueError("no Thread network in the file ('ot dataset set active ...' or 'ot dataset networkname ...')")
+    return result
 
 
 def autoexec_text(tlvs_hex: str) -> str:
