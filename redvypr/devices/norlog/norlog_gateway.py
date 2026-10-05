@@ -371,6 +371,8 @@ class _Gateway:
                                bool(args.get('publish', self.config.archive_publish)))
             elif command == 'set_time':
                 self.set_time(args.get('targets') or ['gateway'], force=bool(args.get('force')))
+            elif command == 'radio_set':
+                self.set_radio(args.get('target') or 'gateway', args.get('dbm'))
             elif command == 'props_read':
                 self.props_command(args.get('target', 'gateway'), {})
             elif command == 'props_set':
@@ -751,6 +753,29 @@ class _Gateway:
         st = ot_cli.time_get(self.cli, address, timeout=self.config.coap_timeout_s)
         t4 = time.time()
         return st, st['t'] / 1000.0 - (t1 + t4) / 2, (t4 - t1) / 2
+
+    def set_radio(self, target, dbm):
+        """Set the transmit power at the antenna of the gateway or a member (stored on the device)."""
+        result = {'target': target, 'ok': False}
+        try:
+            address = self.target_address(target)
+            st = ot_cli.radio_set(self.cli, int(dbm), address, timeout=self.config.coap_timeout_s)
+            result.update(ok=True, radio=st,
+                          message=f"{st.get('antenna_dbm')} dBm at the antenna (set {st.get('txpower_dbm')} dBm, "
+                                  f"nRF {st.get('soc_dbm')} dBm + PA {st.get('pa_gain_db')} dB), stored")
+            if int(dbm) > st.get('max_dbm', int(dbm)):
+                result['message'] += f"; at most {st['max_dbm']} dBm possible"
+        except (ot_cli.OtError, TimeoutError, ValueError, KeyError, TypeError) as exc:
+            text = str(exc)
+            if target != 'gateway' and ('4.04' in text or 'Not Found' in text or 'not found' in text):
+                text += ' (firmware >= 0.4.5 required)'
+            result['message'] = text
+        self.to_gui('radio_result', result)
+        if result['ok']:
+            try:
+                self.query_info([target], report=False)
+            except (ot_cli.OtError, TimeoutError, ValueError):
+                pass
 
     def set_time(self, targets, force=False):
         """
@@ -1767,6 +1792,12 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 if packetid == 'sync_result':
                     self.console_text.appendPlainText(
                         f"[data {data.get('target')}] {'OK' if data.get('ok') else 'ERROR'}: {data.get('message', '')}")
+            elif packetid == 'radio_result':
+                state = 'OK' if data.get('ok') else 'ERROR'
+                self.console_text.appendPlainText(f"[radio {data.get('target')}] {state}: {data.get('message', '')}")
+                dlg = self.settings_dialogs.get(data.get('target'))
+                if dlg is not None:
+                    dlg.on_radio_result(data)
             elif packetid == 'time_result':
                 state = 'OK' if data.get('ok') else 'ERROR'
                 self.console_text.appendPlainText(f"[clock {data.get('target')}] {state}: {data.get('message', '')}")
@@ -1936,8 +1967,57 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         lay.addWidget(self._build_props_box())
         lay.addWidget(self._build_battery_box())
         lay.addWidget(self._build_usb_box())
+        lay.addWidget(self._build_radio_box())
         lay.addStretch(1)
         return w
+
+    def _build_radio_box(self):
+        box = QtWidgets.QGroupBox('Radio (Thread transmit power)')
+        grid = QtWidgets.QGridLayout(box)
+        self.radio_power = QtWidgets.QSpinBox()
+        self.radio_power.setRange(-40, 30)
+        self.radio_power.setSuffix(' dBm')
+        self.radio_power.setToolTip('Transmit power at the antenna. The firmware splits it into the power of '
+                                    'the nRF52840 and the fixed gain of the power amplifier (PA).')
+        self.radio_btn = QtWidgets.QPushButton('Set')
+        self.radio_btn.setToolTip('Set the transmit power of this device; stored on the device (also after a '
+                                  'restart). Needs firmware >= 0.4.5.')
+        self.radio_btn.clicked.connect(self.set_radio)
+        self.radio_status = QtWidgets.QLabel('')
+        self.radio_status.setWordWrap(True)
+        self.radio_status.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        note = QtWidgets.QLabel('Observe the permitted transmit power (EIRP incl. antenna gain) of the country, '
+                                'e.g. EU 2.4 GHz: 20 dBm (100 mW). A lower power of a node can also break its '
+                                'link to the network.')
+        note.setWordWrap(True)
+        note.setStyleSheet('color: gray;')
+        grid.addWidget(QtWidgets.QLabel('At the antenna'), 0, 0)
+        grid.addWidget(self.radio_power, 0, 1)
+        grid.addWidget(self.radio_btn, 0, 2)
+        grid.addWidget(self.radio_status, 0, 3)
+        grid.setColumnStretch(3, 1)
+        grid.addWidget(note, 1, 0, 1, 4)
+        return box
+
+    def set_radio(self):
+        dbm = self.radio_power.value()
+        radio = ((self.entry or {}).get('info') or {}).get('radio') or {}
+        if not self.is_serial() and radio.get('antenna_dbm') is not None and dbm < radio['antenna_dbm']:
+            answer = QtWidgets.QMessageBox.question(
+                self, 'Transmit power',
+                f"Lower the transmit power of this node from {radio['antenna_dbm']} to {dbm} dBm? If its link "
+                f"gets too weak, it can no longer be reached over Thread (only over UART).")
+            if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+        self.radio_status.setStyleSheet('')
+        self.radio_status.setText('Setting ...')
+        self.radio_btn.setEnabled(False)
+        self.device.thread_command('radio_set', {'target': self.key, 'dbm': dbm})
+
+    def on_radio_result(self, data):
+        self.radio_btn.setEnabled(self.running)
+        self.radio_status.setStyleSheet('' if data.get('ok') else 'color: #d64545;')
+        self.radio_status.setText(data.get('message', ''))
 
     def _build_clock_box(self):
         box = QtWidgets.QGroupBox('Clock')
@@ -2175,6 +2255,11 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             self.bat_note.setText('Battery model settings over Thread are not available yet (serial only)')
         elif info and not batt.get('model'):
             self.bat_note.setText('No battery model info (firmware without fuel gauge?)')
+        radio = info.get('radio') or {}
+        if radio.get('min_dbm') is not None and radio.get('max_dbm') is not None:
+            self.radio_power.setRange(int(radio['min_dbm']), int(radio['max_dbm']))
+        if radio.get('txpower_dbm') is not None and not self.radio_power.hasFocus():
+            self.radio_power.setValue(int(radio['txpower_dbm']))
         usb = info.get('usb') or {}
         if usb.get('mode') in self.USB_MODES:
             self.usb_mode.setCurrentIndex(self.USB_MODES.index(usb['mode']))
@@ -2256,6 +2341,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.running = running
         self.read_info_btn.setEnabled(running)
         self.clock_btn.setEnabled(running)
+        self.radio_btn.setEnabled(running)
         for w in (self.props_read_btn, self.props_add_btn, self.props_save_btn):
             w.setEnabled(running)
         for w in (self.usb_mode, self.usb_msc_on, self.usb_msc_off, self.bat_model, self.bat_upload):

@@ -565,6 +565,45 @@ def time_set(cli: OtCli, address=None, timeout: float = 10.0) -> dict:
     return json.loads(coap_request(cli, "put", address, "time", payload, timeout=timeout).decode())
 
 
+RADIO_PREFIX = "#NLR "
+
+
+def radio_get(cli: OtCli, address=None, timeout: float = 10.0) -> dict:
+    """
+    Radio status of the gateway (address None, 'norlog radio json') or of a member
+    (CoAP GET /radio): {'txpower_dbm', 'antenna_dbm', 'soc_dbm', 'pa_gain_db', 'min_dbm',
+    'max_dbm', 'channel'}. Needs firmware >= 0.4.5.
+    """
+    import json
+    if address is None:
+        rest = cli.shell_query("norlog radio json", RADIO_PREFIX, timeout=3.0)
+        if rest.startswith("err"):
+            raise OtError(f"norlog radio json: {rest}")
+        return json.loads(rest)
+    return _retry_garbled(lambda: json.loads(coap_request(cli, "get", address, "radio", timeout=timeout).decode()))
+
+
+def radio_set(cli: OtCli, dbm: int, address=None, timeout: float = 10.0) -> dict:
+    """
+    Set the transmit power at the antenna [dBm] of the gateway or a member; stored on
+    the device (also after a restart). Returns the new radio status (see radio_get()).
+    """
+    import json
+    dbm = int(dbm)
+    if not -40 <= dbm <= 30:
+        raise ValueError(f"transmit power {dbm} dBm out of range (-40..30)")
+    if address is None:
+        try:
+            rest = cli.shell_query(f"norlog radio set {dbm}", RADIO_PREFIX, timeout=5.0)
+        except TimeoutError:
+            raise OtError("no answer to 'norlog radio set' (gateway firmware >= 0.4.5 required)") from None
+        if rest.startswith("err"):
+            raise OtError(f"norlog radio set: {rest}")
+        return json.loads(rest)
+    payload = json.dumps({"txpower_dbm": dbm}).encode()
+    return json.loads(coap_request(cli, "put", address, "radio", payload, timeout=timeout).decode())
+
+
 def fw_install_remote(cli: OtCli, address: str) -> dict:
     import json
     return json.loads(coap_request(cli, "post", address, "fw?op=install").decode())

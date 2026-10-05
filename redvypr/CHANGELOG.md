@@ -23,6 +23,8 @@ redvypr changelog
 - norlog gateway: "Import autoexec.txt ..." in the network parameters (counterpart of the export): network name,
   channel, PAN IDs, network key and the dataset for provisioning
 - norlog gateway: "Provision node via UART" also without a running gateway (directly on the node port)
+- norlog gateway: transmit power at the antenna per device in the settings ("Radio"), gateway over the shell,
+  members over CoAP /radio; stored on the device (firmware >= 0.4.5)
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)
