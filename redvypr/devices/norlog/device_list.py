@@ -153,6 +153,12 @@ def build_device_list(status, gateway_port="", serial_rx_age_s=None, data_source
     }
 
     members = {}
+    own_rloc = gateway["rloc16"]
+
+    def is_own(ext, rloc):
+        """Entry of the gateway itself (the router table of a leader lists it, also with
+        Extended MAC 0000000000000000)."""
+        return ext == own_ext or (own_rloc and norm_rloc16(rloc) == own_rloc) or not ext.strip("0")
 
     def entry(ext, rloc):
         key = ext or rloc
@@ -171,7 +177,7 @@ def build_device_list(status, gateway_port="", serial_rx_age_s=None, data_source
     # --- direct neighbors (RSSI) --------------------------------------------
     for n in status.get("neighbors", []):
         ext = n.get("Extended MAC", "")
-        if not ext or ext == own_ext:
+        if not ext or is_own(ext, n.get("RLOC16")):
             continue
         e = entry(ext, norm_rloc16(n.get("RLOC16")))
         e["thread_role"] = "router" if n.get("Role", "").strip() == "R" else "child"
@@ -203,7 +209,7 @@ def build_device_list(status, gateway_port="", serial_rx_age_s=None, data_source
     leader_id = status.get("leader_router_id")
     for r in status.get("routers", []):
         ext = r.get("Extended MAC", "")
-        if not ext or ext == own_ext:
+        if not ext or is_own(ext, r.get("RLOC16")):
             continue
         e = entry(ext, norm_rloc16(r.get("RLOC16")))
         e["thread_role"] = "leader" if _int(r.get("ID")) == leader_id else "router"
