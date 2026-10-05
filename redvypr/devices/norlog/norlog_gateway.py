@@ -523,7 +523,7 @@ class _Gateway:
                    'rssi_last', 'lq_in', 'lq_out', 'path_cost', 'next_hop', 'age_s')
     # Units of the info values, sent once per device as metadata
     INFO_UNITS = {
-        "uptime_s": 's', "board_temp_c": 'degC',
+        "uptime_s": 's', "board_temp_c": 'degC', "nrf_temp_c": 'degC',
         "battery['mv']": 'mV', "battery['soc']": '%', "battery['current_ma']": 'mA',
         "battery['tte_min']": 'min', "battery['ttf_min']": 'min',
         "radio['txpower_dbm']": 'dBm', "radio['antenna_dbm']": 'dBm', "radio['soc_dbm']": 'dBm',
@@ -1152,7 +1152,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     DEVICE_COLUMNS = ['', 'HW ID', 'Device', 'SN', 'Description', 'Location', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
                       'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets',
-                      'Firmware', 'Battery', 'Board temp [C]', 'RTC', 'Info age [s]']
+                      'Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'RTC', 'Info age [s]']
 
     QUALITY_COLORS = {
         device_list.QUALITY_GOOD: '#7bc96f',
@@ -1160,6 +1160,20 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         device_list.QUALITY_POOR: '#e8743b',
         device_list.QUALITY_NONE: '#d64545',
     }
+
+    @staticmethod
+    def board_temp_warning(info):
+        """Text if the board temperature (ADC) is implausible compared with the nRF chip, else ''."""
+        info = info or {}
+        adc, nrf = info.get('board_temp_c'), info.get('nrf_temp_c')
+        text = ''
+        if adc is not None and nrf is not None and abs(adc - nrf) > 15:
+            text = (f"Board temperature {adc:.1f} C differs from the nRF chip ({nrf:.1f} C): the ADC is "
+                    f"probably misconfigured (firmware >= 0.4.7 resets it).")
+        if info.get('adc_resets'):
+            text += (' ' if text else '') + (f"ADC reset {info['adc_resets']} time(s) since the start because of "
+                                             f"an implausible board temperature.")
+        return text
 
     @staticmethod
     def fem_stuck(radio):
@@ -1369,11 +1383,13 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 d.get('firmware') or ('error' if d.get('info_error') else ''),
                 self._fmt_battery(d),
                 '' if d.get('board_temp_c') is None else f"{d['board_temp_c']:.1f}",
+                '' if (d.get('info') or {}).get('nrf_temp_c') is None else f"{d['info']['nrf_temp_c']:.1f}",
                 self._fmt_clock(d)[0],
                 '' if d.get('info_age_s') is None else f"{d['info_age_s']:.0f}",
             ]
             cols = self.DEVICE_COLUMNS
-            stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'RTC', 'Info age [s]')]
+            stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'RTC',
+                                                  'Info age [s]')]
             self.devices_table.setCellWidget(row, 0, self._settings_button(d))
             full_text = {cols.index('Description'): d.get('desc', ''), cols.index('Location'): d.get('loc', '')}
             for col, text in enumerate([''] + cells):
@@ -1388,11 +1404,17 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                         item.setBackground(QtGui.QColor(self.QUALITY_COLORS[quality]))
                     item.setToolTip(tip)
                 radio = (d.get('info') or {}).get('radio')
-                if cols[col] == 'Board temp [C]' and self.fem_stuck(radio):
+                if cols[col] == 'Quality' and self.fem_stuck(radio):
+                    item.setText(f"{text} / PA stuck?")
                     item.setBackground(QtGui.QColor(self.QUALITY_COLORS[device_list.QUALITY_NONE]))
                     item.setToolTip(f"Front end: TX_EN {radio['fem']['tx']} % HIGH - the PA seems to hang in "
-                                    f"transmit mode (heats, reception only by leakage). Restart the device; "
+                                    f"transmit mode (reception only by leakage). Restart the device; "
                                     f"details in its settings (TX power).")
+                if cols[col] == 'Board temp [C]':
+                    warn = self.board_temp_warning(d.get('info'))
+                    if warn:
+                        item.setBackground(QtGui.QColor(self.QUALITY_COLORS[device_list.QUALITY_FAIR]))
+                        item.setToolTip(warn)
                 if col in stale_cols and d.get('info_error'):
                     # Last read failed: older values in gray, error as tooltip
                     item.setForeground(QtGui.QColor('gray'))
@@ -2247,7 +2269,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             'Board': info.get('board', ''),
             'HW ID': info.get('hwid', ''),
             'Battery': batt,
-            'Board temp': '' if info.get('board_temp_c') is None else f"{info['board_temp_c']:.2f} \u00b0C",
+            'Board temp': self._fmt_temps(info),
             'Uptime': '' if uptime is None else f"{uptime // 3600} h {uptime // 60 % 60} min {uptime % 60} s",
             'Reset cause': str(info.get('reset_cause', '')),
             'Hardware': self._yes_no(info.get('hw')),
@@ -2328,6 +2350,16 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         elif batt.get('ttf_min') is not None:
             text += f", full in {batt['ttf_min'] // 60} h {batt['ttf_min'] % 60} min"
         return text
+
+    @staticmethod
+    def _fmt_temps(info):
+        parts = []
+        if info.get('board_temp_c') is not None:
+            parts.append(f"{info['board_temp_c']:.2f} \u00b0C (ADC)")
+        if info.get('nrf_temp_c') is not None:
+            parts.append(f"nRF chip {info['nrf_temp_c']:.2f} \u00b0C")
+        warn = RedvyprDeviceWidget.board_temp_warning(info)
+        return ', '.join(parts) + (f" - {warn}" if warn else '')
 
     @staticmethod
     def _fmt_radio(radio):

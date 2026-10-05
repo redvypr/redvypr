@@ -25,9 +25,10 @@ redvypr changelog
 - norlog gateway: "Provision node via UART" also without a running gateway (directly on the node port)
 - norlog gateway: transmit power at the antenna per device in the settings ("Radio"), gateway over the shell,
   members over CoAP /radio; stored on the device (firmware >= 0.4.5)
-- norlog gateway: state of the front end pins (TX_EN, RX_EN, MODE) in the settings, the board temperature is marked
-  red if TX_EN hangs HIGH (PA stuck in transmit mode; firmware >= 0.4.6); fixed: the gateway as leader was listed
-  twice
+- norlog gateway: state of the front end pins (TX_EN, RX_EN, MODE) in the settings, "PA stuck?" in the quality
+  column if TX_EN hangs HIGH (firmware >= 0.4.6); fixed: the gateway as leader was listed twice
+- norlog: chip temperature of the nRF52840 (`nrf_temp_c`, CBOR key 61, firmware >= 0.4.7) as column of the device
+  table and in the settings; the board temperature (ADC) is marked if it differs by more than 15 C (ADC resets)
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)

@@ -48,6 +48,7 @@ KEYS = {
     51: "ntc_ohm",
     52: "ntc_temp",
     60: "board_temp_c",
+    61: "nrf_temp_c",       # chip temperature of the nRF52840 (firmware >= 0.4.7)
 }
 
 # Units of the values (metadata of the converted data)
@@ -64,6 +65,7 @@ UNITS = {
     "ntc_ohm": "Ohm",
     "ntc_temp": "degC",
     "board_temp_c": "degC",
+    "nrf_temp_c": "degC",
 }
 
 # cbor_source_id_t
