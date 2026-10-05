@@ -289,6 +289,20 @@ def new_packets(dev_dir, max_packets=None):
     save_state(dev_dir, state)
 
 
+def to_redvypr_packet(pkt, sn=None, hostinfo=None):
+    """
+    redvypr packet of a decoded archive packet (with 't' from new_packets()), with the
+    header of its norlog: device norlog_<sn> (norlog without serial number), deviceid =
+    hardware ID ('mac'), sensorid = sn, packetid = packet type, time = measurement time.
+    """
+    from redvypr.redvypr_datadict import create_redvypr_dict
+    data = create_redvypr_dict(device=f"norlog_{sn}" if sn else "norlog", deviceid=pkt.get("mac"),
+                               sensorid=sn or None, packetid=pkt.get("packet_type", "data"), tu=pkt["t"],
+                               hostinfo=hostinfo)
+    data.update(pkt)
+    return data
+
+
 def waiting_files(dev_dir):
     """Data files whose packets wait for the time of their boot."""
     state = load_state(dev_dir)

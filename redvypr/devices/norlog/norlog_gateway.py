@@ -39,7 +39,9 @@ the same header. Messages about a node keep its key ('gateway' or RLOC16) in
 Data download ("Data" tab of the settings window): the log files of the SD card
 are copied 1:1 into <archive_folder>/<hwid>/ (only what is new, see
 norlog_archive); optionally the new packets are published with their
-measurement time, e.g. for the database writers.
+measurement time, e.g. for the database writers. "Convert to SQLite" turns
+selected archive files into an SQLite database in the redvypr data_flat format
+(norlog_convert, also on the command line).
 
 The info packet contains the info JSON as it is (nested) plus 'link': the radio
 link as seen from the gateway (RSSI, LQ, role, next hop, ...). Metadata is
@@ -80,6 +82,7 @@ from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 from . import device_list
 from . import norlog_archive
 from . import norlog_cbor
+from . import norlog_convert
 from . import ot_cli
 from . import smp_serial
 from .cbor_mini import CBORDecodeError
@@ -690,11 +693,8 @@ class _Gateway:
 
     def publish_archive_packet(self, pkt):
         """Publish a packet of the archive like the live data: header of its norlog, measurement time."""
-        device, hwid, sn = self.identity(hwid=pkt.get('mac'))
-        data = create_redvypr_dict(device=device, deviceid=hwid, sensorid=sn,
-                                   packetid=pkt.get('packet_type', 'data'), tu=pkt['t'])
-        data.update(pkt)
-        self.dataqueue.put(data)
+        _device, _hwid, sn = self.identity(hwid=pkt.get('mac'))
+        self.dataqueue.put(norlog_archive.to_redvypr_packet(pkt, sn))
 
     # --- clock ---
 
@@ -1653,6 +1653,26 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             dlg.update_run_state(running)
 
 
+class ConvertWorker(QtCore.QThread):
+    """Converts *.cbor files into an SQLite database (norlog_convert) without blocking the GUI."""
+    progress = QtCore.pyqtSignal(int, int, str)
+    finished_result = QtCore.pyqtSignal(dict, str)     # result, error text
+
+    def __init__(self, files, db_path, sn=None, parent=None):
+        super().__init__(parent)
+        self.files, self.db_path, self.sn = files, db_path, sn
+
+    def run(self):
+        try:
+            res = norlog_convert.convert(self.files, self.db_path, sn=self.sn,
+                                         progress=lambda i, n, name: self.progress.emit(i, n, name),
+                                         cancel=self.isInterruptionRequested)
+        except Exception as exc:        # shown in the dialog, the GUI must not die
+            self.finished_result.emit({}, f'{type(exc).__name__}: {exc}')
+            return
+        self.finished_result.emit(res, '')
+
+
 class DeviceSettingsDialog(QtWidgets.QDialog):
     """
     Settings of one norlog of the device table: general info and firmware
@@ -2066,7 +2086,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         for w in self.files_run_widgets:
             w.setEnabled(running)
         self.data_sync_btn.setEnabled(running and not self.data_busy)
-        self.data_cancel_btn.setEnabled(running and self.data_busy)
+        self.data_cancel_btn.setEnabled((running and self.data_busy) or self.convert_worker is not None)
 
     # --- firmware ---
 
@@ -2180,11 +2200,19 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.data_sync_btn = QtWidgets.QPushButton('Download new data')
         self.data_sync_btn.clicked.connect(self.data_sync)
         self.data_cancel_btn = QtWidgets.QPushButton('Cancel')
-        self.data_cancel_btn.clicked.connect(lambda: self.device.thread_command('sync_cancel', {}))
+        self.data_cancel_btn.clicked.connect(self.data_cancel)
+        self.data_convert_btn = QtWidgets.QPushButton('Convert to SQLite ...')
+        self.data_convert_btn.setToolTip('Convert selected log files (*.cbor) of the archive into an SQLite '
+                                         'database in the redvypr data_flat format (one column per datastream, '
+                                         'measurement time), readable with the redvypr database tools. Works '
+                                         'without the device; values already in the database are not added '
+                                         'twice.')
+        self.data_convert_btn.clicked.connect(self.data_convert)
         self.data_progress = QtWidgets.QProgressBar()
         self.data_progress.setRange(0, 100)
         self.data_progress.setValue(0)
         row.addWidget(self.data_sync_btn)
+        row.addWidget(self.data_convert_btn)
         row.addWidget(self.data_cancel_btn)
         row.addWidget(self.data_progress, 1)
         lay.addLayout(row)
@@ -2200,7 +2228,62 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         lay.addWidget(self.data_files, 1)
         self.data_busy = False
         self.data_dir = None
+        self.convert_worker = None
         return w
+
+    def _device_archive_dir(self):
+        hwid = (self.entry.get('info') or {}).get('hwid') if getattr(self, 'entry', None) else None
+        folder = self.data_dir or (str(pathlib.Path(self.cfg.archive_folder) / hwid) if hwid else
+                                   self.cfg.archive_folder)
+        return folder if pathlib.Path(folder).exists() else self.cfg.archive_folder
+
+    def data_cancel(self):
+        if self.convert_worker is not None:
+            self.convert_worker.requestInterruption()
+        else:
+            self.device.thread_command('sync_cancel', {})
+
+    def data_convert(self):
+        folder = self._device_archive_dir()
+        files, _ = QtWidgets.QFileDialog.getOpenFileNames(self, 'Log files to convert', folder,
+                                                          'norlog log files (data_*.cbor);;All files (*)')
+        if not files:
+            return
+        default = str(pathlib.Path(folder) / f'{pathlib.Path(folder).name}.sqlite')
+        db_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, 'SQLite database (new or extended)', default, 'SQLite (*.sqlite *.db);;All files (*)',
+            options=QtWidgets.QFileDialog.Option.DontConfirmOverwrite)
+        if not db_path:
+            return
+        self.start_convert(files, db_path)
+
+    def start_convert(self, files, db_path):
+        sn = (getattr(self, 'entry', None) or {}).get('sn')
+        self.convert_worker = ConvertWorker(files, db_path, sn=sn, parent=self)
+        self.convert_worker.progress.connect(self.on_convert_progress)
+        self.convert_worker.finished_result.connect(lambda res, err: self.on_convert_done(res, err, db_path))
+        self.data_convert_btn.setEnabled(False)
+        self.data_cancel_btn.setEnabled(True)
+        self.data_progress.setValue(0)
+        self.data_status.setStyleSheet('')
+        self.data_status.setText(f'Converting {len(files)} file(s) into {db_path} ...')
+        self.convert_worker.start()
+
+    def on_convert_progress(self, i, n, name):
+        self.data_progress.setValue(int(100 * i / n) if n else 0)
+        if name:
+            self.data_status.setText(f'Converting {name} ({i + 1}/{n}) ...')
+
+    def on_convert_done(self, res, err, db_path):
+        self.convert_worker = None
+        self.data_convert_btn.setEnabled(True)
+        self.update_run_state(self.running)
+        if err:
+            self.data_status.setStyleSheet('color: #d64545;')
+            self.data_status.setText(f'Conversion failed: {err}')
+            return
+        self.data_progress.setValue(100)
+        self.data_status.setText(norlog_convert.summary(res, db_path))
 
     def data_browse(self):
         folder = QtWidgets.QFileDialog.getExistingDirectory(self, 'Archive folder', self.data_folder.text())
@@ -2209,11 +2292,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             self.cfg.archive_folder = folder
 
     def data_open_folder(self):
-        hwid = (self.entry.get('info') or {}).get('hwid') if getattr(self, 'entry', None) else None
-        folder = self.data_dir or (str(pathlib.Path(self.cfg.archive_folder) / hwid) if hwid else
-                                   self.cfg.archive_folder)
-        if not pathlib.Path(folder).exists():
-            folder = self.cfg.archive_folder
+        folder = self._device_archive_dir()
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(pathlib.Path(folder).resolve())))
 
     def data_sync(self):

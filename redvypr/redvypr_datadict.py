@@ -87,6 +87,29 @@ def deep_merge(target: dict, source: dict):
             # Otherwise (value is a string, int, None, etc.), overwrite directly
             target[key] = value
 
+# Address entries of expanded data (e.g. the columns of the data_flat database tables).
+# deviceid, sensorid and sensor separate devices with the same name; data without
+# them get the same address as before.
+EXPANDED_ADDRESS_FORMAT = 'k,i,h,d,p,di,si,s'
+
+_EXPANDED_ADDRESS_CACHE = {}
+
+
+def _expanded_header_key(data):
+    """Hashable key of the header values that make up an address, None if not hashable."""
+    rv = dict.get(data, '_redvypr') or {}
+    host = rv.get('host') or {}
+    local = rv.get('localhost') or {}
+    key = (rv.get('device'), rv.get('deviceid'), rv.get('sensor'), rv.get('sensorid'), rv.get('packetid'),
+           rv.get('publisher'), host.get('host'), host.get('uuid'), host.get('addr'),
+           local.get('host'), local.get('uuid'), local.get('addr'))
+    try:
+        hash(key)
+    except TypeError:
+        return None
+    return key
+
+
 class RedvyprDatadict(dict):
     """
     An extension of the built-in `dict` class that implements Redvypr data packets.
@@ -839,7 +862,7 @@ class RedvyprDatadict(dict):
         return self.address.to_address_string(addrformat)
 
     @staticmethod
-    def create_expanded_datadict(t,data,datakey,raddress,address_format='k,i,h,d,p'):
+    def create_expanded_datadict(t,data,datakey,raddress,address_format=EXPANDED_ADDRESS_FORMAT,address=None):
         """
         Options
         1:
@@ -862,13 +885,16 @@ class RedvyprDatadict(dict):
         datakey
         raddress
         address_format
+        address: the address string, if already known (otherwise built from raddress and datakey)
 
         Returns
         -------
 
         """
         data_expanded_tmp = {'format': '0d'}  # can be 0d:one point,0d_stacked: points in a list with time of the same length
-        data_expanded_tmp['address'] = RedvyprAddress(raddress, datakey=datakey).to_address_string(address_format)
+        if address is None:
+            address = RedvyprAddress(raddress, datakey=datakey).to_address_string(address_format)
+        data_expanded_tmp['address'] = address
         try:
             lent = len(t)
             t0 = t[0]
@@ -899,7 +925,7 @@ class RedvyprDatadict(dict):
         return data_expanded_tmp
 
 
-    def expand_data(self, expansion_level=1, address_format='k,i,h,d,p'):
+    def expand_data(self, expansion_level=1, address_format=EXPANDED_ADDRESS_FORMAT):
         """
         Expands data
 
@@ -918,9 +944,19 @@ class RedvyprDatadict(dict):
         except:
             pass
 
+        # The address strings are the same for all packets of one source: cached by the
+        # header values (building them from RedvyprAddress is expensive)
+        header_key = _expanded_header_key(self)
         for k in datakeys:
             data_tmp = self[k]
-            data_expanded_tmp = self.create_expanded_datadict(t,data_tmp,k,self.address)
+            cache_key = (header_key, k, address_format)
+            address = _EXPANDED_ADDRESS_CACHE.get(cache_key) if header_key is not None else None
+            data_expanded_tmp = self.create_expanded_datadict(t, data_tmp, k, self.address,
+                                                              address_format=address_format, address=address)
+            if address is None and header_key is not None:
+                if len(_EXPANDED_ADDRESS_CACHE) > 50000:
+                    _EXPANDED_ADDRESS_CACHE.clear()
+                _EXPANDED_ADDRESS_CACHE[cache_key] = data_expanded_tmp['address']
             data_return[data_expanded_tmp['address']] = data_expanded_tmp
 
         #print(f"{data_return=}")
