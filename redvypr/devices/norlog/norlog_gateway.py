@@ -1084,7 +1084,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     # --- devices ---
 
-    DEVICE_COLUMNS = ['', 'Device', 'SN', 'Description', 'Location', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
+    DEVICE_COLUMNS = ['', 'HW ID', 'Device', 'SN', 'Description', 'Location', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
                       'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets',
                       'Firmware', 'Battery', 'Board temp [C]', 'RTC', 'Info age [s]']
 
@@ -1278,6 +1278,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             if seen is None:
                 seen = d.get('last_data_s')
             cells = [
+                d.get('hwid', ''),
                 name,
                 d.get('sn', ''),
                 self._short(d.get('desc', '')),
