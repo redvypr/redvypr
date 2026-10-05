@@ -31,7 +31,7 @@ Published packets (packetid = type of the packet):
 
 The messages for the GUI of this device (console, command_result,
 thread_status with the device list, flash_status, props, fs_progress,
-fs_result) go through the statusqueue of the device to its widget. They are
+fs_result, time_result) go through the statusqueue of the device to its widget. They are
 published as well only with the option publish_raw_data (default off), with
 the same header. Messages about a node keep its key ('gateway' or RLOC16) in
 'target'.
@@ -341,6 +341,8 @@ class _Gateway:
             elif command == 'refresh':
                 self.read_status()
                 self.query_info('all', refresh_props=True)
+            elif command == 'set_time':
+                self.set_time(args.get('targets') or ['gateway'], force=bool(args.get('force')))
             elif command == 'props_read':
                 self.props_command(args.get('target', 'gateway'), {})
             elif command == 'props_set':
@@ -599,6 +601,65 @@ class _Gateway:
     def fs_write_direct(self, address, data, remote, progress=None):
         """Write a file to a member block by block through the gateway (no SD card on the gateway)."""
         return ot_cli.fs_upload(self.cli, address, data, remote, progress, resume=True)
+
+    # --- clock ---
+
+    TIME_MAX_OFFSET_S = 0.5     # set again if the clock is further off after setting
+    TIME_ATTEMPTS = 3
+
+    def measure_time(self, address):
+        """
+        Read the clock of a device and compare it with this PC: offset = device time
+        minus PC time in the middle of the request, error bound = half the round trip.
+        """
+        t1 = time.time()
+        st = ot_cli.time_get(self.cli, address, timeout=self.config.coap_timeout_s)
+        t4 = time.time()
+        return st, st['t'] / 1000.0 - (t1 + t4) / 2, (t4 - t1) / 2
+
+    def set_time(self, targets, force=False):
+        """
+        Set the clock of the gateway and/or members ('gateway' or RLOC16) to the
+        time of this PC: read (offset before), set, read again; set again while the
+        offset is larger than TIME_MAX_OFFSET_S (e.g. a CoAP retransmission delivered
+        the old time). Devices whose time came from GNSS within the last 2 minutes
+        are skipped unless force.
+        """
+        done, failed, skipped = 0, 0, 0
+        for target in targets:
+            result = {'target': target, 'ok': False}
+            try:
+                address = self.target_address(target)
+                st0, off0, _err0 = self.measure_time(address)
+                result['offset_before_s'] = off0 if st0.get('valid') else None
+                result['src_before'] = st0.get('src')
+                if st0.get('src') == 'gnss' and 0 <= st0.get('set_age_s', -1) < 120 and not force:
+                    result.update(ok=True, skipped=True,
+                                  message=f'skipped: clock from GNSS ({off0 * 1000:+.0f} ms)')
+                    skipped += 1
+                else:
+                    for attempt in range(1, self.TIME_ATTEMPTS + 1):
+                        ot_cli.time_set(self.cli, address, timeout=self.config.coap_timeout_s)
+                        st, off, err = self.measure_time(address)
+                        if abs(off) <= self.TIME_MAX_OFFSET_S:
+                            break
+                    result.update(ok=abs(off) <= self.TIME_MAX_OFFSET_S, attempts=attempt,
+                                  offset_s=off, error_s=err, src=st.get('src'))
+                    before = (f'{off0:+.3f} s' if result['offset_before_s'] is not None
+                              else 'not set')
+                    result['message'] = (f'before {before}, now {off * 1000:+.0f} ms '
+                                         f'(± {err * 1000:.0f} ms)'
+                                         + (f', {attempt} attempts' if attempt > 1 else ''))
+                    if result['ok']:
+                        done += 1
+                    else:
+                        failed += 1
+            except (ot_cli.OtError, TimeoutError, ValueError, KeyError) as exc:
+                result['message'] = str(exc)
+                failed += 1
+            self.to_gui('time_result', result)
+        self.result('set_time', failed == 0,
+                    f'Clock set: {done} ok, {skipped} skipped (GNSS), {failed} failed')
 
     def props_command(self, target, values):
         """Set (values: {name: text}, '' deletes) and/or read the user properties of a device."""
@@ -947,6 +1008,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         refresh.clicked.connect(lambda: self.device.thread_command('refresh', {}))
         info_sel = QtWidgets.QPushButton('Read info (selected)')
         info_sel.clicked.connect(self.read_info_selected)
+        set_clock = QtWidgets.QPushButton('Set clock')
+        set_clock.setToolTip('Set the clock of the gateway and of the selected devices (all if none is '
+                             'selected) to the time of this PC, check it and set it again if it is more than '
+                             '0.5 s off. Devices with a GNSS time are skipped (Shift+click: set them too).')
+        set_clock.clicked.connect(self.set_clock_clicked)
         self.info_interval = QtWidgets.QSpinBox()
         self.info_interval.setRange(0, 3600)
         self.info_interval.setSuffix(' s')
@@ -957,6 +1023,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.devices_info = QtWidgets.QLabel('No data yet (refreshed with the Thread status)')
         row.addWidget(refresh)
         row.addWidget(info_sel)
+        row.addWidget(set_clock)
         row.addWidget(QtWidgets.QLabel('Auto info'))
         row.addWidget(self.info_interval)
         row.addWidget(self.devices_info, 1)
@@ -985,7 +1052,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         lay.addLayout(row)
         lay.addWidget(split, 1)
         lay.addWidget(legend)
-        self.run_widgets.extend([refresh, info_sel])
+        self.run_widgets.extend([refresh, info_sel, set_clock])
         return w
 
     def info_interval_changed(self, value):
@@ -1034,6 +1101,16 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def selected_devices(self):
         rows = sorted({i.row() for i in self.devices_table.selectedIndexes()})
         return [self.current_devices[r] for r in rows if r < len(self.current_devices)]
+
+    def set_clock_clicked(self):
+        """Gateway plus the selected devices; all devices if none (or only the gateway) is selected."""
+        keys = [k for k in (self._device_key(d) for d in self.selected_devices()) if k]
+        if not [k for k in keys if k != 'gateway']:
+            keys = [k for k in (self._device_key(d) for d in self.current_devices) if k]
+        keys = ['gateway'] + [k for k in keys if k != 'gateway']
+        force = bool(QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier)
+        self.console_text.appendPlainText(f"[clock] setting {len(keys)} device(s) to the time of this PC ...")
+        self.device.thread_command('set_time', {'targets': keys, 'force': force})
 
     def read_info_selected(self):
         keys = [self._device_key(d) for d in self.selected_devices()]
@@ -1426,6 +1503,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     self.console_text.appendPlainText(
                         f"[fs {data.get('op')} {data.get('target')}] {'OK' if data.get('ok') else 'ERROR'}: "
                         f"{data.get('message', '')}")
+            elif packetid == 'time_result':
+                state = 'OK' if data.get('ok') else 'ERROR'
+                self.console_text.appendPlainText(f"[clock {data.get('target')}] {state}: {data.get('message', '')}")
             elif packetid == 'command_result':
                 self.show_result(data)
             elif 'packet_type' in data:     # decoded '#NLD' data packet

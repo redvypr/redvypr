@@ -531,6 +531,40 @@ def props_write(cli: OtCli, name: str, value: str, address=None):
     coap_request(cli, "post", address, f"prop?n={name}", data, b64=getattr(cli, "fs_big_blocks", True))
 
 
+TIME_PREFIX = "#NLT "
+
+
+def time_get(cli: OtCli, address=None, timeout: float = 10.0) -> dict:
+    """
+    Clock status of the gateway (address None, 'norlog time get') or of a member
+    (CoAP GET /time): {'t': unix ms, 'valid', 'src', 'set_age_s', 'rtc'}.
+    """
+    import json
+    if address is None:
+        rest = cli.shell_query("norlog time get", TIME_PREFIX, timeout=3.0)
+        if rest.startswith("err"):
+            raise OtError(f"norlog time get: {rest} (gateway firmware >= 0.4.4 required)")
+        return json.loads(rest)
+    return _retry_garbled(lambda: json.loads(coap_request(cli, "get", address, "time", timeout=timeout).decode()))
+
+
+def time_set(cli: OtCli, address=None, timeout: float = 10.0) -> dict:
+    """
+    Set the clock of the gateway or a member to the time of this PC. The time is
+    taken right before the command is sent; the transmission delay (UART, Thread)
+    is not compensated: check the result with time_get(). Returns the new status.
+    """
+    import json
+    ms = int(time.time() * 1000)
+    if address is None:
+        rest = cli.shell_query(f"norlog time set {ms}", TIME_PREFIX, timeout=3.0)
+        if rest.startswith("err"):
+            raise OtError(f"norlog time set: {rest} (gateway firmware >= 0.4.4 required)")
+        return json.loads(rest)
+    payload = json.dumps({"t": ms}).encode()
+    return json.loads(coap_request(cli, "put", address, "time", payload, timeout=timeout).decode())
+
+
 def fw_install_remote(cli: OtCli, address: str) -> dict:
     import json
     return json.loads(coap_request(cli, "post", address, "fw?op=install").decode())
