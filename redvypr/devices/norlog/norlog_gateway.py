@@ -1161,6 +1161,12 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         device_list.QUALITY_NONE: '#d64545',
     }
 
+    @staticmethod
+    def fem_stuck(radio):
+        """TX_EN (almost) always HIGH: the PA of the front end hangs in transmit mode."""
+        fem = (radio or {}).get('fem') or {}
+        return fem.get('tx') is not None and fem['tx'] >= 90
+
     def _build_devices_tab(self):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
@@ -1381,6 +1387,12 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     if quality in self.QUALITY_COLORS:
                         item.setBackground(QtGui.QColor(self.QUALITY_COLORS[quality]))
                     item.setToolTip(tip)
+                radio = (d.get('info') or {}).get('radio')
+                if cols[col] == 'Board temp [C]' and self.fem_stuck(radio):
+                    item.setBackground(QtGui.QColor(self.QUALITY_COLORS[device_list.QUALITY_NONE]))
+                    item.setToolTip(f"Front end: TX_EN {radio['fem']['tx']} % HIGH - the PA seems to hang in "
+                                    f"transmit mode (heats, reception only by leakage). Restart the device; "
+                                    f"details in its settings (TX power).")
                 if col in stale_cols and d.get('info_error'):
                     # Last read failed: older values in gray, error as tooltip
                     item.setForeground(QtGui.QColor('gray'))
@@ -2329,7 +2341,15 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             details.append(f"nRF {radio['soc_dbm']} dBm + PA {radio.get('pa_gain_db', 0)} dB")
         if radio.get('max_dbm') is not None:
             details.append(f"max {radio['max_dbm']} dBm")
-        return text + (f" ({', '.join(details)})" if details else '')
+        text += f" ({', '.join(details)})" if details else ''
+        fem = radio.get('fem')
+        if fem:
+            # Share of 50 samples (5 ms) with the pin HIGH (firmware >= 0.4.6)
+            text += (f"; front end pins HIGH: TX_EN {fem.get('tx')} %, RX_EN {fem.get('rx')} %, "
+                     f"MODE {fem.get('mode')} %")
+            if RedvyprDeviceWidget.fem_stuck(radio):
+                text += ' - PA STUCK IN TRANSMIT MODE?'
+        return text
 
     @staticmethod
     def _fmt_usb(usb):

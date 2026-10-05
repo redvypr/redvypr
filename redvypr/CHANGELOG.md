@@ -25,6 +25,9 @@ redvypr changelog
 - norlog gateway: "Provision node via UART" also without a running gateway (directly on the node port)
 - norlog gateway: transmit power at the antenna per device in the settings ("Radio"), gateway over the shell,
   members over CoAP /radio; stored on the device (firmware >= 0.4.5)
+- norlog gateway: state of the front end pins (TX_EN, RX_EN, MODE) in the settings, the board temperature is marked
+  red if TX_EN hangs HIGH (PA stuck in transmit mode; firmware >= 0.4.6); fixed: the gateway as leader was listed
+  twice
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)
