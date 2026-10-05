@@ -7,9 +7,19 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
-- ?
+- Data sources (`redvypr.datasource`): databases of the SQLite and TimescaleDB writers, configured once in redvypr
+  (`datasources` in the configuration, `Redvypr.add_datasource()`) and used by name. A reader lists the datastreams
+  of the data_flat tables and gives the values of all datastreams matching an address, merged in time; long ranges
+  are thinned out in the database (minimum and maximum per time bucket); units and other metadata from the database
+- XY plot: lines from a database ("Add line from database ...", source `database` or `database+live`): loaded in a
+  thread for the range shown, thinned out for long ranges, reloaded after zooming and panning, "A" loads everything;
+  the data table of a selection gets all values of the range from the database
+- Widgets to add/edit data sources and select datastreams (`redvypr.widgets.datasource_widgets`)
+- norlog_convert: units of the values and hardware ID/serial number of the norlog as metadata in the database;
+  the "Convert to SQLite" button adds the database as data source of redvypr
 ### Changed
-- ?
+- Database writers: index on the time `t` of data_flat tables
+- Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)
 
 ## [0.9.22] - 2026-10-05
 

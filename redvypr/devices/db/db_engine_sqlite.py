@@ -553,6 +553,9 @@ class DbSqlite:
                               f'ON "{table_name_db}" (deviceid, t_packet)')
             else:
                 self._ensure_columns(table_name_db, {"packet_uid": "TEXT"})
+                # Reading time ranges of datastreams (redvypr.datasource)
+                self._execute(f'CREATE INDEX IF NOT EXISTS "idx_{table_name_db}_t" '
+                              f'ON "{table_name_db}" (t)')
             self._execute(f'CREATE INDEX IF NOT EXISTS "idx_{table_name_db}_t_packet" '
                           f'ON "{table_name_db}" (t_packet)')
             if t_cfg.skip_duplicates:

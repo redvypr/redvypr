@@ -1,5 +1,6 @@
 import datetime
 import queue
+import threading
 from sys import exc_info
 
 from PyQt6 import QtWidgets, QtCore, QtGui
@@ -22,6 +23,8 @@ import redvypr.metadata
 from redvypr.widgets.pydantic_config_widget import pydanticConfigWidget
 from redvypr.widgets.redvypr_address_widget import RedvyprAddressWidget
 from redvypr.redvypr_address import RedvyprAddress
+from redvypr.datasource import DatasourceRegistry
+from redvypr.widgets.datasource_widgets import DatastreamSelectDialog
 
 _logo_file = files.logo_file
 _icon_file = files.icon_file
@@ -38,6 +41,50 @@ colors = ['red','blue','green','orange','purple','gray','cyan','magenta']
 
 class LineDataConversionError(TypeError):
     """A packet matches the line, but its x/y values are not numbers."""
+
+
+class _DbLoader(QtCore.QObject):
+    """
+    Loads the data of the database lines in a thread. Only the latest request of a line
+    is done (zooming quickly asks again and again). loaded(key, result) in the GUI thread.
+    """
+    loaded = QtCore.pyqtSignal(object, object)
+
+    def __init__(self):
+        super().__init__()
+        self._pending = {}
+        self._cond = threading.Condition()
+        self._thread = None
+        self._stop = False
+
+    def request(self, key, func):
+        with self._cond:
+            self._pending[key] = func
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._run, daemon=True, name='XYPlot database')
+                self._thread.start()
+            self._cond.notify()
+
+    def stop(self):
+        with self._cond:
+            self._stop = True
+            self._cond.notify()
+
+    def _run(self):
+        while True:
+            with self._cond:
+                while not self._pending and not self._stop:
+                    self._cond.wait()
+                if self._stop:
+                    return
+                key = next(iter(self._pending))
+                func = self._pending.pop(key)
+            try:
+                result = func()
+            except Exception as e:
+                logger.debug('Could not load from the database', exc_info=True)
+                result = {'error': f'{type(e).__name__}: {e}'}
+            self.loaded.emit(key, result)
 
 
 class Databufferline(pydantic.BaseModel):
@@ -86,6 +133,12 @@ class configLine(pydantic.BaseModel,extra='allow'):
     last_N_points: int = pydantic.Field(default=1000,
                                         description='Plots the last points, if plot_mode_x is set to last_N_points')
     plot_every_Nth: int = pydantic.Field(default=1, description='Uses every Nth datapoint for plotting')
+    source: typing.Literal['live', 'database', 'database+live'] = pydantic.Field(
+        default='live', description='live: the packets of redvypr; database: the data of a data source (database) '
+                                    'of redvypr, loaded for the time range shown (thinned out for long ranges, '
+                                    'reloaded when zooming); database+live: both')
+    datasource: str = pydantic.Field(default='', description='Name of the data source (database) of redvypr for the '
+                                                             'sources database and database+live')
 
     def get_data(self, xlim=None, ylim=None):
         funcname = __name__ + '.get_data():'
@@ -381,6 +434,15 @@ class XYPlotWidget(QtWidgets.QFrame):
         else:
             self.config = config
 
+        # Lines from a database: loaded in a thread, reloaded after zooming/panning
+        self._db_registry_local = None
+        self._db_loader = _DbLoader()
+        self._db_loader.loaded.connect(self._db_loaded)
+        self._db_reload_timer = QtCore.QTimer(self)
+        self._db_reload_timer.setSingleShot(True)
+        self._db_reload_timer.setInterval(300)
+        self._db_reload_timer.timeout.connect(self._db_reload_visible)
+
         if add_line == False:
             try:
                 self.config.lines.pop(0)
@@ -518,6 +580,14 @@ class XYPlotWidget(QtWidgets.QFrame):
             # Add line
             addLineAction = plot.plotItem.vb.menu.addAction('Add line')
             addLineAction.triggered.connect(self.pyqtgraphAddLineAction)
+            addDbLineAction = plot.plotItem.vb.menu.addAction('Add line from database ...')
+            addDbLineAction.triggered.connect(self.pyqtgraphAddDbLineAction)
+            reloadDbAction = plot.plotItem.vb.menu.addAction('Reload database data')
+            reloadDbAction.triggered.connect(lambda: self.db_reload(full=True))
+            # Database lines: load the range shown after zooming/panning, everything with "A"
+            plot.plotItem.vb.sigRangeChangedManually.connect(self._db_range_changed)
+            if getattr(plot.plotItem, 'autoBtn', None) is not None:
+                plot.plotItem.autoBtn.clicked.connect(lambda: self.db_reload(full=True))
 
             # plot = redvyprPlotWidget(title=title,name=name)
             plot.register(name=name)
@@ -951,7 +1021,8 @@ class XYPlotWidget(QtWidgets.QFrame):
         """
         self.add_line(y_addr=y_addr, name=name, x_addr=x_addr, color=color, linewidth=linewidth, bufsize=bufsize, index=index)
 
-    def add_line(self, y_addr, x_addr='t', name='$y', error_addr='', color=None, linewidth=1, bufsize=20000, numplot=2000, index=None):
+    def add_line(self, y_addr, x_addr='t', name='$y', error_addr='', color=None, linewidth=1, bufsize=20000, numplot=2000, index=None,
+                 source='live', datasource=''):
         """
         Adds a line to the plot
         """
@@ -986,6 +1057,8 @@ class XYPlotWidget(QtWidgets.QFrame):
         self.config.lines[index].y_addr = y_addr
         self.config.lines[index].error_addr = error_addr
         self.config.lines[index].name = name
+        self.config.lines[index].source = source
+        self.config.lines[index].datasource = datasource
         self.config.lines[index]._xdata_addr_old = x_addr
         # Add the address as well to the data
         #self.config.lines[index].databuffer.xdata_addr = x_addr
@@ -1222,7 +1295,9 @@ class XYPlotWidget(QtWidgets.QFrame):
                 if line._errorplot is not None and len(x) > 0:
                     line._errorplot.setData(x=np.asarray(x), y=np.asarray(y), top=np.asarray(err),
                                             bottom=np.asarray(err))
-                if self.config.automatic_subscription and self.device is not None:
+                if line.source != 'live':
+                    self._db_line_configured(line)
+                if self.config.automatic_subscription and self.device is not None and line.source != 'database':
                     self.logger.debug(funcname + 'Subscribing to x address {}'.format(line.x_addr))
                     self.device.subscribe_address(line.x_addr)
                     self.logger.debug(funcname + 'Subscribing to y address {}'.format(line.y_addr))
@@ -1428,7 +1503,12 @@ class XYPlotWidget(QtWidgets.QFrame):
             # check for relative data
 
 
-            data_tmp = line.get_data(xlim,ylim)
+            loaded = getattr(line, '_db_loaded', None)
+            if line.source != 'live' and loaded is not None and loaded['decimated']:
+                # Shown thinned out: all values of the range from the database
+                data_tmp = self._db_raw_data(line, xlim, ylim)
+            else:
+                data_tmp = line.get_data(xlim,ylim)
             tdata_tmp = data_tmp['t']
             xdata_tmp = data_tmp['x']
             ydata_tmp = data_tmp['y']
@@ -1496,16 +1576,205 @@ class XYPlotWidget(QtWidgets.QFrame):
         else:
             pass
 
-        # Reduce the number of points, if they are more than numplot_max
-        x = xtmp[-line.numplot_max:]
-        y = ytmp[-line.numplot_max:]
-        err = errtmp[-line.numplot_max:]
+        # Reduce the number of points, if they are more than numplot_max (database lines
+        # are thinned out when loaded, here the oldest values would be cut off)
+        if line.source == 'live':
+            x = xtmp[-line.numplot_max:]
+            y = ytmp[-line.numplot_max:]
+            err = errtmp[-line.numplot_max:]
+        else:
+            x, y, err = xtmp, ytmp, errtmp
         # pw.setXRange(min(x[:ind]),max(x[:ind]))
         return [x,y,err]
 
     def closeEvent(self, event):
         #print('Close event')
+        self._db_loader.stop()
         self.closing.emit()
+
+    # --- lines from a database (data sources of redvypr, see redvypr.datasource) ---
+    def datasource_registry(self):
+        """The data sources: those of redvypr, without redvypr a list of the plot."""
+        if self.redvypr is not None:
+            return self.redvypr
+        if self._db_registry_local is None:
+            self._db_registry_local = DatasourceRegistry()
+        return self._db_registry_local
+
+    @staticmethod
+    def _db_key(line):
+        return line.source, line.datasource, RedvyprAddress(line.y_addr).to_address_string()
+
+    def _db_line_configured(self, line):
+        """apply_config(): load a database line that is new or whose source/address changed."""
+        key = self._db_key(line)
+        if getattr(line, '_db_key_loaded', None) == key:
+            return
+        if getattr(line, '_db_key_loaded', None) is not None:
+            line.databuffer.clear()
+        line._db_key_loaded = key
+        line._db_loaded = None
+        line._db_tmax = -np.inf
+        line._db_metadata_loaded = False
+        if str(RedvyprAddress(line.x_addr).datakey) != 't':
+            self.logger.warning('Line {}: from a database only the time can be used as x (x address {})'.format(
+                line.name, line.x_addr))
+        self._db_request(line)
+
+    def _db_request(self, line, t_start=None, t_end=None, max_points=None, refresh=False):
+        """Load the data of a database line in the thread (t_start/t_end None: all)."""
+        if not line.datasource:
+            return
+        registry = self.datasource_registry()
+        name = line.datasource
+        dbkey = self._db_key(line)
+        address = dbkey[2]
+        max_points = max_points or line.numplot_max
+        want_metadata = refresh or not getattr(line, '_db_metadata_loaded', False)
+
+        def load():
+            reader = registry.get_datasource_reader(name, refresh=refresh)
+            result = reader.get_data(address, t_start, t_end, max_points=max_points)
+            result['range'] = (t_start, t_end)
+            result['dbkey'] = dbkey
+            if want_metadata:
+                result['metadata'] = reader.get_metadata(address)
+            return result
+
+        self._db_loader.request(id(line), load)
+
+    def _db_loaded(self, key, result):
+        """Data of a database line arrived (GUI thread)."""
+        line = next((l for l in self.config.lines if id(l) == key), None)
+        if line is None or line.source == 'live':
+            return
+        if 'error' in result:
+            if getattr(line, '_db_error', None) != result['error']:
+                line._db_error = result['error']
+                self.logger.warning('Line {}: could not load from the data source "{}": {}'.format(
+                    line.name, line.datasource, result['error']))
+            return
+        if result['dbkey'] != self._db_key(line):  # changed meanwhile, the next result is coming
+            return
+        line._db_error = None
+        t = np.asarray(result['t'], dtype=float)
+        y = np.asarray(result['data'], dtype=float)
+        if len(t) == 0 and not result['streams']:
+            self.logger.warning('Line {}: no numeric datastream of the data source "{}" matches {}'.format(
+                line.name, line.datasource, result['dbkey'][2]))
+        # database+live: keep the live values newer than all values of the database
+        tmax = max(getattr(line, '_db_tmax', -np.inf), t[-1] if len(t) else -np.inf)
+        live = []
+        if line.source == 'database+live':
+            b = line.databuffer
+            live = [v for v in zip(b.tdata, b.xdata, b.ydata, b.errordata) if v[1] > tmax]
+        line._db_tmax = tmax
+        buf = line.databuffer
+        buf.tdata = list(t) + [v[0] for v in live]
+        buf.xdata = list(t) + [v[1] for v in live]
+        buf.ydata = list(y) + [v[2] for v in live]
+        buf.errordata = [0.0] * len(t) + [v[3] for v in live]
+        line._db_loaded = {'range': result['range'], 'decimated': result['decimated'], 'num': result['num']}
+        self.logger.debug('Line {}: {} values from the database (range {}, thinned out: {})'.format(
+            line.name, len(t), result['range'], result['decimated']))
+        if 'metadata' in result:
+            line._db_metadata_loaded = True
+            unit = (result['metadata'] or {}).get('unit')
+            if unit and unit != line.unit_y:
+                line.unit_y = unit
+                self._update_line_label(line)
+        try:
+            x, yplot, err = self.__get_data_for_line(line)
+        except Exception:
+            x, yplot, err = [], [], []
+        line._lineplot.setData(x=x, y=yplot)
+        if getattr(line, '_errorplot', None) is not None and len(x) > 0:
+            line._errorplot.setData(x=np.asarray(x), y=np.asarray(yplot), top=np.asarray(err),
+                                    bottom=np.asarray(err))
+        if len(x) > 0:
+            self.x_min = min(self.x_min, min(x))
+            self.x_max = max(self.x_max, max(x))
+
+    def _update_line_label(self, line):
+        line.label = self.construct_labelname(line)
+        try:
+            self.legendWidget.removeItem(line._lineplot)
+        except Exception:
+            pass
+        self.legendWidget.addItem(line._lineplot, line.label)
+
+    def _db_lines(self):
+        return [line for line in self.config.lines if line.source != 'live' and line.datasource]
+
+    def _db_range_changed(self, *args):
+        """Zoomed or panned by the user: load the range shown (delayed)."""
+        if self._db_lines():
+            self._db_reload_timer.start()
+
+    def _db_reload_visible(self):
+        """Load the range shown (and half of it on both sides) of the database lines."""
+        x0, x1 = self.plotWidget.plotItem.vb.viewRange()[0]
+        margin = 0.5 * (x1 - x0)
+        for line in self._db_lines():
+            loaded = getattr(line, '_db_loaded', None)
+            if loaded is not None and not loaded['decimated']:
+                r0, r1 = loaded['range']
+                if (r0 is None or r0 <= x0) and (r1 is None or r1 >= x1):
+                    continue    # all values of the range shown are there already
+            self._db_request(line, x0 - margin, x1 + margin, max_points=2 * line.numplot_max)
+
+    def db_reload(self, full=True):
+        """
+        Load the data of the database lines again (e.g. new data was written): full=True all
+        (with new datastreams and metadata), otherwise the range shown.
+        """
+        if full:
+            for line in self._db_lines():
+                self._db_request(line, refresh=True)
+        else:
+            self._db_reload_visible()
+
+    def _db_raw_data(self, line, xlim=None, ylim=None):
+        """All values of a database line in xlim (default: the range shown), for the data table."""
+        if xlim is None:
+            xlim = self.plotWidget.plotItem.vb.viewRange()[0]
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
+        try:
+            reader = self.datasource_registry().get_datasource_reader(line.datasource)
+            d = reader.get_data(self._db_key(line)[2], xlim[0], xlim[1], max_points=None)
+        except Exception:
+            self.logger.warning('Line {}: could not load the data'.format(line.name), exc_info=True)
+            return line.get_data(xlim, ylim)
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        t = np.asarray(d['t'], dtype=float)
+        y = np.asarray(d['data'], dtype=float)
+        ind = np.ones(t.shape, dtype=bool)
+        if ylim is not None:
+            ind = (y > ylim[0]) & (y < ylim[1])
+        return {'x': t[ind], 'y': y[ind], 't': t[ind], 'err': np.zeros(int(ind.sum()))}
+
+    def pyqtgraphAddDbLineAction(self):
+        """Menu "Add line from database ...": select datastreams of a data source."""
+        live = QtWidgets.QCheckBox('Also the live data of redvypr (new packets are added)')
+        live.setEnabled(self.device is not None)
+        dialog = DatastreamSelectDialog(self.datasource_registry(), parent=self, title='Add line from database',
+                                        add_button_text='Add lines', extra_widget=live)
+        if not dialog.exec():
+            return
+        name, streams = dialog.selected()
+        source = 'database+live' if live.isChecked() else 'database'
+        added = set()
+        for stream in streams:
+            if not stream.numeric:
+                continue
+            # Datakey, device, deviceid and packetid: the values of other hosts (e.g. written
+            # live and converted) are the same datastream
+            address = stream.raddress.to_address_string('k,d,di,i')
+            if address in added:
+                continue
+            added.add(address)
+            self.add_line(address, name=name, source=source, datasource=name)
 
     def update_plot(self, data_in, force_update=False):
         """ Updates the plot with data_in
@@ -1523,6 +1792,8 @@ class XYPlotWidget(QtWidgets.QFrame):
                 # Loop over all lines
                 for iline, line in enumerate(self.config.lines):
                     line.__newdata = False
+                    if line.source == 'database':
+                        continue
                     try:
                         line.add_data(data)
                         line.__newdata = True

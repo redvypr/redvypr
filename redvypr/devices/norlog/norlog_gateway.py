@@ -522,14 +522,14 @@ class _Gateway:
         for k in self.meta_sent.get(hwid, {}):
             meta.setdefault(k, '')
         if meta != self.meta_sent.get(hwid):
-            redvypr.metadata.add_metadata2datapacket(data, address=f'@di:{hwid}', metadict=meta)
+            redvypr.metadata.add_metadata2datapacket(data, address=f"@di:'{hwid}'", metadict=meta)
             self.meta_sent[hwid] = {k: v for k, v in meta.items() if v != ''}
 
         # Units of the values present (once per device and key)
         sent = self.units_sent.setdefault(hwid, set())
         for datakey, unit in self.INFO_UNITS.items():
             if datakey not in sent and self._has_key(data, datakey):
-                redvypr.metadata.add_metadata2datapacket(data, address=f'{datakey}@di:{hwid}',
+                redvypr.metadata.add_metadata2datapacket(data, address=f"{datakey}@di:'{hwid}'",
                                                          metadict={'unit': unit})
                 sent.add(datakey)
         self.dataqueue.put(data)
@@ -2283,7 +2283,33 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             self.data_status.setText(f'Conversion failed: {err}')
             return
         self.data_progress.setValue(100)
-        self.data_status.setText(norlog_convert.summary(res, db_path))
+        text = norlog_convert.summary(res, db_path)
+        name = self._register_datasource(db_path)
+        if name:
+            text += f'; data source "{name}" of redvypr (XY plot: "Add line from database ...")'
+        self.data_status.setText(text)
+
+    def _register_datasource(self, db_path):
+        """The converted database as data source of redvypr (once per file); returns its name."""
+        rv = getattr(self.device, 'redvypr', None)
+        if rv is None or not hasattr(rv, 'add_datasource'):
+            return None
+        try:
+            path = pathlib.Path(db_path).resolve()
+            for d in rv.datasources:
+                if d.dbtype == 'sqlite' and d.filepath and pathlib.Path(d.filepath).resolve() == path:
+                    rv.get_datasource_reader(d.name, refresh=True)   # new datastreams and metadata
+                    return d.name
+            names = {d.name for d in rv.datasources}
+            name, i = path.stem, 2
+            while name in names:
+                name, i = f'{path.stem}_{i}', i + 1
+            rv.add_datasource({'name': name, 'dbtype': 'sqlite', 'filepath': str(path),
+                               'description': 'norlog log files (norlog_convert)'})
+            return name
+        except Exception:
+            logger.info('could not add the database as data source', exc_info=True)
+            return None
 
     def data_browse(self):
         folder = QtWidgets.QFileDialog.getExistingDirectory(self, 'Archive folder', self.data_folder.text())

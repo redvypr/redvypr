@@ -508,6 +508,10 @@ class DbTimescaleWriter():
             if t_cfg.tabletype == "redvypr_datapacket":
                 self._execute(f'CREATE INDEX IF NOT EXISTS "idx_{table_name_db}_deviceid_t" '
                               f'ON "{table_name_db}" (deviceid, t_packet DESC)')
+            else:
+                # Reading time ranges of datastreams (redvypr.datasource)
+                self._execute(f'CREATE INDEX IF NOT EXISTS "idx_{table_name_db}_t" '
+                              f'ON "{table_name_db}" (t)')
             if t_cfg.skip_duplicates:
                 # A unique index of a hypertable has to contain its time column. Rows without
                 # uid (written without skip_duplicates) are NULL: no conflict.

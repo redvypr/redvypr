@@ -50,6 +50,22 @@ KEYS = {
     60: "board_temp_c",
 }
 
+# Units of the values (metadata of the converted data)
+UNITS = {
+    "uptime_ms": "ms",
+    "rtc_time": "s",
+    "gps_time": "s",
+    "batt_mv": "mV",
+    "batt_soc": "%",
+    "adc_volts": "V",
+    "lat": "degN",
+    "lon": "degE",
+    "alt": "m",
+    "ntc_ohm": "Ohm",
+    "ntc_temp": "degC",
+    "board_temp_c": "degC",
+}
+
 # cbor_source_id_t
 SOURCE_IDS = {0: "internal", 1: "i2c0", 2: "i2c1", 3: "uart0", 4: "uart1", 5: "spi0", 6: "spi1"}
 

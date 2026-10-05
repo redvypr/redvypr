@@ -36,6 +36,7 @@ import redvypr.redvypr_address as redvypr_address
 from redvypr.redvypr_address import RedvyprAddress
 import redvypr.packet_statistic as redvypr_packet_statistic
 import redvypr.metadata as redvypr_metadata
+from redvypr.datasource import DataSourceConfig, DatasourceRegistry
 from redvypr.version import version
 import redvypr.files as files
 from redvypr.device import RedvyprDeviceConfig, RedvyprDeviceBaseConfig, RedvyprDevice, RedvyprDeviceScan, RedvyprDeviceParameter, queuesize
@@ -98,6 +99,8 @@ class RedvyprConfig(pydantic.BaseModel):
     devicepaths: list = pydantic.Field(default=[])
     loglevel: typing.Literal['INFO','DEBUG','WARNING'] = pydantic.Field(default='INFO')
     gui_home_icon: str = 'redvypr'
+    datasources: typing.List[DataSourceConfig] = pydantic.Field(default=[], description='Databases to read '
+                                                                'data from (e.g. by the XY plot), used by their name')
 
 
 
@@ -457,6 +460,7 @@ class Redvypr(QtCore.QObject):
     metadata_changed_signal = QtCore.pyqtSignal()  # Signal notifying if the status of redvypr has been changed
     device_status_changed_signal = QtCore.pyqtSignal()  # Signal notifying if datastreams have been added
     hostconfig_changed_signal = QtCore.pyqtSignal()  # Signal notifying if the configuration of the host changed (hostname, hostinfo_opt)
+    datasources_changed_signal = QtCore.pyqtSignal()  # Signal notifying that a data source was added, changed or removed
 
     def __init__(self,config=None,hostname=None,nogui=False,loglevel=None,redvypr_device_scan=None):
         """
@@ -509,6 +513,9 @@ class Redvypr(QtCore.QObject):
         self.metadata = config.metadata
 
         self.config = config # This is the initial version
+        # Databases to read from (redvypr.datasource), used by their name
+        self.datasource_registry = DatasourceRegistry(config.datasources or [],
+                                                      on_change=self.datasources_changed_signal.emit)
         self.properties = {}  # Properties that are distributed with the device
         self.numdevice = 0
         self.devices = []  # List containing dictionaries with information about all attached devices
@@ -588,6 +595,33 @@ class Redvypr(QtCore.QObject):
             logger.debug(f"Applying metadata:{redvypr_config.metadata=}")
             self.set_metadata_from_dict(redvypr_config.metadata)
             logger.debug(funcname + 'Adding metadata done')
+        for datasource in redvypr_config.datasources or []:
+            self.add_datasource(datasource)
+
+    # --- data sources (databases to read from, redvypr.datasource) ---
+    @property
+    def datasources(self) -> list[DataSourceConfig]:
+        """The data sources (copy of the list)."""
+        return self.datasource_registry.datasources
+
+    def add_datasource(self, datasource: DataSourceConfig | dict):
+        """Adds a data source; one with the same name is replaced."""
+        return self.datasource_registry.add_datasource(datasource)
+
+    def remove_datasource(self, name: str):
+        """Removes the data source name (and closes its reader)."""
+        self.datasource_registry.remove_datasource(name)
+
+    def get_datasource(self, name: str) -> DataSourceConfig | None:
+        return self.datasource_registry.get_datasource(name)
+
+    def get_datasource_reader(self, name: str, refresh=False):
+        """
+        Open reader of the data source name (redvypr.datasource.DbReader), shared by all
+        users. refresh: reads the datastreams and metadata of the database again.
+        Raises redvypr.datasource.DataSourceError if it cannot be opened.
+        """
+        return self.datasource_registry.get_datasource_reader(name, refresh=refresh)
 
     def get_config(self):
         """
@@ -610,7 +644,7 @@ class Redvypr(QtCore.QObject):
         config = RedvyprConfig(hostname=self.hostinfo['host'], metadata=self.metadata,
                                devicepaths=self.device_paths, loglevel=loglevel_tmp,
                                redvyp_version=version, date_created=str(datetime.datetime.utcnow()),
-                               devices=devices)
+                               devices=devices, datasources=[d.model_copy() for d in self.datasources])
 
         return config
 
@@ -1642,6 +1676,7 @@ def merge_configuration(redvypr_config=None):
     config_tmp = redvypr.RedvyprConfig()
     devices_all = []
     devicepath_all = []
+    datasources_all = {}
     for iconf, configraw in enumerate(redvypr_config):
         #print('Configraw',configraw)
         #print('iconf', iconf,type(configraw))
@@ -1663,9 +1698,12 @@ def merge_configuration(redvypr_config=None):
         # Merge the configuration into one big dictionary
         devices_all.extend(config_tmp.devices)
         devicepath_all.extend(config_tmp.devicepaths)
+        for datasource in config_tmp.datasources:   # by name, a later one replaces an earlier one
+            datasources_all[datasource.name] = datasource
         #print('Config tmp', config_tmp)
         # config = config.model_copy(update=config_tmp)
-    config_tmp2 = redvypr.RedvyprConfig(devices=devices_all, devicepaths=devicepath_all)
-    config = config_tmp2.model_copy(update=config_tmp.model_dump(exclude=['devices', 'devicepaths']))
+    config_tmp2 = redvypr.RedvyprConfig(devices=devices_all, devicepaths=devicepath_all,
+                                        datasources=list(datasources_all.values()))
+    config = config_tmp2.model_copy(update=config_tmp.model_dump(exclude=['devices', 'devicepaths', 'datasources']))
     #print(f'Merged config:{config}')
     return config

@@ -15,6 +15,10 @@ written (data_flat needs a time). Every value is written once (skip_duplicates):
 converting a file again or overlapping files add nothing, converting into an
 existing database adds the new data.
 
+The units of the values ("unit" of "board_temp_c @ di:<hwid>") and the hardware ID
+and serial number of every norlog ("@di:<hwid>") are stored as metadata in the
+database (table redvypr_metadata), the plot finds them without a running norlog.
+
     python -m redvypr.devices.norlog.norlog_convert -o data.sqlite --sn 002 norlog_archive/9AB64B5C71AE5C1C
     python -m redvypr.devices.norlog.norlog_convert -o data.sqlite data_00167_*.cbor
 """
@@ -22,11 +26,13 @@ existing database adds the new data.
 import datetime
 import logging
 import pathlib
+import sqlite3
 import statistics
 import time
 
 from . import norlog_logindex as L
 from .norlog_archive import to_redvypr_packet
+from .norlog_cbor import UNITS
 
 logger = logging.getLogger('redvypr.device.norlog_convert')
 
@@ -86,6 +92,48 @@ def _boot_offsets(files):
     return {k: statistics.median(v) for k, v in samples.items()}
 
 
+def _stored_metadata(db_path):
+    """Metadata written by earlier conversions into db_path, storage format {address: [entries]}."""
+    import redvypr.metadata
+    from redvypr.serialize import deserialize_json
+    if not pathlib.Path(db_path).is_file():
+        return {}
+    storage = {}
+    try:
+        con = sqlite3.connect(str(db_path))
+        try:
+            rows = con.execute("SELECT redvypr_address, metadata FROM redvypr_metadata WHERE uuid = ?",
+                               (CONVERT_HOST["uuid"],)).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return {}
+    for address, content in rows:
+        try:
+            for a, entries in redvypr.metadata.normalize_metadata({address: deserialize_json(content)}).items():
+                storage.setdefault(a, []).extend(entries)
+        except Exception:
+            logger.debug(f"could not read the metadata of {address}", exc_info=True)
+    return storage
+
+
+def _add_metadata(data, pkt, sn, sent):
+    """Metadata of a norlog (hardware ID, serial number) and units of its values, once each."""
+    import redvypr.metadata
+    hwid = pkt.get("mac")
+    if not hwid:
+        return
+    if hwid not in sent:
+        meta = {"hwid": hwid, **({"sn": sn} if sn else {})}
+        redvypr.metadata.add_metadata2datapacket(data, address=f"@di:'{hwid}'", metadict=meta, hostinfo=CONVERT_HOST)
+        sent.add(hwid)
+    for key in pkt:
+        if key in UNITS and (hwid, key) not in sent:
+            redvypr.metadata.add_metadata2datapacket(data, address=f"{key}@di:'{hwid}'", metadict={"unit": UNITS[key]},
+                                                     hostinfo=CONVERT_HOST)
+            sent.add((hwid, key))
+
+
 def db_config(db_path, table="norlog"):
     """SqliteConfig of the conversion: one file, continued, data_flat with all datastreams, each value once."""
     from redvypr.devices.db.db_engine_sqlite import SqliteConfig
@@ -103,14 +151,17 @@ def convert(inputs, db_path, sn=None, table="norlog", progress=None, cancel=None
     sn: serial number of the norlog for the header (device norlog_<sn>, sensorid).
     progress(done_files, total_files, name); cancel() -> True stops after the current file.
     Returns {'files', 'packets', 'written', 'without_time', 'entries', 'entries_duplicate',
-    'seconds', 'cancelled'}.
+    'metadata', 'seconds', 'cancelled'}.
     """
+    import redvypr.metadata
     from redvypr.devices.db.db_engine_sqlite import DbSqlite
     files = find_files(inputs)
     if not files:
         raise ConvertError("no data_*.cbor files")
     t_start = time.monotonic()
     offsets = _boot_offsets(files)
+    metadata = {"metadata": _stored_metadata(db_path)}
+    meta_sent = set()
     db = DbSqlite(db_config(db_path, table))
     res = {"files": 0, "packets": 0, "written": 0, "without_time": 0, "cancelled": False}
     try:
@@ -132,10 +183,18 @@ def convert(inputs, db_path, sn=None, table="norlog", progress=None, cancel=None
                         continue
                     t, src = off_boot + pkt["uptime_ms"] / 1000.0, "uptime"
                 pkt["t"], pkt["t_source"] = t, src
-                db.insert_packet(to_redvypr_packet(pkt, sn, hostinfo=CONVERT_HOST))
+                data = to_redvypr_packet(pkt, sn, hostinfo=CONVERT_HOST)
+                _add_metadata(data, pkt, sn, meta_sent)
+                if "_metadata" in data:
+                    redvypr.metadata.do_metadata(data, metadata)
+                    del data["_metadata"]
+                db.insert_packet(data)
                 res["written"] += 1
             res["files"] += 1
     finally:
+        for address, entries in metadata["metadata"].items():
+            db.add_metadata(address, CONVERT_HOST["uuid"], entries)
+        res["metadata"] = len(metadata["metadata"])
         db.close()
     st = db.file_statistics_total
     res["entries"] = st.get("entries_flat_written", 0)
