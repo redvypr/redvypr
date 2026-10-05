@@ -18,7 +18,8 @@ from abc import ABC, abstractmethod
 from typing import Iterator, Optional, Any, Dict
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.redvypr_datadict import RedvyprDatadict
-from .db_config_util import DbWriteConfig, sanitize_name_for_db
+from .db_config_util import DbWriteConfig, sanitize_name_for_db, packet_uid, value_uid, packet_header
+import time
 from redvypr.serialize import serialize_json, deserialize_json
 
 import numpy as np
@@ -36,6 +37,10 @@ class TimescaleConfig(pydantic.BaseModel):
     password: str = "password"
     host: str = "pi5server1"
     port: int = 5433
+    batch_size: int = pydantic.Field(default=500, ge=1,
+                                     description='Packets written in one transaction at most')
+    dt_commit: float = pydantic.Field(default=1.0, ge=0,
+                                      description='Time after which queued packets are written at the latest [s]')
     write_config: DbWriteConfig = pydantic.Field(default_factory=DbWriteConfig)
 
 
@@ -52,11 +57,15 @@ class DbTimescaleWriter():
         self.file_statistics_total = None
         # Convert the addresses in string format into redvypr addresses
         self.write_config_raddr = self.convert_write_config_raddr(self.config)
+        self._pending = []          # queued inserts: (sql, params, kind, table_name)
+        self._t_flush = time.time()
         if mode == "write":
             self.file_statistics_total = {'packets_raw_written': 0,
                                           'packets_flat_written': 0,
                                           'metadata_written': 0,
                                           'entries_flat_written': 0,
+                                          'packets_duplicate_skipped': 0,
+                                          'entries_duplicate_skipped': 0,
                                           'columns_flat_active': {}}
             self._tables_flat = {}
             self.init_db_write()
@@ -282,8 +291,62 @@ class DbTimescaleWriter():
         """Ensures the connection is closed when exiting the 'with' block."""
         self.disconnect()
 
+    def flush_if_due(self):
+        """Write the queued packets if batch_size is reached or dt_commit has passed."""
+        if self._pending and (len(self._pending) >= self.config.batch_size
+                              or time.time() - self._t_flush >= self.config.dt_commit):
+            self.flush()
+
+    def flush(self):
+        """Write all queued inserts in one transaction and count the skipped duplicates."""
+        self._t_flush = time.time()
+        if not self._pending:
+            return
+        pending, self._pending = self._pending, []
+        if self.conn is None or self.conn.closed:
+            logger.warning("🔄 Connection was closed. Reconnecting...")
+            self.conn = None
+            self.connect()
+        results = []
+        try:
+            with self.conn.cursor() as cur:
+                for sql, params, kind, table_name in pending:
+                    cur.execute(sql, params)
+                    results.append((cur.rowcount, kind, table_name))
+            self.conn.commit()
+        except psycopg.Error:
+            # One bad statement: write the others one by one
+            self.conn.rollback()
+            logger.warning("Batch insert failed, inserting one by one", exc_info=True)
+            results = []
+            for sql, params, kind, table_name in pending:
+                try:
+                    with self.conn.cursor() as cur:
+                        cur.execute(sql, params)
+                        results.append((cur.rowcount, kind, table_name))
+                    self.conn.commit()
+                except psycopg.Error:
+                    self.conn.rollback()
+                    logger.warning(f"Could not insert into {table_name}: {sql}", exc_info=True)
+        for rowcount, kind, _table_name in results:
+            if rowcount == 0:       # ON CONFLICT DO NOTHING: duplicate
+                st = self.file_statistics_total
+                if kind == 'packet':
+                    st['packets_duplicate_skipped'] = st.get('packets_duplicate_skipped', 0) + 1
+                    st['packets_raw_written'] -= 1
+                else:
+                    st['entries_duplicate_skipped'] = st.get('entries_duplicate_skipped', 0) + 1
+                    st['entries_flat_written'] -= 1
+
+    def _skip_duplicates(self, table_name) -> bool:
+        return bool(self.write_config_raddr["tables"].get(table_name, {}).get("skip_duplicates"))
+
     def disconnect(self):
-        """Closes the connection safely."""
+        """Writes the queued packets and closes the connection safely."""
+        try:
+            self.flush()
+        except Exception:
+            logger.warning("Could not write the queued packets", exc_info=True)
         if self.conn:
             try:
                 self.conn.close()
@@ -407,7 +470,11 @@ class DbTimescaleWriter():
                 columns.append(
                     "uuid TEXT")  # SQLite erlaubt typenlose Spalten, Postgres braucht explizit TEXT
                 columns.append("data TEXT NOT NULL")
+                columns.append("deviceid TEXT")
+                columns.append("sensorid TEXT")
+                columns.append("packet_uid TEXT")
             else:
+                columns.append("packet_uid TEXT")
                 for addr in t_cfg.addresses:
                     col_name_db = sanitize_name_for_db(addr)
 
@@ -433,6 +500,19 @@ class DbTimescaleWriter():
             self._execute(f"""
                 SELECT create_hypertable('"{table_name_db}"', 't_packet', if_not_exists => TRUE);
             """)
+
+            # Tables of older versions; index for queries by device and time
+            new_cols = ["packet_uid"] + (["deviceid", "sensorid"] if t_cfg.tabletype == "redvypr_datapacket" else [])
+            for col in new_cols:
+                self._execute(f'ALTER TABLE "{table_name_db}" ADD COLUMN IF NOT EXISTS {col} TEXT')
+            if t_cfg.tabletype == "redvypr_datapacket":
+                self._execute(f'CREATE INDEX IF NOT EXISTS "idx_{table_name_db}_deviceid_t" '
+                              f'ON "{table_name_db}" (deviceid, t_packet DESC)')
+            if t_cfg.skip_duplicates:
+                # A unique index of a hypertable has to contain its time column. Rows without
+                # uid (written without skip_duplicates) are NULL: no conflict.
+                self._execute(f'CREATE UNIQUE INDEX IF NOT EXISTS "uidx_{table_name_db}_packet_uid" '
+                              f'ON "{table_name_db}" (packet_uid, t_packet)')
 
     def add_metadata(self, address: str, uuid: str,
                      metadata_dict: dict, mode: str = "merge"):
@@ -497,13 +577,8 @@ class DbTimescaleWriter():
                         #print("Write packet to db table:{table_name}")
                         sql_command = self.get_sql_insert_datapacket(table_name, data)
                         if sql_command:
-                            #print(f"{sql_command=}")
-                            try:
-                                self._execute(sql_command[0],sql_command[1])
-                            except:
-                                logger.warning(f"Could not insert data:{sql_command}",exc_info=True)
-                                print("data",data)
-                                print("table_name", table_name)
+                            # Written in batches, see flush_if_due()
+                            self._pending.append((sql_command[0], sql_command[1], 'packet', table_name))
                             #print(f"Stored packet in {table_name}")
                             flag_packet_written = True
                             self.file_statistics_total['packets_raw_written'] += 1
@@ -613,15 +688,14 @@ class DbTimescaleWriter():
                                 self.file_statistics_total['columns_flat_active'][
                                     table_name][addr_write]['entries_written'] += 1
 
-                            try:
-                                self._execute_list(sql_commands)
-                            except:
-                                logger.warning("Error writing",exc_info=True)
+                            for sql_command in sql_commands:
+                                self._pending.append((sql_command[0], sql_command[1], 'entry', table_name))
                             flag_packet_written = True
                             flag_address_match = True  # Packet for address found, no need to look for further addresses
 
         if flag_packet_written:
             self.file_statistics_total['packets_flat_written'] += 1
+        self.flush_if_due()
 
     @staticmethod
     def serialize_value(value):
@@ -764,9 +838,11 @@ class DbTimescaleWriter():
 
         # 1. Change placeholders to %s for PostgreSQL/TimescaleDB
         # 2. Quote identifiers with double quotes to ensure case-safety
+        skip = self._skip_duplicates(table_name)
         sql = f"""
-            INSERT INTO "{table_name_db}" (t, t_packet, numpacket, numconfig, "{address_db}")
-            VALUES (to_timestamp(%s), to_timestamp(%s), %s, %s, %s)                 
+            INSERT INTO "{table_name_db}" (t, t_packet, numpacket, numconfig, packet_uid, "{address_db}")
+            VALUES (to_timestamp(%s), to_timestamp(%s), %s, %s, %s, %s)
+            {'ON CONFLICT DO NOTHING' if skip else ''}
         """
 
         sql_command = (sql, (
@@ -774,6 +850,7 @@ class DbTimescaleWriter():
             t_packet,
             numpacket,
             self.numconfig,
+            value_uid(address, t, data) if skip else None,
             data
         ))
 
@@ -787,7 +864,7 @@ class DbTimescaleWriter():
         try:
             # 1. Sanitize table name and prepare addressing / timing information
             table_name_db = sanitize_name_for_db(table_name)
-            raddr = RedvyprAddress(data_dict)
+            hdr = packet_header(data_dict)      # address string cached per source
 
             # Use 't' from the main dict for the entry timestamp
             ts_utc_all = data_dict.get('t', -1)
@@ -805,10 +882,13 @@ class DbTimescaleWriter():
             data_dict_json = serialize_json(data_dict)
 
             # 3. Change placeholders to %s and enforce quoted table names
+            skip = self._skip_duplicates(table_name)
             sql = f"""
-                INSERT INTO "{table_name_db}" 
-                (numconfig, t, t_packet, data, redvypr_address, host, publisher, device, packetid, numpacket, uuid) 
-                VALUES (%s,to_timestamp(%s),to_timestamp(%s),%s,%s,%s,%s,%s,%s,%s,%s)
+                INSERT INTO "{table_name_db}"
+                (numconfig, t, t_packet, data, redvypr_address, host, publisher, device, packetid, numpacket, uuid,
+                 deviceid, sensorid, packet_uid)
+                VALUES (%s,to_timestamp(%s),to_timestamp(%s),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                {'ON CONFLICT DO NOTHING' if skip else ''}
             """
 
             sql_command = (sql, (
@@ -816,13 +896,16 @@ class DbTimescaleWriter():
                 ts_utc,
                 ts_pkt_utc,
                 data_dict_json,
-                raddr.to_address_string(),
-                raddr.host,
-                raddr.publisher,
-                raddr.device,
-                raddr.packetid,
+                hdr['address'],
+                hdr['host'],
+                hdr['publisher'],
+                hdr['device'],
+                hdr['packetid'],
                 rv_meta.get('numpacket', '-1'),
-                raddr.uuid
+                hdr['uuid'],
+                rv_meta.get('deviceid'),
+                rv_meta.get('sensorid'),
+                packet_uid(data_dict) if skip else None,
             ))
 
             return sql_command

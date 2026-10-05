@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from redvypr.redvypr_address import RedvyprAddress
 from redvypr.redvypr_datadict import RedvyprDatadict
 from redvypr.serialize import serialize_json, deserialize_json
-from .db_config_util import DbWriteConfig, sanitize_name_for_db
+from .db_config_util import DbWriteConfig, sanitize_name_for_db, packet_uid, value_uid, packet_header
 import numpy as np
 
 logging.basicConfig(stream=sys.stderr)
@@ -65,7 +65,21 @@ class SqliteConfig(pydantic.BaseModel):
     )
 
     dt_backup: int = pydantic.Field(default=120,
-                                     description='Time after which the sqlite memory is written to the disk')
+                                     description='storage "memory": time after which the sqlite memory is written to the disk')
+    storage: typing.Literal['memory', 'file'] = pydantic.Field(
+        default='memory',
+        description='memory: the database is kept in RAM and copied to the file every dt_backup seconds '
+                    '(fast; data since the last copy is lost at a crash, RAM grows with the file). '
+                    'file: written directly to the file (WAL journal), only the last batch '
+                    '(dt_commit) can be lost')
+    append_to_file: bool = pydantic.Field(
+        default=False,
+        description='storage "file": write into filepath itself and continue an existing database '
+                    '(no new file per start, no rotation), e.g. one archive file')
+    batch_size: int = pydantic.Field(default=500, ge=1,
+                                     description='Packets written in one transaction at most')
+    dt_commit: float = pydantic.Field(default=1.0, ge=0,
+                                      description='Time after which queued packets are written at the latest [s]')
 
     dt_newfile: int = pydantic.Field(default=3600,
                                      description='Time after which a new file is created')
@@ -114,7 +128,12 @@ class DbSqlite:
                 self.filepath = config.filepath
                 self.connect_with_file()
         elif self.mode == "write":
-            self.filepath = self.generate_new_filename()
+            self._pending = []          # queued inserts: (sql, params, kind, table_name)
+            self._t_flush = time.time()
+            if self.config.storage == 'file' and self.config.append_to_file:
+                self.filepath = self.config.filepath
+            else:
+                self.filepath = self.generate_new_filename()
             # Convert the addresses in string format into redvypr addresses
             self.write_config_raddr = self.convert_write_config_raddr(self.config)
             try:
@@ -155,6 +174,8 @@ class DbSqlite:
                                       'packets_flat_written': 0,
                                       'metadata_written': 0,
                                       'entries_flat_written': 0,
+                                      'packets_duplicate_skipped': 0,
+                                      'entries_duplicate_skipped': 0,
                                       'columns_flat_active': {}}
         self.file_statistics[self.filepath] = {'packets_raw_written': 0,
                                                'packets_flat_written': 0,
@@ -164,9 +185,17 @@ class DbSqlite:
         logger.info(f"Opening database file: {self.filepath}")
         self.file_created = time.time()
         self.file_last_check = time.time() - self.dtbackup + 10
-        # self.conn = sqlite3.connect(self.filepath)
-        # self.conn.execute("PRAGMA foreign_keys = ON;")
-        self.conn = sqlite3.connect(':memory:')
+        if self.config.storage == 'file':
+            # Directly into the file; WAL: readers do not block the writer, a crash keeps
+            # everything committed
+            filepath_dir = os.path.dirname(self.filepath)
+            if filepath_dir:
+                os.makedirs(filepath_dir, exist_ok=True)
+            self.conn = sqlite3.connect(self.filepath, check_same_thread=False)
+            self.conn.execute("PRAGMA journal_mode=WAL;")
+            self.conn.execute("PRAGMA synchronous=NORMAL;")
+        else:
+            self.conn = sqlite3.connect(':memory:')
         self.conn.execute("PRAGMA foreign_keys = ON;")
         # Increase cache size
         self.conn.execute("PRAGMA cache_size = -20000;")  # approx. 20MB Cache
@@ -198,9 +227,13 @@ class DbSqlite:
         return memory_usage
 
     def save_to_disk(self, blocking=False):
-        """Copies the RAM database onto the harddisk."""
+        """Copies the RAM database onto the harddisk (storage 'file': writes the queued packets)."""
         if not hasattr(self, 'conn'):
             return
+        if self.mode == "write":
+            self.flush()
+            if self.config.storage == 'file':
+                return
 
         logger.debug(f"Saving data from ram into file:{self.filepath}")
         # A direct copy of the database
@@ -246,7 +279,10 @@ class DbSqlite:
 
     def _check_rotation(self):
         """Checks if the file has to be rotated"""
-        if time.time() >= self.file_last_check + self.dtbackup:
+        self.flush_if_due()
+        if self.config.storage == 'file' and self.config.append_to_file:
+            return      # one file, no rotation
+        if self.config.storage == 'memory' and time.time() >= self.file_last_check + self.dtbackup:
             logger.info("Backup of file to disk")
             self.save_to_disk()
             self.file_last_check = time.time()
@@ -497,15 +533,32 @@ class DbSqlite:
                 columns.append("host TEXT")
                 columns.append("uuid")
                 columns.append("data TEXT NOT NULL")
+                columns.append("deviceid TEXT")
+                columns.append("sensorid TEXT")
+                columns.append("packet_uid TEXT")
                 #columns.append("raw_data BLOB")
             else:
-                pass
-                # Dont add anything, the addresses will be added dynamicall during insert_data
+                columns.append("packet_uid TEXT")
+                # The addresses will be added dynamically during insert_data
 
 
             # Create the data table
             self._execute(
                 f"CREATE TABLE IF NOT EXISTS {table_name_db} ({', '.join(columns)})")
+            # Tables of older versions; indexes for queries by time and device
+            if t_cfg.tabletype == "redvypr_datapacket":
+                self._ensure_columns(table_name_db, {"deviceid": "TEXT", "sensorid": "TEXT",
+                                                     "packet_uid": "TEXT"})
+                self._execute(f'CREATE INDEX IF NOT EXISTS "idx_{table_name_db}_deviceid_t" '
+                              f'ON "{table_name_db}" (deviceid, t_packet)')
+            else:
+                self._ensure_columns(table_name_db, {"packet_uid": "TEXT"})
+            self._execute(f'CREATE INDEX IF NOT EXISTS "idx_{table_name_db}_t_packet" '
+                          f'ON "{table_name_db}" (t_packet)')
+            if t_cfg.skip_duplicates:
+                # Rows without uid (written without skip_duplicates) are NULL: no conflict
+                self._execute(f'CREATE UNIQUE INDEX IF NOT EXISTS "uidx_{table_name_db}_packet_uid" '
+                              f'ON "{table_name_db}" (packet_uid)')
 
             # Create a trigger to update the table stats
             if t_cfg.tabletype == "redvypr_datapacket":
@@ -583,8 +636,65 @@ class DbSqlite:
             self._execute(trigger_sql)
 
     def close(self):
-        self.save_to_disk()
+        self.save_to_disk(blocking=True)
         self.conn.close()
+
+    # --- queued writing ---
+
+    def flush_if_due(self):
+        """Write the queued packets if batch_size is reached or dt_commit has passed."""
+        if self._pending and (len(self._pending) >= self.config.batch_size
+                              or time.time() - self._t_flush >= self.config.dt_commit):
+            self.flush()
+
+    def flush(self):
+        """Write all queued inserts in one transaction and count the skipped duplicates."""
+        if self.mode != "write" or not getattr(self, '_pending', None):
+            if self.mode == "write":
+                self._t_flush = time.time()
+            return
+        pending, self._pending = self._pending, []
+        self._t_flush = time.time()
+        results = []
+        try:
+            with self.conn:
+                for sql, params, kind, table_name in pending:
+                    results.append((self.conn.execute(sql, params).rowcount, kind, table_name))
+        except Exception:
+            # One bad statement: write the others one by one
+            logger.warning("Batch insert failed, inserting one by one", exc_info=True)
+            results = []
+            for sql, params, kind, table_name in pending:
+                try:
+                    with self.conn:
+                        results.append((self.conn.execute(sql, params).rowcount, kind, table_name))
+                except Exception:
+                    logger.warning(f"Could not insert into {table_name}: {sql}", exc_info=True)
+        for rowcount, kind, table_name in results:
+            if rowcount == 0:       # INSERT OR IGNORE: duplicate
+                self._count_duplicate(kind, table_name)
+
+    def _count_duplicate(self, kind, table_name):
+        stats = [self.file_statistics_total, self.file_statistics.get(self.filepath, {})]
+        if kind == 'packet':
+            for st in stats:
+                st['packets_duplicate_skipped'] = st.get('packets_duplicate_skipped', 0) + 1
+                st['packets_raw_written'] = st.get('packets_raw_written', 1) - 1
+        else:
+            for st in stats:
+                st['entries_duplicate_skipped'] = st.get('entries_duplicate_skipped', 0) + 1
+                st['entries_flat_written'] = st.get('entries_flat_written', 1) - 1
+
+    def _skip_duplicates(self, table_name) -> bool:
+        return bool(self.write_config_raddr["tables"].get(table_name, {}).get("skip_duplicates"))
+
+    def _ensure_columns(self, table_name_db, columns: dict):
+        """Add missing columns to an existing table (tables of older versions)."""
+        existing = {row[1] for row in self.conn.execute(f'PRAGMA table_info("{table_name_db}")')}
+        for name, sqltype in columns.items():
+            if name not in existing:
+                logger.info(f"Adding column {name} to {table_name_db}")
+                self._execute(f'ALTER TABLE "{table_name_db}" ADD COLUMN {name} {sqltype}')
 
 
     def add_metadata(self, address: str, uuid: str,
@@ -769,13 +879,8 @@ class DbSqlite:
                         #print("Write packet to db table:{table_name}")
                         sql_command = self.get_sql_insert_datapacket(table_name, data)
                         if sql_command:
-                            #print(f"{sql_command=}")
-                            try:
-                                self._execute(sql_command[0],sql_command[1])
-                            except:
-                                logger.warning(f"Could not insert data:{sql_command}",exc_info=True)
-                                print("data",data)
-                                print("table_name", table_name)
+                            # Written in batches (flush), see flush_if_due()
+                            self._pending.append((sql_command[0], sql_command[1], 'packet', table_name))
                             #print(f"Stored packet in {table_name}")
                             flag_packet_written = True
                             self.file_statistics[self.filepath]['packets_raw_written'] += 1
@@ -888,10 +993,8 @@ class DbSqlite:
 
                                 #self.file_statistics[self.filepath]['entries_flat_written'] += 1
 
-                            try:
-                                self._execute_list(sql_commands)
-                            except:
-                                logger.warning("Error writing",exc_info=True)
+                            for sql_command in sql_commands:
+                                self._pending.append((sql_command[0], sql_command[1], 'entry', table_name))
                             flag_packet_written = True
                             flag_address_match = True  # Packet for address found, no need to look for further addresses
 
@@ -1096,10 +1199,12 @@ class DbSqlite:
         address_db = sanitize_name_for_db(address)
 
         #print(f"Insert data into {table_name=}({table_name_db=}) for {address=}({address_db=})")
-        # Insert or update the data
+        # Insert the data (with skip_duplicates: once per address, time and value)
+        skip = self._skip_duplicates(table_name)
         sql = f"""
-                 INSERT INTO {table_name_db} (t, t_packet,numpacket, numconfig, {address_db})
-                 VALUES (?,?,?,?,?)                 
+                 {'INSERT OR IGNORE' if skip else 'INSERT'} INTO {table_name_db}
+                 (t, t_packet,numpacket, numconfig, packet_uid, {address_db})
+                 VALUES (?,?,?,?,?,?)
               """
 
         sql_command = (sql, (
@@ -1107,6 +1212,7 @@ class DbSqlite:
             t_packet,
             numpacket,
             self.numconfig,
+            value_uid(address, t, data) if skip else None,
             data
         ))
 
@@ -1117,8 +1223,8 @@ class DbSqlite:
         Inserts a data packet into the table_name of the SQLite database.
         """
         try:
-            # 3. Extract addressing and timing information
-            raddr = RedvyprAddress(data_dict)
+            # 3. Extract addressing and timing information (address string cached per source)
+            hdr = packet_header(data_dict)
 
             # Use 't' from the main dict for the entry timestamp
             ts_utc_all = data_dict.get('t',-1)
@@ -1135,10 +1241,12 @@ class DbSqlite:
             # 4. Prepare data for SQL
             data_dict_json = serialize_json(data_dict)
 
+            skip = self._skip_duplicates(table_name)
             sql = f"""
-                INSERT INTO {table_name} 
-                (numconfig, t, t_packet, data, redvypr_address, host, publisher, device, packetid, numpacket, uuid) 
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                {'INSERT OR IGNORE' if skip else 'INSERT'} INTO {sanitize_name_for_db(table_name)}
+                (numconfig, t, t_packet, data, redvypr_address, host, publisher, device, packetid, numpacket, uuid,
+                 deviceid, sensorid, packet_uid)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """
 
             sql_command = (sql, (
@@ -1146,13 +1254,16 @@ class DbSqlite:
                 ts_utc,
                 ts_pkt_utc,
                 data_dict_json,
-                raddr.to_address_string(),
-                raddr.host,
-                raddr.publisher,
-                raddr.device,
-                raddr.packetid,
+                hdr['address'],
+                hdr['host'],
+                hdr['publisher'],
+                hdr['device'],
+                hdr['packetid'],
                 rv_meta.get('numpacket', '-1'),
-                raddr.uuid
+                hdr['uuid'],
+                rv_meta.get('deviceid'),
+                rv_meta.get('sensorid'),
+                packet_uid(data_dict) if skip else None,
             ))
 
             return sql_command
@@ -1607,6 +1718,9 @@ class DbSqlite:
             return {}
 
         phys_table = table_row[0]
+        # deviceid/sensorid: NULL in files of older versions without these columns
+        existing = {r[1] for r in self.conn.execute(f'PRAGMA table_info("{phys_table}")')}
+        id_cols = ", ".join(c if c in existing else f"NULL AS {c}" for c in ("deviceid", "sensorid"))
         # 2. Dynamische WHERE-Bedinungen aufbauen (Standard-Metadaten)
         where_clauses = []
         sql_params = []
@@ -1639,7 +1753,8 @@ class DbSqlite:
 
         # Da es sich um den fixed Datapacket-Typ handelt, selektieren wir alle relevanten Spalten direkt
         final_query = f"""
-            SELECT numconfig, numpacket, t_packet, t, redvypr_address, packetid, publisher, device, host, uuid, data 
+            SELECT numconfig, numpacket, t_packet, t, redvypr_address, packetid, publisher, device, host, uuid, data,
+                   {id_cols}
             FROM "{phys_table}" {where_str} {order_str} {limit_str}
         """
 
@@ -1663,7 +1778,9 @@ class DbSqlite:
                 "device": [],
                 "host": [],
                 "uuid": [],
-                "data": []
+                "data": [],
+                "deviceid": [],
+                "sensorid": []
             }
 
             # Daten spaltenweise in Listen entpacken
@@ -1681,7 +1798,9 @@ class DbSqlite:
 
                 # Da 'data' als TEXT NOT NULL definiert ist, hier direkt anhängen.
                 # Falls es JSON-Strings sind, könntest du hier optional ein json.loads(row[10]) einbauen.
-                result["data"].append(json_safe_loads(row[10]))
+                result["data"].append(deserialize_json(row[10]))
+                result["deviceid"].append(row[11])
+                result["sensorid"].append(row[12])
 
             return result
 
@@ -2037,6 +2156,21 @@ class SqliteConfigWidget(QtWidgets.QWidget):
         file_layout.addWidget(self.query_button)
         layout.addRow("Database Name/Path:", file_layout)
 
+        # --- Storage: RAM with copies or directly into the file ---
+        self.storage_combo = QtWidgets.QComboBox()
+        self.storage_combo.addItems(["memory", "file"])
+        self.storage_combo.setCurrentText(self.config.storage)
+        self.storage_combo.setToolTip("memory: database in RAM, copied to the file every "
+                                      f"{self.config.dt_backup} s (data since the last copy is lost at a crash). "
+                                      "file: written directly to the file (WAL)")
+        self.storage_combo.currentTextChanged.connect(self.config_changed)
+        layout.addRow("Storage:", self.storage_combo)
+        self.append_cb = QtWidgets.QCheckBox("Write into this file and continue it (no new file per start, "
+                                             "no rotation)")
+        self.append_cb.setChecked(self.config.append_to_file)
+        self.append_cb.toggled.connect(self.config_changed)
+        layout.addRow("", self.append_cb)
+
         # --- 2. File Rotation (Size-based) ---
         self.rotate_cb = QtWidgets.QCheckBox("Enable File Rotation (Limit Size)")
         self.rotate_cb.setChecked(self.config.max_file_size_mb is not None)
@@ -2132,16 +2266,23 @@ class SqliteConfigWidget(QtWidgets.QWidget):
             file_format=self.format_edit.text(),
             filedateformat=self.date_format_edit.text(),
             dt_newfile=dt_newfile,
-            dt_newfile_unit=dt_newfile_unit
+            dt_newfile_unit=dt_newfile_unit,
+            dt_backup=self.config.dt_backup,
+            storage=self.storage_combo.currentText(),
+            append_to_file=self.append_cb.isChecked() and self.storage_combo.currentText() == 'file',
+            batch_size=self.config.batch_size,
+            dt_commit=self.config.dt_commit,
         )
-
-        print("config",c)
 
         return c
 
     def update_preview(self):
         """Updates the filename preview."""
         config = self.get_config()
+        self.append_cb.setEnabled(config.storage == 'file')
+        if config.append_to_file:
+            self.preview_label.setText(os.path.basename(config.filepath) + " (continued, no rotation)")
+            return
         preview_path = DbSqlite.format_filename(
             base_name=config.filepath,
             file_format=config.file_format,

@@ -1,4 +1,5 @@
 from PyQt6 import QtWidgets, QtCore
+import queue
 import time
 import logging
 import sys
@@ -81,7 +82,11 @@ def start(device_info, config={}, dataqueue=None, datainqueue=None, statusqueue=
 
         statistics = {}
         while True:
-            datapacket = datainqueue.get()
+            try:
+                datapacket = datainqueue.get(timeout=0.5)
+            except queue.Empty:
+                db.flush_if_due()   # queued packets are written after dt_commit also without new data
+                continue
             #print("Got data",datapacket)
             addrstr = RedvyprAddress(datapacket).to_address_string()
             #print("Addstr",addrstr)

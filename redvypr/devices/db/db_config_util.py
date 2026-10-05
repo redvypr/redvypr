@@ -95,6 +95,75 @@ def sanitize_name_for_db(address: str) -> str:
 
 
 
+def _canonical(obj):
+    """JSON-able, order independent form of a value (dict keys as str, sorted by json.dumps)."""
+    if isinstance(obj, dict):
+        return {str(k): _canonical(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_canonical(v) for v in obj]
+    if hasattr(obj, "tolist"):                  # numpy arrays and scalars
+        return _canonical(obj.tolist())
+    if isinstance(obj, (bytes, bytearray)):
+        return "b:" + bytes(obj).hex()
+    if isinstance(obj, (str, int, float, bool)) or obj is None:
+        return obj
+    return str(obj)
+
+
+def _sha1(obj) -> str:
+    text = json.dumps(_canonical(obj), sort_keys=True, separators=(",", ":"), allow_nan=True)
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()
+
+
+def packet_uid(data: dict) -> str:
+    """
+    Identity of a datapacket for skipping duplicates: its source (deviceid, or
+    the device name without one; sensorid, sensor), packetid, packet time and
+    its content (all keys not starting with '_'). Host, publisher and local
+    counters are not part of it: the same packet received again (e.g. data of
+    a logger downloaded twice, a replayed file) has the same uid.
+    """
+    rv = data.get("_redvypr") or {}
+    source = rv.get("deviceid") or rv.get("device")
+    content = {k: v for k, v in data.items() if not str(k).startswith("_")}
+    return _sha1([source, rv.get("sensorid"), rv.get("sensor"), rv.get("packetid"), rv.get("t"), content])
+
+
+_HEADER_CACHE = {}
+
+
+def packet_header(data: dict) -> dict:
+    """
+    Address string and header fields of a datapacket for the database tables.
+    RedvyprAddress(data).to_address_string() is expensive (it parses the address);
+    it is the same for all packets of one source and cached by the header values.
+    """
+    rv = data.get("_redvypr") or {}
+    host = rv.get("host") or {}
+    local = rv.get("localhost") or {}
+    key = (rv.get("device"), rv.get("deviceid"), rv.get("sensor"), rv.get("sensorid"), rv.get("packetid"),
+           rv.get("publisher"), host.get("host"), host.get("uuid"), host.get("addr"),
+           local.get("host"), local.get("uuid"), local.get("addr"))
+    try:
+        address = _HEADER_CACHE[key]
+    except (KeyError, TypeError):           # TypeError: unhashable value in the header
+        from redvypr.redvypr_address import RedvyprAddress
+        address = RedvyprAddress(data).to_address_string()
+        try:
+            if len(_HEADER_CACHE) > 10000:
+                _HEADER_CACHE.clear()
+            _HEADER_CACHE[key] = address
+        except TypeError:
+            pass
+    return {"address": address, "host": host.get("host"), "publisher": rv.get("publisher"),
+            "device": rv.get("device"), "packetid": rv.get("packetid"), "uuid": host.get("uuid")}
+
+
+def value_uid(address: str, t, value) -> str:
+    """Identity of one entry of a data_flat table (address, time, value)."""
+    return _sha1([address, t, value])
+
+
 class DbTableConfig(pydantic.BaseModel):
     tablename: str = pydantic.Field(default="", description="The tablename")
     tabletype: typing.Literal["redvypr_datapacket", "data_flat", "redvypr_metadata"]\
@@ -106,6 +175,11 @@ class DbTableConfig(pydantic.BaseModel):
                     "redvypr_metadata: Metadata of the redvypr host "
     )
     addresses: List[str] = pydantic.Field(default_factory=list,description="The redvypr addresses that are saved in the table.")
+    skip_duplicates: bool = pydantic.Field(
+        default=False,
+        description="Write a packet (data_flat: an entry) only once: packets with the same source "
+                    "(deviceid or device), packetid, time and content are skipped, e.g. data of a "
+                    "logger that is downloaded again or a file that is replayed twice.")
 
 
 class DbWriteConfig(pydantic.BaseModel):
@@ -205,6 +279,11 @@ class TableDetailWidget(QtWidgets.QWidget):
             "redvypr_metadata"
         ])
         form.addRow("Table Type:", self.type_combo)
+        self.skip_dup_cb = QtWidgets.QCheckBox("Skip duplicates")
+        self.skip_dup_cb.setToolTip("Write a packet only once: packets with the same source (deviceid or "
+                                    "device), packetid, time and content are skipped (e.g. data downloaded "
+                                    "again from a logger, a file replayed twice)")
+        form.addRow("", self.skip_dup_cb)
         layout.addLayout(form)
 
         # Address List Management
@@ -233,6 +312,7 @@ class TableDetailWidget(QtWidgets.QWidget):
         """Connect internal widgets to the data_changed signal."""
         # ComboBox change
         self.type_combo.currentIndexChanged.connect(self.data_changed)
+        self.skip_dup_cb.toggled.connect(self.data_changed)
 
         # Button actions
         self.btn_add_man_addr.clicked.connect(self._add_address_dialog)
@@ -273,6 +353,7 @@ class TableDetailWidget(QtWidgets.QWidget):
         idx = self.type_combo.findText(data.get("tabletype", ""))
         if idx >= 0:
             self.type_combo.setCurrentIndex(idx)
+        self.skip_dup_cb.setChecked(bool(data.get("skip_duplicates", False)))
 
         self.addr_list.clear()
         for addr in data.get("addresses", []):
@@ -283,6 +364,7 @@ class TableDetailWidget(QtWidgets.QWidget):
         """Returns the specific table configuration as a dictionary."""
         return {
             "tabletype": self.type_combo.currentText(),
+            "skip_duplicates": self.skip_dup_cb.isChecked(),
             "addresses": [self.addr_list.item(i).text() for i in
                           range(self.addr_list.count())]
         }

@@ -9,6 +9,12 @@ redvypr changelog
 ### Added
 - Documentation of the metadata system (`doc/source/metadata.rst`), `redvypr.metadata` in the API reference
 - `Redvypr.set_metadata_from_dict()` (was called, but missing), `metadata.normalize_metadata()`
+- norlog gateway: "Data" tab: download the SD card log files into an archive folder (only what is new,
+  CRC verified, resumable) and optionally publish the packets with their measurement time; "Set clock" per device
+- Database writers: option `skip_duplicates` per table (packets with the same source, packetid, time and content
+  are written once); columns `deviceid`, `sensorid` and indexes on time and device
+- SQLite writer: `storage` 'file' (directly into the file, WAL) besides 'memory', `append_to_file` to continue one
+  database file
 ### Changed
 - Metadata entries describe the period in which a value was valid: the same key, value and context again (other
   `valid_from`, restart, sent with every packet) does not add an entry; overlapping periods are merged, a new value
@@ -22,6 +28,9 @@ redvypr changelog
 - Fixed: shared constraints of `create_metadata_dict()`, nested `create_metadatapacket()`, metadata of other redvypr
   instances lost (and the other packets of that distribution round)
 - norlog gateway: no full resend of the metadata after a serial number change
+- Database writers: packets are written in batches (`batch_size`, `dt_commit`) instead of one transaction per row;
+  the address string is cached per source (SQLite: 10000 instead of 1000 packets/s)
+- SQLite `get_redvypr_datapackets()`: failed with `json_safe_loads` not defined; returns deviceid and sensorid
 
 ## [0.9.21] - 2026-10-04
 
