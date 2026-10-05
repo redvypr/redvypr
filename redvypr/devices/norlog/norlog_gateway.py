@@ -31,10 +31,15 @@ Published packets (packetid = type of the packet):
 
 The messages for the GUI of this device (console, command_result,
 thread_status with the device list, flash_status, props, fs_progress,
-fs_result, time_result) go through the statusqueue of the device to its widget. They are
+fs_result, time_result, sync_progress, sync_result) go through the statusqueue of the device to its widget. They are
 published as well only with the option publish_raw_data (default off), with
 the same header. Messages about a node keep its key ('gateway' or RLOC16) in
 'target'.
+
+Data download ("Data" tab of the settings window): the log files of the SD card
+are copied 1:1 into <archive_folder>/<hwid>/ (only what is new, see
+norlog_archive); optionally the new packets are published with their
+measurement time, e.g. for the database writers.
 
 The info packet contains the info JSON as it is (nested) plus 'link': the radio
 link as seen from the gateway (RSSI, LQ, role, next hop, ...). Metadata is
@@ -73,6 +78,7 @@ from redvypr.redvypr_datadict import check_for_command, create_redvypr_dict
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 
 from . import device_list
+from . import norlog_archive
 from . import norlog_cbor
 from . import ot_cli
 from . import smp_serial
@@ -114,6 +120,11 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                                                              'Thread member')
     console_show_commands: bool = pydantic.Field(default=False, description='Show the traffic of internal '
                                                                             'ot commands in the console')
+    archive_folder: str = pydantic.Field(default='norlog_archive', description='Folder of the downloaded log files '
+                                                                          '(one subfolder per hardware ID)')
+    archive_publish: bool = pydantic.Field(default=False, description='Publish the downloaded packets with their '
+                                                                      'measurement time (e.g. for the database '
+                                                                      'writers)')
     publish_raw_data: bool = pydantic.Field(default=False, description='Publish also the raw data of the gateway: '
                                                                        'console lines, command results, Thread '
                                                                        'status with device list, transfer status')
@@ -191,10 +202,13 @@ class _Gateway:
         """
         key = target or 'gateway'
         info = self.infos.get(key) or {}
-        hwid = hwid or info.get('hwid')
-        props = (self.props_cache.get(hwid) if hwid else None) or self.props_cache.get(key) or {}
-        if not info and hwid:
+        if hwid and info.get('hwid') != hwid:
+            # hwid given (e.g. 'mac' of a packet): not the device behind key
             info = next((i for i in self.infos.values() if i and i.get('hwid') == hwid), {})
+            props = self.props_cache.get(hwid) or {}
+        else:
+            hwid = hwid or info.get('hwid')
+            props = (self.props_cache.get(hwid) if hwid else None) or self.props_cache.get(key) or {}
         sn = props.get('sn') or info.get('sn') or None
         return (f'norlog_{sn}' if sn else 'norlog'), hwid, sn
 
@@ -309,7 +323,7 @@ class _Gateway:
                 self.stop_requested = True
                 cancel = True
             elif during_flash:
-                if command == 'flash_cancel':
+                if command in ('flash_cancel', 'sync_cancel'):
                     cancel = True
                 else:
                     logger.info(f'Ignoring command {command!r} while flashing')
@@ -342,6 +356,9 @@ class _Gateway:
             elif command == 'refresh':
                 self.read_status()
                 self.query_info('all', refresh_props=True)
+            elif command == 'data_sync':
+                self.data_sync(args.get('target', 'gateway'), args.get('folder') or self.config.archive_folder,
+                               bool(args.get('publish', self.config.archive_publish)))
             elif command == 'set_time':
                 self.set_time(args.get('targets') or ['gateway'], force=bool(args.get('force')))
             elif command == 'props_read':
@@ -618,6 +635,66 @@ class _Gateway:
     def fs_write_direct(self, address, data, remote, progress=None):
         """Write a file to a member block by block through the gateway (no SD card on the gateway)."""
         return ot_cli.fs_upload(self.cli, address, data, remote, progress, resume=True)
+
+    # --- data download (archive of the SD card log files) ---
+
+    def data_sync(self, target, folder, publish):
+        """
+        Copy the new log data of a norlog into the archive folder and, with publish,
+        publish the packets that were not published yet (with their measurement time).
+        """
+        meter = RateMeter()
+        last = [0.0]
+
+        def progress(done, total, name):
+            now = time.monotonic()
+            if now - last[0] >= 0.3 or done >= total:
+                last[0] = now
+                self.to_gui('sync_progress', {'target': target, 'done': done, 'total': total, 'file': name,
+                                              'rate': meter.update(done)})
+
+        try:
+            address = self.target_address(target)
+            hwid = (self.infos.get(target or 'gateway') or {}).get('hwid')
+            remote = norlog_archive.RemoteFiles(self.cli, address)
+            res = norlog_archive.sync(remote, folder, hwid=hwid, progress=progress,
+                                      cancel=lambda: self.check_commands(during_flash=True))
+        except (norlog_archive.ArchiveError, ot_cli.OtError, TimeoutError, OSError, ValueError) as exc:
+            self.to_gui('sync_result', {'target': target, 'ok': False, 'message': str(exc)})
+            return
+        changed = [f for f in res['files'] if f['new'] != f['old'] or f['status'] == 'replaced']
+        replaced = [f['name'] for f in res['files'] if f['status'] == 'replaced']
+        text = (f"{res['bytes'] / 1024:.1f} KB in {len(changed)} file(s) "
+                f"({meter.average():.1f} KB/s) to {res['dir']}" if res['bytes'] else
+                f"nothing new, archive {res['dir']}")
+        if replaced:
+            text += f"; card changed, old copies kept: {', '.join(replaced)}"
+        if res['cancelled']:
+            text = 'cancelled after ' + text
+        published = 0
+        if publish and not res['cancelled']:
+            try:
+                for pkt in norlog_archive.new_packets(res['dir']):
+                    self.publish_archive_packet(pkt)
+                    published += 1
+                waiting = norlog_archive.waiting_files(res['dir'])
+            except (OSError, ValueError) as exc:
+                self.to_gui('sync_result', {'target': target, 'ok': False, 'message': f'{text}; publishing: {exc}'})
+                return
+            text += f"; {published} packet(s) published"
+            if waiting:
+                text += (f"; {len(waiting)} file(s) wait for the time of their boot "
+                         f"(clock not set, see 'Set clock')")
+        self.to_gui('sync_result', {'target': target, 'ok': not res['cancelled'], 'message': text,
+                                    'files': res['files'], 'dir': res['dir'], 'published': published})
+
+    def publish_archive_packet(self, pkt):
+        """Publish a packet of the archive like the live data: header of its norlog, measurement time."""
+        device, hwid, sn = self.identity(hwid=pkt.get('mac'))
+        data = create_redvypr_dict(device=device, deviceid=hwid, sensorid=sn,
+                                   packetid=pkt.get('packet_type', 'data'), tu=pkt['t'])
+        data.update(pkt)
+        self.dataqueue.put(data)
 
     # --- clock ---
 
@@ -1537,6 +1614,13 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     self.console_text.appendPlainText(
                         f"[fs {data.get('op')} {data.get('target')}] {'OK' if data.get('ok') else 'ERROR'}: "
                         f"{data.get('message', '')}")
+            elif packetid in ('sync_progress', 'sync_result'):
+                dlg = self.settings_dialogs.get(data.get('target'))
+                if dlg is not None:
+                    dlg.on_sync_message(packetid, data)
+                if packetid == 'sync_result':
+                    self.console_text.appendPlainText(
+                        f"[data {data.get('target')}] {'OK' if data.get('ok') else 'ERROR'}: {data.get('message', '')}")
             elif packetid == 'time_result':
                 state = 'OK' if data.get('ok') else 'ERROR'
                 self.console_text.appendPlainText(f"[clock {data.get('target')}] {state}: {data.get('message', '')}")
@@ -1603,6 +1687,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.tabs.addTab(self._scrollable(self._build_general_tab()), 'General')
         self.fw_tab_index = self.tabs.addTab(self._build_firmware_tab(), 'Firmware')
         self.files_tab_index = self.tabs.addTab(self._build_files_tab(), 'Files')
+        self.data_tab_index = self.tabs.addTab(self._build_data_tab(), 'Data')
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay = QtWidgets.QVBoxLayout(self)
@@ -1980,6 +2065,8 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.fw_auto.setEnabled(running and self.is_serial())
         for w in self.files_run_widgets:
             w.setEnabled(running)
+        self.data_sync_btn.setEnabled(running and not self.data_busy)
+        self.data_cancel_btn.setEnabled(running and self.data_busy)
 
     # --- firmware ---
 
@@ -2059,6 +2146,109 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
                                                           'force': self.cfg.firmware_force})
 
     # --- files (SD card) ---
+
+    def _build_data_tab(self):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+        info = QtWidgets.QLabel('Copies the log files of the SD card (data_*.cbor, index, catalog) 1:1 into the '
+                                'archive folder, one subfolder per hardware ID. Only what is new is loaded; an '
+                                'interrupted download continues where it stopped.')
+        info.setWordWrap(True)
+        lay.addWidget(info)
+        row = QtWidgets.QHBoxLayout()
+        self.data_folder = QtWidgets.QLineEdit(self.cfg.archive_folder)
+        self.data_folder.editingFinished.connect(
+            lambda: setattr(self.cfg, 'archive_folder', self.data_folder.text().strip() or 'norlog_archive'))
+        browse = QtWidgets.QPushButton('Browse ...')
+        browse.clicked.connect(self.data_browse)
+        open_btn = QtWidgets.QPushButton('Open')
+        open_btn.setToolTip('Open the archive folder of this device')
+        open_btn.clicked.connect(self.data_open_folder)
+        row.addWidget(QtWidgets.QLabel('Archive folder'))
+        row.addWidget(self.data_folder, 1)
+        row.addWidget(browse)
+        row.addWidget(open_btn)
+        lay.addLayout(row)
+        self.data_publish = QtWidgets.QCheckBox('Publish the downloaded packets (measurement time, e.g. for the '
+                                                'database writers)')
+        self.data_publish.setToolTip('Every packet is published once. Packets written before the clock was set '
+                                     'get their time from the uptime when the clock of their boot is known.')
+        self.data_publish.setChecked(self.cfg.archive_publish)
+        self.data_publish.toggled.connect(lambda v: setattr(self.cfg, 'archive_publish', bool(v)))
+        lay.addWidget(self.data_publish)
+        row = QtWidgets.QHBoxLayout()
+        self.data_sync_btn = QtWidgets.QPushButton('Download new data')
+        self.data_sync_btn.clicked.connect(self.data_sync)
+        self.data_cancel_btn = QtWidgets.QPushButton('Cancel')
+        self.data_cancel_btn.clicked.connect(lambda: self.device.thread_command('sync_cancel', {}))
+        self.data_progress = QtWidgets.QProgressBar()
+        self.data_progress.setRange(0, 100)
+        self.data_progress.setValue(0)
+        row.addWidget(self.data_sync_btn)
+        row.addWidget(self.data_cancel_btn)
+        row.addWidget(self.data_progress, 1)
+        lay.addLayout(row)
+        self.data_status = QtWidgets.QLabel('')
+        self.data_status.setWordWrap(True)
+        self.data_status.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        lay.addWidget(self.data_status)
+        self.data_files = QtWidgets.QTableWidget(0, 3)
+        self.data_files.setHorizontalHeaderLabels(['File', 'Bytes', 'State'])
+        self.data_files.horizontalHeader().setStretchLastSection(True)
+        self.data_files.verticalHeader().setVisible(False)
+        self.data_files.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        lay.addWidget(self.data_files, 1)
+        self.data_busy = False
+        self.data_dir = None
+        return w
+
+    def data_browse(self):
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, 'Archive folder', self.data_folder.text())
+        if folder:
+            self.data_folder.setText(folder)
+            self.cfg.archive_folder = folder
+
+    def data_open_folder(self):
+        hwid = (self.entry.get('info') or {}).get('hwid') if getattr(self, 'entry', None) else None
+        folder = self.data_dir or (str(pathlib.Path(self.cfg.archive_folder) / hwid) if hwid else
+                                   self.cfg.archive_folder)
+        if not pathlib.Path(folder).exists():
+            folder = self.cfg.archive_folder
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(pathlib.Path(folder).resolve())))
+
+    def data_sync(self):
+        self.cfg.archive_folder = self.data_folder.text().strip() or 'norlog_archive'
+        self.data_busy = True
+        self.update_run_state(self.running)
+        self.data_progress.setValue(0)
+        self.data_status.setStyleSheet('')
+        self.data_status.setText('Reading the file list ...')
+        self.device.thread_command('data_sync', {'target': self.key, 'folder': self.cfg.archive_folder,
+                                                 'publish': self.data_publish.isChecked()})
+
+    def on_sync_message(self, packetid, data):
+        if packetid == 'sync_progress':
+            total = data.get('total') or 0
+            self.data_progress.setValue(int(100 * data.get('done', 0) / total) if total else 0)
+            self.data_status.setText(f"{data.get('file', '')}: {data.get('done', 0) / 1024:.1f} of "
+                                     f"{total / 1024:.1f} KB, {data.get('rate', 0):.1f} KB/s")
+            return
+        self.data_busy = False
+        self.update_run_state(self.running)
+        if data.get('ok'):
+            self.data_progress.setValue(100)
+        self.data_dir = data.get('dir') or self.data_dir
+        self.data_status.setStyleSheet('' if data.get('ok') else 'color: #d64545;')
+        self.data_status.setText(data.get('message', ''))
+        files = data.get('files') or []
+        self.data_files.setRowCount(len(files))
+        for row, f in enumerate(files):
+            grown = f['new'] - f['old']
+            state = {'unchanged': 'up to date', 'appended': f'+{grown} bytes', 'new': 'new',
+                     'replaced': 'card changed: loaded again, old copy kept'}.get(f['status'], f['status'])
+            for col, text in enumerate([f['name'], str(f['new']), state]):
+                self.data_files.setItem(row, col, QtWidgets.QTableWidgetItem(text))
+        self.data_files.resizeColumnsToContents()
 
     def _build_files_tab(self):
         w = QtWidgets.QWidget()

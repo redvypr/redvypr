@@ -201,14 +201,15 @@ def byte_range(records, t0=None, t1=None, file_size=None, key="rtc_time", margin
 # Data files
 # ---------------------------------------------------------------------------
 
-def iter_packets(data: bytes, start=0, resync=True):
+def iter_packet_spans(data: bytes, start=0, resync=True):
     """
     Decode the CBOR packets of (a part of) a data file from offset start.
-    Yields (offset, packet) with packet as norlog_cbor.decode_packet() (None for
-    an unknown item). With resync, damaged data (e.g. a packet cut by a power
-    loss) is skipped up to the next packet tag; otherwise CBORDecodeError is raised
-    (also for other errors the damaged data causes).
-    A truncated packet at the end of data is not returned.
+    Yields (offset, end, packet): the packet occupies data[offset:end], packet as
+    norlog_cbor.decode_packet() (None for an unknown item). With resync, damaged
+    data (e.g. a packet cut by a power loss) is skipped up to the next packet tag;
+    otherwise CBORDecodeError is raised (also for other errors the damaged data
+    causes). A truncated packet at the end of data is not returned: the end of the
+    last yielded packet is where decoding continues once the rest has arrived.
     """
     dec = _Decoder(data)
     dec.pos = start
@@ -230,6 +231,16 @@ def iter_packets(data: bytes, start=0, resync=True):
                 return
             dec.pos = nxt
             continue
+        yield pos, dec.pos, pkt
+
+
+def iter_packets(data: bytes, start=0, resync=True):
+    """
+    Decode the CBOR packets of (a part of) a data file from offset start: yields
+    (offset, packet), see iter_packet_spans(). A truncated packet at the end of
+    data is not returned.
+    """
+    for pos, _end, pkt in iter_packet_spans(data, start, resync):
         yield pos, pkt
 
 
