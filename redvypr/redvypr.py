@@ -881,45 +881,28 @@ class Redvypr(QtCore.QObject):
                 devicemodule = smod['module']
                 # Try to get a pydantic base configuration, every device has
                 pydantic_base_config = None
+                # Create or use a given device parameter object
+                if isinstance(base_config, RedvyprDeviceParameter):
+                    device_parameter = base_config
+                elif isinstance(base_config, RedvyprDeviceBaseConfig):
+                    device_parameter = RedvyprDeviceParameter(**base_config.model_dump())
+                elif isinstance(base_config, dict):
+                    device_parameter = RedvyprDeviceParameter().model_copy(update=base_config)
+                else:
+                    device_parameter = RedvyprDeviceParameter()
+                device_parameter.devicemodulename = devicemodulename
+                device_parameter.numdevice = self.numdevice
                 try:
                     pydantic_base_config = devicemodule.DeviceBaseConfig()
                     logger.debug(funcname + ':Found pydantic base configuation {:s}'.format(str(devicemodule)))
                     FLAG_HAS_PYDANTICBASE = True
                     FLAG_PYDANTIC = True
-                    # Create or use a given device parameter object
-                    #print('type base config',type(base_config))
-                    if isinstance(base_config, RedvyprDeviceParameter):
-                        #print('Got a device parameter config')
-                        device_parameter = base_config
-                    elif isinstance(base_config, RedvyprDeviceBaseConfig):
-                        #print('Got a base config',base_config)
-                        device_parameter = RedvyprDeviceParameter(**base_config.model_dump())
-                        #print('parameter',device_parameter)
-                    elif isinstance(base_config, dict):
-                        #print('Will update from config dictionary')
-                        device_parameter_tmp = RedvyprDeviceParameter()
-                        device_parameter = device_parameter_tmp.model_copy(update=base_config)
-                    else:
-                        #print('Standard base_config')
-                        device_parameter = RedvyprDeviceParameter()
-
-                    device_parameter.devicemodulename = devicemodulename
-                    device_parameter.numdevice = self.numdevice
-                    #print('Device parameter',device_parameter)
                     # Update the device parameter with the parameters of the device
                     device_parameter = device_parameter.model_copy(update=pydantic_base_config.model_dump())
-                    #print('Device parameter 2', device_parameter)
-
                 except Exception as e:
+                    # A device without DeviceBaseConfig (e.g. test_device_bare): standard parameters
                     logger.debug(
                         funcname + ':No pydantic base configuration template of device {:s}: {:s}'.format(str(devicemodule), str(e)))
-                    # Standard base config with parameter
-                    if base_config is not None:
-                        device_parameter = RedvyprDeviceParameter(**base_config.model_dump())
-                        device_parameter.devicemodulename=devicemodulename
-                        device_parameter.numdevice=self.numdevice
-                        #print('Device parameter ...',device_parameter)
-                    #logger.exception(e)
                     FLAG_HAS_PYDANTICBASE = False
                     FLAG_PYDANTIC = False
 

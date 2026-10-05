@@ -29,7 +29,7 @@ redvypr_devicemodule = True
 description: str = 'A very basic redvypr device that receives data and prints it'
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
     print('Device info',device_info)
-    logger_start = logging.getLogger('Devicename: {}'.format(device_info['name']))
+    logger_start = logging.getLogger('Devicename: {}'.format(device_info['device']))
     logger_start.setLevel(logging.DEBUG)
     funcname = __name__ + '.start():'
     logger_start.debug(funcname)

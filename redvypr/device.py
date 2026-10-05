@@ -948,7 +948,8 @@ class RedvyprDevice(QtCore.QObject):
                             self.logger.debug('Using internal configuration')
                             self.logger.debug('Pydantic configuration')
                             try:
-                                config = self.custom_config.model_dump()
+                                # Devices without a custom configuration (e.g. test_device_bare) get None
+                                config = None if self.custom_config is None else self.custom_config.model_dump()
                             except:
                                 self.logger.debug(funcname + 'Could not dump model: {}'.format(self.custom_config), exc_info=True)
                                 raise ValueError('Could not dump custom model config')
