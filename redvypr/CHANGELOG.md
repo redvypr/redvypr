@@ -7,6 +7,13 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- ?
+### Changed
+- ?
+
+## [0.9.22] - 2026-10-05
+
+### Added
 - Documentation of the metadata system (`doc/source/metadata.rst`), `redvypr.metadata` in the API reference
 - `Redvypr.set_metadata_from_dict()` (was called, but missing), `metadata.normalize_metadata()`
 - norlog gateway: "Data" tab: download the SD card log files into an archive folder (only what is new,
