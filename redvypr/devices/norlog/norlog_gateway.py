@@ -539,7 +539,7 @@ class _Gateway:
                    'rssi_last', 'lq_in', 'lq_out', 'path_cost', 'next_hop', 'age_s')
     # Units of the info values, sent once per device as metadata
     INFO_UNITS = {
-        "uptime_s": 's', "board_temp_c": 'degC', "nrf_temp_c": 'degC', "gnss['cno']": 'dB-Hz', "gnss['age']": 's',
+        "uptime_s": 's', "board_temp_c": 'degC', "nrf_temp_c": 'degC', "gnss['cno']": 'dB-Hz', "gnss['age']": 's', "gnss['lat']": 'degN', "gnss['lon']": 'degE', "gnss['alt']": 'm',
         "battery['mv']": 'mV', "battery['soc']": '%', "battery['current_ma']": 'mA',
         "battery['tte_min']": 'min', "battery['ttf_min']": 'min',
         "radio['txpower_dbm']": 'dBm', "radio['antenna_dbm']": 'dBm', "radio['soc_dbm']": 'dBm',
@@ -1201,6 +1201,17 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         return text
 
     @staticmethod
+    def gnss_position(info, altitude=True):
+        """'lat, lon[, alt m]' of the last fix (firmware >= 0.4.11), '' without position."""
+        st = (info or {}).get('gnss')
+        if not isinstance(st, dict) or st.get('lat') is None or st.get('lon') is None:
+            return ''
+        text = f"{st['lat']:.6f}, {st['lon']:.6f}"
+        if altitude and st.get('alt') is not None:
+            text += f", {st['alt']:.1f} m"
+        return text
+
+    @staticmethod
     def fmt_gnss(info):
         """(text, quality color key, tooltip) of the GNSS reception (firmware >= 0.4.10)."""
         info = info or {}
@@ -1214,6 +1225,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         tip = (f"{receiver}: {'fix' if st.get('fix') else 'no fix'}, satellites used {used}, in view {view}, "
                f"received {trk}, best signal {st.get('cno', 0)} dB-Hz (good > 35, weak < 25), "
                f"last message {st.get('age', '?')} s ago")
+        pos = RedvyprDeviceWidget.gnss_position(info)
+        if pos:
+            tip += f"\nPosition: {pos} (right click: copy)"
         if st.get('age') is not None and st['age'] > 10:
             return 'no data', device_list.QUALITY_NONE, tip + '\nNo NMEA data from the receiver for > 10 s'
         if st.get('fix'):
@@ -1263,6 +1277,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         legend.setStyleSheet('color: gray;')
         self.devices_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.devices_table.itemSelectionChanged.connect(self.show_device_details)
+        self.devices_table.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.devices_table.customContextMenuRequested.connect(self.devices_context_menu)
         self.device_details = QtWidgets.QPlainTextEdit()
         self.device_details.setReadOnly(True)
         self.device_details.setPlaceholderText('Select a device to see its info: firmware, battery, '
@@ -1320,6 +1336,34 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def serial_dialogs(self):
         """Open settings dialogs of devices connected via serial (the flash target)."""
         return [dlg for dlg in self.settings_dialogs.values() if dlg.is_serial()]
+
+    def devices_context_menu(self, point):
+        """Right click in the device table: copy the GNSS position or the cell."""
+        item = self.devices_table.itemAt(point)
+        if item is None:
+            return
+        row = item.row()
+        device = self.current_devices[row] if row < len(self.current_devices) else {}
+        info = device.get('info') or {}
+        menu = QtWidgets.QMenu(self)
+        clipboard = QtWidgets.QApplication.clipboard()
+        pos = self.gnss_position(info, altitude=False)
+        pos_alt = self.gnss_position(info)
+        act = menu.addAction(f'Copy GNSS position ({pos})' if pos else 'Copy GNSS position (no fix)')
+        act.setEnabled(bool(pos))
+        act.triggered.connect(lambda: clipboard.setText(pos))
+        act = menu.addAction('Copy GNSS position with altitude')
+        act.setEnabled(bool(pos_alt))
+        act.triggered.connect(lambda: clipboard.setText(pos_alt))
+        menu.addSeparator()
+        text = item.text()
+        act = menu.addAction('Copy cell')
+        act.triggered.connect(lambda: clipboard.setText(text))
+        tip = item.toolTip()
+        act = menu.addAction('Copy tooltip')
+        act.setEnabled(bool(tip))
+        act.triggered.connect(lambda: clipboard.setText(tip))
+        menu.exec(self.devices_table.viewport().mapToGlobal(point))
 
     def selected_devices(self):
         rows = sorted({i.row() for i in self.devices_table.selectedIndexes()})
@@ -2340,7 +2384,9 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             'HW ID': info.get('hwid', ''),
             'Battery': batt,
             'Board temp': self._fmt_temps(info),
-            'GNSS': ' - '.join(x for x in RedvyprDeviceWidget.fmt_gnss(info)[::2] if x),
+            'GNSS': ' - '.join(x for x in (RedvyprDeviceWidget.fmt_gnss(info)[0],
+                                           RedvyprDeviceWidget.gnss_position(info),
+                                           RedvyprDeviceWidget.fmt_gnss(info)[2].split('\n')[0]) if x),
             'Uptime': '' if uptime is None else f"{uptime // 3600} h {uptime // 60 % 60} min {uptime % 60} s",
             'Clock': ' - '.join(x for x in (info.get('time', ''), RedvyprDeviceWidget._fmt_rtc(info)) if x),
             'Reset cause': str(info.get('reset_cause', '')),

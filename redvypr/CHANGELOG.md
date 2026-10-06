@@ -34,6 +34,8 @@ redvypr changelog
   to the system clock in the tooltip and the settings
 - norlog gateway: column "GNSS" (fix and satellites, colored; details in the tooltip) and GNSS in the settings
   (firmware >= 0.4.10)
+- norlog gateway: GNSS position (firmware >= 0.4.11) in the tooltip and the settings; right click in the device
+  table: copy the position (with/without altitude), the cell or the tooltip
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)
