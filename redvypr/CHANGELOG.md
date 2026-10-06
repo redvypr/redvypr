@@ -29,6 +29,9 @@ redvypr changelog
   column if TX_EN hangs HIGH (firmware >= 0.4.6); fixed: the gateway as leader was listed twice
 - norlog: chip temperature of the nRF52840 (`nrf_temp_c`, CBOR key 61, firmware >= 0.4.7) as column of the device
   table and in the settings; the board temperature (ADC) is marked if it differs by more than 15 C (ADC resets)
+- norlog gateway: column "Clock" (was "RTC", it showed the system clock of the device): offset to this PC from the
+  info time with ms (firmware >= 0.4.8) and the middle of the request, tolerance from the request time; RTC offset
+  to the system clock in the tooltip and the settings
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)

@@ -196,6 +196,8 @@ class _Gateway:
         self.data_sources = {}          # '#NLD' source -> {'last_seen', 'packets', 'mac'}
         self.infos = {}                 # 'gateway' or RLOC16 -> info dict (norlog info / CoAP /info)
         self.info_times = {}            # 'gateway' or RLOC16 -> time.time() of the last successful read
+        self.info_mid = {}              # ... middle of that request (device time of the info ~ this PC time)
+        self.info_rtt = {}              # ... duration of that request [s]
         self.props_cache = {}           # hwid (or 'gateway'/RLOC16) -> user properties (sn, desc, loc, ...)
         self.last_status = {}
         self.meta_sent = {}             # hwid -> device metadata sent last
@@ -490,7 +492,8 @@ class _Gateway:
             key = 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16')
             if key in self.info_times:
                 d['info_age_s'] = now - self.info_times[key]
-                d['clock_offset_s'] = self._clock_offset(d.get('info'), self.info_times[key])
+                d['clock_offset_s'] = self._clock_offset(d.get('info'), self.info_mid.get(key, self.info_times[key]))
+                d['clock_tolerance_s'] = self._clock_tolerance(d.get('info'), self.info_rtt.get(key))
             props = self.props_cache.get(d.get('hwid')) or self.props_cache.get(key) or {}
             d['props'] = props
             for name in ('sn', 'desc', 'loc'):
@@ -499,10 +502,16 @@ class _Gateway:
         return devices
 
     @staticmethod
-    def _clock_offset(info, read_time):
+    def _clock_has_ms(info):
+        t = (info or {}).get('time') or ''
+        return '.' in t     # firmware >= 0.4.8: system time with ms
+
+    @classmethod
+    def _clock_offset(cls, info, read_time):
         """
-        Device clock (info 'time', whole seconds) minus the PC time when the info
-        was read; None without a time. Resolution about 1-2 s (seconds, transfer).
+        System clock of the device (info 'time') minus this PC in the middle of the
+        info request; None without a time. Firmware < 0.4.8 sends whole seconds
+        (truncated: +0.5 s on average).
         """
         t = (info or {}).get('time')
         if not t or t == '-':
@@ -511,7 +520,14 @@ class _Gateway:
             dt = datetime.datetime.fromisoformat(t.replace('Z', '+00:00'))
         except ValueError:
             return None
-        return dt.timestamp() - read_time
+        return dt.timestamp() + (0.0 if cls._clock_has_ms(info) else 0.5) - read_time
+
+    @classmethod
+    def _clock_tolerance(cls, info, rtt):
+        """Offsets within this are 'ok': half the request time (+ margin), whole seconds: 2 s."""
+        if not cls._clock_has_ms(info):
+            return 2.0
+        return 0.25 + (rtt or 0.0) / 2
 
     def publish_devices(self):
         self.to_gui('thread_status', {'thread_status': self.last_status, 'devices': self.build_devices()})
@@ -577,11 +593,17 @@ class _Gateway:
                 sent.add(datakey)
         self.dataqueue.put(data)
 
-    def store_info(self, key, info=None, error=None):
-        """Store a read info; on error the last good values are kept and marked with the error."""
+    def store_info(self, key, info=None, error=None, t_request=None):
+        """
+        Store a read info; on error the last good values are kept and marked with the error.
+        t_request: time.time() when the request was sent (for the clock offset).
+        """
         if error is None:
+            now = time.time()
             self.infos[key] = info
-            self.info_times[key] = time.time()
+            self.info_times[key] = now
+            self.info_mid[key] = (t_request + now) / 2 if t_request else now
+            self.info_rtt[key] = now - t_request if t_request else None
         else:
             last = {k: v for k, v in (self.infos.get(key) or {}).items() if k != 'error'}
             self.infos[key] = {**last, 'error': error}
@@ -616,7 +638,9 @@ class _Gateway:
 
         if wanted is None or 'gateway' in wanted:
             try:
-                self.store_info('gateway', json.loads(self.cli.shell_query('norlog info json', '#NLI ')))
+                t_request = time.time()
+                self.store_info('gateway', json.loads(self.cli.shell_query('norlog info json', '#NLI ')),
+                                t_request=t_request)
                 self.update_props('gateway', None, refresh_props)
                 read_ok.add('gateway')
                 done += 1
@@ -632,8 +656,9 @@ class _Gateway:
                 rloc = d['rloc16']
                 try:
                     addr = ot_cli.rloc_address(prefix, rloc)
+                    t_request = time.time()
                     payload = ot_cli.coap_get(self.cli, addr, 'info', timeout=self.config.coap_timeout_s)
-                    self.store_info(rloc, json.loads(payload.decode(errors='replace')))
+                    self.store_info(rloc, json.loads(payload.decode(errors='replace')), t_request=t_request)
                     self.update_props(rloc, addr, refresh_props)
                     read_ok.add(rloc)
                     done += 1
@@ -1152,7 +1177,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     DEVICE_COLUMNS = ['', 'HW ID', 'Device', 'SN', 'Description', 'Location', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
                       'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets',
-                      'Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'RTC', 'Info age [s]']
+                      'Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'Clock', 'Info age [s]']
 
     QUALITY_COLORS = {
         device_list.QUALITY_GOOD: '#7bc96f',
@@ -1325,30 +1350,46 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             return ''
         return f"{'' if a is None else a} / {'' if b is None else b}"
 
-    CLOCK_OK_S = 2.0    # info time has whole seconds and a transfer delay
+    @staticmethod
+    def _fmt_rtc(info):
+        """RTC compared with the system clock (firmware >= 0.4.8), text or ''."""
+        rtc = (info or {}).get('rtc') or {}
+        if rtc.get('off_ms') is None:
+            return ''
+        return (f"System clock - RTC: {rtc['off_ms']:+d} ms (measured {rtc.get('chk_s', '?')} s ago at the second "
+                f"change of the RTC; the system clock is set to the RTC every 10 min from 20 ms)")
 
     def _fmt_clock(self, d):
-        """(text, quality color key, tooltip) of the RTC column."""
+        """(text, quality color key, tooltip) of the Clock column: system clock of the device vs. this PC."""
         info = d.get('info') or {}
         if 'time' not in info:
             return '', None, ''
         rtc = info.get('rtc') or {}
         off = d.get('clock_offset_s')
-        tip = (f"Device clock {info.get('time')}, RTC {rtc.get('time', '-')} "
-               f"({'valid' if rtc.get('valid') else 'not valid'}) at the last info read")
+        tol = d.get('clock_tolerance_s') or 2.0
+        tip = (f"System clock of the device {info.get('time')} at the last info read "
+               f"(RTC {'valid' if rtc.get('valid') else 'not valid'})")
         no_rtc = '' if rtc.get('present', True) else ', no RTC'
         if no_rtc:
             tip += '\nNo RTC chip: the time is lost at a restart'
+        rtc_text = self._fmt_rtc(info)
+        if rtc_text:
+            tip += '\n' + rtc_text
         try:
             year_ok = info['time'][:4].isdigit() and int(info['time'][:4]) >= 2025
         except (TypeError, ValueError):
             year_ok = False
         if off is None or not year_ok:
             return 'not set' + no_rtc, device_list.QUALITY_NONE, tip + '\nSet it with "Set clock" in the settings'
-        tip += f'\nOffset to this PC: {off:+.1f} s (resolution about {self.CLOCK_OK_S:.0f} s)'
-        if abs(off) <= self.CLOCK_OK_S:
+        tip += f'\nOffset to this PC: {off:+.2f} s (uncertainty about ±{tol:.2f} s'
+        tip += ')' if self._clock_has_ms_info(info) else ', firmware < 0.4.8 sends whole seconds)'
+        if abs(off) <= tol:
             return 'ok' + no_rtc, device_list.QUALITY_GOOD, tip
-        return f'{off:+.0f} s' + no_rtc, device_list.QUALITY_FAIR, tip
+        return (f'{off:+.1f} s' if abs(off) < 10 else f'{off:+.0f} s') + no_rtc, device_list.QUALITY_FAIR, tip
+
+    @staticmethod
+    def _clock_has_ms_info(info):
+        return '.' in ((info or {}).get('time') or '')
 
     def show_devices(self, devices):
         selected_ids = {d.get('id') for d in self.selected_devices()}
@@ -1388,7 +1429,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 '' if d.get('info_age_s') is None else f"{d['info_age_s']:.0f}",
             ]
             cols = self.DEVICE_COLUMNS
-            stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'RTC',
+            stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'Clock',
                                                   'Info age [s]')]
             self.devices_table.setCellWidget(row, 0, self._settings_button(d))
             full_text = {cols.index('Description'): d.get('desc', ''), cols.index('Location'): d.get('loc', '')}
@@ -1398,7 +1439,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     item.setToolTip(full_text[col])
                 if cols[col] == 'Quality' and d.get('quality') in self.QUALITY_COLORS:
                     item.setBackground(QtGui.QColor(self.QUALITY_COLORS[d['quality']]))
-                if cols[col] == 'RTC':
+                if cols[col] == 'Clock':
                     _text, quality, tip = self._fmt_clock(d)
                     if quality in self.QUALITY_COLORS:
                         item.setBackground(QtGui.QColor(self.QUALITY_COLORS[quality]))
@@ -1926,7 +1967,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
     """
 
     GENERAL_FIELDS = ['Device', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Thread', 'Image', 'Firmware', 'Build',
-                      'Board', 'HW ID', 'Battery', 'Board temp', 'Uptime', 'Reset cause', 'Hardware', 'SD card',
+                      'Board', 'HW ID', 'Battery', 'Board temp', 'Uptime', 'Clock', 'Reset cause', 'Hardware', 'SD card',
                       'Battery model', 'USB', 'TX power', 'Log level', 'Info age']
 
     USB_MODES = ['auto', 'manual', 'off']
@@ -2271,6 +2312,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             'Battery': batt,
             'Board temp': self._fmt_temps(info),
             'Uptime': '' if uptime is None else f"{uptime // 3600} h {uptime // 60 % 60} min {uptime % 60} s",
+            'Clock': ' - '.join(x for x in (info.get('time', ''), RedvyprDeviceWidget._fmt_rtc(info)) if x),
             'Reset cause': str(info.get('reset_cause', '')),
             'Hardware': self._yes_no(info.get('hw')),
             'SD card': self._yes_no(info.get('sd')),
