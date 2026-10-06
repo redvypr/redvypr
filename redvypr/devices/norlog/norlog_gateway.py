@@ -1357,7 +1357,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         if rtc.get('off_ms') is None:
             return ''
         return (f"System clock - RTC: {rtc['off_ms']:+d} ms (measured {rtc.get('chk_s', '?')} s ago at the second "
-                f"change of the RTC; the system clock is set to the RTC every 10 min from 20 ms)")
+                f"change of the RTC; the system clock is set to the RTC every minute from 5 ms)")
 
     def _fmt_clock(self, d):
         """(text, quality color key, tooltip) of the Clock column: system clock of the device vs. this PC."""
