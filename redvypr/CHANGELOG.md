@@ -40,8 +40,7 @@ redvypr changelog
   "Magnetometer": recording on the device over UART or Thread with live points and coverage of 26 directions,
   ellipsoid fit (fallback sphere fit) in `devices/norlog/mag_calibration.py`, apply to / delete on the device,
   points as CSV; magnetometer packets (tag 50007, keys 70-76) decoded with units
-- norlog: wind packets of a NMEA sensor at UART1 (tag 50008, keys 80-83, firmware >= 0.4.13) decoded with units;
-  NMEA/serial raw data as text
+- norlog: wind packets of a NMEA sensor at UART1 (tag 50008, keys 80-83, firmware >= 0.4.13) decoded with units
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)

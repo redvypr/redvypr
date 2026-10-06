@@ -129,10 +129,6 @@ def decode_packet(item):
         name = KEYS.get(key, f"key_{key}")
         result[name] = _convert_value(name, value)
 
-    # NMEA / serial raw data as text (ASCII lines, e.g. of a sensor at UART1)
-    if result.get("raw_type") in ("nmea", "serial") and isinstance(result.get("raw_data"), (bytes, bytearray)):
-        result["raw_data"] = bytes(result["raw_data"]).decode("ascii", errors="replace")
-
     # Convenience: ISO time strings for the epoch timestamps
     for tkey in ("rtc_time", "gps_time"):
         if isinstance(result.get(tkey), (int, float)) and result[tkey] > 0:
