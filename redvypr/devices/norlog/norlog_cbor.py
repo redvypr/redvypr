@@ -19,6 +19,7 @@ PACKET_TAGS = {
     50005: "ntc",
     50006: "board_temp",
     50007: "mag",           # magnetometer (firmware >= 0.4.12)
+    50008: "wind",          # NMEA MWV of a wind meter at UART1 (firmware >= 0.4.13)
 }
 
 # Map keys (cbor_key_t)
@@ -57,6 +58,10 @@ KEYS = {
     74: "magc_y",
     75: "magc_z",
     76: "mag_heading",      # atan2(y, x) of the calibrated (or raw) field, only meaningful when level
+    80: "wind_dir",         # wind direction [deg] (NMEA MWV, UART1)
+    81: "wind_speed",       # wind speed [m/s]
+    82: "wind_ref",         # 0 relative (R), 1 true (T)
+    83: "wind_valid",       # status A
 }
 
 # Units of the values (metadata of the converted data)
@@ -81,6 +86,8 @@ UNITS = {
     "magc_y": "uT",
     "magc_z": "uT",
     "mag_heading": "deg",
+    "wind_dir": "deg",
+    "wind_speed": "m/s",
 }
 
 # cbor_source_id_t
@@ -121,6 +128,10 @@ def decode_packet(item):
     for key, value in item.value.items():
         name = KEYS.get(key, f"key_{key}")
         result[name] = _convert_value(name, value)
+
+    # NMEA / serial raw data as text (ASCII lines, e.g. of a sensor at UART1)
+    if result.get("raw_type") in ("nmea", "serial") and isinstance(result.get("raw_data"), (bytes, bytearray)):
+        result["raw_data"] = bytes(result["raw_data"]).decode("ascii", errors="replace")
 
     # Convenience: ISO time strings for the epoch timestamps
     for tkey in ("rtc_time", "gps_time"):
