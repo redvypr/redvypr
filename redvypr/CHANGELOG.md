@@ -36,6 +36,10 @@ redvypr changelog
   (firmware >= 0.4.10)
 - norlog gateway: GNSS position (firmware >= 0.4.11) in the tooltip and the settings; right click in the device
   table: copy the position (with/without altitude), the cell or the tooltip
+- norlog gateway: magnetometer calibration (hard and soft iron, firmware >= 0.4.12) in the settings, tab
+  "Magnetometer": recording on the device over UART or Thread with live points and coverage of 26 directions,
+  ellipsoid fit (fallback sphere fit) in `devices/norlog/mag_calibration.py`, apply to / delete on the device,
+  points as CSV; magnetometer packets (tag 50007, keys 70-76) decoded with units
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)

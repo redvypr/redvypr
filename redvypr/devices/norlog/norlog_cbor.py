@@ -18,6 +18,7 @@ PACKET_TAGS = {
     50004: "raw",
     50005: "ntc",
     50006: "board_temp",
+    50007: "mag",           # magnetometer (firmware >= 0.4.12)
 }
 
 # Map keys (cbor_key_t)
@@ -49,6 +50,13 @@ KEYS = {
     52: "ntc_temp",
     60: "board_temp_c",
     61: "nrf_temp_c",       # chip temperature of the nRF52840 (firmware >= 0.4.7)
+    70: "mag_x",            # magnetometer raw (SET/RESET corrected), firmware >= 0.4.12
+    71: "mag_y",
+    72: "mag_z",
+    73: "magc_x",           # calibrated A*(raw-b), only with a calibration on the device
+    74: "magc_y",
+    75: "magc_z",
+    76: "mag_heading",      # atan2(y, x) of the calibrated (or raw) field, only meaningful when level
 }
 
 # Units of the values (metadata of the converted data)
@@ -66,6 +74,13 @@ UNITS = {
     "ntc_temp": "degC",
     "board_temp_c": "degC",
     "nrf_temp_c": "degC",
+    "mag_x": "uT",
+    "mag_y": "uT",
+    "mag_z": "uT",
+    "magc_x": "uT",
+    "magc_y": "uT",
+    "magc_z": "uT",
+    "mag_heading": "deg",
 }
 
 # cbor_source_id_t

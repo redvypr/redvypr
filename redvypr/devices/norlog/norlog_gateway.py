@@ -80,6 +80,7 @@ from redvypr.redvypr_datadict import check_for_command, create_redvypr_dict
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 
 from . import device_list
+from . import mag_calibration
 from . import norlog_archive
 from . import norlog_cbor
 from . import norlog_convert
@@ -333,7 +334,7 @@ class _Gateway:
                 self.stop_requested = True
                 cancel = True
             elif during_flash:
-                if command in ('flash_cancel', 'sync_cancel'):
+                if command in ('flash_cancel', 'sync_cancel', 'mag_cal_stop'):
                     cancel = True
                 else:
                     logger.info(f'Ignoring command {command!r} while flashing')
@@ -375,6 +376,15 @@ class _Gateway:
                 self.set_time(args.get('targets') or ['gateway'], force=bool(args.get('force')))
             elif command == 'radio_set':
                 self.set_radio(args.get('target') or 'gateway', args.get('dbm'))
+            elif command == 'mag_read':
+                self.mag_read(args.get('target') or 'gateway')
+            elif command == 'mag_cal':
+                self.mag_calibration_record(args.get('target') or 'gateway', int(args.get('dur', 60)),
+                                            int(args.get('hz', 10)))
+            elif command == 'cal_get':
+                self.cal_get(args.get('target') or 'gateway')
+            elif command == 'cal_set':
+                self.cal_set(args.get('target') or 'gateway', args.get('name', 'mag'), args.get('text', ''))
             elif command == 'props_read':
                 self.props_command(args.get('target', 'gateway'), {})
             elif command == 'props_set':
@@ -778,6 +788,73 @@ class _Gateway:
         st = ot_cli.time_get(self.cli, address, timeout=self.config.coap_timeout_s)
         t4 = time.time()
         return st, st['t'] / 1000.0 - (t1 + t4) / 2, (t4 - t1) / 2
+
+    # --- magnetometer and calibrations (firmware >= 0.4.12) ---
+
+    def mag_read(self, target):
+        result = {'target': target, 'ok': False}
+        try:
+            result.update(ok=True, mag=ot_cli.mag_read(self.cli, self.target_address(target),
+                                                       timeout=self.config.coap_timeout_s))
+        except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+            result['message'] = str(exc)
+        self.to_gui('mag_result', result)
+
+    def mag_calibration_record(self, target, dur, hz):
+        """
+        Record points for the magnetometer calibration on the device: start, then every
+        second the status and the new values (to the GUI as 'mag_cal_progress'), at the end
+        all values ('mag_cal_done'). 'mag_cal_stop' from the GUI ends the recording.
+        """
+        address = None
+        points = []
+        result = {'target': target, 'ok': False, 'points': points}
+        try:
+            address = self.target_address(target)
+            st = ot_cli.mag_cal_start(self.cli, dur, hz, address, timeout=self.config.coap_timeout_s)
+            stopped = False
+            deadline = time.monotonic() + dur + 30
+            while True:
+                if self.check_commands(during_flash=True) and not stopped:
+                    ot_cli.mag_cal_stop(self.cli, address, timeout=self.config.coap_timeout_s)
+                    stopped = True
+                time.sleep(1.0)
+                st = ot_cli.mag_cal_status(self.cli, address, timeout=self.config.coap_timeout_s)
+                while len(points) < st.get('n', 0):
+                    chunk = ot_cli.mag_cal_data(self.cli, len(points), address=address,
+                                                timeout=self.config.coap_timeout_s)
+                    if not chunk:
+                        break
+                    points.extend(chunk)
+                    self.to_gui('mag_cal_progress', {'target': target, 'state': st.get('state'), 'n': len(points),
+                                                     'total': st.get('total'), 'new': chunk})
+                if st.get('state') != 'run' or time.monotonic() > deadline:
+                    break
+            result.update(ok=bool(points), state=st.get('state'),
+                          message=f"{len(points)} values recorded" + (' (stopped)' if stopped else ''))
+        except (ot_cli.OtError, TimeoutError, ValueError, KeyError) as exc:
+            result['message'] = str(exc)
+        self.to_gui('mag_cal_done', result)
+
+    def cal_get(self, target):
+        result = {'target': target, 'ok': False}
+        try:
+            result.update(ok=True, cal=ot_cli.cal_get(self.cli, self.target_address(target),
+                                                      timeout=self.config.coap_timeout_s))
+        except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+            result['message'] = str(exc)
+        self.to_gui('cal_result', result)
+
+    def cal_set(self, target, name, text):
+        result = {'target': target, 'ok': False}
+        try:
+            address = self.target_address(target)
+            ot_cli.cal_set(self.cli, name, text, address, timeout=self.config.coap_timeout_s)
+            result.update(ok=True, message=f"calibration {name} {'stored' if text else 'deleted'}",
+                          cal=ot_cli.cal_get(self.cli, address, timeout=self.config.coap_timeout_s))
+        except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+            result['message'] = str(exc)
+        self.to_gui('cal_result', result)
 
     def set_radio(self, target, dbm):
         """Set the transmit power at the antenna of the gateway or a member (stored on the device)."""
@@ -1939,6 +2016,14 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 if packetid == 'sync_result':
                     self.console_text.appendPlainText(
                         f"[data {data.get('target')}] {'OK' if data.get('ok') else 'ERROR'}: {data.get('message', '')}")
+            elif packetid in ('mag_result', 'mag_cal_progress', 'mag_cal_done', 'cal_result'):
+                if packetid in ('mag_cal_done', 'cal_result') and data.get('message'):
+                    state = 'OK' if data.get('ok') else 'ERROR'
+                    self.console_text.appendPlainText(f"[{packetid.split('_')[0]} {data.get('target')}] {state}: "
+                                                      f"{data.get('message', '')}")
+                dlg = self.settings_dialogs.get(data.get('target'))
+                if dlg is not None:
+                    dlg.on_mag_message(packetid, data)
             elif packetid == 'radio_result':
                 state = 'OK' if data.get('ok') else 'ERROR'
                 self.console_text.appendPlainText(f"[radio {data.get('target')}] {state}: {data.get('message', '')}")
@@ -2067,6 +2152,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.fw_tab_index = self.tabs.addTab(self._build_firmware_tab(), 'Firmware')
         self.files_tab_index = self.tabs.addTab(self._build_files_tab(), 'Files')
         self.data_tab_index = self.tabs.addTab(self._build_data_tab(), 'Data')
+        self.mag_tab_index = self.tabs.addTab(self._scrollable(self._build_mag_tab()), 'Magnetometer')
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay = QtWidgets.QVBoxLayout(self)
@@ -2510,6 +2596,10 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
 
     def update_run_state(self, running):
         self.running = running
+        for w in self.mag_run_widgets:
+            w.setEnabled(running and not self.mag_recording)
+        self.mag_stop_btn.setEnabled(running and self.mag_recording)
+        self.mag_update_buttons()
         self.read_info_btn.setEnabled(running)
         self.clock_btn.setEnabled(running)
         self.radio_btn.setEnabled(running)
@@ -2526,6 +2616,274 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.data_cancel_btn.setEnabled((running and self.data_busy) or self.convert_worker is not None)
 
     # --- firmware ---
+
+    # --- magnetometer: measurement and calibration (firmware >= 0.4.12) ---
+
+    MAG_PLANES = (('x', 'y', 0, 1), ('x', 'z', 0, 2), ('y', 'z', 1, 2))
+
+    def _build_mag_tab(self):
+        import pyqtgraph
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+        self.mag_points = []            # recorded points (µT)
+        self.mag_fit = None             # MagCalibration of the last fit
+        self.mag_device_cal = None      # calibration on the device
+        self.mag_recording = False
+        self.mag_run_widgets = []
+
+        box = QtWidgets.QGroupBox('On the device')
+        grid = QtWidgets.QGridLayout(box)
+        self.mag_cal_label = QtWidgets.QLabel('calibration: - (Read)')
+        self.mag_cal_label.setWordWrap(True)
+        self.mag_cal_label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.mag_value_label = QtWidgets.QLabel('field: -')
+        self.mag_value_label.setWordWrap(True)
+        self.mag_value_label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        read_btn = QtWidgets.QPushButton('Read')
+        read_btn.setToolTip('Read the calibration and the last measurement of the device (firmware >= 0.4.12)')
+        read_btn.clicked.connect(self.mag_read_device)
+        del_btn = QtWidgets.QPushButton('Delete calibration')
+        del_btn.clicked.connect(self.mag_delete_calibration)
+        grid.addWidget(self.mag_cal_label, 0, 0, 1, 3)
+        grid.addWidget(self.mag_value_label, 1, 0, 1, 3)
+        grid.addWidget(read_btn, 2, 0)
+        grid.addWidget(del_btn, 2, 1)
+        grid.setColumnStretch(2, 1)
+        lay.addWidget(box)
+
+        box = QtWidgets.QGroupBox('Calibrate (hard and soft iron)')
+        grid = QtWidgets.QGridLayout(box)
+        note = QtWidgets.QLabel('Mount the device as it will be used (battery, housing). Start the recording and turn '
+                                'the device slowly in all directions (all sides up, rotate around every axis) until '
+                                'all directions are covered. Keep away from iron, magnets and cables with current.')
+        note.setWordWrap(True)
+        note.setStyleSheet('color: gray;')
+        self.mag_dur = QtWidgets.QSpinBox()
+        self.mag_dur.setRange(10, 120)
+        self.mag_dur.setValue(60)
+        self.mag_dur.setSuffix(' s')
+        self.mag_hz = QtWidgets.QSpinBox()
+        self.mag_hz.setRange(1, 20)
+        self.mag_hz.setValue(10)
+        self.mag_hz.setSuffix(' Hz')
+        self.mag_start_btn = QtWidgets.QPushButton('Start recording')
+        self.mag_start_btn.clicked.connect(self.mag_start_recording)
+        self.mag_stop_btn = QtWidgets.QPushButton('Stop')
+        self.mag_stop_btn.setEnabled(False)
+        self.mag_stop_btn.clicked.connect(lambda: self.device.thread_command('mag_cal_stop', {}))
+        self.mag_progress = QtWidgets.QProgressBar()
+        self.mag_progress.setRange(0, 100)
+        self.mag_status = QtWidgets.QLabel('')
+        self.mag_status.setWordWrap(True)
+        self.mag_kind = QtWidgets.QComboBox()
+        self.mag_kind.addItems(['auto', 'ellipsoid', 'sphere'])
+        self.mag_kind.setToolTip('auto: hard and soft iron (ellipsoid) if enough directions are covered, otherwise '
+                                 'hard iron only (sphere)')
+        self.mag_fit_btn = QtWidgets.QPushButton('Fit')
+        self.mag_fit_btn.clicked.connect(self.mag_do_fit)
+        self.mag_apply_btn = QtWidgets.QPushButton('Apply to device')
+        self.mag_apply_btn.setEnabled(False)
+        self.mag_apply_btn.clicked.connect(self.mag_apply)
+        save_btn = QtWidgets.QPushButton('Save points ...')
+        save_btn.clicked.connect(self.mag_save_points)
+        load_btn = QtWidgets.QPushButton('Load points ...')
+        load_btn.clicked.connect(self.mag_load_points)
+        self.mag_fit_label = QtWidgets.QLabel('')
+        self.mag_fit_label.setWordWrap(True)
+        self.mag_fit_label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        grid.addWidget(note, 0, 0, 1, 6)
+        grid.addWidget(QtWidgets.QLabel('Duration'), 1, 0)
+        grid.addWidget(self.mag_dur, 1, 1)
+        grid.addWidget(QtWidgets.QLabel('Rate'), 1, 2)
+        grid.addWidget(self.mag_hz, 1, 3)
+        grid.addWidget(self.mag_start_btn, 1, 4)
+        grid.addWidget(self.mag_stop_btn, 1, 5)
+        grid.addWidget(self.mag_progress, 2, 0, 1, 6)
+        grid.addWidget(self.mag_status, 3, 0, 1, 6)
+        grid.addWidget(QtWidgets.QLabel('Fit'), 4, 0)
+        grid.addWidget(self.mag_kind, 4, 1)
+        grid.addWidget(self.mag_fit_btn, 4, 2)
+        grid.addWidget(self.mag_apply_btn, 4, 3)
+        grid.addWidget(save_btn, 4, 4)
+        grid.addWidget(load_btn, 4, 5)
+        grid.addWidget(self.mag_fit_label, 5, 0, 1, 6)
+        lay.addWidget(box)
+
+        plots = QtWidgets.QHBoxLayout()
+        self.mag_plots = []
+        for a, b, _i, _j in self.MAG_PLANES:
+            pw = pyqtgraph.PlotWidget()
+            pw.setBackground('w')
+            pw.setAspectLocked(True)
+            pw.showGrid(x=True, y=True, alpha=0.3)
+            pw.setLabel('bottom', f'{a} [µT]')
+            pw.setLabel('left', f'{b} [µT]')
+            pw.setMinimumHeight(220)
+            raw = pyqtgraph.ScatterPlotItem(size=4, pen=None, brush=pyqtgraph.mkBrush(150, 150, 150, 160))
+            cal = pyqtgraph.ScatterPlotItem(size=4, pen=None, brush=pyqtgraph.mkBrush(30, 100, 220, 200))
+            circle = pyqtgraph.PlotDataItem(pen=pyqtgraph.mkPen((220, 60, 60), width=1.5))
+            for item in (raw, cal, circle):
+                pw.addItem(item)
+            self.mag_plots.append((raw, cal, circle))
+            plots.addWidget(pw)
+        lay.addLayout(plots)
+        legend = QtWidgets.QLabel('gray: recorded (raw), blue: calibrated, red: sphere of the calibration')
+        legend.setStyleSheet('color: gray;')
+        lay.addWidget(legend)
+        self.mag_run_widgets = [read_btn, del_btn, self.mag_start_btn, self.mag_dur, self.mag_hz]
+        self.mag_update_buttons()
+        return w
+
+    def mag_update_buttons(self):
+        self.mag_fit_btn.setEnabled(len(self.mag_points) >= mag_calibration.MIN_POINTS and not self.mag_recording)
+        self.mag_apply_btn.setEnabled(self.running and self.mag_fit is not None and not self.mag_recording)
+
+    def mag_read_device(self):
+        self.device.thread_command('cal_get', {'target': self.key})
+        self.device.thread_command('mag_read', {'target': self.key})
+
+    def mag_delete_calibration(self):
+        answer = QtWidgets.QMessageBox.question(self, 'Delete calibration',
+                                                'Delete the magnetometer calibration on the device? The device then '
+                                                'stores the raw field only.')
+        if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.device.thread_command('cal_set', {'target': self.key, 'name': 'mag', 'text': ''})
+
+    def mag_start_recording(self):
+        self.mag_points = []
+        self.mag_fit = None
+        self.mag_recording = True
+        self.mag_progress.setValue(0)
+        self.mag_status.setStyleSheet('')
+        self.mag_status.setText('Starting ... turn the device slowly in all directions')
+        self.mag_fit_label.setText('')
+        self.mag_plot()
+        self.update_run_state(self.running)
+        self.mag_update_buttons()
+        self.device.thread_command('mag_cal', {'target': self.key, 'dur': self.mag_dur.value(),
+                                               'hz': self.mag_hz.value()})
+
+    def on_mag_message(self, packetid, data):
+        if packetid == 'mag_result':
+            if data.get('ok'):
+                m = data['mag']
+                text = f"field raw: x {m['x']:.2f}, y {m['y']:.2f}, z {m['z']:.2f} µT"
+                if 'xc' in m:
+                    text += f"; calibrated: x {m['xc']:.2f}, y {m['yc']:.2f}, z {m['zc']:.2f} µT"
+                text += f"; |B| {m.get('b', 0):.2f} µT, heading {m.get('heading', 0):.1f}° (only level)"
+                self.mag_value_label.setText(text)
+            else:
+                self.mag_value_label.setText(f"field: {data.get('message', '')}")
+        elif packetid == 'cal_result':
+            if data.get('ok'):
+                self.mag_device_cal = mag_calibration.MagCalibration.from_device((data.get('cal') or {}).get('mag'))
+                self.mag_cal_label.setText('calibration: ' + (self.mag_device_cal.summary() if self.mag_device_cal
+                                                              else 'none (raw field)'))
+                if data.get('message'):
+                    self.mag_status.setStyleSheet('')
+                    self.mag_status.setText(data['message'])
+            else:
+                self.mag_cal_label.setText(f"calibration: {data.get('message', '')}")
+        elif packetid == 'mag_cal_progress':
+            self.mag_points.extend(tuple(p) for p in data.get('new', []))
+            total = data.get('total') or 1
+            self.mag_progress.setValue(int(100 * len(self.mag_points) / total))
+            self.mag_status.setText(f"{len(self.mag_points)} of {total} values, {self.mag_coverage_text()}"
+                                    + (" - keep turning" if len(self.mag_points) < total else ""))
+            self.mag_plot()
+        elif packetid == 'mag_cal_done':
+            self.mag_recording = False
+            if data.get('points') and len(data['points']) >= len(self.mag_points):
+                self.mag_points = [tuple(p) for p in data['points']]
+            self.mag_progress.setValue(100 if data.get('ok') else self.mag_progress.value())
+            self.mag_status.setStyleSheet('' if data.get('ok') else 'color: #d64545;')
+            self.mag_status.setText(f"{data.get('message', '')}; {self.mag_coverage_text()}")
+            self.update_run_state(self.running)
+            self.mag_update_buttons()
+            if len(self.mag_points) >= mag_calibration.MIN_POINTS:
+                self.mag_do_fit()
+            else:
+                self.mag_plot()
+
+    def mag_coverage_text(self):
+        import numpy as np
+        if len(self.mag_points) < mag_calibration.MIN_POINTS:
+            return 'coverage: -'
+        try:
+            center, _r = mag_calibration.fit_sphere(np.array(self.mag_points))
+            return f'coverage {mag_calibration.coverage(self.mag_points, center)} of 26 directions'
+        except (mag_calibration.CalibrationError, np.linalg.LinAlgError):
+            return 'coverage: -'
+
+    def mag_do_fit(self):
+        import numpy as np
+        try:
+            self.mag_fit = mag_calibration.fit(np.array(self.mag_points), kind=self.mag_kind.currentText())
+            self.mag_fit.id = f"redvypr {datetime.datetime.now():%Y%m%d}"
+            f = self.mag_fit
+            what = 'hard and soft iron (ellipsoid)' if f.kind == 'ellipsoid' else 'hard iron only (sphere)'
+            self.mag_fit_label.setStyleSheet('')
+            self.mag_fit_label.setText(
+                f"Fit: {what}, {f.n} values, {f.coverage} of 26 directions\n"
+                f"hard iron b = {f.b[0]:.2f}, {f.b[1]:.2f}, {f.b[2]:.2f} µT; field {f.field_ut:.2f} µT "
+                f"(earth field about 25-65 µT, Germany about 49 µT); residual {f.rms_ut:.2f} µT\n"
+                f"A = {np.array2string(f.A, precision=4, suppress_small=True).replace(chr(10), ' ')}")
+        except (mag_calibration.CalibrationError, np.linalg.LinAlgError) as exc:
+            self.mag_fit = None
+            self.mag_fit_label.setStyleSheet('color: #d64545;')
+            self.mag_fit_label.setText(f'Fit: {exc}')
+        self.mag_update_buttons()
+        self.mag_plot()
+
+    def mag_apply(self):
+        if self.mag_fit is None:
+            return
+        answer = QtWidgets.QMessageBox.question(
+            self, 'Apply calibration', f'Store this calibration on the device?\n\n{self.mag_fit.summary()}')
+        if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.device.thread_command('cal_set', {'target': self.key, 'name': 'mag', 'text': self.mag_fit.to_text()})
+
+    def mag_plot(self):
+        import numpy as np
+        pts = np.array(self.mag_points, dtype=float).reshape(-1, 3)
+        cal = self.mag_fit.apply(pts) if self.mag_fit is not None and len(pts) else np.zeros((0, 3))
+        phi = np.linspace(0, 2 * np.pi, 120)
+        for (raw_item, cal_item, circle), (_a, _b, i, j) in zip(self.mag_plots, self.MAG_PLANES):
+            raw_item.setData(pts[:, i], pts[:, j]) if len(pts) else raw_item.clear()
+            cal_item.setData(cal[:, i], cal[:, j]) if len(cal) else cal_item.clear()
+            if self.mag_fit is not None:
+                r = self.mag_fit.field_ut
+                circle.setData(r * np.cos(phi), r * np.sin(phi))
+            else:
+                circle.clear()
+
+    def mag_save_points(self):
+        if not self.mag_points:
+            return
+        name = (self.entry or {}).get('hwid') or self.key
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Save magnetometer points',
+                                                        f'mag_points_{name}.csv', 'CSV (*.csv)')
+        if path:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write('x_ut,y_ut,z_ut\n')
+                for x, y, z in self.mag_points:
+                    f.write(f'{x:.4f},{y:.4f},{z:.4f}\n')
+
+    def mag_load_points(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Load magnetometer points', '', 'CSV (*.csv)')
+        if not path:
+            return
+        points = []
+        with open(path, encoding='utf-8') as f:
+            for line in f:
+                try:
+                    points.append(tuple(float(v) for v in line.strip().split(',')[:3]))
+                except ValueError:
+                    continue        # header
+        self.mag_points = [p for p in points if len(p) == 3]
+        self.mag_fit = None
+        self.mag_status.setText(f'{len(self.mag_points)} values loaded; {self.mag_coverage_text()}')
+        self.mag_do_fit() if len(self.mag_points) >= mag_calibration.MIN_POINTS else self.mag_plot()
 
     def _build_firmware_tab(self):
         w = QtWidgets.QWidget()

@@ -604,6 +604,92 @@ def radio_set(cli: OtCli, dbm: int, address=None, timeout: float = 10.0) -> dict
     return json.loads(coap_request(cli, "put", address, "radio", payload, timeout=timeout).decode())
 
 
+MAG_PREFIX = "#NLM "
+CAL_PREFIX = "#NLK "
+
+
+def _shell_json(cli: OtCli, cmd: str, prefix: str, timeout: float = 4.0, min_fw: str = "0.4.12"):
+    import json
+    try:
+        rest = cli.shell_query(cmd, prefix, timeout=timeout)
+    except TimeoutError:
+        raise OtError(f"no answer to '{cmd}' (firmware >= {min_fw} required)") from None
+    if rest.startswith("err"):
+        raise OtError(f"{cmd}: {rest}")
+    return json.loads(rest)
+
+
+def mag_read(cli: OtCli, address=None, timeout: float = 10.0) -> dict:
+    """Last magnetometer measurement {'x','y','z'[,'xc','yc','zc'],'b','heading','age_ms'} (µT, °)."""
+    import json
+    if address is None:
+        return _shell_json(cli, "norlog mag json", MAG_PREFIX)
+    return json.loads(coap_request(cli, "get", address, "mag", timeout=timeout).decode())
+
+
+def mag_cal_start(cli: OtCli, dur_s: int = 60, hz: int = 10, address=None, timeout: float = 10.0) -> dict:
+    """Start the recording for the calibration on the device; returns the status."""
+    import json
+    if address is None:
+        return _shell_json(cli, f"norlog mag cal start {int(dur_s)} {int(hz)}", MAG_PREFIX)
+    return json.loads(coap_request(cli, "post", address, f"mag?op=start&dur={int(dur_s)}&hz={int(hz)}",
+                                   timeout=timeout).decode())
+
+
+def mag_cal_stop(cli: OtCli, address=None, timeout: float = 10.0) -> dict:
+    import json
+    if address is None:
+        return _shell_json(cli, "norlog mag cal stop", MAG_PREFIX)
+    return json.loads(coap_request(cli, "post", address, "mag?op=stop", timeout=timeout).decode())
+
+
+def mag_cal_status(cli: OtCli, address=None, timeout: float = 10.0) -> dict:
+    """{'state': 'idle'|'run'|'done', 'n', 'total', 'hz'}"""
+    import json
+    if address is None:
+        return _shell_json(cli, "norlog mag cal status", MAG_PREFIX)
+    return json.loads(coap_request(cli, "get", address, "mag?op=status", timeout=timeout).decode())
+
+
+MAG_CAL_CHUNK = 80      # values per request (firmware MAG_REC_DATA_MAX)
+
+
+def mag_cal_data(cli: OtCli, off: int, n: int = MAG_CAL_CHUNK, address=None, timeout: float = 10.0) -> list:
+    """Recorded values [(x, y, z), ...] (µT) from index off (at most MAG_CAL_CHUNK)."""
+    import base64
+    import struct
+    if address is None:
+        rest = cli.shell_query(f"norlog mag cal data {int(off)} {int(n)}", MAG_PREFIX, timeout=4.0)
+        if rest.startswith("err"):
+            raise OtError(f"norlog mag cal data: {rest}")
+        raw = b"" if rest.strip() == "-" else base64.b64decode(rest.strip())
+    else:
+        raw = coap_request(cli, "get", address, f"mag?op=data&off={int(off)}&n={int(n)}", timeout=timeout)
+    count = len(raw) // 12
+    return [struct.unpack_from("<3f", raw, 12 * i) for i in range(count)]
+
+
+def cal_get(cli: OtCli, address=None, timeout: float = 10.0) -> dict:
+    """Calibrations on the device {'mag': {...} or None}."""
+    import json
+    if address is None:
+        return _shell_json(cli, "norlog cal", CAL_PREFIX)
+    return json.loads(coap_request(cli, "get", address, "cal", timeout=timeout).decode())
+
+
+def cal_set(cli: OtCli, name: str, text: str, address=None, timeout: float = 10.0):
+    """Set a calibration ('mag', text from MagCalibration.to_text()); empty text deletes it."""
+    if any(c.isspace() for c in text):
+        raise ValueError("calibration text must not contain spaces")
+    if address is None:
+        cmd = f"norlog cal set {name} {text}" if text else f"norlog cal del {name}"
+        rest = cli.shell_query(cmd, CAL_PREFIX, timeout=5.0)
+        if not rest.startswith("ok"):
+            raise OtError(f"norlog cal {name}: {rest}")
+        return
+    coap_request(cli, "post", address, f"cal?n={name}", text.encode(), timeout=timeout, b64=True)
+
+
 def fw_install_remote(cli: OtCli, address: str) -> dict:
     import json
     return json.loads(coap_request(cli, "post", address, "fw?op=install").decode())
