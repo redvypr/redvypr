@@ -539,7 +539,7 @@ class _Gateway:
                    'rssi_last', 'lq_in', 'lq_out', 'path_cost', 'next_hop', 'age_s')
     # Units of the info values, sent once per device as metadata
     INFO_UNITS = {
-        "uptime_s": 's', "board_temp_c": 'degC', "nrf_temp_c": 'degC',
+        "uptime_s": 's', "board_temp_c": 'degC', "nrf_temp_c": 'degC', "gnss['cno']": 'dB-Hz', "gnss['age']": 's',
         "battery['mv']": 'mV', "battery['soc']": '%', "battery['current_ma']": 'mA',
         "battery['tte_min']": 'min', "battery['ttf_min']": 'min',
         "radio['txpower_dbm']": 'dBm', "radio['antenna_dbm']": 'dBm', "radio['soc_dbm']": 'dBm',
@@ -1177,7 +1177,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     DEVICE_COLUMNS = ['', 'HW ID', 'Device', 'SN', 'Description', 'Location', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
                       'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets',
-                      'Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'Clock', 'Info age [s]']
+                      'Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'GNSS', 'Clock', 'Info age [s]']
 
     QUALITY_COLORS = {
         device_list.QUALITY_GOOD: '#7bc96f',
@@ -1199,6 +1199,28 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             text += (' ' if text else '') + (f"ADC reset {info['adc_resets']} time(s) since the start because of "
                                              f"an implausible board temperature.")
         return text
+
+    @staticmethod
+    def fmt_gnss(info):
+        """(text, quality color key, tooltip) of the GNSS reception (firmware >= 0.4.10)."""
+        info = info or {}
+        receiver = (info.get('hw') or {}).get('gnss') or ''
+        st = info.get('gnss')
+        if not isinstance(st, dict):
+            if not receiver:
+                return '', None, ''
+            return 'no status', None, f'{receiver}: no reception status (firmware >= 0.4.10, "norlog gnss")'
+        used, view, trk = st.get('used', 0), st.get('view', 0), st.get('trk', 0)
+        tip = (f"{receiver}: {'fix' if st.get('fix') else 'no fix'}, satellites used {used}, in view {view}, "
+               f"received {trk}, best signal {st.get('cno', 0)} dB-Hz (good > 35, weak < 25), "
+               f"last message {st.get('age', '?')} s ago")
+        if st.get('age') is not None and st['age'] > 10:
+            return 'no data', device_list.QUALITY_NONE, tip + '\nNo NMEA data from the receiver for > 10 s'
+        if st.get('fix'):
+            return f'fix, {used} sat.', device_list.QUALITY_GOOD, tip
+        if trk > 0:
+            return f'no fix, {trk}/{view} sat.', device_list.QUALITY_FAIR, tip
+        return 'no satellites', device_list.QUALITY_NONE, tip + '\nAntenna connected? Free view of the sky?'
 
     @staticmethod
     def fem_stuck(radio):
@@ -1425,11 +1447,12 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 self._fmt_battery(d),
                 '' if d.get('board_temp_c') is None else f"{d['board_temp_c']:.1f}",
                 '' if (d.get('info') or {}).get('nrf_temp_c') is None else f"{d['info']['nrf_temp_c']:.1f}",
+                self.fmt_gnss(d.get('info'))[0],
                 self._fmt_clock(d)[0],
                 '' if d.get('info_age_s') is None else f"{d['info_age_s']:.0f}",
             ]
             cols = self.DEVICE_COLUMNS
-            stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'Clock',
+            stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'GNSS', 'Clock',
                                                   'Info age [s]')]
             self.devices_table.setCellWidget(row, 0, self._settings_button(d))
             full_text = {cols.index('Description'): d.get('desc', ''), cols.index('Location'): d.get('loc', '')}
@@ -1439,6 +1462,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     item.setToolTip(full_text[col])
                 if cols[col] == 'Quality' and d.get('quality') in self.QUALITY_COLORS:
                     item.setBackground(QtGui.QColor(self.QUALITY_COLORS[d['quality']]))
+                if cols[col] == 'GNSS':
+                    _text, quality, tip = self.fmt_gnss(d.get('info'))
+                    if quality in self.QUALITY_COLORS:
+                        item.setBackground(QtGui.QColor(self.QUALITY_COLORS[quality]))
+                    item.setToolTip(tip)
                 if cols[col] == 'Clock':
                     _text, quality, tip = self._fmt_clock(d)
                     if quality in self.QUALITY_COLORS:
@@ -1967,7 +1995,8 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
     """
 
     GENERAL_FIELDS = ['Device', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Thread', 'Image', 'Firmware', 'Build',
-                      'Board', 'HW ID', 'Battery', 'Board temp', 'Uptime', 'Clock', 'Reset cause', 'Hardware', 'SD card',
+                      'Board', 'HW ID', 'Battery', 'Board temp', 'GNSS', 'Uptime', 'Clock', 'Reset cause', 'Hardware',
+                      'SD card',
                       'Battery model', 'USB', 'TX power', 'Log level', 'Info age']
 
     USB_MODES = ['auto', 'manual', 'off']
@@ -2311,6 +2340,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             'HW ID': info.get('hwid', ''),
             'Battery': batt,
             'Board temp': self._fmt_temps(info),
+            'GNSS': ' - '.join(x for x in RedvyprDeviceWidget.fmt_gnss(info)[::2] if x),
             'Uptime': '' if uptime is None else f"{uptime // 3600} h {uptime // 60 % 60} min {uptime % 60} s",
             'Clock': ' - '.join(x for x in (info.get('time', ''), RedvyprDeviceWidget._fmt_rtc(info)) if x),
             'Reset cause': str(info.get('reset_cause', '')),

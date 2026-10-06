@@ -32,6 +32,8 @@ redvypr changelog
 - norlog gateway: column "Clock" (was "RTC", it showed the system clock of the device): offset to this PC from the
   info time with ms (firmware >= 0.4.8) and the middle of the request, tolerance from the request time; RTC offset
   to the system clock in the tooltip and the settings
+- norlog gateway: column "GNSS" (fix and satellites, colored; details in the tooltip) and GNSS in the settings
+  (firmware >= 0.4.10)
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)
