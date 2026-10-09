@@ -79,6 +79,7 @@ from redvypr.gui import iconnames
 from redvypr.redvypr_datadict import check_for_command, create_redvypr_dict
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 
+from . import adc_sequence
 from . import device_list
 from . import mag_calibration
 from . import norlog_archive
@@ -385,6 +386,9 @@ class _Gateway:
                 self.cal_get(args.get('target') or 'gateway')
             elif command == 'cal_set':
                 self.cal_set(args.get('target') or 'gateway', args.get('name', 'mag'), args.get('text', ''))
+            elif command in ('adc_get', 'adc_set', 'adc_read'):
+                self.adc_command(args.get('target') or 'gateway', command[4:], args.get('sensor', 'adc_brd'),
+                                 args.get('text', ''))
             elif command == 'props_read':
                 self.props_command(args.get('target', 'gateway'), {})
             elif command == 'props_set':
@@ -855,6 +859,28 @@ class _Gateway:
         except (ot_cli.OtError, TimeoutError, ValueError) as exc:
             result['message'] = str(exc)
         self.to_gui('cal_result', result)
+
+    # --- ADC measurement sequence (firmware >= 0.4.15) ---
+
+    def adc_command(self, target, op, sensor, text=''):
+        """op 'get': read the sequence, 'set': write the text, 'read': measure once. Answer 'adc_result'."""
+        result = {'target': target, 'sensor': sensor, 'op': op, 'ok': False}
+        try:
+            address = self.target_address(target)
+            timeout = self.config.coap_timeout_s
+            if op == 'set':
+                ot_cli.adc_set(self.cli, sensor, text, address, timeout=timeout)
+                st = ot_cli.adc_get(self.cli, sensor, address, timeout=timeout)
+                result['message'] = f"{sensor}: configuration {st.get('cfg_id')} stored"
+            elif op == 'read':
+                st = ot_cli.adc_measure(self.cli, sensor, address, timeout=timeout)
+                result['message'] = f"{sensor}: measured"
+            else:
+                st = ot_cli.adc_get(self.cli, sensor, address, timeout=timeout)
+            result.update(ok=True, adc=st)
+        except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+            result['message'] = str(exc)
+        self.to_gui('adc_result', result)
 
     def set_radio(self, target, dbm):
         """Set the transmit power at the antenna of the gateway or a member (stored on the device)."""
@@ -2024,6 +2050,13 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 dlg = self.settings_dialogs.get(data.get('target'))
                 if dlg is not None:
                     dlg.on_mag_message(packetid, data)
+            elif packetid == 'adc_result':
+                if data.get('message'):
+                    state = 'OK' if data.get('ok') else 'ERROR'
+                    self.console_text.appendPlainText(f"[adc {data.get('target')}] {state}: {data.get('message')}")
+                dlg = self.settings_dialogs.get(data.get('target'))
+                if dlg is not None:
+                    dlg.on_adc_message(data)
             elif packetid == 'radio_result':
                 state = 'OK' if data.get('ok') else 'ERROR'
                 self.console_text.appendPlainText(f"[radio {data.get('target')}] {state}: {data.get('message', '')}")
@@ -2153,6 +2186,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.files_tab_index = self.tabs.addTab(self._build_files_tab(), 'Files')
         self.data_tab_index = self.tabs.addTab(self._build_data_tab(), 'Data')
         self.mag_tab_index = self.tabs.addTab(self._scrollable(self._build_mag_tab()), 'Magnetometer')
+        self.adc_tab_index = self.tabs.addTab(self._scrollable(self._build_adc_tab()), 'ADC')
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay = QtWidgets.QVBoxLayout(self)
@@ -2600,6 +2634,8 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             w.setEnabled(running and not self.mag_recording)
         self.mag_stop_btn.setEnabled(running and self.mag_recording)
         self.mag_update_buttons()
+        for w in self.adc_run_widgets:
+            w.setEnabled(running and not self.adc_busy)
         self.read_info_btn.setEnabled(running)
         self.clock_btn.setEnabled(running)
         self.radio_btn.setEnabled(running)
@@ -2616,6 +2652,394 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.data_cancel_btn.setEnabled((running and self.data_busy) or self.convert_worker is not None)
 
     # --- firmware ---
+
+    # --- ADC measurement sequence (firmware >= 0.4.15) ---
+
+    ADC_COLS = ['Name', 'p', 'n', 'Gain', 'Ref', 'IDAC µA', 'IDAC1', 'IDAC2', 'Delay ms', 'Value', 'Raw']
+    ADC_HINTS = {
+        'adc_brd': 'norlog rev02: COM (AINCOM) is GND - measure voltages near 0 V with gain "off" (the PGA needs '
+                   'headroom to the supply rails). REF0 is not usable (REFP0 open); an external reference goes to '
+                   'REF1 = AIN6 (+) / AIN7 (-). J15 pins 3-12 = AIN0-9, J17 pins 3-14 = AIN0-11, J17 pin 16 = '
+                   'REFOUT (2.5 V while the internal reference is used), pin 1 = GND.',
+        'adc_hfm': 'hfmeter module at J1: the NTC is connected to AIN5 (IDAC 50 µA, measured separately as ntc '
+                   'packet).',
+    }
+
+    def _build_adc_tab(self):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+        self.adc_state = {}             # sensor -> last answer of the device (adc_get)
+        self.adc_busy = False
+        self.adc_loading = False
+
+        row = QtWidgets.QHBoxLayout()
+        self.adc_sensor = QtWidgets.QComboBox()
+        self.adc_sensor.addItems(adc_sequence.SENSORS)
+        for i, name in enumerate(adc_sequence.SENSORS):
+            self.adc_sensor.setItemData(i, adc_sequence.SENSOR_INFO.get(name, ''),
+                                        QtCore.Qt.ItemDataRole.ToolTipRole)
+        self.adc_sensor.currentTextChanged.connect(self.adc_sensor_changed)
+        self.adc_info = QtWidgets.QLabel('- (Read from device)')
+        self.adc_info.setWordWrap(True)
+        row.addWidget(QtWidgets.QLabel('Sensor'))
+        row.addWidget(self.adc_sensor)
+        row.addWidget(self.adc_info, 1)
+        lay.addLayout(row)
+
+        box = QtWidgets.QGroupBox('Sequence')
+        grid = QtWidgets.QGridLayout(box)
+        self.adc_on = QtWidgets.QCheckBox('run and store on the SD card')
+        self.adc_on.setToolTip('Off: nothing is stored; "Measure once" still works')
+        self.adc_sps = QtWidgets.QComboBox()
+        self.adc_sps.addItems(adc_sequence.SPS)
+        self.adc_filter = QtWidgets.QComboBox()
+        self.adc_filter.addItems(adc_sequence.FILTERS)
+        self.adc_filter.setToolTip('sinc3: 3 periods per conversion, best noise; ll: low latency, 1 period')
+        self.adc_interval = QtWidgets.QDoubleSpinBox()
+        self.adc_interval.setRange(0.1, 86400.0)
+        self.adc_interval.setDecimals(1)
+        self.adc_interval.setValue(10.0)
+        self.adc_interval.setSuffix(' s')
+        for wdg in (self.adc_on,):
+            wdg.toggled.connect(self.adc_changed)
+        for wdg in (self.adc_sps, self.adc_filter):
+            wdg.currentTextChanged.connect(self.adc_changed)
+        self.adc_interval.valueChanged.connect(self.adc_changed)
+        grid.addWidget(self.adc_on, 0, 0, 1, 2)
+        grid.addWidget(QtWidgets.QLabel('Data rate'), 0, 2)
+        grid.addWidget(self.adc_sps, 0, 3)
+        grid.addWidget(QtWidgets.QLabel('SPS, filter'), 0, 4)
+        grid.addWidget(self.adc_filter, 0, 5)
+        grid.addWidget(QtWidgets.QLabel('Interval'), 0, 6)
+        grid.addWidget(self.adc_interval, 0, 7)
+        grid.setColumnStretch(8, 1)
+
+        self.adc_table = QtWidgets.QTableWidget(0, len(self.ADC_COLS))
+        self.adc_table.setHorizontalHeaderLabels(self.ADC_COLS)
+        self.adc_table.verticalHeader().setDefaultSectionSize(26)
+        self.adc_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.adc_table.setMinimumHeight(220)
+        self.adc_table.horizontalHeader().setStretchLastSection(True)
+        self.adc_table.itemChanged.connect(lambda _item: self.adc_changed())
+        tips = ['Channel name: 1-11 characters a-z A-Z 0-9 _, field name in the data',
+                'Positive input: AIN0-11, COM or internal: TEMP (chip temperature), AVDD, DVDD (supply), '
+                'OFS (inputs shorted)', 'Negative input: AIN0-11 or COM',
+                'PGA gain; off = PGA bypassed (inputs may go down to GND)',
+                'Reference: INT 2.5 V (value in V) or external REF0/REF1 (value = U_in / U_ref)',
+                'Current of the excitation current sources', 'Output of IDAC1', 'Output of IDAC2',
+                'Wait after switching (e.g. settling of the IDAC current)', 'Last measured value', 'Raw value (24 bit)']
+        for i, tip in enumerate(tips):
+            self.adc_table.horizontalHeaderItem(i).setToolTip(tip)
+        grid.addWidget(self.adc_table, 1, 0, 1, 9)
+
+        btns = QtWidgets.QHBoxLayout()
+        add_btn = QtWidgets.QPushButton('Add step')
+        add_btn.clicked.connect(self.adc_add_step)
+        del_btn = QtWidgets.QPushButton('Remove')
+        del_btn.clicked.connect(self.adc_remove_step)
+        up_btn = QtWidgets.QPushButton('Up')
+        up_btn.clicked.connect(lambda: self.adc_move_step(-1))
+        down_btn = QtWidgets.QPushButton('Down')
+        down_btn.clicked.connect(lambda: self.adc_move_step(1))
+        for b_ in (add_btn, del_btn, up_btn, down_btn):
+            btns.addWidget(b_)
+        btns.addStretch(1)
+        self.adc_dur_label = QtWidgets.QLabel('')
+        btns.addWidget(self.adc_dur_label)
+        grid.addLayout(btns, 2, 0, 1, 9)
+
+        self.adc_text = QtWidgets.QLineEdit()
+        self.adc_text.setToolTip('Configuration as text (as "norlog adc set <sensor> <text>" on the shell); '
+                                 'edit or paste and press "Use text"')
+        text_btn = QtWidgets.QPushButton('Use text')
+        text_btn.clicked.connect(self.adc_use_text)
+        grid.addWidget(QtWidgets.QLabel('Text'), 3, 0)
+        grid.addWidget(self.adc_text, 3, 1, 1, 7)
+        grid.addWidget(text_btn, 3, 8)
+        lay.addWidget(box)
+
+        row = QtWidgets.QHBoxLayout()
+        read_btn = QtWidgets.QPushButton('Read from device')
+        read_btn.clicked.connect(lambda: self.adc_command('get'))
+        write_btn = QtWidgets.QPushButton('Write to device')
+        write_btn.setToolTip('Store the sequence on the device (settings); every change increases the '
+                             'configuration number')
+        write_btn.clicked.connect(self.adc_write)
+        measure_btn = QtWidgets.QPushButton('Measure once')
+        measure_btn.setToolTip('Run the sequence stored on the device once and show the values (not stored)')
+        measure_btn.clicked.connect(lambda: self.adc_command('read'))
+        for b_ in (read_btn, write_btn, measure_btn):
+            row.addWidget(b_)
+        row.addStretch(1)
+        lay.addLayout(row)
+        self.adc_status = QtWidgets.QLabel('')
+        self.adc_status.setWordWrap(True)
+        self.adc_status.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        lay.addWidget(self.adc_status)
+        self.adc_hint = QtWidgets.QLabel('')
+        self.adc_hint.setWordWrap(True)
+        self.adc_hint.setStyleSheet('color: gray;')
+        lay.addWidget(self.adc_hint)
+        lay.addStretch(1)
+        self.adc_run_widgets = [read_btn, write_btn, measure_btn]
+        self.adc_sensor_changed(self.adc_sensor.currentText())
+        return w
+
+    def _adc_combo(self, items, value, col):
+        cb = QtWidgets.QComboBox()
+        cb.addItems(items)
+        if value in items:
+            cb.setCurrentText(value)
+        cb.currentTextChanged.connect(lambda _t: self.adc_changed())
+        return cb
+
+    def _adc_set_row(self, r, st, value='', raw=''):
+        t = self.adc_table
+        t.setItem(r, 0, QtWidgets.QTableWidgetItem(st.name))
+        t.setCellWidget(r, 1, self._adc_combo(adc_sequence.P_INPUTS, st.p, 1))
+        t.setCellWidget(r, 2, self._adc_combo(adc_sequence.INPUTS, st.n if st.n != '-' else 'COM', 2))
+        t.setCellWidget(r, 3, self._adc_combo(adc_sequence.GAINS, st.gain, 3))
+        t.setCellWidget(r, 4, self._adc_combo(adc_sequence.REFS, st.ref, 4))
+        t.setCellWidget(r, 5, self._adc_combo([str(v) for v in adc_sequence.IDAC_UA], str(st.idac_ua), 5))
+        t.setCellWidget(r, 6, self._adc_combo(adc_sequence.IDAC_PINS, st.i1, 6))
+        t.setCellWidget(r, 7, self._adc_combo(adc_sequence.IDAC_PINS, st.i2, 7))
+        delay = QtWidgets.QSpinBox()
+        delay.setRange(0, 2000)
+        delay.setValue(st.delay_ms)
+        delay.valueChanged.connect(lambda _v: self.adc_changed())
+        t.setCellWidget(r, 8, delay)
+        for col, text in ((9, value), (10, raw)):
+            item = QtWidgets.QTableWidgetItem(text)
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+            t.setItem(r, col, item)
+
+    def _adc_row_step(self, r):
+        t = self.adc_table
+        item = t.item(r, 0)
+        st = adc_sequence.AdcStep(name=item.text().strip() if item else '')
+        st.p = t.cellWidget(r, 1).currentText()
+        st.n = t.cellWidget(r, 2).currentText()
+        st.gain = t.cellWidget(r, 3).currentText()
+        st.ref = t.cellWidget(r, 4).currentText()
+        st.idac_ua = int(t.cellWidget(r, 5).currentText())
+        st.i1 = t.cellWidget(r, 6).currentText()
+        st.i2 = t.cellWidget(r, 7).currentText()
+        st.delay_ms = t.cellWidget(r, 8).value()
+        if st.internal:
+            st.n = '-'
+        return st
+
+    def adc_sequence_from_gui(self):
+        return adc_sequence.AdcSequence(on=self.adc_on.isChecked(), sps=self.adc_sps.currentText(),
+                                        filter=self.adc_filter.currentText(),
+                                        interval_ms=int(round(self.adc_interval.value() * 1000)),
+                                        steps=[self._adc_row_step(r) for r in range(self.adc_table.rowCount())])
+
+    def adc_show_sequence(self, seq, values=None):
+        """Fill the table; values: {name: (value text, raw text)}."""
+        values = values or {}
+        self.adc_loading = True
+        try:
+            self.adc_on.setChecked(seq.on)
+            self.adc_sps.setCurrentText(seq.sps)
+            self.adc_filter.setCurrentText(seq.filter)
+            self.adc_interval.setValue(seq.interval_ms / 1000.0)
+            self.adc_table.setRowCount(len(seq.steps))
+            for r, st in enumerate(seq.steps):
+                self._adc_set_row(r, st, *values.get(st.name, ('', '')))
+            self.adc_table.resizeColumnsToContents()
+        finally:
+            self.adc_loading = False
+        self.adc_changed()
+
+    def adc_changed(self, *_args):
+        if self.adc_loading:
+            return
+        t = self.adc_table
+        for r in range(t.rowCount()):
+            if t.cellWidget(r, 1) is None:
+                continue
+            internal = t.cellWidget(r, 1).currentText() in adc_sequence.INTERNAL
+            idac = t.cellWidget(r, 5).currentText() != '0'
+            for col in range(2, 9):
+                t.cellWidget(r, col).setEnabled(not internal and (col not in (6, 7) or idac))
+        seq = self.adc_sequence_from_gui()
+        text = seq.to_text()
+        if self.adc_text.text() != text:
+            self.adc_text.setText(text)
+        dur = seq.duration_ms()
+        self.adc_dur_label.setText(f'one run approx. {dur / 1000:.2f} s'
+                                   + (' - longer than the interval, runs without pause'
+                                      if seq.steps and dur > seq.interval_ms else ''))
+        device = self.adc_state.get(self.adc_sensor.currentText())
+        try:
+            canonical = adc_sequence.parse(text).to_text()
+            error = ''
+        except adc_sequence.SequenceError as exc:
+            canonical, error = None, str(exc)
+        if error:
+            self.adc_status.setStyleSheet('color: #d64545;')
+            self.adc_status.setText(f'invalid: {error}')
+        elif device is not None and canonical != device.get('cfg'):
+            self.adc_status.setStyleSheet('color: #c08000;')
+            self.adc_status.setText('changed - not yet written to the device')
+        elif device is not None:
+            self.adc_status.setStyleSheet('')
+            self.adc_status.setText('same as on the device')
+
+    def adc_add_step(self):
+        names = {self._adc_row_step(r).name for r in range(self.adc_table.rowCount())}
+        i = 0
+        while f'ch{i}' in names:
+            i += 1
+        if self.adc_table.rowCount() >= adc_sequence.MAX_STEPS:
+            return
+        r = self.adc_table.rowCount()
+        self.adc_loading = True
+        self.adc_table.insertRow(r)
+        self._adc_set_row(r, adc_sequence.AdcStep(name=f'ch{i}', p=str(min(r, 11)), n='COM', gain='off'))
+        self.adc_loading = False
+        self.adc_changed()
+
+    def adc_remove_step(self):
+        rows = sorted({i.row() for i in self.adc_table.selectedIndexes()}, reverse=True)
+        for r in rows:
+            self.adc_table.removeRow(r)
+        self.adc_changed()
+
+    def adc_move_step(self, delta):
+        r = self.adc_table.currentRow()
+        seq = self.adc_sequence_from_gui()
+        if not 0 <= r < len(seq.steps) or not 0 <= r + delta < len(seq.steps):
+            return
+        seq.steps[r], seq.steps[r + delta] = seq.steps[r + delta], seq.steps[r]
+        self.adc_show_sequence(seq, self._adc_table_values())
+        self.adc_table.selectRow(r + delta)
+
+    def _adc_table_values(self):
+        t = self.adc_table
+        return {self._adc_row_step(r).name: ((t.item(r, 9).text() if t.item(r, 9) else ''),
+                                             (t.item(r, 10).text() if t.item(r, 10) else ''))
+                for r in range(t.rowCount())}
+
+    def adc_use_text(self):
+        try:
+            seq = adc_sequence.parse(self.adc_text.text(), base=self.adc_sequence_from_gui())
+        except adc_sequence.SequenceError as exc:
+            self.adc_status.setStyleSheet('color: #d64545;')
+            self.adc_status.setText(f'invalid: {exc}')
+            return
+        self.adc_show_sequence(seq, self._adc_table_values())
+
+    def adc_sensor_changed(self, sensor):
+        self.adc_hint.setText(self.ADC_HINTS.get(sensor, ''))
+        st = self.adc_state.get(sensor)
+        if st is not None:
+            self.adc_show_device(st)
+        else:
+            self.adc_info.setText('- (Read from device)')
+            self.adc_show_sequence(adc_sequence.AdcSequence())
+            self.adc_status.setText('')
+
+    def adc_command(self, op, text=''):
+        self.adc_busy = True
+        self.update_run_state(self.running)
+        self.adc_status.setStyleSheet('')
+        self.adc_status.setText({'get': 'reading ...', 'set': 'writing ...', 'read': 'measuring ...'}[op])
+        self.device.thread_command(f'adc_{op}', {'target': self.key, 'sensor': self.adc_sensor.currentText(),
+                                                 'text': text})
+
+    def adc_write(self):
+        seq = self.adc_sequence_from_gui()
+        try:
+            text = seq.validate()
+        except adc_sequence.SequenceError as exc:
+            self.adc_status.setStyleSheet('color: #d64545;')
+            self.adc_status.setText(f'invalid: {exc}')
+            return
+        if not seq.steps and seq.on:
+            self.adc_status.setStyleSheet('color: #d64545;')
+            self.adc_status.setText('add at least one step')
+            return
+        self.adc_command('set', text)
+
+    @staticmethod
+    def _adc_fmt_value(value, unit, err, ovr):
+        if err:
+            return 'error'
+        if value is None:
+            return '-'
+        unit = {'degC': '°C', '1': ''}.get(unit, unit)
+        text = f'{value:.7g} {unit}'.strip()
+        return text + (' OVERRANGE' if ovr else '')
+
+    def adc_show_device(self, st, table=True):
+        """
+        Show the answer of the device: state, last values and (table=True) its configuration.
+        table=False: only the values of the steps with the same name (unsaved changes stay).
+        """
+        try:
+            seq = adc_sequence.parse(st.get('cfg', ''))
+        except adc_sequence.SequenceError as exc:
+            self.adc_status.setStyleSheet('color: #d64545;')
+            self.adc_status.setText(f"configuration of the device not readable: {exc}")
+            return
+        values = {}
+        last = st.get('last') or {}
+        if last and last.get('cfg_id') == st.get('cfg_id'):
+            vals, raws = last.get('val') or [], last.get('raw') or []
+            for i, step in enumerate(seq.steps):
+                if i < len(vals):
+                    err = bool(last.get('err', 0) & (1 << i))
+                    ovr = bool(last.get('ovr', 0) & (1 << i))
+                    values[step.name] = (self._adc_fmt_value(vals[i], step.unit(), err, ovr),
+                                         str(raws[i]) if i < len(raws) and not err else '')
+        if table:
+            self.adc_show_sequence(seq, values)
+        else:
+            self.adc_loading = True
+            for r in range(self.adc_table.rowCount()):
+                item = self.adc_table.item(r, 0)
+                value, raw = values.get(item.text() if item else '', ('', ''))
+                self.adc_table.item(r, 9).setText(value)
+                self.adc_table.item(r, 10).setText(raw)
+            self.adc_loading = False
+            self.adc_changed()
+        age = f", last run {last.get('age_ms', 0) / 1000:.0f} s ago" if last else ''
+        self.adc_info.setText(f"{'found' if st.get('present') else 'NOT FOUND'}, sequence "
+                              f"{'on' if st.get('on') else 'off'}, configuration {st.get('cfg_id')}, "
+                              f"{st.get('runs', 0)} runs{age}")
+
+    def adc_unsaved(self):
+        """True if the table differs from the configuration last read from the device."""
+        device = self.adc_state.get(self.adc_sensor.currentText())
+        if device is None:
+            return False
+        try:
+            return adc_sequence.parse(self.adc_sequence_from_gui().to_text()).to_text() != device.get('cfg')
+        except adc_sequence.SequenceError:
+            return True
+
+    def on_adc_message(self, data):
+        self.adc_busy = False
+        self.update_run_state(self.running)
+        if not data.get('ok'):
+            if data.get('sensor') == self.adc_sensor.currentText():
+                self.adc_status.setStyleSheet('color: #d64545;')
+                self.adc_status.setText(data.get('message', 'error'))
+            return
+        current = data['sensor'] == self.adc_sensor.currentText()
+        keep_table = current and data.get('op') == 'read' and self.adc_unsaved()
+        self.adc_state[data['sensor']] = data['adc']
+        if current:
+            self.adc_show_device(data['adc'], table=not keep_table)
+            if keep_table:
+                self.adc_status.setStyleSheet('color: #c08000;')
+                self.adc_status.setText('measured with the sequence on the device; the changes in the table are '
+                                        'not yet written')
+            elif data.get('message'):
+                self.adc_status.setStyleSheet('')
+                self.adc_status.setText(data['message'])
 
     # --- magnetometer: measurement and calibration (firmware >= 0.4.12) ---
 

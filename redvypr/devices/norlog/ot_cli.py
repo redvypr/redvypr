@@ -690,6 +690,74 @@ def cal_set(cli: OtCli, name: str, text: str, address=None, timeout: float = 10.
     coap_request(cli, "post", address, f"cal?n={name}", text.encode(), timeout=timeout, b64=True)
 
 
+ADC_PREFIX = "#NLA "
+
+
+def adc_get(cli: OtCli, sensor: str = "adc_brd", address=None, timeout: float = 10.0) -> dict:
+    """
+    Measurement sequence of an ADC (firmware >= 0.4.15): {'sensor', 'present', 'on', 'cfg_id', 'n',
+    'interval_ms', 'dur_ms', 'runs', 'cfg' (text, see adc_sequence.py)[, 'last': {'age_ms', 'cfg_id',
+    'err', 'ovr', 'raw', 'val'}]}.
+    """
+    import json
+    if address is None:
+        return _shell_json(cli, f"norlog adc json {sensor}", ADC_PREFIX, min_fw="0.4.15")
+    return json.loads(coap_request(cli, "get", address, f"adc?s={sensor}", timeout=timeout).decode())
+
+
+def adc_set(cli: OtCli, sensor: str, text: str, address=None, timeout: float = 10.0):
+    """Set (and store) the configuration text of a sequence; raises OtError with the reason of the device."""
+    import json
+    if not text or any(c.isspace() for c in text):
+        raise ValueError("configuration text must not be empty or contain spaces")
+    if address is None:
+        try:
+            rest = cli.shell_query(f"norlog adc set {sensor} {text}", ADC_PREFIX, timeout=5.0)
+        except TimeoutError:
+            raise OtError("no answer to 'norlog adc set' (firmware >= 0.4.15 required)") from None
+        if not rest.startswith("ok"):
+            raise OtError(f"ADC sequence {sensor}: {rest[4:] if rest.startswith('err ') else rest}")
+        return
+    try:
+        coap_request(cli, "post", address, f"adc?s={sensor}", text.encode(), timeout=timeout, b64=True)
+    except OtError as exc:
+        # The device explains in {"ok":false,"err":"..."}
+        msg = str(exc)
+        if '"err"' in msg:
+            try:
+                msg = json.loads(msg[msg.index("{"):])["err"]
+            except (ValueError, KeyError):
+                pass
+        raise OtError(f"ADC sequence {sensor}: {msg}") from None
+
+
+def adc_measure(cli: OtCli, sensor: str = "adc_brd", address=None, timeout: float = 10.0) -> dict:
+    """
+    Run the sequence once (also when it is off) and return adc_get() with the new 'last' values.
+    Gateway: 'norlog adc read' blocks the shell until the run is done, the following
+    'norlog adc json' is answered after it. Member: 'POST adc?op=read', then poll.
+    """
+    import time
+    before = adc_get(cli, sensor, address, timeout=timeout)
+    if not before.get("present", True):
+        raise OtError(f"{sensor} not found on the device")
+    wait = before.get("dur_ms", 0) / 1000.0 * 2 + 5.0
+    if address is None:
+        cli.write_line(f"norlog adc read {sensor}")
+        st = _shell_json(cli, f"norlog adc json {sensor}", ADC_PREFIX, timeout=wait, min_fw="0.4.15")
+    else:
+        coap_request(cli, "post", address, f"adc?s={sensor}&op=read", timeout=timeout)
+        end = time.monotonic() + wait
+        while True:
+            time.sleep(max(0.3, min(1.0, before.get("dur_ms", 0) / 1000.0)))
+            st = adc_get(cli, sensor, address, timeout=timeout)
+            if st.get("runs", 0) != before.get("runs", 0) or time.monotonic() > end:
+                break
+    if st.get("runs", 0) == before.get("runs", 0):
+        raise OtError(f"{sensor}: no measurement (sequence without steps?)")
+    return st
+
+
 def fw_install_remote(cli: OtCli, address: str) -> dict:
     import json
     return json.loads(coap_request(cli, "post", address, "fw?op=install").decode())

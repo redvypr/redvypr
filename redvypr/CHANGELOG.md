@@ -44,6 +44,11 @@ redvypr changelog
 - norlog: ADC measurement sequences (tag 50009, firmware >= 0.4.15) decoded into one field per step (value, unit
   from the packet) plus `<name>_raw`, packet type = sensor name (e.g. `adc_brd`); configuration packets
   (tag 50010) as `<sensor>_cfg`; key 9 `sensor`; `norlog_cbor.units_of()`
+- norlog gateway: settings tab "ADC" for the measurement sequence of `adc_brd`/`adc_hfm` (firmware >= 0.4.15),
+  over UART and Thread: table of the steps (inputs, gain, reference, IDAC, delay) with the last values, data rate,
+  filter, interval, on/off; read, write (checked before), measure once; configuration text; hints on the inputs
+  of the norlog rev02; `devices/norlog/adc_sequence.py` (parser/writer of the configuration text),
+  `ot_cli.adc_get/adc_set/adc_measure`
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)
