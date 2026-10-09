@@ -32,7 +32,7 @@ import time
 
 from . import norlog_logindex as L
 from .norlog_archive import to_redvypr_packet
-from .norlog_cbor import UNITS
+from .norlog_cbor import units_of
 
 logger = logging.getLogger('redvypr.device.norlog_convert')
 
@@ -127,11 +127,11 @@ def _add_metadata(data, pkt, sn, sent):
         meta = {"hwid": hwid, **({"sn": sn} if sn else {})}
         redvypr.metadata.add_metadata2datapacket(data, address=f"@di:'{hwid}'", metadict=meta, hostinfo=CONVERT_HOST)
         sent.add(hwid)
-    for key in pkt:
-        if key in UNITS and (hwid, key) not in sent:
-            redvypr.metadata.add_metadata2datapacket(data, address=f"{key}@di:'{hwid}'", metadict={"unit": UNITS[key]},
+    for key, unit in units_of(pkt).items():
+        if (hwid, key, unit) not in sent:
+            redvypr.metadata.add_metadata2datapacket(data, address=f"{key}@di:'{hwid}'", metadict={"unit": unit},
                                                      hostinfo=CONVERT_HOST)
-            sent.add((hwid, key))
+            sent.add((hwid, key, unit))
 
 
 def db_config(db_path, table="norlog"):

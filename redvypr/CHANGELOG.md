@@ -41,6 +41,9 @@ redvypr changelog
   ellipsoid fit (fallback sphere fit) in `devices/norlog/mag_calibration.py`, apply to / delete on the device,
   points as CSV; magnetometer packets (tag 50007, keys 70-76) decoded with units
 - norlog: wind packets of a NMEA sensor at UART1 (tag 50008, keys 80-83, firmware >= 0.4.13) decoded with units
+- norlog: ADC measurement sequences (tag 50009, firmware >= 0.4.15) decoded into one field per step (value, unit
+  from the packet) plus `<name>_raw`, packet type = sensor name (e.g. `adc_brd`); configuration packets
+  (tag 50010) as `<sensor>_cfg`; key 9 `sensor`; `norlog_cbor.units_of()`
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)

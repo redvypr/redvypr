@@ -20,6 +20,8 @@ PACKET_TAGS = {
     50006: "board_temp",
     50007: "mag",           # magnetometer (firmware >= 0.4.12)
     50008: "wind",          # NMEA MWV of a wind meter at UART1 (firmware >= 0.4.13)
+    50009: "adcseq",        # measurement sequence of an ADC (firmware >= 0.4.15), see decode_packet()
+    50010: "adcseq_cfg",    # its configuration as text
 }
 
 # Map keys (cbor_key_t)
@@ -33,6 +35,7 @@ KEYS = {
     6: "set",
     7: "packet_num_sensor",
     8: "boot",
+    9: "sensor",            # name of the sensor (firmware sensors.h), e.g. "adc_brd"
     10: "batt_mv",
     11: "batt_soc",
     12: "batt_charging",
@@ -62,6 +65,14 @@ KEYS = {
     81: "wind_speed",       # wind speed [m/s]
     82: "wind_ref",         # 0 relative (R), 1 true (T)
     83: "wind_valid",       # status A
+    90: "cfg_id",           # ADC sequence: number of the configuration
+    91: "seq_names",        # [names of the steps]
+    92: "seq_raw",          # [raw values, 24 bit]
+    93: "seq_values",       # [values: V, U_in/U_ref or degC]
+    94: "seq_units",        # [units of the values]
+    95: "seq_err",          # bit i: step i failed
+    96: "seq_ovr",          # bit i: step i overranged
+    97: "cfg",              # configuration as text
 }
 
 # Units of the values (metadata of the converted data)
@@ -99,6 +110,44 @@ RAW_TYPES = {0: "serial", 1: "nmea", 2: "ubx"}
 CBOR_TAG_EPOCH = 1
 
 
+class Packet(dict):
+    """A decoded packet; .units holds the units of fields that are not in UNITS (ADC sequences)."""
+    units = None
+
+
+def units_of(pkt):
+    """Units of the fields of a decoded packet: UNITS plus the units the packet carries itself."""
+    units = {k: UNITS[k] for k in pkt if k in UNITS}
+    units.update(getattr(pkt, "units", None) or {})
+    return units
+
+
+# Field names of an ADC sequence that would collide with the header get the prefix "ch_"
+_RESERVED = set(KEYS.values()) | {"packet_type", "source", "t", "rtc_time_iso", "gps_time_iso"}
+
+
+def _flatten_adcseq(result):
+    """
+    ADC sequence: one field per step named like the step (value) plus <name>_raw;
+    the packet type is the sensor name (e.g. 'adc_brd'), so several ADCs stay apart.
+    """
+    names = result.pop("seq_names", None) or []
+    raw = result.pop("seq_raw", None) or []
+    values = result.pop("seq_values", None) or []
+    units = result.pop("seq_units", None) or []
+    result.units = {}
+    for i, name in enumerate(names):
+        key = name if name not in _RESERVED else f"ch_{name}"
+        if i < len(values):
+            result[key] = values[i]
+        if i < len(raw):
+            result[f"{key}_raw"] = raw[i]
+        if i < len(units) and units[i]:
+            result.units[key] = units[i]
+    if result.get("sensor"):
+        result["packet_type"] = result["sensor"]
+
+
 def _convert_value(key_name, value):
     """Unwrap epoch tags and give a few fields a friendlier representation."""
     if isinstance(value, CBORTag) and value.tag == CBOR_TAG_EPOCH:
@@ -124,10 +173,15 @@ def decode_packet(item):
     if not isinstance(item.value, dict):
         return None
 
-    result = {"packet_type": PACKET_TAGS[item.tag]}
+    result = Packet(packet_type=PACKET_TAGS[item.tag])
     for key, value in item.value.items():
         name = KEYS.get(key, f"key_{key}")
         result[name] = _convert_value(name, value)
+
+    if item.tag == 50009:
+        _flatten_adcseq(result)
+    elif item.tag == 50010 and result.get("sensor"):
+        result["packet_type"] = f"{result['sensor']}_cfg"
 
     # Convenience: ISO time strings for the epoch timestamps
     for tkey in ("rtc_time", "gps_time"):
