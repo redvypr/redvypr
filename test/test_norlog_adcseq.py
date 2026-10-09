@@ -89,3 +89,9 @@ def test_other_packets_unchanged():
     pkt = norlog_cbor.decode_bytes(_packet(50008, [(0, _int(1)), (80, b"\xfb" + struct.pack(">d", 90.0))]))
     assert pkt["packet_type"] == "wind" and pkt["wind_dir"] == 90.0
     assert norlog_cbor.units_of(pkt)["wind_dir"] == "deg"
+
+
+if __name__ == "__main__":
+    import sys
+    import pytest
+    sys.exit(pytest.main(["-v", __file__]))
