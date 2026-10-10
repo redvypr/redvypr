@@ -73,6 +73,8 @@ KEYS = {
     95: "seq_err",          # bit i: step i failed
     96: "seq_ovr",          # bit i: step i overranged
     97: "cfg",              # configuration as text
+    98: "seq_cal",          # [calibrated values, NaN without calibration] (firmware >= 0.4.16)
+    99: "seq_cal_units",    # [their units, "" without calibration]
 }
 
 # Units of the values (metadata of the converted data)
@@ -128,13 +130,16 @@ _RESERVED = set(KEYS.values()) | {"packet_type", "source", "t", "rtc_time_iso", 
 
 def _flatten_adcseq(result):
     """
-    ADC sequence: one field per step named like the step (value) plus <name>_raw;
+    ADC sequence: one field per step named like the step (value) plus <name>_raw and,
+    with a calibration on the device, <name>_cal;
     the packet type is the sensor name (e.g. 'adc_brd'), so several ADCs stay apart.
     """
     names = result.pop("seq_names", None) or []
     raw = result.pop("seq_raw", None) or []
     values = result.pop("seq_values", None) or []
     units = result.pop("seq_units", None) or []
+    cal = result.pop("seq_cal", None) or []
+    cal_units = result.pop("seq_cal_units", None) or []
     result.units = {}
     for i, name in enumerate(names):
         key = name if name not in _RESERVED else f"ch_{name}"
@@ -144,6 +149,10 @@ def _flatten_adcseq(result):
             result[f"{key}_raw"] = raw[i]
         if i < len(units) and units[i]:
             result.units[key] = units[i]
+        # calibrated value (polynomial on the device) as <name>_cal in its own unit
+        if i < len(cal) and i < len(cal_units) and cal_units[i]:
+            result[f"{key}_cal"] = cal[i]
+            result.units[f"{key}_cal"] = cal_units[i]
     if result.get("sensor"):
         result["packet_type"] = result["sensor"]
 

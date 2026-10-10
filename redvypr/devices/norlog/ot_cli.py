@@ -690,6 +690,24 @@ def cal_set(cli: OtCli, name: str, text: str, address=None, timeout: float = 10.
     coap_request(cli, "post", address, f"cal?n={name}", text.encode(), timeout=timeout, b64=True)
 
 
+def cal_get_one(cli: OtCli, name: str, address=None, timeout: float = 10.0) -> dict:
+    """One calibration (polynomial '<sensor>.<channel>', firmware >= 0.4.16): {'name','c','unit','id','date'}."""
+    import json
+    if address is None:
+        return _shell_json(cli, f"norlog cal get {name}", CAL_PREFIX, min_fw="0.4.16")
+    return json.loads(coap_request(cli, "get", address, f"cal?n={name}", timeout=timeout).decode())
+
+
+def adc_calibrations(cli: OtCli, sensor: str, address=None, timeout: float = 10.0) -> dict:
+    """Polynomial calibrations of the channels of a sensor: {channel: {...}} (empty before firmware 0.4.16)."""
+    names = cal_get(cli, address, timeout=timeout).get("poly", [])
+    result = {}
+    for name in names:
+        if name.startswith(sensor + "."):
+            result[name[len(sensor) + 1:]] = cal_get_one(cli, name, address, timeout=timeout)
+    return result
+
+
 ADC_PREFIX = "#NLA "
 
 

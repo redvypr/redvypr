@@ -86,6 +86,7 @@ from . import norlog_archive
 from . import norlog_cbor
 from . import norlog_convert
 from . import ot_cli
+from . import poly_calibration
 from . import smp_serial
 from .cbor_mini import CBORDecodeError
 
@@ -386,9 +387,9 @@ class _Gateway:
                 self.cal_get(args.get('target') or 'gateway')
             elif command == 'cal_set':
                 self.cal_set(args.get('target') or 'gateway', args.get('name', 'mag'), args.get('text', ''))
-            elif command in ('adc_get', 'adc_set', 'adc_read'):
+            elif command in ('adc_get', 'adc_set', 'adc_read', 'adc_cal_set'):
                 self.adc_command(args.get('target') or 'gateway', command[4:], args.get('sensor', 'adc_brd'),
-                                 args.get('text', ''))
+                                 args.get('text', ''), args.get('channel', ''))
             elif command == 'props_read':
                 self.props_command(args.get('target', 'gateway'), {})
             elif command == 'props_set':
@@ -862,8 +863,12 @@ class _Gateway:
 
     # --- ADC measurement sequence (firmware >= 0.4.15) ---
 
-    def adc_command(self, target, op, sensor, text=''):
-        """op 'get': read the sequence, 'set': write the text, 'read': measure once. Answer 'adc_result'."""
+    def adc_command(self, target, op, sensor, text='', channel=''):
+        """
+        op 'get': read the sequence and the calibrations of its channels, 'set': write the text,
+        'read': measure once, 'cal_set': set (text) or delete (empty) the calibration of a channel.
+        Answer 'adc_result' (with 'cals' {channel: {...}} for 'get' and 'cal_set').
+        """
         result = {'target': target, 'sensor': sensor, 'op': op, 'ok': False}
         try:
             address = self.target_address(target)
@@ -875,8 +880,17 @@ class _Gateway:
             elif op == 'read':
                 st = ot_cli.adc_measure(self.cli, sensor, address, timeout=timeout)
                 result['message'] = f"{sensor}: measured"
+            elif op == 'cal_set':
+                ot_cli.cal_set(self.cli, f"{sensor}.{channel}", text, address, timeout=timeout)
+                st = ot_cli.adc_get(self.cli, sensor, address, timeout=timeout)
+                result['message'] = f"{sensor}.{channel}: calibration {'stored' if text else 'deleted'}"
             else:
                 st = ot_cli.adc_get(self.cli, sensor, address, timeout=timeout)
+            if op in ('get', 'cal_set'):
+                try:
+                    result['cals'] = ot_cli.adc_calibrations(self.cli, sensor, address, timeout=timeout)
+                except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+                    result['cal_message'] = f"calibrations not readable: {exc}"
             result.update(ok=True, adc=st)
         except (ot_cli.OtError, TimeoutError, ValueError) as exc:
             result['message'] = str(exc)
@@ -2149,6 +2163,193 @@ class ConvertWorker(QtCore.QThread):
         self.finished_result.emit(res, '')
 
 
+class AdcCalibrationDialog(QtWidgets.QDialog):
+    """
+    Polynomial calibration of one channel of the ADC sequence (stored and applied on the
+    device, firmware >= 0.4.16): y = c0 + c1*x + ... + c5*x^5 with x = value of the step.
+    The coefficients are entered directly, set from a sensitivity (linear sensors, e.g.
+    heat flux sensors) or fitted to reference points.
+    """
+
+    SCALES = {'V': 1.0, 'mV': 1e-3, 'µV': 1e-6}
+
+    def __init__(self, parent, name, x_unit, cal=None, x_value=None):
+        super().__init__(parent)
+        self.setWindowTitle(f'Calibration {name}')
+        self.name = name
+        self.x_unit = x_unit
+        self.x_value = x_value
+        self.calibration = None
+        self.delete_requested = False
+        lay = QtWidgets.QVBoxLayout(self)
+        xu = {'degC': '°C', '1': 'U_in/U_ref'}.get(x_unit, x_unit)
+        head = QtWidgets.QLabel(f'<b>{name}</b>: y = c0 + c1·x + ... + c5·x⁵, x = value of the step [{xu}]'
+                                + (f', last measured x = {x_value:.7g}' if x_value is not None else ''))
+        head.setWordWrap(True)
+        lay.addWidget(head)
+
+        form = QtWidgets.QGridLayout()
+        self.unit = QtWidgets.QLineEdit(cal.unit if cal else '')
+        self.unit.setPlaceholderText('e.g. W/m2, degC, Pa')
+        self.unit.setMaxLength(poly_calibration.UNIT_MAX)
+        self.ident = QtWidgets.QLineEdit(cal.id if cal else '')
+        self.ident.setPlaceholderText('optional, e.g. serial number of the sensor')
+        self.ident.setMaxLength(poly_calibration.ID_MAX)
+        form.addWidget(QtWidgets.QLabel('Unit of y'), 0, 0)
+        form.addWidget(self.unit, 0, 1)
+        form.addWidget(QtWidgets.QLabel('Id'), 0, 2)
+        form.addWidget(self.ident, 0, 3)
+        self.coeffs = []
+        for i in range(poly_calibration.ORDER_MAX + 1):
+            edit = QtWidgets.QLineEdit()
+            edit.setPlaceholderText('0' if i < 2 else '')
+            if cal and i < len(cal.coeffs):
+                edit.setText(f'{cal.coeffs[i]:.12g}')
+            edit.textChanged.connect(self.update_preview)
+            self.coeffs.append(edit)
+            form.addWidget(QtWidgets.QLabel(f'c{i}'), 1 + i // 2, 2 * (i % 2))
+            form.addWidget(edit, 1 + i // 2, 2 * (i % 2) + 1)
+        lay.addLayout(form)
+
+        box = QtWidgets.QGroupBox('Linear from the sensitivity of the sensor')
+        row = QtWidgets.QHBoxLayout(box)
+        self.sens = QtWidgets.QLineEdit()
+        self.sens.setPlaceholderText('e.g. 62.5')
+        self.sens_scale = QtWidgets.QComboBox()
+        self.sens_scale.addItems(list(self.SCALES) if x_unit == 'V' else [xu])
+        if x_unit == 'V':
+            self.sens_scale.setCurrentText('µV')     # typical for thermopiles / heat flux sensors
+        sens_btn = QtWidgets.QPushButton('Set c0, c1')
+        sens_btn.clicked.connect(self.set_from_sensitivity)
+        row.addWidget(QtWidgets.QLabel('Sensitivity'))
+        row.addWidget(self.sens)
+        row.addWidget(self.sens_scale)
+        row.addWidget(QtWidgets.QLabel('per unit of y'))
+        row.addWidget(sens_btn)
+        lay.addWidget(box)
+
+        box = QtWidgets.QGroupBox('Fit to reference points')
+        grid = QtWidgets.QGridLayout(box)
+        self.points = QtWidgets.QTableWidget(0, 2)
+        self.points.setHorizontalHeaderLabels([f'x [{xu}]', 'y (reference)'])
+        self.points.horizontalHeader().setStretchLastSection(True)
+        self.points.setMinimumHeight(120)
+        add_btn = QtWidgets.QPushButton('Add point')
+        add_btn.clicked.connect(lambda: self.add_point(''))
+        cur_btn = QtWidgets.QPushButton('Add last measured x')
+        cur_btn.setEnabled(x_value is not None)
+        cur_btn.setToolTip('"Measure once" in the ADC tab updates the value')
+        cur_btn.clicked.connect(lambda: self.add_point(f'{x_value:.9g}' if x_value is not None else ''))
+        del_btn = QtWidgets.QPushButton('Remove')
+        del_btn.clicked.connect(lambda: [self.points.removeRow(r) for r in
+                                         sorted({i.row() for i in self.points.selectedIndexes()}, reverse=True)])
+        self.order = QtWidgets.QSpinBox()
+        self.order.setRange(1, poly_calibration.ORDER_MAX)
+        fit_btn = QtWidgets.QPushButton('Fit')
+        fit_btn.clicked.connect(self.do_fit)
+        grid.addWidget(self.points, 0, 0, 1, 6)
+        grid.addWidget(add_btn, 1, 0)
+        grid.addWidget(cur_btn, 1, 1)
+        grid.addWidget(del_btn, 1, 2)
+        grid.addWidget(QtWidgets.QLabel('Order'), 1, 3)
+        grid.addWidget(self.order, 1, 4)
+        grid.addWidget(fit_btn, 1, 5)
+        lay.addWidget(box)
+
+        self.preview = QtWidgets.QLabel('')
+        self.preview.setWordWrap(True)
+        self.preview.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        lay.addWidget(self.preview)
+        buttons = QtWidgets.QDialogButtonBox()
+        apply_btn = buttons.addButton('Apply to device', QtWidgets.QDialogButtonBox.ButtonRole.AcceptRole)
+        apply_btn.clicked.connect(self.apply)
+        if cal is not None:
+            delete_btn = buttons.addButton('Delete on device', QtWidgets.QDialogButtonBox.ButtonRole.DestructiveRole)
+            delete_btn.clicked.connect(self.delete)
+        buttons.addButton(QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        buttons.rejected.connect(self.reject)
+        lay.addWidget(buttons)
+        self.update_preview()
+
+    def add_point(self, x_text):
+        r = self.points.rowCount()
+        self.points.insertRow(r)
+        self.points.setItem(r, 0, QtWidgets.QTableWidgetItem(x_text))
+        self.points.setItem(r, 1, QtWidgets.QTableWidgetItem(''))
+        self.points.setCurrentCell(r, 1)
+        self.points.editItem(self.points.item(r, 1))
+
+    def _set_coeffs(self, coeffs):
+        for i, edit in enumerate(self.coeffs):
+            edit.setText(f'{coeffs[i]:.12g}' if i < len(coeffs) else '')
+
+    def _error(self, text):
+        self.preview.setStyleSheet('color: #d64545;')
+        self.preview.setText(text)
+
+    def set_from_sensitivity(self):
+        try:
+            s = float(self.sens.text().replace(',', '.')) * self.SCALES.get(self.sens_scale.currentText(), 1.0)
+            cal = poly_calibration.linear_from_sensitivity(s, self.unit.text() or '?')
+        except (ValueError, poly_calibration.CalibrationError) as exc:
+            self._error(f'sensitivity: {exc}')
+            return
+        self._set_coeffs(cal.coeffs)
+
+    def do_fit(self):
+        pts = []
+        try:
+            for r in range(self.points.rowCount()):
+                x, y = (self.points.item(r, c).text().strip().replace(',', '.') if self.points.item(r, c) else ''
+                        for c in (0, 1))
+                if x or y:
+                    pts.append((float(x), float(y)))
+            cal, rms = poly_calibration.fit(pts, self.order.value(), self.unit.text() or '?')
+        except (ValueError, poly_calibration.CalibrationError) as exc:
+            self._error(f'fit: {exc}')
+            return
+        self._set_coeffs(cal.coeffs)
+        self.preview.setText(self.preview.text() + f'; fit: {len(pts)} points, rms residual {rms:.4g}')
+
+    def current(self):
+        """PolyCalibration of the fields (coefficients up to the last one filled in)."""
+        texts = [e.text().strip().replace(',', '.') for e in self.coeffs]
+        n = max([i + 1 for i, t in enumerate(texts) if t] + [2])
+        coeffs = [float(t) if t else 0.0 for t in texts[:n]]
+        cal = poly_calibration.PolyCalibration(coeffs=coeffs, unit=self.unit.text().strip(),
+                                               id=self.ident.text().strip(), date=int(time.time()), name=self.name)
+        cal.check()
+        return cal
+
+    def update_preview(self):
+        try:
+            cal = self.current()
+        except (ValueError, poly_calibration.CalibrationError) as exc:
+            self._error(str(exc))
+            return
+        self.preview.setStyleSheet('')
+        text = cal.summary()
+        if self.x_value is not None:
+            text += f';  last x = {self.x_value:.7g} → y = {cal.apply(self.x_value):.7g} {cal.unit}'
+        self.preview.setText(text)
+
+    def apply(self):
+        try:
+            self.calibration = self.current()
+            self.calibration.to_text()
+        except (ValueError, poly_calibration.CalibrationError) as exc:
+            self._error(str(exc))
+            return
+        self.accept()
+
+    def delete(self):
+        if QtWidgets.QMessageBox.question(self, 'Delete calibration',
+                                          f'Delete the calibration {self.name} on the device?') \
+                == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.delete_requested = True
+            self.accept()
+
+
 class DeviceSettingsDialog(QtWidgets.QDialog):
     """
     Settings of one norlog of the device table: general info and firmware
@@ -2653,12 +2854,16 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
 
     # --- firmware ---
 
-    # --- ADC measurement sequence (firmware >= 0.4.15) ---
+    # --- ADC measurement sequence (firmware >= 0.4.15; bias and calibrations >= 0.4.16) ---
 
-    ADC_COLS = ['Name', 'p', 'n', 'Gain', 'Ref', 'IDAC µA', 'IDAC1', 'IDAC2', 'Delay ms', 'Value', 'Raw']
+    ADC_COLS = ['Name', 'p', 'n', 'Gain', 'Ref', 'IDAC µA', 'IDAC1', 'IDAC2', 'Delay ms', 'Bias', 'Value',
+                'Calibrated', 'Raw']
+    COL_DELAY, COL_BIAS, COL_VALUE, COL_CAL, COL_RAW = 8, 9, 10, 11, 12
     ADC_HINTS = {
         'adc_brd': 'norlog rev02: COM (AINCOM) is GND - measure voltages near 0 V with gain "off" (the PGA needs '
-                   'headroom to the supply rails). REF0 is not usable (REFP0 open); an external reference goes to '
+                   'headroom to the supply rails). Floating sensors with small voltages (thermopiles, heat flux '
+                   'sensors): differential between two inputs, bias (AVDD/2) on the negative one, high gain. Bias '
+                   'is possible at AIN0-5. REF0 is not usable (REFP0 open); an external reference goes to '
                    'REF1 = AIN6 (+) / AIN7 (-). J15 pins 3-12 = AIN0-9, J17 pins 3-14 = AIN0-11, J17 pin 16 = '
                    'REFOUT (2.5 V while the internal reference is used), pin 1 = GND.',
         'adc_hfm': 'hfmeter module at J1: the NTC is connected to AIN5 (IDAC 50 µA, measured separately as ntc '
@@ -2669,6 +2874,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
         self.adc_state = {}             # sensor -> last answer of the device (adc_get)
+        self.adc_cals = {}              # sensor -> {channel: PolyCalibration} on the device
         self.adc_busy = False
         self.adc_loading = False
 
@@ -2700,8 +2906,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.adc_interval.setDecimals(1)
         self.adc_interval.setValue(10.0)
         self.adc_interval.setSuffix(' s')
-        for wdg in (self.adc_on,):
-            wdg.toggled.connect(self.adc_changed)
+        self.adc_on.toggled.connect(self.adc_changed)
         for wdg in (self.adc_sps, self.adc_filter):
             wdg.currentTextChanged.connect(self.adc_changed)
         self.adc_interval.valueChanged.connect(self.adc_changed)
@@ -2721,13 +2926,19 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.adc_table.setMinimumHeight(220)
         self.adc_table.horizontalHeader().setStretchLastSection(True)
         self.adc_table.itemChanged.connect(lambda _item: self.adc_changed())
+        self.adc_table.cellDoubleClicked.connect(
+            lambda r, c: self.adc_calibrate(r) if c == self.COL_CAL else None)
         tips = ['Channel name: 1-11 characters a-z A-Z 0-9 _, field name in the data',
                 'Positive input: AIN0-11, COM or internal: TEMP (chip temperature), AVDD, DVDD (supply), '
                 'OFS (inputs shorted)', 'Negative input: AIN0-11 or COM',
                 'PGA gain; off = PGA bypassed (inputs may go down to GND)',
                 'Reference: INT 2.5 V (value in V) or external REF0/REF1 (value = U_in / U_ref)',
                 'Current of the excitation current sources', 'Output of IDAC1', 'Output of IDAC2',
-                'Wait after switching (e.g. settling of the IDAC current)', 'Last measured value', 'Raw value (24 bit)']
+                'Wait after switching (e.g. settling of the IDAC current or the bias)',
+                'Input that gets the bias voltage AVDD/2 (AIN0-5, firmware >= 0.4.16): common mode for floating '
+                'sensors measured with the PGA', 'Last measured value',
+                'Calibrated value (polynomial on the device, firmware >= 0.4.16); double click or "Calibration ..."',
+                'Raw value (24 bit)']
         for i, tip in enumerate(tips):
             self.adc_table.horizontalHeaderItem(i).setToolTip(tip)
         grid.addWidget(self.adc_table, 1, 0, 1, 9)
@@ -2760,6 +2971,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
 
         row = QtWidgets.QHBoxLayout()
         read_btn = QtWidgets.QPushButton('Read from device')
+        read_btn.setToolTip('Read the sequence and the calibrations of its channels')
         read_btn.clicked.connect(lambda: self.adc_command('get'))
         write_btn = QtWidgets.QPushButton('Write to device')
         write_btn.setToolTip('Store the sequence on the device (settings); every change increases the '
@@ -2768,7 +2980,11 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         measure_btn = QtWidgets.QPushButton('Measure once')
         measure_btn.setToolTip('Run the sequence stored on the device once and show the values (not stored)')
         measure_btn.clicked.connect(lambda: self.adc_command('read'))
-        for b_ in (read_btn, write_btn, measure_btn):
+        cal_btn = QtWidgets.QPushButton('Calibration ...')
+        cal_btn.setToolTip('Polynomial calibration of the selected channel, stored and applied on the device '
+                           '(firmware >= 0.4.16)')
+        cal_btn.clicked.connect(lambda: self.adc_calibrate(self.adc_table.currentRow()))
+        for b_ in (read_btn, write_btn, measure_btn, cal_btn):
             row.addWidget(b_)
         row.addStretch(1)
         lay.addLayout(row)
@@ -2781,11 +2997,11 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.adc_hint.setStyleSheet('color: gray;')
         lay.addWidget(self.adc_hint)
         lay.addStretch(1)
-        self.adc_run_widgets = [read_btn, write_btn, measure_btn]
+        self.adc_run_widgets = [read_btn, write_btn, measure_btn, cal_btn]
         self.adc_sensor_changed(self.adc_sensor.currentText())
         return w
 
-    def _adc_combo(self, items, value, col):
+    def _adc_combo(self, items, value):
         cb = QtWidgets.QComboBox()
         cb.addItems(items)
         if value in items:
@@ -2793,22 +3009,23 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         cb.currentTextChanged.connect(lambda _t: self.adc_changed())
         return cb
 
-    def _adc_set_row(self, r, st, value='', raw=''):
+    def _adc_set_row(self, r, st, value='', cal='', raw=''):
         t = self.adc_table
         t.setItem(r, 0, QtWidgets.QTableWidgetItem(st.name))
-        t.setCellWidget(r, 1, self._adc_combo(adc_sequence.P_INPUTS, st.p, 1))
-        t.setCellWidget(r, 2, self._adc_combo(adc_sequence.INPUTS, st.n if st.n != '-' else 'COM', 2))
-        t.setCellWidget(r, 3, self._adc_combo(adc_sequence.GAINS, st.gain, 3))
-        t.setCellWidget(r, 4, self._adc_combo(adc_sequence.REFS, st.ref, 4))
-        t.setCellWidget(r, 5, self._adc_combo([str(v) for v in adc_sequence.IDAC_UA], str(st.idac_ua), 5))
-        t.setCellWidget(r, 6, self._adc_combo(adc_sequence.IDAC_PINS, st.i1, 6))
-        t.setCellWidget(r, 7, self._adc_combo(adc_sequence.IDAC_PINS, st.i2, 7))
+        t.setCellWidget(r, 1, self._adc_combo(adc_sequence.P_INPUTS, st.p))
+        t.setCellWidget(r, 2, self._adc_combo(adc_sequence.INPUTS, st.n if st.n != '-' else 'COM'))
+        t.setCellWidget(r, 3, self._adc_combo(adc_sequence.GAINS, st.gain))
+        t.setCellWidget(r, 4, self._adc_combo(adc_sequence.REFS, st.ref))
+        t.setCellWidget(r, 5, self._adc_combo([str(v) for v in adc_sequence.IDAC_UA], str(st.idac_ua)))
+        t.setCellWidget(r, 6, self._adc_combo(adc_sequence.IDAC_PINS, st.i1))
+        t.setCellWidget(r, 7, self._adc_combo(adc_sequence.IDAC_PINS, st.i2))
         delay = QtWidgets.QSpinBox()
         delay.setRange(0, 2000)
         delay.setValue(st.delay_ms)
         delay.valueChanged.connect(lambda _v: self.adc_changed())
-        t.setCellWidget(r, 8, delay)
-        for col, text in ((9, value), (10, raw)):
+        t.setCellWidget(r, self.COL_DELAY, delay)
+        t.setCellWidget(r, self.COL_BIAS, self._adc_combo(adc_sequence.BIAS_PINS, st.bias))
+        for col, text in ((self.COL_VALUE, value), (self.COL_CAL, cal), (self.COL_RAW, raw)):
             item = QtWidgets.QTableWidgetItem(text)
             item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
             t.setItem(r, col, item)
@@ -2824,9 +3041,11 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         st.idac_ua = int(t.cellWidget(r, 5).currentText())
         st.i1 = t.cellWidget(r, 6).currentText()
         st.i2 = t.cellWidget(r, 7).currentText()
-        st.delay_ms = t.cellWidget(r, 8).value()
+        st.delay_ms = t.cellWidget(r, self.COL_DELAY).value()
+        st.bias = t.cellWidget(r, self.COL_BIAS).currentText()
         if st.internal:
             st.n = '-'
+            st.bias = '-'
         return st
 
     def adc_sequence_from_gui(self):
@@ -2836,7 +3055,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
                                         steps=[self._adc_row_step(r) for r in range(self.adc_table.rowCount())])
 
     def adc_show_sequence(self, seq, values=None):
-        """Fill the table; values: {name: (value text, raw text)}."""
+        """Fill the table; values: {name: (value text, calibrated text, raw text)}."""
         values = values or {}
         self.adc_loading = True
         try:
@@ -2846,11 +3065,30 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             self.adc_interval.setValue(seq.interval_ms / 1000.0)
             self.adc_table.setRowCount(len(seq.steps))
             for r, st in enumerate(seq.steps):
-                self._adc_set_row(r, st, *values.get(st.name, ('', '')))
+                self._adc_set_row(r, st, *values.get(st.name, ('', '', '')))
+            self.adc_show_calibrations()
             self.adc_table.resizeColumnsToContents()
         finally:
             self.adc_loading = False
         self.adc_changed()
+
+    def adc_show_calibrations(self):
+        """Tooltips of the 'Calibrated' cells, unit for channels with a calibration but no value yet."""
+        cals = self.adc_cals.get(self.adc_sensor.currentText(), {})
+        loading, self.adc_loading = self.adc_loading, True
+        for r in range(self.adc_table.rowCount()):
+            name = self.adc_table.item(r, 0).text() if self.adc_table.item(r, 0) else ''
+            item = self.adc_table.item(r, self.COL_CAL)
+            if item is None:
+                continue
+            cal = cals.get(name)
+            item.setToolTip(cal.summary() + (f' ({cal.id})' if cal.id else '') if cal
+                            else 'no calibration (double click to add one)')
+            if cal and not item.text():
+                item.setText(f'[{cal.unit}]')
+            elif not cal and item.text().startswith('['):
+                item.setText('')
+        self.adc_loading = loading
 
     def adc_changed(self, *_args):
         if self.adc_loading:
@@ -2861,7 +3099,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
                 continue
             internal = t.cellWidget(r, 1).currentText() in adc_sequence.INTERNAL
             idac = t.cellWidget(r, 5).currentText() != '0'
-            for col in range(2, 9):
+            for col in range(2, self.COL_BIAS + 1):
                 t.cellWidget(r, col).setEnabled(not internal and (col not in (6, 7) or idac))
         seq = self.adc_sequence_from_gui()
         text = seq.to_text()
@@ -2918,8 +3156,10 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
 
     def _adc_table_values(self):
         t = self.adc_table
-        return {self._adc_row_step(r).name: ((t.item(r, 9).text() if t.item(r, 9) else ''),
-                                             (t.item(r, 10).text() if t.item(r, 10) else ''))
+
+        def text(r, c):
+            return t.item(r, c).text() if t.item(r, c) else ''
+        return {self._adc_row_step(r).name: (text(r, self.COL_VALUE), text(r, self.COL_CAL), text(r, self.COL_RAW))
                 for r in range(t.rowCount())}
 
     def adc_use_text(self):
@@ -2941,13 +3181,14 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             self.adc_show_sequence(adc_sequence.AdcSequence())
             self.adc_status.setText('')
 
-    def adc_command(self, op, text=''):
+    def adc_command(self, op, text='', channel=''):
         self.adc_busy = True
         self.update_run_state(self.running)
         self.adc_status.setStyleSheet('')
-        self.adc_status.setText({'get': 'reading ...', 'set': 'writing ...', 'read': 'measuring ...'}[op])
+        self.adc_status.setText({'get': 'reading ...', 'set': 'writing ...', 'read': 'measuring ...',
+                                 'cal_set': 'storing the calibration ...'}[op])
         self.device.thread_command(f'adc_{op}', {'target': self.key, 'sensor': self.adc_sensor.currentText(),
-                                                 'text': text})
+                                                 'text': text, 'channel': channel})
 
     def adc_write(self):
         seq = self.adc_sequence_from_gui()
@@ -2963,8 +3204,40 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             return
         self.adc_command('set', text)
 
+    def _adc_last_value(self, name):
+        """(value, unit) of the last measurement of a channel on the device, or (None, unit)."""
+        st = self.adc_state.get(self.adc_sensor.currentText()) or {}
+        try:
+            seq = adc_sequence.parse(st.get('cfg', ''))
+        except adc_sequence.SequenceError:
+            return None, ''
+        last = st.get('last') or {}
+        for i, step in enumerate(seq.steps):
+            if step.name == name:
+                vals = last.get('val') or []
+                ok = last.get('cfg_id') == st.get('cfg_id') and i < len(vals) and not last.get('err', 0) & (1 << i)
+                return (vals[i] if ok else None), step.unit()
+        return None, ''
+
+    def adc_calibrate(self, row):
+        if not 0 <= row < self.adc_table.rowCount():
+            self.adc_status.setStyleSheet('color: #d64545;')
+            self.adc_status.setText('select a channel (row) first')
+            return
+        step = self._adc_row_step(row)
+        sensor = self.adc_sensor.currentText()
+        x, x_unit = self._adc_last_value(step.name)
+        dlg = AdcCalibrationDialog(self, poly_calibration.cal_name(sensor, step.name), x_unit or step.unit(),
+                                   self.adc_cals.get(sensor, {}).get(step.name), x)
+        if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+        if dlg.delete_requested:
+            self.adc_command('cal_set', '', step.name)
+        else:
+            self.adc_command('cal_set', dlg.calibration.to_text(), step.name)
+
     @staticmethod
-    def _adc_fmt_value(value, unit, err, ovr):
+    def _adc_fmt_value(value, unit, err=False, ovr=False):
         if err:
             return 'error'
         if value is None:
@@ -2986,13 +3259,18 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             return
         values = {}
         last = st.get('last') or {}
+        cals = self.adc_cals.get(st.get('sensor', self.adc_sensor.currentText()), {})
         if last and last.get('cfg_id') == st.get('cfg_id'):
-            vals, raws = last.get('val') or [], last.get('raw') or []
+            vals, raws, cvals = last.get('val') or [], last.get('raw') or [], last.get('cal') or []
             for i, step in enumerate(seq.steps):
                 if i < len(vals):
                     err = bool(last.get('err', 0) & (1 << i))
                     ovr = bool(last.get('ovr', 0) & (1 << i))
+                    cal = cals.get(step.name)
+                    cval = cvals[i] if i < len(cvals) else None
                     values[step.name] = (self._adc_fmt_value(vals[i], step.unit(), err, ovr),
+                                         self._adc_fmt_value(cval, cal.unit, err)
+                                         if cval is not None and cal is not None else '',
                                          str(raws[i]) if i < len(raws) and not err else '')
         if table:
             self.adc_show_sequence(seq, values)
@@ -3000,15 +3278,17 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             self.adc_loading = True
             for r in range(self.adc_table.rowCount()):
                 item = self.adc_table.item(r, 0)
-                value, raw = values.get(item.text() if item else '', ('', ''))
-                self.adc_table.item(r, 9).setText(value)
-                self.adc_table.item(r, 10).setText(raw)
+                for col, text in zip((self.COL_VALUE, self.COL_CAL, self.COL_RAW),
+                                     values.get(item.text() if item else '', ('', '', ''))):
+                    self.adc_table.item(r, col).setText(text)
+            self.adc_show_calibrations()
             self.adc_loading = False
             self.adc_changed()
         age = f", last run {last.get('age_ms', 0) / 1000:.0f} s ago" if last else ''
+        ncal = len(cals)
         self.adc_info.setText(f"{'found' if st.get('present') else 'NOT FOUND'}, sequence "
                               f"{'on' if st.get('on') else 'off'}, configuration {st.get('cfg_id')}, "
-                              f"{st.get('runs', 0)} runs{age}")
+                              f"{st.get('runs', 0)} runs{age}" + (f", {ncal} calibrated" if ncal else ''))
 
     def adc_unsaved(self):
         """True if the table differs from the configuration last read from the device."""
@@ -3028,18 +3308,25 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
                 self.adc_status.setStyleSheet('color: #d64545;')
                 self.adc_status.setText(data.get('message', 'error'))
             return
-        current = data['sensor'] == self.adc_sensor.currentText()
-        keep_table = current and data.get('op') == 'read' and self.adc_unsaved()
-        self.adc_state[data['sensor']] = data['adc']
+        sensor = data['sensor']
+        current = sensor == self.adc_sensor.currentText()
+        keep_table = current and data.get('op') in ('read', 'cal_set') and self.adc_unsaved()
+        if 'cals' in data:
+            self.adc_cals[sensor] = {ch: poly_calibration.PolyCalibration.from_device(d)
+                                     for ch, d in (data.get('cals') or {}).items()}
+        self.adc_state[sensor] = data['adc']
         if current:
             self.adc_show_device(data['adc'], table=not keep_table)
+            message = data.get('message', '')
+            if data.get('cal_message'):
+                message = (message + '; ' if message else '') + data['cal_message']
             if keep_table:
                 self.adc_status.setStyleSheet('color: #c08000;')
-                self.adc_status.setText('measured with the sequence on the device; the changes in the table are '
-                                        'not yet written')
-            elif data.get('message'):
+                self.adc_status.setText((message + ' - ' if message else '') +
+                                        'the changes in the table are not yet written')
+            elif message:
                 self.adc_status.setStyleSheet('')
-                self.adc_status.setText(data['message'])
+                self.adc_status.setText(message)
 
     # --- magnetometer: measurement and calibration (firmware >= 0.4.12) ---
 

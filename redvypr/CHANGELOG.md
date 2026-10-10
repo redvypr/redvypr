@@ -49,6 +49,10 @@ redvypr changelog
   filter, interval, on/off; read, write (checked before), measure once; configuration text; hints on the inputs
   of the norlog rev02; `devices/norlog/adc_sequence.py` (parser/writer of the configuration text),
   `ot_cli.adc_get/adc_set/adc_measure`
+- norlog gateway, tab "ADC" (firmware >= 0.4.16): column "Bias" (VBIAS at AIN0-5 for floating sensors) and
+  "Calibrated"; dialog "Calibration ..." for the polynomial calibration of a channel on the device (coefficients,
+  linear from a sensitivity, fit to reference points, delete); `devices/norlog/poly_calibration.py`,
+  `ot_cli.cal_get_one/adc_calibrations`; calibrated values of ADC sequences decoded as `<name>_cal` with unit
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)

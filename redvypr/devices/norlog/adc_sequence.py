@@ -5,7 +5,7 @@ The configuration is one line of text, the same for the shell, CoAP and the
 configuration packets:
 
     on=1,sps=20,filter=sinc3,interval=10000;<step>;<step>;...
-    <step> = name,p,n[,gain[,ref[,idac_ua[,i1[,i2[,delay_ms]]]]]]
+    <step> = name,p,n[,gain[,ref[,idac_ua[,i1[,i2[,delay_ms[,bias]]]]]]]   (bias: firmware >= 0.4.16)
 
 parse() and AdcSequence.to_text() follow the firmware (same checks, same
 canonical text), so a sequence can be checked before it is sent.
@@ -33,6 +33,7 @@ INPUTS = [str(i) for i in range(12)] + ["COM"]
 INTERNAL = ["TEMP", "AVDD", "DVDD", "OFS"]
 P_INPUTS = INPUTS + INTERNAL
 IDAC_PINS = ["-"] + INPUTS
+BIAS_PINS = ["-"] + [str(i) for i in range(6)]     # VBIAS (AVDD/2) only at AIN0..AIN5
 
 
 class SequenceError(ValueError):
@@ -50,6 +51,7 @@ class AdcStep:
     i1: str = "-"
     i2: str = "-"
     delay_ms: int = 0
+    bias: str = "-"         # input that gets VBIAS = AVDD/2 (common mode of floating sensors with PGA)
 
     @property
     def internal(self):
@@ -75,8 +77,10 @@ class AdcStep:
             last = 5
         if self.delay_ms:
             last = 6
+        if self.bias != "-":
+            last = 7
         # up to the last field that differs from its default; idac_ua, i1 and i2 belong together
-        extra = [self.gain, self.ref, str(self.idac_ua), self.i1, self.i2, str(self.delay_ms)]
+        extra = [self.gain, self.ref, str(self.idac_ua), self.i1, self.i2, str(self.delay_ms), self.bias]
         return ",".join(fields + extra[:last])
 
 
@@ -122,9 +126,9 @@ def _pin(text, internal_ok=False, none_ok=False):
 
 
 def _parse_step(seg, idx):
-    f = seg.split(",", 8)
+    f = seg.split(",", 9)
     if len(f) < 2:
-        raise SequenceError(f"step {idx + 1}: name,p,n[,gain,ref,idac_ua,i1,i2,delay_ms]")
+        raise SequenceError(f"step {idx + 1}: name,p,n[,gain,ref,idac_ua,i1,i2,delay_ms,bias]")
     name = f[0]
     if not 1 <= len(name) <= NAME_MAX:
         raise SequenceError(f"step {idx + 1}: name 1-{NAME_MAX} characters")
@@ -189,6 +193,14 @@ def _parse_step(seg, idx):
         if not 0 <= d <= 2000:
             raise SequenceError(f"{name}: delay_ms = 0..2000")
         st.delay_ms = d
+    if len(f) > 9 and f[9] and f[9] != "-":
+        try:
+            pin = _pin(f[9])
+        except ValueError:
+            pin = "COM"
+        if pin not in BIAS_PINS:
+            raise SequenceError(f"{name}: bias = 0..5 or -")
+        st.bias = pin
     return st
 
 
