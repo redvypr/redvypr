@@ -53,6 +53,10 @@ redvypr changelog
   "Calibrated"; dialog "Calibration ..." for the polynomial calibration of a channel on the device (coefficients,
   linear from a sensitivity, fit to reference points, delete); `devices/norlog/poly_calibration.py`,
   `ot_cli.cal_get_one/adc_calibrations`; calibrated values of ADC sequences decoded as `<name>_cal` with unit
+- norlog gateway, calibration dialog (firmware >= 0.4.17): kind NTC, the same model as
+  `CalibrationNTC` (1/T = polynomial of ln R, R = x * R_ref), fit from R/R_ref and temperatures; load
+  redvypr calibration files (ntc, polynom, linearfactor, heatflow) and save as redvypr calibration;
+  `poly_calibration.fit_ntc/from_redvypr/to_redvypr`
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)

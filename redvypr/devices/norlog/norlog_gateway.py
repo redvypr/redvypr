@@ -2165,13 +2165,16 @@ class ConvertWorker(QtCore.QThread):
 
 class AdcCalibrationDialog(QtWidgets.QDialog):
     """
-    Polynomial calibration of one channel of the ADC sequence (stored and applied on the
-    device, firmware >= 0.4.16): y = c0 + c1*x + ... + c5*x^5 with x = value of the step.
+    Calibration of one channel of the ADC sequence, stored and applied on the device:
+    - Polynomial (firmware >= 0.4.16): y = c0 + c1*x + ... + c5*x^5, x = value of the step
+    - NTC (firmware >= 0.4.17), like redvypr's CalibrationNTC: R = x * R_ref,
+      T = 1 / (c0 + c1*ln(R) + ...) - Toff
     The coefficients are entered directly, set from a sensitivity (linear sensors, e.g.
-    heat flux sensors) or fitted to reference points.
+    heat flux sensors), fitted to reference points or loaded from a redvypr calibration file.
     """
 
     SCALES = {'V': 1.0, 'mV': 1e-3, 'µV': 1e-6}
+    KIND_LABELS = {'poly': 'Polynomial', 'ntc': 'NTC (Steinhart-Hart / Hoge, as redvypr CalibrationNTC)'}
 
     def __init__(self, parent, name, x_unit, cal=None, x_value=None):
         super().__init__(parent)
@@ -2183,36 +2186,56 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         self.delete_requested = False
         lay = QtWidgets.QVBoxLayout(self)
         xu = {'degC': '°C', '1': 'U_in/U_ref'}.get(x_unit, x_unit)
-        head = QtWidgets.QLabel(f'<b>{name}</b>: y = c0 + c1·x + ... + c5·x⁵, x = value of the step [{xu}]'
+        self.xu = xu
+        head = QtWidgets.QLabel(f'<b>{name}</b>: x = value of the step [{xu}]'
                                 + (f', last measured x = {x_value:.7g}' if x_value is not None else ''))
         head.setWordWrap(True)
         lay.addWidget(head)
 
         form = QtWidgets.QGridLayout()
+        self.kind = QtWidgets.QComboBox()
+        for kind, label in self.KIND_LABELS.items():
+            self.kind.addItem(label, kind)
+        self.kind.currentIndexChanged.connect(self.kind_changed)
+        self.formula = QtWidgets.QLabel('')
+        self.formula.setStyleSheet('color: gray;')
         self.unit = QtWidgets.QLineEdit(cal.unit if cal else '')
         self.unit.setPlaceholderText('e.g. W/m2, degC, Pa')
         self.unit.setMaxLength(poly_calibration.UNIT_MAX)
+        self.unit.textChanged.connect(self.update_preview)
         self.ident = QtWidgets.QLineEdit(cal.id if cal else '')
         self.ident.setPlaceholderText('optional, e.g. serial number of the sensor')
         self.ident.setMaxLength(poly_calibration.ID_MAX)
-        form.addWidget(QtWidgets.QLabel('Unit of y'), 0, 0)
-        form.addWidget(self.unit, 0, 1)
-        form.addWidget(QtWidgets.QLabel('Id'), 0, 2)
-        form.addWidget(self.ident, 0, 3)
+        self.scale = QtWidgets.QLineEdit(f'{cal.scale:.12g}' if cal and cal.kind == 'ntc' else '10000')
+        self.scale.setToolTip('R = x * R_ref: the reference resistor of a ratiometric measurement (x = R/R_ref); '
+                              '1 if x is already the resistance in Ohm')
+        self.scale.textChanged.connect(self.update_preview)
+        self.toff = QtWidgets.QLineEdit(f'{cal.toff:.12g}' if cal and cal.kind == 'ntc' else '273.15')
+        self.toff.setToolTip('T = 1/(...) - Toff; 273.15 for degC')
+        self.toff.textChanged.connect(self.update_preview)
+        form.addWidget(QtWidgets.QLabel('Kind'), 0, 0)
+        form.addWidget(self.kind, 0, 1, 1, 3)
+        form.addWidget(self.formula, 1, 0, 1, 4)
+        form.addWidget(QtWidgets.QLabel('Unit of y'), 2, 0)
+        form.addWidget(self.unit, 2, 1)
+        form.addWidget(QtWidgets.QLabel('Id'), 2, 2)
+        form.addWidget(self.ident, 2, 3)
+        self.ntc_widgets = [QtWidgets.QLabel('R_ref [Ohm]'), self.scale, QtWidgets.QLabel('Toff'), self.toff]
+        for i, wdg in enumerate(self.ntc_widgets):
+            form.addWidget(wdg, 3, i)
         self.coeffs = []
         for i in range(poly_calibration.ORDER_MAX + 1):
             edit = QtWidgets.QLineEdit()
-            edit.setPlaceholderText('0' if i < 2 else '')
             if cal and i < len(cal.coeffs):
                 edit.setText(f'{cal.coeffs[i]:.12g}')
             edit.textChanged.connect(self.update_preview)
             self.coeffs.append(edit)
-            form.addWidget(QtWidgets.QLabel(f'c{i}'), 1 + i // 2, 2 * (i % 2))
-            form.addWidget(edit, 1 + i // 2, 2 * (i % 2) + 1)
+            form.addWidget(QtWidgets.QLabel(f'c{i}'), 4 + i // 2, 2 * (i % 2))
+            form.addWidget(edit, 4 + i // 2, 2 * (i % 2) + 1)
         lay.addLayout(form)
 
-        box = QtWidgets.QGroupBox('Linear from the sensitivity of the sensor')
-        row = QtWidgets.QHBoxLayout(box)
+        self.sens_box = QtWidgets.QGroupBox('Linear from the sensitivity of the sensor')
+        row = QtWidgets.QHBoxLayout(self.sens_box)
         self.sens = QtWidgets.QLineEdit()
         self.sens.setPlaceholderText('e.g. 62.5')
         self.sens_scale = QtWidgets.QComboBox()
@@ -2226,7 +2249,7 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         row.addWidget(self.sens_scale)
         row.addWidget(QtWidgets.QLabel('per unit of y'))
         row.addWidget(sens_btn)
-        lay.addWidget(box)
+        lay.addWidget(self.sens_box)
 
         box = QtWidgets.QGroupBox('Fit to reference points')
         grid = QtWidgets.QGridLayout(box)
@@ -2247,6 +2270,9 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         self.order.setRange(1, poly_calibration.ORDER_MAX)
         fit_btn = QtWidgets.QPushButton('Fit')
         fit_btn.clicked.connect(self.do_fit)
+        self.fit_note = QtWidgets.QLabel('')
+        self.fit_note.setStyleSheet('color: gray;')
+        self.fit_note.setWordWrap(True)
         grid.addWidget(self.points, 0, 0, 1, 6)
         grid.addWidget(add_btn, 1, 0)
         grid.addWidget(cur_btn, 1, 1)
@@ -2254,7 +2280,19 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         grid.addWidget(QtWidgets.QLabel('Order'), 1, 3)
         grid.addWidget(self.order, 1, 4)
         grid.addWidget(fit_btn, 1, 5)
+        grid.addWidget(self.fit_note, 2, 0, 1, 6)
         lay.addWidget(box)
+
+        row = QtWidgets.QHBoxLayout()
+        load_btn = QtWidgets.QPushButton('Load redvypr calibration ...')
+        load_btn.setToolTip('Calibration file of redvypr (calibration device): ntc, polynom, linearfactor, heatflow')
+        load_btn.clicked.connect(self.load_redvypr)
+        save_btn = QtWidgets.QPushButton('Save as redvypr calibration ...')
+        save_btn.clicked.connect(self.save_redvypr)
+        row.addWidget(load_btn)
+        row.addWidget(save_btn)
+        row.addStretch(1)
+        lay.addLayout(row)
 
         self.preview = QtWidgets.QLabel('')
         self.preview.setWordWrap(True)
@@ -2269,6 +2307,25 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         buttons.addButton(QtWidgets.QDialogButtonBox.StandardButton.Cancel)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
+        self.kind.setCurrentIndex(list(self.KIND_LABELS).index(cal.kind) if cal else 0)
+        self.kind_changed()
+
+    def current_kind(self):
+        return self.kind.currentData() or 'poly'
+
+    def kind_changed(self, *_args):
+        ntc = self.current_kind() == 'ntc'
+        for wdg in self.ntc_widgets:
+            wdg.setVisible(ntc)
+        self.sens_box.setVisible(not ntc)
+        self.formula.setText('T = 1 / (c0 + c1·ln R + c2·(ln R)² + c3·(ln R)³ ...) - Toff,  R = x · R_ref [Ohm]'
+                             if ntc else 'y = c0 + c1·x + c2·x² + ... + c5·x⁵')
+        self.order.setValue(3 if ntc else self.order.value())
+        self.fit_note.setText('NTC: x = R/R_ref of the step, y = reference temperature; order 3 = Steinhart-Hart '
+                              'with ln² term (redvypr default), needs at least 4 points' if ntc else
+                              'x = value of the step, y = reference')
+        if ntc and not self.unit.text():
+            self.unit.setText('degC')
         self.update_preview()
 
     def add_point(self, x_text):
@@ -2283,13 +2340,27 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         for i, edit in enumerate(self.coeffs):
             edit.setText(f'{coeffs[i]:.12g}' if i < len(coeffs) else '')
 
+    def _set_calibration(self, cal):
+        self.kind.setCurrentIndex(list(self.KIND_LABELS).index(cal.kind))
+        self.unit.setText(cal.unit)
+        if cal.id:
+            self.ident.setText(cal.id)
+        if cal.kind == 'ntc':
+            self.scale.setText(f'{cal.scale:.12g}')
+            self.toff.setText(f'{cal.toff:.12g}')
+        self._set_coeffs(cal.coeffs)
+
     def _error(self, text):
         self.preview.setStyleSheet('color: #d64545;')
         self.preview.setText(text)
 
+    @staticmethod
+    def _num(text):
+        return float(text.strip().replace(',', '.'))
+
     def set_from_sensitivity(self):
         try:
-            s = float(self.sens.text().replace(',', '.')) * self.SCALES.get(self.sens_scale.currentText(), 1.0)
+            s = self._num(self.sens.text()) * self.SCALES.get(self.sens_scale.currentText(), 1.0)
             cal = poly_calibration.linear_from_sensitivity(s, self.unit.text() or '?')
         except (ValueError, poly_calibration.CalibrationError) as exc:
             self._error(f'sensitivity: {exc}')
@@ -2300,11 +2371,14 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         pts = []
         try:
             for r in range(self.points.rowCount()):
-                x, y = (self.points.item(r, c).text().strip().replace(',', '.') if self.points.item(r, c) else ''
-                        for c in (0, 1))
+                x, y = (self.points.item(r, c).text().strip() if self.points.item(r, c) else '' for c in (0, 1))
                 if x or y:
-                    pts.append((float(x), float(y)))
-            cal, rms = poly_calibration.fit(pts, self.order.value(), self.unit.text() or '?')
+                    pts.append((self._num(x), self._num(y)))
+            if self.current_kind() == 'ntc':
+                cal, rms = poly_calibration.fit_ntc(pts, self.order.value(), scale=self._num(self.scale.text()),
+                                                    toff=self._num(self.toff.text()), unit=self.unit.text() or 'degC')
+            else:
+                cal, rms = poly_calibration.fit(pts, self.order.value(), self.unit.text() or '?')
         except (ValueError, poly_calibration.CalibrationError) as exc:
             self._error(f'fit: {exc}')
             return
@@ -2312,16 +2386,19 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         self.preview.setText(self.preview.text() + f'; fit: {len(pts)} points, rms residual {rms:.4g}')
 
     def current(self):
-        """PolyCalibration of the fields (coefficients up to the last one filled in)."""
+        """Calibration of the fields (coefficients up to the last one filled in)."""
         texts = [e.text().strip().replace(',', '.') for e in self.coeffs]
         n = max([i + 1 for i, t in enumerate(texts) if t] + [2])
         coeffs = [float(t) if t else 0.0 for t in texts[:n]]
-        cal = poly_calibration.PolyCalibration(coeffs=coeffs, unit=self.unit.text().strip(),
-                                               id=self.ident.text().strip(), date=int(time.time()), name=self.name)
+        kind = self.current_kind()
+        cal = poly_calibration.PolyCalibration(
+            coeffs=coeffs, unit=self.unit.text().strip(), id=self.ident.text().strip(), date=int(time.time()),
+            name=self.name, kind=kind, scale=self._num(self.scale.text()) if kind == 'ntc' else 1.0,
+            toff=self._num(self.toff.text()) if kind == 'ntc' else 273.15)
         cal.check()
         return cal
 
-    def update_preview(self):
+    def update_preview(self, *_args):
         try:
             cal = self.current()
         except (ValueError, poly_calibration.CalibrationError) as exc:
@@ -2332,6 +2409,61 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         if self.x_value is not None:
             text += f';  last x = {self.x_value:.7g} → y = {cal.apply(self.x_value):.7g} {cal.unit}'
         self.preview.setText(text)
+
+    def load_redvypr(self):
+        from redvypr.devices.sensors.calibration.calibration_models import CalibrationList
+        fname, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'redvypr calibration', '',
+                                                         'Calibration (*.yaml *.yml);;All files (*)')
+        if not fname:
+            return
+        cals = [c for c in (CalibrationList().read_calibration_file(fname) or [])
+                if getattr(c, 'calibration_type', '') in ('ntc', 'polynom', 'linearfactor', 'heatflow')]
+        if not cals:
+            self._error(f'no usable calibration (ntc, polynom, linearfactor, heatflow) in {fname}')
+            return
+        cal = cals[0]
+        if len(cals) > 1:
+            labels = [f"{i}: {c.calibration_type}  sn {c.sn}  channel {c.channel}  {c.date:%Y-%m-%d}  "
+                      f"{c.calibration_id}" for i, c in enumerate(cals)]
+            choice, ok = QtWidgets.QInputDialog.getItem(self, 'redvypr calibration', 'Calibration', labels, 0, False)
+            if not ok:
+                return
+            cal = cals[labels.index(choice)]
+        scale = None
+        if cal.calibration_type == 'ntc':
+            try:
+                scale = self._num(self.scale.text())
+            except ValueError:
+                scale = 10000.0
+            scale, ok = QtWidgets.QInputDialog.getDouble(
+                self, 'NTC', 'redvypr NTC calibrations take R in Ohm.\nR_ref of the ratiometric measurement '
+                             '(x = R/R_ref) in Ohm, 1 if x is already R:', scale, 1e-6, 1e12, 3)
+            if not ok:
+                return
+        try:
+            self._set_calibration(poly_calibration.from_redvypr(cal, scale=scale))
+        except poly_calibration.CalibrationError as exc:
+            self._error(str(exc))
+            return
+        self.preview.setText(self.preview.text() + f'; loaded {cal.calibration_type} of sn {cal.sn} '
+                                                   f'({pathlib.Path(fname).name})')
+
+    def save_redvypr(self):
+        from redvypr.devices.sensors.calibration.calibration_models import CalibrationList
+        try:
+            cal = self.current()
+        except (ValueError, poly_calibration.CalibrationError) as exc:
+            self._error(str(exc))
+            return
+        channel = self.name.split('.', 1)[-1]
+        fname, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Save as redvypr calibration',
+                                                         f'calibration_{self.name.replace(".", "_")}.yaml',
+                                                         'Calibration (*.yaml)')
+        if not fname:
+            return
+        rv = poly_calibration.to_redvypr(cal, channel=channel, sn=cal.id or 'NA')
+        CalibrationList([rv]).save([fname])
+        self.preview.setText(self.preview.text() + f'; saved as redvypr {rv.calibration_type}: {fname}')
 
     def apply(self):
         try:
