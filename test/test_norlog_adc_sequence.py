@@ -31,10 +31,23 @@ def test_idac_without_current_drops_pins():
 
 
 def test_base_keeps_missing_globals():
-    base = aseq.AdcSequence(on=True, sps="90", filter="ll", interval_ms=2000)
+    base = aseq.AdcSequence(on=True, sps="100", filter="ll", interval_ms=2000)
     seq = aseq.parse("interval=3000;a,0,COM", base=base)
-    assert seq.on and seq.sps == "90" and seq.filter == "ll" and seq.interval_ms == 3000
+    assert seq.on and seq.sps == "100" and seq.filter == "ll" and seq.interval_ms == 3000
 
+
+
+def test_data_rates_of_the_ads124s08():
+    # DR codes 0..13 of the datasheet (firmware >= 0.4.18; before, codes 5.. were labelled 45, 90, 175 ...)
+    assert aseq.SPS == ["2.5", "5", "10", "16.6", "20", "50", "60", "100", "200", "400", "800", "1000", "2000",
+                        "4000"]
+    assert aseq.parse("sps=400;a,0,COM").sps == "400"
+    assert aseq.parse("sps=16.7;a,0,COM").sps == "16.6"
+    for old in ("45", "90", "175", "330", "600"):
+        with pytest.raises(aseq.SequenceError, match="sps"):
+            aseq.parse(f"sps={old};a,0,COM")
+    # wait for one single-shot conversion as in the firmware (conv_ms)
+    assert aseq.parse("sps=60;a,0,COM").duration_ms() == int(3 * 1000 / 60 * 1.25) + 3 + 2
 
 @pytest.mark.parametrize("text, msg", [
     ("", "empty"),

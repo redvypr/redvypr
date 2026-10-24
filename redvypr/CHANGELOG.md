@@ -57,6 +57,8 @@ redvypr changelog
   `CalibrationNTC` (1/T = polynomial of ln R, R = x * R_ref), fit from R/R_ref and temperatures; load
   redvypr calibration files (ntc, polynom, linearfactor, heatflow) and save as redvypr calibration;
   `poly_calibration.fit_ntc/from_redvypr/to_redvypr`
+- norlog ADC tab: data rates of the ADS124S08 corrected (50, 60, 100, 200, 400, 800, 1000, 2000, 4000 SPS
+  instead of 45, 90, 175, 330, 600, 1000, 2000), matching firmware >= 0.4.18
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)
