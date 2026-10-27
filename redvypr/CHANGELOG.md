@@ -59,6 +59,9 @@ redvypr changelog
   `poly_calibration.fit_ntc/from_redvypr/to_redvypr`
 - norlog ADC tab: data rates of the ADS124S08 corrected (50, 60, 100, 200, 400, 800, 1000, 2000, 4000 SPS
   instead of 45, 90, 175, 330, 600, 1000, 2000), matching firmware >= 0.4.18
+- norlog gateway: settings tab "NMEA" for a sensor at UART1 (e.g. wind meter): receive on/off, baud rate
+  (auto or fixed), raw packets on the SD card (written over the shell or CoAP `POST wind`, firmware >= 0.4.21),
+  status with sentences, last wind and last sentence, optional refresh every 2 s; `ot_cli.nmea_get/nmea_set`
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)

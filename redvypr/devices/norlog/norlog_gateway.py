@@ -390,6 +390,8 @@ class _Gateway:
             elif command in ('adc_get', 'adc_set', 'adc_read', 'adc_cal_set'):
                 self.adc_command(args.get('target') or 'gateway', command[4:], args.get('sensor', 'adc_brd'),
                                  args.get('text', ''), args.get('channel', ''))
+            elif command in ('nmea_get', 'nmea_set'):
+                self.nmea_command(args.get('target') or 'gateway', command[5:], args.get('values') or {})
             elif command == 'props_read':
                 self.props_command(args.get('target', 'gateway'), {})
             elif command == 'props_set':
@@ -895,6 +897,23 @@ class _Gateway:
         except (ot_cli.OtError, TimeoutError, ValueError) as exc:
             result['message'] = str(exc)
         self.to_gui('adc_result', result)
+
+    # --- NMEA sensor at UART1 (status firmware >= 0.4.13, settings >= 0.4.21) ---
+
+    def nmea_command(self, target, op, values):
+        """op 'get': status, 'set': store values {'on', 'baud', 'raw'} and read back. Answer 'nmea_result'."""
+        result = {'target': target, 'op': op, 'ok': False}
+        try:
+            address = self.target_address(target)
+            timeout = self.config.coap_timeout_s
+            if op == 'set':
+                ot_cli.nmea_set(self.cli, values.get('on'), values.get('baud'), values.get('raw'), address,
+                                timeout=timeout)
+                result['message'] = 'NMEA settings stored'
+            result.update(ok=True, nmea=ot_cli.nmea_get(self.cli, address, timeout=timeout))
+        except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+            result['message'] = str(exc)
+        self.to_gui('nmea_result', result)
 
     def set_radio(self, target, dbm):
         """Set the transmit power at the antenna of the gateway or a member (stored on the device)."""
@@ -2071,6 +2090,13 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 dlg = self.settings_dialogs.get(data.get('target'))
                 if dlg is not None:
                     dlg.on_adc_message(data)
+            elif packetid == 'nmea_result':
+                if data.get('message'):
+                    state = 'OK' if data.get('ok') else 'ERROR'
+                    self.console_text.appendPlainText(f"[nmea {data.get('target')}] {state}: {data.get('message')}")
+                dlg = self.settings_dialogs.get(data.get('target'))
+                if dlg is not None:
+                    dlg.on_nmea_message(data)
             elif packetid == 'radio_result':
                 state = 'OK' if data.get('ok') else 'ERROR'
                 self.console_text.appendPlainText(f"[radio {data.get('target')}] {state}: {data.get('message', '')}")
@@ -2520,6 +2546,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.data_tab_index = self.tabs.addTab(self._build_data_tab(), 'Data')
         self.mag_tab_index = self.tabs.addTab(self._scrollable(self._build_mag_tab()), 'Magnetometer')
         self.adc_tab_index = self.tabs.addTab(self._scrollable(self._build_adc_tab()), 'ADC')
+        self.nmea_tab_index = self.tabs.addTab(self._scrollable(self._build_nmea_tab()), 'NMEA')
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay = QtWidgets.QVBoxLayout(self)
@@ -2969,6 +2996,8 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.mag_update_buttons()
         for w in self.adc_run_widgets:
             w.setEnabled(running and not self.adc_busy)
+        for w in self.nmea_run_widgets:
+            w.setEnabled(running and not self.nmea_busy)
         self.read_info_btn.setEnabled(running)
         self.clock_btn.setEnabled(running)
         self.radio_btn.setEnabled(running)
@@ -3459,6 +3488,153 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             elif message:
                 self.adc_status.setStyleSheet('')
                 self.adc_status.setText(message)
+
+    # --- NMEA sensor at UART1, e.g. a wind meter (status firmware >= 0.4.13, settings >= 0.4.21) ---
+
+    def _build_nmea_tab(self):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+        self.nmea_busy = False
+        self.nmea_device = None         # last answer of the device (nmea_get)
+
+        box = QtWidgets.QGroupBox('Settings (stored on the device)')
+        grid = QtWidgets.QGridLayout(box)
+        self.nmea_on = QtWidgets.QCheckBox('receive at UART1 (RX: J1 pin 16 / J10 pin 4)')
+        self.nmea_on.setToolTip('The receiver keeps the high frequency clock of the nRF52840 running '
+                                '(about 0.5-1 mA). Every $xxMWV sentence is stored as wind packet on the SD card.')
+        self.nmea_baud = QtWidgets.QComboBox()
+        self.nmea_baud.setEditable(True)
+        self.nmea_baud.addItems(['auto'] + [str(b) for b in ot_cli.NMEA_BAUDS])
+        self.nmea_baud.setToolTip('auto: without a valid sentence the next of '
+                                  + ', '.join(str(b) for b in ot_cli.NMEA_BAUDS) + ' baud is tried every 4 s')
+        self.nmea_raw = QtWidgets.QCheckBox('store every sentence as raw packet on the SD card')
+        self.nmea_raw.setToolTip('For diagnosis or sentences the norlog does not decode; '
+                                 'about twice the amount of data')
+        grid.addWidget(self.nmea_on, 0, 0, 1, 3)
+        grid.addWidget(QtWidgets.QLabel('Baud rate'), 1, 0)
+        grid.addWidget(self.nmea_baud, 1, 1)
+        grid.addWidget(self.nmea_raw, 2, 0, 1, 3)
+        grid.setColumnStretch(2, 1)
+        lay.addWidget(box)
+
+        box = QtWidgets.QGroupBox('Status')
+        form = QtWidgets.QFormLayout(box)
+        self.nmea_labels = {}
+        for name in ('State', 'Sentences', 'Wind', 'Last sentence'):
+            label = QtWidgets.QLabel('-')
+            label.setWordWrap(True)
+            label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+            form.addRow(name, label)
+            self.nmea_labels[name] = label
+        self.nmea_labels['Last sentence'].setFont(QtGui.QFontDatabase.systemFont(
+            QtGui.QFontDatabase.SystemFont.FixedFont))
+        lay.addWidget(box)
+
+        row = QtWidgets.QHBoxLayout()
+        read_btn = QtWidgets.QPushButton('Read from device')
+        read_btn.clicked.connect(lambda: self.nmea_command('get'))
+        write_btn = QtWidgets.QPushButton('Write to device')
+        write_btn.setToolTip('Store the settings on the device, effective at once (firmware >= 0.4.21)')
+        write_btn.clicked.connect(self.nmea_write)
+        self.nmea_auto = QtWidgets.QCheckBox('refresh every 2 s')
+        self.nmea_auto.setToolTip('Read the status repeatedly (over Thread one CoAP request every 2 s)')
+        self.nmea_timer = QtCore.QTimer(self)
+        self.nmea_timer.setInterval(2000)
+        self.nmea_timer.timeout.connect(self.nmea_refresh)
+        self.nmea_auto.toggled.connect(lambda on: self.nmea_timer.start() if on else self.nmea_timer.stop())
+        self.finished.connect(lambda _r: self.nmea_timer.stop())
+        for b_ in (read_btn, write_btn, self.nmea_auto):
+            row.addWidget(b_)
+        row.addStretch(1)
+        lay.addLayout(row)
+        self.nmea_status = QtWidgets.QLabel('')
+        self.nmea_status.setWordWrap(True)
+        self.nmea_status.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        lay.addWidget(self.nmea_status)
+        hint = QtWidgets.QLabel('Shell of the device: "norlog nmea" (status), "norlog nmea monitor" (sentences '
+                                'live, firmware >= 0.4.19). Wind packets: wind_dir [deg], wind_speed [m/s], '
+                                'wind_ref (0 relative, 1 true), wind_valid.')
+        hint.setWordWrap(True)
+        hint.setStyleSheet('color: gray;')
+        lay.addWidget(hint)
+        lay.addStretch(1)
+        self.nmea_run_widgets = [read_btn, write_btn, self.nmea_auto]
+        return w
+
+    def nmea_command(self, op, values=None):
+        self.nmea_busy = True
+        self.update_run_state(self.running)
+        if op == 'set':
+            self.nmea_status.setStyleSheet('')
+            self.nmea_status.setText('writing ...')
+        self.device.thread_command(f'nmea_{op}', {'target': self.key, 'values': values or {}})
+
+    def nmea_refresh(self):
+        if self.running and not self.nmea_busy:
+            self.nmea_command('get')
+
+    def nmea_write(self):
+        baud = self.nmea_baud.currentText().strip().lower()
+        try:
+            values = {'on': self.nmea_on.isChecked(), 'raw': self.nmea_raw.isChecked(),
+                      'baud': 'auto' if baud in ('auto', '0', '') else int(baud)}
+            ot_cli.nmea_settings_text(**values)
+        except ValueError:
+            self.nmea_status.setStyleSheet('color: #d64545;')
+            self.nmea_status.setText('baud rate: auto or 1200..1000000')
+            return
+        self.nmea_command('set', values)
+
+    def nmea_show_device(self, st, settings=True):
+        """Show the status of the device; settings=True also takes over its settings into the controls."""
+        if settings:
+            self.nmea_on.setChecked(bool(st.get('on')))
+            self.nmea_raw.setChecked(bool(st.get('raw')))
+            self.nmea_baud.setCurrentText('auto' if st.get('auto', True) else str(st.get('baud', '')))
+        on = bool(st.get('on'))
+        self.nmea_labels['State'].setText(
+            f"{'on' if on else 'off'}, {st.get('baud', '?')} baud "
+            f"({'automatic' if st.get('auto', True) else 'fixed'}), raw packets {'on' if st.get('raw') else 'off'}")
+        age = st.get('age_ms', -1)
+        self.nmea_labels['Sentences'].setText(
+            f"{st.get('ok', 0)} valid, {st.get('err', 0)} checksum wrong"
+            + (f", last {age / 1000:.1f} s ago" if age is not None and age >= 0 else ', none yet'))
+        wind = st.get('wind')
+        if wind:
+            ref = 'true' if wind.get('ref') == 'T' else 'relative'
+            self.nmea_labels['Wind'].setText(
+                f"{wind.get('dir', 0):.1f}° ({ref}), {wind.get('spd', 0):.2f} m/s"
+                f"{'' if wind.get('ok', True) else ', INVALID'}, {wind.get('age_ms', 0) / 1000:.1f} s ago")
+        else:
+            self.nmea_labels['Wind'].setText('- (no MWV sentence yet)')
+        self.nmea_labels['Last sentence'].setText(st.get('last') or '-')
+
+    def nmea_unsaved(self):
+        st = self.nmea_device
+        if st is None:
+            return False
+        baud = self.nmea_baud.currentText().strip().lower()
+        device_baud = 'auto' if st.get('auto', True) else str(st.get('baud'))
+        return (self.nmea_on.isChecked() != bool(st.get('on')) or self.nmea_raw.isChecked() != bool(st.get('raw'))
+                or (baud or 'auto') != device_baud)
+
+    def on_nmea_message(self, data):
+        self.nmea_busy = False
+        self.update_run_state(self.running)
+        if not data.get('ok'):
+            self.nmea_status.setStyleSheet('color: #d64545;')
+            self.nmea_status.setText(data.get('message', 'error'))
+            return
+        # Refreshing keeps settings the user is editing; reading or writing takes over the device's
+        keep = data.get('op') == 'get' and self.nmea_auto.isChecked() and self.nmea_unsaved()
+        self.nmea_device = data['nmea']
+        self.nmea_show_device(data['nmea'], settings=not keep)
+        if keep:
+            self.nmea_status.setStyleSheet('color: #c08000;')
+            self.nmea_status.setText('the changed settings are not yet written')
+        elif data.get('message') or not self.nmea_auto.isChecked():
+            self.nmea_status.setStyleSheet('')
+            self.nmea_status.setText(data.get('message', ''))
 
     # --- magnetometer: measurement and calibration (firmware >= 0.4.12) ---
 

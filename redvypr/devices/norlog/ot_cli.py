@@ -776,6 +776,67 @@ def adc_measure(cli: OtCli, sensor: str = "adc_brd", address=None, timeout: floa
     return st
 
 
+NMEA_PREFIX = "#NLN "
+NMEA_BAUDS = [4800, 9600, 19200, 38400, 57600, 115200]     # searched in this order with baud=auto
+
+
+def nmea_get(cli: OtCli, address=None, timeout: float = 10.0) -> dict:
+    """
+    NMEA sensor at UART1 (firmware >= 0.4.13): {'on', 'baud', 'auto', 'raw', 'ok', 'err', 'lines',
+    'age_ms'[, 'wind': {'dir', 'spd', 'ref', 'ok', 'age_ms'}], 'last'}.
+    """
+    import json
+    if address is None:
+        return _shell_json(cli, "norlog nmea json", NMEA_PREFIX, min_fw="0.4.13")
+    return json.loads(coap_request(cli, "get", address, "wind", timeout=timeout).decode())
+
+
+def nmea_settings_text(on=None, baud=None, raw=None) -> str:
+    """'on=1,baud=auto,raw=0' (only the given values); baud 0 or 'auto' = automatic."""
+    parts = []
+    if on is not None:
+        parts.append(f"on={int(bool(on))}")
+    if baud is not None:
+        if baud in (0, "0", "auto"):
+            parts.append("baud=auto")
+        else:
+            b = int(baud)
+            if not 1200 <= b <= 1000000:
+                raise ValueError("baud rate: auto or 1200..1000000")
+            parts.append(f"baud={b}")
+    if raw is not None:
+        parts.append(f"raw={int(bool(raw))}")
+    if not parts:
+        raise ValueError("nothing to set")
+    return ",".join(parts)
+
+
+def nmea_set(cli: OtCli, on=None, baud=None, raw=None, address=None, timeout: float = 10.0):
+    """Set and store the settings of the NMEA sensor (firmware >= 0.4.21); values that are None stay."""
+    import json
+    text = nmea_settings_text(on, baud, raw)
+    if address is None:
+        try:
+            rest = cli.shell_query(f"norlog nmea set {text}", NMEA_PREFIX, timeout=5.0)
+        except TimeoutError:
+            raise OtError("no answer to 'norlog nmea set' (firmware >= 0.4.21 required)") from None
+        if not rest.startswith("ok"):
+            raise OtError(f"NMEA: {rest[4:] if rest.startswith('err ') else rest}")
+        return
+    try:
+        coap_request(cli, "post", address, "wind", text.encode(), timeout=timeout, b64=True)
+    except OtError as exc:
+        msg = str(exc)
+        if " 4.05" in msg:
+            msg = "the node cannot change NMEA settings over Thread (firmware >= 0.4.21 required)"
+        elif '"err"' in msg:
+            try:
+                msg = json.loads(msg[msg.index("{"):])["err"]
+            except (ValueError, KeyError):
+                pass
+        raise OtError(f"NMEA: {msg}") from None
+
+
 def fw_install_remote(cli: OtCli, address: str) -> dict:
     import json
     return json.loads(coap_request(cli, "post", address, "fw?op=install").decode())
