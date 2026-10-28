@@ -97,12 +97,14 @@ def _local_crc(path, off, length):
         return zlib.crc32(f.read(length))
 
 
-def sync(remote, archive_root, hwid=None, progress=None, cancel=None):
+def plan(remote, archive_root, hwid=None):
     """
-    Copy what is new on the card into <archive_root>/<hwid>/.
+    Compare the log files of the card with the archive, without downloading data files
+    (only the small catalog is copied, it gives the hardware ID).
     hwid: only needed for cards without catalog (firmware < 0.4.3).
-    progress(done_bytes, total_bytes, name); cancel() -> True stops after the current block.
-    Returns {'hwid', 'dir', 'files': [{'name', 'old', 'new', 'status'}], 'bytes', 'cancelled'}.
+    Returns {'hwid', 'dir', 'files': [{'name', 'card', 'local', 'state'}]} sorted by name (= chronological),
+    state 'unchanged', 'new' (not in the archive), 'grown' (more on the card) or 'mismatch' (the local copy
+    does not match the card: formatted or swapped; a sync keeps it as <name>.replaced-<time> and loads again).
     """
     entries = remote.list(LOG_DIR)
     sizes = {e["n"]: e.get("s", 0) for e in entries if not e.get("d")}
@@ -122,25 +124,56 @@ def sync(remote, archive_root, hwid=None, progress=None, cancel=None):
     if catalog is not None:
         _write_atomic(dev_dir / CATALOG, catalog_bytes)
 
-    names = sorted(n for n in sizes if n.startswith("data_") and (n.endswith(".cbor") or n.endswith(".idx")))
-    result = {"hwid": hwid, "dir": str(dev_dir), "files": [], "bytes": 0, "cancelled": False}
-
-    # Plan: local size, checked against the card
-    plan = []
-    for name in names:
+    files = []
+    for name in sorted(n for n in sizes if n.startswith("data_") and (n.endswith(".cbor") or n.endswith(".idx"))):
         local = dev_dir / name
         have = local.stat().st_size if local.exists() else 0
-        status = "unchanged"
         if have > sizes[name] or (have and not _tail_matches(remote, local, name, have)):
+            state = "mismatch"
+        else:
+            state = "unchanged" if have == sizes[name] else ("grown" if have else "new")
+        files.append({"name": name, "card": sizes[name], "local": have, "state": state})
+    return {"hwid": hwid, "dir": str(dev_dir), "files": files}
+
+
+def file_stem(name):
+    """'data_00595_..._00000002.cbor' and its '.idx' belong together."""
+    return name.rsplit(".", 1)[0]
+
+
+def sync(remote, archive_root, hwid=None, progress=None, cancel=None, stems=None, newest_first=False):
+    """
+    Copy what is new on the card into <archive_root>/<hwid>/.
+    stems: only these data files (file_stem(), each with its index), None = all.
+    newest_first: the newest data files first (default: chronological).
+    progress(done_bytes, total_bytes, name); cancel() -> True stops after the current block.
+    Returns {'hwid', 'dir', 'files': [{'name', 'old', 'new', 'status'}], 'bytes', 'cancelled'}
+    with the files in download order; files that were not selected are not listed.
+    """
+    p = plan(remote, archive_root, hwid)
+    dev_dir = pathlib.Path(p["dir"])
+    result = {"hwid": p["hwid"], "dir": p["dir"], "files": [], "bytes": 0, "cancelled": False}
+
+    files = [f for f in p["files"] if stems is None or file_stem(f["name"]) in stems]
+    # Data file before its index; whole pairs in the chosen order
+    order = sorted({file_stem(f["name"]) for f in files}, reverse=newest_first)
+    rank = {s: i for i, s in enumerate(order)}
+    files.sort(key=lambda f: (rank[file_stem(f["name"])], not f["name"].endswith(".cbor")))
+
+    todo = []
+    for f in files:
+        name, have, status = f["name"], f["local"], "unchanged"
+        if f["state"] == "mismatch":
+            local = dev_dir / name
             old = local.with_name(f"{name}.replaced-{datetime.datetime.now():%Y%m%d-%H%M%S}")
             os.replace(local, old)
             logger.warning(f"{name}: local copy does not match the card (formatted/swapped?), kept as {old.name}")
             have, status = 0, "replaced"
-        plan.append((name, have, sizes[name], status))
-    total = sum(max(0, r - h) for _n, h, r, _s in plan)
+        todo.append((name, have, f["card"], status))
+    total = sum(max(0, r - h) for _n, h, r, _s in todo)
 
     done = 0
-    for name, have, rsize, status in plan:
+    for name, have, rsize, status in todo:
         entry = {"name": name, "old": have, "new": have, "status": status}
         result["files"].append(entry)
         if have >= rsize:

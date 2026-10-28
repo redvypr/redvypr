@@ -62,6 +62,11 @@ redvypr changelog
 - norlog gateway: settings tab "NMEA" for a sensor at UART1 (e.g. wind meter): receive on/off, baud rate
   (auto or fixed), raw packets on the SD card (written over the shell or CoAP `POST wind`, firmware >= 0.4.21),
   status with sentences, last wind and last sentence, optional refresh every 2 s; `ot_cli.nmea_get/nmea_set`
+- norlog settings, tab "Data": "List files" compares the card with the archive without downloading (boot, start
+  time, sizes, what is left to load); select files (checkboxes, "All" with new data, "None", "Marked rows") and
+  the order ("oldest first"/"newest first"); during the download the current file is highlighted with its
+  percentage, finished files are marked, the status shows file i of n, rate and time left;
+  `norlog_archive.plan()` and `sync(stems=, newest_first=)`
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)

@@ -61,6 +61,7 @@ import json
 import logging
 import pathlib
 import queue
+import re
 import secrets
 import sys
 import time
@@ -373,7 +374,10 @@ class _Gateway:
                 self.query_info('all', refresh_props=True)
             elif command == 'data_sync':
                 self.data_sync(args.get('target', 'gateway'), args.get('folder') or self.config.archive_folder,
-                               bool(args.get('publish', self.config.archive_publish)))
+                               bool(args.get('publish', self.config.archive_publish)), args.get('stems'),
+                               bool(args.get('newest_first', False)))
+            elif command == 'data_list':
+                self.data_list(args.get('target', 'gateway'), args.get('folder') or self.config.archive_folder)
             elif command == 'set_time':
                 self.set_time(args.get('targets') or ['gateway'], force=bool(args.get('force')))
             elif command == 'radio_set':
@@ -726,10 +730,22 @@ class _Gateway:
 
     # --- data download (archive of the SD card log files) ---
 
-    def data_sync(self, target, folder, publish):
+    def data_list(self, target, folder):
+        """Log files of the card compared with the archive, without download: answer 'sync_list'."""
+        try:
+            hwid = (self.infos.get(target or 'gateway') or {}).get('hwid')
+            remote = norlog_archive.RemoteFiles(self.cli, self.target_address(target))
+            res = norlog_archive.plan(remote, folder, hwid=hwid)
+        except (norlog_archive.ArchiveError, ot_cli.OtError, TimeoutError, OSError, ValueError) as exc:
+            self.to_gui('sync_list', {'target': target, 'ok': False, 'message': str(exc)})
+            return
+        self.to_gui('sync_list', {'target': target, 'ok': True, **res})
+
+    def data_sync(self, target, folder, publish, stems=None, newest_first=False):
         """
         Copy the new log data of a norlog into the archive folder and, with publish,
         publish the packets that were not published yet (with their measurement time).
+        stems: only these data files (norlog_archive.file_stem), None = all; newest_first: order.
         """
         meter = RateMeter()
         last = [0.0]
@@ -746,7 +762,8 @@ class _Gateway:
             hwid = (self.infos.get(target or 'gateway') or {}).get('hwid')
             remote = norlog_archive.RemoteFiles(self.cli, address)
             res = norlog_archive.sync(remote, folder, hwid=hwid, progress=progress,
-                                      cancel=lambda: self.check_commands(during_flash=True))
+                                      cancel=lambda: self.check_commands(during_flash=True),
+                                      stems=set(stems) if stems is not None else None, newest_first=newest_first)
         except (norlog_archive.ArchiveError, ot_cli.OtError, TimeoutError, OSError, ValueError) as exc:
             self.to_gui('sync_result', {'target': target, 'ok': False, 'message': str(exc)})
             return
@@ -2068,7 +2085,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     self.console_text.appendPlainText(
                         f"[fs {data.get('op')} {data.get('target')}] {'OK' if data.get('ok') else 'ERROR'}: "
                         f"{data.get('message', '')}")
-            elif packetid in ('sync_progress', 'sync_result'):
+            elif packetid in ('sync_progress', 'sync_result', 'sync_list'):
                 dlg = self.settings_dialogs.get(data.get('target'))
                 if dlg is not None:
                     dlg.on_sync_message(packetid, data)
@@ -3011,6 +3028,9 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         for w in self.files_run_widgets:
             w.setEnabled(running)
         self.data_sync_btn.setEnabled(running and not self.data_busy)
+        self.data_list_btn.setEnabled(running and not self.data_busy)
+        for w in self.data_select_widgets:
+            w.setEnabled(not self.data_busy)
         self.data_cancel_btn.setEnabled((running and self.data_busy) or self.convert_worker is not None)
 
     # --- firmware ---
@@ -4011,7 +4031,35 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.data_publish.toggled.connect(lambda v: setattr(self.cfg, 'archive_publish', bool(v)))
         lay.addWidget(self.data_publish)
         row = QtWidgets.QHBoxLayout()
-        self.data_sync_btn = QtWidgets.QPushButton('Download new data')
+        self.data_list_btn = QtWidgets.QPushButton('List files')
+        self.data_list_btn.setToolTip('Compare the log files of the SD card with the archive, nothing is '
+                                      'downloaded; then select the files to load')
+        self.data_list_btn.clicked.connect(self.data_list)
+        self.data_order = QtWidgets.QComboBox()
+        self.data_order.addItems(['oldest first', 'newest first'])
+        self.data_order.setToolTip('Order of the download (the file names are chronological)')
+        self.data_order.currentIndexChanged.connect(lambda _i: self.data_show_rows())
+        sel_all = QtWidgets.QPushButton('All')
+        sel_all.setToolTip('Select all files with something to load')
+        sel_all.clicked.connect(lambda: self.data_select('all'))
+        sel_none = QtWidgets.QPushButton('None')
+        sel_none.clicked.connect(lambda: self.data_select('none'))
+        sel_rows = QtWidgets.QPushButton('Marked rows')
+        sel_rows.setToolTip('Select only the rows marked in the table (click, Shift/Ctrl+click)')
+        sel_rows.clicked.connect(lambda: self.data_select('rows'))
+        self.data_sel_label = QtWidgets.QLabel('')
+        row.addWidget(self.data_list_btn)
+        row.addWidget(QtWidgets.QLabel('Order'))
+        row.addWidget(self.data_order)
+        row.addWidget(QtWidgets.QLabel('Select'))
+        for b_ in (sel_all, sel_none, sel_rows):
+            row.addWidget(b_)
+        row.addWidget(self.data_sel_label, 1)
+        lay.addLayout(row)
+        self.data_select_widgets = [sel_all, sel_none, sel_rows, self.data_order]
+        row = QtWidgets.QHBoxLayout()
+        self.data_sync_btn = QtWidgets.QPushButton('Download')
+        self.data_sync_btn.setToolTip('Load the selected files (all new data if the list was not read)')
         self.data_sync_btn.clicked.connect(self.data_sync)
         self.data_cancel_btn = QtWidgets.QPushButton('Cancel')
         self.data_cancel_btn.clicked.connect(self.data_cancel)
@@ -4034,16 +4082,166 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.data_status.setWordWrap(True)
         self.data_status.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
         lay.addWidget(self.data_status)
-        self.data_files = QtWidgets.QTableWidget(0, 3)
-        self.data_files.setHorizontalHeaderLabels(['File', 'Bytes', 'State'])
+        self.data_files = QtWidgets.QTableWidget(0, len(self.DATA_COLS))
+        self.data_files.setHorizontalHeaderLabels(self.DATA_COLS)
         self.data_files.horizontalHeader().setStretchLastSection(True)
         self.data_files.verticalHeader().setVisible(False)
         self.data_files.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.data_files.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.data_files.itemChanged.connect(self.data_item_changed)
         lay.addWidget(self.data_files, 1)
         self.data_busy = False
         self.data_dir = None
         self.convert_worker = None
+        self.data_rows = {}             # stem -> {'files': {name: {'card', 'local', 'state'}}, 'sel', 'run'}
+        self.data_listed = False        # list read: download only the selected files
+        self.data_loading = False
+        self.data_current = None        # (stem, done at its start, bytes to load) during the download
+        self.data_queue = None          # selected stems in download order
         return w
+
+    # --- data: file list, selection and order ---
+
+    DATA_COLS = ['File', 'Boot', 'Start', 'On card', 'In archive', 'To load', 'State']
+    DATA_NAME_RE = re.compile(r'data_(\d+)_(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})(\d{2})_(\d+)$')
+    DATA_STATES = {'unchanged': 'up to date', 'new': 'new', 'grown': 'more on the card',
+                   'mismatch': 'card changed: load again (old copy kept)'}
+
+    @staticmethod
+    def _kb(n):
+        return f'{n / 1024:.1f} KB' if n < 1024 * 1024 else f'{n / 1024 / 1024:.2f} MB'
+
+    @staticmethod
+    def _data_to_load(files):
+        return sum(f['card'] if f['state'] == 'mismatch' else max(0, f['card'] - f['local'])
+                   for f in files.values())
+
+    def _data_state(self, files):
+        for state in ('mismatch', 'grown', 'new'):
+            if any(f['state'] == state for f in files.values()):
+                return state
+        return 'unchanged'
+
+    def data_list(self):
+        self.cfg.archive_folder = self.data_folder.text().strip() or 'norlog_archive'
+        self.data_busy = True
+        self.update_run_state(self.running)
+        self.data_status.setStyleSheet('')
+        self.data_status.setText('Reading the file list ...')
+        self.device.thread_command('data_list', {'target': self.key, 'folder': self.cfg.archive_folder})
+
+    def data_stems(self):
+        """Stems in download order."""
+        return sorted(self.data_rows, reverse=self.data_order.currentIndex() == 1)
+
+    def data_show_rows(self):
+        self.data_loading = True
+        t = self.data_files
+        stems = self.data_stems()
+        t.setRowCount(len(stems))
+        for r, stem in enumerate(stems):
+            d = self.data_rows[stem]
+            data = d['files'].get(stem + '.cbor') or next(iter(d['files'].values()))
+            m = self.DATA_NAME_RE.match(stem)
+            boot, start = (str(int(m.group(1))), f'{m.group(2)} {m.group(3)}:{m.group(4)}:{m.group(5)}') if m \
+                else ('', '')
+            todo = self._data_to_load(d['files'])
+            state = d.get('run') or self.DATA_STATES.get(self._data_state(d['files']), '')
+            item = QtWidgets.QTableWidgetItem(stem + '.cbor')
+            if self.data_listed:
+                item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(QtCore.Qt.CheckState.Checked if d.get('sel') else QtCore.Qt.CheckState.Unchecked)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, stem)
+            t.setItem(r, 0, item)
+            for col, text in enumerate([boot, start, self._kb(data['card']), self._kb(data['local']),
+                                        self._kb(todo) if todo else '-', state], start=1):
+                it = QtWidgets.QTableWidgetItem(text)
+                if col in (3, 4, 5):
+                    it.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+                t.setItem(r, col, it)
+        t.resizeColumnsToContents()
+        self.data_loading = False
+        self.data_update_selection_label()
+
+    def data_update_selection_label(self):
+        if not self.data_listed:
+            self.data_sel_label.setText('')
+            return
+        sel = [s for s, d in self.data_rows.items() if d.get('sel')]
+        todo = sum(self._data_to_load(self.data_rows[s]['files']) for s in sel)
+        new = sum(1 for d in self.data_rows.values() if self._data_to_load(d['files']))
+        self.data_sel_label.setText(f'{len(sel)} of {len(self.data_rows)} files selected, {self._kb(todo)} to load '
+                                    f'({new} with new data)')
+
+    def data_item_changed(self, item):
+        if self.data_loading or item.column() != 0:
+            return
+        stem = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        if stem in self.data_rows:
+            self.data_rows[stem]['sel'] = item.checkState() == QtCore.Qt.CheckState.Checked
+            self.data_update_selection_label()
+
+    def data_select(self, how):
+        if not self.data_listed:
+            self.data_status.setStyleSheet('color: #c08000;')
+            self.data_status.setText('read the file list first ("List files")')
+            return
+        rows = {self.data_files.item(i.row(), 0).data(QtCore.Qt.ItemDataRole.UserRole)
+                for i in self.data_files.selectedIndexes()}
+        for stem, d in self.data_rows.items():
+            d['sel'] = (how == 'all' and self._data_to_load(d['files']) > 0) or (how == 'rows' and stem in rows)
+        self.data_show_rows()
+
+    def on_data_list(self, data):
+        self.data_busy = False
+        self.update_run_state(self.running)
+        if not data.get('ok'):
+            self.data_status.setStyleSheet('color: #d64545;')
+            self.data_status.setText(data.get('message', 'error'))
+            return
+        self.data_dir = data.get('dir') or self.data_dir
+        old = self.data_rows
+        self.data_rows = {}
+        for f in data.get('files', []):
+            stem = norlog_archive.file_stem(f['name'])
+            d = self.data_rows.setdefault(stem, {'files': {}})
+            d['files'][f['name']] = {k: f[k] for k in ('card', 'local', 'state')}
+        for stem, d in self.data_rows.items():
+            # keep a selection made before, otherwise everything with new data
+            d['sel'] = old[stem].get('sel', False) if self.data_listed and stem in old else \
+                self._data_to_load(d['files']) > 0
+        self.data_listed = True
+        self.data_show_rows()
+        todo = sum(self._data_to_load(d['files']) for d in self.data_rows.values())
+        self.data_status.setStyleSheet('')
+        self.data_status.setText(f"{len(self.data_rows)} data files on the card, {self._kb(todo)} not in the archive "
+                                 f"({data.get('dir')})")
+
+    def _data_row_of(self, stem):
+        for r in range(self.data_files.rowCount()):
+            item = self.data_files.item(r, 0)
+            if item is not None and item.data(QtCore.Qt.ItemDataRole.UserRole) == stem:
+                return r
+        return -1
+
+    def _data_set_run(self, stem, text, active=False):
+        """State text of a row during the download; the active row is highlighted and kept visible."""
+        d = self.data_rows.get(stem)
+        if d is None:
+            return
+        d['run'] = text
+        r = self._data_row_of(stem)
+        if r < 0:
+            return
+        self.data_loading = True
+        self.data_files.item(r, 6).setText(text)
+        font = self.data_files.item(r, 0).font()
+        font.setBold(active)
+        for c in range(self.data_files.columnCount()):
+            self.data_files.item(r, c).setFont(font)
+        self.data_loading = False
+        if active:
+            self.data_files.scrollToItem(self.data_files.item(r, 0))
 
     def _device_archive_dir(self):
         hwid = (self.entry.get('info') or {}).get('hwid') if getattr(self, 'entry', None) else None
@@ -4137,20 +4335,69 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
 
     def data_sync(self):
         self.cfg.archive_folder = self.data_folder.text().strip() or 'norlog_archive'
+        args = {'target': self.key, 'folder': self.cfg.archive_folder, 'publish': self.data_publish.isChecked(),
+                'newest_first': self.data_order.currentIndex() == 1}
+        if self.data_listed:
+            stems = [s for s in self.data_stems() if self.data_rows[s].get('sel')]
+            if not stems:
+                self.data_status.setStyleSheet('color: #c08000;')
+                self.data_status.setText('no file selected')
+                return
+            args['stems'] = stems
+            for s in self.data_rows:
+                self.data_rows[s]['run'] = 'waiting' if s in stems else None
+            self.data_show_rows()
+        self.data_queue = args.get('stems')
+        self.data_current = None
         self.data_busy = True
         self.update_run_state(self.running)
         self.data_progress.setValue(0)
         self.data_status.setStyleSheet('')
-        self.data_status.setText('Reading the file list ...')
-        self.device.thread_command('data_sync', {'target': self.key, 'folder': self.cfg.archive_folder,
-                                                 'publish': self.data_publish.isChecked()})
+        self.data_status.setText('Comparing with the archive ...')
+        self.device.thread_command('data_sync', args)
+
+    def data_track_progress(self, data):
+        """Rows during the download: finished files 'loaded', the current one with its percentage."""
+        stem = norlog_archive.file_stem(data.get('file', ''))
+        done = data.get('done', 0)
+        if stem not in self.data_rows:
+            return
+        if self.data_current is None or self.data_current[0] != stem:
+            if self.data_current is not None:
+                self._data_set_run(self.data_current[0], 'loaded')
+            # the files before it in the order are loaded (or had nothing to load); its bytes start after theirs
+            start = 0
+            for s in (self.data_queue or []):
+                if s == stem:
+                    break
+                start += self._data_to_load(self.data_rows[s]['files'])
+                if self.data_rows[s].get('run') == 'waiting':
+                    self._data_set_run(s, 'loaded')
+            self.data_current = (stem, start, self._data_to_load(self.data_rows[stem]['files']))
+        _stem, start, size = self.data_current
+        pct = max(0, min(99, int(100 * (done - start) / size))) if size else 0
+        self._data_set_run(stem, f'loading {pct} %', active=True)
 
     def on_sync_message(self, packetid, data):
+        if packetid == 'sync_list':
+            self.on_data_list(data)
+            return
         if packetid == 'sync_progress':
             total = data.get('total') or 0
-            self.data_progress.setValue(int(100 * data.get('done', 0) / total) if total else 0)
-            self.data_status.setText(f"{data.get('file', '')}: {data.get('done', 0) / 1024:.1f} of "
-                                     f"{total / 1024:.1f} KB, {data.get('rate', 0):.1f} KB/s")
+            done = data.get('done', 0)
+            rate = data.get('rate', 0)
+            self.data_progress.setValue(int(100 * done / total) if total else 0)
+            eta = (total - done) / 1024 / rate if rate > 0 else None
+            n_files = len(self.data_queue) if self.data_queue else None
+            pos = ''
+            if n_files and data.get('file'):
+                stem = norlog_archive.file_stem(data['file'])
+                if stem in self.data_queue:
+                    pos = f'file {self.data_queue.index(stem) + 1} of {n_files}, '
+            self.data_status.setText(
+                f"{pos}{data.get('file', '')}: {self._kb(done)} of {self._kb(total)}, {rate:.1f} KB/s"
+                + (f", about {int(eta // 60)}:{int(eta % 60):02d} min left" if eta is not None else ''))
+            self.data_track_progress(data)
             return
         self.data_busy = False
         self.update_run_state(self.running)
@@ -4159,15 +4406,22 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.data_dir = data.get('dir') or self.data_dir
         self.data_status.setStyleSheet('' if data.get('ok') else 'color: #d64545;')
         self.data_status.setText(data.get('message', ''))
-        files = data.get('files') or []
-        self.data_files.setRowCount(len(files))
-        for row, f in enumerate(files):
-            grown = f['new'] - f['old']
-            state = {'unchanged': 'up to date', 'appended': f'+{grown} bytes', 'new': 'new',
-                     'replaced': 'card changed: loaded again, old copy kept'}.get(f['status'], f['status'])
-            for col, text in enumerate([f['name'], str(f['new']), state]):
-                self.data_files.setItem(row, col, QtWidgets.QTableWidgetItem(text))
-        self.data_files.resizeColumnsToContents()
+        # Archive sizes from the result; rows of a download without list are added
+        for f in data.get('files') or []:
+            stem = norlog_archive.file_stem(f['name'])
+            d = self.data_rows.setdefault(stem, {'files': {}})
+            entry = d['files'].setdefault(f['name'], {'card': f['new'], 'local': 0, 'state': 'new'})
+            entry['local'] = f['new']
+            entry['card'] = max(entry['card'], f['new'])
+            entry['state'] = 'unchanged' if entry['local'] >= entry['card'] else 'grown'
+        for d in self.data_rows.values():
+            left = self._data_to_load(d['files'])
+            # the row interrupted by a cancel or error says so; all others show their state again
+            d['run'] = 'stopped' if left and (d.get('run') or '').startswith('loading') else None
+            if not left:
+                d['sel'] = False
+        self.data_current = None
+        self.data_show_rows()
 
     def _build_files_tab(self):
         w = QtWidgets.QWidget()
