@@ -107,7 +107,7 @@ def plan(remote, archive_root, hwid=None, verify=False, progress=None, cancel=No
     is compared at its end (needed before appending). verify: also compare every file of the same
     size completely by CRC (slow: one request per 64 KB over Thread).
     progress(i, n, name) before each file; cancel() -> True stops with ArchiveError.
-    list_progress(entries so far) after each page of the directory listing.
+    list_progress(entries so far, total or None) after each page of the directory listing.
     Returns {'hwid', 'dir', 'files': [{'name', 'card', 'local', 'state'}]} sorted by name (= chronological),
     state 'unchanged', 'new' (not in the archive), 'grown' (more on the card) or 'mismatch' (the local copy
     does not match the card: formatted or swapped; a sync keeps it as <name>.replaced-<time> and loads again).

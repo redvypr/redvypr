@@ -753,9 +753,9 @@ class _Gateway:
                 self.to_gui('sync_progress', {'target': target, 'verify': True, 'done': i, 'total': n,
                                               'file': name})
 
-        def list_progress(entries):
+        def list_progress(entries, total=None):
             # each page of the directory (about 12 entries) at once to the table
-            self.to_gui('sync_list_partial', {'target': target, 'n': len(entries),
+            self.to_gui('sync_list_partial', {'target': target, 'n': len(entries), 'total': total,
                                               'files': [{'name': e['n'], 'card': e.get('s', 0)} for e in entries
                                                         if not e.get('d') and e['n'].startswith('data_')]})
             if self.check_commands(during_flash=True):
@@ -4247,8 +4247,12 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             d = self.data_rows.setdefault(norlog_archive.file_stem(f['name']), {'files': {}})
             d['files'][f['name']] = {'card': f['card'], 'local': 0, 'state': 'listing'}
         self.data_show_rows()
-        self.data_status.setText(f"Reading the file list: {data.get('n', 0)} entries "
-                                 f"({len(self.data_rows)} data files) ...")
+        n, total = data.get('n', 0), data.get('total')
+        if total:       # firmware >= 0.4.22: number of entries known, otherwise the bar keeps running
+            self.data_progress.setRange(0, 100)
+            self.data_progress.setValue(int(100 * n / total))
+        self.data_status.setText(f"Reading the file list: {n}" + (f" of {total}" if total else '')
+                                 + f" entries ({len(self.data_rows)} data files) ...")
 
     def on_data_list(self, data):
         self.data_busy = False

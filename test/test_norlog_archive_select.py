@@ -90,3 +90,16 @@ def test_verify_and_reload(tmp_path):
     assert res["files"][0]["status"] == "replaced"
     assert (tmp_path / "HW1" / f"{A}.cbor").read_bytes() == b"x" * 250
     assert list((tmp_path / "HW1").glob(f"{A}.cbor.replaced-*"))
+
+
+def test_fs_list_reports_pages_and_total():
+    from redvypr.devices.norlog import ot_cli
+    pages = {0: {"entries": [{"n": "a", "s": 1}], "next": 1, "total": 2}, 1: {"entries": [{"n": "b", "s": 2}], "next": 0}}
+    seen = []
+    ot_cli_fs_local = ot_cli.fs_local
+    try:
+        ot_cli.fs_local = lambda cli, op, path, start: pages[start]
+        entries = ot_cli.fs_list(None, None, "/log", progress=lambda e, total: seen.append((len(e), total)))
+    finally:
+        ot_cli.fs_local = ot_cli_fs_local
+    assert [e["n"] for e in entries] == ["a", "b"] and seen == [(1, 2), (2, 2)]

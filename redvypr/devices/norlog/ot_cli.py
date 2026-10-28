@@ -289,15 +289,17 @@ def fs_remote(cli: OtCli, address: str, op: str, path: str, timeout: float = 10.
 def fs_list(cli: OtCli, address, path: str, progress=None):
     """
     Directory listing (address None = gateway itself); follows 'next' for long directories.
-    progress(entries so far) after each page.
+    progress(entries so far, total) after each page; total = number of all entries (firmware >= 0.4.22,
+    sent with the first page) or None.
     """
-    entries, start = [], 0
+    entries, start, total = [], 0, None
     while True:
         res = (fs_local(cli, "ls", _fs_quote(path), start) if address is None
                else fs_remote(cli, address, "ls", path, i=start))
         entries.extend(res.get("entries", []))
+        total = res.get("total", total)
         if progress:
-            progress(entries)
+            progress(entries, total)
         start = res.get("next", 0)
         if not start:
             return entries
