@@ -1290,10 +1290,13 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.settings_dialogs = {}  # device key -> open DeviceSettingsDialog
 
         self.tabs = QtWidgets.QTabWidget()
-        self.tabs.addTab(self._build_devices_tab(), 'Devices')
+        # Scroll areas: otherwise the highest tab sets the minimum height of the redvypr main window,
+        # which then reaches under the taskbar on small or scaled screens
+        scroll = DeviceSettingsDialog._scrollable
+        self.tabs.addTab(scroll(self._build_devices_tab()), 'Devices')
         self.tabs.addTab(self._build_console_tab(), 'Console')
-        self.tabs.addTab(self._build_thread_tab(), 'Thread network')
-        self.tabs.addTab(self._build_data_tab(), 'Data')
+        self.tabs.addTab(scroll(self._build_thread_tab()), 'Thread network')
+        self.tabs.addTab(scroll(self._build_data_tab()), 'Data')
         self.layout.addWidget(self._build_port_row())
         self.layout.addWidget(self.tabs)
 

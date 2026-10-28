@@ -74,7 +74,8 @@ redvypr changelog
 - norlog gateway: without a configured port the first serial port that no other device of redvypr uses
   is preset (ports in numeric order, COM3 before COM16); a port from the configuration stays
 - Main window: after opening it is fitted into the free area of the screen and centered (it could reach
-  under the Windows taskbar)
+  under the Windows taskbar); the tabs of the norlog gateway scroll, they no longer force a minimum height of
+  about 790 px on the main window
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)
 
