@@ -29,6 +29,7 @@ import logging
 import os
 import pathlib
 import statistics
+import struct
 import zlib
 
 from . import norlog_logindex as L
@@ -97,18 +98,57 @@ def _local_crc(path, off, length):
         return zlib.crc32(f.read(length))
 
 
-def plan(remote, archive_root, hwid=None, verify=False, progress=None, cancel=None, list_progress=None):
+def _fetch_catalog(remote, local, card_size, head, progress=None):
+    """
+    The catalog of the card, loaded incrementally into the local copy: it only grows (one record per
+    data file) and only the record of the open file changes, so the last local record and what is
+    new are read; one CRC request checks the part kept (otherwise, e.g. another card: all again).
+    The new range is verified by CRC except the last record (written while the file is open).
+    head: the header read before (hardware ID); progress(done, total) in bytes of this load.
+    """
+    path = f"{LOG_DIR}/{CATALOG}"
+    hdr = L.CATALOG_HEADER.size
+    if len(head) < hdr:
+        raise L.LogIndexError("catalog too short")
+    magic, _version, rec_size, _hwid = L.CATALOG_HEADER.unpack_from(head)
+    if magic != L.CATALOG_MAGIC or rec_size <= 0:
+        raise L.LogIndexError(f"no norlog catalog (magic {magic!r})")
+    old = local.read_bytes() if local.exists() else b""
+    start = 0
+    if hdr + rec_size <= len(old) <= card_size and (len(old) - hdr) % rec_size == 0:
+        start = len(old) - rec_size
+        if remote.crc(path, 0, start) != zlib.crc32(old[:start]):
+            start = 0
+    data = bytearray(old[:start])
+    while len(data) < card_size:
+        chunk = remote.read(path, len(data), card_size - len(data))
+        if not chunk:
+            break
+        data.extend(chunk)
+        if progress:
+            progress(len(data) - start, card_size - start)
+    end = len(data) - rec_size
+    if len(data) != card_size or (end > start and remote.crc(path, start, end - start)
+                                  != zlib.crc32(bytes(data[start:end]))):
+        raise ArchiveError("catalog: download does not match the card (CRC)")
+    return bytes(data)
+
+
+def plan(remote, archive_root, hwid=None, verify=False, progress=None, cancel=None, list_progress=None,
+         catalog_progress=None):
     """
     Compare the log files of the card with the archive, without downloading data files
-    (only the small catalog is copied, it gives the hardware ID).
+    (only the catalog is updated, it gives the hardware ID and the boot of each file).
     hwid: only needed for cards without catalog (firmware < 0.4.3).
     Files of the same size count as unchanged: the names are unique per device (boot counter and
     start time) and every downloaded range was verified by CRC. Only a file that grew on the card
     is compared at its end (needed before appending). verify: also compare every file of the same
     size completely by CRC (slow: one request per 64 KB over Thread).
     progress(i, n, name) before each file; cancel() -> True stops with ArchiveError.
-    list_progress(entries so far, total or None) after each page of the directory listing.
-    Returns {'hwid', 'dir', 'files': [{'name', 'card', 'local', 'state'}]} sorted by name (= chronological),
+    list_progress(entries so far, total or None) after each page of the directory listing;
+    catalog_progress(done, total) while the catalog is loaded (bytes).
+    Returns {'hwid', 'dir', 'files': [{'name', 'card', 'local', 'state', 'boot'}]} sorted by name
+    (= chronological), boot from the catalog (None if unknown),
     state 'unchanged', 'new' (not in the archive), 'grown' (more on the card) or 'mismatch' (the local copy
     does not match the card: formatted or swapped; a sync keeps it as <name>.replaced-<time> and loads again).
     """
@@ -119,18 +159,24 @@ def plan(remote, archive_root, hwid=None, verify=False, progress=None, cancel=No
 
     catalog = None
     if CATALOG in sizes:
-        catalog_bytes = remote.read_all(f"{LOG_DIR}/{CATALOG}")
         try:
+            # the hardware ID (folder of the local copy) is in the header
+            head = remote.read(f"{LOG_DIR}/{CATALOG}", 0, L.CATALOG_HEADER.size)
+            hwid = f"{L.CATALOG_HEADER.unpack_from(head)[3]:016X}"
+            local_cat = pathlib.Path(archive_root) / hwid / CATALOG
+            local_cat.parent.mkdir(parents=True, exist_ok=True)
+            catalog_bytes = _fetch_catalog(remote, local_cat, sizes[CATALOG], head, catalog_progress)
             catalog = L.parse_catalog(catalog_bytes)
             hwid = catalog["hwid"]
-        except L.LogIndexError as exc:
+            _write_atomic(local_cat, catalog_bytes)
+        except (L.LogIndexError, ValueError, struct.error) as exc:
             logger.warning(f"catalog not readable: {exc}")
+            catalog = None
     if not hwid:
         raise ArchiveError("hardware ID unknown (no catalog on the card, read the device info first)")
     dev_dir = pathlib.Path(archive_root) / hwid
     dev_dir.mkdir(parents=True, exist_ok=True)
-    if catalog is not None:
-        _write_atomic(dev_dir / CATALOG, catalog_bytes)
+    boots = {r["name"]: r["boot"] for r in catalog["files"]} if catalog else {}
 
     files = []
     names = sorted(n for n in sizes if n.startswith("data_") and (n.endswith(".cbor") or n.endswith(".idx")))
@@ -152,7 +198,8 @@ def plan(remote, archive_root, hwid=None, verify=False, progress=None, cancel=No
             state = "unchanged" if _file_matches(remote, local, name, have) else "mismatch"
         else:
             state = "unchanged"
-        files.append({"name": name, "card": sizes[name], "local": have, "state": state})
+        files.append({"name": name, "card": sizes[name], "local": have, "state": state,
+                      "boot": boots.get(file_stem(name) + ".cbor")})
     if progress:
         progress(len(names), len(names), "")
     return {"hwid": hwid, "dir": str(dev_dir), "files": files}

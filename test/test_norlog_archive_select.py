@@ -103,3 +103,37 @@ def test_fs_list_reports_pages_and_total():
     finally:
         ot_cli.fs_local = ot_cli_fs_local
     assert [e["n"] for e in entries] == ["a", "b"] and seen == [(1, 2), (2, 2)]
+
+
+def _catalog(records, hwid=0x9AB64B5C71AE5C1C):
+    from redvypr.devices.norlog import norlog_logindex as L
+    data = L.CATALOG_HEADER.pack(L.CATALOG_MAGIC, 2, L.CATALOG_RECORD.size, hwid)
+    for i, (name, boot, packets) in enumerate(records):
+        data += L.CATALOG_RECORD.pack(i + 1, boot, 0, 0, packets, 0, 1, 0, 0, 0, 0, 0, name.encode())
+    return data
+
+
+class CatalogRemote(FakeRemote):
+    def read(self, path, off, length):
+        name = path.rsplit("/", 1)[1]
+        self.reads.append((name, off))
+        return self.files[name][off:off + min(length, 100)]
+
+
+def test_catalog_is_loaded_incrementally(tmp_path):
+    remote = CatalogRemote(card().files)
+    remote.files["catalog.dat"] = _catalog([(f"{A}.cbor", 7, 10), (f"{B}.cbor", 8, 5)])
+    p = norlog_archive.plan(remote, tmp_path)
+    assert p["hwid"] == "9AB64B5C71AE5C1C"
+    assert {f["name"]: f["boot"] for f in p["files"]}[f"{B}.idx"] == 8
+    first = [o for n, o in remote.reads if n == "catalog.dat"]
+    assert first[0] == 0 and len(first) > 2
+
+    # B is closed (its record changes), C is new: only from the last known record on
+    remote.reads.clear()
+    remote.files["catalog.dat"] = _catalog([(f"{A}.cbor", 7, 10), (f"{B}.cbor", 8, 9), (f"{C}.cbor", 9, 1)])
+    p = norlog_archive.plan(remote, tmp_path)
+    offsets = [o for n, o in remote.reads if n == "catalog.dat"]
+    assert offsets[0] == 0 and min(offsets[1:]) == 16 + 96         # header, then record B on
+    assert (tmp_path / p["hwid"] / "catalog.dat").read_bytes() == remote.files["catalog.dat"]
+    assert {f["name"]: f["boot"] for f in p["files"]}[f"{C}.cbor"] == 9

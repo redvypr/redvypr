@@ -761,13 +761,18 @@ class _Gateway:
             if self.check_commands(during_flash=True):
                 raise norlog_archive.ArchiveError('cancelled while reading the file list')
 
+        def catalog_progress(done, total):
+            if time.monotonic() - last[0] >= 0.3 or done >= total:
+                last[0] = time.monotonic()
+                self.to_gui('sync_progress', {'target': target, 'catalog': True, 'done': done, 'total': total})
+
         try:
             hwid = (self.infos.get(target or 'gateway') or {}).get('hwid')
             remote = norlog_archive.RemoteFiles(self.cli, self.target_address(target))
             res = norlog_archive.plan(remote, folder, hwid=hwid, verify=verify,
                                       progress=progress if verify else None,
                                       cancel=lambda: self.check_commands(during_flash=True),
-                                      list_progress=list_progress)
+                                      list_progress=list_progress, catalog_progress=catalog_progress)
         except (norlog_archive.ArchiveError, ot_cli.OtError, TimeoutError, OSError, ValueError) as exc:
             self.to_gui('sync_list', {'target': target, 'ok': False, 'message': str(exc)})
             return
@@ -4172,7 +4177,8 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
 
     # --- data: file list, selection and order ---
 
-    DATA_COLS = ['File', 'Boot', 'Start', 'On card', 'In archive', 'To load', 'State']
+    DATA_COLS = ['File', 'No.', 'Boot', 'Start', 'On card', 'In archive', 'To load', 'State']
+    COL_DATA_STATE = 7
     DATA_NAME_RE = re.compile(r'data_(\d+)_(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})(\d{2})_(\d+)$')
     DATA_STATES = {'unchanged': 'up to date', 'new': 'new', 'grown': 'more on the card',
                    'mismatch': 'differs from the card: load again (old copy kept)', 'listing': 'reading ...'}
@@ -4218,8 +4224,10 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             d = self.data_rows[stem]
             data = d['files'].get(stem + '.cbor') or next(iter(d['files'].values()))
             m = self.DATA_NAME_RE.match(stem)
-            boot, start = (str(int(m.group(1))), f'{m.group(2)} {m.group(3)}:{m.group(4)}:{m.group(5)}') if m \
+            # file name: data_<file number>_<start date>_<time>_<uptime s>; the boot comes from the catalog
+            number, start = (str(int(m.group(1))), f'{m.group(2)} {m.group(3)}:{m.group(4)}:{m.group(5)}') if m \
                 else ('', '')
+            boot = '' if data.get('boot') is None else str(data['boot'])
             todo = self._data_to_load(d['files'])
             listing = data['state'] == 'listing'
             state = 'reading ...' if listing else \
@@ -4232,9 +4240,10 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             t.setItem(r, 0, item)
             local = '...' if listing else self._kb(data['local'])
             todo_text = '...' if listing else (self._kb(todo) if todo else '-')
-            for col, text in enumerate([boot, start, self._kb(data['card']), local, todo_text, state], start=1):
+            for col, text in enumerate([number, boot, start, self._kb(data['card']), local, todo_text, state],
+                                       start=1):
                 it = QtWidgets.QTableWidgetItem(text)
-                if col in (3, 4, 5):
+                if col in (1, 2, 4, 5, 6):
                     it.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
                 t.setItem(r, col, it)
         t.resizeColumnsToContents()
@@ -4299,7 +4308,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         for f in data.get('files', []):
             stem = norlog_archive.file_stem(f['name'])
             d = self.data_rows.setdefault(stem, {'files': {}})
-            d['files'][f['name']] = {k: f[k] for k in ('card', 'local', 'state')}
+            d['files'][f['name']] = {k: f.get(k) for k in ('card', 'local', 'state', 'boot')}
         for stem, d in self.data_rows.items():
             # keep a selection made before, otherwise everything with new data
             d['sel'] = old[stem].get('sel', False) if stem in old else self._data_to_load(d['files']) > 0
@@ -4327,7 +4336,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         if r < 0:
             return
         self.data_loading = True
-        self.data_files.item(r, 6).setText(text)
+        self.data_files.item(r, self.COL_DATA_STATE).setText(text)
         font = self.data_files.item(r, 0).font()
         font.setBold(active)
         for c in range(self.data_files.columnCount()):
@@ -4480,6 +4489,13 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             return
         if packetid == 'sync_list_partial':
             self.on_data_list_partial(data)
+            return
+        if packetid == 'sync_progress' and data.get('catalog'):
+            n = data.get('total') or 0
+            self.data_progress.setRange(0, 100)
+            self.data_progress.setValue(int(100 * data.get('done', 0) / n) if n else 0)
+            self.data_status.setText(f"Reading the catalog of the card: {self._kb(data.get('done', 0))} of "
+                                     f"{self._kb(n)} (only what is new) ...")
             return
         if packetid == 'sync_progress' and data.get('verify'):
             n = data.get('total') or 0

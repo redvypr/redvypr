@@ -70,6 +70,9 @@ redvypr changelog
 - norlog data download: the file list compares sizes only (CRC only at the end of files that grew, before
   appending), much faster with many files; optional "verify (CRC)" compares the archived files completely
   with the card, files found different are loaded again (old copy kept); the list can be cancelled
+- norlog data download: the catalog of the card (96 bytes per data file) is loaded incrementally (last
+  record and what is new, the rest checked by one CRC) instead of completely for every list, with progress;
+  columns "No." (file number from the name) and "Boot" (from the catalog)
 ### Changed
 - norlog gateway: without a configured port the first serial port that no other device of redvypr uses
   is preset (ports in numeric order, COM3 before COM16); a port from the configuration stays
