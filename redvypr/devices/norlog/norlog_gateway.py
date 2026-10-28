@@ -375,9 +375,10 @@ class _Gateway:
             elif command == 'data_sync':
                 self.data_sync(args.get('target', 'gateway'), args.get('folder') or self.config.archive_folder,
                                bool(args.get('publish', self.config.archive_publish)), args.get('stems'),
-                               bool(args.get('newest_first', False)))
+                               bool(args.get('newest_first', False)), args.get('reload'))
             elif command == 'data_list':
-                self.data_list(args.get('target', 'gateway'), args.get('folder') or self.config.archive_folder)
+                self.data_list(args.get('target', 'gateway'), args.get('folder') or self.config.archive_folder,
+                               bool(args.get('verify', False)))
             elif command == 'set_time':
                 self.set_time(args.get('targets') or ['gateway'], force=bool(args.get('force')))
             elif command == 'radio_set':
@@ -730,22 +731,36 @@ class _Gateway:
 
     # --- data download (archive of the SD card log files) ---
 
-    def data_list(self, target, folder):
-        """Log files of the card compared with the archive, without download: answer 'sync_list'."""
+    def data_list(self, target, folder, verify=False):
+        """
+        Log files of the card compared with the archive, without download: answer 'sync_list'.
+        verify: compare the archived files completely by CRC (slow), progress as 'sync_progress'.
+        """
+        last = [0.0]
+
+        def progress(i, n, name):
+            if time.monotonic() - last[0] >= 0.3 or i >= n:
+                last[0] = time.monotonic()
+                self.to_gui('sync_progress', {'target': target, 'verify': True, 'done': i, 'total': n,
+                                              'file': name})
+
         try:
             hwid = (self.infos.get(target or 'gateway') or {}).get('hwid')
             remote = norlog_archive.RemoteFiles(self.cli, self.target_address(target))
-            res = norlog_archive.plan(remote, folder, hwid=hwid)
+            res = norlog_archive.plan(remote, folder, hwid=hwid, verify=verify,
+                                      progress=progress if verify else None,
+                                      cancel=lambda: self.check_commands(during_flash=True))
         except (norlog_archive.ArchiveError, ot_cli.OtError, TimeoutError, OSError, ValueError) as exc:
             self.to_gui('sync_list', {'target': target, 'ok': False, 'message': str(exc)})
             return
         self.to_gui('sync_list', {'target': target, 'ok': True, **res})
 
-    def data_sync(self, target, folder, publish, stems=None, newest_first=False):
+    def data_sync(self, target, folder, publish, stems=None, newest_first=False, reload=None):
         """
         Copy the new log data of a norlog into the archive folder and, with publish,
         publish the packets that were not published yet (with their measurement time).
-        stems: only these data files (norlog_archive.file_stem), None = all; newest_first: order.
+        stems: only these data files (norlog_archive.file_stem), None = all; newest_first: order;
+        reload: file names to load again (found different by a verified list).
         """
         meter = RateMeter()
         last = [0.0]
@@ -763,7 +778,8 @@ class _Gateway:
             remote = norlog_archive.RemoteFiles(self.cli, address)
             res = norlog_archive.sync(remote, folder, hwid=hwid, progress=progress,
                                       cancel=lambda: self.check_commands(during_flash=True),
-                                      stems=set(stems) if stems is not None else None, newest_first=newest_first)
+                                      stems=set(stems) if stems is not None else None, newest_first=newest_first,
+                                      reload=set(reload or ()))
         except (norlog_archive.ArchiveError, ot_cli.OtError, TimeoutError, OSError, ValueError) as exc:
             self.to_gui('sync_result', {'target': target, 'ok': False, 'message': str(exc)})
             return
@@ -4035,6 +4051,10 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.data_list_btn.setToolTip('Compare the log files of the SD card with the archive, nothing is '
                                       'downloaded; then select the files to load')
         self.data_list_btn.clicked.connect(self.data_list)
+        self.data_verify = QtWidgets.QCheckBox('verify (CRC)')
+        self.data_verify.setToolTip('Also compare every archived file completely with the card (CRC). Slow: over '
+                                    'Thread one request per 64 KB. Without it, files of the same size count as '
+                                    'up to date (the names are unique, downloads are verified by CRC).')
         self.data_order = QtWidgets.QComboBox()
         self.data_order.addItems(['oldest first', 'newest first'])
         self.data_order.setToolTip('Order of the download (the file names are chronological)')
@@ -4049,6 +4069,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         sel_rows.clicked.connect(lambda: self.data_select('rows'))
         self.data_sel_label = QtWidgets.QLabel('')
         row.addWidget(self.data_list_btn)
+        row.addWidget(self.data_verify)
         row.addWidget(QtWidgets.QLabel('Order'))
         row.addWidget(self.data_order)
         row.addWidget(QtWidgets.QLabel('Select'))
@@ -4056,7 +4077,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             row.addWidget(b_)
         row.addWidget(self.data_sel_label, 1)
         lay.addLayout(row)
-        self.data_select_widgets = [sel_all, sel_none, sel_rows, self.data_order]
+        self.data_select_widgets = [sel_all, sel_none, sel_rows, self.data_order, self.data_verify]
         row = QtWidgets.QHBoxLayout()
         self.data_sync_btn = QtWidgets.QPushButton('Download')
         self.data_sync_btn.setToolTip('Load the selected files (all new data if the list was not read)')
@@ -4105,7 +4126,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
     DATA_COLS = ['File', 'Boot', 'Start', 'On card', 'In archive', 'To load', 'State']
     DATA_NAME_RE = re.compile(r'data_(\d+)_(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})(\d{2})_(\d+)$')
     DATA_STATES = {'unchanged': 'up to date', 'new': 'new', 'grown': 'more on the card',
-                   'mismatch': 'card changed: load again (old copy kept)'}
+                   'mismatch': 'differs from the card: load again (old copy kept)'}
 
     @staticmethod
     def _kb(n):
@@ -4127,8 +4148,12 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.data_busy = True
         self.update_run_state(self.running)
         self.data_status.setStyleSheet('')
-        self.data_status.setText('Reading the file list ...')
-        self.device.thread_command('data_list', {'target': self.key, 'folder': self.cfg.archive_folder})
+        verify = self.data_verify.isChecked()
+        self.data_progress.setValue(0)
+        self.data_status.setText('Reading the file list' + (' and comparing the archive by CRC' if verify else '')
+                                 + ' ...')
+        self.device.thread_command('data_list', {'target': self.key, 'folder': self.cfg.archive_folder,
+                                                 'verify': verify})
 
     def data_stems(self):
         """Stems in download order."""
@@ -4344,6 +4369,9 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
                 self.data_status.setText('no file selected')
                 return
             args['stems'] = stems
+            # found different by a verified list: the same size does not show it to the download
+            args['reload'] = [n for s in stems for n, f in self.data_rows[s]['files'].items()
+                              if f['state'] == 'mismatch']
             for s in self.data_rows:
                 self.data_rows[s]['run'] = 'waiting' if s in stems else None
             self.data_show_rows()
@@ -4381,6 +4409,12 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
     def on_sync_message(self, packetid, data):
         if packetid == 'sync_list':
             self.on_data_list(data)
+            return
+        if packetid == 'sync_progress' and data.get('verify'):
+            n = data.get('total') or 0
+            self.data_progress.setValue(int(100 * data.get('done', 0) / n) if n else 0)
+            self.data_status.setText(f"Comparing the archive by CRC: file {data.get('done', 0)} of {n} "
+                                     f"({data.get('file', '')}) ...")
             return
         if packetid == 'sync_progress':
             total = data.get('total') or 0

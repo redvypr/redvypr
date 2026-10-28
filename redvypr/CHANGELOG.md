@@ -67,6 +67,9 @@ redvypr changelog
   the order ("oldest first"/"newest first"); during the download the current file is highlighted with its
   percentage, finished files are marked, the status shows file i of n, rate and time left;
   `norlog_archive.plan()` and `sync(stems=, newest_first=)`
+- norlog data download: the file list compares sizes only (CRC only at the end of files that grew, before
+  appending), much faster with many files; optional "verify (CRC)" compares the archived files completely
+  with the card, files found different are loaded again (old copy kept); the list can be cancelled
 ### Changed
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)

@@ -97,11 +97,16 @@ def _local_crc(path, off, length):
         return zlib.crc32(f.read(length))
 
 
-def plan(remote, archive_root, hwid=None):
+def plan(remote, archive_root, hwid=None, verify=False, progress=None, cancel=None):
     """
     Compare the log files of the card with the archive, without downloading data files
     (only the small catalog is copied, it gives the hardware ID).
     hwid: only needed for cards without catalog (firmware < 0.4.3).
+    Files of the same size count as unchanged: the names are unique per device (boot counter and
+    start time) and every downloaded range was verified by CRC. Only a file that grew on the card
+    is compared at its end (needed before appending). verify: also compare every file of the same
+    size completely by CRC (slow: one request per 64 KB over Thread).
+    progress(i, n, name) before each file; cancel() -> True stops with ArchiveError.
     Returns {'hwid', 'dir', 'files': [{'name', 'card', 'local', 'state'}]} sorted by name (= chronological),
     state 'unchanged', 'new' (not in the archive), 'grown' (more on the card) or 'mismatch' (the local copy
     does not match the card: formatted or swapped; a sync keeps it as <name>.replaced-<time> and loads again).
@@ -125,14 +130,28 @@ def plan(remote, archive_root, hwid=None):
         _write_atomic(dev_dir / CATALOG, catalog_bytes)
 
     files = []
-    for name in sorted(n for n in sizes if n.startswith("data_") and (n.endswith(".cbor") or n.endswith(".idx"))):
+    names = sorted(n for n in sizes if n.startswith("data_") and (n.endswith(".cbor") or n.endswith(".idx")))
+    for i, name in enumerate(names):
+        if cancel and cancel():
+            raise ArchiveError("cancelled while comparing the file list")
+        if progress:
+            progress(i, len(names), name)
         local = dev_dir / name
         have = local.stat().st_size if local.exists() else 0
-        if have > sizes[name] or (have and not _tail_matches(remote, local, name, have)):
+        card = sizes[name]
+        if have > card:
             state = "mismatch"
+        elif have == 0:
+            state = "new"
+        elif have < card:
+            state = "grown" if _tail_matches(remote, local, name, have) else "mismatch"
+        elif verify:
+            state = "unchanged" if _file_matches(remote, local, name, have) else "mismatch"
         else:
-            state = "unchanged" if have == sizes[name] else ("grown" if have else "new")
+            state = "unchanged"
         files.append({"name": name, "card": sizes[name], "local": have, "state": state})
+    if progress:
+        progress(len(names), len(names), "")
     return {"hwid": hwid, "dir": str(dev_dir), "files": files}
 
 
@@ -141,16 +160,19 @@ def file_stem(name):
     return name.rsplit(".", 1)[0]
 
 
-def sync(remote, archive_root, hwid=None, progress=None, cancel=None, stems=None, newest_first=False):
+def sync(remote, archive_root, hwid=None, progress=None, cancel=None, stems=None, newest_first=False,
+         reload=None):
     """
     Copy what is new on the card into <archive_root>/<hwid>/.
     stems: only these data files (file_stem(), each with its index), None = all.
     newest_first: the newest data files first (default: chronological).
+    reload: names of files found as 'mismatch' by plan(verify=True): loaded again (the same size
+    alone does not show it again).
     progress(done_bytes, total_bytes, name); cancel() -> True stops after the current block.
     Returns {'hwid', 'dir', 'files': [{'name', 'old', 'new', 'status'}], 'bytes', 'cancelled'}
     with the files in download order; files that were not selected are not listed.
     """
-    p = plan(remote, archive_root, hwid)
+    p = plan(remote, archive_root, hwid, cancel=cancel)
     dev_dir = pathlib.Path(p["dir"])
     result = {"hwid": p["hwid"], "dir": p["dir"], "files": [], "bytes": 0, "cancelled": False}
 
@@ -163,7 +185,7 @@ def sync(remote, archive_root, hwid=None, progress=None, cancel=None, stems=None
     todo = []
     for f in files:
         name, have, status = f["name"], f["local"], "unchanged"
-        if f["state"] == "mismatch":
+        if f["state"] == "mismatch" or (reload and name in reload and have):
             local = dev_dir / name
             old = local.with_name(f"{name}.replaced-{datetime.datetime.now():%Y%m%d-%H%M%S}")
             os.replace(local, old)
@@ -206,6 +228,13 @@ def _tail_matches(remote, local, name, have):
     n = min(have, TAIL_CHECK)
     try:
         return remote.crc(f"{LOG_DIR}/{name}", have - n, n) == _local_crc(local, have - n, n)
+    except ot_cli.OtError:
+        return False
+
+
+def _file_matches(remote, local, name, size):
+    try:
+        return remote.crc(f"{LOG_DIR}/{name}", 0, size) == _local_crc(local, 0, size)
     except ot_cli.OtError:
         return False
 

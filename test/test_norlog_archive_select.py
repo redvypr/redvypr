@@ -15,6 +15,7 @@ class FakeRemote:
     def __init__(self, files):
         self.files = dict(files)        # name -> bytes (no catalog: hwid given)
         self.reads = []
+        self.crcs = []
 
     def list(self, path):
         return [{"n": n, "s": len(b)} for n, b in self.files.items()]
@@ -25,6 +26,7 @@ class FakeRemote:
         return self.files[name][off:off + min(length, 100)]
 
     def crc(self, path, off, length):
+        self.crcs.append((path.rsplit("/", 1)[1], off, length))
         return zlib.crc32(self.files[path.rsplit("/", 1)[1]][off:off + length])
 
     def read_all(self, path):
@@ -65,13 +67,26 @@ def test_all_chronological_by_default(tmp_path):
     assert [f["name"] for f in res["files"]][::2] == [f"{A}.cbor", f"{B}.cbor", f"{C}.cbor"]
 
 
-def test_mismatch_is_loaded_again(tmp_path):
+def test_list_compares_sizes_only(tmp_path):
+    remote = card()
+    norlog_archive.sync(remote, tmp_path, hwid="HW1")
+    remote.crcs.clear()
+    remote.files[f"{C}.cbor"] += b"c" * 10              # only C grew: one tail CRC
+    p = norlog_archive.plan(remote, tmp_path, hwid="HW1")
+    assert [c[0] for c in remote.crcs] == [f"{C}.cbor"]
+    assert sum(f["state"] == "unchanged" for f in p["files"]) == 5
+
+
+def test_verify_and_reload(tmp_path):
     remote = card()
     norlog_archive.sync(remote, tmp_path, hwid="HW1", stems={A})
-    remote.files[f"{A}.cbor"] = b"x" * 250          # card swapped
-    p = norlog_archive.plan(remote, tmp_path, hwid="HW1")
-    assert next(f for f in p["files"] if f["name"] == f"{A}.cbor")["state"] == "mismatch"
-    res = norlog_archive.sync(remote, tmp_path, hwid="HW1", stems={A})
+    remote.files[f"{A}.cbor"] = b"x" * 250              # same size, other content
+    state = lambda p: next(f for f in p["files"] if f["name"] == f"{A}.cbor")["state"]
+    assert state(norlog_archive.plan(remote, tmp_path, hwid="HW1")) == "unchanged"
+    seen = []
+    p = norlog_archive.plan(remote, tmp_path, hwid="HW1", verify=True, progress=lambda i, n, f: seen.append(i))
+    assert state(p) == "mismatch" and seen[-1] == len(p["files"])
+    res = norlog_archive.sync(remote, tmp_path, hwid="HW1", stems={A}, reload={f"{A}.cbor"})
     assert res["files"][0]["status"] == "replaced"
     assert (tmp_path / "HW1" / f"{A}.cbor").read_bytes() == b"x" * 250
     assert list((tmp_path / "HW1").glob(f"{A}.cbor.replaced-*"))
