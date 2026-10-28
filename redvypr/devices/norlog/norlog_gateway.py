@@ -195,6 +195,7 @@ class _Gateway:
         self.reader = ot_cli.LineReader()
         self.cli = None
         self.stop_requested = False
+        self.deferred = []              # commands that arrived during a flash, download or file list
         self.npackets = 0
         self.last_rx = None             # time.monotonic() of the last line from the gateway
         self.data_sources = {}          # '#NLD' source -> {'last_seen', 'packets', 'mac'}
@@ -316,8 +317,15 @@ class _Gateway:
     # --- commands ---
 
     def check_commands(self, during_flash=False):
-        """Process commands from the GUI. Returns True if a running flash shall be cancelled."""
+        """
+        Process commands from the GUI. Returns True if a running flash shall be cancelled.
+        during_flash: only stop/cancel act at once (flash, download, file list are running); other
+        commands wait and run afterwards, e.g. "List files" of a second device.
+        """
         cancel = False
+        if not during_flash:
+            while self.deferred and not self.stop_requested:
+                self.execute(*self.deferred.pop(0))
         while True:
             try:
                 data = self.datainqueue.get(block=False)
@@ -339,8 +347,9 @@ class _Gateway:
             elif during_flash:
                 if command in ('flash_cancel', 'sync_cancel', 'mag_cal_stop'):
                     cancel = True
-                else:
-                    logger.info(f'Ignoring command {command!r} while flashing')
+                elif (command, args) not in self.deferred:
+                    logger.info(f'Command {command!r} waits for the running flash/download')
+                    self.deferred.append((command, args))
             else:
                 self.execute(command, args)
         return cancel
@@ -744,12 +753,21 @@ class _Gateway:
                 self.to_gui('sync_progress', {'target': target, 'verify': True, 'done': i, 'total': n,
                                               'file': name})
 
+        def list_progress(entries):
+            # each page of the directory (about 12 entries) at once to the table
+            self.to_gui('sync_list_partial', {'target': target, 'n': len(entries),
+                                              'files': [{'name': e['n'], 'card': e.get('s', 0)} for e in entries
+                                                        if not e.get('d') and e['n'].startswith('data_')]})
+            if self.check_commands(during_flash=True):
+                raise norlog_archive.ArchiveError('cancelled while reading the file list')
+
         try:
             hwid = (self.infos.get(target or 'gateway') or {}).get('hwid')
             remote = norlog_archive.RemoteFiles(self.cli, self.target_address(target))
             res = norlog_archive.plan(remote, folder, hwid=hwid, verify=verify,
                                       progress=progress if verify else None,
-                                      cancel=lambda: self.check_commands(during_flash=True))
+                                      cancel=lambda: self.check_commands(during_flash=True),
+                                      list_progress=list_progress)
         except (norlog_archive.ArchiveError, ot_cli.OtError, TimeoutError, OSError, ValueError) as exc:
             self.to_gui('sync_list', {'target': target, 'ok': False, 'message': str(exc)})
             return
@@ -2101,7 +2119,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     self.console_text.appendPlainText(
                         f"[fs {data.get('op')} {data.get('target')}] {'OK' if data.get('ok') else 'ERROR'}: "
                         f"{data.get('message', '')}")
-            elif packetid in ('sync_progress', 'sync_result', 'sync_list'):
+            elif packetid in ('sync_progress', 'sync_result', 'sync_list', 'sync_list_partial'):
                 dlg = self.settings_dialogs.get(data.get('target'))
                 if dlg is not None:
                     dlg.on_sync_message(packetid, data)
@@ -4126,7 +4144,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
     DATA_COLS = ['File', 'Boot', 'Start', 'On card', 'In archive', 'To load', 'State']
     DATA_NAME_RE = re.compile(r'data_(\d+)_(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})(\d{2})_(\d+)$')
     DATA_STATES = {'unchanged': 'up to date', 'new': 'new', 'grown': 'more on the card',
-                   'mismatch': 'differs from the card: load again (old copy kept)'}
+                   'mismatch': 'differs from the card: load again (old copy kept)', 'listing': 'reading ...'}
 
     @staticmethod
     def _kb(n):
@@ -4149,7 +4167,8 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.update_run_state(self.running)
         self.data_status.setStyleSheet('')
         verify = self.data_verify.isChecked()
-        self.data_progress.setValue(0)
+        self.data_prev_rows = self.data_rows if self.data_listed else {}    # keeps the selection
+        self.data_progress.setRange(0, 0)       # number of files unknown until the listing is complete
         self.data_status.setText('Reading the file list' + (' and comparing the archive by CRC' if verify else '')
                                  + ' ...')
         self.device.thread_command('data_list', {'target': self.key, 'folder': self.cfg.archive_folder,
@@ -4171,15 +4190,18 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             boot, start = (str(int(m.group(1))), f'{m.group(2)} {m.group(3)}:{m.group(4)}:{m.group(5)}') if m \
                 else ('', '')
             todo = self._data_to_load(d['files'])
-            state = d.get('run') or self.DATA_STATES.get(self._data_state(d['files']), '')
+            listing = data['state'] == 'listing'
+            state = 'reading ...' if listing else \
+                (d.get('run') or self.DATA_STATES.get(self._data_state(d['files']), ''))
             item = QtWidgets.QTableWidgetItem(stem + '.cbor')
             if self.data_listed:
                 item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
                 item.setCheckState(QtCore.Qt.CheckState.Checked if d.get('sel') else QtCore.Qt.CheckState.Unchecked)
             item.setData(QtCore.Qt.ItemDataRole.UserRole, stem)
             t.setItem(r, 0, item)
-            for col, text in enumerate([boot, start, self._kb(data['card']), self._kb(data['local']),
-                                        self._kb(todo) if todo else '-', state], start=1):
+            local = '...' if listing else self._kb(data['local'])
+            todo_text = '...' if listing else (self._kb(todo) if todo else '-')
+            for col, text in enumerate([boot, start, self._kb(data['card']), local, todo_text, state], start=1):
                 it = QtWidgets.QTableWidgetItem(text)
                 if col in (3, 4, 5):
                     it.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
@@ -4217,15 +4239,27 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             d['sel'] = (how == 'all' and self._data_to_load(d['files']) > 0) or (how == 'rows' and stem in rows)
         self.data_show_rows()
 
+    def on_data_list_partial(self, data):
+        """A page of the directory listing: show the files already, the comparison follows."""
+        self.data_listed = False
+        self.data_rows = {}
+        for f in data.get('files', []):
+            d = self.data_rows.setdefault(norlog_archive.file_stem(f['name']), {'files': {}})
+            d['files'][f['name']] = {'card': f['card'], 'local': 0, 'state': 'listing'}
+        self.data_show_rows()
+        self.data_status.setText(f"Reading the file list: {data.get('n', 0)} entries "
+                                 f"({len(self.data_rows)} data files) ...")
+
     def on_data_list(self, data):
         self.data_busy = False
         self.update_run_state(self.running)
+        self.data_progress.setRange(0, 100)
         if not data.get('ok'):
             self.data_status.setStyleSheet('color: #d64545;')
             self.data_status.setText(data.get('message', 'error'))
             return
         self.data_dir = data.get('dir') or self.data_dir
-        old = self.data_rows
+        old = getattr(self, 'data_prev_rows', {})
         self.data_rows = {}
         for f in data.get('files', []):
             stem = norlog_archive.file_stem(f['name'])
@@ -4233,8 +4267,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             d['files'][f['name']] = {k: f[k] for k in ('card', 'local', 'state')}
         for stem, d in self.data_rows.items():
             # keep a selection made before, otherwise everything with new data
-            d['sel'] = old[stem].get('sel', False) if self.data_listed and stem in old else \
-                self._data_to_load(d['files']) > 0
+            d['sel'] = old[stem].get('sel', False) if stem in old else self._data_to_load(d['files']) > 0
         self.data_listed = True
         self.data_show_rows()
         todo = sum(self._data_to_load(d['files']) for d in self.data_rows.values())
@@ -4410,8 +4443,12 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         if packetid == 'sync_list':
             self.on_data_list(data)
             return
+        if packetid == 'sync_list_partial':
+            self.on_data_list_partial(data)
+            return
         if packetid == 'sync_progress' and data.get('verify'):
             n = data.get('total') or 0
+            self.data_progress.setRange(0, 100)
             self.data_progress.setValue(int(100 * data.get('done', 0) / n) if n else 0)
             self.data_status.setText(f"Comparing the archive by CRC: file {data.get('done', 0)} of {n} "
                                      f"({data.get('file', '')}) ...")

@@ -53,8 +53,8 @@ class RemoteFiles:
     def __init__(self, cli, address=None):
         self.cli, self.address = cli, address
 
-    def list(self, path):
-        return ot_cli.fs_list(self.cli, self.address, path)
+    def list(self, path, progress=None):
+        return ot_cli.fs_list(self.cli, self.address, path, progress=progress)
 
     def read(self, path, off, length):
         return ot_cli.fs_read_block(self.cli, self.address, path, off, length)
@@ -97,7 +97,7 @@ def _local_crc(path, off, length):
         return zlib.crc32(f.read(length))
 
 
-def plan(remote, archive_root, hwid=None, verify=False, progress=None, cancel=None):
+def plan(remote, archive_root, hwid=None, verify=False, progress=None, cancel=None, list_progress=None):
     """
     Compare the log files of the card with the archive, without downloading data files
     (only the small catalog is copied, it gives the hardware ID).
@@ -107,12 +107,15 @@ def plan(remote, archive_root, hwid=None, verify=False, progress=None, cancel=No
     is compared at its end (needed before appending). verify: also compare every file of the same
     size completely by CRC (slow: one request per 64 KB over Thread).
     progress(i, n, name) before each file; cancel() -> True stops with ArchiveError.
+    list_progress(entries so far) after each page of the directory listing.
     Returns {'hwid', 'dir', 'files': [{'name', 'card', 'local', 'state'}]} sorted by name (= chronological),
     state 'unchanged', 'new' (not in the archive), 'grown' (more on the card) or 'mismatch' (the local copy
     does not match the card: formatted or swapped; a sync keeps it as <name>.replaced-<time> and loads again).
     """
-    entries = remote.list(LOG_DIR)
+    entries = remote.list(LOG_DIR, progress=list_progress) if list_progress else remote.list(LOG_DIR)
     sizes = {e["n"]: e.get("s", 0) for e in entries if not e.get("d")}
+    if cancel and cancel():
+        raise ArchiveError("cancelled while reading the file list")
 
     catalog = None
     if CATALOG in sizes:

@@ -286,13 +286,18 @@ def fs_remote(cli: OtCli, address: str, op: str, path: str, timeout: float = 10.
     return _retry_garbled(lambda: json.loads(coap_request(cli, method, address, query, timeout=timeout).decode()))
 
 
-def fs_list(cli: OtCli, address, path: str):
-    """Directory listing (address None = gateway itself); follows 'next' for long directories."""
+def fs_list(cli: OtCli, address, path: str, progress=None):
+    """
+    Directory listing (address None = gateway itself); follows 'next' for long directories.
+    progress(entries so far) after each page.
+    """
     entries, start = [], 0
     while True:
         res = (fs_local(cli, "ls", _fs_quote(path), start) if address is None
                else fs_remote(cli, address, "ls", path, i=start))
         entries.extend(res.get("entries", []))
+        if progress:
+            progress(entries)
         start = res.get("next", 0)
         if not start:
             return entries
