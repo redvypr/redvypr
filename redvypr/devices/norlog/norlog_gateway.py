@@ -1338,11 +1338,39 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.config_widgets.extend([self.port_combo, self.port_refresh, self.baud_edit])
         return w
 
+    @staticmethod
+    def _port_key(device):
+        """COM3 before COM16 (numeric order), /dev/ttyACM0 ..."""
+        digits = ''.join(c for c in device if c.isdigit())
+        return device.rstrip('0123456789'), int(digits) if digits else -1
+
+    def ports_in_use(self):
+        """Serial ports configured in the other devices of this redvypr (not opened to test them)."""
+        used = set()
+        rv = getattr(self.device, 'redvypr', None)
+        for d in getattr(rv, 'devices', None) or []:
+            dev = d.get('device')
+            cfg = getattr(dev, 'custom_config', None)
+            if dev is None or dev is self.device or cfg is None:
+                continue
+            for name in ('comport', 'node_comport', 'port', 'serial_port'):
+                value = getattr(cfg, name, None)
+                if isinstance(value, str) and value:
+                    used.add(value)
+        return used
+
     def refresh_ports(self):
+        ports = sorted(serial.tools.list_ports.comports(), key=lambda p: self._port_key(p.device))
         current = self.cfg.comport
+        if not current:
+            # Default: the first port no other device of this redvypr uses (the configured port stays)
+            used = self.ports_in_use()
+            free = [p.device for p in ports if p.device not in used]
+            if free:
+                current = self.cfg.comport = free[0]
         self.port_combo.blockSignals(True)
         self.port_combo.clear()
-        for p in serial.tools.list_ports.comports():
+        for p in ports:
             self.port_combo.addItem(f'{p.device}  ({p.description})', p.device)
         idx = self.port_combo.findData(current)
         if idx >= 0:
