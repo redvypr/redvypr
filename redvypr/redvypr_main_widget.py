@@ -1342,6 +1342,26 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
 
         self.resize(width, height)
         self.show()
+        # After the window got its frame: Windows places new windows cascaded, the bottom may end up
+        # under the taskbar
+        QtCore.QTimer.singleShot(0, self.fit_on_screen)
+
+    def fit_on_screen(self):
+        """Shrink the window to the available area of its screen (without taskbar) if needed and center it."""
+        screen = self.screen() or QtWidgets.QApplication.primaryScreen()
+        if screen is None or self.isMaximized() or self.isFullScreen():
+            return
+        avail = screen.availableGeometry()
+        frame = self.frameGeometry()
+        extra_w = frame.width() - self.width()       # window frame and title bar
+        extra_h = frame.height() - self.height()
+        w = min(self.width(), avail.width() - extra_w)
+        h = min(self.height(), avail.height() - extra_h)
+        if (w, h) != (self.width(), self.height()):
+            self.resize(w, h)
+        x = avail.x() + (avail.width() - w - extra_w) // 2
+        y = avail.y() + (avail.height() - h - extra_h) // 2
+        self.move(max(avail.x(), x), max(avail.y(), y))
 
     def show_datastreams(self):
         self.datastream_widget = RedvyprAddressTable(redvypr_obj=self.redvypr_widget.redvypr)

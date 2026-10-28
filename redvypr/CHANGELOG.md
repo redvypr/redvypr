@@ -71,6 +71,8 @@ redvypr changelog
   appending), much faster with many files; optional "verify (CRC)" compares the archived files completely
   with the card, files found different are loaded again (old copy kept); the list can be cancelled
 ### Changed
+- Main window: after opening it is fitted into the free area of the screen and centered (it could reach
+  under the Windows taskbar)
 - Database writers: index on the time `t` of data_flat tables
 - Fixed: norlog metadata of a hardware ID of digits only did not match (`@di:` without quotes became a number)
 
