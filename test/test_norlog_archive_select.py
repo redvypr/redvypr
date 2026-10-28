@@ -137,3 +137,51 @@ def test_catalog_is_loaded_incrementally(tmp_path):
     assert offsets[0] == 0 and min(offsets[1:]) == 16 + 96         # header, then record B on
     assert (tmp_path / p["hwid"] / "catalog.dat").read_bytes() == remote.files["catalog.dat"]
     assert {f["name"]: f["boot"] for f in p["files"]}[f"{C}.cbor"] == 9
+
+
+class FlakyRemote(FakeRemote):
+    """Garbles the first read of chosen offsets (like a log line inside an answer of the gateway)."""
+
+    def __init__(self, files, bad):
+        super().__init__(files)
+        self.bad = set(bad)
+
+    def read(self, path, off, length):
+        data = super().read(path, off, length)
+        if off in self.bad:
+            self.bad.discard(off)
+            return bytes(b ^ 0xFF for b in data)
+        return data
+
+
+def test_garbled_block_is_read_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(norlog_archive, "REPAIR_PIECE", 64)
+    remote = FlakyRemote(card().files, bad={100})
+    res = norlog_archive.sync(remote, tmp_path, hwid="HW1", stems={A})
+    assert res["files"][0]["status"] == "new" and "errors" not in res
+    assert (tmp_path / "HW1" / f"{A}.cbor").read_bytes() == b"a" * 250
+
+
+class BrokenRemote(FakeRemote):
+    """One file reads wrong every time."""
+
+    def read(self, path, off, length):
+        data = super().read(path, off, length)
+        return bytes(b ^ 0xFF for b in data) if path.endswith(f"{B}.cbor") else data
+
+
+def test_failed_file_does_not_stop_the_others(tmp_path):
+    remote = BrokenRemote(card().files)
+    res = norlog_archive.sync(remote, tmp_path, hwid="HW1")
+    status = {f["name"]: f["status"] for f in res["files"]}
+    assert status[f"{B}.cbor"] == "failed" and status[f"{C}.cbor"] == "new" and len(res["errors"]) == 1
+    assert (tmp_path / "HW1" / f"{B}.cbor").stat().st_size == 0
+
+
+def test_gateway_block_with_log_text_is_read_again(monkeypatch):
+    import base64
+    from redvypr.devices.norlog import ot_cli
+    good = base64.b64encode(b"x" * 48).decode()
+    answers = [good[:20] + "[NMEA] 4800 Baud" + good[20:], good]       # log text inside, then clean
+    monkeypatch.setattr(ot_cli, "fs_local", lambda cli, *a, **k: answers.pop(0))
+    assert ot_cli.fs_read_block(None, None, "/log/x", 0, 48) == b"x" * 48 and not answers

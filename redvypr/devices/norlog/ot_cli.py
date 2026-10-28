@@ -352,13 +352,28 @@ def fs_write_block(cli: OtCli, address, path: str, off: int, data: bytes, trunc:
 
 
 def fs_read_block(cli: OtCli, address, path: str, off: int, length: int) -> bytes:
-    """Read one block (max. FS_LOCAL_CHUNK from the gateway, FS_REMOTE_CHUNK from a member)."""
+    """
+    Read one block (max. FS_LOCAL_CHUNK from the gateway, FS_REMOTE_CHUNK from a member).
+    A block longer than requested or (gateway) not clean base64, e.g. with a log message inside
+    the answer line, is read again.
+    """
     import base64
+
+    def check(data, want):
+        if len(data) > want:
+            raise ValueError(f"block of {len(data)} bytes, {want} requested")
+        return data
+
     if address is None:
-        text = fs_local(cli, "read", _fs_quote(path), off, min(length, FS_LOCAL_CHUNK))
-        return b"" if text == "-" else base64.b64decode(text)
-    return _retry_garbled(lambda: coap_request(cli, "get", address,
-                        f"fs?op=read&p={_fs_quote(path)}&off={off}&len={min(length, FS_REMOTE_CHUNK)}"))
+        want = min(length, FS_LOCAL_CHUNK)
+
+        def read_local():
+            text = fs_local(cli, "read", _fs_quote(path), off, want)
+            return b"" if text == "-" else check(base64.b64decode(text.strip(), validate=True), want)
+        return _retry_garbled(read_local)
+    want = min(length, FS_REMOTE_CHUNK)
+    return _retry_garbled(lambda: check(coap_request(cli, "get", address,
+                                                     f"fs?op=read&p={_fs_quote(path)}&off={off}&len={want}"), want))
 
 
 def _resume_offset(cli: OtCli, address, path: str, data: bytes) -> int:

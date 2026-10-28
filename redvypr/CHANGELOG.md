@@ -73,6 +73,10 @@ redvypr changelog
 - norlog data download: the catalog of the card (96 bytes per data file) is loaded incrementally (last
   record and what is new, the rest checked by one CRC) instead of completely for every list, with progress;
   columns "No." (file number from the name) and "Boot" (from the catalog)
+- norlog data download more robust: blocks from the gateway's own card are checked (strict base64, length)
+  and read again if garbled (e.g. a log line inside the answer); after a CRC mismatch the differing 4 KB
+  pieces are read again instead of aborting; a file that still fails is marked "FAILED" and the download
+  continues with the next files (stops after 3 failures in a row)
 ### Changed
 - norlog gateway: without a configured port the first serial port that no other device of redvypr uses
   is preset (ports in numeric order, COM3 before COM16); a port from the configuration stays

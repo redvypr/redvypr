@@ -829,7 +829,10 @@ class _Gateway:
             if waiting:
                 text += (f"; {len(waiting)} file(s) wait for the time of their boot "
                          f"(clock not set, see 'Set clock')")
-        self.to_gui('sync_result', {'target': target, 'ok': not res['cancelled'], 'message': text,
+        errors = res.get('errors') or []
+        if errors:
+            text += f"; {len(errors)} file(s) FAILED (loaded again at the next download): " + "; ".join(errors)
+        self.to_gui('sync_result', {'target': target, 'ok': not res['cancelled'] and not errors, 'message': text,
                                     'files': res['files'], 'dir': res['dir'], 'published': published})
 
     def publish_archive_packet(self, pkt):
@@ -4529,17 +4532,21 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.data_status.setStyleSheet('' if data.get('ok') else 'color: #d64545;')
         self.data_status.setText(data.get('message', ''))
         # Archive sizes from the result; rows of a download without list are added
+        failed = set()
         for f in data.get('files') or []:
             stem = norlog_archive.file_stem(f['name'])
+            if f.get('status') == 'failed':
+                failed.add(stem)
             d = self.data_rows.setdefault(stem, {'files': {}})
             entry = d['files'].setdefault(f['name'], {'card': f['new'], 'local': 0, 'state': 'new'})
             entry['local'] = f['new']
             entry['card'] = max(entry['card'], f['new'])
             entry['state'] = 'unchanged' if entry['local'] >= entry['card'] else 'grown'
-        for d in self.data_rows.values():
+        for stem, d in self.data_rows.items():
             left = self._data_to_load(d['files'])
             # the row interrupted by a cancel or error says so; all others show their state again
-            d['run'] = 'stopped' if left and (d.get('run') or '').startswith('loading') else None
+            d['run'] = 'FAILED (CRC), try again' if stem in failed else \
+                ('stopped' if left and (d.get('run') or '').startswith('loading') else None)
             if not left:
                 d['sel'] = False
         self.data_current = None

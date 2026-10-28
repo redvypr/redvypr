@@ -42,6 +42,8 @@ CATALOG = "catalog.dat"
 STATE = "sync.json"
 TAIL_CHECK = 4096           # bytes at the end of a local copy compared with the card
 CRC_CHECK_MAX = 256 * 1024  # verify a downloaded range in pieces of this size
+REPAIR_PIECE = 4096         # after a CRC mismatch: compare and read again in pieces of this size
+MAX_FAILED_IN_ROW = 3       # files failed one after the other: stop the sync
 
 
 class ArchiveError(Exception):
@@ -219,8 +221,10 @@ def sync(remote, archive_root, hwid=None, progress=None, cancel=None, stems=None
     reload: names of files found as 'mismatch' by plan(verify=True): loaded again (the same size
     alone does not show it again).
     progress(done_bytes, total_bytes, name); cancel() -> True stops after the current block.
-    Returns {'hwid', 'dir', 'files': [{'name', 'old', 'new', 'status'}], 'bytes', 'cancelled'}
-    with the files in download order; files that were not selected are not listed.
+    Returns {'hwid', 'dir', 'files': [{'name', 'old', 'new', 'status'[, 'error']}], 'bytes', 'cancelled'
+    [, 'errors']} with the files in download order; files that were not selected are not listed.
+    A file whose download fails (status 'failed', e.g. CRC also after reading again) stays as it
+    was, the following files are loaded.
     """
     p = plan(remote, archive_root, hwid, cancel=cancel)
     dev_dir = pathlib.Path(p["dir"])
@@ -245,6 +249,7 @@ def sync(remote, archive_root, hwid=None, progress=None, cancel=None, stems=None
     total = sum(max(0, r - h) for _n, h, r, _s in todo)
 
     done = 0
+    failed_in_row = 0
     for name, have, rsize, status in todo:
         entry = {"name": name, "old": have, "new": have, "status": status}
         result["files"].append(entry)
@@ -253,8 +258,21 @@ def sync(remote, archive_root, hwid=None, progress=None, cancel=None, stems=None
         if cancel and cancel():
             result["cancelled"] = True
             break
-        got = _append_range(remote, dev_dir / name, name, have, rsize,
-                            lambda n: progress and progress(done + n, total, name), cancel)
+        try:
+            got = _append_range(remote, dev_dir / name, name, have, rsize,
+                                lambda n: progress and progress(done + n, total, name), cancel)
+        except (ArchiveError, ot_cli.OtError) as exc:
+            # this file stays as it was, the others are loaded; the next sync tries it again
+            logger.warning(str(exc))
+            failed_in_row += 1
+            if failed_in_row >= MAX_FAILED_IN_ROW:     # e.g. connection lost: stop instead of waiting per file
+                raise
+            entry["status"] = "failed"
+            entry["error"] = str(exc)
+            result.setdefault("errors", []).append(str(exc))
+            done += rsize - have
+            continue
+        failed_in_row = 0
         done += got - have
         entry["new"] = got
         entry["status"] = "new" if have == 0 and status != "replaced" else (
@@ -307,12 +325,41 @@ def _append_range(remote, local, name, start, end, progress, cancel):
     pos = start
     while pos < off:
         n = min(CRC_CHECK_MAX, off - pos)
-        if remote.crc(path, pos, n) != _local_crc(local, pos, n):
+        if remote.crc(path, pos, n) != _local_crc(local, pos, n) and not _repair(remote, local, name, pos, n):
             with open(local, "r+b") as f:
                 f.truncate(start)
-            raise ArchiveError(f"{name}: downloaded range {start}..{off} does not match the card (CRC)")
+            raise ArchiveError(f"{name}: downloaded range {start}..{off} does not match the card (CRC), "
+                               f"also after reading the differing parts again")
         pos += n
     return off
+
+
+def _repair(remote, local, name, pos, n, attempts=2):
+    """
+    Find the parts of [pos, pos+n) that differ from the card (CRC per REPAIR_PIECE) and read them
+    again, e.g. after a block garbled on its way through the gateway. True if the range matches then.
+    """
+    path = f"{LOG_DIR}/{name}"
+    for _ in range(attempts):
+        bad = [p for p in range(pos, pos + n, REPAIR_PIECE)
+               if remote.crc(path, p, min(REPAIR_PIECE, pos + n - p)) != _local_crc(local, p, min(REPAIR_PIECE,
+                                                                                                   pos + n - p))]
+        if not bad:
+            return True
+        logger.warning(f"{name}: {len(bad)} piece(s) of {REPAIR_PIECE} bytes differ from the card "
+                       f"(offsets {', '.join(str(p) for p in bad[:8])}{' ...' if len(bad) > 8 else ''}), reading again")
+        with open(local, "r+b") as f:
+            for p in bad:
+                end = min(p + REPAIR_PIECE, pos + n)
+                q = p
+                while q < end:
+                    chunk = remote.read(path, q, end - q)
+                    if not chunk:
+                        return False
+                    f.seek(q)
+                    f.write(chunk)
+                    q += len(chunk)
+    return remote.crc(path, pos, n) == _local_crc(local, pos, n)
 
 
 # ---------------------------------------------------------------------------
