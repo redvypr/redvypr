@@ -354,10 +354,11 @@ def fs_write_block(cli: OtCli, address, path: str, off: int, data: bytes, trunc:
 def fs_read_block(cli: OtCli, address, path: str, off: int, length: int) -> bytes:
     """
     Read one block (max. FS_LOCAL_CHUNK from the gateway, FS_REMOTE_CHUNK from a member).
-    A block longer than requested or (gateway) not clean base64, e.g. with a log message inside
-    the answer line, is read again.
+    A block longer than requested or (gateway) not clean base64 or with a wrong block CRC
+    (firmware >= 0.4.23), e.g. with a log message inside the answer line, is read again.
     """
     import base64
+    import zlib
 
     def check(data, want):
         if len(data) > want:
@@ -368,8 +369,16 @@ def fs_read_block(cli: OtCli, address, path: str, off: int, length: int) -> byte
         want = min(length, FS_LOCAL_CHUNK)
 
         def read_local():
-            text = fs_local(cli, "read", _fs_quote(path), off, want)
-            return b"" if text == "-" else check(base64.b64decode(text.strip(), validate=True), want)
+            # "<base64> <crc32>" (firmware >= 0.4.23) or "<base64>"; "-" (with CRC 0) at the end of the file
+            parts = fs_local(cli, "read", _fs_quote(path), off, want).split()
+            if not parts or parts[0] == "-":
+                return b""
+            if len(parts) > 2:
+                raise ValueError("unexpected text in the answer")
+            data = check(base64.b64decode(parts[0], validate=True), want)
+            if len(parts) == 2 and int(parts[1], 16) != zlib.crc32(data):
+                raise ValueError("block CRC does not match")
+            return data
         return _retry_garbled(read_local)
     want = min(length, FS_REMOTE_CHUNK)
     return _retry_garbled(lambda: check(coap_request(cli, "get", address,

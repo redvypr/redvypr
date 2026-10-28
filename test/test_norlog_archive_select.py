@@ -185,3 +185,17 @@ def test_gateway_block_with_log_text_is_read_again(monkeypatch):
     answers = [good[:20] + "[NMEA] 4800 Baud" + good[20:], good]       # log text inside, then clean
     monkeypatch.setattr(ot_cli, "fs_local", lambda cli, *a, **k: answers.pop(0))
     assert ot_cli.fs_read_block(None, None, "/log/x", 0, 48) == b"x" * 48 and not answers
+
+
+def test_gateway_block_crc(monkeypatch):
+    import base64
+    import zlib
+    from redvypr.devices.norlog import ot_cli
+    data = bytes(range(48))
+    b64 = base64.b64encode(data).decode()
+    wrong = base64.b64encode(bytes(range(1, 49))).decode()       # clean base64, but other bytes
+    answers = [f"{wrong} {zlib.crc32(data):08x}", f"{b64} {zlib.crc32(data):08x}", "- 00000000", b64]
+    monkeypatch.setattr(ot_cli, "fs_local", lambda cli, *a, **k: answers.pop(0))
+    assert ot_cli.fs_read_block(None, None, "/log/x", 0, 48) == data      # CRC wrong: read again
+    assert ot_cli.fs_read_block(None, None, "/log/x", 48, 48) == b""      # end of the file
+    assert ot_cli.fs_read_block(None, None, "/log/x", 0, 48) == data      # firmware < 0.4.23
