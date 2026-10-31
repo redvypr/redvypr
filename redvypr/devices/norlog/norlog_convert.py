@@ -92,8 +92,8 @@ def _boot_offsets(files):
     return {k: statistics.median(v) for k, v in samples.items()}
 
 
-def _stored_metadata(db_path, uuid=CONVERT_HOST["uuid"]):
-    """Metadata of the host uuid (default: earlier conversions) in db_path, storage format {address: [entries]}."""
+def _stored_metadata(db_path):
+    """Metadata written by earlier conversions into db_path, storage format {address: [entries]}."""
     import redvypr.metadata
     from redvypr.serialize import deserialize_json
     if not pathlib.Path(db_path).is_file():
@@ -103,7 +103,7 @@ def _stored_metadata(db_path, uuid=CONVERT_HOST["uuid"]):
         con = sqlite3.connect(str(db_path))
         try:
             rows = con.execute("SELECT redvypr_address, metadata FROM redvypr_metadata WHERE uuid = ?",
-                               (uuid,)).fetchall()
+                               (CONVERT_HOST["uuid"],)).fetchall()
         finally:
             con.close()
     except sqlite3.Error:
@@ -117,7 +117,7 @@ def _stored_metadata(db_path, uuid=CONVERT_HOST["uuid"]):
     return storage
 
 
-def _add_metadata(data, pkt, sn, sent, hostinfo=CONVERT_HOST):
+def _add_metadata(data, pkt, sn, sent):
     """Metadata of a norlog (hardware ID, serial number) and units of its values, once each."""
     import redvypr.metadata
     hwid = pkt.get("mac")
@@ -125,12 +125,12 @@ def _add_metadata(data, pkt, sn, sent, hostinfo=CONVERT_HOST):
         return
     if hwid not in sent:
         meta = {"hwid": hwid, **({"sn": sn} if sn else {})}
-        redvypr.metadata.add_metadata2datapacket(data, address=f"@di:'{hwid}'", metadict=meta, hostinfo=hostinfo)
+        redvypr.metadata.add_metadata2datapacket(data, address=f"@di:'{hwid}'", metadict=meta, hostinfo=CONVERT_HOST)
         sent.add(hwid)
     for key, unit in units_of(pkt).items():
         if (hwid, key, unit) not in sent:
             redvypr.metadata.add_metadata2datapacket(data, address=f"{key}@di:'{hwid}'", metadict={"unit": unit},
-                                                     hostinfo=hostinfo)
+                                                     hostinfo=CONVERT_HOST)
             sent.add((hwid, key, unit))
 
 

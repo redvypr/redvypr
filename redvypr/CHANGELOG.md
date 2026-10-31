@@ -14,10 +14,10 @@ redvypr changelog
   last packet per device and type, lost packets (gaps in `packet_num_type`) and a log of the incoming packets
   The gateway is a sink by default (`live_sink`), so its own packets come as live data too (firmware >= 0.4.33)
 - `ot_cli`: `pub_status()`, `pub_set()`, `sink_set()`, `pub_text()`, `sink_text()`, `PACKET_TYPES`
-- norlog gateway: "Save data" with options (gear button): saves the live data packets (`#NLD`) in the device
-  thread into channels (`save_data`, `save_channels`); channel type `sqlite` (redvypr SQLite format, `data_flat`,
-  metadata), packets as published (host = redvypr instance, publisher = gateway), one continued file or a new
-  file every N hours/days, all or chosen packet types (`norlog_save`)
+- norlog gateway: "Save data" with options (gear button): the channels are ordinary redvypr writer devices
+  (for now `sqlite_writer`, shown in the device list) that subscribe to the packets of the gateway
+  (`@p:<gateway>`, optionally only some packet IDs); "Save data" starts and stops them, the first one is added
+  automatically (`save_data`, `save_channels` = device names)
 ### Changed
 - norlog gateway: simpler "Subscriptions" window: one table for all devices including the gateway, ticks =
   packet types that come live (`norlog pub`), received packets and age per device, yellow = not applied yet,

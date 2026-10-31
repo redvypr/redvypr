@@ -21,9 +21,9 @@ packet_num_type); its "Subscriptions" sets what the devices send (stored on them
 configuration: live_pub per hardware ID, set again at the start with live_apply; the gateway
 is always the sink, live_sink).
 
-"Save data" (save_data) saves the '#NLD' packets in the device thread into the channels of
-save_channels (gear button next to it; norlog_save), as they are published (host = this redvypr
-instance, publisher = this device): for now SQLite in the redvypr format (data_flat).
+"Save data" (save_data) starts the writer devices of save_channels (gear button next to it):
+ordinary redvypr writer devices (for now sqlite_writer) that subscribe to the packets of this
+gateway ("@p:'<gateway>'", optionally only some packet types) and are shown in the device list.
 
 All packets carry the norlog they belong to in the header:
 
@@ -96,7 +96,6 @@ from . import mag_calibration
 from . import norlog_archive
 from . import norlog_cbor
 from . import norlog_convert
-from . import norlog_save
 from . import ot_cli
 from . import poly_calibration
 from . import smp_serial
@@ -172,11 +171,12 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
     live_apply: bool = pydantic.Field(default=True, description='Set live_sink on the gateway at the start and '
                                                                 'live_pub on each device once per start when it '
                                                                 'is seen (both are also stored on the devices)')
-    save_data: bool = pydantic.Field(default=False, description='Save the live data packets ("#NLD") into the '
-                                                                'channels of save_channels')
-    save_channels: typing.List[norlog_save.SaveChannel] = pydantic.Field(
-        default_factory=lambda: [norlog_save.SaveChannelSqlite()],
-        description='Channels of "Save data" (type sqlite: SQLite file in the data_flat format)')
+    save_data: bool = pydantic.Field(default=False, description='Save data: start the writer devices of '
+                                                                'save_channels (stop them when switched off)')
+    save_channels: typing.List[str] = pydantic.Field(default_factory=list, description='Names of the writer '
+                                                                                       'devices (e.g. '
+                                                                                       'sqlite_writer) that save '
+                                                                                       'the data of this gateway')
 
 
 # --------------------------------------------------------------------------
@@ -240,13 +240,6 @@ class _Gateway:
         self.meta_sent = {}             # hwid -> device metadata sent last
         self.units_sent = {}            # hwid -> set of keys whose unit was sent
         self.live_applied = set()       # hwids whose live_pub was set in this start
-        # "Save data": channels of save_channels, host of the packets and metadata = this redvypr instance
-        self.saver = norlog_save.DataSaver(device_info.get('hostinfo') or {'uuid': self.device})
-        if pdconfig is not None:
-            self.saver.configure(pdconfig.save_data, pdconfig.save_channels)
-
-    def save_status(self):
-        self.to_gui('save_status', self.saver.status())
 
     # --- publishing ---
 
@@ -331,13 +324,6 @@ class _Gateway:
         data['t'] = t
         self.dataqueue.put(data)
         self.npackets += 1
-        if self.saver.on:
-            # As published: host = this redvypr instance, publisher = this device (set by redvypr on distribution)
-            saved = dict(data)
-            saved['_redvypr'] = copy.deepcopy(data['_redvypr'])
-            saved['_redvypr']['host'] = self.device_info.get('hostinfo') or saved['_redvypr'].get('host')
-            saved['_redvypr']['publisher'] = self.device
-            self.saver.write(saved, pkt, sn)
 
         src = self.data_sources.setdefault(source, {'packets': 0})
         src['packets'] += 1
@@ -405,8 +391,6 @@ class _Gateway:
         try:
             if command == 'config':
                 self.config = DeviceCustomConfig.model_validate(args['config'])
-                if self.saver.configure(self.config.save_data, self.config.save_channels):
-                    self.save_status()
             elif command == 'send':
                 self.ser.write((args.get('text', '') + "\r\n").encode())
                 self.ser.flush()
@@ -1382,9 +1366,6 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
             except serial.SerialException as exc:
                 gw.result('serial', False, f'Serial port error: {exc}')
                 break
-            gw.saver.poll()
-            if gw.saver.on and gw.saver.status_due():
-                gw.save_status()
 
             interval = gw.config.status_interval_s
             if interval > 0 and time.monotonic() - t_status >= interval:
@@ -1403,7 +1384,6 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                     logger.debug(funcname + f'Info poll failed: {exc}')
     finally:
         gw.close()
-        gw.saver.close()
         logger.info(funcname + 'Stopped')
 
 
@@ -1431,7 +1411,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.live_dialog = None
         self.live_status = {}       # hwid -> last 'norlog pub json' status of the device
         self.save_dialog = None
-        self.save_state = {}        # last 'save_status' of the device thread
+        self.save_was_running = False   # gateway thread: start the save channels when it starts
         self.layout.addWidget(self._build_port_row())
         self.layout.addWidget(self.tabs)
 
@@ -2231,41 +2211,78 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         if self.device.get_thread_status()['thread_running']:
             self.device.thread_command('live_read', {'targets': 'all'})
 
-    # --- save data ---
+    # --- save data: writer devices of redvypr (save_channels) ---
+
+    def save_channel_devices(self):
+        """[(name, device or None)] of save_channels; None: not (any more) in redvypr."""
+        rv = getattr(self.device, 'redvypr', None)
+        devices = {d['device'].name: d['device'] for d in (getattr(rv, 'devices', None) or [])}
+        return [(name, devices.get(name)) for name in self.cfg.save_channels]
+
+    def create_save_channel(self, kind='SQLite'):
+        """New writer device for the data of this gateway, added to save_channels; returns it or None."""
+        rv = getattr(self.device, 'redvypr', None)
+        if rv is None or kind not in SAVE_CHANNEL_TYPES:
+            return None
+        module, make_config = SAVE_CHANNEL_TYPES[kind]
+        devicemodulename = rv.get_devicemodulename_from_str(module)
+        dev = rv.add_device(devicemodulename=devicemodulename, custom_config=make_config(self.device.name),
+                            base_config={'name': f'{self.device.name}_{module}'})
+        if dev is None:
+            self.console_text.appendPlainText(f'[save data] ERROR: could not add a {module} device')
+            return None
+        self.cfg.save_channels.append(dev.name)
+        self.console_text.appendPlainText(f'[save data] added the device {dev.name} ({module})')
+        return dev
+
+    def remove_save_channel(self, name, remove_device=True):
+        dev = dict(self.save_channel_devices()).get(name)
+        if name in self.cfg.save_channels:
+            self.cfg.save_channels.remove(name)
+        if dev is not None and remove_device:
+            self.device.redvypr.rem_device(dev)
+
+    def start_save_channels(self):
+        if not any(dev for _name, dev in self.save_channel_devices()):
+            self.create_save_channel()
+        for _name, dev in self.save_channel_devices():
+            if dev is not None and not dev.thread_running():
+                dev.thread_start()
+
+    def stop_save_channels(self):
+        for _name, dev in self.save_channel_devices():
+            if dev is not None and dev.thread_running():
+                dev.thread_stop()
 
     def save_data_changed(self, checked):
         self.cfg.save_data = bool(checked)
-        self.send_config()
-        if not checked:
-            self.on_save_status({'on': False, 'channels': []})
+        if checked:
+            self.start_save_channels()
+        else:
+            self.stop_save_channels()
+        self.update_save_text()
 
     def open_save_options(self):
         if self.save_dialog is None:
             self.save_dialog = SaveOptionsDialog(self)
             self.save_dialog.finished.connect(lambda _r: setattr(self, 'save_dialog', None))
+        self.save_dialog.refresh()
         self.save_dialog.show()
         self.save_dialog.raise_()
         self.save_dialog.activateWindow()
 
-    def on_save_status(self, data):
-        self.save_state = data
-        lines = []
-        for ch in data.get('channels') or []:
-            if not ch.get('enabled'):
-                state = 'off'
-            elif ch.get('error'):
-                state = f"ERROR {ch['error']}"
-            elif ch.get('file'):
-                state = f"{ch.get('packets', 0)} packets, {ch.get('values', 0)} values -> {ch['file']}"
+    def update_save_text(self):
+        parts = []
+        for name, dev in self.save_channel_devices():
+            if dev is None:
+                parts.append(f'{name}: missing')
             else:
-                state = 'waiting for data'
-            lines.append(f"{ch.get('name')} ({ch.get('channel_type')}): {state}")
-        text = '\n'.join(lines) if data.get('on') else 'Save data: off'
-        self.save_data.setToolTip('Save the live data packets of the Thread network (#NLD) into the channels of '
-                                  'the options (gear button)\n\n' + text)
-        self.live_tab.set_save_text(('Saving: ' + '; '.join(lines)) if data.get('on') and lines else '')
-        if self.save_dialog is not None:
-            self.save_dialog.on_status(data)
+                parts.append(f"{name}: {'running' if dev.thread_running() else 'stopped'}, "
+                             f"{save_channel_file(dev)}")
+        text = '; '.join(parts) or 'no channel (a SQLite writer is added when switched on)'
+        self.save_data.setToolTip('Save data: start the writer devices of this gateway (gear button: channels), '
+                                  'they are in the device list of redvypr\n\n' + text.replace('; ', '\n'))
+        self.live_tab.set_save_text(f'Save data: {text}' if self.cfg.save_data else '')
 
     def send_config(self):
         """Hand the changed configuration to the running device thread."""
@@ -2377,8 +2394,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 self.show_result(data)
             elif packetid == 'live_result':
                 self.on_live_result(data)
-            elif packetid == 'save_status':
-                self.on_save_status(data)
             elif 'packet_type' in data and 'source' in data:    # '#NLD' packet (archive packets: no source)
                 self.live_tab.add_packet(data)
 
@@ -2397,6 +2412,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     def update_run_state(self):
         running = self.device.get_thread_status()['thread_running']
+        if running and not self.save_was_running and self.cfg.save_data:
+            self.start_save_channels()
+        self.save_was_running = running
+        self.update_save_text()
         for w in self.run_widgets:
             w.setEnabled(running)
         for dlg in self.settings_dialogs.values():
@@ -2750,232 +2769,239 @@ class LiveDataTab(QtWidgets.QWidget):
                                      f'{values}')
 
 
+def _sqlite_channel_config(gateway):
+    """sqlite_writer configuration: the packets of this gateway as full packets and data_flat."""
+    from redvypr.devices.db import sqlite_writer
+    from redvypr.devices.db.db_config_util import DbTableConfig
+    cfg = sqlite_writer.DeviceCustomConfig()
+    cfg.database = cfg.database.model_copy(deep=True)
+    cfg.database.filepath = f'{gateway}.sqlite'
+    cfg.database.write_config.name = f'norlog gateway {gateway}'
+    addresses = save_addresses(gateway, [])
+    cfg.database.write_config.tables = {
+        'redvypr_raw': DbTableConfig(tablename='redvypr_raw', tabletype='redvypr_datapacket', addresses=addresses),
+        'redvypr_flat': DbTableConfig(tablename='redvypr_flat', tabletype='data_flat', addresses=addresses)}
+    return cfg
+
+
+# "Save data" channels: label -> (redvypr device module, configuration for a gateway)
+SAVE_CHANNEL_TYPES = {'SQLite': ('sqlite_writer', _sqlite_channel_config)}
+
+
+def save_addresses(gateway, packetids):
+    """Subscriptions of a channel: all packets of the gateway or only these packet IDs (packet types)."""
+    if not packetids:
+        return [f"@p:'{gateway}'"]
+    return [f"@p:'{gateway}' and i:'{p}'" for p in packetids]
+
+
+def save_channel_packetids(dev):
+    """Packet IDs the channel saves (from its table addresses), [] = all packets of the gateway."""
+    tables = getattr(getattr(getattr(dev.custom_config, 'database', None), 'write_config', None), 'tables', {})
+    ids = []
+    for t in tables.values():
+        for a in t.addresses:
+            ids += [p for p in re.findall(r"\bi:'([^']*)'", a) if p not in ids]
+    return ids
+
+
+def save_channel_file(dev):
+    db = getattr(dev.custom_config, 'database', None)
+    return getattr(db, 'filepath', '') or '?'
+
+
 class SaveOptionsDialog(QtWidgets.QDialog):
     """
-    Options of "Save data": the channels (save_channels), each with its type (for now sqlite),
-    file, new file every N hours/days and the packet types to save.
+    Options of "Save data": the channels are writer devices of redvypr (for now sqlite_writer) that
+    subscribe to the packets of this gateway; here: add, remove, file and packet types. All other
+    settings in the device itself (device list of redvypr).
     """
-    NEW_FILE = [('none', 'No, one file (continued)'), ('hours', 'Every N hours'), ('days', 'Every N days')]
 
     def __init__(self, widget):
         super().__init__(widget)
         self.widget = widget
-        self.setWindowTitle('norlog gateway: save data')
+        self.setWindowTitle(f'{widget.device.name}: save data')
         self.setModal(False)
-        self.resize(760, 440)
-        self.channels = [c.model_dump() for c in widget.cfg.save_channels]
-        self.current = -1
+        self.resize(820, 460)
         lay = QtWidgets.QVBoxLayout(self)
-        top = QtWidgets.QHBoxLayout()
-        left = QtWidgets.QVBoxLayout()
-        left.addWidget(QtWidgets.QLabel('Channels'))
-        self.list = QtWidgets.QListWidget()
-        self.list.currentRowChanged.connect(self.select)
-        self.list.itemChanged.connect(self.list_item_changed)
-        left.addWidget(self.list, 1)
-        buttons = QtWidgets.QHBoxLayout()
+        lay.addWidget(QtWidgets.QLabel('Channels: writer devices of redvypr that save the data of this gateway. '
+                                       '"Save data" starts and stops them.'))
+        self.table = QtWidgets.QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(['Device', 'Type', 'State', 'File'])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.itemSelectionChanged.connect(self.select)
+        lay.addWidget(self.table, 1)
+        row = QtWidgets.QHBoxLayout()
         add = QtWidgets.QToolButton()
         add.setText('Add')
         add.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QtWidgets.QMenu(add)
-        for name in norlog_save.CHANNEL_TYPES:
-            menu.addAction(name, lambda n=name: self.add_channel(n))
+        for kind in SAVE_CHANNEL_TYPES:
+            menu.addAction(kind, lambda k=kind: self.add_channel(k))
         add.setMenu(menu)
-        remove = QtWidgets.QPushButton('Remove')
-        remove.clicked.connect(self.remove_channel)
-        buttons.addWidget(add)
-        buttons.addWidget(remove)
-        buttons.addStretch(1)
-        left.addLayout(buttons)
-        top.addLayout(left, 1)
+        self.remove_button = QtWidgets.QPushButton('Remove')
+        self.remove_button.clicked.connect(self.remove_channel)
+        row.addWidget(add)
+        row.addWidget(self.remove_button)
+        row.addStretch(1)
+        lay.addLayout(row)
         self.editor = QtWidgets.QGroupBox('Channel')
-        top.addWidget(self.editor, 2)
-        self._build_sqlite_editor()
-        lay.addLayout(top, 1)
-        self.status = QtWidgets.QLabel('')
-        self.status.setWordWrap(True)
-        self.status.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
-        lay.addWidget(self.status)
-        box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok
-                                         | QtWidgets.QDialogButtonBox.StandardButton.Apply
-                                         | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
-        box.accepted.connect(self.accept_changes)
-        box.rejected.connect(self.reject)
-        box.button(QtWidgets.QDialogButtonBox.StandardButton.Apply).clicked.connect(self.apply)
-        lay.addWidget(box)
-        self.fill_list()
-        self.on_status(widget.save_state)
-
-    # --- editor of a sqlite channel ---
-
-    def _build_sqlite_editor(self):
         form = QtWidgets.QFormLayout(self.editor)
-        self.e_name = QtWidgets.QLineEdit()
-        self.e_name.textEdited.connect(lambda t: self.set_value('name', t))
-        form.addRow('Name', self.e_name)
-        self.e_type = QtWidgets.QLabel('')
-        form.addRow('Type', self.e_type)
         file_row = QtWidgets.QHBoxLayout()
         self.e_file = QtWidgets.QLineEdit()
-        self.e_file.setToolTip('SQLite file (relative to the folder redvypr was started in); with a new file '
-                               'every N hours/days the base name: <name>_<count>_<date>.sqlite')
-        self.e_file.textEdited.connect(lambda t: self.set_value('filepath', t))
+        self.e_file.setToolTip('SQLite file; the writer makes <name>_<count>_<date>.sqlite of it unless it '
+                               'continues one file (settings of the device)')
         browse = QtWidgets.QToolButton()
         browse.setText('...')
         browse.clicked.connect(self.browse_file)
         file_row.addWidget(self.e_file, 1)
         file_row.addWidget(browse)
         form.addRow('File', file_row)
-        newfile_row = QtWidgets.QHBoxLayout()
-        self.e_newfile = QtWidgets.QComboBox()
-        for key, text in self.NEW_FILE:
-            self.e_newfile.addItem(text, key)
-        self.e_newfile.currentIndexChanged.connect(self.newfile_changed)
-        self.e_dt = QtWidgets.QSpinBox()
-        self.e_dt.setRange(1, 10000)
-        self.e_dt.setPrefix('N = ')
-        self.e_dt.valueChanged.connect(lambda v: self.set_value('dt_newfile', v))
-        newfile_row.addWidget(self.e_newfile, 1)
-        newfile_row.addWidget(self.e_dt)
-        form.addRow('New file', newfile_row)
         types = QtWidgets.QWidget()
         grid = QtWidgets.QGridLayout(types)
         grid.setContentsMargins(0, 0, 0, 0)
-        self.e_all = QtWidgets.QCheckBox('all')
-        self.e_all.toggled.connect(self.types_changed)
-        grid.addWidget(self.e_all, 0, 0)
+        self.e_all = QtWidgets.QCheckBox('all packets of the gateway')
+        self.e_all.toggled.connect(self.all_toggled)
+        grid.addWidget(self.e_all, 0, 0, 1, 4)
         self.e_types = {}
-        for i, name in enumerate(ot_cli.PACKET_TYPES):
+        for i, name in enumerate(t for t in ot_cli.PACKET_TYPES if not t.startswith('adcseq')):
             cb = QtWidgets.QCheckBox(name)
-            cb.toggled.connect(self.types_changed)
             grid.addWidget(cb, 1 + i // 4, i % 4)
             self.e_types[name] = cb
+        self.e_other = QtWidgets.QLineEdit()
+        self.e_other.setPlaceholderText('more packet IDs, e.g. ADC sequences by sensor name: adc_brd hfm; info')
+        grid.addWidget(self.e_other, 3, 0, 1, 4)
         form.addRow('Packet types', types)
-        self.e_table = QtWidgets.QLineEdit()
-        self.e_table.setToolTip('Name of the data_flat table')
-        self.e_table.textEdited.connect(lambda t: self.set_value('table', t.strip() or 'norlog'))
-        form.addRow('Table', self.e_table)
+        self.apply_button = QtWidgets.QPushButton('Apply')
+        self.apply_button.setToolTip('Store file and packet types in the device (a running device is restarted)')
+        self.apply_button.clicked.connect(self.apply)
+        hint = QtWidgets.QLabel('More settings (storage, new files, tables): the device itself in the device '
+                                'list of redvypr.')
+        hint.setWordWrap(True)
+        form.addRow(self.apply_button, hint)
+        lay.addWidget(self.editor)
+        self.log = QtWidgets.QLabel('')
+        lay.addWidget(self.log)
+        close = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
+        close.rejected.connect(self.reject)
+        lay.addWidget(close)
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self.update_states)
+        self.timer.start(1000)
+        self.refresh()
 
-    def _editor_widgets(self):
-        return (self.e_name, self.e_file, self.e_newfile, self.e_dt, self.e_all, self.e_table,
-                *self.e_types.values())
+    def refresh(self):
+        selected = self.current_name()
+        channels = self.widget.save_channel_devices()
+        self.table.blockSignals(True)
+        self.table.setRowCount(len(channels))
+        for row, (name, dev) in enumerate(channels):
+            kind = next((k for k, (m, _f) in SAVE_CHANNEL_TYPES.items()
+                         if dev is not None and str(dev.devicemodulename).split('.')[-1] == m), '?')
+            for col, text in enumerate([name, kind, '', '' if dev is None else save_channel_file(dev)]):
+                self.table.setItem(row, col, QtWidgets.QTableWidgetItem(text))
+        self.table.blockSignals(False)
+        self.update_states()
+        names = [n for n, _d in channels]
+        if names:
+            self.table.selectRow(names.index(selected) if selected in names else 0)
+        self.select()
 
-    def fill_list(self, select=0):
-        self.list.blockSignals(True)
-        self.list.clear()
-        for ch in self.channels:
-            item = QtWidgets.QListWidgetItem(f"{ch['name']} ({ch['channel_type']})")
-            item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(QtCore.Qt.CheckState.Checked if ch['enabled'] else QtCore.Qt.CheckState.Unchecked)
-            item.setToolTip('Ticked: the channel saves (with "Save data" on)')
-            self.list.addItem(item)
-        self.list.blockSignals(False)
-        self.current = -1
-        if self.channels:
-            self.list.setCurrentRow(min(max(select, 0), len(self.channels) - 1))
-        else:
-            self.select(-1)
+    def update_states(self):
+        for row, (_name, dev) in enumerate(self.widget.save_channel_devices()):
+            item = self.table.item(row, 2)
+            if item is not None:
+                item.setText('missing (removed from redvypr)' if dev is None else
+                             'running' if dev.thread_running() else 'stopped')
 
-    def select(self, row):
-        self.current = row
-        self.editor.setEnabled(0 <= row < len(self.channels))
-        if not self.editor.isEnabled():
+    def current_name(self):
+        rows = self.table.selectionModel().selectedRows()
+        item = self.table.item(rows[0].row(), 0) if rows else None
+        return item.text() if item is not None else None
+
+    def current_device(self):
+        return dict(self.widget.save_channel_devices()).get(self.current_name())
+
+    def select(self):
+        dev = self.current_device()
+        self.editor.setEnabled(dev is not None)
+        self.remove_button.setEnabled(self.current_name() is not None)
+        if dev is None:
             return
-        ch = self.channels[row]
-        for w in self._editor_widgets():
-            w.blockSignals(True)
-        self.e_name.setText(ch['name'])
-        self.e_type.setText(f"{ch['channel_type']} (redvypr SQLite format, table type data_flat)")
-        self.e_file.setText(ch['filepath'])
-        self.e_newfile.setCurrentIndex(max(0, self.e_newfile.findData(ch['new_file'])))
-        self.e_dt.setValue(ch['dt_newfile'])
-        self.e_dt.setEnabled(ch['new_file'] != 'none')
-        self.e_all.setChecked(not ch['packet_types'])
+        self.editor.setTitle(f'Channel {dev.name}')
+        self.e_file.setText(save_channel_file(dev))
+        ids = save_channel_packetids(dev)
+        self.e_all.setChecked(not ids)
         for name, cb in self.e_types.items():
-            cb.setChecked(not ch['packet_types'] or name in ch['packet_types'])
-            cb.setEnabled(bool(ch['packet_types']))
-        self.e_table.setText(ch['table'])
-        for w in self._editor_widgets():
-            w.blockSignals(False)
+            cb.setChecked(name in ids)
+        self.e_other.setText(' '.join(i for i in ids if i not in self.e_types))
+        self.all_toggled(not ids)
 
-    def set_value(self, key, value):
-        if not 0 <= self.current < len(self.channels):
-            return
-        self.channels[self.current][key] = value
-        if key == 'name':
-            self.list.blockSignals(True)
-            self.list.item(self.current).setText(f"{value} ({self.channels[self.current]['channel_type']})")
-            self.list.blockSignals(False)
-
-    def list_item_changed(self, item):
-        row = self.list.row(item)
-        if 0 <= row < len(self.channels):
-            self.channels[row]['enabled'] = item.checkState() == QtCore.Qt.CheckState.Checked
-
-    def newfile_changed(self, _index):
-        self.set_value('new_file', self.e_newfile.currentData())
-        self.e_dt.setEnabled(self.e_newfile.currentData() != 'none')
-
-    def types_changed(self, _checked=False):
-        every = self.e_all.isChecked()
+    def all_toggled(self, checked):
         for cb in self.e_types.values():
-            cb.setEnabled(not every)
-        self.set_value('packet_types', [] if every else [n for n, cb in self.e_types.items() if cb.isChecked()])
+            cb.setEnabled(not checked)
+        self.e_other.setEnabled(not checked)
 
     def browse_file(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, 'SQLite file (new or continued)', self.e_file.text(), 'SQLite (*.sqlite *.db);;All files (*)',
+            self, 'SQLite file', self.e_file.text(), 'SQLite (*.sqlite *.db);;All files (*)',
             options=QtWidgets.QFileDialog.Option.DontConfirmOverwrite)
         if path:
             self.e_file.setText(path)
-            self.set_value('filepath', path)
 
-    def add_channel(self, channel_type):
-        ch = norlog_save.CHANNEL_TYPES[channel_type]().model_dump()
-        names = {c['name'] for c in self.channels}
-        base, n = ch['name'], 2
-        while ch['name'] in names:
-            ch['name'] = f'{base} {n}'
-            n += 1
-        self.channels.append(ch)
-        self.fill_list(len(self.channels) - 1)
+    def add_channel(self, kind):
+        dev = self.widget.create_save_channel(kind)
+        if dev is not None and self.widget.cfg.save_data:
+            dev.thread_start()
+        self.refresh()
+        if dev is not None:
+            self.table.selectRow(self.table.rowCount() - 1)
+        self.log.setText(f'Added {dev.name}' if dev is not None else 'Could not add the device')
 
     def remove_channel(self):
-        if 0 <= self.current < len(self.channels):
-            del self.channels[self.current]
-            self.fill_list(self.current)
-
-    # --- apply ---
+        name = self.current_name()
+        if name is None:
+            return
+        answer = QtWidgets.QMessageBox.question(
+            self, 'Remove channel', f'Remove the channel {name} and its device from redvypr? (The files stay.)')
+        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        self.widget.remove_save_channel(name)
+        self.refresh()
+        self.log.setText(f'Removed {name}')
 
     def apply(self):
-        try:
-            channels = [norlog_save.channel_from_dict(c) for c in self.channels]
-        except (pydantic.ValidationError, KeyError) as exc:
-            QtWidgets.QMessageBox.warning(self, 'Save data', f'Invalid channel: {exc}')
-            return False
-        if any(c.channel_type == 'sqlite' and not c.filepath.strip() for c in channels):
-            QtWidgets.QMessageBox.warning(self, 'Save data', 'A SQLite channel needs a file.')
-            return False
-        self.widget.cfg.save_channels = channels
-        self.widget.send_config()
-        return True
-
-    def accept_changes(self):
-        if self.apply():
-            self.accept()
-
-    def on_status(self, data):
-        if not data:
-            self.status.setText('')
+        dev = self.current_device()
+        if dev is None:
             return
-        lines = []
-        for ch in data.get('channels') or []:
-            if ch.get('error'):
-                lines.append(f"{ch['name']}: ERROR {ch['error']}")
-            elif ch.get('file'):
-                lines.append(f"{ch['name']}: {ch.get('packets', 0)} packets, {ch.get('values', 0)} values, "
-                             f"{ch.get('duplicates', 0)} already there -> {ch['file']}")
-        self.status.setText('\n'.join(['Save data is on.' if data.get('on') else 'Save data is off.'] + lines))
+        path = self.e_file.text().strip()
+        if not path:
+            QtWidgets.QMessageBox.warning(self, 'Save data', 'The channel needs a file.')
+            return
+        ids = [] if self.e_all.isChecked() else (
+            [n for n, cb in self.e_types.items() if cb.isChecked()] + self.e_other.text().replace(',', ' ').split())
+        db = dev.custom_config.database
+        db.filepath = path
+        for t in db.write_config.tables.values():
+            t.addresses = save_addresses(self.widget.device.name, ids)
+        if dev.thread_running():
+            dev.thread_stop()
+            restart = QtCore.QTimer(self)
+
+            def start_when_stopped():
+                if not dev.thread_running():
+                    restart.stop()
+                    dev.thread_start()
+            restart.timeout.connect(start_when_stopped)
+            restart.start(200)
+            self.log.setText(f'{dev.name}: stored, restarting')
+        else:
+            self.log.setText(f'{dev.name}: stored (used at the next start)')
+        self.refresh()
 
 
 class ProvisionWorker(QtCore.QThread):
