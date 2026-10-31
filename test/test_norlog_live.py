@@ -76,3 +76,20 @@ def test_live_window_counts_lost_packets():
     assert "6 packets" in w.summary.text() and "2 lost" in w.summary.text()
     w.close()
     assert app is not None
+
+
+def test_device_list_assigns_live_data_to_gateway_and_members():
+    from redvypr.devices.norlog import device_list
+    status = {"extaddr": "aaaa", "rloc16": "0x4000", "state": "leader",
+              "children": [{"Extended MAC": "bbbb", "RLOC16": "0x4001"}]}
+    infos = {"gateway": {"hwid": "GW"}, "0x4001": {"hwid": "N1"}}
+    now = 1000.0
+    sources = {"0x4000": {"last_seen": now, "packets": 5, "mac": "GW"},       # gateway itself (sink)
+               "0x6c00": {"last_seen": now, "packets": 2, "mac": "N1"},       # member, RLOC16 changed
+               "0x8000": {"last_seen": now, "packets": 1, "mac": "XX"}}       # unknown: data only
+    devices = device_list.build_device_list(status, data_sources=sources, infos=infos, now=now)
+    assert devices[0]["role"] == device_list.ROLE_GATEWAY and devices[0]["packets"] == 5
+    member = next(d for d in devices if d.get("rloc16") == "0x4001")
+    assert member["packets"] == 2
+    links = [d.get("link") for d in devices]
+    assert links.count("data only") == 1

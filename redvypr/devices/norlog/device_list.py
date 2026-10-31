@@ -230,11 +230,24 @@ def build_device_list(status, gateway_port="", serial_rx_age_s=None, data_source
             e["age_s"] = _int(r.get("Age"))
 
     # --- data sources ('#NLD <source> ...') -------------------------------
+    # The gateway outputs its own packets as sink too (firmware >= 0.4.33), and the RLOC16 of a
+    # member changes with its role: match also by the hardware ID ('mac' of the packets)
+    infos = infos or {}
     by_rloc = {e["rloc16"]: e for e in members.values() if e["rloc16"]}
+    by_hwid = {}
+    for e in members.values():
+        hwid = (infos.get(e["rloc16"]) or {}).get("hwid")
+        if hwid:
+            by_hwid[hwid] = e
+    gateway_hwid = (infos.get("gateway") or {}).get("hwid")
     for source, info in data_sources.items():
         age = now - info.get("last_seen", 0)
         rloc = norm_rloc16(source)
-        e = by_rloc.get(rloc)
+        mac = info.get("mac")
+        if (own_rloc and rloc == own_rloc) or (mac and mac == gateway_hwid):
+            e = gateway
+        else:
+            e = by_rloc.get(rloc) or (by_hwid.get(mac) if mac else None)
         if e is None:
             if age > DATA_SOURCE_TIMEOUT_S:
                 continue
@@ -260,7 +273,6 @@ def build_device_list(status, gateway_port="", serial_rx_age_s=None, data_source
             e["quality"] = worst(*q)
 
     # --- device info (norlog info / CoAP /info), keyed 'gateway' or RLOC16 ---
-    infos = infos or {}
     _apply_info(gateway, infos.get("gateway"))
     for e in members.values():
         _apply_info(e, infos.get(e["rloc16"]))

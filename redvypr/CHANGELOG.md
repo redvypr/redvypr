@@ -16,6 +16,8 @@ redvypr changelog
 - `ot_cli`: `pub_status()`, `pub_set()`, `sink_set()`, `pub_text()`, `sink_text()`, `PACKET_TYPES`
 ### Changed
 - norlog gateway: the "Data" tab (last `#NLD` packet per node) is replaced by the "Live data" window
+- norlog gateway: live data of the gateway itself and of a member whose RLOC16 changed are counted at that
+  device (matched by RLOC16 or hardware ID) instead of an extra "data only" device
 - norlog: CBOR key 7 is decoded as `packet_num_type` (packet number per packet type, firmware 0.4.31),
   was `packet_num_sensor`; same key, so old log files still decode. New databases get the column
   `packet_num_type`, existing ones keep `packet_num_sensor`
