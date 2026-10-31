@@ -93,3 +93,19 @@ def test_device_list_assigns_live_data_to_gateway_and_members():
     assert member["packets"] == 2
     links = [d.get("link") for d in devices]
     assert links.count("data only") == 1
+
+
+def test_live_parse_and_text():
+    from redvypr.devices.norlog.norlog_gateway import _live_parse, _live_text
+    assert _live_parse("off") == (frozenset(), ())
+    assert _live_parse("all")[0] == frozenset(ot_cli.PACKET_TYPES)
+    assert _live_parse("ntc,wind") == (frozenset({"ntc", "wind"}), ("sinks",))
+    assert _live_parse("ntc sinks fd11::7") == (frozenset({"ntc"}), ("sinks", "fd11::7"))
+    assert _live_text(frozenset(ot_cli.PACKET_TYPES), ("sinks",)) == "all"
+    assert _live_text({"wind", "ntc"}, ("sinks",)) == "ntc,wind"
+    assert _live_text({"ntc"}, ("fd11::7",)) == "ntc fd11::7"
+    assert _live_text(set(), ()) == "off"
+    # what the device reports compares equal to the wish
+    status = {"pub": {"mask": 0x120, "sinks": True, "to": []}}
+    from redvypr.devices.norlog.norlog_gateway import _live_pub_text
+    assert _live_parse(_live_pub_text(status)) == _live_parse("ntc,wind")

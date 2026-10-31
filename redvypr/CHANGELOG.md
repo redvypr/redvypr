@@ -15,6 +15,10 @@ redvypr changelog
   The gateway is a sink by default (`live_sink`), so its own packets come as live data too (firmware >= 0.4.33)
 - `ot_cli`: `pub_status()`, `pub_set()`, `sink_set()`, `pub_text()`, `sink_text()`, `PACKET_TYPES`
 ### Changed
+- norlog gateway: simpler "Subscriptions" window: one table for all devices including the gateway, ticks =
+  packet types that come live (`norlog pub`), received packets and age per device, yellow = not applied yet,
+  grey = not read; targets and all/none in the right-click menu. The gateway is always the sink for all
+  types; without an entry it sends all its own packets (firmware >= 0.4.34). `live_sink_types` is unused
 - norlog gateway: the "Data" tab (last `#NLD` packet per node) is replaced by the "Live data" window
 - norlog gateway: live data of the gateway itself and of a member whose RLOC16 changed are counted at that
   device (matched by RLOC16 or hardware ID) instead of an extra "data only" device
