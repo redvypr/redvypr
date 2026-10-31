@@ -296,6 +296,13 @@ class TableDetailWidget(QtWidgets.QWidget):
                                     "device), packetid, time and content are skipped (e.g. data downloaded "
                                     "again from a logger, a file replayed twice)")
         form.addRow("", self.skip_dup_cb)
+        self.uid_keys_edit = QtWidgets.QLineEdit()
+        self.uid_keys_edit.setPlaceholderText("e.g. boot, packet_num")
+        self.uid_keys_edit.setToolTip("redvypr_datapacket with skip duplicates: keys of the packet that identify "
+                                      "it together with its source (deviceid or device), comma separated. "
+                                      "Packets with all of them are compared by these only (the same packet "
+                                      "received live and read from a logger later), others by time and content.")
+        form.addRow("UID keys:", self.uid_keys_edit)
         layout.addLayout(form)
 
         # Address List Management
@@ -325,6 +332,7 @@ class TableDetailWidget(QtWidgets.QWidget):
         # ComboBox change
         self.type_combo.currentIndexChanged.connect(self.data_changed)
         self.skip_dup_cb.toggled.connect(self.data_changed)
+        self.uid_keys_edit.editingFinished.connect(self.data_changed)
 
         # Button actions
         self.btn_add_man_addr.clicked.connect(self._add_address_dialog)
@@ -366,6 +374,7 @@ class TableDetailWidget(QtWidgets.QWidget):
         if idx >= 0:
             self.type_combo.setCurrentIndex(idx)
         self.skip_dup_cb.setChecked(bool(data.get("skip_duplicates", False)))
+        self.uid_keys_edit.setText(", ".join(data.get("uid_keys") or []))
 
         self.addr_list.clear()
         for addr in data.get("addresses", []):
@@ -377,6 +386,7 @@ class TableDetailWidget(QtWidgets.QWidget):
         return {
             "tabletype": self.type_combo.currentText(),
             "skip_duplicates": self.skip_dup_cb.isChecked(),
+            "uid_keys": [k.strip() for k in self.uid_keys_edit.text().split(",") if k.strip()],
             "addresses": [self.addr_list.item(i).text() for i in
                           range(self.addr_list.count())]
         }

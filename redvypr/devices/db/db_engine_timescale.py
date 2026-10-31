@@ -596,7 +596,7 @@ class DbTimescaleWriter():
                                 self.file_statistics_total['columns_flat_active'][
                                     table_name][
                                     addr] = {
-                                    'colname_db': sanitize_name_for_db(addr),
+                                    'colname_db': None,     # packet table: no column per address
                                     'entries_written': 0}
 
                             self.file_statistics_total['columns_flat_active'][
@@ -1505,7 +1505,8 @@ class TimescaleStatusTableWidget(QtWidgets.QWidget):
         # Add tables to layout
         self.layout.addWidget(QtWidgets.QLabel("General Status:"))
         self.layout.addWidget(self.generic_infotable)
-        self.layout.addWidget(QtWidgets.QLabel("Columns Flat Active Status:"))
+        self.layout.addWidget(QtWidgets.QLabel("Written per table and address (packets, or entries of a "
+                                               "data_flat column):"))
         self.layout.addWidget(self.sqlite_infotable)
 
 
@@ -1533,7 +1534,7 @@ class TimescaleStatusTableWidget(QtWidgets.QWidget):
         """Configure the SQLite info table for columns_flat_active."""
         self.sqlite_infotable.setColumnCount(4)
         self.sqlite_infotable.setHorizontalHeaderLabels([
-            "Table Name (table_name_db)", "Address", "Column Name (colname_db)", "Entries Written"
+            "Table", "Address", "Flat column (data_flat only)", "Written"
         ])
         self.sqlite_infotable.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeMode.Stretch
@@ -1603,13 +1604,13 @@ class TimescaleStatusTableWidget(QtWidgets.QWidget):
                 if not isinstance(table_data, dict):
                     continue
 
-                table_name_db = table_data.get("table_name_db", "N/A")
+                table_name_db = table_data.get("table_name_db", table_name)
                 # Process each address in columns_flat_active
                 for address, column_data in table_data.items():
                     if not isinstance(column_data, dict):
                         continue
 
-                    colname_db = column_data.get("colname_db", "N/A")
+                    colname_db = column_data.get("colname_db") or "–"   # packet tables: no column
                     entries_written = str(column_data.get("entries_written", "N/A"))
 
                     # Create a unique key for this row: (table_name_db, address)
