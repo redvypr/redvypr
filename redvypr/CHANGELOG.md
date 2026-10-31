@@ -7,6 +7,13 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- ?
+### Changed
+- ?
+
+## [0.9.23] - 2026-10-31
+
+### Added
 - Data sources (`redvypr.datasource`): databases of the SQLite and TimescaleDB writers, configured once in redvypr
   (`datasources` in the configuration, `Redvypr.add_datasource()`) and used by name. A reader lists the datastreams
   of the data_flat tables and gives the values of all datastreams matching an address, merged in time; long ranges
