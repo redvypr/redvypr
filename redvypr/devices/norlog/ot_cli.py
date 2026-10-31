@@ -868,6 +868,77 @@ def nmea_set(cli: OtCli, on=None, baud=None, raw=None, address=None, timeout: fl
         raise OtError(f"NMEA: {msg}") from None
 
 
+# --- Live data over Thread: 'norlog pub' / 'norlog sink' (firmware >= 0.4.32) ---
+
+PUB_PREFIX = "#NLU "
+# Packet types in the order of their mask bits: bit n = CBOR tag 50000 + n (doc/pakete.md)
+PACKET_TYPES = ("battery", "adc", "gnss", "raw", "ntc", "board_temp", "mag", "wind", "adcseq", "adcseq_cfg")
+
+
+def types_from_mask(mask: int) -> list:
+    return [name for i, name in enumerate(PACKET_TYPES, start=1) if mask & (1 << i)]
+
+
+def pub_text(types, targets=None) -> str:
+    """Arguments of 'norlog pub': 'off' or '<types> [sinks|<ipv6> ...]' (no target = sinks)."""
+    types = [t for t in types if t]
+    unknown = [t for t in types if t not in PACKET_TYPES]
+    if unknown:
+        raise ValueError(f"unknown packet types: {', '.join(unknown)}")
+    if not types:
+        return "off"
+    return " ".join([",".join(types)] + [t for t in (targets or []) if t])
+
+
+def sink_text(on: bool, types=None) -> str:
+    """Arguments of 'norlog sink': 'on [<types>]' or 'off'."""
+    if not on:
+        return "off"
+    types = [t for t in (types or []) if t]
+    return "on " + ",".join(types) if types and len(types) < len(PACKET_TYPES) else "on"
+
+
+def _live_command(cli: OtCli, kind: str, text, address, timeout: float) -> dict:
+    """
+    Status ({'pub': {...}, 'sink': {...}}) after setting text (None: only read). Gateway over
+    the shell ('#NLU <json>'), members over CoAP GET/POST pub or sink.
+    """
+    import json
+    if address is None:
+        cmd = "norlog pub json" if text is None else f"norlog {kind} {text}"
+        return _shell_json(cli, cmd, PUB_PREFIX, timeout=5.0, min_fw="0.4.32")
+    try:
+        if text is None:
+            data = coap_request(cli, "get", address, kind, timeout=timeout)
+        else:
+            data = coap_request(cli, "post", address, kind, text.encode(), timeout=timeout, b64=True)
+    except OtError as exc:
+        msg = str(exc)
+        if '"err"' in msg:
+            try:
+                msg = json.loads(msg[msg.index("{"):])["err"]
+            except (ValueError, KeyError):
+                pass
+        raise OtError(f"{kind}: {msg}") from None
+    return json.loads(data.decode())
+
+
+def pub_status(cli: OtCli, address=None, timeout: float = 10.0) -> dict:
+    """{'pub': {'types', 'mask', 'sinks', 'to', 'sent', 'dropped'}, 'sink': {'on', 'types', 'mask',
+    'received', 'rx_dropped', 'known': [{'addr', 'types', 'mask', 'age_s'}]}}"""
+    return _live_command(cli, "pub", None, address, timeout)
+
+
+def pub_set(cli: OtCli, text: str, address=None, timeout: float = 10.0) -> dict:
+    """Set and store what the device sends (pub_text()); returns the status."""
+    return _live_command(cli, "pub", text, address, timeout)
+
+
+def sink_set(cli: OtCli, text: str, address=None, timeout: float = 10.0) -> dict:
+    """Make the device a sink or not (sink_text()), stored; returns the status."""
+    return _live_command(cli, "sink", text, address, timeout)
+
+
 def fw_install_remote(cli: OtCli, address: str) -> dict:
     import json
     return json.loads(coap_request(cli, "post", address, "fw?op=install").decode())

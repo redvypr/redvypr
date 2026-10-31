@@ -9,11 +9,16 @@ network of norlog sensor nodes. The device
 - flashes the gateway firmware over UART (MCUmgr/SMP via the norlog_loader),
 - publishes norlog data packets received from the Thread network.
 
-Data lines from the gateway firmware (planned, not yet implemented there):
+Live data over Thread (firmware >= 0.4.32): a device sends its logged packets with
+'norlog pub <types> [sinks|<ipv6> ...]', the gateway receives them as sink ('norlog sink on')
+and prints each one as
 
     #NLD <source> <base64 encoded norlog CBOR packet>
 
-<source> identifies the sending node (e.g. its RLOC16 or IPv6 address).
+<source> is the RLOC16 of the sending node. The packets are identical to the log on the SD
+card. "Subscriptions" sets both on the devices (stored there and in the configuration:
+live_sink, live_sink_types, live_pub per hardware ID, set again at the start with live_apply);
+"Live data" shows the incoming packets with the lost ones (gaps in packet_num_type).
 
 All packets carry the norlog they belong to in the header:
 
@@ -145,6 +150,20 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                                                     'a restart of the gateway); if it is not '
                                                                     'leader, it becomes leader again (at most '
                                                                     'every 10 minutes)')
+    live_sink: bool = pydantic.Field(default=False, description='Live data: the gateway is a sink of the Thread '
+                                                                'network ("norlog sink on", firmware >= 0.4.32), '
+                                                                'devices that send to "sinks" send to it')
+    live_sink_types: typing.List[str] = pydantic.Field(default_factory=list, description='Packet types the '
+                                                                                         'gateway accepts as sink, '
+                                                                                         'empty = all')
+    live_pub: typing.Dict[str, str] = pydantic.Field(default_factory=dict, description='Live data sent by the '
+                                                                                       'devices ("norlog pub"), '
+                                                                                       'key: hardware ID, value: '
+                                                                                       '"off" or "<types> '
+                                                                                       '[sinks|<ipv6> ...]"')
+    live_apply: bool = pydantic.Field(default=True, description='Set live_sink on the gateway at the start and '
+                                                                'live_pub on each device once per start when it '
+                                                                'is seen (both are also stored on the devices)')
 
 
 # --------------------------------------------------------------------------
@@ -207,6 +226,7 @@ class _Gateway:
         self.last_status = {}
         self.meta_sent = {}             # hwid -> device metadata sent last
         self.units_sent = {}            # hwid -> set of keys whose unit was sent
+        self.live_applied = set()       # hwids whose live_pub was set in this start
 
     # --- publishing ---
 
@@ -414,6 +434,12 @@ class _Gateway:
                 self.fs_command(args)
             elif command == 'fw_update_node':
                 self.fw_update_node(args.get('target', ''), args.get('image', ''), bool(args.get('force', False)))
+            elif command == 'live_read':
+                self.live_read(args.get('targets', 'all'))
+            elif command == 'live_pub_set':
+                self.live_pub_set(args.get('target', 'gateway'), args.get('text', 'off'), args.get('hwid'))
+            elif command == 'live_sink_set':
+                self.live_sink_apply(report=True)
             elif command == 'battery_upload':
                 self.battery_upload(args.get('path', ''))
             elif command == 'provision':
@@ -703,6 +729,7 @@ class _Gateway:
             key = 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16')
             if key in read_ok:
                 self.publish_info(d)
+        self.live_apply_seen(devices, read_ok)
         if report:
             self.result('read_device_info', failed == 0, f'Device info read: {done} ok, {failed} failed')
 
@@ -973,6 +1000,58 @@ class _Gateway:
         except (ot_cli.OtError, TimeoutError, ValueError) as exc:
             result['message'] = str(exc)
         self.to_gui('nmea_result', result)
+
+    # --- live data over Thread: 'norlog pub' / 'norlog sink' (firmware >= 0.4.32) ---
+
+    def _live_result(self, target, ok, message='', status=None, hwid=None):
+        self.to_gui('live_result', {'target': target, 'ok': ok, 'message': message, 'status': status or {},
+                                    'hwid': hwid or (self.infos.get(target) or {}).get('hwid', '')})
+
+    def live_read(self, targets='all'):
+        """Read what the devices send and whether they are sinks. Answer 'live_result' per device."""
+        if not self.last_status:
+            self.read_status()
+        keys = ['gateway'] + [d['rloc16'] for d in self.build_devices()[1:] if d.get('rloc16')]
+        if targets != 'all':
+            keys = [k for k in keys if k in set(targets)]
+        for key in keys:
+            try:
+                status = ot_cli.pub_status(self.cli, self.target_address(key), timeout=self.config.coap_timeout_s)
+                self._live_result(key, True, status=status)
+            except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+                self._live_result(key, False, str(exc))
+
+    def live_pub_set(self, target, text, hwid=None):
+        """Set 'norlog pub <text>' on a device (stored there)."""
+        try:
+            status = ot_cli.pub_set(self.cli, text, self.target_address(target), timeout=self.config.coap_timeout_s)
+            hwid = hwid or (self.infos.get(target) or {}).get('hwid')
+            if hwid:
+                self.live_applied.add(hwid)
+            self._live_result(target, True, f'pub {text}', status, hwid)
+        except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+            self._live_result(target, False, f'pub {text}: {exc}', hwid=hwid)
+
+    def live_sink_apply(self, report=False):
+        """Set the configured sink state on the gateway ('norlog sink on [<types>]' or 'off')."""
+        text = ot_cli.sink_text(self.config.live_sink, self.config.live_sink_types)
+        try:
+            status = ot_cli.sink_set(self.cli, text)
+            self._live_result('gateway', True, f'sink {text}', status)
+        except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+            if report or self.config.live_sink:
+                self._live_result('gateway', False, f'sink {text}: {exc}')
+
+    def live_apply_seen(self, devices, read_ok):
+        """live_pub of the configuration, once per start for each device whose info was just read."""
+        if not self.config.live_apply or not self.config.live_pub:
+            return
+        for d in devices:
+            key = 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16')
+            hwid = d.get('hwid')
+            if key in read_ok and hwid and hwid in self.config.live_pub and hwid not in self.live_applied:
+                self.live_applied.add(hwid)         # also on error: not on every poll
+                self.live_pub_set(key, self.config.live_pub[hwid], hwid)
 
     def set_radio(self, target, dbm):
         """Set the transmit power at the antenna of the gateway or a member (stored on the device)."""
@@ -1251,6 +1330,8 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
         gw.query_info(['gateway'], report=False)
     except (ot_cli.OtError, TimeoutError, ValueError) as exc:
         logger.debug(funcname + f'Gateway info not read: {exc}')
+    if pdconfig.live_apply:
+        gw.live_sink_apply()
     gw.result('start', True, f'Connected to {pdconfig.comport}')
     t_status = time.monotonic()
     t_info = None                   # first info read right after the first status
@@ -1304,7 +1385,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.tabs.addTab(scroll(self._build_devices_tab()), 'Devices')
         self.tabs.addTab(self._build_console_tab(), 'Console')
         self.tabs.addTab(scroll(self._build_thread_tab()), 'Thread network')
-        self.tabs.addTab(scroll(self._build_data_tab()), 'Data')
+        # Live data over Thread ('#NLD'): own windows, the data are collected also while they are closed
+        self.live_window = LiveDataWindow()
+        self.live_dialog = None
+        self.live_status = {}       # hwid -> last 'norlog pub json' status of the device
         self.layout.addWidget(self._build_port_row())
         self.layout.addWidget(self.tabs)
 
@@ -1343,6 +1427,15 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.publish_raw.setChecked(self.cfg.publish_raw_data)
         self.publish_raw.toggled.connect(self.publish_raw_changed)
         lay.addWidget(self.publish_raw)
+        self.live_subs_button = QtWidgets.QPushButton('Subscriptions')
+        self.live_subs_button.setToolTip('Live data over Thread: this gateway as sink and what each device sends '
+                                         '(norlog sink / norlog pub, firmware >= 0.4.32)')
+        self.live_subs_button.clicked.connect(self.open_live_subscriptions)
+        lay.addWidget(self.live_subs_button)
+        self.live_data_button = QtWidgets.QPushButton('Live data')
+        self.live_data_button.setToolTip('Window with the live data received from the Thread network')
+        self.live_data_button.clicked.connect(self.open_live_data)
+        lay.addWidget(self.live_data_button)
         self.refresh_ports()
         self.port_combo.currentTextChanged.connect(self.port_changed)
         # Disabled while the thread is running (handled by the base class)
@@ -2080,33 +2173,38 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     QtWidgets.QTreeWidgetItem(child, [k, v])
         self.status_tree.expandToDepth(0)
 
-    # --- data ---
+    # --- live data over Thread ---
 
-    def _build_data_tab(self):
-        w = QtWidgets.QWidget()
-        lay = QtWidgets.QVBoxLayout(w)
-        lay.addWidget(QtWidgets.QLabel('Last packet per node and packet type (requires gateway firmware '
-                                       'that forwards Thread data as "#NLD" lines)'))
-        self.data_table = QtWidgets.QTableWidget(0, 5)
-        self.data_table.setHorizontalHeaderLabels(['Node (MAC)', 'Type', 'Packet #', 'Received', 'Values'])
-        self.data_table.horizontalHeader().setStretchLastSection(True)
-        self.data_rows = {}
-        lay.addWidget(self.data_table)
-        return w
+    def open_live_subscriptions(self):
+        if self.live_dialog is None:
+            self.live_dialog = LiveSubscriptionsDialog(self)
+            self.live_dialog.finished.connect(lambda _r: setattr(self, 'live_dialog', None))
+        self.live_dialog.populate()
+        self.live_dialog.show()
+        self.live_dialog.raise_()
+        self.live_dialog.activateWindow()
+        if self.device.get_thread_status()['thread_running']:
+            self.device.thread_command('live_read', {'targets': 'all'})
 
-    def show_data(self, data):
-        key = (data.get('mac', data.get('source', '?')), data.get('packet_type', '?'))
-        row = self.data_rows.get(key)
-        if row is None:
-            row = self.data_table.rowCount()
-            self.data_table.insertRow(row)
-            self.data_rows[key] = row
-        skip = {'packet_type', 'mac', 'packet_num', '_redvypr', 't', 'raw_data'}
-        values = ', '.join(f'{k}={v:.4g}' if isinstance(v, float) else f'{k}={v}'
-                           for k, v in data.items() if k not in skip and not k.startswith('_'))
-        cells = [key[0], key[1], str(data.get('packet_num', '')), time.strftime('%H:%M:%S'), values]
-        for col, text in enumerate(cells):
-            self.data_table.setItem(row, col, QtWidgets.QTableWidgetItem(text))
+    def open_live_data(self):
+        self.live_window.show()
+        self.live_window.raise_()
+        self.live_window.activateWindow()
+
+    def send_config(self):
+        """Hand the changed configuration to the running device thread."""
+        if self.device.get_thread_status()['thread_running']:
+            self.device.thread_command('config', {'config': self.cfg.model_dump()})
+
+    def on_live_result(self, data):
+        hwid = data.get('hwid')
+        if data.get('ok') and hwid:
+            self.live_status[hwid] = data.get('status') or {}
+        if data.get('message'):
+            state = 'OK' if data.get('ok') else 'ERROR'
+            self.console_text.appendPlainText(f"[live {data.get('target')}] {state}: {data['message']}")
+        if self.live_dialog is not None:
+            self.live_dialog.on_result(data)
 
     # --- data from the device thread ---
 
@@ -2201,8 +2299,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                     dlg.on_time_result(data)
             elif packetid == 'command_result':
                 self.show_result(data)
-            elif 'packet_type' in data:     # decoded '#NLD' data packet
-                self.show_data(data)
+            elif packetid == 'live_result':
+                self.on_live_result(data)
+            elif 'packet_type' in data and 'source' in data:    # '#NLD' packet (archive packets: no source)
+                self.live_window.add_packet(data)
 
     def show_result(self, data):
         text = f"[{data.get('command')}] {'OK' if data.get('ok') else 'ERROR'}: {data.get('message', '')}"
@@ -2223,6 +2323,284 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             w.setEnabled(running)
         for dlg in self.settings_dialogs.values():
             dlg.update_run_state(running)
+
+
+def _live_pub_text(status):
+    """'norlog pub' text of a device from its status ({'pub': {...}}), '' if unknown."""
+    pub = (status or {}).get('pub')
+    if not pub:
+        return ''
+    types = ot_cli.types_from_mask(int(pub.get('mask', 0)))
+    targets = (['sinks'] if pub.get('sinks') else []) + list(pub.get('to') or [])
+    return ot_cli.pub_text(types, targets)
+
+
+class LiveSubscriptionsDialog(QtWidgets.QDialog):
+    """
+    Live data over Thread: this gateway as sink ('norlog sink') and what each device sends
+    ('norlog pub'). Both are stored on the devices and in the redvypr configuration
+    (live_sink, live_sink_types, live_pub per hardware ID).
+    """
+    COL_DEVICE, COL_HWID, COL_RLOC, COL_NOW = range(4)
+    COL_TYPES = 4
+
+    def __init__(self, widget):
+        super().__init__(widget)
+        self.widget = widget
+        self.cfg = widget.cfg
+        self.setWindowTitle('norlog live data: subscriptions')
+        self.setModal(False)
+        self.resize(1100, 560)
+        lay = QtWidgets.QVBoxLayout(self)
+
+        box = QtWidgets.QGroupBox('This gateway as sink (norlog sink)')
+        blay = QtWidgets.QGridLayout(box)
+        self.sink_check = QtWidgets.QCheckBox('Receive live data: devices that send to "sinks" send to this gateway')
+        self.sink_check.setChecked(self.cfg.live_sink)
+        blay.addWidget(self.sink_check, 0, 0, 1, 6)
+        self.sink_types = {}
+        for i, name in enumerate(ot_cli.PACKET_TYPES):
+            cb = QtWidgets.QCheckBox(name)
+            cb.setChecked(not self.cfg.live_sink_types or name in self.cfg.live_sink_types)
+            self.sink_types[name] = cb
+            blay.addWidget(cb, 1 + i // 5, i % 5)
+        self.sink_apply = QtWidgets.QPushButton('Apply to the gateway')
+        self.sink_apply.clicked.connect(self.apply_sink)
+        blay.addWidget(self.sink_apply, 1, 5)
+        self.sink_status = QtWidgets.QLabel('')
+        self.sink_status.setWordWrap(True)
+        blay.addWidget(self.sink_status, 3, 0, 1, 6)
+        lay.addWidget(box)
+
+        box = QtWidgets.QGroupBox('Devices: what they send (norlog pub)')
+        dlay = QtWidgets.QVBoxLayout(box)
+        dlay.addWidget(QtWidgets.QLabel('Tick the packet types a device sends. Targets: "sinks" (all sinks, e.g. '
+                                        'this gateway) and/or IPv6 addresses (ML-EID) of single devices.'))
+        self.table = QtWidgets.QTableWidget(0, self.COL_TYPES + len(ot_cli.PACKET_TYPES) + 1)
+        self.table.setHorizontalHeaderLabels(['Device', 'HW ID', 'RLOC16', 'Sends now']
+                                             + list(ot_cli.PACKET_TYPES) + ['Targets'])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setVisible(False)
+        dlay.addWidget(self.table)
+        row = QtWidgets.QHBoxLayout()
+        self.read_button = QtWidgets.QPushButton('Read from the devices')
+        self.read_button.clicked.connect(lambda: self.widget.device.thread_command('live_read', {'targets': 'all'}))
+        self.apply_button = QtWidgets.QPushButton('Apply to the devices')
+        self.apply_button.clicked.connect(self.apply_devices)
+        self.apply_start = QtWidgets.QCheckBox('Set again at every start of the gateway device')
+        self.apply_start.setChecked(self.cfg.live_apply)
+        self.apply_start.toggled.connect(self.apply_start_changed)
+        row.addWidget(self.read_button)
+        row.addWidget(self.apply_button)
+        row.addStretch(1)
+        row.addWidget(self.apply_start)
+        dlay.addLayout(row)
+        lay.addWidget(box, 1)
+
+        self.log = QtWidgets.QPlainTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setMaximumBlockCount(200)
+        self.log.setMaximumHeight(90)
+        lay.addWidget(self.log)
+        self.rows = {}              # hwid -> row
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self.update_run_state)
+        self.timer.start(500)
+        self.update_run_state()
+
+    def update_run_state(self):
+        running = self.widget.device.get_thread_status()['thread_running']
+        for w in (self.sink_apply, self.read_button, self.apply_button):
+            w.setEnabled(running)
+
+    def apply_start_changed(self, checked):
+        self.cfg.live_apply = bool(checked)
+        self.widget.send_config()
+
+    def populate(self):
+        """One row per device with a hardware ID; ticks from the configuration, else from the device."""
+        devices = [d for d in getattr(self.widget, 'current_devices', []) if d.get('hwid')]
+        self.table.setRowCount(len(devices))
+        self.rows = {}
+        for row, d in enumerate(devices):
+            hwid = d['hwid']
+            self.rows[hwid] = row
+            name = d.get('sn') or ('gateway' if d.get('role') == device_list.ROLE_GATEWAY else '')
+            for col, text in ((self.COL_DEVICE, name), (self.COL_HWID, hwid), (self.COL_RLOC, d.get('rloc16', ''))):
+                item = QtWidgets.QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+                if col == self.COL_DEVICE:
+                    item.setData(QtCore.Qt.ItemDataRole.UserRole, self.widget.device_key(d))
+                self.table.setItem(row, col, item)
+            now = _live_pub_text(self.widget.live_status.get(hwid))
+            self._set_now(row, now)
+            self._set_wanted(row, self.cfg.live_pub.get(hwid) or now or 'off')
+        self.table.resizeColumnsToContents()
+
+    def _set_now(self, row, text):
+        item = QtWidgets.QTableWidgetItem(text or '?')
+        item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+        item.setToolTip('What the device sends now (read from the device)')
+        self.table.setItem(row, self.COL_NOW, item)
+
+    def _set_wanted(self, row, text):
+        parts = text.split()
+        types = set(parts[0].split(',')) if parts and parts[0] != 'off' else set()
+        targets = parts[1:] or ['sinks']
+        for i, name in enumerate(ot_cli.PACKET_TYPES):
+            item = QtWidgets.QTableWidgetItem()
+            item.setFlags(QtCore.Qt.ItemFlag.ItemIsUserCheckable | QtCore.Qt.ItemFlag.ItemIsEnabled)
+            item.setCheckState(QtCore.Qt.CheckState.Checked if name in types else QtCore.Qt.CheckState.Unchecked)
+            self.table.setItem(row, self.COL_TYPES + i, item)
+        self.table.setItem(row, self.COL_TYPES + len(ot_cli.PACKET_TYPES), QtWidgets.QTableWidgetItem(' '.join(targets)))
+
+    def _wanted_text(self, row):
+        types = [name for i, name in enumerate(ot_cli.PACKET_TYPES)
+                 if self.table.item(row, self.COL_TYPES + i).checkState() == QtCore.Qt.CheckState.Checked]
+        item = self.table.item(row, self.COL_TYPES + len(ot_cli.PACKET_TYPES))
+        targets = (item.text() if item else '').split() or ['sinks']
+        return ot_cli.pub_text(types, targets)
+
+    def apply_devices(self):
+        sent = 0
+        for hwid, row in self.rows.items():
+            try:
+                text = self._wanted_text(row)
+            except ValueError as exc:
+                self.log.appendPlainText(f'{hwid}: {exc}')
+                continue
+            now = self.table.item(row, self.COL_NOW).text()
+            if text == now:
+                if hwid in self.cfg.live_pub:
+                    self.cfg.live_pub[hwid] = text
+                continue        # the device sends that already
+            if text == 'off' and now in ('?', 'off') and hwid not in self.cfg.live_pub:
+                continue        # never configured, nothing to switch off
+            self.cfg.live_pub[hwid] = text
+            key = self.table.item(row, self.COL_DEVICE).data(QtCore.Qt.ItemDataRole.UserRole)
+            self.widget.device.thread_command('live_pub_set', {'target': key, 'text': text, 'hwid': hwid})
+            sent += 1
+        self.widget.send_config()
+        self.log.appendPlainText(f'{sent} device(s) set' if sent else 'Nothing to change')
+
+    def apply_sink(self):
+        self.cfg.live_sink = self.sink_check.isChecked()
+        types = [name for name, cb in self.sink_types.items() if cb.isChecked()]
+        self.cfg.live_sink_types = [] if len(types) == len(ot_cli.PACKET_TYPES) else types
+        self.widget.send_config()
+        self.widget.device.thread_command('live_sink_set', {})
+
+    def on_result(self, data):
+        if data.get('message'):
+            self.log.appendPlainText(f"{data.get('target')}: {'OK' if data.get('ok') else 'ERROR'} "
+                                     f"{data['message']}")
+        status = data.get('status') or {}
+        row = self.rows.get(data.get('hwid'))
+        if data.get('ok') and row is not None:
+            self._set_now(row, _live_pub_text(status))
+            if data.get('hwid') not in self.cfg.live_pub:
+                self._set_wanted(row, _live_pub_text(status))
+        if data.get('ok') and data.get('target') == 'gateway':
+            sink = status.get('sink') or {}
+            known = ', '.join(f"{k.get('addr')} ({k.get('types')}, {k.get('age_s')} s)"
+                              for k in sink.get('known') or [])
+            self.sink_status.setText(f"Gateway: sink {'on (' + sink.get('types', '') + ')' if sink.get('on') else 'off'}"
+                                     f", received {sink.get('received', 0)}, dropped {sink.get('rx_dropped', 0)}"
+                                     f"; known sinks: {known or 'none'}")
+
+
+class LiveDataWindow(QtWidgets.QWidget):
+    """
+    Live data received from the Thread network ('#NLD'): last packet per device and packet
+    type with the lost packets (gaps in packet_num_type), and a log of the incoming packets.
+    """
+    COLUMNS = ['Device', 'HW ID', 'Type', 'Measured', 'Received', 'Packet # (type)', 'Lost', 'Count', 'Values']
+    SKIP = {'packet_type', 'mac', 'packet_num', 'packet_num_type', 'uptime_ms', 'boot', 'source', 't',
+            'rtc_time', 'rtc_time_iso', 'gps_time_iso', 'raw_data'}
+
+    def __init__(self):
+        super().__init__(None, QtCore.Qt.WindowType.Window)
+        self.setWindowTitle('norlog live data')
+        self.resize(1100, 600)
+        lay = QtWidgets.QVBoxLayout(self)
+        row = QtWidgets.QHBoxLayout()
+        self.summary = QtWidgets.QLabel('No live data yet (devices send with "norlog pub", see Subscriptions)')
+        self.pause = QtWidgets.QCheckBox('Pause log')
+        clear = QtWidgets.QPushButton('Clear')
+        clear.clicked.connect(self.clear)
+        row.addWidget(self.summary, 1)
+        row.addWidget(self.pause)
+        row.addWidget(clear)
+        lay.addLayout(row)
+        split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        self.table = QtWidgets.QTableWidget(0, len(self.COLUMNS))
+        self.table.setHorizontalHeaderLabels(self.COLUMNS)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.log = QtWidgets.QPlainTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setMaximumBlockCount(1000)
+        self.log.setFont(QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont))
+        split.addWidget(self.table)
+        split.addWidget(self.log)
+        split.setSizes([350, 250])
+        lay.addWidget(split, 1)
+        self.clear()
+
+    def clear(self):
+        self.rows = {}              # (hwid, packet_type) -> row
+        self.gaps = {}              # (hwid, base type) -> {'boot', 'num', 'lost'}
+        self.counts = {}            # (hwid, packet_type) -> packets
+        self.total = 0
+        self.table.setRowCount(0)
+        self.log.clear()
+
+    @staticmethod
+    def base_type(data):
+        """Packet type of the counter packet_num_type: adcseq packets are named after their sensor."""
+        ptype = data.get('packet_type', '?')
+        if data.get('sensor') and ptype == data['sensor']:
+            return 'adcseq'
+        if data.get('sensor') and ptype == f"{data['sensor']}_cfg":
+            return 'adcseq_cfg'
+        return ptype
+
+    def add_packet(self, data):
+        hwid = str(data.get('mac', '?'))
+        ptype = data.get('packet_type', '?')
+        try:
+            device = data['_redvypr']['device']
+        except (KeyError, TypeError):
+            device = ''
+        num = data.get('packet_num_type')
+        gap = self.gaps.setdefault((hwid, self.base_type(data)), {'boot': None, 'num': None, 'lost': 0})
+        if isinstance(num, int):
+            if gap['boot'] == data.get('boot') and gap['num'] is not None and num > gap['num'] + 1:
+                gap['lost'] += num - gap['num'] - 1
+            gap['boot'], gap['num'] = data.get('boot'), num
+        key = (hwid, ptype)
+        self.counts[key] = self.counts.get(key, 0) + 1
+        self.total += 1
+        t = data.get('t')
+        measured = time.strftime('%H:%M:%S', time.localtime(t)) if isinstance(t, (int, float)) else ''
+        received = time.strftime('%H:%M:%S')
+        values = ', '.join(f'{k}={v:.4g}' if isinstance(v, float) else f'{k}={v}'
+                           for k, v in data.items() if k not in self.SKIP and not k.startswith('_'))
+        row = self.rows.get(key)
+        if row is None:
+            row = self.rows[key] = self.table.rowCount()
+            self.table.insertRow(row)
+        cells = [device, hwid, ptype, measured, received, '' if num is None else str(num), str(gap['lost']),
+                 str(self.counts[key]), values]
+        for col, text in enumerate(cells):
+            self.table.setItem(row, col, QtWidgets.QTableWidgetItem(text))
+        lost = sum(g['lost'] for g in self.gaps.values())
+        self.summary.setText(f'{self.total} packets from {len({k[0] for k in self.rows})} device(s), '
+                             f'{lost} lost (gaps in packet_num_type)')
+        if not self.pause.isChecked():
+            self.log.appendPlainText(f'{received} {device or hwid} {ptype} #{num if num is not None else "-"} '
+                                     f'{values}')
 
 
 class ProvisionWorker(QtCore.QThread):
