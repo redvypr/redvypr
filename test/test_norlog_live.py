@@ -134,10 +134,11 @@ def test_time_packet_decoded():
     from redvypr.devices.norlog.cbor_mini import CBORTag, dumps
     pkt = norlog_cbor.decode_bytes(dumps(CBORTag(50011, {
         0: 7, 1: 60000, 4: 0xAB, 8: 2, 100: 1_700_000_000_000, 101: 0, 105: -1500, 106: 1_700_000_000_120,
-        107: 300})))
+        107: 300, 108: True})))
     assert pkt["packet_type"] == "time" and pkt["time_event_name"] == "observation"
     assert pkt["rtc_diff_us"] == -1500 and pkt["gps_offset_ms"] - pkt["offset_ms"] == 120
     assert norlog_cbor.units_of(pkt)["rtc_diff_us"] == "us"
+    assert pkt["gps_pps"] is True
 
 
 def test_logindex_header_from_offset():

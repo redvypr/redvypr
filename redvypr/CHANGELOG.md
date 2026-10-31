@@ -25,7 +25,8 @@ redvypr changelog
   stored once, independent of its time
 - norlog: time basis of firmware >= 0.4.35: packet time `t` = (`uptime_ms` + `offset_ms`) / 1000 with
   `t_source` 'node' (live data, archive, converter, log index); `rtc_time` of older logs is still used.
-  `norlog_cbor.packet_time()`; time packet `time` (tag 50011, keys 100-107, `time_event_name`), pub type `time`
+  `norlog_cbor.packet_time()`; time packet `time` (tag 50011, keys 100-108 incl. `gps_pps` of firmware 0.4.36,
+  `time_event_name`), pub type `time`
 - norlog gateway: "Set clock" sends the uncertainty of the time (round trip of the request) with firmware
   >= 0.4.35 (`ot_cli.time_set(unc_ms=...)`)
 ### Changed

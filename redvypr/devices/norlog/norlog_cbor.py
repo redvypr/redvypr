@@ -83,7 +83,8 @@ KEYS = {
     104: "src_unc_ms",      # uncertainty of the source [ms]
     105: "rtc_diff_us",     # system time - RTC at the second edge of the RTC [us]
     106: "gps_offset_ms",   # GNSS time - uptime at the reception of the last RMC sentence [ms]
-    107: "gps_age_ms",      # age of that RMC sentence [ms]
+    107: "gps_age_ms",      # age of that RMC sentence [ms] (with PPS: of the edge)
+    108: "gps_pps",         # True: gps_offset_ms from the PPS edge (board v02.1, firmware >= 0.4.36)
 }
 
 # cbor_time_event_t (key 101 of the time packet)
