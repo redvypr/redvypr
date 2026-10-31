@@ -19,8 +19,15 @@ redvypr changelog
   (`@p:<gateway>`, optionally only some packet IDs) into the table `redvypr_raw` (full packets, no flat
   table); "Save data" starts and stops them, the first one is added automatically (`save_data`,
   `save_channels` = device names)
-- db: a packet can bring its own identity for skipping duplicates (`_packet_uid`, `packet_uid()`); norlog packets
-  carry (mac, boot, packet_num), so a packet received live and converted from the SD card is stored once
+- db: table setting `uid_keys` (redvypr_datapacket with `skip_duplicates`): keys of the packet that identify it
+  together with its source (deviceid or device); packets that have all of them are compared by these only.
+  norlog raw tables use `['boot', 'packet_num']`, so a packet received live and converted from the SD card is
+  stored once, independent of its time
+- norlog: time basis of firmware >= 0.4.35: packet time `t` = (`uptime_ms` + `offset_ms`) / 1000 with
+  `t_source` 'node' (live data, archive, converter, log index); `rtc_time` of older logs is still used.
+  `norlog_cbor.packet_time()`; time packet `time` (tag 50011, keys 100-107, `time_event_name`), pub type `time`
+- norlog gateway: "Set clock" sends the uncertainty of the time (round trip of the request) with firmware
+  >= 0.4.35 (`ot_cli.time_set(unc_ms=...)`)
 ### Changed
 - norlog_convert / "Convert to SQLite": the packets go into `redvypr_raw` (full packets, as "Save data"); the
   data_flat table only with `flat=True` / `--flat` / "Flat table for plots" (default on in the GUI, needed by

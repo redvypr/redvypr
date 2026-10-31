@@ -34,6 +34,7 @@ import zlib
 
 from . import norlog_logindex as L
 from . import ot_cli
+from .norlog_cbor import packet_time
 
 logger = logging.getLogger('redvypr.device.norlog_archive')
 
@@ -366,24 +367,10 @@ def _repair(remote, local, name, pos, n, attempts=2):
 # Decoding the archive
 # ---------------------------------------------------------------------------
 
-def _packet_times(pkt):
-    """(packet time or None, source) from the RTC or GPS time of a decoded packet."""
-    for key, src in (("rtc_time", "rtc"), ("gps_time", "gps")):
-        t = pkt.get(key)
-        if isinstance(t, str):
-            try:
-                t = datetime.datetime.fromisoformat(t).timestamp()
-            except ValueError:
-                t = None
-        if t:
-            return float(t), src
-    return None, None
-
-
 def new_packets(dev_dir, max_packets=None):
     """
     Decode the packets of the archive that were not decoded yet and give each a
-    time ('t', unix s) and 't_source' ('rtc', 'gps' or 'uptime'). Yields the
+    time ('t', unix s) and 't_source' ('node', 'rtc', 'gps' or 'uptime'). Yields the
     packets (dicts as norlog_cbor.decode_packet()) file by file; the state is
     saved after every file, so a consumer may stop at any file boundary.
     Packets of a boot without any time stay in the archive until the time of
@@ -409,7 +396,7 @@ def new_packets(dev_dir, max_packets=None):
         for _pos, _end, pkt in spans:
             if pkt is None:
                 continue
-            t, _src = _packet_times(pkt)
+            t, _src = packet_time(pkt)
             if t is not None and pkt.get("uptime_ms") is not None:
                 samples.setdefault(pkt.get("boot", 0), []).append(t - pkt["uptime_ms"] / 1000.0)
         for boot, vals in samples.items():
@@ -426,7 +413,7 @@ def new_packets(dev_dir, max_packets=None):
         for _pos, _end, pkt in spans:
             if pkt is None:
                 continue
-            t, src = _packet_times(pkt)
+            t, src = packet_time(pkt)
             if t is None:
                 off = offsets.get(pkt.get("boot", 0))
                 if off is None or pkt.get("uptime_ms") is None:
@@ -453,17 +440,14 @@ def to_redvypr_packet(pkt, sn=None, hostinfo=None):
     redvypr packet of a decoded archive packet (with 't' from new_packets()), with the
     header of its norlog: device norlog_<sn> (norlog without serial number), deviceid =
     hardware ID ('mac'), sensorid = sn, packetid = packet type, time = measurement time.
-    '_packet_uid' (mac, boot, packet_num): the same packet received live is the same in a database.
+    The same packet received live has the same header, deviceid, boot and packet_num (uid_keys
+    of the database).
     """
     from redvypr.redvypr_datadict import create_redvypr_dict
-    from .norlog_cbor import packet_identity
     data = create_redvypr_dict(device=f"norlog_{sn}" if sn else "norlog", deviceid=pkt.get("mac"),
                                sensorid=sn or None, packetid=pkt.get("packet_type", "data"), tu=pkt["t"],
                                hostinfo=hostinfo)
     data.update(pkt)
-    uid = packet_identity(pkt)
-    if uid:
-        data["_packet_uid"] = uid
     return data
 
 

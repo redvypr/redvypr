@@ -52,8 +52,9 @@ norlog_archive); optionally the new packets are published with their
 measurement time, e.g. for the database writers. "Convert to SQLite" turns
 selected archive files into an SQLite database in the redvypr format: the packets in
 redvypr_raw and optionally a data_flat table for the plots (norlog_convert, also on the
-command line). Live data and SD card packets carry the same '_packet_uid' (mac, boot,
-packet_num): in one database each packet is stored once.
+command line). Live data and SD card packets have the same deviceid (mac), boot and
+packet_num (uid_keys of the raw table): in one database each packet is stored once. Their
+time 't' is uptime_ms + offset_ms of the node (t_source 'node', firmware >= 0.4.35).
 
 The info packet contains the info JSON as it is (nested) plus 'link': the radio
 link as seen from the gateway (RSSI, LQ, role, next hop, ...). Metadata is
@@ -317,16 +318,16 @@ class _Gateway:
         if pkt is None:
             return
         pkt['source'] = source
-        t = pkt.get('rtc_time') or pkt.get('gps_time') or time.time()
+        t, t_source = norlog_cbor.packet_time(pkt)
+        if t is None:
+            t, t_source = time.time(), 'received'
         # 'mac' of the CBOR packets is the hwid of the sending norlog
         device, hwid, sn = self.identity(device_list.norm_rloc16(source), hwid=pkt.get('mac'))
         data = create_redvypr_dict(device=device, deviceid=hwid, sensorid=sn,
                                    packetid=pkt.get('packet_type', 'data'), tu=t)
         data.update(pkt)
         data['t'] = t
-        uid = norlog_cbor.packet_identity(pkt)
-        if uid:
-            data['_packet_uid'] = uid       # same packet from the SD card: written once into a database
+        data['t_source'] = t_source
         self.dataqueue.put(data)
         self.npackets += 1
 
@@ -1114,7 +1115,10 @@ class _Gateway:
             result = {'target': target, 'ok': False}
             try:
                 address = self.target_address(target)
-                st0, off0, _err0 = self.measure_time(address)
+                st0, off0, err0 = self.measure_time(address)
+                # uncertainty of the time sent: the delay of the request, at most its round trip
+                # (2 x half round trip of the measurement); firmware >= 0.4.35 (offset_ms in the status)
+                unc_ms = round(2000 * err0) if 'offset_ms' in st0 else None
                 result['offset_before_s'] = off0 if st0.get('valid') else None
                 result['src_before'] = st0.get('src')
                 if st0.get('src') == 'gnss' and 0 <= st0.get('set_age_s', -1) < 120 and not force:
@@ -1123,7 +1127,7 @@ class _Gateway:
                     skipped += 1
                 else:
                     for attempt in range(1, self.TIME_ATTEMPTS + 1):
-                        ot_cli.time_set(self.cli, address, timeout=self.config.coap_timeout_s)
+                        ot_cli.time_set(self.cli, address, timeout=self.config.coap_timeout_s, unc_ms=unc_ms)
                         st, off, err = self.measure_time(address)
                         if abs(off) <= self.TIME_MAX_OFFSET_S:
                             break
@@ -2682,7 +2686,7 @@ class LiveDataTab(QtWidgets.QWidget):
     """
     COLUMNS = ['Device', 'HW ID', 'Type', 'Measured', 'Received', 'Packet # (type)', 'Lost', 'Count', 'Values']
     SKIP = {'packet_type', 'mac', 'packet_num', 'packet_num_type', 'uptime_ms', 'boot', 'source', 't',
-            'rtc_time', 'rtc_time_iso', 'gps_time_iso', 'raw_data'}
+            'rtc_time', 'rtc_time_iso', 'gps_time_iso', 'raw_data', 'offset_ms', 't_source'}
 
     def __init__(self, widget):
         super().__init__()
@@ -2777,7 +2781,8 @@ class LiveDataTab(QtWidgets.QWidget):
 def _sqlite_channel_config(gateway):
     """
     sqlite_writer configuration: the packets of this gateway as they are (raw data, no flat table), each
-    packet once (_packet_uid: also with the same packets converted from the SD card into the same file).
+    packet once (uid_keys boot, packet_num: also with the same packets converted from the SD card into
+    the same file).
     """
     from redvypr.devices.db import sqlite_writer
     from redvypr.devices.db.db_config_util import DbTableConfig
@@ -2788,7 +2793,7 @@ def _sqlite_channel_config(gateway):
     addresses = save_addresses(gateway, [])
     cfg.database.write_config.tables = {
         'redvypr_raw': DbTableConfig(tablename='redvypr_raw', tabletype='redvypr_datapacket', addresses=addresses,
-                                     skip_duplicates=True)}
+                                     skip_duplicates=True, uid_keys=norlog_convert.UID_KEYS)}
     return cfg
 
 

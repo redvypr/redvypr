@@ -22,13 +22,14 @@ PACKET_TAGS = {
     50008: "wind",          # NMEA MWV of a wind meter at UART1 (firmware >= 0.4.13)
     50009: "adcseq",        # measurement sequence of an ADC (firmware >= 0.4.15), see decode_packet()
     50010: "adcseq_cfg",    # its configuration as text
+    50011: "time",          # setting of the clock and comparisons with RTC/GNSS (firmware >= 0.4.35)
 }
 
 # Map keys (cbor_key_t)
 KEYS = {
     0: "packet_num",
     1: "uptime_ms",
-    2: "rtc_time",
+    2: "rtc_time",          # system time [s] (firmware <= 0.4.34, replaced by offset_ms)
     3: "gps_time",
     4: "mac",
     5: "source_id",
@@ -75,12 +76,30 @@ KEYS = {
     97: "cfg",              # configuration as text
     98: "seq_cal",          # [calibrated values, NaN without calibration] (firmware >= 0.4.16)
     99: "seq_cal_units",    # [their units, "" without calibration]
+    100: "offset_ms",       # system time - uptime [ms] (firmware >= 0.4.35): time = uptime_ms + offset_ms
+    101: "time_event",      # time packet: TIME_EVENTS
+    102: "offset_old_ms",   # offset before setting the clock
+    103: "src_time_ms",     # time of the source [unix ms]
+    104: "src_unc_ms",      # uncertainty of the source [ms]
+    105: "rtc_diff_us",     # system time - RTC at the second edge of the RTC [us]
+    106: "gps_offset_ms",   # GNSS time - uptime at the reception of the last RMC sentence [ms]
+    107: "gps_age_ms",      # age of that RMC sentence [ms]
 }
+
+# cbor_time_event_t (key 101 of the time packet)
+TIME_EVENTS = {0: "observation", 1: "rtc", 2: "shell", 3: "coap", 4: "gnss", 5: "rtc_discipline"}
 
 # Units of the values (metadata of the converted data)
 UNITS = {
     "uptime_ms": "ms",
     "rtc_time": "s",
+    "offset_ms": "ms",
+    "offset_old_ms": "ms",
+    "src_time_ms": "ms",
+    "src_unc_ms": "ms",
+    "rtc_diff_us": "us",
+    "gps_offset_ms": "ms",
+    "gps_age_ms": "ms",
     "gps_time": "s",
     "batt_mv": "mV",
     "batt_soc": "%",
@@ -124,15 +143,25 @@ def units_of(pkt):
     return units
 
 
-def packet_identity(pkt):
+def packet_time(pkt):
     """
-    Identity of a logged packet: (mac, boot, packet_num) is unique, the same packet received live
-    ('#NLD') and read from the SD card has the same identity. None for packets without a number.
+    (time [unix s], source) of a decoded packet, (None, None) without time:
+    'node' uptime_ms + offset_ms (firmware >= 0.4.35), 'rtc' rtc_time (older firmware),
+    'gps' gps_time of GNSS packets. Live data and SD card give the same time.
     """
-    mac, boot, num = pkt.get("mac"), pkt.get("boot"), pkt.get("packet_num")
-    if not mac or boot is None or not isinstance(num, int) or num <= 0:
-        return None
-    return f"norlog:{mac}:{boot}:{num}"
+    off, up = pkt.get("offset_ms"), pkt.get("uptime_ms")
+    if isinstance(off, int) and isinstance(up, int):
+        return (up + off) / 1000.0, "node"
+    for key, src in (("rtc_time", "rtc"), ("gps_time", "gps")):
+        t = pkt.get(key)
+        if isinstance(t, str):
+            try:
+                t = datetime.datetime.fromisoformat(t).timestamp()
+            except ValueError:
+                t = None
+        if t:
+            return float(t), src
+    return None, None
 
 
 def base_type(pkt):
@@ -147,7 +176,7 @@ def base_type(pkt):
 
 
 # Field names of an ADC sequence that would collide with the header get the prefix "ch_"
-_RESERVED = set(KEYS.values()) | {"packet_type", "source", "t", "rtc_time_iso", "gps_time_iso"}
+_RESERVED = set(KEYS.values()) | {"packet_type", "source", "t", "t_source", "rtc_time_iso", "gps_time_iso"}
 
 
 def _flatten_adcseq(result):
@@ -213,6 +242,8 @@ def decode_packet(item):
         _flatten_adcseq(result)
     elif item.tag == 50010 and result.get("sensor"):
         result["packet_type"] = f"{result['sensor']}_cfg"
+    elif item.tag == 50011 and "time_event" in result:
+        result["time_event_name"] = TIME_EVENTS.get(result["time_event"], str(result["time_event"]))
 
     # Convenience: ISO time strings for the epoch timestamps
     for tkey in ("rtc_time", "gps_time"):

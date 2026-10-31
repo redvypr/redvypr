@@ -245,7 +245,7 @@ def iter_packets(data: bytes, start=0, resync=True):
 
 
 def decode_range(data: bytes, start=0, t0=None, t1=None):
-    """Packets of data from offset start, optionally only those with t0 <= rtc_time <= t1."""
+    """Packets of data from offset start, optionally only those with t0 <= time of the node <= t1."""
     t0, t1 = _to_unix(t0), _to_unix(t1)
     packets = []
     for _off, pkt in iter_packets(data, start):
@@ -261,11 +261,16 @@ def decode_range(data: bytes, start=0, t0=None, t1=None):
 
 
 def _header(pkt):
-    """(packet_num, uptime_ms, rtc unix seconds) of a decoded packet."""
-    rtc = pkt.get("rtc_time")
-    if isinstance(rtc, str):
-        rtc = datetime.datetime.fromisoformat(rtc).timestamp()
-    return pkt.get("packet_num", 0), pkt.get("uptime_ms", 0), int(rtc) if rtc else 0
+    """(packet_num, uptime_ms, unix seconds of the node or 0) of a decoded packet."""
+    up = pkt.get("uptime_ms", 0)
+    off = pkt.get("offset_ms")
+    if isinstance(off, int):
+        rtc = (up + off) // 1000         # firmware >= 0.4.35, as its log_index.c
+    else:
+        rtc = pkt.get("rtc_time")
+        if isinstance(rtc, str):
+            rtc = datetime.datetime.fromisoformat(rtc).timestamp()
+    return pkt.get("packet_num", 0), up, int(rtc) if rtc and rtc > 0 else 0
 
 
 def build_index(data: bytes, interval_bytes=INTERVAL_BYTES, interval_s=INTERVAL_S):

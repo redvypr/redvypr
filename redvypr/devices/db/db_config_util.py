@@ -115,21 +115,22 @@ def _sha1(obj) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
 
-def packet_uid(data: dict) -> str:
+def packet_uid(data: dict, uid_keys=None) -> str:
     """
     Identity of a datapacket for skipping duplicates: its source (deviceid, or
     the device name without one; sensorid, sensor), packetid, packet time and
     its content (all keys not starting with '_'). Host, publisher and local
     counters are not part of it: the same packet received again (e.g. data of
     a logger downloaded twice, a replayed file) has the same uid.
-    A packet can bring its own identity in '_packet_uid' (e.g. logger, boot and
-    packet number of a sensor packet): then only that counts, so the same
-    measurement received live and read from the logger later is written once.
+    uid_keys (table setting): keys of the packet that identify it together with its
+    source, e.g. ['boot', 'packet_num'] of a logger. If the packet has all of them, only
+    these count, so the same measurement received live and read from the logger later
+    (with a different time or additional fields) is written once.
     """
-    if data.get("_packet_uid"):
-        return _sha1(["_packet_uid", data["_packet_uid"]])
     rv = data.get("_redvypr") or {}
     source = rv.get("deviceid") or rv.get("device")
+    if uid_keys and all(data.get(k) is not None for k in uid_keys):
+        return _sha1(["uid_keys", source, [[k, data[k]] for k in uid_keys]])
     content = {k: v for k, v in data.items() if not str(k).startswith("_")}
     return _sha1([source, rv.get("sensorid"), rv.get("sensor"), rv.get("packetid"), rv.get("t"), content])
 
@@ -185,6 +186,12 @@ class DbTableConfig(pydantic.BaseModel):
         description="Write a packet (data_flat: an entry) only once: packets with the same source "
                     "(deviceid or device), packetid, time and content are skipped, e.g. data of a "
                     "logger that is downloaded again or a file that is replayed twice.")
+    uid_keys: List[str] = pydantic.Field(
+        default_factory=list,
+        description="redvypr_datapacket with skip_duplicates: keys of the packet that identify it "
+                    "together with its source (deviceid or device), e.g. ['boot', 'packet_num'] of a "
+                    "logger. Packets that have all of them are compared by these only (the same packet "
+                    "received live and read from the logger later), others by time and content.")
 
 
 class DbWriteConfig(pydantic.BaseModel):

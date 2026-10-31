@@ -579,20 +579,26 @@ def time_get(cli: OtCli, address=None, timeout: float = 10.0) -> dict:
     return _retry_garbled(lambda: json.loads(coap_request(cli, "get", address, "time", timeout=timeout).decode()))
 
 
-def time_set(cli: OtCli, address=None, timeout: float = 10.0) -> dict:
+def time_set(cli: OtCli, address=None, timeout: float = 10.0, unc_ms=None) -> dict:
     """
     Set the clock of the gateway or a member to the time of this PC. The time is
     taken right before the command is sent; the transmission delay (UART, Thread)
     is not compensated: check the result with time_get(). Returns the new status.
+    unc_ms: uncertainty of the time sent (e.g. duration of a request), stored by the
+    device in its time packet (firmware >= 0.4.35; older gateways reject it).
     """
     import json
     ms = int(time.time() * 1000)
     if address is None:
-        rest = cli.shell_query(f"norlog time set {ms}", TIME_PREFIX, timeout=3.0)
+        unc = f" {int(unc_ms)}" if unc_ms is not None else ""
+        rest = cli.shell_query(f"norlog time set {ms}{unc}", TIME_PREFIX, timeout=3.0)
         if rest.startswith("err"):
             raise OtError(f"norlog time set: {rest} (gateway firmware >= 0.4.4 required)")
         return json.loads(rest)
-    payload = json.dumps({"t": ms}).encode()
+    req = {"t": ms}
+    if unc_ms is not None:
+        req["unc"] = int(unc_ms)
+    payload = json.dumps(req).encode()
     return json.loads(coap_request(cli, "put", address, "time", payload, timeout=timeout).decode())
 
 
@@ -872,7 +878,8 @@ def nmea_set(cli: OtCli, on=None, baud=None, raw=None, address=None, timeout: fl
 
 PUB_PREFIX = "#NLU "
 # Packet types in the order of their mask bits: bit n = CBOR tag 50000 + n (doc/pakete.md)
-PACKET_TYPES = ("battery", "adc", "gnss", "raw", "ntc", "board_temp", "mag", "wind", "adcseq", "adcseq_cfg")
+PACKET_TYPES = ("battery", "adc", "gnss", "raw", "ntc", "board_temp", "mag", "wind", "adcseq", "adcseq_cfg",
+                "time")
 
 
 def types_from_mask(mask: int) -> list:

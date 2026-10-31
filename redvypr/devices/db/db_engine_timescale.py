@@ -341,6 +341,9 @@ class DbTimescaleWriter():
     def _skip_duplicates(self, table_name) -> bool:
         return bool(self.write_config_raddr["tables"].get(table_name, {}).get("skip_duplicates"))
 
+    def _uid_keys(self, table_name):
+        return self.write_config_raddr["tables"].get(table_name, {}).get("uid_keys") or None
+
     def disconnect(self):
         """Writes the queued packets and closes the connection safely."""
         try:
@@ -909,7 +912,7 @@ class DbTimescaleWriter():
                 hdr['uuid'],
                 rv_meta.get('deviceid'),
                 rv_meta.get('sensorid'),
-                packet_uid(data_dict) if skip else None,
+                packet_uid(data_dict, self._uid_keys(table_name)) if skip else None,
             ))
 
             return sql_command

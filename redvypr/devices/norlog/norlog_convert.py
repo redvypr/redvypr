@@ -11,7 +11,7 @@ hardware ID, sensorid = sn, packetid = packet type) and their measurement
 time: the RTC or GPS time of the packet, or for packets written before the
 clock was set, uptime + offset of their boot (learned from the packets of the
 same device and boot that have a time). Packets without any time are not
-written. Every packet is written once (skip_duplicates, packet_uid): converting a
+written. Every packet is written once (skip_duplicates, uid_keys boot + packet_num): converting a
 file again or overlapping files add nothing, converting into an existing database
 adds the new data.
 
@@ -23,7 +23,6 @@ database (table redvypr_metadata), the plot finds them without a running norlog.
     python -m redvypr.devices.norlog.norlog_convert -o data.sqlite data_00167_*.cbor
 """
 
-import datetime
 import logging
 import pathlib
 import sqlite3
@@ -32,28 +31,19 @@ import time
 
 from . import norlog_logindex as L
 from .norlog_archive import to_redvypr_packet
-from .norlog_cbor import units_of
+from .norlog_cbor import packet_time, units_of
 
 logger = logging.getLogger('redvypr.device.norlog_convert')
+
+# A norlog packet is identified by its device (deviceid = hardware ID), boot and packet_num:
+# the same packet received live and converted from the SD card is stored once
+UID_KEYS = ["boot", "packet_num"]
 
 CONVERT_HOST = {"host": "norlog_convert", "tstart": 0, "addr": None, "uuid": "norlog_convert"}
 
 
 class ConvertError(Exception):
     pass
-
-
-def _packet_time(pkt):
-    for key, src in (("rtc_time", "rtc"), ("gps_time", "gps")):
-        t = pkt.get(key)
-        if isinstance(t, str):
-            try:
-                t = datetime.datetime.fromisoformat(t).timestamp()
-            except ValueError:
-                t = None
-        if t:
-            return float(t), src
-    return None, None
 
 
 def find_files(inputs):
@@ -86,7 +76,7 @@ def _boot_offsets(files):
         for _off, pkt in L.iter_packets(pathlib.Path(f).read_bytes()):
             if not pkt:
                 continue
-            t, _src = _packet_time(pkt)
+            t, _src = packet_time(pkt)
             if t is not None and pkt.get("uptime_ms") is not None:
                 samples.setdefault((pkt.get("mac"), pkt.get("boot")), []).append(t - pkt["uptime_ms"] / 1000.0)
     return {k: statistics.median(v) for k, v in samples.items()}
@@ -145,7 +135,7 @@ def db_config(db_path, table="norlog", flat=False):
     from redvypr.devices.db.db_engine_sqlite import SqliteConfig
     from redvypr.devices.db.db_config_util import DbWriteConfig, DbTableConfig
     tables = {RAW_TABLE: DbTableConfig(tablename=RAW_TABLE, tabletype="redvypr_datapacket", addresses=["@"],
-                                       skip_duplicates=True)}
+                                       skip_duplicates=True, uid_keys=UID_KEYS)}
     if flat:
         tables[table] = DbTableConfig(tablename=table, tabletype="data_flat", addresses=["@"], skip_duplicates=True)
     return SqliteConfig(filepath=str(db_path), storage="file", append_to_file=True, batch_size=2000,
@@ -185,7 +175,7 @@ def convert(inputs, db_path, sn=None, table="norlog", progress=None, cancel=None
                 if not pkt:
                     continue
                 res["packets"] += 1
-                t, src = _packet_time(pkt)
+                t, src = packet_time(pkt)
                 if t is None:
                     off_boot = offsets.get((pkt.get("mac"), pkt.get("boot")))
                     if off_boot is None or pkt.get("uptime_ms") is None:

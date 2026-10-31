@@ -12,7 +12,8 @@ from redvypr.devices.norlog import ot_cli
 def test_types_from_mask():
     assert ot_cli.types_from_mask(0) == []
     assert ot_cli.types_from_mask(0x160) == ["ntc", "board_temp", "wind"]
-    assert ot_cli.types_from_mask(0x7FE) == list(ot_cli.PACKET_TYPES)
+    assert ot_cli.types_from_mask(0xFFE) == list(ot_cli.PACKET_TYPES)
+    assert ot_cli.types_from_mask(1 << 11) == ["time"]
 
 
 def test_pub_text():
@@ -116,16 +117,49 @@ def test_live_parse_and_text():
     assert _live_parse(_live_pub_text(status)) == _live_parse("ntc,wind")
 
 
+def test_packet_time_offset_and_old_rtc_time():
+    from redvypr.devices.norlog import norlog_cbor
+    from redvypr.devices.norlog.cbor_mini import CBORTag, dumps
+    # firmware >= 0.4.35: uptime_ms + offset_ms, ms resolution
+    pkt = norlog_cbor.decode_bytes(dumps(CBORTag(50005, {0: 1, 1: 1234, 100: 1_700_000_000_000})))
+    assert norlog_cbor.packet_time(pkt) == (1_700_000_001.234, "node")
+    # older firmware: rtc_time in seconds
+    pkt = norlog_cbor.decode_bytes(dumps(CBORTag(50005, {0: 1, 1: 1234, 2: CBORTag(1, 1_700_000_000)})))
+    assert norlog_cbor.packet_time(pkt) == (1_700_000_000.0, "rtc")
+    assert norlog_cbor.packet_time({"uptime_ms": 5}) == (None, None)
+
+
+def test_time_packet_decoded():
+    from redvypr.devices.norlog import norlog_cbor
+    from redvypr.devices.norlog.cbor_mini import CBORTag, dumps
+    pkt = norlog_cbor.decode_bytes(dumps(CBORTag(50011, {
+        0: 7, 1: 60000, 4: 0xAB, 8: 2, 100: 1_700_000_000_000, 101: 0, 105: -1500, 106: 1_700_000_000_120,
+        107: 300})))
+    assert pkt["packet_type"] == "time" and pkt["time_event_name"] == "observation"
+    assert pkt["rtc_diff_us"] == -1500 and pkt["gps_offset_ms"] - pkt["offset_ms"] == 120
+    assert norlog_cbor.units_of(pkt)["rtc_diff_us"] == "us"
+
+
+def test_logindex_header_from_offset():
+    from redvypr.devices.norlog import norlog_logindex as L
+    assert L._header({"packet_num": 3, "uptime_ms": 2500, "offset_ms": 1_700_000_000_000}) == \
+        (3, 2500, 1_700_000_002)
+    assert L._header({"packet_num": 3, "uptime_ms": 2500}) == (3, 2500, 0)
+
+
 def test_live_and_sd_card_packets_stored_once(tmp_path):
-    """The same packet received live and converted from the SD card: one row in redvypr_raw."""
+    """
+    The same packet received live and converted from the SD card: one row in redvypr_raw
+    (uid_keys boot + packet_num of the source), even with a different time (live: time of reception).
+    """
     import sqlite3
     import time
     from redvypr.devices.db.db_engine_sqlite import DbSqlite
     from redvypr.devices.norlog import norlog_cbor, norlog_convert
     from redvypr.devices.norlog.cbor_mini import CBORTag, dumps
     from redvypr.redvypr_datadict import create_redvypr_dict
-    t0 = int(time.time()) - 100
-    raw = [dumps(CBORTag(50005, {0: n, 1: 1000 * n, 2: CBORTag(1, t0 + n), 4: 0x9AB64B5C71AE5C1C, 7: n, 8: 3,
+    off = (int(time.time()) - 100) * 1000
+    raw = [dumps(CBORTag(50005, {0: n, 1: 1000 * n, 100: off, 4: 0x9AB64B5C71AE5C1C, 7: n, 8: 3,
                                  52: 20.0 + n})) for n in (1, 2, 3)]
     (tmp_path / "data_00001_x.cbor").write_bytes(b"".join(raw))
     db_path = tmp_path / "both.sqlite"
@@ -133,11 +167,11 @@ def test_live_and_sd_card_packets_stored_once(tmp_path):
     host = {"host": "redvypr", "tstart": 0, "addr": "127.0.0.1", "uuid": "pc"}
     for b in raw[:2]:                           # live, like the gateway ('#NLD')
         pkt = norlog_cbor.decode_bytes(b)
+        t = time.time()                         # e.g. old gateway: time of reception
         data = create_redvypr_dict(device="norlog_7", deviceid=pkt["mac"], sensorid="7",
-                                   packetid=pkt["packet_type"], tu=pkt["rtc_time"], hostinfo=host)
+                                   packetid=pkt["packet_type"], tu=t, hostinfo=host)
         data.update(pkt)
-        data.update({"source": "0x7000", "t": pkt["rtc_time"],
-                     "_packet_uid": norlog_cbor.packet_identity(pkt)})
+        data.update({"source": "0x7000", "t": t, "t_source": "received"})
         db.insert_packet(data)
     db.close()
     res = norlog_convert.convert([tmp_path / "data_00001_x.cbor"], db_path, sn="7")
