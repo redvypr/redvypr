@@ -19,7 +19,12 @@ redvypr changelog
   (`@p:<gateway>`, optionally only some packet IDs) into the table `redvypr_raw` (full packets, no flat
   table); "Save data" starts and stops them, the first one is added automatically (`save_data`,
   `save_channels` = device names)
+- db: a packet can bring its own identity for skipping duplicates (`_packet_uid`, `packet_uid()`); norlog packets
+  carry (mac, boot, packet_num), so a packet received live and converted from the SD card is stored once
 ### Changed
+- norlog_convert / "Convert to SQLite": the packets go into `redvypr_raw` (full packets, as "Save data"); the
+  data_flat table only with `flat=True` / `--flat` / "Flat table for plots" (default on in the GUI, needed by
+  the redvypr data sources)
 - norlog gateway: simpler "Subscriptions" window: one table for all devices including the gateway, ticks =
   packet types that come live (`norlog pub`), received packets and age per device, yellow = not applied yet,
   grey = not read; targets and all/none in the right-click menu. The gateway is always the sink for all

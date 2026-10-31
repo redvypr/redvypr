@@ -122,7 +122,12 @@ def packet_uid(data: dict) -> str:
     its content (all keys not starting with '_'). Host, publisher and local
     counters are not part of it: the same packet received again (e.g. data of
     a logger downloaded twice, a replayed file) has the same uid.
+    A packet can bring its own identity in '_packet_uid' (e.g. logger, boot and
+    packet number of a sensor packet): then only that counts, so the same
+    measurement received live and read from the logger later is written once.
     """
+    if data.get("_packet_uid"):
+        return _sha1(["_packet_uid", data["_packet_uid"]])
     rv = data.get("_redvypr") or {}
     source = rv.get("deviceid") or rv.get("device")
     content = {k: v for k, v in data.items() if not str(k).startswith("_")}

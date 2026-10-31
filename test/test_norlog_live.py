@@ -114,3 +114,40 @@ def test_live_parse_and_text():
     status = {"pub": {"mask": 0x120, "sinks": True, "to": []}}
     from redvypr.devices.norlog.norlog_gateway import _live_pub_text
     assert _live_parse(_live_pub_text(status)) == _live_parse("ntc,wind")
+
+
+def test_live_and_sd_card_packets_stored_once(tmp_path):
+    """The same packet received live and converted from the SD card: one row in redvypr_raw."""
+    import sqlite3
+    import time
+    from redvypr.devices.db.db_engine_sqlite import DbSqlite
+    from redvypr.devices.norlog import norlog_cbor, norlog_convert
+    from redvypr.devices.norlog.cbor_mini import CBORTag, dumps
+    from redvypr.redvypr_datadict import create_redvypr_dict
+    t0 = int(time.time()) - 100
+    raw = [dumps(CBORTag(50005, {0: n, 1: 1000 * n, 2: CBORTag(1, t0 + n), 4: 0x9AB64B5C71AE5C1C, 7: n, 8: 3,
+                                 52: 20.0 + n})) for n in (1, 2, 3)]
+    (tmp_path / "data_00001_x.cbor").write_bytes(b"".join(raw))
+    db_path = tmp_path / "both.sqlite"
+    db = DbSqlite(norlog_convert.db_config(db_path))
+    host = {"host": "redvypr", "tstart": 0, "addr": "127.0.0.1", "uuid": "pc"}
+    for b in raw[:2]:                           # live, like the gateway ('#NLD')
+        pkt = norlog_cbor.decode_bytes(b)
+        data = create_redvypr_dict(device="norlog_7", deviceid=pkt["mac"], sensorid="7",
+                                   packetid=pkt["packet_type"], tu=pkt["rtc_time"], hostinfo=host)
+        data.update(pkt)
+        data.update({"source": "0x7000", "t": pkt["rtc_time"],
+                     "_packet_uid": norlog_cbor.packet_identity(pkt)})
+        db.insert_packet(data)
+    db.close()
+    res = norlog_convert.convert([tmp_path / "data_00001_x.cbor"], db_path, sn="7")
+    assert res["packets_new"] == 1 and res["packets_duplicate"] == 2
+    con = sqlite3.connect(str(db_path))
+    try:
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        rows = con.execute("SELECT COUNT(*) FROM redvypr_raw").fetchone()[0]
+    finally:
+        con.close()
+    assert rows == 3 and "norlog" not in tables          # no flat table without flat=True
+    res = norlog_convert.convert([tmp_path / "data_00001_x.cbor"], db_path, sn="7", flat=True)
+    assert res["packets_new"] == 0 and res["entries"] > 0

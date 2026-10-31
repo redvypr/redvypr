@@ -50,8 +50,10 @@ Data download ("Data" tab of the settings window): the log files of the SD card
 are copied 1:1 into <archive_folder>/<hwid>/ (only what is new, see
 norlog_archive); optionally the new packets are published with their
 measurement time, e.g. for the database writers. "Convert to SQLite" turns
-selected archive files into an SQLite database in the redvypr data_flat format
-(norlog_convert, also on the command line).
+selected archive files into an SQLite database in the redvypr format: the packets in
+redvypr_raw and optionally a data_flat table for the plots (norlog_convert, also on the
+command line). Live data and SD card packets carry the same '_packet_uid' (mac, boot,
+packet_num): in one database each packet is stored once.
 
 The info packet contains the info JSON as it is (nested) plus 'link': the radio
 link as seen from the gateway (RSSI, LQ, role, next hop, ...). Metadata is
@@ -322,6 +324,9 @@ class _Gateway:
                                    packetid=pkt.get('packet_type', 'data'), tu=t)
         data.update(pkt)
         data['t'] = t
+        uid = norlog_cbor.packet_identity(pkt)
+        if uid:
+            data['_packet_uid'] = uid       # same packet from the SD card: written once into a database
         self.dataqueue.put(data)
         self.npackets += 1
 
@@ -2770,7 +2775,10 @@ class LiveDataTab(QtWidgets.QWidget):
 
 
 def _sqlite_channel_config(gateway):
-    """sqlite_writer configuration: the packets of this gateway as they are (raw data, no flat table)."""
+    """
+    sqlite_writer configuration: the packets of this gateway as they are (raw data, no flat table), each
+    packet once (_packet_uid: also with the same packets converted from the SD card into the same file).
+    """
     from redvypr.devices.db import sqlite_writer
     from redvypr.devices.db.db_config_util import DbTableConfig
     cfg = sqlite_writer.DeviceCustomConfig()
@@ -2779,7 +2787,8 @@ def _sqlite_channel_config(gateway):
     cfg.database.write_config.name = f'norlog gateway {gateway}'
     addresses = save_addresses(gateway, [])
     cfg.database.write_config.tables = {
-        'redvypr_raw': DbTableConfig(tablename='redvypr_raw', tabletype='redvypr_datapacket', addresses=addresses)}
+        'redvypr_raw': DbTableConfig(tablename='redvypr_raw', tabletype='redvypr_datapacket', addresses=addresses,
+                                     skip_duplicates=True)}
     return cfg
 
 
@@ -3042,13 +3051,13 @@ class ConvertWorker(QtCore.QThread):
     progress = QtCore.pyqtSignal(int, int, str)
     finished_result = QtCore.pyqtSignal(dict, str)     # result, error text
 
-    def __init__(self, files, db_path, sn=None, parent=None):
+    def __init__(self, files, db_path, sn=None, flat=True, parent=None):
         super().__init__(parent)
-        self.files, self.db_path, self.sn = files, db_path, sn
+        self.files, self.db_path, self.sn, self.flat = files, db_path, sn, flat
 
     def run(self):
         try:
-            res = norlog_convert.convert(self.files, self.db_path, sn=self.sn,
+            res = norlog_convert.convert(self.files, self.db_path, sn=self.sn, flat=self.flat,
                                          progress=lambda i, n, name: self.progress.emit(i, n, name),
                                          cancel=self.isInterruptionRequested)
         except Exception as exc:        # shown in the dialog, the GUI must not die
@@ -4921,16 +4930,21 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.data_cancel_btn.clicked.connect(self.data_cancel)
         self.data_convert_btn = QtWidgets.QPushButton('Convert to SQLite ...')
         self.data_convert_btn.setToolTip('Convert selected log files (*.cbor) of the archive into an SQLite '
-                                         'database in the redvypr data_flat format (one column per datastream, '
-                                         'measurement time), readable with the redvypr database tools. Works '
-                                         'without the device; values already in the database are not added '
-                                         'twice.')
+                                         'database in the redvypr format: the packets in the table redvypr_raw '
+                                         '(like "Save data" of the gateway) with their measurement time. Works '
+                                         'without the device; packets already in the database (also received '
+                                         'live) are not added twice.')
+        self.data_convert_flat = QtWidgets.QCheckBox('Flat table for plots')
+        self.data_convert_flat.setChecked(True)
+        self.data_convert_flat.setToolTip('Also a data_flat table (one column per datastream): needed by the '
+                                          'redvypr data sources, e.g. XY plot "Add line from database ..."')
         self.data_convert_btn.clicked.connect(self.data_convert)
         self.data_progress = QtWidgets.QProgressBar()
         self.data_progress.setRange(0, 100)
         self.data_progress.setValue(0)
         row.addWidget(self.data_sync_btn)
         row.addWidget(self.data_convert_btn)
+        row.addWidget(self.data_convert_flat)
         row.addWidget(self.data_cancel_btn)
         row.addWidget(self.data_progress, 1)
         lay.addLayout(row)
@@ -5154,7 +5168,8 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
 
     def start_convert(self, files, db_path):
         sn = (getattr(self, 'entry', None) or {}).get('sn')
-        self.convert_worker = ConvertWorker(files, db_path, sn=sn, parent=self)
+        self.convert_flat = self.data_convert_flat.isChecked()
+        self.convert_worker = ConvertWorker(files, db_path, sn=sn, flat=self.convert_flat, parent=self)
         self.convert_worker.progress.connect(self.on_convert_progress)
         self.convert_worker.finished_result.connect(lambda res, err: self.on_convert_done(res, err, db_path))
         self.data_convert_btn.setEnabled(False)
@@ -5179,7 +5194,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             return
         self.data_progress.setValue(100)
         text = norlog_convert.summary(res, db_path)
-        name = self._register_datasource(db_path)
+        name = self._register_datasource(db_path) if self.convert_flat else None
         if name:
             text += f'; data source "{name}" of redvypr (XY plot: "Add line from database ...")'
         self.data_status.setText(text)

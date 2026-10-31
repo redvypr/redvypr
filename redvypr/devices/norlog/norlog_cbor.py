@@ -124,6 +124,17 @@ def units_of(pkt):
     return units
 
 
+def packet_identity(pkt):
+    """
+    Identity of a logged packet: (mac, boot, packet_num) is unique, the same packet received live
+    ('#NLD') and read from the SD card has the same identity. None for packets without a number.
+    """
+    mac, boot, num = pkt.get("mac"), pkt.get("boot"), pkt.get("packet_num")
+    if not mac or boot is None or not isinstance(num, int) or num <= 0:
+        return None
+    return f"norlog:{mac}:{boot}:{num}"
+
+
 def base_type(pkt):
     """Packet type of the CBOR tag (counter packet_num_type): adcseq packets are named after their sensor."""
     ptype = pkt.get("packet_type", "?")

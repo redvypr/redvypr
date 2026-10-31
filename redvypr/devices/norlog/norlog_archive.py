@@ -453,12 +453,17 @@ def to_redvypr_packet(pkt, sn=None, hostinfo=None):
     redvypr packet of a decoded archive packet (with 't' from new_packets()), with the
     header of its norlog: device norlog_<sn> (norlog without serial number), deviceid =
     hardware ID ('mac'), sensorid = sn, packetid = packet type, time = measurement time.
+    '_packet_uid' (mac, boot, packet_num): the same packet received live is the same in a database.
     """
     from redvypr.redvypr_datadict import create_redvypr_dict
+    from .norlog_cbor import packet_identity
     data = create_redvypr_dict(device=f"norlog_{sn}" if sn else "norlog", deviceid=pkt.get("mac"),
                                sensorid=sn or None, packetid=pkt.get("packet_type", "data"), tu=pkt["t"],
                                hostinfo=hostinfo)
     data.update(pkt)
+    uid = packet_identity(pkt)
+    if uid:
+        data["_packet_uid"] = uid
     return data
 
 
