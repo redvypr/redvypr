@@ -16,8 +16,9 @@ redvypr changelog
 - `ot_cli`: `pub_status()`, `pub_set()`, `sink_set()`, `pub_text()`, `sink_text()`, `PACKET_TYPES`
 - norlog gateway: "Save data" with options (gear button): the channels are ordinary redvypr writer devices
   (for now `sqlite_writer`, shown in the device list) that subscribe to the packets of the gateway
-  (`@p:<gateway>`, optionally only some packet IDs); "Save data" starts and stops them, the first one is added
-  automatically (`save_data`, `save_channels` = device names)
+  (`@p:<gateway>`, optionally only some packet IDs) into the table `redvypr_raw` (full packets, no flat
+  table); "Save data" starts and stops them, the first one is added automatically (`save_data`,
+  `save_channels` = device names)
 ### Changed
 - norlog gateway: simpler "Subscriptions" window: one table for all devices including the gateway, ticks =
   packet types that come live (`norlog pub`), received packets and age per device, yellow = not applied yet,

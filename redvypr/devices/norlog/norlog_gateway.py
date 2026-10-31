@@ -2770,7 +2770,7 @@ class LiveDataTab(QtWidgets.QWidget):
 
 
 def _sqlite_channel_config(gateway):
-    """sqlite_writer configuration: the packets of this gateway as full packets and data_flat."""
+    """sqlite_writer configuration: the packets of this gateway as they are (raw data, no flat table)."""
     from redvypr.devices.db import sqlite_writer
     from redvypr.devices.db.db_config_util import DbTableConfig
     cfg = sqlite_writer.DeviceCustomConfig()
@@ -2779,8 +2779,7 @@ def _sqlite_channel_config(gateway):
     cfg.database.write_config.name = f'norlog gateway {gateway}'
     addresses = save_addresses(gateway, [])
     cfg.database.write_config.tables = {
-        'redvypr_raw': DbTableConfig(tablename='redvypr_raw', tabletype='redvypr_datapacket', addresses=addresses),
-        'redvypr_flat': DbTableConfig(tablename='redvypr_flat', tabletype='data_flat', addresses=addresses)}
+        'redvypr_raw': DbTableConfig(tablename='redvypr_raw', tabletype='redvypr_datapacket', addresses=addresses)}
     return cfg
 
 
