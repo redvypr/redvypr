@@ -12,6 +12,7 @@ redvypr changelog
   over CoAP for the members); stored on the devices and in the configuration (`live_sink`, `live_sink_types`,
   `live_pub` per hardware ID) and set again at the start (`live_apply`). "Live data" button: window with the
   last packet per device and type, lost packets (gaps in `packet_num_type`) and a log of the incoming packets
+  The gateway is a sink by default (`live_sink`), so its own packets come as live data too (firmware >= 0.4.33)
 - `ot_cli`: `pub_status()`, `pub_set()`, `sink_set()`, `pub_text()`, `sink_text()`, `PACKET_TYPES`
 ### Changed
 - norlog gateway: the "Data" tab (last `#NLD` packet per node) is replaced by the "Live data" window

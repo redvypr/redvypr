@@ -150,9 +150,10 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                                                     'a restart of the gateway); if it is not '
                                                                     'leader, it becomes leader again (at most '
                                                                     'every 10 minutes)')
-    live_sink: bool = pydantic.Field(default=False, description='Live data: the gateway is a sink of the Thread '
-                                                                'network ("norlog sink on", firmware >= 0.4.32), '
-                                                                'devices that send to "sinks" send to it')
+    live_sink: bool = pydantic.Field(default=True, description='Live data: the gateway is a sink of the Thread '
+                                                               'network ("norlog sink on", firmware >= 0.4.32): '
+                                                               'devices that send to "sinks" send to it, and it '
+                                                               'outputs its own packets (firmware >= 0.4.33)')
     live_sink_types: typing.List[str] = pydantic.Field(default_factory=list, description='Packet types the '
                                                                                          'gateway accepts as sink, '
                                                                                          'empty = all')
