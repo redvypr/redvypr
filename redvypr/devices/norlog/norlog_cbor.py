@@ -33,7 +33,7 @@ KEYS = {
     4: "mac",
     5: "source_id",
     6: "set",
-    7: "packet_num_sensor",
+    7: "packet_num_type",       # packet number per packet type (firmware 0.4.31; before: packet_num_sensor)
     8: "boot",
     9: "sensor",            # name of the sensor (firmware sensors.h), e.g. "adc_brd"
     10: "batt_mv",

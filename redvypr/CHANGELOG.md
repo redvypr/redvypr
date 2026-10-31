@@ -9,7 +9,9 @@ redvypr changelog
 ### Added
 - ?
 ### Changed
-- ?
+- norlog: CBOR key 7 is decoded as `packet_num_type` (packet number per packet type, firmware 0.4.31),
+  was `packet_num_sensor`; same key, so old log files still decode. New databases get the column
+  `packet_num_type`, existing ones keep `packet_num_sensor`
 
 ## [0.9.23] - 2026-10-31
 
