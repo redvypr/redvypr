@@ -124,6 +124,17 @@ def units_of(pkt):
     return units
 
 
+def base_type(pkt):
+    """Packet type of the CBOR tag (counter packet_num_type): adcseq packets are named after their sensor."""
+    ptype = pkt.get("packet_type", "?")
+    sensor = pkt.get("sensor")
+    if sensor and ptype == sensor:
+        return "adcseq"
+    if sensor and ptype == f"{sensor}_cfg":
+        return "adcseq_cfg"
+    return ptype
+
+
 # Field names of an ADC sequence that would collide with the header get the prefix "ch_"
 _RESERVED = set(KEYS.values()) | {"packet_type", "source", "t", "rtc_time_iso", "gps_time_iso"}
 

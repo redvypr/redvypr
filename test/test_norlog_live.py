@@ -57,12 +57,17 @@ def test_live_pub_text_from_status():
     assert _live_pub_text({"pub": {"mask": 0x120, "sinks": True, "to": ["fd11::7"]}}) == "ntc,wind sinks fd11::7"
 
 
-def test_live_window_counts_lost_packets():
+def test_live_tab_counts_lost_packets():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PyQt6 import QtWidgets
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    from redvypr.devices.norlog.norlog_gateway import LiveDataWindow
-    w = LiveDataWindow()
+    from PyQt6 import QtCore
+    from redvypr.devices.norlog.norlog_gateway import LiveDataTab
+
+    class Owner(QtCore.QObject):
+        def open_live_subscriptions(self):
+            pass
+    w = LiveDataTab(Owner())
     head = {"_redvypr": {"device": "norlog_7"}, "mac": "AB", "boot": 3, "source": "0x7000", "t": 1.7e9}
     for num in (1, 2, 5):                       # 3 and 4 lost
         w.add_packet({**head, "packet_type": "ntc", "packet_num_type": num, "ntc_temp": 21.5})
@@ -109,3 +114,32 @@ def test_live_parse_and_text():
     status = {"pub": {"mask": 0x120, "sinks": True, "to": []}}
     from redvypr.devices.norlog.norlog_gateway import _live_pub_text
     assert _live_parse(_live_pub_text(status)) == _live_parse("ntc,wind")
+
+
+def test_save_sqlite_channel(tmp_path):
+    """Save data: published packets into the redvypr SQLite format, host = redvypr instance, type filter."""
+    import sqlite3
+    from redvypr.devices.norlog import norlog_save, norlog_cbor
+    from redvypr.redvypr_datadict import create_redvypr_dict
+    host = {"host": "pc", "tstart": 0, "addr": "127.0.0.1", "uuid": "pc-uuid"}
+    path = tmp_path / "live.sqlite"
+    saver = norlog_save.DataSaver(host)
+    assert saver.configure(True, [{"filepath": str(path), "packet_types": ["board_temp"]}])
+    assert not saver.configure(True, [{"filepath": str(path), "packet_types": ["board_temp"]}])
+    for i in range(3):
+        pkt = norlog_cbor.Packet(packet_type="board_temp", mac="AB", board_temp_c=20.0 + i, t=1.7e9 + i)
+        data = create_redvypr_dict(device="norlog_7", deviceid="AB", packetid="board_temp", tu=pkt["t"],
+                                   hostinfo=host)
+        data.update(pkt)
+        saver.write(data, pkt, "7")
+        saver.write(data, norlog_cbor.Packet(packet_type="gnss", mac="AB", t=1.7e9 + i), "7")   # not wanted
+    status = saver.status()["channels"][0]
+    assert status["packets"] == 3 and status["error"] is None
+    saver.close()
+    con = sqlite3.connect(str(path))
+    try:
+        uuids = {r[0] for r in con.execute("SELECT uuid FROM redvypr_metadata")}
+        n = con.execute("SELECT COUNT(*) FROM norlog").fetchone()[0]
+    finally:
+        con.close()
+    assert uuids == {"pc-uuid"} and n > 0

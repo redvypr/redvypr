@@ -14,12 +14,17 @@ redvypr changelog
   last packet per device and type, lost packets (gaps in `packet_num_type`) and a log of the incoming packets
   The gateway is a sink by default (`live_sink`), so its own packets come as live data too (firmware >= 0.4.33)
 - `ot_cli`: `pub_status()`, `pub_set()`, `sink_set()`, `pub_text()`, `sink_text()`, `PACKET_TYPES`
+- norlog gateway: "Save data" with options (gear button): saves the live data packets (`#NLD`) in the device
+  thread into channels (`save_data`, `save_channels`); channel type `sqlite` (redvypr SQLite format, `data_flat`,
+  metadata), packets as published (host = redvypr instance, publisher = gateway), one continued file or a new
+  file every N hours/days, all or chosen packet types (`norlog_save`)
 ### Changed
 - norlog gateway: simpler "Subscriptions" window: one table for all devices including the gateway, ticks =
   packet types that come live (`norlog pub`), received packets and age per device, yellow = not applied yet,
   grey = not read; targets and all/none in the right-click menu. The gateway is always the sink for all
   types; without an entry it sends all its own packets (firmware >= 0.4.34). `live_sink_types` is unused
-- norlog gateway: the "Data" tab (last `#NLD` packet per node) is replaced by the "Live data" window
+- norlog gateway: the "Data" tab (last `#NLD` packet per node) is replaced by the "Live data" tab with the
+  "Subscriptions" button
 - norlog gateway: live data of the gateway itself and of a member whose RLOC16 changed are counted at that
   device (matched by RLOC16 or hardware ID) instead of an extra "data only" device
 - norlog: CBOR key 7 is decoded as `packet_num_type` (packet number per packet type, firmware 0.4.31),
