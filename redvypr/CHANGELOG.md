@@ -44,8 +44,8 @@ redvypr changelog
 - norlog: CBOR key 7 is decoded as `packet_num_type` (packet number per packet type, firmware 0.4.31),
   was `packet_num_sensor`; same key, so old log files still decode. New databases get the column
   `packet_num_type`, existing ones keep `packet_num_sensor`
-- db writer status (sqlite, timescale): the lower table is "Written per table and address"; packet tables
-  (redvypr_datapacket) show no flat column ("–"), only data_flat tables have one per address
+- db writer status (sqlite, timescale): the lower table is "Written per table and address" with the table
+  type; packet tables (redvypr_datapacket) show no flat column ("–"), only data_flat tables have one per address
 ### Fixed
 - db writer config widget: field "UID keys" per table; before, applying the configuration in the GUI
   dropped `uid_keys`

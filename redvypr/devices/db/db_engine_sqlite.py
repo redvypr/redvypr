@@ -898,6 +898,7 @@ class DbSqlite:
                                 self.file_statistics_total['columns_flat_active'][
                                     table_name][
                                     addr] = {
+                                    'tabletype': table_type,
                                     'colname_db': None,     # packet table: no column per address
                                     'entries_written': 0}
 
@@ -991,7 +992,8 @@ class DbSqlite:
                                     self.file_statistics_total['columns_flat_active'][table_name][addr_write]
                                 except:
                                     self.file_statistics_total['columns_flat_active'][table_name][
-                                        addr_write] = {'colname_db':sanitize_name_for_db(addr_write),
+                                        addr_write] = {'tabletype': table_type,
+                                                       'colname_db':sanitize_name_for_db(addr_write),
                                                        'entries_written':0}
 
                                 self.file_statistics_total['columns_flat_active'][
@@ -2380,9 +2382,9 @@ class SqliteStatusTableWidget(QtWidgets.QWidget):
 
     def _setup_sqlite_table(self):
         """Configure the SQLite info table for columns_flat_active."""
-        self.sqlite_infotable.setColumnCount(4)
+        self.sqlite_infotable.setColumnCount(5)
         self.sqlite_infotable.setHorizontalHeaderLabels([
-            "Table", "Address", "Flat column (data_flat only)", "Written"
+            "Table", "Table type", "Address", "Flat column (data_flat only)", "Written"
         ])
         self.sqlite_infotable.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeMode.Stretch
@@ -2470,11 +2472,13 @@ class SqliteStatusTableWidget(QtWidgets.QWidget):
                         row_position = self.sqlite_infotable.rowCount()
                         self.sqlite_infotable.insertRow(row_position)
                         self.sqlite_infotable.setItem(row_position, 0, QtWidgets.QTableWidgetItem(table_name_db))
-                        self.sqlite_infotable.setItem(row_position, 1, QtWidgets.QTableWidgetItem(address))
+                        self.sqlite_infotable.setItem(row_position, 1, QtWidgets.QTableWidgetItem(
+                            str(column_data.get("tabletype") or "")))
+                        self.sqlite_infotable.setItem(row_position, 2, QtWidgets.QTableWidgetItem(address))
                         self.row_keys[row_key] = row_position
 
                     # Update the row with new data
                     row = self.row_keys[row_key]
-                    self.sqlite_infotable.setItem(row, 2, QtWidgets.QTableWidgetItem(colname_db))
-                    self.sqlite_infotable.setItem(row, 3, QtWidgets.QTableWidgetItem(entries_written))
+                    self.sqlite_infotable.setItem(row, 3, QtWidgets.QTableWidgetItem(colname_db))
+                    self.sqlite_infotable.setItem(row, 4, QtWidgets.QTableWidgetItem(entries_written))
 
