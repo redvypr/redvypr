@@ -951,6 +951,53 @@ def fw_install_remote(cli: OtCli, address: str) -> dict:
     return json.loads(coap_request(cli, "post", address, "fw?op=install").decode())
 
 
+# --- Loader update (firmware >= 0.4.42): /fw/loader.bin -> slot1, no reboot ---
+
+FW_PREFIX = "#NLW "
+LOADER_FILE = "/fw/loader.bin"
+
+
+def fw_status_local(cli: OtCli, timeout: float = 4.0) -> dict:
+    """Update status of the gateway ('norlog fw json', like CoAP GET fw)."""
+    return _shell_json(cli, "norlog fw json", FW_PREFIX, timeout=timeout, min_fw="0.4.42")
+
+
+def fw_loader_local(cli: OtCli, timeout: float = 30.0) -> dict:
+    """Write /fw/loader.bin of the gateway's SD card to slot1 ('norlog fw loader'); returns the status."""
+    import json
+    try:
+        rest = cli.shell_query("norlog fw loader", FW_PREFIX, timeout=timeout)
+    except TimeoutError:
+        raise OtError("no answer to 'norlog fw loader' (firmware >= 0.4.42 required)") from None
+    if rest.startswith("err"):
+        raise OtError(f"loader install: {rest[4:]}")
+    return json.loads(rest[3:]) if rest.startswith("ok ") else {}
+
+
+def fw_loader_remote(cli: OtCli, address: str, timeout: float = 60.0, poll: float = 2.0) -> dict:
+    """
+    POST fw?op=loader on a member (it writes its /fw/loader.bin to slot1 in the
+    background) and wait until GET fw reports the result; returns the status.
+    """
+    import json
+    coap_request(cli, "post", address, "fw?op=loader")
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        time.sleep(poll)
+        try:
+            st = fw_status_remote(cli, address)
+        except (OtError, TimeoutError, ValueError):
+            continue                # radio loss, try again
+        state = st.get("loader_state")
+        if state in ("ok", "same"):
+            return st
+        if state == "error":
+            raise OtError(f"loader install on {address} failed ({st.get('loader_rc')}), try again")
+        if state is None:
+            raise OtError("member does not report the loader state (firmware >= 0.4.42 required)")
+    raise TimeoutError(f"loader install on {address}: no result within {timeout:.0f} s")
+
+
 BATTERY_PREFIX = "#NLB "
 BATTERY_CHUNK = 160     # bytes of .inc text per line (320 hex chars, shell buffer 416)
 

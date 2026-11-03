@@ -154,6 +154,8 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
     node_comport: str = pydantic.Field(default='', description='Serial port of a node to be provisioned')
     firmware_image: str = pydantic.Field(default='', description='Signed firmware image (zephyr.signed.bin)')
     firmware_force: bool = pydantic.Field(default=False, description='Flash even if the image is already installed')
+    loader_image: str = pydantic.Field(default='', description='Signed loader image '
+                                                                '(build/norlog_loader/zephyr/zephyr.signed.bin)')
     prefer_leader: bool = pydantic.Field(default=False, description='The gateway prefers the Thread leader role: '
                                                                     'leader weight 72 (default 64, set again after '
                                                                     'a restart of the gateway); if it is not '
@@ -453,6 +455,8 @@ class _Gateway:
                 self.fs_command(args)
             elif command == 'fw_update_node':
                 self.fw_update_node(args.get('target', ''), args.get('image', ''), bool(args.get('force', False)))
+            elif command == 'loader_update':
+                self.loader_update(args.get('target', ''), args.get('image', ''))
             elif command == 'live_read':
                 self.live_read(args.get('targets', 'all'))
             elif command == 'live_pub_set':
@@ -1237,46 +1241,104 @@ class _Gateway:
                 status('done', 'This version is already installed, nothing to do', 100)
                 return
 
-            last = [0.0]
-
-            def progress(share_from, share_to, label):
-                meter = RateMeter()
-
-                def cb(done, total):
-                    now = time.monotonic()
-                    rate = meter.update(done)
-                    if now - last[0] >= 1.0 or done >= total:
-                        last[0] = now
-                        pct = share_from + (share_to - share_from) * done // max(total, 1)
-                        text = f'{label}: {done // 1024}/{total // 1024} KB, {rate:.1f} KB/s'
-                        if done >= total:
-                            text += f' (average {meter.average():.1f} KB/s)'
-                        status('upload', text, pct)
-                return cb
-
-            if self.gateway_has_sd():
-                ot_cli.fs_local(self.cli, 'mkdir', '/fw')
-                try:
-                    crc, size = ot_cli.fs_crc(self.cli, None, self.GATEWAY_XFER_FILE)
-                except ot_cli.OtError:
-                    crc, size = None, None
-                if size == len(image) and crc == zlib.crc32(image):
-                    status('upload', 'Image already on the gateway SD card', 30)
-                else:
-                    ot_cli.fs_upload_local(self.cli, image, self.GATEWAY_XFER_FILE,
-                                           progress(0, 30, 'PC -> gateway SD'))
-                res = ot_cli.fs_push(self.cli, address, self.GATEWAY_XFER_FILE, '/fw/update.bin',
-                                     progress(30, 95, 'Gateway -> node over Thread'), resume=True)
-                resumed = f', resumed after {res["resumed"] // 1024} KB' if res.get('resumed') else ''
-                status('upload', f'Node has the image ({res.get("seconds", "?")} s, CRC {res.get("crc")}'
-                                 f'{resumed})', 95)
-            else:
-                status('upload', 'Gateway without SD card: sending directly (slower)', 0)
-                self.fs_write_direct(address, image, '/fw/update.bin', progress(0, 95, 'PC -> node over Thread'))
-
+            self.image_to_node(address, image, '/fw/update.bin', status)
             ot_cli.fw_install_remote(self.cli, address)
             status('done', 'Installing: the node reboots into its loader and starts the new firmware '
                            '(about 1 min, check the version with "Read info")', 100)
+        except (ot_cli.OtError, TimeoutError, OSError, ValueError, smp_serial.SmpError) as exc:
+            status('error', str(exc))
+
+    def image_to_node(self, address, image, remote, status, share_to=95):
+        """
+        Write an image to a file on a member: through the gateway's SD card and
+        'norlog fs push', or chunk by chunk without gateway SD card.
+        """
+        last = [0.0]
+        to_gw = share_to * 30 // 95
+
+        def progress(share_from, share_to, label):
+            meter = RateMeter()
+
+            def cb(done, total):
+                now = time.monotonic()
+                rate = meter.update(done)
+                if now - last[0] >= 1.0 or done >= total:
+                    last[0] = now
+                    pct = share_from + (share_to - share_from) * done // max(total, 1)
+                    text = f'{label}: {done // 1024}/{total // 1024} KB, {rate:.1f} KB/s'
+                    if done >= total:
+                        text += f' (average {meter.average():.1f} KB/s)'
+                    status('upload', text, pct)
+            return cb
+
+        if self.gateway_has_sd():
+            ot_cli.fs_local(self.cli, 'mkdir', '/fw')
+            try:
+                crc, size = ot_cli.fs_crc(self.cli, None, self.GATEWAY_XFER_FILE)
+            except ot_cli.OtError:
+                crc, size = None, None
+            if size == len(image) and crc == zlib.crc32(image):
+                status('upload', 'Image already on the gateway SD card', to_gw)
+            else:
+                ot_cli.fs_upload_local(self.cli, image, self.GATEWAY_XFER_FILE,
+                                       progress(0, to_gw, 'PC -> gateway SD'))
+            res = ot_cli.fs_push(self.cli, address, self.GATEWAY_XFER_FILE, remote,
+                                 progress(to_gw, share_to, 'Gateway -> node over Thread'), resume=True)
+            resumed = f', resumed after {res["resumed"] // 1024} KB' if res.get('resumed') else ''
+            status('upload', f'Node has the image ({res.get("seconds", "?")} s, CRC {res.get("crc")}'
+                             f'{resumed})', share_to)
+        else:
+            status('upload', 'Gateway without SD card: sending directly (slower)', 0)
+            self.fs_write_direct(address, image, remote, progress(0, share_to, 'PC -> node over Thread'))
+
+    LOADER_SLOT_SIZE = 144 * 1024     # slot1 (norlog_flash_layout.dtsi)
+
+    def loader_update(self, target, image_path):
+        """
+        Install a new norlog_loader without SWD (firmware >= 0.4.42): signed loader image
+        -> /fw/loader.bin on the SD card of the gateway or a member, then the app writes it
+        to slot1 ('norlog fw loader' / POST fw?op=loader). No reboot; if it fails, only
+        the loader is invalid and the app keeps running: try again.
+        """
+        def status(state, message, progress=None):
+            self.flash_status(state, message, progress, target=target)
+
+        try:
+            path = pathlib.Path(image_path)
+            if not path.is_file():
+                raise ValueError(f'Loader image not found: {image_path}')
+            image = path.read_bytes()
+            info = smp_serial.image_info(image)
+            if len(image) > self.LOADER_SLOT_SIZE:
+                raise ValueError(f'{path.name} has {len(image) // 1024} KB, slot1 holds '
+                                 f'{self.LOADER_SLOT_SIZE // 1024} KB: an app image instead of '
+                                 f'build/norlog_loader/zephyr/zephyr.signed.bin?')
+            status('start', f'Loader {path.name}: version {info["version"]}, {len(image) // 1024} KB -> {target}')
+
+            address = self.target_address(target)
+            if address is None:
+                fw = ot_cli.fw_status_local(self.cli)
+                status('loader', f'Gateway loader {fw.get("loader") or "?"}')
+                if not self.gateway_has_sd():
+                    raise ValueError('The gateway has no SD card mounted')
+                ot_cli.fs_local(self.cli, 'mkdir', '/fw')
+                ot_cli.fs_upload_local(self.cli, image, ot_cli.LOADER_FILE,
+                                       lambda d, t: status('upload', f'PC -> gateway SD: {d // 1024}/'
+                                                                     f'{t // 1024} KB', 80 * d // max(t, 1)))
+                status('upload', 'Writing the loader to slot1 ...', 85)
+                fw = ot_cli.fw_loader_local(self.cli)
+            else:
+                fw = ot_cli.fw_status_remote(self.cli, address)
+                if 'loader' not in fw:
+                    raise ValueError(f'{target} runs {fw.get("running", "?")}: firmware >= 0.4.42 '
+                                     f'required to install the loader')
+                status('loader', f'Node loader {fw.get("loader") or "?"}')
+                self.image_to_node(address, image, ot_cli.LOADER_FILE, status, share_to=85)
+                status('upload', 'Writing the loader to slot1 ...', 90)
+                fw = ot_cli.fw_loader_remote(self.cli, address)
+            same = fw.get('loader_state') == 'same'
+            status('done', f'Loader {fw.get("loader") or info["version"]} '
+                           f'{"was already installed" if same else "installed and verified"}', 100)
         except (ot_cli.OtError, TimeoutError, OSError, ValueError, smp_serial.SmpError) as exc:
             status('error', str(exc))
 
@@ -3888,6 +3950,8 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         for w in (self.usb_mode, self.usb_msc_on, self.usb_msc_off, self.bat_model, self.bat_upload):
             w.setEnabled(running and self.is_serial())
         self.fw_flash.setEnabled(running)
+        # gateway (serial) or Thread member; other serial devices are not reachable by key
+        self.loader_install.setEnabled(running and (self.key == 'gateway' or not self.is_serial()))
         self.fw_cancel.setEnabled(running and self.is_serial())
         self.fw_auto.setEnabled(running and self.is_serial())
         for w in self.files_run_widgets:
@@ -4831,10 +4895,62 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         lay.addWidget(self.fw_auto)
         lay.addLayout(btn_row)
         lay.addWidget(self.fw_progress)
+
+        # Loader (slot1) without SWD, firmware >= 0.4.42
+        box = QtWidgets.QGroupBox('Loader (slot1, without SWD)')
+        box_lay = QtWidgets.QVBoxLayout(box)
+        row = QtWidgets.QHBoxLayout()
+        self.loader_path = QtWidgets.QLineEdit(self.cfg.loader_image)
+        self.loader_path.setPlaceholderText('.../build/norlog_loader/zephyr/zephyr.signed.bin')
+        self.loader_path.textChanged.connect(lambda t: setattr(self.cfg, 'loader_image', t))
+        browse = QtWidgets.QPushButton('Browse ...')
+        browse.clicked.connect(self.browse_loader)
+        row.addWidget(QtWidgets.QLabel('Image'))
+        row.addWidget(self.loader_path, 1)
+        row.addWidget(browse)
+        self.loader_info = QtWidgets.QLabel('')
+        self.loader_install = QtWidgets.QPushButton('Install loader')
+        self.loader_install.setToolTip('Copies the image to /fw/loader.bin on the SD card; the app writes it to '
+                                       'slot1 and verifies it (no reboot, firmware >= 0.4.42). If it fails, only '
+                                       'the loader is invalid and the app keeps running: try again.')
+        self.loader_install.clicked.connect(self.install_loader)
+        box_lay.addLayout(row)
+        box_lay.addWidget(self.loader_info)
+        box_lay.addWidget(self.loader_install)
+        lay.addWidget(box)
+
         lay.addWidget(self.fw_log, 1)
         self.fw_path.textChanged.connect(self.update_image_info)
+        self.loader_path.textChanged.connect(self.update_loader_info)
         self.update_image_info()
+        self.update_loader_info()
         return w
+
+    def browse_loader(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Signed loader image', self.loader_path.text(),
+                                                        'MCUboot images (*.signed.bin);;All files (*)')
+        if path:
+            self.loader_path.setText(path)
+
+    def update_loader_info(self):
+        path = pathlib.Path(self.loader_path.text())
+        if not path.is_file():
+            self.loader_info.setText('')
+            return
+        try:
+            image = path.read_bytes()
+            info = smp_serial.image_info(image)
+            text = f'Version {info["version"]}, {len(image) // 1024} KB'
+            if len(image) > _Gateway.LOADER_SLOT_SIZE:
+                text += ' - too large for slot1 (app image?)'
+            self.loader_info.setText(text)
+        except (ValueError, OSError, TypeError) as exc:
+            self.loader_info.setText(f'Invalid image: {exc}')
+
+    def install_loader(self):
+        self.fw_progress.setValue(0)
+        self.fw_log.clear()
+        self.device.thread_command('loader_update', {'target': self.key, 'image': self.cfg.loader_image})
 
     def browse_image(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Signed firmware image', self.fw_path.text(),

@@ -7,6 +7,11 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- norlog gateway: install a new norlog_loader without SWD (firmware >= 0.4.42). Firmware tab of the device
+  settings, group "Loader (slot1, without SWD)": the signed loader image goes to `/fw/loader.bin` on the SD
+  card of the gateway or a member, the app writes it to slot1 and verifies it (`norlog fw loader`,
+  `POST fw?op=loader`), no reboot. `ot_cli`: `fw_status_local()`, `fw_loader_local()`, `fw_loader_remote()`;
+  config `loader_image`
 - norlog gateway: live data over Thread (firmware >= 0.4.32). "Subscriptions" button: make the gateway a sink
   (`norlog sink on [<types>]`) and tick per device which packet types it sends (`norlog pub <types> [targets]`,
   over CoAP for the members); stored on the devices and in the configuration (`live_sink`, `live_sink_types`,
