@@ -7,7 +7,8 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
-- norlog gateway, tab "Datafiles", right click on a device: "Archive log files on the card" (moves /log to
+- norlog gateway, button "SD card" in the tab "Datafiles" and in the "Files" tab of the device settings, also
+  right click on a device in "Datafiles": "Archive log files on the card" (moves /log to
   /archive/<name>_<date_time> on the card, logging continues), "Delete log files on the card", "Format the card"
   (firmware >= 0.4.44, also over Thread). `ot_cli`: `sd_op_local()`, `sd_op_remote()`, `sd_status_local()`,
   `sd_status_remote()`

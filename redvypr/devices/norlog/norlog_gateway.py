@@ -2522,6 +2522,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                         f"[data {data.get('target')}] {'OK' if data.get('ok') else 'ERROR'}: {data.get('message', '')}")
             elif packetid == 'sd_op_result':
                 self.datafiles_tab.on_sd_op_result(data)
+                dlg = self.settings_dialogs.get(data.get('target'))
+                if dlg is not None:
+                    dlg.on_sd_op_result(data)
                 self.console_text.appendPlainText(f"[sd {data.get('op')} {data.get('target')}] "
                                                   f"{'OK' if data.get('ok') else 'ERROR'}: {data.get('message', '')}")
             elif packetid == 'archive_publish_result':
@@ -3298,6 +3301,18 @@ class DatafilesWorker(QtCore.QThread):
             self.job_done.emit(hwid, phase, res, '')
 
 
+SD_OPS_MENU = (('Archive log files on the card ...', 'archive'), ('Delete log files on the card ...', 'delete'),
+               ('Format the card ...', 'format'))
+
+
+def sd_ops_menu(parent, run):
+    """Menu of the SD card operations; run(op) with op 'archive', 'delete' or 'format'."""
+    menu = QtWidgets.QMenu(parent)
+    for text, op in SD_OPS_MENU:
+        menu.addAction(text, lambda o=op: run(o))
+    return menu
+
+
 class DatafilesTab(QtWidgets.QWidget):
     """
     Tab "Datafiles": the archive of the SD card log files, one folder per device (hardware ID).
@@ -3358,6 +3373,10 @@ class DatafilesTab(QtWidgets.QWidget):
         self.download_btn.clicked.connect(self.download)
         self.cancel_btn = QtWidgets.QPushButton('Cancel')
         self.cancel_btn.clicked.connect(self.cancel)
+        self.sd_btn = QtWidgets.QPushButton('SD card')
+        self.sd_btn.setToolTip('Log files on the SD card of the selected device: archive (move to /archive on the '
+                               'card), delete, or format the card (firmware >= 0.4.44)')
+        self.sd_btn.setMenu(sd_ops_menu(self, lambda op: self.sd_op(self.selected_target()[0], op)))
         self.progress = QtWidgets.QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setMaximumWidth(220)
@@ -3365,6 +3384,7 @@ class DatafilesTab(QtWidgets.QWidget):
         row.addWidget(self.list_btn)
         row.addWidget(self.download_btn)
         row.addWidget(self.cancel_btn)
+        row.addWidget(self.sd_btn)
         row.addWidget(self.progress)
         row.addWidget(self.status, 1)
         lay.addLayout(row)
@@ -3432,6 +3452,7 @@ class DatafilesTab(QtWidgets.QWidget):
         busy = self.sync_target is not None
         self.list_btn.setEnabled(running and not busy)
         self.download_btn.setEnabled(running and not busy)
+        self.sd_btn.setEnabled(running and not busy)
         self.cancel_btn.setEnabled(busy or self.worker.busy())
 
     # --- archive ---
@@ -3584,42 +3605,49 @@ class DatafilesTab(QtWidgets.QWidget):
         menu.addAction('Rebuild database', lambda: self.rebuild_db(hwid))
         menu.addSeparator()
         on_card = self.running and self.device_entry(hwid) is not None
-        for text, op in (('Archive log files on the card ...', 'archive'),
-                         ('Delete log files on the card ...', 'delete'), ('Format the card ...', 'format')):
+        for text, op in SD_OPS_MENU:
             act = menu.addAction(text, lambda o=op: self.sd_op(hwid, o))
             act.setEnabled(on_card)
         menu.exec(self.tree.viewport().mapToGlobal(point))
 
-    def sd_op(self, hwid, op):
+    def sd_op(self, hwid, op, parent=None):
         """Archive/delete the log files or format the SD card of the device (firmware >= 0.4.44)."""
+        parent = parent or self
+        if hwid is None:
+            self.say('Select one device (or files of one device)')
+            return False
         d = self.device_entry(hwid)
         if d is None:
-            return
+            self.say(f'{hwid} is not in the device list (not reachable)')
+            return False
         label = f"{hwid} {self.device_label(hwid)}".strip()
         name = ''
         if op == 'archive':
             name, ok = QtWidgets.QInputDialog.getText(
-                self, 'Archive log files', f'{label}: move /log on the card to /archive/<name>_<date_time>; '
+                parent, 'Archive log files', f'{label}: move /log on the card to /archive/<name>_<date_time>; '
                                            f'logging continues in a new /log.\nName (letters, digits, - and _, '
                                            f'at most 32):', text='log')
             if not ok:
-                return
+                return False
             name = name.strip()
             if not ot_cli.SD_NAME_RE.fullmatch(name):
                 self.say(f'invalid archive name {name!r}')
-                return
+                QtWidgets.QMessageBox.warning(parent, 'SD card', f'Invalid archive name {name!r}: letters, digits, '
+                                                                 f'- and _, at most 32')
+                return False
         else:
             text = (f'{label}: delete ALL log files in /log on the card (data, index, catalog)? Files not '
                     f'downloaded are lost.' if op == 'delete' else
                     f'{label}: FORMAT the SD card? Everything on it is lost (log files, archive, firmware '
                     f'files, autoexec.txt).')
             if QtWidgets.QMessageBox.warning(
-                    self, 'SD card', text, QtWidgets.QMessageBox.StandardButton.Yes |
+                    parent, 'SD card', text, QtWidgets.QMessageBox.StandardButton.Yes |
                     QtWidgets.QMessageBox.StandardButton.Cancel,
                     QtWidgets.QMessageBox.StandardButton.Cancel) != QtWidgets.QMessageBox.StandardButton.Yes:
-                return
+                return False
         self.widget.device.thread_command('sd_op', {'target': self.widget.device_key(d), 'op': op, 'name': name})
         self.say(f'{hwid}: SD card {op} ...')
+        return True
 
     def on_sd_op_result(self, data):
         hwid = self.hwid_of_target(data.get('target')) or data.get('target')
@@ -6045,10 +6073,16 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.data_progress = QtWidgets.QProgressBar()
         self.data_progress.setRange(0, 100)
         self.data_progress.setValue(0)
+        self.data_sd_btn = QtWidgets.QPushButton('SD card')
+        self.data_sd_btn.setToolTip('Log files on the SD card: archive (move /log to /archive/<name>_<date_time> '
+                                    'on the card, logging continues in a new /log), delete, or format the card '
+                                    '(firmware >= 0.4.44)')
+        self.data_sd_btn.setMenu(sd_ops_menu(self, self.data_sd_op))
         row.addWidget(self.data_sync_btn)
         row.addWidget(self.data_convert_btn)
         row.addWidget(self.data_convert_flat)
         row.addWidget(self.data_cancel_btn)
+        row.addWidget(self.data_sd_btn)
         row.addWidget(self.data_progress, 1)
         lay.addLayout(row)
         self.data_status = QtWidgets.QLabel('')
@@ -6306,6 +6340,22 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         """The converted database as data source of redvypr (once per file); returns its name."""
         return register_datasource(getattr(self.device, 'redvypr', None), db_path,
                                    description='norlog log files (norlog_convert)')
+
+    def data_sd_op(self, op):
+        entry = getattr(self, 'entry', None) or {}
+        hwid = entry.get('hwid') or (entry.get('info') or {}).get('hwid')
+        if self.widget.datafiles_tab.sd_op(hwid, op, parent=self):
+            self.data_status.setStyleSheet('')
+            self.data_status.setText(f'SD card {op} ...')
+        elif hwid is None:
+            self.data_status.setText('hardware ID of the device unknown (not read yet)')
+
+    def on_sd_op_result(self, data):
+        ok = data.get('ok')
+        self.data_status.setStyleSheet('' if ok else 'color: red;')
+        self.data_status.setText(f"SD card {data.get('op')} {'OK' if ok else 'ERROR'}: {data.get('message', '')}")
+        if ok:
+            self.data_listed = False
 
     def show_in_datafiles(self):
         w = self.widget
