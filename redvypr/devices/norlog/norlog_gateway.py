@@ -2030,6 +2030,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 dlg.update_entry(entry)
         members = len(devices) - 1
         self.devices_info.setText(f'{members} member(s), updated {time.strftime("%H:%M:%S")}')
+        # Datafiles: reachable devices appear in its tree (only when the devices changed)
+        known = sorted((d['hwid'], d.get('sn') or '', d.get('desc') or '') for d in devices if d.get('hwid'))
+        if known != getattr(self, '_datafiles_known', None) and hasattr(self, 'datafiles_tab'):
+            self._datafiles_known = known
+            self.datafiles_tab.rebuild_tree()
 
     # --- console ---
 
@@ -3516,7 +3521,9 @@ class DatafilesTab(QtWidgets.QWidget):
                     for i in range(self.tree.topLevelItemCount()) if self.tree.topLevelItem(i).isExpanded()}
         self.tree.blockSignals(True)
         self.tree.clear()
-        hwids = {d.name for d in norlog_datafiles.device_dirs(self.archive_root())} | set(self.card)
+        # devices of the archive, of "List card" and the reachable ones (to list/download a first time)
+        hwids = ({d.name for d in norlog_datafiles.device_dirs(self.archive_root())} | set(self.card) |
+                 {d['hwid'] for d in getattr(self.widget, 'current_devices', []) if d.get('hwid')})
         for hwid in sorted(hwids):
             info = self.infos.get(hwid, {})
             local = dict(norlog_datafiles.data_files(self.dev_dir(hwid))) if self.dev_dir(hwid).is_dir() else {}
