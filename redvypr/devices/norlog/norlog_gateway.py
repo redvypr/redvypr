@@ -5610,7 +5610,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.mag_hz.setValue(10)
         self.mag_hz.setSuffix(' Hz')
         for w in (self.mag_dur, self.mag_hz):
-            w.setToolTip('The device stores at most 600 values (firmware >= 0.4.45, before 1200), e.g. 60 s at 
+            w.setToolTip('The device stores at most 600 values (firmware >= 0.4.45, before 1200), e.g. 60 s at '
                          '10 Hz; a longer recording ends at 600 values')
         self.mag_start_btn = QtWidgets.QPushButton('Start recording')
         self.mag_start_btn.clicked.connect(self.mag_start_recording)
