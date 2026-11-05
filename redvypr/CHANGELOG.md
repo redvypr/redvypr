@@ -9,6 +9,11 @@ redvypr changelog
 ### Added
 - norlog gateway: "Subscribe" button per device in the device table: the subscriptions window for this device
   only. Subscriptions window: checkbox "All" ticks or unticks all packet types
+- norlog gateway, tab "Live data": columns "CBOR type" (packet type of the CBOR tag, e.g. `adcseq (50009)`)
+  and "Redvypr address"; checkbox "One row per value" splits the packets into their values (`live_split`).
+  Right click on rows: "Plot data" makes a new XY-Plot device with the numeric values of the selected rows
+  (x = measurement time `t` of the same packets), "Add to <plot>" adds them to a plot made here before
+  (`live_plots`); "Copy redvypr address"
 - norlog gateway: right click on the header of the device table shows or hides columns
   (`devices_hidden_columns`)
 - norlog gateway: install a new norlog_loader without SWD (firmware >= 0.4.42). Firmware tab of the device

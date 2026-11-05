@@ -63,10 +63,15 @@ def test_live_tab_counts_lost_packets():
     from PyQt6 import QtWidgets
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     from PyQt6 import QtCore
-    from redvypr.devices.norlog.norlog_gateway import LiveDataTab
+    from redvypr.devices.norlog.norlog_gateway import LiveDataTab, DeviceCustomConfig
 
     class Owner(QtCore.QObject):
+        cfg = DeviceCustomConfig()
+
         def open_live_subscriptions(self):
+            pass
+
+        def send_config(self):
             pass
     w = LiveDataTab(Owner())
     head = {"_redvypr": {"device": "norlog_7"}, "mac": "AB", "boot": 3, "source": "0x7000", "t": 1.7e9}
@@ -80,6 +85,18 @@ def test_live_tab_counts_lost_packets():
     assert w.gaps[("AB", "adcseq")]["lost"] == 0
     assert w.table.rowCount() == 3
     assert "6 packets" in w.summary.text() and "2 lost" in w.summary.text()
+    cols = LiveDataTab.COLUMNS
+    assert w.table.item(1, cols.index("CBOR type")).text() == "adcseq (50009)"
+    # one row per value: redvypr address of the value, numeric values can be plotted
+    w.add_packet({"_redvypr": {"device": "norlog_7", "packetid": "battery"}, "mac": "AB", "packet_type": "battery",
+                  "packet_num_type": 1, "batt_mv": 4200, "batt_charging": False})
+    w.split.setChecked(True)
+    row = w.rows[("AB", "battery", "batt_mv")]
+    assert w.table.item(row, cols.index("Redvypr address")).text() == "batt_mv @ d:'norlog_7' and i:'battery'"
+    w.table.selectRow(row)
+    assert [a for a, _n, _u in w.selected_lines()] == ["batt_mv @ d:'norlog_7' and i:'battery'"]
+    w.table.selectRow(w.rows[("AB", "battery", "batt_charging")])
+    assert w.selected_lines() == []
     w.close()
     assert app is not None
 

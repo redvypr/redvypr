@@ -90,6 +90,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 import redvypr.metadata
 from redvypr.device import RedvyprDeviceCustomConfig
 from redvypr.gui import iconnames
+from redvypr.redvypr_address import RedvyprAddress
 from redvypr.redvypr_datadict import check_for_command, create_redvypr_dict
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 
@@ -182,6 +183,10 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                                                                        'devices (e.g. '
                                                                                        'sqlite_writer) that save '
                                                                                        'the data of this gateway')
+    live_split: bool = pydantic.Field(default=False, description='Live data: one row per value')
+    live_plots: typing.List[str] = pydantic.Field(default_factory=list, description='Names of the XY-Plot devices '
+                                                                                    'made from the live data '
+                                                                                    '(right click "Plot data")')
     devices_hidden_columns: typing.List[str] = pydantic.Field(default_factory=list, description='Hidden columns '
                                                                                                 'of the device '
                                                                                                 'table (right '
@@ -2851,14 +2856,20 @@ class LiveDataTab(QtWidgets.QWidget):
     """
     Tab "Live data": live data received from the Thread network ('#NLD'), last packet per
     device and packet type with the lost packets (gaps in packet_num_type), and a log of the
-    incoming packets. "Subscriptions" sets what the devices send.
+    incoming packets. "Subscriptions" sets what the devices send. "One row per value" splits
+    the packets into their values; right click: plot the selected rows (new XY-Plot device or
+    add to one made here before).
     """
-    COLUMNS = ['Device', 'HW ID', 'Type', 'Measured', 'Received', 'Packet # (type)', 'Lost', 'Count', 'Values']
+    COLUMNS = ['Device', 'HW ID', 'Type', 'CBOR type', 'Measured', 'Received', 'Packet # (type)', 'Lost', 'Count',
+               'Redvypr address', 'Values']
     SKIP = {'packet_type', 'mac', 'packet_num', 'packet_num_type', 'uptime_ms', 'boot', 'source', 't',
             'rtc_time', 'rtc_time_iso', 'gps_time_iso', 'raw_data', 'offset_ms', 't_source'}
+    TAG_OF_TYPE = {name: tag for tag, name in norlog_cbor.PACKET_TAGS.items()}
+    PLOT_COLORS = ['red', 'blue', 'green', 'darkorange', 'purple', 'brown', 'magenta', 'teal', 'olive', 'black']
 
     def __init__(self, widget):
         super().__init__()
+        self.widget = widget
         lay = QtWidgets.QVBoxLayout(self)
         row = QtWidgets.QHBoxLayout()
         self.summary = QtWidgets.QLabel('No live data yet (devices send with "norlog pub", see Subscriptions)')
@@ -2866,11 +2877,17 @@ class LiveDataTab(QtWidgets.QWidget):
         self.subs_button.setToolTip('What each device sends live (norlog pub, firmware >= 0.4.32); the gateway '
                                     'is the sink')
         self.subs_button.clicked.connect(widget.open_live_subscriptions)
+        self.split = QtWidgets.QCheckBox('One row per value')
+        self.split.setToolTip('Split the packets into their values: one row per device, packet type and value, '
+                              'with the redvypr address of the value')
+        self.split.setChecked(bool(getattr(widget.cfg, 'live_split', False)))
+        self.split.toggled.connect(self.split_changed)
         self.pause = QtWidgets.QCheckBox('Pause log')
         clear = QtWidgets.QPushButton('Clear')
         clear.clicked.connect(self.clear)
         row.addWidget(self.summary, 1)
         row.addWidget(self.subs_button)
+        row.addWidget(self.split)
         row.addWidget(self.pause)
         row.addWidget(clear)
         lay.addLayout(row)
@@ -2884,6 +2901,10 @@ class LiveDataTab(QtWidgets.QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.context_menu)
+        self.table.setToolTip('Right click: plot the selected rows, copy the redvypr address')
         self.log = QtWidgets.QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(1000)
@@ -2895,7 +2916,9 @@ class LiveDataTab(QtWidgets.QWidget):
         self.clear()
 
     def clear(self):
-        self.rows = {}              # (hwid, packet_type) -> row
+        self.rows = {}              # (hwid, packet_type[, key]) -> row
+        self.row_keys = []          # row -> its key in rows
+        self.last = {}              # (hwid, packet_type) -> last packet with its table texts
         self.gaps = {}              # (hwid, base type) -> {'boot', 'num', 'lost'}
         self.counts = {}            # (hwid, packet_type) -> packets
         self.total = 0
@@ -2909,6 +2932,32 @@ class LiveDataTab(QtWidgets.QWidget):
     @staticmethod
     def base_type(data):
         return norlog_cbor.base_type(data)
+
+    @classmethod
+    def cbor_type(cls, data):
+        """CBOR packet type (tag) of the packet, e.g. 'adcseq (50009)' for a packet named after its sensor."""
+        base = cls.base_type(data)
+        tag = cls.TAG_OF_TYPE.get(base)
+        return f'{base} ({tag})' if tag is not None else base
+
+    @classmethod
+    def value_items(cls, data):
+        return [(k, v) for k, v in data.items() if k not in cls.SKIP and not k.startswith('_')]
+
+    @staticmethod
+    def fmt_value(v):
+        return f'{v:.4g}' if isinstance(v, float) else str(v)
+
+    @staticmethod
+    def is_number(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+    @staticmethod
+    def address(data, key=None):
+        """Redvypr address of a value (key) or of the packet: device and packet ID of the published packet."""
+        rv = data.get('_redvypr') or {}
+        addr = RedvyprAddress(datakey=key, device=rv.get('device') or None, packetid=rv.get('packetid') or None)
+        return addr.to_address_string()
 
     def add_packet(self, data):
         hwid = str(data.get('mac', '?'))
@@ -2929,22 +2978,151 @@ class LiveDataTab(QtWidgets.QWidget):
         t = data.get('t')
         measured = time.strftime('%H:%M:%S', time.localtime(t)) if isinstance(t, (int, float)) else ''
         received = time.strftime('%H:%M:%S')
-        values = ', '.join(f'{k}={v:.4g}' if isinstance(v, float) else f'{k}={v}'
-                           for k, v in data.items() if k not in self.SKIP and not k.startswith('_'))
-        row = self.rows.get(key)
-        if row is None:
-            row = self.rows[key] = self.table.rowCount()
-            self.table.insertRow(row)
-        cells = [device, hwid, ptype, measured, received, '' if num is None else str(num), str(gap['lost']),
-                 str(self.counts[key]), values]
-        for col, text in enumerate(cells):
-            self.table.setItem(row, col, QtWidgets.QTableWidgetItem(text))
+        values = ', '.join(f'{k}={self.fmt_value(v)}' for k, v in self.value_items(data))
+        self.last[key] = {'data': data, 'device': device, 'hwid': hwid, 'ptype': ptype, 'measured': measured,
+                          'received': received, 'num': num, 'gap': gap}
+        self.show_packet(key)
         lost = sum(g['lost'] for g in self.gaps.values())
-        self.summary.setText(f'{self.total} packets from {len({k[0] for k in self.rows})} device(s), '
+        self.summary.setText(f'{self.total} packets from {len({k[0] for k in self.last})} device(s), '
                              f'{lost} lost (gaps in packet_num_type)')
         if not self.pause.isChecked():
             self.log.appendPlainText(f'{received} {device or hwid} {ptype} #{num if num is not None else "-"} '
                                      f'{values}')
+
+    def _row(self, rkey):
+        row = self.rows.get(rkey)
+        if row is None:
+            row = self.rows[rkey] = self.table.rowCount()
+            self.row_keys.append(rkey)
+            self.table.insertRow(row)
+        return row
+
+    def show_packet(self, key):
+        """Rows of the last packet of (hwid, packet type): one row, or one per value."""
+        p = self.last[key]
+        data = p['data']
+        common = [p['device'], p['hwid'], p['ptype'], self.cbor_type(data), p['measured'], p['received'],
+                  '' if p['num'] is None else str(p['num']), str(p['gap']['lost']), str(self.counts[key])]
+        if self.split.isChecked():
+            rows = []
+            for k, v in self.value_items(data):
+                unit = norlog_cbor.UNITS.get(k, '')
+                rows.append((key + (k,), self.address(data, k), f"{k} = {self.fmt_value(v)}"
+                                                                 f"{' ' + unit if unit else ''}"))
+        else:
+            rows = [(key, self.address(data), ', '.join(f'{k}={self.fmt_value(v)}'
+                                                        for k, v in self.value_items(data)))]
+        for rkey, addr, values in rows:
+            row = self._row(rkey)
+            for col, text in enumerate(common + [addr, values]):
+                item = self.table.item(row, col)
+                if item is None:
+                    self.table.setItem(row, col, QtWidgets.QTableWidgetItem(text))
+                elif item.text() != text:
+                    item.setText(text)
+
+    def split_changed(self, checked):
+        self.widget.cfg.live_split = bool(checked)
+        self.rows = {}
+        self.row_keys = []
+        self.table.setRowCount(0)
+        for key in self.last:
+            self.show_packet(key)
+        self.table.resizeColumnsToContents()
+
+    # --- plot ---
+
+    def selected_lines(self):
+        """[(y address, name, unit)] of the numeric values of the selected rows."""
+        lines = []
+        for row in sorted({i.row() for i in self.table.selectedIndexes()}):
+            if row >= len(self.row_keys):
+                continue
+            rkey = self.row_keys[row]
+            p = self.last.get(rkey[:2])
+            if p is None:
+                continue
+            data = p['data']
+            keys = [rkey[2]] if len(rkey) > 2 else [k for k, _v in self.value_items(data)]
+            for k in keys:
+                if self.is_number(data.get(k)):
+                    addr = self.address(data, k)
+                    if addr not in [a for a, _n, _u in lines]:
+                        lines.append((addr, f"{p['device'] or p['hwid']} {k}", norlog_cbor.UNITS.get(k, '')))
+        return lines
+
+    def plot_devices(self):
+        """XY-Plot devices made from this table that still exist in redvypr: [device]."""
+        rv = getattr(self.widget.device, 'redvypr', None)
+        devices = {d['device'].name: d['device'] for d in (getattr(rv, 'devices', None) or [])}
+        names = [n for n in self.widget.cfg.live_plots if n in devices]
+        if names != self.widget.cfg.live_plots:
+            self.widget.cfg.live_plots = names
+        return [devices[n] for n in names]
+
+    def context_menu(self, point):
+        if self.table.itemAt(point) is None:
+            return
+        lines = self.selected_lines()
+        menu = QtWidgets.QMenu(self)
+        act = menu.addAction(f'Plot data ({len(lines)} line(s), new XY-Plot)', lambda: self.plot_new(lines))
+        act.setEnabled(bool(lines))
+        for dev in self.plot_devices():
+            act = menu.addAction(f'Add to {dev.name}', lambda d=dev: self.plot_add(d, lines))
+            act.setEnabled(bool(lines))
+        menu.addSeparator()
+        item = self.table.itemAt(point)
+        addr = self.table.item(item.row(), self.COLUMNS.index('Redvypr address'))
+        clipboard = QtWidgets.QApplication.clipboard()
+        if addr is not None:
+            menu.addAction('Copy redvypr address', lambda: clipboard.setText(addr.text()))
+        menu.addAction('Copy cell', lambda: clipboard.setText(item.text()))
+        menu.exec(self.table.viewport().mapToGlobal(point))
+
+    def _line_config(self, plot_cfg, addr, name, unit):
+        from redvypr.devices.plot import XYPlotWidget
+        used = {str(getattr(line, 'color', '')) for line in plot_cfg.lines}
+        color = next((c for c in self.PLOT_COLORS if c not in used), self.PLOT_COLORS[len(plot_cfg.lines)
+                                                                                      % len(self.PLOT_COLORS)])
+        y_addr = RedvyprAddress(addr)
+        # x: measurement time of the same packets (a bare 't' would subscribe to all packets with a time)
+        x_addr = RedvyprAddress(y_addr, datakey='t')
+        return XYPlotWidget.configLine(name=name, y_addr=y_addr, x_addr=x_addr, unit_y=unit, color=color,
+                                       label_format='{NAME} [{UNIT}]' if unit else '{NAME}')
+
+    def plot_new(self, lines):
+        """New XY-Plot device with the lines, started."""
+        rv = getattr(self.widget.device, 'redvypr', None)
+        if rv is None or not lines:
+            return
+        from redvypr.devices.plot import XYPlotDevice
+        cfg = XYPlotDevice.DeviceCustomConfig(lines=[])
+        for addr, name, unit in lines:
+            cfg.lines.append(self._line_config(cfg, addr, name, unit))
+        devicemodulename = rv.get_devicemodulename_from_str('XYPlotDevice')
+        dev = rv.add_device(devicemodulename=devicemodulename, custom_config=cfg,
+                            base_config={'name': f'{self.widget.device.name}_plot'})
+        if dev is None:
+            self.log.appendPlainText('Plot: could not add an XY-Plot device')
+            return
+        self.widget.cfg.live_plots.append(dev.name)
+        self.widget.send_config()
+        dev.thread_start()
+        self.log.appendPlainText(f'Plot: new device {dev.name} with {len(lines)} line(s)')
+
+    def plot_add(self, dev, lines):
+        """Add the lines (not yet in it) to an XY-Plot device made here."""
+        cfg = dev.custom_config
+        have = {RedvyprAddress(line.y_addr).to_address_string() for line in cfg.lines}
+        new = [line for line in lines if line[0] not in have]
+        for addr, name, unit in new:
+            cfg.lines.append(self._line_config(cfg, addr, name, unit))
+        if new:
+            dev.config_changed()
+        if not dev.thread_running():
+            dev.thread_start()
+        self.log.appendPlainText(f'Plot: {len(new)} line(s) added to {dev.name}'
+                                 + (f' ({len(lines) - len(new)} already in it)' if len(new) < len(lines) else ''))
 
 
 def _sqlite_channel_config(gateway):
