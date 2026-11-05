@@ -7,6 +7,8 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- norlog gateway: "Subscribe" button per device in the device table: the subscriptions window for this device
+  only. Subscriptions window: checkbox "All" ticks or unticks all packet types
 - norlog gateway: install a new norlog_loader without SWD (firmware >= 0.4.42). Firmware tab of the device
   settings, group "Loader (slot1, without SWD)": the signed loader image goes to `/fw/loader.bin` on the SD
   card of the gateway or a member, the app writes it to slot1 and verifies it (`norlog fw loader`,
@@ -35,6 +37,8 @@ redvypr changelog
 - norlog gateway: "Set clock" sends the uncertainty of the time (round trip of the request) with firmware
   >= 0.4.35 (`ot_cli.time_set(unc_ms=...)`)
 ### Changed
+- norlog gateway: tab "Live data" directly after "Devices"; the info text box below the device table
+  is removed (the info stays in the table and in the device settings)
 - norlog_convert / "Convert to SQLite": the packets go into `redvypr_raw` (full packets, as "Save data"); the
   data_flat table only with `flat=True` / `--flat` / "Flat table for plots" (default on in the GUI, needed by
   the redvypr data sources)

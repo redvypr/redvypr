@@ -1473,13 +1473,14 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         # Scroll areas: otherwise the highest tab sets the minimum height of the redvypr main window,
         # which then reaches under the taskbar on small or scaled screens
         scroll = DeviceSettingsDialog._scrollable
+        self.live_dialog = None
+        self.device_live_dialogs = {}   # hwid -> LiveSubscriptionsDialog of one device
         self.tabs.addTab(scroll(self._build_devices_tab()), 'Devices')
-        self.tabs.addTab(self._build_console_tab(), 'Console')
-        self.tabs.addTab(scroll(self._build_thread_tab()), 'Thread network')
         # Live data over Thread ('#NLD')
         self.live_tab = LiveDataTab(self)
         self.tabs.addTab(self.live_tab, 'Live data')
-        self.live_dialog = None
+        self.tabs.addTab(self._build_console_tab(), 'Console')
+        self.tabs.addTab(scroll(self._build_thread_tab()), 'Thread network')
         self.live_status = {}       # hwid -> last 'norlog pub json' status of the device
         self.save_dialog = None
         self.save_was_running = False   # gateway thread: start the save channels when it starts
@@ -1691,20 +1692,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         legend.setWordWrap(True)
         legend.setStyleSheet('color: gray;')
         self.devices_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
-        self.devices_table.itemSelectionChanged.connect(self.show_device_details)
         self.devices_table.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.devices_table.customContextMenuRequested.connect(self.devices_context_menu)
-        self.device_details = QtWidgets.QPlainTextEdit()
-        self.device_details.setReadOnly(True)
-        self.device_details.setPlaceholderText('Select a device to see its info: firmware, battery, '
-                                               'hardware, SD and Thread details (norlog info / CoAP /info).')
-        split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
-        split.addWidget(self.devices_table)
-        split.addWidget(self.device_details)
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 1)
         lay.addLayout(row)
-        lay.addWidget(split, 1)
+        lay.addWidget(self.devices_table, 1)
         lay.addWidget(legend)
         self.run_widgets.extend([refresh, info_sel])
         return w
@@ -1731,6 +1722,22 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         key = self.device_key(d)
         btn.clicked.connect(lambda checked=False, k=key: self.open_settings(k))
         return btn
+
+    def _row_buttons(self, d):
+        """First column: settings and live data subscriptions of the device."""
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(2)
+        lay.addWidget(self._settings_button(d))
+        sub = QtWidgets.QPushButton('Subscribe')
+        hwid = d.get('hwid')
+        sub.setEnabled(bool(hwid))
+        sub.setToolTip('Packet types this device sends live (norlog pub, firmware >= 0.4.32)' if hwid
+                       else 'Hardware ID not known yet (Refresh)')
+        sub.clicked.connect(lambda checked=False, h=hwid: self.open_device_subscriptions(h))
+        lay.addWidget(sub)
+        return w
 
     def open_settings(self, key):
         dlg = self.settings_dialogs.get(key)
@@ -1789,21 +1796,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         keys = [k for k in keys if k]
         if keys:
             self.device.thread_command('read_device_info', {'targets': keys})
-
-    def show_device_details(self):
-        sel = self.selected_devices()
-        if not sel:
-            return
-        d = sel[0]
-        info = {k: v for k, v in (d.get('info') or {}).items() if k != 'error'}
-        text = f"Last read failed: {d['info_error']}\n" if d.get('info_error') else ''
-        if info:
-            if d.get('info_error'):
-                text += 'Last good info:\n'
-            text += json.dumps(info, indent=2, ensure_ascii=False)
-        elif not text:
-            text = 'No info read yet (button "Refresh").'
-        self.device_details.setPlainText(text)
 
     @staticmethod
     def _fmt_battery(d):
@@ -1913,7 +1905,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             cols = self.DEVICE_COLUMNS
             stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'GNSS', 'Clock',
                                                   'Info age [s]')]
-            self.devices_table.setCellWidget(row, 0, self._settings_button(d))
+            self.devices_table.setCellWidget(row, 0, self._row_buttons(d))
             full_text = {cols.index('Description'): d.get('desc', ''), cols.index('Location'): d.get('loc', '')}
             for col, text in enumerate([''] + cells):
                 item = QtWidgets.QTableWidgetItem(str(text))
@@ -1953,7 +1945,6 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 self.devices_table.selectRow(row)
         self.devices_table.blockSignals(False)
         self.devices_table.resizeColumnsToContents()
-        self.show_device_details()
         for key, dlg in self.settings_dialogs.items():
             entry = next((d for d in devices if self.device_key(d) == key), None)
             if entry is not None:
@@ -2271,6 +2262,22 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     # --- live data over Thread ---
 
+    def open_device_subscriptions(self, hwid):
+        """Live data subscriptions of one device (same dialog as Subscriptions, one row)."""
+        if not hwid:
+            return
+        dlg = self.device_live_dialogs.get(hwid)
+        if dlg is None:
+            dlg = LiveSubscriptionsDialog(self, hwid=hwid)
+            dlg.finished.connect(lambda _r, h=hwid: self.device_live_dialogs.pop(h, None))
+            self.device_live_dialogs[hwid] = dlg
+        dlg.populate()
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        if self.device.get_thread_status()['thread_running'] and dlg.read_targets():
+            self.device.thread_command('live_read', {'targets': dlg.read_targets()})
+
     def open_live_subscriptions(self):
         if self.live_dialog is None:
             self.live_dialog = LiveSubscriptionsDialog(self)
@@ -2367,8 +2374,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         if data.get('message'):
             state = 'OK' if data.get('ok') else 'ERROR'
             self.console_text.appendPlainText(f"[live {data.get('target')}] {state}: {data['message']}")
-        if self.live_dialog is not None:
-            self.live_dialog.on_result(data)
+        for dlg in [self.live_dialog] + list(self.device_live_dialogs.values()):
+            if dlg is not None:
+                dlg.on_result(data)
 
     # --- data from the device thread ---
 
@@ -2536,16 +2544,19 @@ class LiveSubscriptionsDialog(QtWidgets.QDialog):
     PENDING = QtGui.QColor('#fff2b3')
     UNKNOWN = QtGui.QColor('#e6e6e6')
 
-    def __init__(self, widget):
+    def __init__(self, widget, hwid=None):
         super().__init__(widget)
         self.widget = widget
         self.cfg = widget.cfg
-        self.setWindowTitle('norlog live data: subscriptions')
+        self.only_hwid = hwid       # None: all devices, else only this device
+        self.setWindowTitle('norlog live data: subscriptions' if hwid is None
+                            else f'norlog live data: subscriptions of {self._device_name(widget, hwid)}')
         self.setModal(False)
-        self.resize(1100, 480)
+        self.resize(1100, 480 if hwid is None else 260)
         lay = QtWidgets.QVBoxLayout(self)
         self.sink_status = QtWidgets.QLabel('Gateway: not read yet')
         self.sink_status.setWordWrap(True)
+        self.sink_status.setVisible(hwid is None)
         lay.addWidget(self.sink_status)
         lay.addWidget(QtWidgets.QLabel('Ticked packet types come live from the device. Right click: all, none, '
                                        'targets. Yellow: not applied yet, grey: device not read.'))
@@ -2558,12 +2569,18 @@ class LiveSubscriptionsDialog(QtWidgets.QDialog):
         self.table.itemChanged.connect(self.item_changed)
         lay.addWidget(self.table, 1)
         row = QtWidgets.QHBoxLayout()
+        self.all_box = QtWidgets.QCheckBox('All')
+        self.all_box.setToolTip('Tick or untick all packet types' + (' of all devices' if hwid is None else ''))
+        self.all_box.clicked.connect(self.all_clicked)
+        row.addWidget(self.all_box)
         self.apply_button = QtWidgets.QPushButton('Apply')
         self.apply_button.setToolTip('Send the changed rows to the devices (stored there and in the configuration)')
         self.apply_button.clicked.connect(self.apply_devices)
         self.read_button = QtWidgets.QPushButton('Reload')
         self.read_button.setToolTip('Read again what the devices send')
-        self.read_button.clicked.connect(lambda: self.widget.device.thread_command('live_read', {'targets': 'all'}))
+        self.read_button.clicked.connect(
+            lambda: self.read_targets() and self.widget.device.thread_command('live_read',
+                                                                              {'targets': self.read_targets()}))
         self.apply_start = QtWidgets.QCheckBox('Set at every start of the gateway device')
         self.apply_start.setChecked(self.cfg.live_apply)
         self.apply_start.toggled.connect(self.apply_start_changed)
@@ -2587,9 +2604,23 @@ class LiveSubscriptionsDialog(QtWidgets.QDialog):
 
     # --- table ---
 
+    @staticmethod
+    def _device_name(widget, hwid):
+        d = next((d for d in getattr(widget, 'current_devices', []) if d.get('hwid') == hwid), {})
+        return f"{d.get('sn') or '?'} ({hwid})"
+
+    def read_targets(self):
+        """Targets of 'live_read': 'all', or the key of the single device ([] if it is not in the list)."""
+        if self.only_hwid is None:
+            return 'all'
+        d = next((d for d in getattr(self.widget, 'current_devices', []) if d.get('hwid') == self.only_hwid), None)
+        key = self.widget.device_key(d) if d is not None else ''
+        return [key] if key else []
+
     def populate(self):
         """One row per device with a hardware ID: state of the device, or the stored wish if it differs."""
-        devices = [d for d in getattr(self.widget, 'current_devices', []) if d.get('hwid')]
+        devices = [d for d in getattr(self.widget, 'current_devices', []) if d.get('hwid')
+                   and (self.only_hwid is None or d['hwid'] == self.only_hwid)]
         self.table.blockSignals(True)
         self.table.setRowCount(len(devices))
         self.rows = {}
@@ -2629,6 +2660,30 @@ class LiveSubscriptionsDialog(QtWidgets.QDialog):
             self.table.setItem(row, self.COL_TYPES + i, item)
         self.table.blockSignals(False)
         self._color_row(row, hwid)
+        self.update_all_box()
+
+    def _checks(self):
+        """All packet type items of the table."""
+        items = (self.table.item(r, self.COL_TYPES + i) for r in self.rows.values()
+                 for i in range(len(ot_cli.PACKET_TYPES)))
+        return [it for it in items if it is not None]
+
+    def update_all_box(self):
+        checks = self._checks()
+        n = sum(it.checkState() == QtCore.Qt.CheckState.Checked for it in checks)
+        state = (QtCore.Qt.CheckState.Checked if checks and n == len(checks) else
+                 QtCore.Qt.CheckState.Unchecked if n == 0 else QtCore.Qt.CheckState.PartiallyChecked)
+        self.all_box.setTristate(state == QtCore.Qt.CheckState.PartiallyChecked)
+        self.all_box.setCheckState(state)
+
+    def all_clicked(self, _checked=False):
+        """'All': tick everything unless everything is ticked already, then untick everything."""
+        checks = self._checks()
+        on = not (checks and all(it.checkState() == QtCore.Qt.CheckState.Checked for it in checks))
+        types = frozenset(ot_cli.PACKET_TYPES) if on else frozenset()
+        for hwid, row in self.rows.items():
+            self._set_row(row, hwid, (types, (self.targets.get(hwid) or ('sinks',)) if on else ()))
+        self.update_all_box()
 
     def _wanted(self, row, hwid):
         types = frozenset(name for i, name in enumerate(ot_cli.PACKET_TYPES)
@@ -2654,6 +2709,7 @@ class LiveSubscriptionsDialog(QtWidgets.QDialog):
         hwid = next((h for h, r in self.rows.items() if r == item.row()), None)
         if hwid is not None:
             self._color_row(item.row(), hwid)
+            self.update_all_box()
 
     def refresh(self):
         """Received packets and their age per device (from the device list), run state of the buttons."""
@@ -2715,11 +2771,16 @@ class LiveSubscriptionsDialog(QtWidgets.QDialog):
             key = self.table.item(row, self.COL_DEVICE).data(QtCore.Qt.ItemDataRole.UserRole)
             self.widget.device.thread_command('live_pub_set', {'target': key, 'text': text, 'hwid': hwid})
             sent += 1
+            for dlg in [self.widget.live_dialog] + list(self.widget.device_live_dialogs.values()):
+                if dlg is not None and dlg is not self and hwid in dlg.rows:
+                    dlg._set_row(dlg.rows[hwid], hwid, wanted)    # other open dialogs show the new wish
         self.widget.send_config()
         self.log.appendPlainText(f'{sent} device(s) set' if sent else 'Nothing to change')
 
     def on_result(self, data):
         hwid = data.get('hwid')
+        if self.only_hwid is not None and hwid != self.only_hwid:
+            return
         if data.get('message'):
             self.log.appendPlainText(f"{data.get('target')}: {'OK' if data.get('ok') else 'ERROR'} "
                                      f"{data['message']}")
