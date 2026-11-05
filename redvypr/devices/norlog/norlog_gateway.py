@@ -182,6 +182,11 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                                                                        'devices (e.g. '
                                                                                        'sqlite_writer) that save '
                                                                                        'the data of this gateway')
+    devices_hidden_columns: typing.List[str] = pydantic.Field(default_factory=list, description='Hidden columns '
+                                                                                                'of the device '
+                                                                                                'table (right '
+                                                                                                'click on the '
+                                                                                                'header)')
 
 
 # --------------------------------------------------------------------------
@@ -1592,9 +1597,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     # --- devices ---
 
+    # Link details and firmware at the right end: useful, but not needed at first glance
     DEVICE_COLUMNS = ['', 'HW ID', 'Device', 'SN', 'Description', 'Location', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
-                      'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets',
-                      'Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'GNSS', 'Clock', 'Info age [s]']
+                      'Battery', 'Board temp [C]', 'nRF temp [C]', 'GNSS', 'Clock', 'Info age [s]',
+                      'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets', 'Firmware']
 
     QUALITY_COLORS = {
         device_list.QUALITY_GOOD: '#7bc96f',
@@ -1687,6 +1693,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.devices_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self.devices_table.horizontalHeader().setStretchLastSection(True)
         self.devices_table.verticalHeader().setVisible(False)
+        header = self.devices_table.horizontalHeader()
+        header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self.devices_header_menu)
+        header.setToolTip('Right click: show or hide columns')
+        self.apply_hidden_columns()
         legend = QtWidgets.QLabel('Quality: Thread links from link quality (0-3) and average RSSI '
                                   '(good >= -70 dBm, fair >= -85 dBm); multi-hop routers from the path '
                                   'cost (good <= 3, fair <= 6, 16 = unreachable); serial = data from the gateway within 30 s.')
@@ -1700,6 +1711,38 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         lay.addWidget(legend)
         self.run_widgets.extend([refresh, info_sel])
         return w
+
+    def apply_hidden_columns(self):
+        hidden = set(self.cfg.devices_hidden_columns)
+        for col, name in enumerate(self.DEVICE_COLUMNS):
+            if name:
+                self.devices_table.setColumnHidden(col, name in hidden)
+
+    def devices_header_menu(self, point):
+        """Right click on the header of the device table: show or hide columns."""
+        menu = QtWidgets.QMenu(self)
+        hidden = set(self.cfg.devices_hidden_columns)
+        for name in self.DEVICE_COLUMNS:
+            if not name:
+                continue
+            act = menu.addAction(name)
+            act.setCheckable(True)
+            act.setChecked(name not in hidden)
+            act.toggled.connect(lambda on, n=name: self.set_column_visible(n, on))
+        menu.addSeparator()
+        menu.addAction('Show all columns', lambda: self.set_hidden_columns([]))
+        menu.exec(self.devices_table.horizontalHeader().mapToGlobal(point))
+
+    def set_column_visible(self, name, visible):
+        hidden = [n for n in self.cfg.devices_hidden_columns if n != name]
+        if not visible:
+            hidden.append(name)
+        self.set_hidden_columns(hidden)
+
+    def set_hidden_columns(self, hidden):
+        self.cfg.devices_hidden_columns = list(hidden)
+        self.apply_hidden_columns()
+        self.send_config()
 
     def info_interval_changed(self, value):
         self.cfg.info_interval_s = float(value)
@@ -1878,37 +1921,39 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             seen = d.get('age_s')
             if seen is None:
                 seen = d.get('last_data_s')
-            cells = [
-                d.get('hwid', ''),
-                name,
-                d.get('sn', ''),
-                self._short(d.get('desc', '')),
-                self._short(d.get('loc', '')),
-                d.get('rloc16', ''),
-                d.get('connection', ''),
-                d.get('role', ''),
-                d.get('thread_role', ''),
-                d.get('link', ''),
-                d.get('quality', ''),
-                self._fmt_pair(d.get('rssi_avg'), d.get('rssi_last')),
-                self._fmt_pair(d.get('lq_in'), d.get('lq_out')),
-                '' if d.get('path_cost') is None else str(d['path_cost']),
-                '' if seen is None else f'{seen:.0f}',
-                str(d.get('packets', 0) or ''),
-                d.get('firmware') or ('error' if d.get('info_error') else ''),
-                self._fmt_battery(d),
-                '' if d.get('board_temp_c') is None else f"{d['board_temp_c']:.1f}",
-                '' if (d.get('info') or {}).get('nrf_temp_c') is None else f"{d['info']['nrf_temp_c']:.1f}",
-                self.fmt_gnss(d.get('info'))[0],
-                self._fmt_clock(d)[0],
-                '' if d.get('info_age_s') is None else f"{d['info_age_s']:.0f}",
-            ]
+            values = {
+                '': '',
+                'HW ID': d.get('hwid', ''),
+                'Device': name,
+                'SN': d.get('sn', ''),
+                'Description': self._short(d.get('desc', '')),
+                'Location': self._short(d.get('loc', '')),
+                'RLOC16': d.get('rloc16', ''),
+                'Connection': d.get('connection', ''),
+                'Role': d.get('role', ''),
+                'Thread role': d.get('thread_role', ''),
+                'Link': d.get('link', ''),
+                'Quality': d.get('quality', ''),
+                'RSSI avg/last [dBm]': self._fmt_pair(d.get('rssi_avg'), d.get('rssi_last')),
+                'LQ in/out': self._fmt_pair(d.get('lq_in'), d.get('lq_out')),
+                'Path cost': '' if d.get('path_cost') is None else str(d['path_cost']),
+                'Seen [s]': '' if seen is None else f'{seen:.0f}',
+                'Packets': str(d.get('packets', 0) or ''),
+                'Firmware': d.get('firmware') or ('error' if d.get('info_error') else ''),
+                'Battery': self._fmt_battery(d),
+                'Board temp [C]': '' if d.get('board_temp_c') is None else f"{d['board_temp_c']:.1f}",
+                'nRF temp [C]': '' if (d.get('info') or {}).get('nrf_temp_c') is None
+                else f"{d['info']['nrf_temp_c']:.1f}",
+                'GNSS': self.fmt_gnss(d.get('info'))[0],
+                'Clock': self._fmt_clock(d)[0],
+                'Info age [s]': '' if d.get('info_age_s') is None else f"{d['info_age_s']:.0f}",
+            }
             cols = self.DEVICE_COLUMNS
             stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'GNSS', 'Clock',
                                                   'Info age [s]')]
             self.devices_table.setCellWidget(row, 0, self._row_buttons(d))
             full_text = {cols.index('Description'): d.get('desc', ''), cols.index('Location'): d.get('loc', '')}
-            for col, text in enumerate([''] + cells):
+            for col, text in enumerate(values[c] for c in cols):
                 item = QtWidgets.QTableWidgetItem(str(text))
                 if full_text.get(col) and full_text[col] != text:
                     item.setToolTip(full_text[col])

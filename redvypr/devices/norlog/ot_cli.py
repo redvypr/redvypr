@@ -127,9 +127,32 @@ class OtCli:
                 raise OtError(f"'{full}': {line}")
             result.append(line)
 
+    # Expected form of single-value answers: other lines in the response are asynchronous output
+    # of the firmware that got into it (e.g. a log line split by the shell, "0 | Lat: ..."),
+    # they go to on_line and are not taken as the value.
+    VALUE_PATTERNS = {
+        "state": re.compile(r"^(disabled|detached|child|router|leader)$"),
+        "channel": re.compile(r"^\d+$"),
+        "panid": re.compile(r"^0x[0-9a-fA-F]{4}$"),
+        "rloc16": re.compile(r"^(0x)?[0-9a-fA-F]{4}$"),
+        "extaddr": re.compile(r"^[0-9a-fA-F]{16}$"),
+        "extpanid": re.compile(r"^[0-9a-fA-F]{16}$"),
+        "leaderweight": re.compile(r"^\d+$"),
+        "partitionid": re.compile(r"^(0x)?[0-9a-fA-F]+$"),
+        "dataset active -x": re.compile(r"^[0-9a-fA-F]+$"),
+    }
+
     def value(self, cmd: str) -> str:
-        lines = self.command(cmd)
-        return lines[0].strip() if lines else ""
+        lines = [line.strip() for line in self.command(cmd)]
+        pattern = self.VALUE_PATTERNS.get(cmd)
+        if pattern is None:
+            return lines[0] if lines else ""
+        for line in lines:
+            if pattern.match(line):
+                return line
+        for line in lines:
+            self.on_line(line, False)
+        return ""
 
     def wait_line(self, match, timeout: float):
         """Wait for a line for which match(line) is true; other lines go to on_line."""
