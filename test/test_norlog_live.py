@@ -88,13 +88,14 @@ def test_live_tab_counts_lost_packets():
     cols = LiveDataTab.COLUMNS
     assert w.table.item(1, cols.index("CBOR type")).text() == "adcseq (50009)"
     # one row per value: redvypr address of the value, numeric values can be plotted
-    w.add_packet({"_redvypr": {"device": "norlog_7", "packetid": "battery"}, "mac": "AB", "packet_type": "battery",
+    w.add_packet({"_redvypr": {"device": "norlog_7", "deviceid": "AB", "packetid": "battery"}, "mac": "AB",
+                  "packet_type": "battery",
                   "packet_num_type": 1, "batt_mv": 4200, "batt_charging": False})
     w.split.setChecked(True)
     row = w.rows[("AB", "battery", "batt_mv")]
-    assert w.table.item(row, cols.index("Redvypr address")).text() == "batt_mv @ d:'norlog_7' and i:'battery'"
+    assert w.table.item(row, cols.index("Redvypr address")).text() == "batt_mv @ di:'AB' and i:'battery'"
     w.table.selectRow(row)
-    assert [a for a, _n, _u in w.selected_lines()] == ["batt_mv @ d:'norlog_7' and i:'battery'"]
+    assert [line["addr"] for line in w.selected_lines()] == ["batt_mv @ di:'AB' and i:'battery'"]
     w.table.selectRow(w.rows[("AB", "battery", "batt_charging")])
     assert w.selected_lines() == []
     w.close()

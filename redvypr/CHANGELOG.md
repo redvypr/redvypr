@@ -7,6 +7,15 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- norlog gateway: tab "Datafiles" (after "Live data"): the archive of the SD card log files, one folder per
+  hardware ID. Left the devices and their files ("List card": state on the card, "Download": what is new, also
+  only the selected files), right an overview of the packets of the selected devices/files (one row per packet
+  type and value: count, time range, lost packets, boots, redvypr address). Downloaded data is converted
+  automatically into `<archive>/<hwid>/<hwid>.sqlite` (only new or grown files, `convert.json`) and added as
+  data source of redvypr; "Rebuild database" in the tree menu. Right click in the overview: "Plot data" (database
+  lines in a new XY-Plot) or "Add to <plot>" (also plots of the live data), "Publish packets" of the selected
+  types and files with their measurement time, "Copy redvypr address". New module `norlog_datafiles`
+  (`summarize()`, `summary_rows()`, `convert_device()`, `iter_packets()`); `norlog_convert.convert(boot_offsets=)`
 - norlog gateway: "Subscribe" button per device in the device table: the subscriptions window for this device
   only. Subscriptions window: checkbox "All" ticks or unticks all packet types
 - norlog gateway, tab "Live data": columns "CBOR type" (packet type of the CBOR tag, e.g. `adcseq (50009)`)
@@ -44,6 +53,11 @@ redvypr changelog
 - norlog gateway: "Set clock" sends the uncertainty of the time (round trip of the request) with firmware
   >= 0.4.35 (`ot_cli.time_set(unc_ms=...)`)
 ### Changed
+- norlog gateway: the redvypr address of the live data uses the hardware ID (`<key> @ di:<hwid> and
+  i:<type>`) instead of the device name, the same as the data files
+- norlog gateway: "Publish the downloaded packets" removed (`archive_publish` is not used anymore); instead
+  "Publish packets" of selected types in the tab "Datafiles". The "Data" tab of the device settings has
+  "Show in Datafiles"
 - norlog gateway: tab "Live data" directly after "Devices"; the info text box below the device table
   is removed (the info stays in the table and in the device settings)
 - norlog gateway: device table: RSSI, LQ, path cost, seen, packets and firmware moved to the right end

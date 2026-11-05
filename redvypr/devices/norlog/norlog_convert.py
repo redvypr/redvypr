@@ -144,12 +144,14 @@ def db_config(db_path, table="norlog", flat=False):
                                                    description="norlog log files converted by norlog_convert"))
 
 
-def convert(inputs, db_path, sn=None, table="norlog", progress=None, cancel=None, flat=False):
+def convert(inputs, db_path, sn=None, table="norlog", progress=None, cancel=None, flat=False, boot_offsets=None):
     """
     Convert *.cbor files (files and/or folders) into db_path (created or extended).
     sn: serial number of the norlog for the header (device norlog_<sn>, sensorid).
     flat: also the data_flat table <table> (one column per datastream).
     progress(done_files, total_files, name); cancel() -> True stops after the current file.
+    boot_offsets: {(hardware ID, boot): time - uptime} instead of learning them from the files
+    (e.g. learned from earlier files of the same boot).
     Returns {'files', 'packets', 'written', 'without_time', 'packets_new', 'packets_duplicate',
     'entries', 'entries_duplicate', 'metadata', 'seconds', 'cancelled'}.
     """
@@ -159,7 +161,7 @@ def convert(inputs, db_path, sn=None, table="norlog", progress=None, cancel=None
     if not files:
         raise ConvertError("no data_*.cbor files")
     t_start = time.monotonic()
-    offsets = _boot_offsets(files)
+    offsets = _boot_offsets(files) if boot_offsets is None else boot_offsets
     metadata = {"metadata": _stored_metadata(db_path)}
     meta_sent = set()
     db = DbSqlite(db_config(db_path, table, flat))

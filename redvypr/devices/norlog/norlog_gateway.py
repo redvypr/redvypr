@@ -46,10 +46,12 @@ published as well only with the option publish_raw_data (default off), with
 the same header. Messages about a node keep its key ('gateway' or RLOC16) in
 'target'.
 
-Data download ("Data" tab of the settings window): the log files of the SD card
+Data download (tab "Datafiles", or "Data" of the settings window): the log files of the SD card
 are copied 1:1 into <archive_folder>/<hwid>/ (only what is new, see
-norlog_archive); optionally the new packets are published with their
-measurement time, e.g. for the database writers. "Convert to SQLite" turns
+norlog_archive) and converted automatically into <archive_folder>/<hwid>/<hwid>.sqlite,
+a data source of redvypr (norlog_datafiles). The tab shows the files and an overview of
+their packets; right click: plot (also together with live data) or publish the packets of
+the selected types with their measurement time. "Convert to SQLite" turns
 selected archive files into an SQLite database in the redvypr format: the packets in
 redvypr_raw and optionally a data_flat table for the plots (norlog_convert, also on the
 command line). Live data and SD card packets have the same deviceid (mac), boot and
@@ -77,6 +79,7 @@ import queue
 import re
 import secrets
 import sys
+import threading
 import time
 import typing
 import zlib
@@ -100,6 +103,7 @@ from . import mag_calibration
 from . import norlog_archive
 from . import norlog_cbor
 from . import norlog_convert
+from . import norlog_datafiles
 from . import ot_cli
 from . import poly_calibration
 from . import smp_serial
@@ -144,9 +148,8 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                                                             'ot commands in the console')
     archive_folder: str = pydantic.Field(default='norlog_archive', description='Folder of the downloaded log files '
                                                                           '(one subfolder per hardware ID)')
-    archive_publish: bool = pydantic.Field(default=False, description='Publish the downloaded packets with their '
-                                                                      'measurement time (e.g. for the database '
-                                                                      'writers)')
+    archive_publish: bool = pydantic.Field(default=False, description='Not used anymore: publish selected packets '
+                                                                      'in the tab Datafiles (right click)')
     publish_raw_data: bool = pydantic.Field(default=False, description='Publish also the raw data of the gateway: '
                                                                        'console lines, command results, Thread '
                                                                        'status with device list, transfer status')
@@ -185,8 +188,9 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                                                                        'the data of this gateway')
     live_split: bool = pydantic.Field(default=False, description='Live data: one row per value')
     live_plots: typing.List[str] = pydantic.Field(default_factory=list, description='Names of the XY-Plot devices '
-                                                                                    'made from the live data '
-                                                                                    '(right click "Plot data")')
+                                                                                    'made from the live data or '
+                                                                                    'the data files (right click '
+                                                                                    '"Plot data")')
     devices_hidden_columns: typing.List[str] = pydantic.Field(default_factory=list, description='Hidden columns '
                                                                                                 'of the device '
                                                                                                 'table (right '
@@ -434,8 +438,9 @@ class _Gateway:
                 self.query_info('all', refresh_props=True)
             elif command == 'data_sync':
                 self.data_sync(args.get('target', 'gateway'), args.get('folder') or self.config.archive_folder,
-                               bool(args.get('publish', self.config.archive_publish)), args.get('stems'),
-                               bool(args.get('newest_first', False)), args.get('reload'))
+                               args.get('stems'), bool(args.get('newest_first', False)), args.get('reload'))
+            elif command == 'publish_archive':
+                self.publish_archive(args.get('dir', ''), args.get('names'), args.get('types'))
             elif command == 'data_list':
                 self.data_list(args.get('target', 'gateway'), args.get('folder') or self.config.archive_folder,
                                bool(args.get('verify', False)))
@@ -838,10 +843,10 @@ class _Gateway:
             return
         self.to_gui('sync_list', {'target': target, 'ok': True, **res})
 
-    def data_sync(self, target, folder, publish, stems=None, newest_first=False, reload=None):
+    def data_sync(self, target, folder, stems=None, newest_first=False, reload=None):
         """
-        Copy the new log data of a norlog into the archive folder and, with publish,
-        publish the packets that were not published yet (with their measurement time).
+        Copy the new log data of a norlog into the archive folder (converted into its database
+        by the tab Datafiles).
         stems: only these data files (norlog_archive.file_stem), None = all; newest_first: order;
         reload: file names to load again (found different by a verified list).
         """
@@ -875,25 +880,27 @@ class _Gateway:
             text += f"; card changed, old copies kept: {', '.join(replaced)}"
         if res['cancelled']:
             text = 'cancelled after ' + text
-        published = 0
-        if publish and not res['cancelled']:
-            try:
-                for pkt in norlog_archive.new_packets(res['dir']):
-                    self.publish_archive_packet(pkt)
-                    published += 1
-                waiting = norlog_archive.waiting_files(res['dir'])
-            except (OSError, ValueError) as exc:
-                self.to_gui('sync_result', {'target': target, 'ok': False, 'message': f'{text}; publishing: {exc}'})
-                return
-            text += f"; {published} packet(s) published"
-            if waiting:
-                text += (f"; {len(waiting)} file(s) wait for the time of their boot "
-                         f"(clock not set, see 'Set clock')")
         errors = res.get('errors') or []
         if errors:
             text += f"; {len(errors)} file(s) FAILED (loaded again at the next download): " + "; ".join(errors)
         self.to_gui('sync_result', {'target': target, 'ok': not res['cancelled'] and not errors, 'message': text,
-                                    'files': res['files'], 'dir': res['dir'], 'published': published})
+                                    'files': res['files'], 'dir': res['dir']})
+
+    def publish_archive(self, dev_dir, names=None, types=None):
+        """Publish the packets of the archive files (all or names) of the types (None = all): 'archive_publish_result'."""
+        n = 0
+        try:
+            for pkt in norlog_datafiles.iter_packets(dev_dir, names=names, types=set(types) if types else None):
+                self.publish_archive_packet(pkt)
+                n += 1
+                if n % 1000 == 0 and self.check_commands(during_flash=True):
+                    self.to_gui('archive_publish_result', {'dir': dev_dir, 'ok': False,
+                                                           'message': f'cancelled after {n} packet(s)'})
+                    return
+        except (OSError, ValueError) as exc:
+            self.to_gui('archive_publish_result', {'dir': dev_dir, 'ok': False, 'message': f'{n} packet(s), {exc}'})
+            return
+        self.to_gui('archive_publish_result', {'dir': dev_dir, 'ok': True, 'message': f'{n} packet(s) published'})
 
     def publish_archive_packet(self, pkt):
         """Publish a packet of the archive like the live data: header of its norlog, measurement time."""
@@ -1490,6 +1497,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         # Live data over Thread ('#NLD')
         self.live_tab = LiveDataTab(self)
         self.tabs.addTab(self.live_tab, 'Live data')
+        self.datafiles_tab = DatafilesTab(self)
+        self.tabs.addTab(self.datafiles_tab, 'Datafiles')
         self.tabs.addTab(self._build_console_tab(), 'Console')
         self.tabs.addTab(scroll(self._build_thread_tab()), 'Thread network')
         self.live_status = {}       # hwid -> last 'norlog pub json' status of the device
@@ -2483,9 +2492,14 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 dlg = self.settings_dialogs.get(data.get('target'))
                 if dlg is not None:
                     dlg.on_sync_message(packetid, data)
+                self.datafiles_tab.on_sync_message(packetid, data)
                 if packetid == 'sync_result':
                     self.console_text.appendPlainText(
                         f"[data {data.get('target')}] {'OK' if data.get('ok') else 'ERROR'}: {data.get('message', '')}")
+            elif packetid == 'archive_publish_result':
+                self.datafiles_tab.on_publish_result(data)
+                self.console_text.appendPlainText(f"[publish {data.get('dir')}] {'OK' if data.get('ok') else 'ERROR'}: "
+                                                  f"{data.get('message', '')}")
             elif packetid in ('mag_result', 'mag_cal_progress', 'mag_cal_done', 'cal_result'):
                 if packetid in ('mag_cal_done', 'cal_result') and data.get('message'):
                     state = 'OK' if data.get('ok') else 'ERROR'
@@ -2550,6 +2564,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             w.setEnabled(running)
         for dlg in self.settings_dialogs.values():
             dlg.update_run_state(running)
+        if not running:
+            self.datafiles_tab.sync_target = None
+        self.datafiles_tab.update_run_state(running)
 
 
 def _live_pub_text(status):
@@ -2865,7 +2882,6 @@ class LiveDataTab(QtWidgets.QWidget):
     SKIP = {'packet_type', 'mac', 'packet_num', 'packet_num_type', 'uptime_ms', 'boot', 'source', 't',
             'rtc_time', 'rtc_time_iso', 'gps_time_iso', 'raw_data', 'offset_ms', 't_source'}
     TAG_OF_TYPE = {name: tag for tag, name in norlog_cbor.PACKET_TAGS.items()}
-    PLOT_COLORS = ['red', 'blue', 'green', 'darkorange', 'purple', 'brown', 'magenta', 'teal', 'olive', 'black']
 
     def __init__(self, widget):
         super().__init__()
@@ -2954,9 +2970,12 @@ class LiveDataTab(QtWidgets.QWidget):
 
     @staticmethod
     def address(data, key=None):
-        """Redvypr address of a value (key) or of the packet: device and packet ID of the published packet."""
+        """
+        Redvypr address of a value (key) or of the packet: hardware ID (deviceid) and packet ID, the same
+        for live data and the data files (the device name changes with the serial number).
+        """
         rv = data.get('_redvypr') or {}
-        addr = RedvyprAddress(datakey=key, device=rv.get('device') or None, packetid=rv.get('packetid') or None)
+        addr = RedvyprAddress(datakey=key, deviceid=rv.get('deviceid') or None, packetid=rv.get('packetid') or None)
         return addr.to_address_string()
 
     def add_packet(self, data):
@@ -3033,7 +3052,7 @@ class LiveDataTab(QtWidgets.QWidget):
     # --- plot ---
 
     def selected_lines(self):
-        """[(y address, name, unit)] of the numeric values of the selected rows."""
+        """Plot lines (plot_line()) of the numeric values of the selected rows."""
         lines = []
         for row in sorted({i.row() for i in self.table.selectedIndexes()}):
             if row >= len(self.row_keys):
@@ -3047,31 +3066,21 @@ class LiveDataTab(QtWidgets.QWidget):
             for k in keys:
                 if self.is_number(data.get(k)):
                     addr = self.address(data, k)
-                    if addr not in [a for a, _n, _u in lines]:
-                        lines.append((addr, f"{p['device'] or p['hwid']} {k}", norlog_cbor.UNITS.get(k, '')))
+                    if addr not in [line['addr'] for line in lines]:
+                        lines.append(plot_line(addr, f"{p['device'] or p['hwid']} {k}", norlog_cbor.UNITS.get(k, '')))
         return lines
 
-    def plot_devices(self):
-        """XY-Plot devices made from this table that still exist in redvypr: [device]."""
-        rv = getattr(self.widget.device, 'redvypr', None)
-        devices = {d['device'].name: d['device'] for d in (getattr(rv, 'devices', None) or [])}
-        names = [n for n in self.widget.cfg.live_plots if n in devices]
-        if names != self.widget.cfg.live_plots:
-            self.widget.cfg.live_plots = names
-        return [devices[n] for n in names]
+    def say(self, text):
+        self.log.appendPlainText(text)
 
     def context_menu(self, point):
-        if self.table.itemAt(point) is None:
-            return
-        lines = self.selected_lines()
-        menu = QtWidgets.QMenu(self)
-        act = menu.addAction(f'Plot data ({len(lines)} line(s), new XY-Plot)', lambda: self.plot_new(lines))
-        act.setEnabled(bool(lines))
-        for dev in self.plot_devices():
-            act = menu.addAction(f'Add to {dev.name}', lambda d=dev: self.plot_add(d, lines))
-            act.setEnabled(bool(lines))
-        menu.addSeparator()
         item = self.table.itemAt(point)
+        if item is None:
+            return
+        menu = QtWidgets.QMenu(self)
+        add_plot_actions(menu, self.widget, self.selected_lines(), self.say,
+                         disabled_text=' (no numeric value selected)')
+        menu.addSeparator()
         addr = self.table.item(item.row(), self.COLUMNS.index('Redvypr address'))
         clipboard = QtWidgets.QApplication.clipboard()
         if addr is not None:
@@ -3079,50 +3088,663 @@ class LiveDataTab(QtWidgets.QWidget):
         menu.addAction('Copy cell', lambda: clipboard.setText(item.text()))
         menu.exec(self.table.viewport().mapToGlobal(point))
 
-    def _line_config(self, plot_cfg, addr, name, unit):
-        from redvypr.devices.plot import XYPlotWidget
-        used = {str(getattr(line, 'color', '')) for line in plot_cfg.lines}
-        color = next((c for c in self.PLOT_COLORS if c not in used), self.PLOT_COLORS[len(plot_cfg.lines)
-                                                                                      % len(self.PLOT_COLORS)])
-        y_addr = RedvyprAddress(addr)
-        # x: measurement time of the same packets (a bare 't' would subscribe to all packets with a time)
-        x_addr = RedvyprAddress(y_addr, datakey='t')
-        return XYPlotWidget.configLine(name=name, y_addr=y_addr, x_addr=x_addr, unit_y=unit, color=color,
-                                       label_format='{NAME} [{UNIT}]' if unit else '{NAME}')
 
-    def plot_new(self, lines):
-        """New XY-Plot device with the lines, started."""
-        rv = getattr(self.widget.device, 'redvypr', None)
-        if rv is None or not lines:
-            return
-        from redvypr.devices.plot import XYPlotDevice
-        cfg = XYPlotDevice.DeviceCustomConfig(lines=[])
-        for addr, name, unit in lines:
-            cfg.lines.append(self._line_config(cfg, addr, name, unit))
-        devicemodulename = rv.get_devicemodulename_from_str('XYPlotDevice')
-        dev = rv.add_device(devicemodulename=devicemodulename, custom_config=cfg,
-                            base_config={'name': f'{self.widget.device.name}_plot'})
-        if dev is None:
-            self.log.appendPlainText('Plot: could not add an XY-Plot device')
-            return
-        self.widget.cfg.live_plots.append(dev.name)
-        self.widget.send_config()
+# --------------------------------------------------------------------------
+# XY plots made from the tabs "Live data" and "Datafiles"
+# --------------------------------------------------------------------------
+
+PLOT_COLORS = ['red', 'blue', 'green', 'darkorange', 'purple', 'brown', 'magenta', 'teal', 'olive', 'black']
+
+
+def plot_line(addr, name, unit='', datasource=''):
+    """A line for plot_new()/plot_add(): live data, or with datasource from that database."""
+    return {'addr': addr, 'name': name, 'unit': unit, 'datasource': datasource}
+
+
+def _plot_line_config(plot_cfg, line):
+    from redvypr.devices.plot import XYPlotWidget
+    used = {str(getattr(c, 'color', '')) for c in plot_cfg.lines}
+    color = next((c for c in PLOT_COLORS if c not in used), PLOT_COLORS[len(plot_cfg.lines) % len(PLOT_COLORS)])
+    y_addr = RedvyprAddress(line['addr'])
+    # x: measurement time of the same packets (a bare 't' would subscribe to all packets with a time)
+    x_addr = RedvyprAddress(y_addr, datakey='t')
+    unit = line.get('unit') or ''
+    cfg = XYPlotWidget.configLine(name=line['name'], y_addr=y_addr, x_addr=x_addr, unit_y=unit, color=color,
+                                  label_format='{NAME} [{UNIT}]' if unit else '{NAME}')
+    if line.get('datasource'):
+        cfg.source = 'database'
+        cfg.datasource = line['datasource']
+    return cfg
+
+
+def _line_key(line_cfg):
+    return (RedvyprAddress(line_cfg.y_addr).to_address_string(), getattr(line_cfg, 'source', 'live'))
+
+
+def plot_devices(widget):
+    """XY-Plot devices made from the live data or the data files that still exist in redvypr."""
+    rv = getattr(widget.device, 'redvypr', None)
+    devices = {d['device'].name: d['device'] for d in (getattr(rv, 'devices', None) or [])}
+    names = [n for n in widget.cfg.live_plots if n in devices]
+    if names != widget.cfg.live_plots:
+        widget.cfg.live_plots = names
+    return [devices[n] for n in names]
+
+
+def plot_new(widget, lines):
+    """New XY-Plot device with the lines, started. Returns a message."""
+    rv = getattr(widget.device, 'redvypr', None)
+    if rv is None or not lines:
+        return 'Plot: nothing to plot'
+    from redvypr.devices.plot import XYPlotDevice
+    cfg = XYPlotDevice.DeviceCustomConfig(lines=[])
+    for line in lines:
+        cfg.lines.append(_plot_line_config(cfg, line))
+    devicemodulename = rv.get_devicemodulename_from_str('XYPlotDevice')
+    dev = rv.add_device(devicemodulename=devicemodulename, custom_config=cfg,
+                        base_config={'name': f'{widget.device.name}_plot'})
+    if dev is None:
+        return 'Plot: could not add an XY-Plot device'
+    widget.cfg.live_plots.append(dev.name)
+    widget.send_config()
+    dev.thread_start()
+    return f'Plot: new device {dev.name} with {len(lines)} line(s)'
+
+
+def plot_add(dev, lines):
+    """Add the lines (not yet in it) to an XY-Plot device made here. Returns a message."""
+    cfg = dev.custom_config
+    have = {_line_key(c) for c in cfg.lines}
+    new = []
+    for line in lines:
+        c = _plot_line_config(cfg, line)
+        if _line_key(c) not in have:
+            cfg.lines.append(c)
+            have.add(_line_key(c))
+            new.append(line)
+    if new:
+        dev.config_changed()
+    if not dev.thread_running():
         dev.thread_start()
-        self.log.appendPlainText(f'Plot: new device {dev.name} with {len(lines)} line(s)')
+    return (f'Plot: {len(new)} line(s) added to {dev.name}'
+            + (f' ({len(lines) - len(new)} already in it)' if len(new) < len(lines) else ''))
 
-    def plot_add(self, dev, lines):
-        """Add the lines (not yet in it) to an XY-Plot device made here."""
-        cfg = dev.custom_config
-        have = {RedvyprAddress(line.y_addr).to_address_string() for line in cfg.lines}
-        new = [line for line in lines if line[0] not in have]
-        for addr, name, unit in new:
-            cfg.lines.append(self._line_config(cfg, addr, name, unit))
-        if new:
-            dev.config_changed()
-        if not dev.thread_running():
-            dev.thread_start()
-        self.log.appendPlainText(f'Plot: {len(new)} line(s) added to {dev.name}'
-                                 + (f' ({len(lines) - len(new)} already in it)' if len(new) < len(lines) else ''))
+
+def add_plot_actions(menu, widget, lines, log, disabled_text=''):
+    """'Plot data' and 'Add to <plot>' for the lines; log(text) gets the result."""
+    text = f'Plot data ({len(lines)} line(s), new XY-Plot)' if lines else f'Plot data{disabled_text}'
+    act = menu.addAction(text, lambda: log(plot_new(widget, lines)))
+    act.setEnabled(bool(lines))
+    for dev in plot_devices(widget):
+        act = menu.addAction(f'Add to {dev.name}', lambda d=dev: log(plot_add(d, lines)))
+        act.setEnabled(bool(lines))
+
+
+def register_datasource(rv, db_path, description='norlog log files'):
+    """The database as data source of redvypr (once per file, refreshed); returns its name or None."""
+    if rv is None or not hasattr(rv, 'add_datasource'):
+        return None
+    try:
+        path = pathlib.Path(db_path).resolve()
+        for d in rv.datasources:
+            if d.dbtype == 'sqlite' and d.filepath and pathlib.Path(d.filepath).resolve() == path:
+                rv.get_datasource_reader(d.name, refresh=True)   # new datastreams and metadata
+                return d.name
+        names = {d.name for d in rv.datasources}
+        name, i = path.stem, 2
+        while name in names:
+            name, i = f'{path.stem}_{i}', i + 1
+        rv.add_datasource({'name': name, 'dbtype': 'sqlite', 'filepath': str(path), 'description': description})
+        return name
+    except Exception:
+        logger.info('could not add the database as data source', exc_info=True)
+        return None
+
+
+# --------------------------------------------------------------------------
+# Tab "Datafiles"
+# --------------------------------------------------------------------------
+
+class DatafilesWorker(QtCore.QThread):
+    """Overview (summary.json) and conversion into <hwid>.sqlite of device folders, one job after the other."""
+    progress = QtCore.pyqtSignal(str, str, int, int, str)       # hwid, phase, done, total, file
+    job_done = QtCore.pyqtSignal(str, str, object, str)         # hwid, phase, result, error text
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.jobs = collections.deque()
+        self.lock = threading.Lock()
+        self.active = False
+        self.cancel_requested = False
+
+    def add(self, phase, dev_dir, sn=None, rebuild=False):
+        """phase 'scan' (overview) or 'convert'; a job already waiting is not added again."""
+        job = (phase, str(dev_dir), sn, rebuild)
+        with self.lock:
+            if any(j[:2] == job[:2] and j[3] == rebuild for j in self.jobs):
+                return
+            self.jobs.append(job)
+            start = not self.active
+            self.active = True
+        if start:
+            self.wait()
+            self.cancel_requested = False
+            self.start()
+
+    def busy(self):
+        return self.active
+
+    def cancel(self):
+        with self.lock:
+            self.jobs.clear()
+        self.cancel_requested = True
+
+    def stop(self):
+        """Cancel and wait (the thread must not run when Qt deletes it)."""
+        self.cancel()
+        self.wait(30000)
+
+    def run(self):
+        while True:
+            with self.lock:
+                if not self.jobs:
+                    self.active = False
+                    return
+                phase, dev_dir, sn, rebuild = self.jobs.popleft()
+            hwid = pathlib.Path(dev_dir).name
+
+            def progress(done, total, name, phase=phase, hwid=hwid):
+                self.progress.emit(hwid, phase, done, total, name)
+
+            try:
+                if phase == 'scan':
+                    res = norlog_datafiles.summarize(dev_dir, progress=progress,
+                                                     cancel=lambda: self.cancel_requested)
+                else:
+                    res = norlog_datafiles.convert_device(dev_dir, sn=sn, progress=progress, rebuild=rebuild,
+                                                          cancel=lambda: self.cancel_requested)
+            except Exception as exc:     # shown in the tab, the GUI must not die
+                logger.warning(f'{phase} {dev_dir}', exc_info=True)
+                self.job_done.emit(hwid, phase, {}, f'{type(exc).__name__}: {exc}')
+                continue
+            self.job_done.emit(hwid, phase, res, '')
+
+
+class DatafilesTab(QtWidgets.QWidget):
+    """
+    Tab "Datafiles": the archive of the SD card log files, one folder per device (hardware ID).
+    Left the devices and their files (with "List card": state on the card), right the overview of
+    the packets of the selected devices/files (one row per packet type and value). Downloaded data
+    is converted automatically into <hwid>.sqlite (data source of redvypr). Right click: plot
+    (database lines in a new XY-Plot or one made here, also together with live data), publish the
+    packets of the selected types, copy the redvypr address.
+    """
+    TREE_COLUMNS = ['Device / file', 'Size', 'Packets', 'From', 'To', 'Card', 'Database']
+    COLUMNS = ['Device', 'HW ID', 'Type', 'CBOR type', 'Value', 'Unit', 'Packets', 'From', 'To', 'Lost', 'Boots',
+               'Redvypr address']
+    CARD_TEXT = {'unchanged': 'loaded', 'grown': 'grown on card', 'new': 'only on card', 'mismatch': 'DIFFERENT'}
+
+    def __init__(self, widget):
+        super().__init__()
+        self.widget = widget
+        self.cfg = widget.cfg
+        self.infos = {}             # hwid -> summary (norlog_datafiles.summarize)
+        self.card = {}              # hwid -> {file name: plan entry} from "List card"
+        self.db_state = {}          # hwid -> text of the database column
+        self.datasources = {}       # hwid -> name of the data source of its database
+        self.sync_target = None     # hwid of the running download/list
+        self.worker = DatafilesWorker()     # no parent: stopped at aboutToQuit, not deleted by Qt
+        self.worker.progress.connect(self.on_worker_progress)
+        self.worker.job_done.connect(self.on_worker_done)
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self.worker.stop)
+
+        lay = QtWidgets.QVBoxLayout(self)
+        row = QtWidgets.QHBoxLayout()
+        self.folder = QtWidgets.QLineEdit(self.cfg.archive_folder)
+        self.folder.setToolTip('Archive: one folder per device (hardware ID) with the copies of the SD card '
+                               'log files, summary.json and <hwid>.sqlite')
+        self.folder.editingFinished.connect(self.folder_changed)
+        browse = QtWidgets.QPushButton('Browse ...')
+        browse.clicked.connect(self.browse)
+        open_btn = QtWidgets.QPushButton('Open')
+        open_btn.clicked.connect(lambda: self.open_folder(self.archive_root()))
+        rescan = QtWidgets.QPushButton('Rescan')
+        rescan.setToolTip('Read the archive folder again (new files are added to the overview and the database)')
+        rescan.clicked.connect(self.rescan)
+        row.addWidget(QtWidgets.QLabel('Archive'))
+        row.addWidget(self.folder, 1)
+        row.addWidget(browse)
+        row.addWidget(open_btn)
+        row.addWidget(rescan)
+        lay.addLayout(row)
+        row = QtWidgets.QHBoxLayout()
+        self.list_btn = QtWidgets.QPushButton('List card')
+        self.list_btn.setToolTip('Compare the files on the SD card of the selected device with the archive '
+                                 '(device must be reachable)')
+        self.list_btn.clicked.connect(self.list_card)
+        self.download_btn = QtWidgets.QPushButton('Download')
+        self.download_btn.setToolTip('Load what is new on the card of the selected device (selected files only, '
+                                     'if files are selected); converted into its database afterwards')
+        self.download_btn.clicked.connect(self.download)
+        self.cancel_btn = QtWidgets.QPushButton('Cancel')
+        self.cancel_btn.clicked.connect(self.cancel)
+        self.progress = QtWidgets.QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setMaximumWidth(220)
+        self.status = QtWidgets.QLabel('')
+        row.addWidget(self.list_btn)
+        row.addWidget(self.download_btn)
+        row.addWidget(self.cancel_btn)
+        row.addWidget(self.progress)
+        row.addWidget(self.status, 1)
+        lay.addLayout(row)
+
+        split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        self.tree = QtWidgets.QTreeWidget()
+        self.tree.setHeaderLabels(self.TREE_COLUMNS)
+        self.tree.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.tree.itemSelectionChanged.connect(self.show_summary)
+        self.tree.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.tree_menu)
+        self.table = QtWidgets.QTableWidget(0, len(self.COLUMNS))
+        self.table.setHorizontalHeaderLabels(self.COLUMNS)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.table_menu)
+        self.table.setToolTip('Packets of the devices/files selected on the left. Right click: plot, publish, '
+                              'copy the redvypr address')
+        split.addWidget(self.tree)
+        split.addWidget(self.table)
+        split.setSizes([450, 750])
+        vsplit = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        vsplit.addWidget(split)
+        self.log = QtWidgets.QPlainTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setMaximumBlockCount(500)
+        vsplit.addWidget(self.log)
+        vsplit.setSizes([450, 90])
+        lay.addWidget(vsplit, 1)
+        self.table_rows = []        # row -> (hwid, summary row)
+        self.update_run_state(False)
+        QtCore.QTimer.singleShot(0, self.rescan)
+
+    # --- helpers ---
+
+    def archive_root(self):
+        return self.cfg.archive_folder or 'norlog_archive'
+
+    def dev_dir(self, hwid):
+        return pathlib.Path(self.archive_root()) / hwid
+
+    def device_entry(self, hwid):
+        return next((d for d in getattr(self.widget, 'current_devices', []) if d.get('hwid') == hwid), None)
+
+    def device_label(self, hwid):
+        d = self.device_entry(hwid) or {}
+        return ' '.join(x for x in (d.get('sn') or '', d.get('desc') or '') if x)
+
+    @staticmethod
+    def fmt_time(t):
+        return datetime.datetime.fromtimestamp(t).strftime('%Y-%m-%d %H:%M:%S') if t is not None else ''
+
+    @staticmethod
+    def fmt_size(n):
+        return f'{n / 1024 / 1024:.1f} MB' if n >= 1024 * 1024 else f'{n / 1024:.1f} KB'
+
+    def say(self, text):
+        self.log.appendPlainText(f"{time.strftime('%H:%M:%S')} {text}")
+
+    def update_run_state(self, running):
+        self.running = running
+        busy = self.sync_target is not None
+        self.list_btn.setEnabled(running and not busy)
+        self.download_btn.setEnabled(running and not busy)
+        self.cancel_btn.setEnabled(busy or self.worker.busy())
+
+    # --- archive ---
+
+    def folder_changed(self):
+        text = self.folder.text().strip() or 'norlog_archive'
+        if text != self.cfg.archive_folder:
+            self.cfg.archive_folder = text
+            self.widget.send_config()
+            self.card = {}
+            self.rescan()
+
+    def browse(self):
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, 'Archive folder', self.archive_root())
+        if folder:
+            self.folder.setText(folder)
+            self.folder_changed()
+
+    @staticmethod
+    def open_folder(path):
+        path = pathlib.Path(path)
+        if path.exists():
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(path.resolve())))
+
+    def rescan(self):
+        """Devices of the archive: overview and database of each (only what is new is read)."""
+        self.folder.setText(self.archive_root())
+        for dev_dir in norlog_datafiles.device_dirs(self.archive_root()):
+            self.worker.add('scan', dev_dir)
+            self.worker.add('convert', dev_dir, sn=(self.device_entry(dev_dir.name) or {}).get('sn') or None)
+        self.update_run_state(self.running)
+        self.rebuild_tree()
+
+    def on_worker_progress(self, hwid, phase, done, total, name):
+        what = 'Reading' if phase == 'scan' else 'Converting into the database'
+        self.progress.setValue(int(100 * done / total) if total else 0)
+        self.status.setText(f'{hwid}: {what} file {done} of {total} {name}')
+        if phase == 'convert':
+            self.db_state[hwid] = f'converting {done}/{total}'
+            self.set_device_column(hwid)
+        self.update_run_state(self.running)
+
+    def on_worker_done(self, hwid, phase, res, error):
+        if error:
+            self.say(f'{hwid}: {phase} FAILED: {error}')
+            self.db_state[hwid] = 'error' if phase == 'convert' else self.db_state.get(hwid, '')
+        elif phase == 'scan':
+            self.infos[hwid] = res
+        else:
+            db = res.get('db')
+            if res.get('files'):
+                self.say(f"{hwid}: {norlog_convert.summary(res, db)}")
+            name = register_datasource(getattr(self.widget.device, 'redvypr', None), db) if db else None
+            if name:
+                self.datasources[hwid] = name
+            self.db_state[hwid] = (f'data source "{name}"' if name else 'converted') if db else ''
+        if not self.worker.busy():
+            self.progress.setValue(100)
+            self.status.setText('')
+        self.rebuild_tree()
+        self.update_run_state(self.running)
+
+    # --- tree ---
+
+    def selection(self):
+        """{hwid: None (whole device) or [file names]} of the tree selection."""
+        sel = {}
+        for item in self.tree.selectedItems():
+            kind = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
+            if not kind:
+                continue
+            if kind[0] == 'dev':
+                sel[kind[1]] = None
+            elif sel.get(kind[1], []) is not None:
+                sel.setdefault(kind[1], []).append(kind[2])
+        return sel
+
+    def set_device_column(self, hwid):
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
+            if item.data(0, QtCore.Qt.ItemDataRole.UserRole) == ('dev', hwid):
+                item.setText(6, self.db_state.get(hwid, ''))
+
+    def rebuild_tree(self):
+        selected = {tuple(i.data(0, QtCore.Qt.ItemDataRole.UserRole) or ()) for i in self.tree.selectedItems()}
+        expanded = {self.tree.topLevelItem(i).data(0, QtCore.Qt.ItemDataRole.UserRole)
+                    for i in range(self.tree.topLevelItemCount()) if self.tree.topLevelItem(i).isExpanded()}
+        self.tree.blockSignals(True)
+        self.tree.clear()
+        hwids = {d.name for d in norlog_datafiles.device_dirs(self.archive_root())} | set(self.card)
+        for hwid in sorted(hwids):
+            info = self.infos.get(hwid, {})
+            local = dict(norlog_datafiles.data_files(self.dev_dir(hwid))) if self.dev_dir(hwid).is_dir() else {}
+            card = {n: e for n, e in self.card.get(hwid, {}).items() if n.endswith('.cbor')}
+            label = self.device_label(hwid)
+            dev = QtWidgets.QTreeWidgetItem([f'{hwid} {label}'.strip(), self.fmt_size(sum(local.values())), '', '',
+                                             '', '', self.db_state.get(hwid, '')])
+            dev.setData(0, QtCore.Qt.ItemDataRole.UserRole, ('dev', hwid))
+            packets = 0
+            t_all = []
+            for name in sorted(set(local) | set(card)):
+                n, t0, t1 = norlog_datafiles.file_info(info, name)
+                packets += n or 0
+                t_all += [t for t in (t0, t1) if t is not None]
+                c = card.get(name)
+                item = QtWidgets.QTreeWidgetItem([name, self.fmt_size(local.get(name, 0)) if name in local else '',
+                                                  '' if n is None else str(n), self.fmt_time(t0), self.fmt_time(t1),
+                                                  self.CARD_TEXT.get(c['state'], c['state']) if c else '', ''])
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, ('file', hwid, name))
+                if name not in local:
+                    for col in range(len(self.TREE_COLUMNS)):
+                        item.setForeground(col, QtGui.QColor('gray'))
+                if c and c['state'] == 'mismatch':
+                    item.setForeground(5, QtGui.QColor('red'))
+                dev.addChild(item)
+                if ('file', hwid, name) in selected:
+                    item.setSelected(True)
+            dev.setText(2, str(packets) if packets else '')
+            dev.setText(3, self.fmt_time(min(t_all)) if t_all else '')
+            dev.setText(4, self.fmt_time(max(t_all)) if t_all else '')
+            if card:
+                todo = sum(1 for e in card.values() if e['state'] != 'unchanged')
+                dev.setText(5, f'{todo} file(s) to load' if todo else 'all loaded')
+            self.tree.addTopLevelItem(dev)
+            dev.setExpanded(('dev', hwid) in expanded)
+            if ('dev', hwid) in selected:
+                dev.setSelected(True)
+        self.tree.blockSignals(False)
+        for col in range(1, len(self.TREE_COLUMNS)):
+            self.tree.resizeColumnToContents(col)
+        if not self.tree.selectedItems() and self.tree.topLevelItemCount():
+            self.tree.topLevelItem(0).setSelected(True)
+        self.show_summary()
+
+    def tree_menu(self, point):
+        item = self.tree.itemAt(point)
+        if item is None:
+            return
+        kind = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
+        hwid = kind[1]
+        menu = QtWidgets.QMenu(self)
+        menu.addAction('Open folder', lambda: self.open_folder(self.dev_dir(hwid)))
+        act = menu.addAction('List card', self.list_card)
+        act.setEnabled(self.list_btn.isEnabled())
+        act = menu.addAction('Download', self.download)
+        act.setEnabled(self.download_btn.isEnabled())
+        menu.addSeparator()
+        menu.addAction('Rebuild database', lambda: self.rebuild_db(hwid))
+        menu.exec(self.tree.viewport().mapToGlobal(point))
+
+    def rebuild_db(self, hwid):
+        db = norlog_datafiles.db_path(self.dev_dir(hwid))
+        if QtWidgets.QMessageBox.question(
+                self, 'Rebuild database', f'Delete {db} and convert all data files of {hwid} again?') != \
+                QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        rv = getattr(self.widget.device, 'redvypr', None)
+        name = self.datasources.pop(hwid, None)
+        if rv is not None and name and hasattr(rv, 'remove_datasource'):
+            rv.remove_datasource(name)          # closes the reader of the file
+        self.worker.add('convert', self.dev_dir(hwid), sn=(self.device_entry(hwid) or {}).get('sn') or None,
+                        rebuild=True)
+        self.update_run_state(self.running)
+
+    # --- card: list and download (thread of the gateway) ---
+
+    def selected_target(self):
+        """(hwid, device key) of the device selected in the tree, key None if it is not in the device list."""
+        sel = self.selection()
+        if len(sel) != 1:
+            return None, None
+        hwid = next(iter(sel))
+        d = self.device_entry(hwid)
+        return hwid, (self.widget.device_key(d) if d else None)
+
+    def _target_or_warn(self):
+        hwid, key = self.selected_target()
+        if hwid is None:
+            self.say('Select one device (or files of one device)')
+        elif key is None:
+            self.say(f'{hwid} is not in the device list (not reachable)')
+        return hwid, key
+
+    def list_card(self):
+        hwid, key = self._target_or_warn()
+        if key is None:
+            return
+        self.sync_target = hwid
+        self.widget.device.thread_command('data_list', {'target': key, 'folder': self.archive_root()})
+        self.status.setText(f'{hwid}: reading the file list of the card ...')
+        self.update_run_state(self.running)
+
+    def download(self):
+        hwid, key = self._target_or_warn()
+        if key is None:
+            return
+        names = self.selection()[hwid]
+        args = {'target': key, 'folder': self.archive_root()}
+        if names:
+            args['stems'] = sorted({norlog_archive.file_stem(n) for n in names})
+            args['reload'] = [n for n, e in self.card.get(hwid, {}).items()
+                              if e['state'] == 'mismatch' and norlog_archive.file_stem(n) in args['stems']]
+        self.sync_target = hwid
+        self.widget.device.thread_command('data_sync', args)
+        self.status.setText(f'{hwid}: download ...')
+        self.progress.setValue(0)
+        self.update_run_state(self.running)
+
+    def cancel(self):
+        if self.sync_target is not None:
+            self.widget.device.thread_command('sync_cancel', {})
+        self.worker.cancel()
+
+    def hwid_of_target(self, target):
+        d = next((d for d in getattr(self.widget, 'current_devices', [])
+                  if self.widget.device_key(d) == target), None)
+        return (d or {}).get('hwid')
+
+    def on_sync_message(self, packetid, data):
+        """Messages of 'data_list'/'data_sync' (also those started in the device settings)."""
+        hwid = self.hwid_of_target(data.get('target')) or (pathlib.Path(data['dir']).name if data.get('dir')
+                                                           else None)
+        if packetid == 'sync_progress' and hwid == self.sync_target:
+            total = data.get('total') or 0
+            self.progress.setValue(int(100 * data.get('done', 0) / total) if total else 0)
+            if data.get('file'):
+                self.status.setText(f"{hwid}: {data['file']} ({data.get('rate', 0):.1f} KB/s)")
+        elif packetid == 'sync_list':
+            if data.get('ok'):
+                hwid = data.get('hwid') or hwid
+                self.card[hwid] = {f['name']: f for f in data.get('files', [])}
+                self.say(f"{hwid}: {len([n for n in self.card[hwid] if n.endswith('.cbor')])} data file(s) on "
+                         f"the card")
+            else:
+                self.say(f"{hwid or data.get('target')}: list FAILED: {data.get('message', '')}")
+            self._sync_finished(hwid)
+        elif packetid == 'sync_result':
+            self.say(f"{hwid or data.get('target')}: download {'OK' if data.get('ok') else 'ERROR'}: "
+                     f"{data.get('message', '')}")
+            if data.get('dir'):
+                hwid = pathlib.Path(data['dir']).name
+                for f in data.get('files') or []:
+                    e = self.card.get(hwid, {}).get(f['name'])
+                    if e is not None and f.get('new') == e.get('card'):
+                        e['state'] = 'unchanged'
+                self.worker.add('scan', data['dir'])
+                self.worker.add('convert', data['dir'], sn=(self.device_entry(hwid) or {}).get('sn') or None)
+            self._sync_finished(hwid)
+
+    def _sync_finished(self, hwid):
+        if self.sync_target is not None and (hwid is None or hwid == self.sync_target):
+            self.sync_target = None
+            self.status.setText('')
+            self.progress.setValue(100)
+        self.update_run_state(self.running)
+        self.rebuild_tree()
+
+    # --- overview ---
+
+    def show_summary(self):
+        self.table_rows = []
+        for hwid, names in sorted(self.selection().items()):
+            info = self.infos.get(hwid)
+            if info is None:
+                continue
+            for r in norlog_datafiles.summary_rows(info, names):
+                self.table_rows.append((hwid, r))
+        self.table.setRowCount(len(self.table_rows))
+        for row, (hwid, r) in enumerate(self.table_rows):
+            tag = LiveDataTab.TAG_OF_TYPE.get(r['base'])
+            addr = RedvyprAddress(datakey=r['key'] or None, deviceid=hwid,
+                                  packetid=r['type']).to_address_string()
+            cells = [self.device_label(hwid).split(' ')[0] or '', hwid, r['type'],
+                     f"{r['base']} ({tag})" if tag else r['base'], r['key'], r['unit'], str(r['count']),
+                     self.fmt_time(r['t_min']), self.fmt_time(r['t_max']), str(r['lost']), str(r['boots']), addr]
+            for col, text in enumerate(cells):
+                item = QtWidgets.QTableWidgetItem(text)
+                if col == self.COLUMNS.index('Value') and not r['numeric']:
+                    item.setForeground(QtGui.QColor('gray'))
+                    item.setToolTip('not a number: cannot be plotted')
+                self.table.setItem(row, col, item)
+        self.table.resizeColumnsToContents()
+
+    def selected_rows(self):
+        return [self.table_rows[r] for r in sorted({i.row() for i in self.table.selectedIndexes()})
+                if r < len(self.table_rows)]
+
+    def table_menu(self, point):
+        item = self.table.itemAt(point)
+        if item is None:
+            return
+        rows = self.selected_rows()
+        lines, missing = [], set()
+        for hwid, r in rows:
+            if not r['numeric'] or not r['key']:
+                continue
+            source = self.datasources.get(hwid)
+            if source is None:
+                missing.add(hwid)
+                continue
+            addr = RedvyprAddress(datakey=r['key'], deviceid=hwid, packetid=r['type']).to_address_string()
+            name = f"{self.device_label(hwid).split(' ')[0] or hwid} {r['key']} (SD)"
+            lines.append(plot_line(addr, name, r['unit'], source))
+        menu = QtWidgets.QMenu(self)
+        add_plot_actions(menu, self.widget, lines, self.say,
+                         disabled_text=' (database not ready yet)' if missing else ' (no numeric value selected)')
+        menu.addSeparator()
+        types = {}
+        for hwid, r in rows:
+            types.setdefault(hwid, {})[r['type']] = r['count']
+        n = sum(sum(t.values()) for t in types.values())
+        act = menu.addAction(f'Publish packets ({n} packet(s) of {sum(len(t) for t in types.values())} type(s)) ...',
+                             lambda: self.publish(types))
+        act.setEnabled(bool(n) and self.running)
+        if not self.running:
+            act.setToolTip('the gateway device must be running')
+        menu.addSeparator()
+        clipboard = QtWidgets.QApplication.clipboard()
+        addr = self.table.item(item.row(), self.COLUMNS.index('Redvypr address'))
+        if addr is not None:
+            menu.addAction('Copy redvypr address', lambda: clipboard.setText(addr.text()))
+        menu.addAction('Copy cell', lambda: clipboard.setText(item.text()))
+        menu.exec(self.table.viewport().mapToGlobal(point))
+
+    def publish(self, types):
+        """Publish the packets of the selected types (of the selected files) into redvypr."""
+        sel = self.selection()
+        n = sum(sum(t.values()) for t in types.values())
+        if QtWidgets.QMessageBox.question(
+                self, 'Publish packets', f'Publish {n} packet(s) with their measurement time into redvypr '
+                                         f'(e.g. for writers or plots that subscribe to them)?') != \
+                QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        for hwid, t in types.items():
+            self.widget.device.thread_command('publish_archive', {'dir': str(self.dev_dir(hwid)),
+                                                                  'names': sel.get(hwid), 'types': sorted(t)})
+        self.say(f'Publishing {n} packet(s) ...')
+
+    def on_publish_result(self, data):
+        self.say(f"{pathlib.Path(data.get('dir', '')).name}: {'OK' if data.get('ok') else 'ERROR'}: "
+                 f"{data.get('message', '')}")
 
 
 def _sqlite_channel_config(gateway):
@@ -5289,13 +5911,10 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         row.addWidget(browse)
         row.addWidget(open_btn)
         lay.addLayout(row)
-        self.data_publish = QtWidgets.QCheckBox('Publish the downloaded packets (measurement time, e.g. for the '
-                                                'database writers)')
-        self.data_publish.setToolTip('Every packet is published once. Packets written before the clock was set '
-                                     'get their time from the uptime when the clock of their boot is known.')
-        self.data_publish.setChecked(self.cfg.archive_publish)
-        self.data_publish.toggled.connect(lambda v: setattr(self.cfg, 'archive_publish', bool(v)))
-        lay.addWidget(self.data_publish)
+        show = QtWidgets.QPushButton('Show in Datafiles')
+        show.setToolTip('The tab Datafiles of the gateway: overview of the packets, plot, publish')
+        show.clicked.connect(self.show_in_datafiles)
+        row.addWidget(show)
         row = QtWidgets.QHBoxLayout()
         self.data_list_btn = QtWidgets.QPushButton('List files')
         self.data_list_btn.setToolTip('Compare the log files of the SD card with the archive, nothing is '
@@ -5607,25 +6226,14 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
 
     def _register_datasource(self, db_path):
         """The converted database as data source of redvypr (once per file); returns its name."""
-        rv = getattr(self.device, 'redvypr', None)
-        if rv is None or not hasattr(rv, 'add_datasource'):
-            return None
-        try:
-            path = pathlib.Path(db_path).resolve()
-            for d in rv.datasources:
-                if d.dbtype == 'sqlite' and d.filepath and pathlib.Path(d.filepath).resolve() == path:
-                    rv.get_datasource_reader(d.name, refresh=True)   # new datastreams and metadata
-                    return d.name
-            names = {d.name for d in rv.datasources}
-            name, i = path.stem, 2
-            while name in names:
-                name, i = f'{path.stem}_{i}', i + 1
-            rv.add_datasource({'name': name, 'dbtype': 'sqlite', 'filepath': str(path),
-                               'description': 'norlog log files (norlog_convert)'})
-            return name
-        except Exception:
-            logger.info('could not add the database as data source', exc_info=True)
-            return None
+        return register_datasource(getattr(self.device, 'redvypr', None), db_path,
+                                   description='norlog log files (norlog_convert)')
+
+    def show_in_datafiles(self):
+        w = self.widget
+        w.tabs.setCurrentWidget(w.datafiles_tab)
+        w.window().raise_()
+        w.window().activateWindow()
 
     def data_browse(self):
         folder = QtWidgets.QFileDialog.getExistingDirectory(self, 'Archive folder', self.data_folder.text())
@@ -5639,7 +6247,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
 
     def data_sync(self):
         self.cfg.archive_folder = self.data_folder.text().strip() or 'norlog_archive'
-        args = {'target': self.key, 'folder': self.cfg.archive_folder, 'publish': self.data_publish.isChecked(),
+        args = {'target': self.key, 'folder': self.cfg.archive_folder,
                 'newest_first': self.data_order.currentIndex() == 1}
         if self.data_listed:
             stems = [s for s in self.data_stems() if self.data_rows[s].get('sel')]
