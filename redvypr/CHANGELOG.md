@@ -57,6 +57,8 @@ redvypr changelog
 - norlog gateway: "Set clock" sends the uncertainty of the time (round trip of the request) with firmware
   >= 0.4.35 (`ot_cli.time_set(unc_ms=...)`)
 ### Changed
+- norlog gateway: magnetometer calibration: tooltip on the duration/rate, the device stores at most 600 values
+  (firmware >= 0.4.45)
 - norlog gateway: the redvypr address of the live data uses the hardware ID (`<key> @ di:<hwid> and
   i:<type>`) instead of the device name, the same as the data files
 - norlog gateway: "Publish the downloaded packets" removed (`archive_publish` is not used anymore); instead
