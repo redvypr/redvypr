@@ -11,7 +11,9 @@ redvypr changelog
   right click on a device in "Datafiles": "Archive log files on the card" (moves /log to
   /archive/<name>_<date_time> on the card, logging continues), "Delete log files on the card", "Format the card"
   (firmware >= 0.4.44, also over Thread). `ot_cli`: `sd_op_local()`, `sd_op_remote()`, `sd_status_local()`,
-  `sd_status_remote()`
+  `sd_status_remote()`. Progress ("N file(s) deleted ...") in the status line; gives up only after 120 s
+  without progress instead of a fixed 90 s (deleting hundreds of files takes a while). With firmware
+  >= 0.4.46 the shell command on the gateway runs in the background and `norlog sd json` is polled.
 - norlog gateway: tab "Datafiles" (after "Live data"): the archive of the SD card log files, one folder per
   hardware ID. Left the devices and their files ("List card": state on the card, "Download": what is new, also
   only the selected files), right an overview of the packets of the selected devices/files (one row per packet

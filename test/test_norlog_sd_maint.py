@@ -1,6 +1,8 @@
 """
 SD card of a norlog: archive/delete the log files, format (firmware 0.4.44), with a simulated
 norlog shell: 'norlog sd archive|delete|format|json' on the gateway, POST/GET sd on a member.
+Firmware 0.4.44/45 answers the shell command at the end, 0.4.46 at once (state busy, then
+'norlog sd json' with the growing number of deleted files).
 """
 import json
 
@@ -17,9 +19,10 @@ def state(op="", st="idle", rc=0, path="", deleted=0):
 
 
 class FakeCli:
-    def __init__(self, results=("busy", "ok"), local_rc=0):
+    def __init__(self, results=("busy", "ok"), local_rc=0, local_async=None):
         self.results = list(results)    # state of the following GET sd
         self.local_rc = local_rc
+        self.local_async = None if local_async is None else list(local_async)  # 0.4.46: (state, deleted)
         self.sent = []
         self.op = ""
 
@@ -29,8 +32,14 @@ class FakeCli:
             assert prefix == ot_cli.SD_PREFIX
             parts = cmd.split(" ")
             if parts[2] == "json":
+                if self.local_async is not None:
+                    st, n = self.local_async.pop(0)
+                    return json.dumps(state(self.op, st, deleted=n))
                 return json.dumps(state())
             op = parts[2]
+            self.op = op
+            if self.local_async is not None:
+                return "ok " + json.dumps(state(op, "busy"))
             if self.local_rc:
                 return f"err {self.local_rc} " + json.dumps(state(op, "error", self.local_rc))
             return "ok " + json.dumps(state(op, "ok", path="/archive/test_2026-11-05_181500" if op == "archive"
@@ -81,3 +90,24 @@ def test_remote_format_needs_confirm_and_reports_errors():
     with pytest.raises(ot_cli.OtError, match="failed"):
         ot_cli.sd_op_remote(cli, ADDR, "format", poll=0)
     assert cli.post_uri == "sd?op=format&confirm=1"
+
+
+def test_local_async_polls_with_progress():
+    cli = FakeCli(local_async=[("busy", 40), ("busy", 40), ("busy", 300), ("ok", 412)])
+    seen = []
+    st = ot_cli.sd_op_local(cli, "delete", poll=0, progress=lambda s: seen.append(s["deleted"]))
+    assert st["deleted"] == 412 and cli.sent[0] == "norlog sd delete confirm"
+    assert seen == [0, 40, 300]         # only when something moved
+
+
+def test_local_async_gives_up_without_progress():
+    cli = FakeCli(local_async=[("busy", 5)] * 1000)
+    with pytest.raises(TimeoutError, match="no progress"):
+        ot_cli.sd_op_local(cli, "delete", stall=0.05, poll=0.001)
+
+
+def test_remote_progress():
+    cli = FakeCli(results=["busy", "busy", "ok"])
+    seen = []
+    ot_cli.sd_op_remote(cli, ADDR, "format", poll=0, progress=seen.append)
+    assert [s["state"] for s in seen] == ["busy", "busy"]

@@ -1000,44 +1000,71 @@ def sd_status_remote(cli: OtCli, address: str) -> dict:
     return json.loads(coap_request(cli, "get", address, "sd").decode())
 
 
-def sd_op_local(cli: OtCli, op: str, name: str = "", timeout: float = 90.0) -> dict:
+def _sd_wait(status, op, where, stall: float, poll: float, progress=None, first=None) -> dict:
+    """
+    Wait for the end of the SD card operation op: status() returns the state (GET sd). Gives up
+    only when nothing moved (state, number of deleted files) for stall seconds; deleting
+    hundreds of files can take minutes. progress(state) is called with every new state.
+    """
+    st = first
+    last = None
+    moved = time.monotonic()
+    while True:
+        if st is not None and st.get("op") == op:
+            if st.get("state") == "ok":
+                return st
+            if st.get("state") == "error":
+                raise OtError(f"SD card {op} on {where} failed ({st.get('rc')})")
+            key = (st.get("state"), st.get("deleted"))
+            if key != last:
+                last = key
+                moved = time.monotonic()
+                if progress is not None:
+                    progress(st)
+        if time.monotonic() - moved > stall:
+            raise TimeoutError(f"SD card {op} on {where}: no progress for {stall:.0f} s")
+        time.sleep(poll)
+        try:
+            st = status()
+        except (OtError, TimeoutError, ValueError):
+            st = None               # radio loss or a garbled line, try again
+
+
+def sd_op_local(cli: OtCli, op: str, name: str = "", stall: float = 120.0, poll: float = 1.0,
+                progress=None) -> dict:
     """
     Archive ('/log' -> '/archive/<name>_<date_time>'), delete the log files or format the SD card of
     the gateway; returns the state (like GET sd: 'path' = archive folder, 'deleted' = files).
+    Firmware >= 0.4.46 starts it in the background and 'norlog sd json' is polled; 0.4.44/45
+    answer only at the end.
     """
     import json
     _sd_check(op, name)
     cmd = {"archive": f"norlog sd archive {name}".strip(), "delete": "norlog sd delete confirm",
            "format": "norlog sd format confirm"}[op]
     try:
-        rest = cli.shell_query(cmd, SD_PREFIX, timeout=timeout)
+        rest = cli.shell_query(cmd, SD_PREFIX, timeout=stall)
     except TimeoutError:
-        raise OtError(f"no answer to '{cmd}' (firmware >= 0.4.44 required)") from None
+        raise OtError(f"no answer to '{cmd}' within {stall:.0f} s (firmware >= 0.4.44 required; with "
+                      f"0.4.44/45 deleting many files can take longer, see 'norlog sd json')") from None
     if rest.startswith("err"):
         parts = rest.split(" ", 2)
         raise OtError(f"SD card {op} failed ({parts[1] if len(parts) > 1 else '?'})")
-    return json.loads(rest[3:]) if rest.startswith("ok ") else {}
+    first = json.loads(rest[3:]) if rest.startswith("ok ") else {}
+    first.setdefault("op", op)
+    if first.get("state") not in ("busy", "error"):
+        first["state"] = "ok"       # 0.4.44/45: the answer comes at the end
+    return _sd_wait(lambda: sd_status_local(cli), op, "the gateway", stall, poll, progress, first)
 
 
-def sd_op_remote(cli: OtCli, address: str, op: str, name: str = "", timeout: float = 90.0,
-                 poll: float = 2.0) -> dict:
+def sd_op_remote(cli: OtCli, address: str, op: str, name: str = "", stall: float = 120.0,
+                 poll: float = 2.0, progress=None) -> dict:
     """The same on a member (POST sd?op=..., runs in the background), waits for the result of GET sd."""
     _sd_check(op, name)
-    uri = f"sd?op={op}" + (f"&name={name}" if op == "archive" and name else "") + \
-        ("&confirm=1" if op in ("delete", "format") else "")
+    uri = f"sd?op={op}" + (f"&name={name}" if op == "archive" and name else "") +         ("&confirm=1" if op in ("delete", "format") else "")
     coap_request(cli, "post", address, uri)
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        time.sleep(poll)
-        try:
-            st = sd_status_remote(cli, address)
-        except (OtError, TimeoutError, ValueError):
-            continue                # radio loss or card busy, try again
-        if st.get("op") == op and st.get("state") == "ok":
-            return st
-        if st.get("op") == op and st.get("state") == "error":
-            raise OtError(f"SD card {op} on {address} failed ({st.get('rc')})")
-    raise TimeoutError(f"SD card {op} on {address}: no result within {timeout:.0f} s")
+    return _sd_wait(lambda: sd_status_remote(cli, address), op, address, stall, poll, progress,
+                    {"op": op, "state": "busy", "deleted": None})
 
 
 FW_PREFIX = "#NLW "

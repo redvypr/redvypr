@@ -890,12 +890,18 @@ class _Gateway:
 
     def sd_op(self, target, op, name=''):
         """Archive/delete the log files or format the SD card of a device: answer 'sd_op_result'."""
+        def progress(st):
+            n = st.get('deleted')
+            self.to_gui('sd_op_progress', {'target': target, 'op': op,
+                                           'message': f'{n} file(s) deleted ...' if op == 'delete' and n
+                                           else f'{op} running ...'})
+
         try:
             address = self.target_address(target)
             if address is None:
-                st = ot_cli.sd_op_local(self.cli, op, name)
+                st = ot_cli.sd_op_local(self.cli, op, name, progress=progress)
             else:
-                st = ot_cli.sd_op_remote(self.cli, address, op, name)
+                st = ot_cli.sd_op_remote(self.cli, address, op, name, progress=progress)
         except (ot_cli.OtError, TimeoutError, ValueError) as exc:
             self.to_gui('sd_op_result', {'target': target, 'op': op, 'ok': False, 'message': str(exc)})
             return
@@ -2520,7 +2526,15 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 if packetid == 'sync_result':
                     self.console_text.appendPlainText(
                         f"[data {data.get('target')}] {'OK' if data.get('ok') else 'ERROR'}: {data.get('message', '')}")
+            elif packetid == 'sd_op_progress':
+                hwid = self.datafiles_tab.hwid_of_target(data.get('target')) or data.get('target')
+                self.datafiles_tab.status.setText(f"{hwid}: SD card {data.get('message', '')}")
+                dlg = self.settings_dialogs.get(data.get('target'))
+                if dlg is not None:
+                    dlg.data_status.setStyleSheet('')
+                    dlg.data_status.setText(f"SD card {data.get('message', '')}")
             elif packetid == 'sd_op_result':
+                self.datafiles_tab.status.setText('')
                 self.datafiles_tab.on_sd_op_result(data)
                 dlg = self.settings_dialogs.get(data.get('target'))
                 if dlg is not None:
