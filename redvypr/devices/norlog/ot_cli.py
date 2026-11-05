@@ -976,6 +976,70 @@ def fw_install_remote(cli: OtCli, address: str) -> dict:
 
 # --- Loader update (firmware >= 0.4.42): /fw/loader.bin -> slot1, no reboot ---
 
+# --- SD card: archive/delete the log files, format (firmware >= 0.4.44) ---
+
+SD_PREFIX = "#NLS "
+SD_OPS = ("archive", "delete", "format")
+SD_NAME_RE = re.compile(r"[A-Za-z0-9_-]{0,32}")
+
+
+def _sd_check(op, name):
+    if op not in SD_OPS:
+        raise ValueError(f"unknown SD card operation {op!r} ({', '.join(SD_OPS)})")
+    if op == "archive" and not SD_NAME_RE.fullmatch(name or ""):
+        raise ValueError(f"invalid archive name {name!r} (letters, digits, - and _, at most 32)")
+
+
+def sd_status_local(cli: OtCli, timeout: float = 4.0) -> dict:
+    """State of the SD card of the gateway ('norlog sd json', like CoAP GET sd)."""
+    return _shell_json(cli, "norlog sd json", SD_PREFIX, timeout=timeout, min_fw="0.4.44")
+
+
+def sd_status_remote(cli: OtCli, address: str) -> dict:
+    import json
+    return json.loads(coap_request(cli, "get", address, "sd").decode())
+
+
+def sd_op_local(cli: OtCli, op: str, name: str = "", timeout: float = 90.0) -> dict:
+    """
+    Archive ('/log' -> '/archive/<name>_<date_time>'), delete the log files or format the SD card of
+    the gateway; returns the state (like GET sd: 'path' = archive folder, 'deleted' = files).
+    """
+    import json
+    _sd_check(op, name)
+    cmd = {"archive": f"norlog sd archive {name}".strip(), "delete": "norlog sd delete confirm",
+           "format": "norlog sd format confirm"}[op]
+    try:
+        rest = cli.shell_query(cmd, SD_PREFIX, timeout=timeout)
+    except TimeoutError:
+        raise OtError(f"no answer to '{cmd}' (firmware >= 0.4.44 required)") from None
+    if rest.startswith("err"):
+        parts = rest.split(" ", 2)
+        raise OtError(f"SD card {op} failed ({parts[1] if len(parts) > 1 else '?'})")
+    return json.loads(rest[3:]) if rest.startswith("ok ") else {}
+
+
+def sd_op_remote(cli: OtCli, address: str, op: str, name: str = "", timeout: float = 90.0,
+                 poll: float = 2.0) -> dict:
+    """The same on a member (POST sd?op=..., runs in the background), waits for the result of GET sd."""
+    _sd_check(op, name)
+    uri = f"sd?op={op}" + (f"&name={name}" if op == "archive" and name else "") + \
+        ("&confirm=1" if op in ("delete", "format") else "")
+    coap_request(cli, "post", address, uri)
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        time.sleep(poll)
+        try:
+            st = sd_status_remote(cli, address)
+        except (OtError, TimeoutError, ValueError):
+            continue                # radio loss or card busy, try again
+        if st.get("op") == op and st.get("state") == "ok":
+            return st
+        if st.get("op") == op and st.get("state") == "error":
+            raise OtError(f"SD card {op} on {address} failed ({st.get('rc')})")
+    raise TimeoutError(f"SD card {op} on {address}: no result within {timeout:.0f} s")
+
+
 FW_PREFIX = "#NLW "
 LOADER_FILE = "/fw/loader.bin"
 
@@ -1002,7 +1066,6 @@ def fw_loader_remote(cli: OtCli, address: str, timeout: float = 60.0, poll: floa
     POST fw?op=loader on a member (it writes its /fw/loader.bin to slot1 in the
     background) and wait until GET fw reports the result; returns the status.
     """
-    import json
     coap_request(cli, "post", address, "fw?op=loader")
     end = time.monotonic() + timeout
     while time.monotonic() < end:

@@ -439,6 +439,8 @@ class _Gateway:
             elif command == 'data_sync':
                 self.data_sync(args.get('target', 'gateway'), args.get('folder') or self.config.archive_folder,
                                args.get('stems'), bool(args.get('newest_first', False)), args.get('reload'))
+            elif command == 'sd_op':
+                self.sd_op(args.get('target', 'gateway'), args.get('op', ''), args.get('name', ''))
             elif command == 'publish_archive':
                 self.publish_archive(args.get('dir', ''), args.get('names'), args.get('types'))
             elif command == 'data_list':
@@ -885,6 +887,23 @@ class _Gateway:
             text += f"; {len(errors)} file(s) FAILED (loaded again at the next download): " + "; ".join(errors)
         self.to_gui('sync_result', {'target': target, 'ok': not res['cancelled'] and not errors, 'message': text,
                                     'files': res['files'], 'dir': res['dir']})
+
+    def sd_op(self, target, op, name=''):
+        """Archive/delete the log files or format the SD card of a device: answer 'sd_op_result'."""
+        try:
+            address = self.target_address(target)
+            if address is None:
+                st = ot_cli.sd_op_local(self.cli, op, name)
+            else:
+                st = ot_cli.sd_op_remote(self.cli, address, op, name)
+        except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+            self.to_gui('sd_op_result', {'target': target, 'op': op, 'ok': False, 'message': str(exc)})
+            return
+        text = {'archive': f"log files moved to {st.get('path', '?')} on the card",
+                'delete': f"{st.get('deleted', '?')} log file(s) deleted on the card",
+                'format': 'card formatted'}.get(op, op)
+        self.to_gui('sd_op_result', {'target': target, 'op': op, 'ok': True, 'status': st,
+                                     'message': f"{text}, logging: {'on' if st.get('logging') else 'off'}"})
 
     def publish_archive(self, dev_dir, names=None, types=None):
         """Publish the packets of the archive files (all or names) of the types (None = all): 'archive_publish_result'."""
@@ -2496,6 +2515,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 if packetid == 'sync_result':
                     self.console_text.appendPlainText(
                         f"[data {data.get('target')}] {'OK' if data.get('ok') else 'ERROR'}: {data.get('message', '')}")
+            elif packetid == 'sd_op_result':
+                self.datafiles_tab.on_sd_op_result(data)
+                self.console_text.appendPlainText(f"[sd {data.get('op')} {data.get('target')}] "
+                                                  f"{'OK' if data.get('ok') else 'ERROR'}: {data.get('message', '')}")
             elif packetid == 'archive_publish_result':
                 self.datafiles_tab.on_publish_result(data)
                 self.console_text.appendPlainText(f"[publish {data.get('dir')}] {'OK' if data.get('ok') else 'ERROR'}: "
@@ -3552,7 +3575,52 @@ class DatafilesTab(QtWidgets.QWidget):
         act.setEnabled(self.download_btn.isEnabled())
         menu.addSeparator()
         menu.addAction('Rebuild database', lambda: self.rebuild_db(hwid))
+        menu.addSeparator()
+        on_card = self.running and self.device_entry(hwid) is not None
+        for text, op in (('Archive log files on the card ...', 'archive'),
+                         ('Delete log files on the card ...', 'delete'), ('Format the card ...', 'format')):
+            act = menu.addAction(text, lambda o=op: self.sd_op(hwid, o))
+            act.setEnabled(on_card)
         menu.exec(self.tree.viewport().mapToGlobal(point))
+
+    def sd_op(self, hwid, op):
+        """Archive/delete the log files or format the SD card of the device (firmware >= 0.4.44)."""
+        d = self.device_entry(hwid)
+        if d is None:
+            return
+        label = f"{hwid} {self.device_label(hwid)}".strip()
+        name = ''
+        if op == 'archive':
+            name, ok = QtWidgets.QInputDialog.getText(
+                self, 'Archive log files', f'{label}: move /log on the card to /archive/<name>_<date_time>; '
+                                           f'logging continues in a new /log.\nName (letters, digits, - and _, '
+                                           f'at most 32):', text='log')
+            if not ok:
+                return
+            name = name.strip()
+            if not ot_cli.SD_NAME_RE.fullmatch(name):
+                self.say(f'invalid archive name {name!r}')
+                return
+        else:
+            text = (f'{label}: delete ALL log files in /log on the card (data, index, catalog)? Files not '
+                    f'downloaded are lost.' if op == 'delete' else
+                    f'{label}: FORMAT the SD card? Everything on it is lost (log files, archive, firmware '
+                    f'files, autoexec.txt).')
+            if QtWidgets.QMessageBox.warning(
+                    self, 'SD card', text, QtWidgets.QMessageBox.StandardButton.Yes |
+                    QtWidgets.QMessageBox.StandardButton.Cancel,
+                    QtWidgets.QMessageBox.StandardButton.Cancel) != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+        self.widget.device.thread_command('sd_op', {'target': self.widget.device_key(d), 'op': op, 'name': name})
+        self.say(f'{hwid}: SD card {op} ...')
+
+    def on_sd_op_result(self, data):
+        hwid = self.hwid_of_target(data.get('target')) or data.get('target')
+        self.say(f"{hwid}: SD card {data.get('op')} {'OK' if data.get('ok') else 'ERROR'}: "
+                 f"{data.get('message', '')}")
+        if data.get('ok'):
+            self.card.pop(hwid, None)       # the files on the card changed: "List card" again
+            self.rebuild_tree()
 
     def rebuild_db(self, hwid):
         db = norlog_datafiles.db_path(self.dev_dir(hwid))
