@@ -1475,7 +1475,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         scroll = DeviceSettingsDialog._scrollable
         self.live_dialog = None
         self.device_live_dialogs = {}   # hwid -> LiveSubscriptionsDialog of one device
-        self.tabs.addTab(scroll(self._build_devices_tab()), 'Devices')
+        # Devices without scroll area: the table scrolls itself (horizontal scrollbar always visible)
+        self.tabs.addTab(self._build_devices_tab(), 'Devices')
         # Live data over Thread ('#NLD')
         self.live_tab = LiveDataTab(self)
         self.tabs.addTab(self.live_tab, 'Live data')
