@@ -142,6 +142,15 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                                                             'info (battery, temperature, '
                                                                             'firmware) of all devices, '
                                                                             '0 = only on request')
+    extinfo_interval_s: float = pydantic.Field(default=60.0, ge=0, description='Interval for reading the '
+                                                                               'rarely changing part of the '
+                                                                               'device info of the members '
+                                                                               '(CoAP extinfo: firmware, '
+                                                                               'serial number, temperatures, '
+                                                                               'radio, ...; firmware >= '
+                                                                               '0.4.50), read together with '
+                                                                               'the info; 0 = only once and '
+                                                                               'on "Read device info"')
     coap_timeout_s: int = pydantic.Field(default=5, ge=1, le=60, description='Timeout of a CoAP request to a '
                                                                              'Thread member')
     console_show_commands: bool = pydantic.Field(default=False, description='Show the traffic of internal '
@@ -254,6 +263,7 @@ class _Gateway:
         self.info_times = {}            # 'gateway' or RLOC16 -> time.time() of the last successful read
         self.info_mid = {}              # ... middle of that request (device time of the info ~ this PC time)
         self.info_rtt = {}              # ... duration of that request [s]
+        self.ext_infos = {}             # hwid -> (CoAP /extinfo dict, time.time()), firmware >= 0.4.50
         self.props_cache = {}           # hwid (or 'gateway'/RLOC16) -> user properties (sn, desc, loc, ...)
         self.last_status = {}
         self.meta_sent = {}             # hwid -> device metadata sent last
@@ -655,8 +665,12 @@ class _Gateway:
             node = node[part]
         return True
 
-    def publish_info(self, entry):
-        """Publish the info of one device (entry of build_devices()) as packet 'info'."""
+    def publish_info(self, entry, values=None):
+        """
+        Publish the info of one device (entry of build_devices()) as packet 'info'.
+        values: the values read now (only the compact info if the extinfo was not read again,
+        so older extinfo values are not published as new); default: the whole info.
+        """
         info = entry.get('info') or {}
         hwid = info.get('hwid')
         if not hwid or (len(info) == 1 and 'error' in info):
@@ -667,7 +681,7 @@ class _Gateway:
 
         t = self.info_times.get(key) or time.time()
         data = create_redvypr_dict(device=device, deviceid=hwid, packetid='info', sensorid=sn, tu=t)
-        data.update({k: v for k, v in info.items() if k != 'error'})
+        data.update({k: v for k, v in (info if values is None else values).items() if k != 'error'})
         data['link'] = {f: entry.get(f) for f in self.LINK_FIELDS}
         data['t'] = t
 
@@ -732,6 +746,7 @@ class _Gateway:
         wanted = None if targets == 'all' else set(targets)
         done, failed = 0, 0
         read_ok = set()     # keys whose info was read now -> 'info' packets
+        values_now = {}     # key -> values read now, if not the whole info (compact info only)
 
         if wanted is None or 'gateway' in wanted:
             try:
@@ -755,7 +770,12 @@ class _Gateway:
                     addr = ot_cli.rloc_address(prefix, rloc)
                     t_request = time.time()
                     payload = ot_cli.coap_get(self.cli, addr, 'info', timeout=self.config.coap_timeout_s)
-                    self.store_info(rloc, json.loads(payload.decode(errors='replace')), t_request=t_request)
+                    info = json.loads(payload.decode(errors='replace'))
+                    if device_list.is_compact_info(info):
+                        info, fresh = self.with_extinfo(addr, info, force=report or refresh_props)
+                        if not fresh:
+                            values_now[rloc] = json.loads(payload.decode(errors='replace'))
+                    self.store_info(rloc, info, t_request=t_request)
                     self.update_props(rloc, addr, refresh_props)
                     read_ok.add(rloc)
                     done += 1
@@ -768,10 +788,34 @@ class _Gateway:
         for d in devices:
             key = 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16')
             if key in read_ok:
-                self.publish_info(d)
+                self.publish_info(d, values_now.get(key))
         self.live_apply_seen(devices, read_ok)
         if report:
             self.result('read_device_info', failed == 0, f'Device info read: {done} ok, {failed} failed')
+
+    def with_extinfo(self, addr, info, force=False):
+        """
+        Compact info (firmware >= 0.4.50): add the rarely changing part (CoAP /extinfo), read
+        again after extinfo_interval_s (0: only once) or with force, otherwise from the cache.
+        Returns (merged info, True if the extinfo was read now). On an error the cached
+        extinfo (if any) is used; the compact info alone is still valid.
+        """
+        hwid = info.get('hwid')
+        cached, t_ext = self.ext_infos.get(hwid, (None, 0.0))
+        interval = self.config.extinfo_interval_s
+        due = cached is None or force or (interval > 0 and time.time() - t_ext >= interval)
+        fresh = False
+        if due:
+            try:
+                payload = ot_cli.coap_get(self.cli, addr, 'extinfo', timeout=self.config.coap_timeout_s)
+                ext = json.loads(payload.decode(errors='replace'))
+                if ext.get('hwid') == hwid:
+                    cached = ext
+                    self.ext_infos[hwid] = (ext, time.time())
+                    fresh = True
+            except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+                logger.debug(f'extinfo of {addr}: {exc}')
+        return device_list.merge_info(cached, info), fresh
 
     # --- firmware update ---
 

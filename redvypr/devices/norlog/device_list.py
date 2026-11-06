@@ -42,6 +42,29 @@ def norm_rloc16(value):
     return f"0x{m.group(2).lower()}" if m else str(value).strip()
 
 
+def is_compact_info(info):
+    """
+    True for the compact CoAP 'info' of firmware >= 0.4.50 (the rest is in 'extinfo');
+    older firmware and 'norlog info json' send everything (with 'firmware').
+    """
+    return bool(info) and 'firmware' not in info and 'device' not in info
+
+
+def merge_info(ext, base):
+    """
+    Combine 'extinfo' and 'info' (firmware >= 0.4.50) into one info dict as older firmware
+    sends it. Objects split over both parts (battery, gnss, thread) are merged one level
+    deep; the values of base (read more often) win.
+    """
+    merged = dict(ext or {})
+    for k, v in (base or {}).items():
+        if isinstance(v, dict) and isinstance(merged.get(k), dict):
+            merged[k] = {**merged[k], **v}
+        else:
+            merged[k] = v
+    return merged
+
+
 def _int(value):
     try:
         return int(str(value).strip())

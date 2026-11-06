@@ -7,6 +7,10 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- norlog gateway: compact CoAP 'info' of firmware >= 0.4.50 plus 'extinfo' (firmware, serial number,
+  temperatures, radio, ...), read only every extinfo_interval_s (default 60 s, also on "Read device
+  info") and merged into one info dict. 'info' packets carry the extinfo values only when they were
+  read again. Older firmware still sends everything in 'info'.
 - norlog: CoAP answers of 'norlog coap local' (firmware >= 0.4.48) are read: binary payload as
   base64 with CRC-32 (a garbled line is detected and read again). Not used for requests yet.
 - norlog gateway, button "SD card" in the tab "Datafiles" and in the "Files" tab of the device settings, also
