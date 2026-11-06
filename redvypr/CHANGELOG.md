@@ -7,6 +7,11 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- norlog: new module `links` with `SerialLink` (shell of the norlog at a serial port) and `ThreadLink`
+  (CoAP to a member through the shell of a gateway), first step of several serial ports per gateway
+  device (design note doc/design_verbindungen.md of the firmware). The gateway thread reaches every
+  norlog through a link (`_Gateway.link(target)` instead of `target_address`); the `*_local` /
+  `*_remote` pairs of `ot_cli` are methods of the links. No change of the behaviour.
 - norlog gateway: compact CoAP 'info' of firmware >= 0.4.50 plus 'extinfo' (firmware, serial number,
   temperatures, radio, ...), read only every extinfo_interval_s (default 60 s, also on "Read device
   info") and merged into one info dict. 'info' packets carry the extinfo values only when they were

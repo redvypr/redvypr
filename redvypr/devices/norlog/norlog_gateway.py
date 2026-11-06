@@ -72,7 +72,6 @@ import collections
 import datetime
 import copy
 import binascii
-import json
 import logging
 import pathlib
 import queue
@@ -82,7 +81,6 @@ import sys
 import threading
 import time
 import typing
-import zlib
 
 import pydantic
 import qtawesome
@@ -99,6 +97,7 @@ from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 
 from . import adc_sequence
 from . import device_list
+from . import links
 from . import mag_calibration
 from . import norlog_archive
 from . import norlog_cbor
@@ -748,40 +747,26 @@ class _Gateway:
         read_ok = set()     # keys whose info was read now -> 'info' packets
         values_now = {}     # key -> values read now, if not the whole info (compact info only)
 
-        if wanted is None or 'gateway' in wanted:
+        keys = ['gateway'] if wanted is None or 'gateway' in wanted else []
+        keys += [d['rloc16'] for d in self.build_devices()[1:]
+                 if d.get('rloc16') and (wanted is None or d['rloc16'] in wanted)]
+        for key in keys:
             try:
+                link = self.link(key)
                 t_request = time.time()
-                self.store_info('gateway', json.loads(self.cli.shell_query('norlog info json', '#NLI ')),
-                                t_request=t_request)
-                self.update_props('gateway', None, refresh_props)
-                read_ok.add('gateway')
+                info = link.info(timeout=10.0 if link.is_local else self.config.coap_timeout_s)
+                if device_list.is_compact_info(info):
+                    merged, fresh = self.with_extinfo(link, info, force=report or refresh_props)
+                    if not fresh:
+                        values_now[key] = info
+                    info = merged
+                self.store_info(key, info, t_request=t_request)
+                self.update_props(key, link.address, refresh_props)
+                read_ok.add(key)
                 done += 1
-            except (TimeoutError, ValueError) as exc:
-                self.store_info('gateway', error=str(exc))
+            except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+                self.store_info(key, error=str(exc))
                 failed += 1
-
-        members = [d for d in self.build_devices()[1:]
-                   if d.get('rloc16') and (wanted is None or d['rloc16'] in wanted)]
-        if members:
-            prefix = ot_cli.mesh_local_prefix(self.cli, self.last_status.get('ipaddr'))
-            for d in members:
-                rloc = d['rloc16']
-                try:
-                    addr = ot_cli.rloc_address(prefix, rloc)
-                    t_request = time.time()
-                    payload = ot_cli.coap_get(self.cli, addr, 'info', timeout=self.config.coap_timeout_s)
-                    info = json.loads(payload.decode(errors='replace'))
-                    if device_list.is_compact_info(info):
-                        info, fresh = self.with_extinfo(addr, info, force=report or refresh_props)
-                        if not fresh:
-                            values_now[rloc] = json.loads(payload.decode(errors='replace'))
-                    self.store_info(rloc, info, t_request=t_request)
-                    self.update_props(rloc, addr, refresh_props)
-                    read_ok.add(rloc)
-                    done += 1
-                except (ot_cli.OtError, TimeoutError, ValueError) as exc:
-                    self.store_info(rloc, error=str(exc))
-                    failed += 1
 
         devices = self.build_devices()
         self.to_gui('thread_status', {'thread_status': self.last_status, 'devices': devices})
@@ -793,7 +778,7 @@ class _Gateway:
         if report:
             self.result('read_device_info', failed == 0, f'Device info read: {done} ok, {failed} failed')
 
-    def with_extinfo(self, addr, info, force=False):
+    def with_extinfo(self, link, info, force=False):
         """
         Compact info (firmware >= 0.4.50): add the rarely changing part (CoAP /extinfo), read
         again after extinfo_interval_s (0: only once) or with force, otherwise from the cache.
@@ -807,14 +792,13 @@ class _Gateway:
         fresh = False
         if due:
             try:
-                payload = ot_cli.coap_get(self.cli, addr, 'extinfo', timeout=self.config.coap_timeout_s)
-                ext = json.loads(payload.decode(errors='replace'))
+                ext = link.extinfo(timeout=self.config.coap_timeout_s)
                 if ext.get('hwid') == hwid:
                     cached = ext
                     self.ext_infos[hwid] = (ext, time.time())
                     fresh = True
             except (ot_cli.OtError, TimeoutError, ValueError) as exc:
-                logger.debug(f'extinfo of {addr}: {exc}')
+                logger.debug(f'extinfo of {link}: {exc}')
         return device_list.merge_info(cached, info), fresh
 
     # --- firmware update ---
@@ -823,18 +807,25 @@ class _Gateway:
 
     GATEWAY_XFER_FILE = '/fw/push.bin'      # firmware image on the gateway's SD card for 'fs push'
 
-    def target_address(self, target):
-        """None for the gateway itself, otherwise the RLOC address of the member (target = RLOC16)."""
+    def gateway_link(self):
+        """The shell of the gateway norlog at the serial port."""
+        return links.SerialLink(self.cli, self.config.comport)
+
+    def link(self, target):
+        """
+        Way to a norlog: the gateway itself (target 'gateway' or empty) over its shell,
+        a member (target = RLOC16) over CoAP through the gateway (RLOC address).
+        """
         if not target or target == 'gateway':
-            return None
+            return self.gateway_link()
         if not self.last_status:
             self.read_status()
         prefix = ot_cli.mesh_local_prefix(self.cli, self.last_status.get('ipaddr'))
-        return ot_cli.rloc_address(prefix, target)
+        return links.ThreadLink(self.gateway_link(), ot_cli.rloc_address(prefix, target))
 
     def gateway_has_sd(self):
         try:
-            ot_cli.fs_local(self.cli, 'stat', '/')
+            self.gateway_link().fs_op('stat', '/')
             return True
         except (ot_cli.OtError, TimeoutError):
             return False
@@ -844,10 +835,6 @@ class _Gateway:
 
     def fs_result(self, target, op, ok, message='', **extra):
         self.to_gui('fs_result', {'target': target, 'op': op, 'ok': ok, 'message': message, **extra})
-
-    def fs_write_direct(self, address, data, remote, progress=None):
-        """Write a file to a member block by block through the gateway (no SD card on the gateway)."""
-        return ot_cli.fs_upload(self.cli, address, data, remote, progress, resume=True)
 
     # --- data download (archive of the SD card log files) ---
 
@@ -879,7 +866,8 @@ class _Gateway:
 
         try:
             hwid = (self.infos.get(target or 'gateway') or {}).get('hwid')
-            remote = norlog_archive.RemoteFiles(self.cli, self.target_address(target))
+            link = self.link(target)
+            remote = norlog_archive.RemoteFiles(link.cli, link.address)
             res = norlog_archive.plan(remote, folder, hwid=hwid, verify=verify,
                                       progress=progress if verify else None,
                                       cancel=lambda: self.check_commands(during_flash=True),
@@ -907,9 +895,9 @@ class _Gateway:
                                               'rate': meter.update(done)})
 
         try:
-            address = self.target_address(target)
+            link = self.link(target)
             hwid = (self.infos.get(target or 'gateway') or {}).get('hwid')
-            remote = norlog_archive.RemoteFiles(self.cli, address)
+            remote = norlog_archive.RemoteFiles(link.cli, link.address)
             res = norlog_archive.sync(remote, folder, hwid=hwid, progress=progress,
                                       cancel=lambda: self.check_commands(during_flash=True),
                                       stems=set(stems) if stems is not None else None, newest_first=newest_first,
@@ -941,11 +929,7 @@ class _Gateway:
                                            else f'{op} running ...'})
 
         try:
-            address = self.target_address(target)
-            if address is None:
-                st = ot_cli.sd_op_local(self.cli, op, name, progress=progress)
-            else:
-                st = ot_cli.sd_op_remote(self.cli, address, op, name, progress=progress)
+            st = self.link(target).sd_op(op, name, progress=progress)
         except (ot_cli.OtError, TimeoutError, ValueError) as exc:
             self.to_gui('sd_op_result', {'target': target, 'op': op, 'ok': False, 'message': str(exc)})
             return
@@ -981,13 +965,13 @@ class _Gateway:
     TIME_MAX_OFFSET_S = 0.5     # set again if the clock is further off after setting
     TIME_ATTEMPTS = 3
 
-    def measure_time(self, address):
+    def measure_time(self, link):
         """
         Read the clock of a device and compare it with this PC: offset = device time
         minus PC time in the middle of the request, error bound = half the round trip.
         """
         t1 = time.time()
-        st = ot_cli.time_get(self.cli, address, timeout=self.config.coap_timeout_s)
+        st = ot_cli.time_get(link.cli, link.address, timeout=self.config.coap_timeout_s)
         t4 = time.time()
         return st, st['t'] / 1000.0 - (t1 + t4) / 2, (t4 - t1) / 2
 
@@ -996,8 +980,8 @@ class _Gateway:
     def mag_read(self, target):
         result = {'target': target, 'ok': False}
         try:
-            result.update(ok=True, mag=ot_cli.mag_read(self.cli, self.target_address(target),
-                                                       timeout=self.config.coap_timeout_s))
+            link = self.link(target)
+            result.update(ok=True, mag=ot_cli.mag_read(link.cli, link.address, timeout=self.config.coap_timeout_s))
         except (ot_cli.OtError, TimeoutError, ValueError) as exc:
             result['message'] = str(exc)
         self.to_gui('mag_result', result)
@@ -1012,18 +996,19 @@ class _Gateway:
         points = []
         result = {'target': target, 'ok': False, 'points': points}
         try:
-            address = self.target_address(target)
-            st = ot_cli.mag_cal_start(self.cli, dur, hz, address, timeout=self.config.coap_timeout_s)
+            link = self.link(target)
+            cli, address = link.cli, link.address
+            st = ot_cli.mag_cal_start(cli, dur, hz, address, timeout=self.config.coap_timeout_s)
             stopped = False
             deadline = time.monotonic() + dur + 30
             while True:
                 if self.check_commands(during_flash=True) and not stopped:
-                    ot_cli.mag_cal_stop(self.cli, address, timeout=self.config.coap_timeout_s)
+                    ot_cli.mag_cal_stop(cli, address, timeout=self.config.coap_timeout_s)
                     stopped = True
                 time.sleep(1.0)
-                st = ot_cli.mag_cal_status(self.cli, address, timeout=self.config.coap_timeout_s)
+                st = ot_cli.mag_cal_status(cli, address, timeout=self.config.coap_timeout_s)
                 while len(points) < st.get('n', 0):
-                    chunk = ot_cli.mag_cal_data(self.cli, len(points), address=address,
+                    chunk = ot_cli.mag_cal_data(cli, len(points), address=address,
                                                 timeout=self.config.coap_timeout_s)
                     if not chunk:
                         break
@@ -1041,8 +1026,8 @@ class _Gateway:
     def cal_get(self, target):
         result = {'target': target, 'ok': False}
         try:
-            result.update(ok=True, cal=ot_cli.cal_get(self.cli, self.target_address(target),
-                                                      timeout=self.config.coap_timeout_s))
+            link = self.link(target)
+            result.update(ok=True, cal=ot_cli.cal_get(link.cli, link.address, timeout=self.config.coap_timeout_s))
         except (ot_cli.OtError, TimeoutError, ValueError) as exc:
             result['message'] = str(exc)
         self.to_gui('cal_result', result)
@@ -1050,10 +1035,11 @@ class _Gateway:
     def cal_set(self, target, name, text):
         result = {'target': target, 'ok': False}
         try:
-            address = self.target_address(target)
-            ot_cli.cal_set(self.cli, name, text, address, timeout=self.config.coap_timeout_s)
+            link = self.link(target)
+            cli, address = link.cli, link.address
+            ot_cli.cal_set(cli, name, text, address, timeout=self.config.coap_timeout_s)
             result.update(ok=True, message=f"calibration {name} {'stored' if text else 'deleted'}",
-                          cal=ot_cli.cal_get(self.cli, address, timeout=self.config.coap_timeout_s))
+                          cal=ot_cli.cal_get(cli, address, timeout=self.config.coap_timeout_s))
         except (ot_cli.OtError, TimeoutError, ValueError) as exc:
             result['message'] = str(exc)
         self.to_gui('cal_result', result)
@@ -1068,24 +1054,25 @@ class _Gateway:
         """
         result = {'target': target, 'sensor': sensor, 'op': op, 'ok': False}
         try:
-            address = self.target_address(target)
+            link = self.link(target)
+            cli, address = link.cli, link.address
             timeout = self.config.coap_timeout_s
             if op == 'set':
-                ot_cli.adc_set(self.cli, sensor, text, address, timeout=timeout)
-                st = ot_cli.adc_get(self.cli, sensor, address, timeout=timeout)
+                ot_cli.adc_set(cli, sensor, text, address, timeout=timeout)
+                st = ot_cli.adc_get(cli, sensor, address, timeout=timeout)
                 result['message'] = f"{sensor}: configuration {st.get('cfg_id')} stored"
             elif op == 'read':
-                st = ot_cli.adc_measure(self.cli, sensor, address, timeout=timeout)
+                st = ot_cli.adc_measure(cli, sensor, address, timeout=timeout)
                 result['message'] = f"{sensor}: measured"
             elif op == 'cal_set':
-                ot_cli.cal_set(self.cli, f"{sensor}.{channel}", text, address, timeout=timeout)
-                st = ot_cli.adc_get(self.cli, sensor, address, timeout=timeout)
+                ot_cli.cal_set(cli, f"{sensor}.{channel}", text, address, timeout=timeout)
+                st = ot_cli.adc_get(cli, sensor, address, timeout=timeout)
                 result['message'] = f"{sensor}.{channel}: calibration {'stored' if text else 'deleted'}"
             else:
-                st = ot_cli.adc_get(self.cli, sensor, address, timeout=timeout)
+                st = ot_cli.adc_get(cli, sensor, address, timeout=timeout)
             if op in ('get', 'cal_set'):
                 try:
-                    result['cals'] = ot_cli.adc_calibrations(self.cli, sensor, address, timeout=timeout)
+                    result['cals'] = ot_cli.adc_calibrations(cli, sensor, address, timeout=timeout)
                 except (ot_cli.OtError, TimeoutError, ValueError) as exc:
                     result['cal_message'] = f"calibrations not readable: {exc}"
             result.update(ok=True, adc=st)
@@ -1099,13 +1086,14 @@ class _Gateway:
         """op 'get': status, 'set': store values {'on', 'baud', 'raw'} and read back. Answer 'nmea_result'."""
         result = {'target': target, 'op': op, 'ok': False}
         try:
-            address = self.target_address(target)
+            link = self.link(target)
+            cli, address = link.cli, link.address
             timeout = self.config.coap_timeout_s
             if op == 'set':
-                ot_cli.nmea_set(self.cli, values.get('on'), values.get('baud'), values.get('raw'), address,
+                ot_cli.nmea_set(cli, values.get('on'), values.get('baud'), values.get('raw'), address,
                                 timeout=timeout)
                 result['message'] = 'NMEA settings stored'
-            result.update(ok=True, nmea=ot_cli.nmea_get(self.cli, address, timeout=timeout))
+            result.update(ok=True, nmea=ot_cli.nmea_get(cli, address, timeout=timeout))
         except (ot_cli.OtError, TimeoutError, ValueError) as exc:
             result['message'] = str(exc)
         self.to_gui('nmea_result', result)
@@ -1125,7 +1113,8 @@ class _Gateway:
             keys = [k for k in keys if k in set(targets)]
         for key in keys:
             try:
-                status = ot_cli.pub_status(self.cli, self.target_address(key), timeout=self.config.coap_timeout_s)
+                link = self.link(key)
+                status = ot_cli.pub_status(link.cli, link.address, timeout=self.config.coap_timeout_s)
                 self._live_result(key, True, status=status)
             except (ot_cli.OtError, TimeoutError, ValueError) as exc:
                 self._live_result(key, False, str(exc))
@@ -1133,7 +1122,8 @@ class _Gateway:
     def live_pub_set(self, target, text, hwid=None):
         """Set 'norlog pub <text>' on a device (stored there)."""
         try:
-            status = ot_cli.pub_set(self.cli, text, self.target_address(target), timeout=self.config.coap_timeout_s)
+            link = self.link(target)
+            status = ot_cli.pub_set(link.cli, text, link.address, timeout=self.config.coap_timeout_s)
             hwid = hwid or (self.infos.get(target) or {}).get('hwid')
             if hwid:
                 self.live_applied.add(hwid)
@@ -1173,8 +1163,9 @@ class _Gateway:
         """Set the transmit power at the antenna of the gateway or a member (stored on the device)."""
         result = {'target': target, 'ok': False}
         try:
-            address = self.target_address(target)
-            st = ot_cli.radio_set(self.cli, int(dbm), address, timeout=self.config.coap_timeout_s)
+            link = self.link(target)
+            cli, address = link.cli, link.address
+            st = ot_cli.radio_set(cli, int(dbm), address, timeout=self.config.coap_timeout_s)
             result.update(ok=True, radio=st,
                           message=f"{st.get('antenna_dbm')} dBm at the antenna (set {st.get('txpower_dbm')} dBm, "
                                   f"nRF {st.get('soc_dbm')} dBm + PA {st.get('pa_gain_db')} dB), stored")
@@ -1204,8 +1195,8 @@ class _Gateway:
         for target in targets:
             result = {'target': target, 'ok': False}
             try:
-                address = self.target_address(target)
-                st0, off0, err0 = self.measure_time(address)
+                link = self.link(target)
+                st0, off0, err0 = self.measure_time(link)
                 # uncertainty of the time sent: the delay of the request, at most its round trip
                 # (2 x half round trip of the measurement); firmware >= 0.4.35 (offset_ms in the status)
                 unc_ms = round(2000 * err0) if 'offset_ms' in st0 else None
@@ -1217,8 +1208,8 @@ class _Gateway:
                     skipped += 1
                 else:
                     for attempt in range(1, self.TIME_ATTEMPTS + 1):
-                        ot_cli.time_set(self.cli, address, timeout=self.config.coap_timeout_s, unc_ms=unc_ms)
-                        st, off, err = self.measure_time(address)
+                        ot_cli.time_set(link.cli, link.address, timeout=self.config.coap_timeout_s, unc_ms=unc_ms)
+                        st, off, err = self.measure_time(link)
                         if abs(off) <= self.TIME_MAX_OFFSET_S:
                             break
                     result.update(ok=abs(off) <= self.TIME_MAX_OFFSET_S, attempts=attempt,
@@ -1244,10 +1235,11 @@ class _Gateway:
     def props_command(self, target, values):
         """Set (values: {name: text}, '' deletes) and/or read the user properties of a device."""
         try:
-            address = self.target_address(target)
+            link = self.link(target)
+            cli, address = link.cli, link.address
             for name, value in values.items():
-                ot_cli.props_write(self.cli, name, value, address)
-            props = ot_cli.props_read(self.cli, address)
+                ot_cli.props_write(cli, name, value, address)
+            props = ot_cli.props_read(cli, address)
             self.props_cache[self._props_key(target)] = props
             self.to_gui('props', {'target': target, 'ok': True, 'props': props,
                                    'message': f'{len(values)} propert(y/ies) saved' if values else 'read'})
@@ -1262,37 +1254,31 @@ class _Gateway:
         """File operations on the SD card of the gateway (target 'gateway') or of a member."""
         target, op, path = args.get('target', 'gateway'), args.get('op', ''), args.get('path', '/')
         try:
-            address = self.target_address(target)
+            link = self.link(target)
+            cli, address = link.cli, link.address
             if op == 'ls':
-                self.fs_result(target, op, True, path=path, entries=ot_cli.fs_list(self.cli, address, path))
+                self.fs_result(target, op, True, path=path, entries=ot_cli.fs_list(cli, address, path))
             elif op in ('stat', 'mkdir', 'rm'):
-                res = (ot_cli.fs_local(self.cli, op, ot_cli._fs_quote(path)) if address is None
-                       else ot_cli.fs_remote(self.cli, address, op, path))
+                res = link.fs_op(op, path)
                 self.fs_result(target, op, True, f'{op} {path}', path=path, data=res)
             elif op == 'crc':
-                crc, size = ot_cli.fs_crc(self.cli, address, path)
+                crc, size = ot_cli.fs_crc(cli, address, path)
                 self.fs_result(target, op, True, f'{path}: {size} bytes, CRC32 0x{crc:08x}', path=path,
                                crc=crc, size=size)
             elif op == 'upload':
                 data = pathlib.Path(args['local']).read_bytes()
                 progress = lambda d, t: self.fs_progress(target, op, d, t)
-                if address is None:
-                    skipped = ot_cli.fs_upload_local(self.cli, data, path, progress)
-                elif self.gateway_has_sd():
-                    tmp = '/fw/xfer.tmp'
-                    ot_cli.fs_local(self.cli, 'mkdir', '/fw')
-                    ot_cli.fs_upload_local(self.cli, data, tmp, lambda d, t: progress(d // 2, t))
-                    res = ot_cli.fs_push(self.cli, address, tmp, path,
-                                         lambda d, t: progress(len(data) // 2 + d // 2, len(data)), resume=True)
-                    skipped = res.get('resumed', 0)
-                    ot_cli.fs_local(self.cli, 'rm', tmp)
+                if link.is_local or not link.has_gateway_sd():
+                    skipped = link.fs_upload(data, path, progress)
                 else:
-                    skipped = self.fs_write_direct(address, data, path, progress)
+                    res = link.push(data, path, lambda phase, d, t: progress(
+                        d // 2 if phase != 'thread' else len(data) // 2 + d // 2, len(data)))
+                    skipped = res.get('resumed', 0)
                 note = f', resumed after {skipped} bytes' if skipped else ''
                 self.fs_result(target, op, True, f'{len(data)} bytes written to {path} (CRC verified{note})',
                                path=path)
             elif op == 'download':
-                data = ot_cli.fs_download(self.cli, address, path,
+                data = ot_cli.fs_download(cli, address, path,
                                           lambda d, t: self.fs_progress(target, op, d, t))
                 pathlib.Path(args['local']).write_bytes(data)
                 self.fs_result(target, op, True, f'{len(data)} bytes saved to {args["local"]}', path=path)
@@ -1316,25 +1302,25 @@ class _Gateway:
                 raise ValueError(f'Image not found: {image_path}')
             image = path.read_bytes()
             info = smp_serial.image_info(image)
-            address = self.target_address(target)
-            if address is None:
+            link = self.link(target)
+            if link.is_local:
                 raise ValueError('Use the serial flash for the gateway')
             status('start', f'{path.name}: version {info["version"]}, {len(image) // 1024} KB -> {target}')
 
-            fw = ot_cli.fw_status_remote(self.cli, address)
+            fw = link.fw_status()
             status('loader', f'Node runs {fw.get("running", "?")}, auto update {"on" if fw.get("auto") else "off"}')
             if fw.get('running') == info['version'] and not force:
                 status('done', 'This version is already installed, nothing to do', 100)
                 return
 
-            self.image_to_node(address, image, '/fw/update.bin', status)
-            ot_cli.fw_install_remote(self.cli, address)
+            self.image_to_node(link, image, '/fw/update.bin', status)
+            link.fw_install()
             status('done', 'Installing: the node reboots into its loader and starts the new firmware '
                            '(about 1 min, check the version with "Read info")', 100)
         except (ot_cli.OtError, TimeoutError, OSError, ValueError, smp_serial.SmpError) as exc:
             status('error', str(exc))
 
-    def image_to_node(self, address, image, remote, status, share_to=95):
+    def image_to_node(self, link, image, remote, status, share_to=95):
         """
         Write an image to a file on a member: through the gateway's SD card and
         'norlog fs push', or chunk by chunk without gateway SD card.
@@ -1357,25 +1343,24 @@ class _Gateway:
                     status('upload', text, pct)
             return cb
 
-        if self.gateway_has_sd():
-            ot_cli.fs_local(self.cli, 'mkdir', '/fw')
-            try:
-                crc, size = ot_cli.fs_crc(self.cli, None, self.GATEWAY_XFER_FILE)
-            except ot_cli.OtError:
-                crc, size = None, None
-            if size == len(image) and crc == zlib.crc32(image):
-                status('upload', 'Image already on the gateway SD card', to_gw)
-            else:
-                ot_cli.fs_upload_local(self.cli, image, self.GATEWAY_XFER_FILE,
-                                       progress(0, to_gw, 'PC -> gateway SD'))
-            res = ot_cli.fs_push(self.cli, address, self.GATEWAY_XFER_FILE, remote,
-                                 progress(to_gw, share_to, 'Gateway -> node over Thread'), resume=True)
+        if link.has_gateway_sd():
+            to_gateway = progress(0, to_gw, 'PC -> gateway SD')
+            over_thread = progress(to_gw, share_to, 'Gateway -> node over Thread')
+            def cb(phase, done, total):
+                if phase == 'cached':
+                    status('upload', 'Image already on the gateway SD card', to_gw)
+                elif phase == 'gateway':
+                    to_gateway(done, total)
+                else:
+                    over_thread(done, total)
+
+            res = link.push(image, remote, cb, tmp=self.GATEWAY_XFER_FILE, keep=True)
             resumed = f', resumed after {res["resumed"] // 1024} KB' if res.get('resumed') else ''
             status('upload', f'Node has the image ({res.get("seconds", "?")} s, CRC {res.get("crc")}'
                              f'{resumed})', share_to)
         else:
             status('upload', 'Gateway without SD card: sending directly (slower)', 0)
-            self.fs_write_direct(address, image, remote, progress(0, share_to, 'PC -> node over Thread'))
+            link.fs_upload(image, remote, progress(0, share_to, 'PC -> node over Thread'))
 
     LOADER_SLOT_SIZE = 144 * 1024     # slot1 (norlog_flash_layout.dtsi)
 
@@ -1401,27 +1386,25 @@ class _Gateway:
                                  f'build/norlog_loader/zephyr/zephyr.signed.bin?')
             status('start', f'Loader {path.name}: version {info["version"]}, {len(image) // 1024} KB -> {target}')
 
-            address = self.target_address(target)
-            if address is None:
-                fw = ot_cli.fw_status_local(self.cli)
+            link = self.link(target)
+            fw = link.fw_status()
+            if link.is_local:
                 status('loader', f'Gateway loader {fw.get("loader") or "?"}')
                 if not self.gateway_has_sd():
                     raise ValueError('The gateway has no SD card mounted')
-                ot_cli.fs_local(self.cli, 'mkdir', '/fw')
-                ot_cli.fs_upload_local(self.cli, image, ot_cli.LOADER_FILE,
-                                       lambda d, t: status('upload', f'PC -> gateway SD: {d // 1024}/'
-                                                                     f'{t // 1024} KB', 80 * d // max(t, 1)))
+                link.fs_op('mkdir', '/fw')
+                link.fs_upload(image, ot_cli.LOADER_FILE,
+                               lambda d, t: status('upload', f'PC -> gateway SD: {d // 1024}/'
+                                                             f'{t // 1024} KB', 80 * d // max(t, 1)))
                 status('upload', 'Writing the loader to slot1 ...', 85)
-                fw = ot_cli.fw_loader_local(self.cli)
             else:
-                fw = ot_cli.fw_status_remote(self.cli, address)
                 if 'loader' not in fw:
                     raise ValueError(f'{target} runs {fw.get("running", "?")}: firmware >= 0.4.42 '
                                      f'required to install the loader')
                 status('loader', f'Node loader {fw.get("loader") or "?"}')
-                self.image_to_node(address, image, ot_cli.LOADER_FILE, status, share_to=85)
+                self.image_to_node(link, image, ot_cli.LOADER_FILE, status, share_to=85)
                 status('upload', 'Writing the loader to slot1 ...', 90)
-                fw = ot_cli.fw_loader_remote(self.cli, address)
+            fw = link.fw_loader()
             same = fw.get('loader_state') == 'same'
             status('done', f'Loader {fw.get("loader") or info["version"]} '
                            f'{"was already installed" if same else "installed and verified"}', 100)

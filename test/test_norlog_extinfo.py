@@ -7,8 +7,10 @@ import queue
 import time
 
 from redvypr.devices.norlog import device_list
+from redvypr.devices.norlog import links
 from redvypr.devices.norlog import norlog_gateway as ng
 
+LINK = links.ThreadLink(links.SerialLink(None, "COM1"), "fd00::1")
 BASE = {"hwid": "AA", "uptime_s": 42, "time": "2026-11-06T17:51:19.196Z",
         "battery": {"mv": 4213, "soc": 85, "charging": False},
         "gnss": {"fix": 1, "used": 12},
@@ -59,29 +61,29 @@ def make_gateway(monkeypatch, answers):
 
 def test_extinfo_read_once_then_cached(monkeypatch):
     gw = make_gateway(monkeypatch, [EXT])
-    info, fresh = gw.with_extinfo("fd00::1", BASE)
+    info, fresh = gw.with_extinfo(LINK, BASE)
     assert fresh and info["sn"] == "003" and gw.requests == ["extinfo"]
-    info, fresh = gw.with_extinfo("fd00::1", BASE)
+    info, fresh = gw.with_extinfo(LINK, BASE)
     assert not fresh and info["sn"] == "003" and gw.requests == ["extinfo"]
 
 
 def test_extinfo_again_after_interval_or_force(monkeypatch):
     gw = make_gateway(monkeypatch, [EXT, {**EXT, "sn": "004"}, {**EXT, "sn": "005"}])
-    gw.with_extinfo("fd00::1", BASE)
+    gw.with_extinfo(LINK, BASE)
     ext, t = gw.ext_infos["AA"]
     gw.ext_infos["AA"] = (ext, time.time() - 61)
-    assert gw.with_extinfo("fd00::1", BASE)[0]["sn"] == "004"
-    assert gw.with_extinfo("fd00::1", BASE, force=True)[0]["sn"] == "005"
+    assert gw.with_extinfo(LINK, BASE)[0]["sn"] == "004"
+    assert gw.with_extinfo(LINK, BASE, force=True)[0]["sn"] == "005"
 
 
 def test_extinfo_error_keeps_cache(monkeypatch):
     gw = make_gateway(monkeypatch, [EXT, TimeoutError("no answer")])
-    gw.with_extinfo("fd00::1", BASE)
-    info, fresh = gw.with_extinfo("fd00::1", BASE, force=True)
+    gw.with_extinfo(LINK, BASE)
+    info, fresh = gw.with_extinfo(LINK, BASE, force=True)
     assert not fresh and info["sn"] == "003"
 
 
 def test_extinfo_of_another_device_is_ignored(monkeypatch):
     gw = make_gateway(monkeypatch, [{**EXT, "hwid": "BB"}])
-    info, fresh = gw.with_extinfo("fd00::1", BASE)
+    info, fresh = gw.with_extinfo(LINK, BASE)
     assert not fresh and info == BASE
