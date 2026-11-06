@@ -3339,7 +3339,9 @@ class DatafilesTab(QtWidgets.QWidget):
     TREE_COLUMNS = ['Device / file', 'Size', 'Packets', 'From', 'To', 'Card', 'Database']
     COLUMNS = ['Device', 'HW ID', 'Type', 'CBOR type', 'Value', 'Unit', 'Packets', 'From', 'To', 'Lost', 'Boots',
                'Redvypr address']
-    CARD_TEXT = {'unchanged': 'loaded', 'grown': 'grown on card', 'new': 'only on card', 'mismatch': 'DIFFERENT'}
+    CARD_TEXT = {'unchanged': 'loaded', 'grown': 'grown on card', 'new': 'only on card', 'mismatch': 'DIFFERENT',
+                 'loading': 'loading ...', 'fetched': 'loaded'}
+    # 'loading'/'fetched': set during a download from its progress, confirmed by the result
 
     def __init__(self, widget):
         super().__init__()
@@ -3350,6 +3352,7 @@ class DatafilesTab(QtWidgets.QWidget):
         self.db_state = {}          # hwid -> text of the database column
         self.datasources = {}       # hwid -> name of the data source of its database
         self.sync_target = None     # hwid of the running download/list
+        self.sync_file = None       # file being downloaded (progress)
         self.worker = DatafilesWorker()     # no parent: stopped at aboutToQuit, not deleted by Qt
         self.worker.progress.connect(self.on_worker_progress)
         self.worker.job_done.connect(self.on_worker_done)
@@ -3590,7 +3593,7 @@ class DatafilesTab(QtWidgets.QWidget):
             dev.setText(3, self.fmt_time(min(t_all)) if t_all else '')
             dev.setText(4, self.fmt_time(max(t_all)) if t_all else '')
             if card:
-                todo = sum(1 for e in card.values() if e['state'] != 'unchanged')
+                todo = sum(1 for e in card.values() if e['state'] not in ('unchanged', 'fetched'))
                 dev.setText(5, f'{todo} file(s) to load' if todo else 'all loaded')
             self.tree.addTopLevelItem(dev)
             dev.setExpanded(('dev', hwid) in expanded)
@@ -3743,11 +3746,15 @@ class DatafilesTab(QtWidgets.QWidget):
         """Messages of 'data_list'/'data_sync' (also those started in the device settings)."""
         hwid = self.hwid_of_target(data.get('target')) or (pathlib.Path(data['dir']).name if data.get('dir')
                                                            else None)
-        if packetid == 'sync_progress' and hwid == self.sync_target:
-            total = data.get('total') or 0
-            self.progress.setValue(int(100 * data.get('done', 0) / total) if total else 0)
-            if data.get('file'):
-                self.status.setText(f"{hwid}: {data['file']} ({data.get('rate', 0):.1f} KB/s)")
+        if packetid == 'sync_progress':
+            if hwid == self.sync_target:
+                total = data.get('total') or 0
+                self.progress.setValue(int(100 * data.get('done', 0) / total) if total else 0)
+                if data.get('file'):
+                    self.status.setText(f"{hwid}: {data['file']} ({data.get('rate', 0):.1f} KB/s)")
+            # also a download started in the device settings
+            if hwid and not data.get('catalog') and not data.get('verify'):
+                self._track_file(hwid, pathlib.PurePath(data.get('file') or '').name)
         elif packetid == 'sync_list':
             if data.get('ok'):
                 hwid = data.get('hwid') or hwid
@@ -3762,6 +3769,10 @@ class DatafilesTab(QtWidgets.QWidget):
                      f"{data.get('message', '')}")
             if data.get('dir'):
                 hwid = pathlib.Path(data['dir']).name
+                # states shown during the download: the result decides
+                for e in self.card.get(hwid, {}).values():
+                    if e['state'] in ('loading', 'fetched'):
+                        e['state'] = e.pop('before', 'new')
                 for f in data.get('files') or []:
                     e = self.card.get(hwid, {}).get(f['name'])
                     if e is not None and f.get('new') == e.get('card'):
@@ -3770,7 +3781,23 @@ class DatafilesTab(QtWidgets.QWidget):
                 self.worker.add('convert', data['dir'], sn=(self.device_entry(hwid) or {}).get('sn') or None)
             self._sync_finished(hwid)
 
+    def _track_file(self, hwid, name):
+        """Download progress: the previous file is loaded, name is loading (tree updated per file)."""
+        if not name or name == self.sync_file:
+            return
+        card = self.card.get(hwid, {})
+        prev = card.get(self.sync_file)
+        if prev is not None and prev['state'] == 'loading':
+            prev['state'] = 'fetched'
+        e = card.get(name)
+        if e is not None and e['state'] not in ('unchanged', 'loading', 'fetched'):
+            e['before'] = e['state']
+            e['state'] = 'loading'
+        self.sync_file = name
+        self.rebuild_tree()             # also the new file and its size in the archive
+
     def _sync_finished(self, hwid):
+        self.sync_file = None
         if self.sync_target is not None and (hwid is None or hwid == self.sync_target):
             self.sync_target = None
             self.status.setText('')
