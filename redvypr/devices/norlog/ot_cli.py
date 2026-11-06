@@ -187,8 +187,10 @@ def parse_coap_line(rest: str):
     """
     Parse the answer of 'norlog coap get' (without the '#NLC ' prefix):
         ok <addr> <code> txt|hex[+] <payload>
+        ok local <code> b64[+] <base64> <crc32>   ('norlog coap local', firmware >= 0.4.48)
         err <addr> <code|timeout|...> [...]
     Returns (ok, code, payload_bytes, truncated).
+    A b64 payload with a wrong or missing CRC raises ValueError (line garbled, e.g. by a log message).
     """
     parts = rest.split(" ", 4)
     if len(parts) < 3:
@@ -198,7 +200,16 @@ def parse_coap_line(rest: str):
     payload = parts[4] if len(parts) > 4 else ""
     truncated = fmt.endswith("+")
     fmt = fmt.rstrip("+")
-    if fmt == "hex":
+    if fmt == "b64":
+        import base64
+        import zlib
+        fields = payload.split()
+        if len(fields) != 2:
+            raise ValueError(f"b64 CoAP answer without CRC: {rest!r}")
+        data = base64.b64decode(fields[0], validate=True)
+        if int(fields[1], 16) != zlib.crc32(data):
+            raise ValueError("CoAP answer: CRC does not match")
+    elif fmt == "hex":
         data = bytes.fromhex(payload.strip())
     else:
         data = payload.encode()
