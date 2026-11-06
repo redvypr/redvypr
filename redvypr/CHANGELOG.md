@@ -7,6 +7,24 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- norlog gateway: several serial ports in one gateway device (design note doc/design_verbindungen.md of
+  the firmware). The device list is a tree: the serial ports at the top (also while the device is
+  stopped: the ports found, "All serial ports" also those that do not look like a norlog), the members
+  of a Thread network below their gateway. Right click on a port: "Connect" / "Disconnect", role
+  auto (may become the gateway of its network) / gateway (preferred) / node (never the way into the
+  network), remove it from the configuration. The ports are stored in `ports` (found again by their
+  USB serial number under another COM number; ports that are not connected are never opened); an
+  older `comport` becomes the first port with role gateway. Each Thread network (Extended PAN ID) gets
+  one active gateway (role gateway, then leader, router, child; no flapping on a tie); it is the sink
+  of the live data, a former gateway gets `norlog sink off`. A packet received twice (mac, boot,
+  packet_num) is published once. Console and tab "Thread network" (form network, make leader, read
+  dataset, status) work on a chosen port; flash, battery model and USB settings of the settings window
+  go to the port of the device.
+- norlog gateway: devices are named by their hardware ID (before their first info `port:<port>` or
+  `rloc:<RLOC16>@<gateway port>`) instead of "gateway" / RLOC16. Members are addressed over their
+  Mesh-Local EID (firmware >= 0.4.49, `thread.mleid` of the info), which stays the same when the
+  RLOC16 changes; without it over the RLOC address. New module `ports` (port search, matching with the
+  configuration, open port); `device_list.build_devices()` and `choose_gateways()`.
 - norlog: new module `links` with `SerialLink` (shell of the norlog at a serial port) and `ThreadLink`
   (CoAP to a member through the shell of a gateway), first step of several serial ports per gateway
   device (design note doc/design_verbindungen.md of the firmware). The gateway thread reaches every

@@ -1,13 +1,23 @@
 """
 norlog gateway device
 
-A norlog connected via UART acts as the gateway between redvypr and a Thread
-network of norlog sensor nodes. The device
+norlogs connected via UART (one or more serial ports), and the Thread networks of norlog
+sensor nodes behind them. The device
 
-- provides a console to the norlog Zephyr shell,
+- provides a console to the norlog Zephyr shell of each port,
 - forms a Thread network and shows its state (OpenThread CLI, "ot ..."),
-- flashes the gateway firmware over UART (MCUmgr/SMP via the norlog_loader),
+- flashes the firmware over UART (MCUmgr/SMP via the norlog_loader),
 - publishes norlog data packets received from the Thread network.
+
+Serial ports (design note doc/design_verbindungen.md of the firmware): the device list shows the
+serial ports at the top level (found ones, and the configured ports in 'ports', found again by their
+USB serial number), the members of a Thread network below their gateway. A port is opened only when
+it is connected (right click, stored in 'ports'); a foreign device at a port gets no commands. Role
+of a port: 'auto' (may become the gateway of its Thread network), 'gateway' (preferred), 'node'
+(never the way into the network). Each Thread network (Extended PAN ID) has one active gateway
+(device_list.choose_gateways), it is the sink of the live data; a packet received twice (mac, boot,
+packet_num) is published once. The modules: ports (search, open port), links (SerialLink: shell of
+the norlog at a port, ThreadLink: CoAP through a gateway), device_list (entries, keys, gateway).
 
 Live data over Thread (firmware >= 0.4.32): a device sends its logged packets with
 'norlog pub <types> [sinks|<ipv6> ...]', the gateway receives them as sink ('norlog sink on')
@@ -43,8 +53,9 @@ The messages for the GUI of this device (console, command_result,
 thread_status with the device list, flash_status, props, fs_progress,
 fs_result, time_result, sync_progress, sync_result) go through the statusqueue of the device to its widget. They are
 published as well only with the option publish_raw_data (default off), with
-the same header. Messages about a node keep its key ('gateway' or RLOC16) in
-'target'.
+the same header. Messages about a norlog keep its key in 'target': its hardware ID, before its
+first info 'port:<port>' (serial) or 'rloc:<RLOC16>@<gateway port>' (Thread member); 'gateway' in
+a command is the first active gateway.
 
 Data download (tab "Datafiles", or "Data" of the settings window): the log files of the SD card
 are copied 1:1 into <archive_folder>/<hwid>/ (only what is new, see
@@ -105,6 +116,7 @@ from . import norlog_convert
 from . import norlog_datafiles
 from . import ot_cli
 from . import poly_calibration
+from . import ports
 from . import smp_serial
 from .cbor_mini import CBORDecodeError
 
@@ -125,8 +137,27 @@ class DeviceBaseConfig(pydantic.BaseModel):
     gui_tablabel_display: str = 'norlog gateway'
 
 
+class PortConfig(pydantic.BaseModel):
+    """A serial port with a norlog (entry of DeviceCustomConfig.ports)."""
+    port: str = pydantic.Field(default='', description='Name of the serial port (the last one seen)')
+    usb_sn: str = pydantic.Field(default='', description='USB serial number of the port: finds the port again '
+                                                         'under another name (COM number)')
+    hwid: str = pydantic.Field(default='', description='Hardware ID of the norlog at the port (known after the '
+                                                       'first connection)')
+    role: typing.Literal['auto', 'gateway', 'node'] = pydantic.Field(
+        default='auto', description='auto: may become the gateway of its Thread network, gateway: preferred '
+                                    'gateway, node: only addressed directly, never the way into the Thread network')
+    connect: bool = pydantic.Field(default=True, description='Open the port when it is found')
+
+
 class DeviceCustomConfig(RedvyprDeviceCustomConfig):
-    comport: str = pydantic.Field(default='', description='Serial port of the gateway norlog')
+    comport: str = pydantic.Field(default='', description='Not used anymore (one gateway port): taken over into '
+                                                          'ports as role gateway when ports is empty')
+    ports: typing.List[PortConfig] = pydantic.Field(default_factory=list, description='Serial ports with a '
+                                                                                      'norlog (right click in '
+                                                                                      'the device list)')
+    ports_show_all: bool = pydantic.Field(default=True, description='Device list: show also serial ports that do '
+                                                                    'not look like a norlog (not opened)')
     baud: int = pydantic.Field(default=115200, description='Baud rate of the norlog shell UART')
     network_name: str = pydantic.Field(default='NorlogMesh', description='Thread network name')
     channel: int = pydantic.Field(default=18, ge=11, le=26, description='IEEE 802.15.4 channel (11-26)')
@@ -206,6 +237,15 @@ class DeviceCustomConfig(RedvyprDeviceCustomConfig):
                                                                                                 'header)')
 
 
+def configured_ports(cfg):
+    """The serial ports of the configuration; an older one with comport only: that port as gateway."""
+    if cfg.ports:
+        return cfg.ports
+    if cfg.comport:
+        return [PortConfig(port=cfg.comport, role='gateway')]
+    return []
+
+
 # --------------------------------------------------------------------------
 # Device thread
 # --------------------------------------------------------------------------
@@ -241,7 +281,17 @@ class RateMeter:
 
 
 class _Gateway:
-    """State of the running device thread."""
+    """
+    State of the running device thread: the serial ports (ports.Port) and what is known about the
+    norlogs behind them. Devices are named by their key (device_list): the hardware ID, before the
+    first info 'port:<port>' or 'rloc:<RLOC16>@<gateway port>'; 'gateway' (older commands) is the
+    first active gateway.
+    """
+
+    # Data packets seen (mac, boot, packet_num): the same packet received twice (two sinks after a
+    # change of the gateway, two ports) is published once
+    SEEN_PACKETS = 4096
+    PORT_SCAN_S = 3.0
 
     def __init__(self, device_info, pdconfig, dataqueue, datainqueue, statusqueue=None):
         self.device_info = device_info
@@ -250,41 +300,137 @@ class _Gateway:
         self.dataqueue = dataqueue
         self.datainqueue = datainqueue
         self.statusqueue = statusqueue  # messages for the GUI (not published)
-        self.ser = None
-        self.reader = ot_cli.LineReader()
-        self.cli = None
+        self.ports = {}                 # port name -> ports.Port (open or failed)
+        self.port_rows = []             # ports.match(): configured and found ports
+        self.port_configs = {}          # port name -> PortConfig
+        self.t_scan = None
+        self.open_failed = {}           # port name -> time.monotonic() of the last failed open
+        self.port_errors = {}           # port name -> error text of the last failed open
+        self.gateways = {}              # Thread network -> port name of its active gateway
+        self.member_hwid = {}           # (gateway port, RLOC16) -> hardware ID of the member
+        self.devices = []               # last device list (device_list.build_devices)
         self.stop_requested = False
         self.deferred = []              # commands that arrived during a flash, download or file list
         self.npackets = 0
-        self.last_rx = None             # time.monotonic() of the last line from the gateway
-        self.data_sources = {}          # '#NLD' source -> {'last_seen', 'packets', 'mac'}
-        self.infos = {}                 # 'gateway' or RLOC16 -> info dict (norlog info / CoAP /info)
-        self.info_times = {}            # 'gateway' or RLOC16 -> time.time() of the last successful read
+        self.seen_packets = collections.OrderedDict()
+        self.duplicates = 0
+        self.infos = {}                 # key -> info dict (norlog info / CoAP /info)
+        self.info_times = {}            # key -> time.time() of the last successful read
         self.info_mid = {}              # ... middle of that request (device time of the info ~ this PC time)
         self.info_rtt = {}              # ... duration of that request [s]
         self.ext_infos = {}             # hwid -> (CoAP /extinfo dict, time.time()), firmware >= 0.4.50
-        self.props_cache = {}           # hwid (or 'gateway'/RLOC16) -> user properties (sn, desc, loc, ...)
-        self.last_status = {}
+        self.props_cache = {}           # key -> user properties (sn, desc, loc, ...)
         self.meta_sent = {}             # hwid -> device metadata sent last
         self.units_sent = {}            # hwid -> set of keys whose unit was sent
         self.live_applied = set()       # hwids whose live_pub was set in this start
 
+    # --- ports ---
+
+    def open_ports(self):
+        return [p for p in self.ports.values() if p.is_open]
+
+    def primary(self):
+        """First active gateway, else the first open port (target 'gateway' of older commands)."""
+        for name in self.gateways.values():
+            p = self.ports.get(name)
+            if p is not None and p.is_open:
+                return p
+        return next(iter(self.open_ports()), None)
+
+    def port_of(self, target):
+        """Open port of a serial device: target = key, port name or 'gateway'."""
+        if not target or target == 'gateway':
+            port = self.primary()
+        elif target.startswith('port:'):
+            port = self.ports.get(target[5:])
+        else:
+            port = self.ports.get(target) or next((p for p in self.open_ports() if p.hwid == target), None)
+        if port is None or not port.is_open:
+            raise ValueError(f'{target or "gateway"}: no open serial port')
+        return port
+
+    def update_ports(self, force_scan=False):
+        """
+        Search the serial ports (every PORT_SCAN_S), open the configured ones (connect), close the
+        ports no longer wanted or gone. Returns True if something changed.
+        """
+        now = time.monotonic()
+        if not force_scan and self.t_scan is not None and now - self.t_scan < self.PORT_SCAN_S:
+            return False
+        self.t_scan = now
+        try:
+            found = ports.scan()
+        except Exception as exc:     # never stop the thread because of the port search
+            logger.debug(f'Port search failed: {exc}')
+            found = []
+        self.port_rows, self.port_configs = ports.match(configured_ports(self.config), found)
+        present = {r['name'] for r in self.port_rows if r['found'] is not None}
+        changed = False
+        for name, port in list(self.ports.items()):
+            cfg = self.port_configs.get(name)
+            if cfg is None or not cfg.connect or name not in present:
+                port.close()
+                del self.ports[name]
+                self.console(f'[{name}] closed' + ('' if name in present else ' (port gone)'))
+                changed = True
+            else:
+                port.role = cfg.role
+        for name, cfg in self.port_configs.items():
+            if not cfg.connect or name in self.ports or name not in present:
+                continue
+            if now - self.open_failed.get(name, -1e9) < ports.OPEN_RETRY_S:
+                continue
+            port = ports.Port(name, self.config.baud, cfg.role, self.on_port_line)
+            try:
+                port.open()
+            except (serial.SerialException, OSError, ValueError) as exc:
+                self.open_failed[name] = now
+                self.port_errors[name] = str(exc)
+                continue
+            self.open_failed.pop(name, None)
+            self.port_errors.pop(name, None)
+            self.ports[name] = port
+            self.console(f'[{name}] opened with {self.config.baud} baud')
+            changed = True
+            self.connect_port(port)
+        return changed
+
+    def connect_port(self, port):
+        """A port was opened: its info first (hardware ID, serial number), its Thread state."""
+        try:
+            self.query_info([device_list.port_key(port.name)], report=False)
+        except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+            logger.debug(f'{port.name}: info not read: {exc}')
+        cfg = self.port_configs.get(port.name)
+        if cfg is not None and port.hwid and cfg.hwid != port.hwid:
+            cfg.hwid = port.hwid
+            self.to_gui('port_config', {'port': port.name, 'hwid': port.hwid})
+        self.result('connect', True, f'Connected to {port.name}' + (f' ({port.hwid})' if port.hwid else ''))
+
+    def close_ports(self):
+        for port in self.ports.values():
+            port.close()
+
     # --- publishing ---
+
+    def resolve_key(self, target):
+        """Current key of a target ('gateway', port name, temporary key or hwid)."""
+        if not target or target == 'gateway':
+            p = self.primary()
+            return p.key if p is not None else 'gateway'
+        if target.startswith('port:') and target[5:] in self.ports:
+            return self.ports[target[5:]].key
+        return target
 
     def identity(self, target='gateway', hwid=None):
         """
         device, deviceid and sensorid of a norlog for the packet header.
-        target: 'gateway' or RLOC16 (its read info gives the hwid), or hwid directly.
+        target: key of the device (its read info gives the hwid), or hwid directly.
         """
-        key = target or 'gateway'
+        key = hwid or self.resolve_key(target)
         info = self.infos.get(key) or {}
-        if hwid and info.get('hwid') != hwid:
-            # hwid given (e.g. 'mac' of a packet): not the device behind key
-            info = next((i for i in self.infos.values() if i and i.get('hwid') == hwid), {})
-            props = self.props_cache.get(hwid) or {}
-        else:
-            hwid = hwid or info.get('hwid')
-            props = (self.props_cache.get(hwid) if hwid else None) or self.props_cache.get(key) or {}
+        hwid = hwid or info.get('hwid')
+        props = (self.props_cache.get(hwid) if hwid else None) or self.props_cache.get(key) or {}
         sn = props.get('sn') or info.get('sn') or None
         return (f'norlog_{sn}' if sn else 'norlog'), hwid, sn
 
@@ -309,27 +455,42 @@ class _Gateway:
         except queue.Full:
             logger.debug('statusqueue full, GUI message dropped')
 
-    def console(self, line):
-        self.to_gui('console', {'line': line})
+    def console(self, line, port=None):
+        self.to_gui('console', {'line': line, **({'port': port} if port else {})})
 
     def result(self, command, ok, message='', **extra):
         self.to_gui('command_result', {'command': command, 'ok': ok, 'message': message, **extra})
 
     # --- incoming lines ---
 
-    def on_gateway_line(self, line, is_response=False):
-        self.last_rx = time.monotonic()
-        self.on_line(line, is_response)
+    def on_port_line(self, port, line, is_response=False):
+        if line.startswith(DATA_PREFIX):
+            self.handle_data_line(line, port)
+            return
+        if is_response and not self.config.console_show_commands:
+            return
+        self.console(f'[{port.name}] {line}' if len(self.ports) > 1 else line, port=port.name)
 
     def on_line(self, line, is_response=False):
-        if line.startswith(DATA_PREFIX):
-            self.handle_data_line(line)
-            return
+        """Lines of a port that is not managed here (provisioning of a second port)."""
         if is_response and not self.config.console_show_commands:
             return
         self.console(line)
 
-    def handle_data_line(self, line):
+    def is_duplicate(self, pkt):
+        """True if this packet (mac, boot, packet_num) was published already."""
+        if pkt.get('packet_num') is None or not pkt.get('mac'):
+            return False
+        key = (pkt.get('mac'), pkt.get('boot'), pkt.get('packet_num'))
+        if key in self.seen_packets:
+            self.duplicates += 1
+            return True
+        self.seen_packets[key] = None
+        while len(self.seen_packets) > self.SEEN_PACKETS:
+            self.seen_packets.popitem(last=False)
+        return False
+
+    def handle_data_line(self, line, port=None):
         parts = line.split(" ", 2)
         if len(parts) != 3:
             self.console(line)
@@ -342,12 +503,19 @@ class _Gateway:
             return
         if pkt is None:
             return
+        if port is not None:
+            src = port.data_sources.setdefault(source, {'packets': 0})
+            src['packets'] += 1
+            src['last_seen'] = time.time()
+            src['mac'] = pkt.get('mac', '')
+        if self.is_duplicate(pkt):
+            return
         pkt['source'] = source
         t, t_source = norlog_cbor.packet_time(pkt)
         if t is None:
             t, t_source = time.time(), 'received'
         # 'mac' of the CBOR packets is the hwid of the sending norlog
-        device, hwid, sn = self.identity(device_list.norm_rloc16(source), hwid=pkt.get('mac'))
+        device, hwid, sn = self.identity(hwid=pkt.get('mac')) if pkt.get('mac') else self.identity()
         data = create_redvypr_dict(device=device, deviceid=hwid, sensorid=sn,
                                    packetid=pkt.get('packet_type', 'data'), tu=t)
         data.update(pkt)
@@ -355,28 +523,22 @@ class _Gateway:
         data['t_source'] = t_source
         self.dataqueue.put(data)
         self.npackets += 1
+        if port is not None:
+            port.npackets += 1
 
-        src = self.data_sources.setdefault(source, {'packets': 0})
-        src['packets'] += 1
-        src['last_seen'] = time.time()
-        src['mac'] = pkt.get('mac', '')
-
-    # --- serial ---
-
-    def open(self):
-        self.ser = serial.Serial(self.config.comport, self.config.baud, timeout=0.05)
-        self.cli = ot_cli.OtCli(self.ser, self.reader, self.on_gateway_line)
-
-    def close(self):
-        if self.ser is not None:
+    def poll_ports(self):
+        for name, port in list(self.ports.items()):
+            if not port.is_open:
+                continue
             try:
-                self.ser.close()
-            except Exception:
-                pass
-
-    def poll_serial(self):
-        for line in self.reader.drain(self.ser):
-            self.on_gateway_line(line)
+                port.poll()
+            except (serial.SerialException, OSError) as exc:
+                self.result('serial', False, f'{name}: serial port error: {exc}')
+                port.close()
+                del self.ports[name]
+                self.open_failed[name] = time.monotonic()
+                self.port_errors[name] = str(exc)
+                self.publish_devices()
 
     # --- commands ---
 
@@ -422,27 +584,34 @@ class _Gateway:
         try:
             if command == 'config':
                 self.config = DeviceCustomConfig.model_validate(args['config'])
+                if self.update_ports(force_scan=True):
+                    self.read_status()
+                else:
+                    self.publish_devices()
             elif command == 'send':
-                self.ser.write((args.get('text', '') + "\r\n").encode())
-                self.ser.flush()
+                port = self.port_of(args.get('port'))
+                port.ser.write((args.get('text', '') + "\r\n").encode())
+                port.ser.flush()
             elif command == 'ot_status':
                 self.read_status()
             elif command == 'make_leader':
-                self.make_leader()
+                self.make_leader(self.port_of(args.get('port')))
             elif command == 'form_network':
-                ot_cli.form_network(self.cli, network_name=args.get('network_name', ''),
+                port = self.port_of(args.get('port'))
+                ot_cli.form_network(port.cli, network_name=args.get('network_name', ''),
                                     channel=args.get('channel'), panid=args.get('panid', ''),
                                     extpanid=args.get('extpanid', ''), networkkey=args.get('networkkey', ''))
-                self.result(command, True, 'Thread network formed, waiting for leader role')
+                self.result(command, True, f'{port.name}: Thread network formed, waiting for leader role')
                 time.sleep(1.0)
                 self.read_status()
             elif command == 'dataset':
-                tlvs = ot_cli.active_dataset_tlvs(self.cli)
+                tlvs = ot_cli.active_dataset_tlvs(self.port_of(args.get('port')).cli)
                 # Not published as data (contains the network key), only as command result
                 self.result(command, True, 'Active dataset', dataset_tlvs=tlvs)
             elif command == 'read_device_info':
                 self.query_info(args.get('targets', 'all'))
             elif command == 'refresh':
+                self.update_ports(force_scan=True)
                 self.read_status()
                 self.query_info('all', refresh_props=True)
             elif command == 'data_sync':
@@ -490,11 +659,11 @@ class _Gateway:
             elif command == 'live_sink_set':
                 self.live_sink_apply(report=True)
             elif command == 'battery_upload':
-                self.battery_upload(args.get('path', ''))
+                self.battery_upload(args.get('path', ''), args.get('target'))
             elif command == 'provision':
                 self.provision(args.get('port', ''), args.get('dataset', ''))
             elif command == 'flash':
-                self.flash(args.get('image', ''), bool(args.get('force', False)))
+                self.flash(args.get('image', ''), bool(args.get('force', False)), args.get('target'))
             else:
                 # e.g. redvypr's own 'info' broadcast: not for us, ignore quietly
                 logger.debug(f'Ignoring command {command!r}')
@@ -504,11 +673,12 @@ class _Gateway:
             logger.exception(f'Command {command!r} failed')
             self.result(command, False, f'Internal error: {exc!r}')
 
-    def battery_upload(self, path):
-        """Load a battery model (.inc from nPM PowerUP) into the gateway norlog (serial)."""
+    def battery_upload(self, path, target=None):
+        """Load a battery model (.inc from nPM PowerUP) into a norlog at a serial port."""
         p = pathlib.Path(path)
         if not p.is_file():
             raise ValueError(f'Battery model not found: {path}')
+        port = self.port_of(target)
         text = p.read_text(errors='replace')
         last = [0.0]
 
@@ -518,17 +688,18 @@ class _Gateway:
                 self.result('battery_upload', True, f'{p.name}: {done * 100 // total} %',
                             progress=done * 100 // total)
 
-        name = ot_cli.upload_battery_model(self.cli, text, progress=progress)
+        name = ot_cli.upload_battery_model(port.cli, text, progress=progress)
         self.result('battery_upload', True, f'Battery model "{name}" loaded and active (custom)',
                     progress=100, done=True)
-        self.query_info(['gateway'], report=False)
+        self.query_info([port.key], report=False)
 
     def provision(self, port, dataset):
-        """Store the dataset on a node (own port or a second serial port) and start Thread."""
+        """Store the dataset on a node (an open port or another serial port) and start Thread."""
         if not dataset:
             raise ValueError('No dataset available, read it from the gateway first')
-        if not port or port == self.config.comport:
-            node_cli, node_ser, label = self.cli, None, 'this device'
+        own = self.ports.get(port) if port else self.primary()
+        if own is not None and own.is_open:
+            node_cli, node_ser, label = own.cli, None, own.name
         else:
             node_ser = serial.Serial(port, self.config.baud, timeout=0.05)
             label = port
@@ -551,61 +722,128 @@ class _Gateway:
     # Automatic leader role (prefer_leader): at most one attempt in this time [s]
     LEADER_RETRY_S = 600
 
-    def make_leader(self, automatic=False):
-        """Make the gateway the Thread leader (button, or prefer_leader)."""
-        self.t_leader_attempt = time.monotonic()
-        what = 'Gateway is not leader (prefer leader role): ' if automatic else ''
+    def make_leader(self, port, automatic=False):
+        """Make a gateway port the Thread leader (button, or prefer_leader)."""
+        port.t_leader_attempt = time.monotonic()
+        what = f'{port.name} is not leader (prefer leader role): ' if automatic else f'{port.name}: '
         self.result('make_leader', True, what + 'becoming leader, the network is interrupted shortly ...')
-        res = ot_cli.make_leader(self.cli)
+        res = ot_cli.make_leader(port.cli)
         if res['leader']:
-            self.result('make_leader', True, f"Gateway is leader (leader weight {res['leader_weight']}, "
+            self.result('make_leader', True, f"{port.name} is leader (leader weight {res['leader_weight']}, "
                                              f"partition {res['partition_id']})")
         else:
-            self.result('make_leader', False, f"Gateway is not leader yet (state {res['state']!r}), "
+            self.result('make_leader', False, f"{port.name} is not leader yet (state {res['state']!r}), "
                                               f"see 'Read status' later")
         self.read_status(check_leader=False)
 
-    def check_prefer_leader(self, status):
+    def check_prefer_leader(self, port):
         """prefer_leader: leader weight after a restart of the gateway, leader role again."""
+        status = port.status
         if not self.config.prefer_leader or status.get('state') not in ('child', 'router', 'leader'):
             return False
         if status.get('state') in ('router', 'leader') and status.get('leader_weight') is not None \
                 and status['leader_weight'] != ot_cli.LEADER_WEIGHT_PREFERRED:
-            ot_cli.ensure_leader_weight(self.cli)
-            self.result('make_leader', True, f'Leader weight set to {ot_cli.LEADER_WEIGHT_PREFERRED} '
+            ot_cli.ensure_leader_weight(port.cli)
+            self.result('make_leader', True, f'{port.name}: leader weight set to {ot_cli.LEADER_WEIGHT_PREFERRED} '
                                              f'(prefer leader role)')
-        last = getattr(self, 't_leader_attempt', None)
+        last = port.t_leader_attempt
         if status.get('state') != 'leader' and (last is None or time.monotonic() - last >= self.LEADER_RETRY_S):
-            self.make_leader(automatic=True)
+            self.make_leader(port, automatic=True)
             return True
         return False
 
     def read_status(self, check_leader=True):
-        status = ot_cli.read_status(self.cli)
-        status['packets_received'] = self.npackets
-        self.last_status = status
+        """Thread state of all open ports, gateway of each network, device list to the GUI."""
+        for port in self.open_ports():
+            try:
+                port.status = ot_cli.read_status(port.cli)
+            except (ot_cli.OtError, TimeoutError) as exc:
+                logger.debug(f'{port.name}: status not read: {exc}')
+        self.choose_gateways()
         self.publish_devices()
-        if check_leader and self.check_prefer_leader(status):
-            return
+        if check_leader:
+            for name in list(self.gateways.values()):
+                port = self.ports.get(name)
+                if port is not None and port.is_open and self.check_prefer_leader(port):
+                    return
+
+    def choose_gateways(self):
+        """Active gateway of each Thread network; the sink follows a change (live_sink)."""
+        rows = [{'name': p.name, 'role': p.role, 'status': p.status, 'opened': p.opened}
+                for p in self.open_ports()]
+        new = device_list.choose_gateways(rows, self.gateways)
+        old = self.gateways
+        self.gateways = new
+        if new != old:
+            for net, name in new.items():
+                if old.get(net) != name:
+                    self.console(f'[{name}] gateway of the Thread network {net}'
+                                 + (f' (instead of {old[net]})' if old.get(net) else ''))
+            if self.config.live_apply:
+                self.live_sink_apply()
+
+    @property
+    def last_status(self):
+        """Thread status of the first active gateway (older users: one gateway)."""
+        p = self.primary()
+        return p.status if p is not None else {}
 
     def build_devices(self):
-        rx_age = None if self.last_rx is None else time.monotonic() - self.last_rx
-        devices = device_list.build_device_list(self.last_status, gateway_port=self.config.comport,
-                                                serial_rx_age_s=rx_age, data_sources=self.data_sources,
-                                                infos=self.infos)
+        active = set(self.gateways.values())
+        rows = []
+        for r in self.port_rows or [{'name': n, 'config': self.port_configs.get(n), 'found': {}}
+                                    for n in self.ports]:
+            name, cfg, found = r['name'], r['config'], r['found'] or {}
+            port = self.ports.get(name)
+            if port is not None and port.is_open:
+                state = device_list.PORT_OPEN
+            elif name in self.port_errors:
+                state = device_list.PORT_ERROR
+            elif cfg is not None and r['found'] is None:
+                state = device_list.PORT_GONE
+            else:
+                state = device_list.PORT_CLOSED
+            if (cfg is None and state == device_list.PORT_CLOSED and not self.config.ports_show_all
+                    and not ports.looks_like_norlog(found)):
+                continue
+            key = port.key if port is not None else (cfg.hwid if cfg is not None and cfg.hwid else None)
+            rows.append({
+                'name': name, 'state': state, 'key': key,
+                'role': cfg.role if cfg is not None else device_list.PORT_ROLE_AUTO,
+                'description': found.get('description', ''), 'error': self.port_errors.get(name, ''),
+                'active': name in active and port is not None,
+                'status': port.status if port is not None else {},
+                'rx_age_s': port.rx_age() if port is not None else None,
+                'data_sources': port.data_sources if port is not None else None,
+                'member_keys': {rloc: h for (pn, rloc), h in self.member_hwid.items() if pn == name},
+            })
+        devices = device_list.build_devices(rows, infos=self.infos)
         now = time.time()
         for d in devices:
-            key = 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16')
+            key = d['key']
+            d['configured'] = d.get('connection') != device_list.CONNECTION_SERIAL or \
+                d.get('port') in self.port_configs
             if key in self.info_times:
                 d['info_age_s'] = now - self.info_times[key]
                 d['clock_offset_s'] = self._clock_offset(d.get('info'), self.info_mid.get(key, self.info_times[key]))
                 d['clock_tolerance_s'] = self._clock_tolerance(d.get('info'), self.info_rtt.get(key))
-            props = self.props_cache.get(d.get('hwid')) or self.props_cache.get(key) or {}
+            props = self.props_cache.get(key) or {}
             d['props'] = props
             for name in ('sn', 'desc', 'loc'):
                 if props.get(name):
                     d[name] = props[name]
+        self.devices = devices
         return devices
+
+    def entry(self, key):
+        """Entry of the device list (built again if the key is not in it)."""
+        for refresh in (False, True):
+            if refresh or not self.devices:
+                self.build_devices()
+            e = next((d for d in self.devices if d['key'] == key), None)
+            if e is not None:
+                return e
+        return None
 
     @staticmethod
     def _clock_has_ms(info):
@@ -635,14 +873,19 @@ class _Gateway:
             return 2.0
         return 0.25 + (rtt or 0.0) / 2
 
+    def status_payload(self, devices):
+        return {'thread_status': {**self.last_status, 'packets_received': self.npackets}, 'devices': devices,
+                'gateways': dict(self.gateways), 'duplicates': self.duplicates,
+                'port_status': {p.name: {**p.status, 'packets_received': p.npackets} for p in self.open_ports()}}
+
     def publish_devices(self):
-        self.to_gui('thread_status', {'thread_status': self.last_status, 'devices': self.build_devices()})
+        self.to_gui('thread_status', self.status_payload(self.build_devices()))
 
     # --- info packets (one redvypr device per norlog, device = hwid) ---
 
     # Radio link as seen from the gateway (entry of the device list) -> 'link'
     LINK_FIELDS = ('rloc16', 'extaddr', 'connection', 'link', 'thread_role', 'quality', 'rssi_avg',
-                   'rssi_last', 'lq_in', 'lq_out', 'path_cost', 'next_hop', 'age_s')
+                   'rssi_last', 'lq_in', 'lq_out', 'path_cost', 'next_hop', 'age_s', 'port', 'via')
     # Units of the info values, sent once per device as metadata
     INFO_UNITS = {
         "uptime_s": 's', "board_temp_c": 'degC', "nrf_temp_c": 'degC', "gnss['cno']": 'dB-Hz', "gnss['age']": 's', "gnss['lat']": 'degN', "gnss['lon']": 'degE', "gnss['alt']": 'm',
@@ -674,7 +917,7 @@ class _Gateway:
         hwid = info.get('hwid')
         if not hwid or (len(info) == 1 and 'error' in info):
             return
-        key = 'gateway' if entry.get('role') == device_list.ROLE_GATEWAY else entry.get('rloc16')
+        key = entry['key']
         props = entry.get('props') or {}
         device, hwid, sn = self.identity(key, hwid=hwid)
 
@@ -718,38 +961,36 @@ class _Gateway:
             last = {k: v for k, v in (self.infos.get(key) or {}).items() if k != 'error'}
             self.infos[key] = {**last, 'error': error}
 
-    def _props_key(self, key):
-        """Properties are cached per hardware ID (the RLOC16 of a node can change)."""
-        return (self.infos.get(key) or {}).get('hwid') or key
-
-    def update_props(self, key, address, force=False):
+    def update_props(self, key, link, force=False):
         """Read the user properties of a device once (or again with force) into the cache."""
-        pk = self._props_key(key)
-        if pk in self.props_cache and not force:
+        if key in self.props_cache and not force:
             return
         try:
-            self.props_cache[pk] = ot_cli.props_read(self.cli, address)
+            self.props_cache[key] = ot_cli.props_read(link.cli, link.address)
         except (ot_cli.OtError, TimeoutError, ValueError):
-            self.props_cache[pk] = {}       # e.g. firmware without properties: do not ask on every poll
+            self.props_cache[key] = {}       # e.g. firmware without properties: do not ask on every poll
 
     def query_info(self, targets='all', report=True, refresh_props=False):
         """
-        Read the device info: gateway via 'norlog info json' (UART), members via
-        CoAP GET /info ('norlog coap get' on the gateway).
-        targets: 'all' or a list of keys ('gateway' or RLOC16 like '0xc001').
+        Read the device info: serial devices via 'norlog info json', members via
+        CoAP GET /info ('norlog coap get' on their gateway). The info gives the hardware ID,
+        the key of the device from now on.
+        targets: 'all' or a list of keys.
         report: publish a command result (False for the periodic poll).
         refresh_props: read the user properties again (otherwise only once per device).
         """
-        if not self.last_status:
+        if not any(p.status for p in self.open_ports()):
             self.read_status()
-        wanted = None if targets == 'all' else set(targets)
+        devices = self.build_devices()
+        if targets == 'all':
+            keys = [d['key'] for d in devices if d.get('port_state') == device_list.PORT_OPEN
+                    or d.get('connection') == device_list.CONNECTION_THREAD]
+        else:
+            keys = [self.resolve_key(t) for t in targets]
         done, failed = 0, 0
         read_ok = set()     # keys whose info was read now -> 'info' packets
         values_now = {}     # key -> values read now, if not the whole info (compact info only)
 
-        keys = ['gateway'] if wanted is None or 'gateway' in wanted else []
-        keys += [d['rloc16'] for d in self.build_devices()[1:]
-                 if d.get('rloc16') and (wanted is None or d['rloc16'] in wanted)]
         for key in keys:
             try:
                 link = self.link(key)
@@ -760,23 +1001,45 @@ class _Gateway:
                     if not fresh:
                         values_now[key] = info
                     info = merged
-                self.store_info(key, info, t_request=t_request)
-                self.update_props(key, link.address, refresh_props)
-                read_ok.add(key)
-                done += 1
             except (ot_cli.OtError, TimeoutError, ValueError) as exc:
                 self.store_info(key, error=str(exc))
                 failed += 1
+                continue
+            hwid = info.get('hwid')
+            if hwid and hwid != key:
+                self.rename_key(key, hwid, link)
+                if key in values_now:
+                    values_now[hwid] = values_now.pop(key)
+                key = hwid
+            self.store_info(key, info, t_request=t_request)
+            self.update_props(key, link, refresh_props)
+            read_ok.add(key)
+            done += 1
 
         devices = self.build_devices()
-        self.to_gui('thread_status', {'thread_status': self.last_status, 'devices': devices})
+        self.to_gui('thread_status', self.status_payload(devices))
         for d in devices:
-            key = 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16')
-            if key in read_ok:
-                self.publish_info(d, values_now.get(key))
+            if d['key'] in read_ok:
+                self.publish_info(d, values_now.get(d['key']))
         self.live_apply_seen(devices, read_ok)
         if report:
             self.result('read_device_info', failed == 0, f'Device info read: {done} ok, {failed} failed')
+
+    def rename_key(self, old, hwid, link):
+        """The info of a device gave its hardware ID: remember it for the port or the RLOC16."""
+        if link.is_local:
+            port = self.ports.get(link.port)
+            if port is not None:
+                port.hwid = hwid
+        else:
+            e = next((d for d in self.devices if d['key'] == old), None)
+            if e is not None and e.get('via') and e.get('rloc16'):
+                # the RLOC16 of a member changes with its role: forget the old one of this hwid
+                for k in [k for k, h in self.member_hwid.items() if h == hwid]:
+                    del self.member_hwid[k]
+                self.member_hwid[(e['via'], e['rloc16'])] = hwid
+        for store in (self.infos, self.info_times, self.info_mid, self.info_rtt, self.props_cache):
+            store.pop(old, None)
 
     def with_extinfo(self, link, info, force=False):
         """
@@ -807,27 +1070,40 @@ class _Gateway:
 
     GATEWAY_XFER_FILE = '/fw/push.bin'      # firmware image on the gateway's SD card for 'fs push'
 
-    def gateway_link(self):
-        """The shell of the gateway norlog at the serial port."""
-        return links.SerialLink(self.cli, self.config.comport)
-
     def link(self, target):
         """
-        Way to a norlog: the gateway itself (target 'gateway' or empty) over its shell,
-        a member (target = RLOC16) over CoAP through the gateway (RLOC address).
+        Way to a norlog (target = key, 'gateway' or a port name):
+        - a norlog at an open serial port: its shell (SerialLink)
+        - a Thread member: CoAP through its gateway port (ThreadLink), to its Mesh-Local EID if
+          its info gave it (firmware >= 0.4.49, stays the same when the RLOC16 changes),
+          otherwise to its RLOC address
         """
-        if not target or target == 'gateway':
-            return self.gateway_link()
-        if not self.last_status:
-            self.read_status()
-        prefix = ot_cli.mesh_local_prefix(self.cli, self.last_status.get('ipaddr'))
-        return links.ThreadLink(self.gateway_link(), ot_cli.rloc_address(prefix, target))
+        if not target or target == 'gateway' or target.startswith('port:') or target in self.ports:
+            return self.port_of(target).link()
+        port = next((p for p in self.open_ports() if p.hwid == target), None)
+        if port is not None:
+            return port.link()
+        if target.startswith('rloc:'):
+            rloc, _, via = target[5:].partition('@')
+            e = {'rloc16': rloc, 'via': via}
+        else:
+            e = self.entry(target)
+            if e is None or e.get('connection') != device_list.CONNECTION_THREAD:
+                raise ValueError(f'{target}: not reachable (not in the device list)')
+        gw = self.port_of(e['via'])
+        mleid = ((self.infos.get(target) or {}).get('thread') or {}).get('mleid')
+        if mleid:
+            return links.ThreadLink(gw.link(), mleid)
+        prefix = ot_cli.mesh_local_prefix(gw.cli, gw.status.get('ipaddr'))
+        return links.ThreadLink(gw.link(), ot_cli.rloc_address(prefix, e['rloc16']))
 
-    def gateway_has_sd(self):
+    @staticmethod
+    def has_sd(link):
+        """True if the norlog of the link has a mounted SD card."""
         try:
-            self.gateway_link().fs_op('stat', '/')
+            link.fs_op('stat', '/')
             return True
-        except (ot_cli.OtError, TimeoutError):
+        except (ot_cli.OtError, TimeoutError, ValueError):
             return False
 
     def fs_progress(self, target, op, done, total):
@@ -865,7 +1141,7 @@ class _Gateway:
                 self.to_gui('sync_progress', {'target': target, 'catalog': True, 'done': done, 'total': total})
 
         try:
-            hwid = (self.infos.get(target or 'gateway') or {}).get('hwid')
+            hwid = (self.infos.get(self.resolve_key(target)) or {}).get('hwid')
             link = self.link(target)
             remote = norlog_archive.RemoteFiles(link.cli, link.address)
             res = norlog_archive.plan(remote, folder, hwid=hwid, verify=verify,
@@ -896,7 +1172,7 @@ class _Gateway:
 
         try:
             link = self.link(target)
-            hwid = (self.infos.get(target or 'gateway') or {}).get('hwid')
+            hwid = (self.infos.get(self.resolve_key(target)) or {}).get('hwid')
             remote = norlog_archive.RemoteFiles(link.cli, link.address)
             res = norlog_archive.sync(remote, folder, hwid=hwid, progress=progress,
                                       cancel=lambda: self.check_commands(during_flash=True),
@@ -1102,15 +1378,17 @@ class _Gateway:
 
     def _live_result(self, target, ok, message='', status=None, hwid=None):
         self.to_gui('live_result', {'target': target, 'ok': ok, 'message': message, 'status': status or {},
-                                    'hwid': hwid or (self.infos.get(target) or {}).get('hwid', '')})
+                                    'hwid': hwid or (self.infos.get(self.resolve_key(target)) or {}).get('hwid', ''),
+                                    'gateway': target in {self.ports[n].key for n in self.gateways.values()
+                                                          if n in self.ports}})
 
     def live_read(self, targets='all'):
         """Read what the devices send and whether they are sinks. Answer 'live_result' per device."""
-        if not self.last_status:
-            self.read_status()
-        keys = ['gateway'] + [d['rloc16'] for d in self.build_devices()[1:] if d.get('rloc16')]
+        keys = [d['key'] for d in self.build_devices() if d.get('port_state') == device_list.PORT_OPEN
+                or d.get('connection') == device_list.CONNECTION_THREAD]
         if targets != 'all':
-            keys = [k for k in keys if k in set(targets)]
+            wanted = {self.resolve_key(t) for t in targets}
+            keys = [k for k in keys if k in wanted]
         for key in keys:
             try:
                 link = self.link(key)
@@ -1124,7 +1402,7 @@ class _Gateway:
         try:
             link = self.link(target)
             status = ot_cli.pub_set(link.cli, text, link.address, timeout=self.config.coap_timeout_s)
-            hwid = hwid or (self.infos.get(target) or {}).get('hwid')
+            hwid = hwid or (self.infos.get(self.resolve_key(target)) or {}).get('hwid')
             if hwid:
                 self.live_applied.add(hwid)
             self._live_result(target, True, f'pub {text}', status, hwid)
@@ -1132,14 +1410,26 @@ class _Gateway:
             self._live_result(target, False, f'pub {text}: {exc}', hwid=hwid)
 
     def live_sink_apply(self, report=False):
-        """Make the gateway a sink for all packet types ('norlog sink on'), or not (live_sink)."""
-        text = ot_cli.sink_text(self.config.live_sink)
-        try:
-            status = ot_cli.sink_set(self.cli, text)
-            self._live_result('gateway', True, f'sink {text}', status)
-        except (ot_cli.OtError, TimeoutError, ValueError) as exc:
-            if report or self.config.live_sink:
-                self._live_result('gateway', False, f'sink {text}: {exc}')
+        """
+        The active gateways are sinks for all packet types ('norlog sink on'), or not (live_sink).
+        A port that was made a sink and is not the gateway anymore: 'norlog sink off' (it announces
+        mask 0, the members stop sending to it).
+        """
+        active = set(self.gateways.values())
+        for port in self.open_ports():
+            on = port.name in active and self.config.live_sink
+            if port.name not in active and not port.sink:
+                continue            # never made a sink by us: leave it
+            if port.sink == on and not report:
+                continue
+            text = ot_cli.sink_text(on)
+            try:
+                status = ot_cli.sink_set(port.cli, text)
+                port.sink = on
+                self._live_result(port.key, True, f'{port.name}: sink {text}', status)
+            except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+                if report or on:
+                    self._live_result(port.key, False, f'{port.name}: sink {text}: {exc}')
 
     def live_apply_seen(self, devices, read_ok):
         """
@@ -1150,7 +1440,7 @@ class _Gateway:
             return
         for d in devices:
             is_gateway = d.get('role') == device_list.ROLE_GATEWAY
-            key = 'gateway' if is_gateway else d.get('rloc16')
+            key = d['key']
             hwid = d.get('hwid')
             if key not in read_ok or not hwid or hwid in self.live_applied:
                 continue
@@ -1173,7 +1463,7 @@ class _Gateway:
                 result['message'] += f"; at most {st['max_dbm']} dBm possible"
         except (ot_cli.OtError, TimeoutError, ValueError, KeyError, TypeError) as exc:
             text = str(exc)
-            if target != 'gateway' and ('4.04' in text or 'Not Found' in text or 'not found' in text):
+            if not target.startswith('port:') and target not in self.ports and                     not any(p.hwid == target for p in self.open_ports()) and ('4.04' in text or 'Not Found' in text or 'not found' in text):
                 text += ' (firmware >= 0.4.5 required)'
             result['message'] = text
         self.to_gui('radio_result', result)
@@ -1240,7 +1530,7 @@ class _Gateway:
             for name, value in values.items():
                 ot_cli.props_write(cli, name, value, address)
             props = ot_cli.props_read(cli, address)
-            self.props_cache[self._props_key(target)] = props
+            self.props_cache[self.resolve_key(target)] = props
             self.to_gui('props', {'target': target, 'ok': True, 'props': props,
                                    'message': f'{len(values)} propert(y/ies) saved' if values else 'read'})
             if values:
@@ -1390,8 +1680,8 @@ class _Gateway:
             fw = link.fw_status()
             if link.is_local:
                 status('loader', f'Gateway loader {fw.get("loader") or "?"}')
-                if not self.gateway_has_sd():
-                    raise ValueError('The gateway has no SD card mounted')
+                if not self.has_sd(link):
+                    raise ValueError(f'{link.port}: no SD card mounted')
                 link.fs_op('mkdir', '/fw')
                 link.fs_upload(image, ot_cli.LOADER_FILE,
                                lambda d, t: status('upload', f'PC -> gateway SD: {d // 1024}/'
@@ -1418,29 +1708,43 @@ class _Gateway:
         payload.update(extra)
         self.to_gui('flash_status', payload)
 
-    def flash(self, image_path, force):
+    def flash(self, image_path, force, target=None):
+        """Firmware update of a norlog at a serial port over its loader (MCUmgr/SMP)."""
+        port = self.port_of(target)
+        key = port.key
         path = pathlib.Path(image_path)
         if not path.is_file():
             raise ValueError(f'Image not found: {image_path}')
         image = path.read_bytes()
         info = smp_serial.image_info(image)
-        self.flash_status('start', f'{path.name}: version {info["version"]}, {info["size"] // 1024} KB')
 
-        smp = smp_serial.SmpSerial(self.ser, text_callback=self.console)
-        cancel = lambda: self.check_commands(during_flash=True)
-        self.reader.reset()
+        def flash_status(state, message='', progress=None):
+            self.flash_status(state, message, progress, target=key)
+        flash_status('start', f'{port.name}: {path.name}: version {info["version"]}, {info["size"] // 1024} KB')
+
+        smp = smp_serial.SmpSerial(port.ser, text_callback=lambda line: self.console(f'[{port.name}] {line}'))
+        others = [p for p in self.open_ports() if p is not port]
+
+        def cancel():
+            for p in others:        # the other ports keep running (live data)
+                try:
+                    p.poll()
+                except (serial.SerialException, OSError):
+                    pass
+            return self.check_commands(during_flash=True)
+        port.reader.reset()
         try:
-            self.flash_status('loader', "Rebooting into the loader ('norlog dfu') ...")
+            flash_status('loader', "Rebooting into the loader ('norlog dfu') ...")
             if not smp.enter_loader(timeout=20.0, cancel=cancel):
                 raise smp_serial.SmpError('Loader does not respond')
 
             images = smp.image_state()
             slot0 = next((i for i in images if i.get('image', 0) == 0 and i.get('slot', 0) == 0), {})
-            self.flash_status('loader', f'Loader ready, installed version: {slot0.get("version", "-")}')
+            flash_status('loader', f'Loader ready, installed version: {slot0.get("version", "-")}')
 
             if slot0.get('hash') == info['hash'] and not force:
                 smp.reset()
-                self.flash_status('done', 'Image already installed, nothing to do', progress=100)
+                flash_status('done', 'Image already installed, nothing to do', progress=100)
                 return
 
             last = [0.0]
@@ -1451,23 +1755,23 @@ class _Gateway:
                 rate = meter.update(off)    # first call: after erasing slot 0
                 if now - last[0] >= 0.5 or off >= size:
                     last[0] = now
-                    self.flash_status('upload', f'{off // 1024}/{size // 1024} KB, {rate:.1f} KB/s',
+                    flash_status('upload', f'{off // 1024}/{size // 1024} KB, {rate:.1f} KB/s',
                                       progress=off * 100 // size)
 
-            self.flash_status('upload', 'Erasing slot 0 (about 20 s) ...', progress=0)
+            flash_status('upload', 'Erasing slot 0 (about 20 s) ...', progress=0)
             smp.upload(image, progress=progress, cancel=cancel)
             images = smp.image_state()
             slot0 = next((i for i in images if i.get('image', 0) == 0 and i.get('slot', 0) == 0), {})
             smp.reset()
-            self.flash_status('done', f'Installed version {slot0.get("version", "?")}, rebooting '
+            flash_status('done', f'Installed version {slot0.get("version", "?")}, rebooting '
                                       f'(upload average {meter.average():.1f} KB/s)', progress=100)
         except smp_serial.SmpCancelled:
-            self.flash_status('cancelled', 'Cancelled. The loader restarts the app after 5 min '
+            flash_status('cancelled', 'Cancelled. The loader restarts the app after 5 min '
                                            '(or press RESET).')
         except (smp_serial.SmpError, TimeoutError) as exc:
-            self.flash_status('error', str(exc))
+            flash_status('error', str(exc))
         finally:
-            self.reader.reset()
+            port.reader.reset()
 
 
 def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueue=None):
@@ -1475,24 +1779,16 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
     pdconfig = DeviceCustomConfig.model_validate(config)
     gw = _Gateway(device_info, pdconfig, dataqueue, datainqueue, statusqueue)
 
-    if not pdconfig.comport:
-        gw.result('start', False, 'No serial port configured')
-        return
+    if not configured_ports(pdconfig):
+        gw.result('start', False, 'No serial port configured: right click on a port in the device list, "Connect"')
+    gw.update_ports(force_scan=True)
+    names = ', '.join(p.name for p in gw.open_ports())
+    logger.info(funcname + f'Opened {names or "no port"}')
     try:
-        gw.open()
-    except serial.SerialException as exc:
-        gw.result('start', False, f'Could not open {pdconfig.comport}: {exc}')
-        return
-
-    logger.info(funcname + f'Opened {pdconfig.comport} with {pdconfig.baud} baud')
-    # Info of the gateway first: its hwid and serial number go into the header of all packets
-    try:
-        gw.query_info(['gateway'], report=False)
+        gw.read_status()
     except (ot_cli.OtError, TimeoutError, ValueError) as exc:
-        logger.debug(funcname + f'Gateway info not read: {exc}')
-    if pdconfig.live_apply:
-        gw.live_sink_apply()
-    gw.result('start', True, f'Connected to {pdconfig.comport}')
+        logger.debug(funcname + f'Status not read: {exc}')
+    gw.result('start', True, f'Connected to {names}' if names else 'Running, no serial port open')
     t_status = time.monotonic()
     t_info = None                   # first info read right after the first status
 
@@ -1501,18 +1797,19 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
             gw.check_commands()
             if gw.stop_requested:
                 break
+            gw.poll_ports()
             try:
-                gw.poll_serial()
-            except serial.SerialException as exc:
-                gw.result('serial', False, f'Serial port error: {exc}')
-                break
+                if gw.update_ports():
+                    gw.read_status()
+            except (ot_cli.OtError, TimeoutError, ValueError) as exc:
+                logger.debug(funcname + f'Port update: {exc}')
 
             interval = gw.config.status_interval_s
             if interval > 0 and time.monotonic() - t_status >= interval:
                 t_status = time.monotonic()
                 try:
                     gw.read_status()
-                except (ot_cli.OtError, TimeoutError) as exc:
+                except (ot_cli.OtError, TimeoutError, ValueError) as exc:
                     logger.debug(funcname + f'Status poll failed: {exc}')
 
             interval = gw.config.info_interval_s
@@ -1522,8 +1819,10 @@ def start(device_info, config=None, dataqueue=None, datainqueue=None, statusqueu
                     gw.query_info('all', report=False)
                 except (ot_cli.OtError, TimeoutError, ValueError) as exc:
                     logger.debug(funcname + f'Info poll failed: {exc}')
+            if not gw.open_ports():
+                time.sleep(0.05)    # nothing to read: do not spin
     finally:
-        gw.close()
+        gw.close_ports()
         logger.info(funcname + 'Stopped')
 
 
@@ -1535,8 +1834,15 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = self.device.custom_config
+        if not self.cfg.ports and self.cfg.comport:
+            # Older configuration with one gateway port: the first entry of the port list
+            self.cfg.ports = [PortConfig(port=self.cfg.comport, role='gateway')]
+            self.cfg.comport = ''
         self.run_widgets = []       # only enabled while the thread is running
         self.settings_dialogs = {}  # device key -> open DeviceSettingsDialog
+        self.last_scan = []         # ports.scan() of this GUI (also while the thread is stopped)
+        self.port_status = {}       # port name -> Thread status (thread running)
+        self.gateways = {}          # Thread network -> port of its active gateway
 
         self.tabs = QtWidgets.QTabWidget()
         # Scroll areas: otherwise the highest tab sets the minimum height of the redvypr main window,
@@ -1566,6 +1872,11 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.run_timer = QtCore.QTimer()
         self.run_timer.timeout.connect(self.update_run_state)
         self.run_timer.start(500)
+        # Port search: the ports found appear in the device list also while the thread is stopped
+        self.port_timer = QtCore.QTimer()
+        self.port_timer.timeout.connect(self.scan_ports)
+        self.port_timer.start(3000)
+        self.scan_ports()
 
     # --- port ---
 
@@ -1573,19 +1884,19 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QHBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
-        self.port_combo = QtWidgets.QComboBox()
-        self.port_combo.setEditable(True)
-        self.port_refresh = QtWidgets.QPushButton('Refresh')
-        self.port_refresh.clicked.connect(self.refresh_ports)
         self.baud_edit = QtWidgets.QSpinBox()
         self.baud_edit.setRange(1200, 3000000)
         self.baud_edit.setValue(self.cfg.baud)
+        self.baud_edit.setToolTip('Baud rate of the norlog shell UART (all ports)')
         self.baud_edit.valueChanged.connect(lambda v: setattr(self.cfg, 'baud', v))
-        lay.addWidget(QtWidgets.QLabel('Port'))
-        lay.addWidget(self.port_combo, 1)
-        lay.addWidget(self.port_refresh)
         lay.addWidget(QtWidgets.QLabel('Baud'))
         lay.addWidget(self.baud_edit)
+        self.show_all_ports = QtWidgets.QCheckBox('All serial ports')
+        self.show_all_ports.setToolTip('Show also serial ports that do not look like a norlog (USB vendor '
+                                       'Nordic/Zephyr). They are never opened unless you connect them.')
+        self.show_all_ports.setChecked(self.cfg.ports_show_all)
+        self.show_all_ports.toggled.connect(self.show_all_ports_changed)
+        lay.addWidget(self.show_all_ports)
         # Can be changed while running (sent to the device thread)
         self.publish_raw = QtWidgets.QCheckBox('Publish raw data')
         self.publish_raw.setToolTip('Publish also the console lines, command results, Thread status with '
@@ -1605,17 +1916,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.save_options.setToolTip('Options of "Save data": channels (SQLite, ...), files, packet types')
         self.save_options.clicked.connect(self.open_save_options)
         lay.addWidget(self.save_options)
-        self.refresh_ports()
-        self.port_combo.currentTextChanged.connect(self.port_changed)
+        lay.addStretch(1)
         # Disabled while the thread is running (handled by the base class)
-        self.config_widgets.extend([self.port_combo, self.port_refresh, self.baud_edit])
+        self.config_widgets.extend([self.baud_edit])
         return w
-
-    @staticmethod
-    def _port_key(device):
-        """COM3 before COM16 (numeric order), /dev/ttyACM0 ..."""
-        digits = ''.join(c for c in device if c.isdigit())
-        return device.rstrip('0123456789'), int(digits) if digits else -1
 
     def ports_in_use(self):
         """Serial ports configured in the other devices of this redvypr (not opened to test them)."""
@@ -1630,41 +1934,98 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 value = getattr(cfg, name, None)
                 if isinstance(value, str) and value:
                     used.add(value)
+            for pc in getattr(cfg, 'ports', None) or []:     # another norlog gateway
+                if getattr(pc, 'connect', False) and getattr(pc, 'port', ''):
+                    used.add(pc.port)
         return used
 
-    def refresh_ports(self):
-        ports = sorted(serial.tools.list_ports.comports(), key=lambda p: self._port_key(p.device))
-        current = self.cfg.comport
-        if not current:
-            # Default: the first port no other device of this redvypr uses (the configured port stays)
-            used = self.ports_in_use()
-            free = [p.device for p in ports if p.device not in used]
-            if free:
-                current = self.cfg.comport = free[0]
-        self.port_combo.blockSignals(True)
-        self.port_combo.clear()
-        for p in ports:
-            self.port_combo.addItem(f'{p.device}  ({p.description})', p.device)
-        idx = self.port_combo.findData(current)
-        if idx >= 0:
-            self.port_combo.setCurrentIndex(idx)
+    def scan_ports(self):
+        """Search the serial ports; while the thread is stopped the device list shows them."""
+        try:
+            self.last_scan = ports.scan()
+        except Exception as exc:
+            logger.debug(f'Port search failed: {exc}')
+            return
+        _rows, by_name = ports.match(configured_ports(self.cfg), self.last_scan)
+        for name, pc in by_name.items():
+            if pc.port != name:
+                pc.port = name          # found again by its USB serial number under another name
+        if not self.device.get_thread_status()['thread_running']:
+            self.show_devices(self.offline_devices())
+
+    def offline_devices(self):
+        """Device list without the thread: the configured and the found serial ports."""
+        rows, _by_name = ports.match(configured_ports(self.cfg), self.last_scan)
+        entries = []
+        for r in rows:
+            pc, found = r['config'], r['found']
+            if pc is None and not self.cfg.ports_show_all and not ports.looks_like_norlog(found or {}):
+                continue
+            state = device_list.PORT_GONE if pc is not None and found is None else device_list.PORT_CLOSED
+            e = device_list.port_entry(r['name'], state, pc.role if pc is not None else 'auto',
+                                       pc.hwid if pc is not None and pc.hwid else None,
+                                       (found or {}).get('description', ''))
+            e['configured'] = pc is not None
+            e['connect'] = pc.connect if pc is not None else False
+            entries.append(e)
+        return entries
+
+    def port_config(self, name, create=False):
+        """PortConfig of the port name (found again by USB serial number); create: add it."""
+        _rows, by_name = ports.match(self.cfg.ports, self.last_scan)
+        pc = by_name.get(name)
+        if pc is None and create:
+            found = next((f for f in self.last_scan if f['name'] == name), {})
+            pc = PortConfig(port=name, usb_sn=found.get('usb_sn', ''))
+            self.cfg.ports.append(pc)
+        return pc
+
+    def ports_changed(self):
+        """The port list of the configuration changed: to the thread, or show it."""
+        if self.device.get_thread_status()['thread_running']:
+            self.send_config()
         else:
-            self.port_combo.setEditText(current)
-        self.port_combo.blockSignals(False)
+            self.show_devices(self.offline_devices())
+
+    def port_connect(self, name, connect):
+        if connect:
+            used = self.ports_in_use()
+            if name in used and QtWidgets.QMessageBox.question(
+                    self, 'Connect port', f'{name} is configured in another device of this redvypr. '
+                                          f'Connect it here anyway?') != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+        pc = self.port_config(name, create=connect)
+        if pc is None:
+            return
+        pc.connect = bool(connect)
+        self.ports_changed()
+
+    def port_set_role(self, name, role):
+        pc = self.port_config(name, create=True)
+        pc.role = role
+        self.ports_changed()
+
+    def port_forget(self, name):
+        pc = self.port_config(name)
+        if pc is not None:
+            self.cfg.ports = [x for x in self.cfg.ports if x is not pc]
+            self.ports_changed()
+
+    def show_all_ports_changed(self, checked):
+        self.cfg.ports_show_all = bool(checked)
+        self.ports_changed()
 
     def publish_raw_changed(self, checked):
         self.cfg.publish_raw_data = bool(checked)
         if self.device.get_thread_status()['thread_running']:
             self.device.thread_command('config', {'config': self.cfg.model_dump()})
 
-    def port_changed(self, text):
-        data = self.port_combo.currentData()
-        self.cfg.comport = data if data else text.split()[0] if text.strip() else ''
-
     # --- devices ---
 
-    # Link details and firmware at the right end: useful, but not needed at first glance
-    DEVICE_COLUMNS = ['', 'HW ID', 'Device', 'SN', 'Description', 'Location', 'RLOC16', 'Connection', 'Role', 'Thread role', 'Link', 'Quality',
+    # Link details and firmware at the right end: useful, but not needed at first glance.
+    # 'Device' is the tree column: serial ports, the members of a gateway below it.
+    DEVICE_COLUMNS = ['Device', '', 'HW ID', 'SN', 'Description', 'Location', 'Port', 'RLOC16', 'Connection', 'Role',
+                      'Thread role', 'Link', 'Quality',
                       'Battery', 'Board temp [C]', 'nRF temp [C]', 'GNSS', 'Clock', 'Info age [s]',
                       'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets', 'Firmware']
 
@@ -1754,19 +2115,27 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         row.addWidget(self.info_interval)
         row.addWidget(self.devices_info, 1)
         self.current_devices = []
-        self.devices_table = QtWidgets.QTableWidget(0, len(self.DEVICE_COLUMNS))
-        self.devices_table.setHorizontalHeaderLabels(self.DEVICE_COLUMNS)
+        self.collapsed = set()      # keys of the serial entries whose members are hidden
+        self.devices_table = QtWidgets.QTreeWidget()
+        self.devices_table.setColumnCount(len(self.DEVICE_COLUMNS))
+        self.devices_table.setHeaderLabels(self.DEVICE_COLUMNS)
         self.devices_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.devices_table.horizontalHeader().setStretchLastSection(True)
-        self.devices_table.verticalHeader().setVisible(False)
-        header = self.devices_table.horizontalHeader()
+        self.devices_table.header().setStretchLastSection(True)
+        self.devices_table.setRootIsDecorated(True)
+        self.devices_table.setUniformRowHeights(True)
+        self.devices_table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.devices_table.itemCollapsed.connect(lambda item: self.collapsed.add(self._item_key(item)))
+        self.devices_table.itemExpanded.connect(lambda item: self.collapsed.discard(self._item_key(item)))
+        header = self.devices_table.header()
         header.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self.devices_header_menu)
         header.setToolTip('Right click: show or hide columns')
         self.apply_hidden_columns()
-        legend = QtWidgets.QLabel('Quality: Thread links from link quality (0-3) and average RSSI '
+        legend = QtWidgets.QLabel('Serial ports at the top level (right click: connect, role auto / gateway / '
+                                  'node), the members of the Thread network below their gateway. '
+                                  'Quality: Thread links from link quality (0-3) and average RSSI '
                                   '(good >= -70 dBm, fair >= -85 dBm); multi-hop routers from the path '
-                                  'cost (good <= 3, fair <= 6, 16 = unreachable); serial = data from the gateway within 30 s.')
+                                  'cost (good <= 3, fair <= 6, 16 = unreachable); serial = data from the port within 30 s.')
         legend.setWordWrap(True)
         legend.setStyleSheet('color: gray;')
         self.devices_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
@@ -1781,7 +2150,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def apply_hidden_columns(self):
         hidden = set(self.cfg.devices_hidden_columns)
         for col, name in enumerate(self.DEVICE_COLUMNS):
-            if name:
+            if name and name != 'Device':       # the tree column stays
                 self.devices_table.setColumnHidden(col, name in hidden)
 
     def devices_header_menu(self, point):
@@ -1789,7 +2158,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         menu = QtWidgets.QMenu(self)
         hidden = set(self.cfg.devices_hidden_columns)
         for name in self.DEVICE_COLUMNS:
-            if not name:
+            if not name or name == 'Device':
                 continue
             act = menu.addAction(name)
             act.setCheckable(True)
@@ -1797,7 +2166,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             act.toggled.connect(lambda on, n=name: self.set_column_visible(n, on))
         menu.addSeparator()
         menu.addAction('Show all columns', lambda: self.set_hidden_columns([]))
-        menu.exec(self.devices_table.horizontalHeader().mapToGlobal(point))
+        menu.exec(self.devices_table.header().mapToGlobal(point))
 
     def set_column_visible(self, name, visible):
         hidden = [n for n in self.cfg.devices_hidden_columns if n != name]
@@ -1817,12 +2186,25 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
 
     @staticmethod
     def _device_key(d):
-        return 'gateway' if d.get('role') == device_list.ROLE_GATEWAY else d.get('rloc16', '')
+        return d.get('key', '')
 
     @classmethod
     def device_key(cls, d):
-        """Key of a device in the info/settings bookkeeping ('gateway', RLOC16 or id)."""
+        """Key of a device (device_list: hardware ID, 'port:<port>' or 'rloc:<RLOC16>@<port>')."""
         return cls._device_key(d) or d.get('id', '')
+
+    @staticmethod
+    def _item_key(item):
+        return item.data(0, QtCore.Qt.ItemDataRole.UserRole + 1) or ''
+
+    def _item_device(self, item):
+        i = item.data(0, QtCore.Qt.ItemDataRole.UserRole) if item is not None else None
+        return self.current_devices[i] if isinstance(i, int) and i < len(self.current_devices) else {}
+
+    @staticmethod
+    def is_reachable(d):
+        """An open serial port or a Thread member: commands can be sent to it."""
+        return d.get('port_state') == device_list.PORT_OPEN or d.get('connection') == device_list.CONNECTION_THREAD
 
     def _settings_button(self, d):
         btn = QtWidgets.QPushButton()
@@ -1839,10 +2221,12 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         lay = QtWidgets.QHBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(2)
-        lay.addWidget(self._settings_button(d))
+        btn = self._settings_button(d)
+        btn.setEnabled(self.is_reachable(d))
+        lay.addWidget(btn)
         sub = QtWidgets.QPushButton('Subscribe')
         hwid = d.get('hwid')
-        sub.setEnabled(bool(hwid))
+        sub.setEnabled(bool(hwid) and self.is_reachable(d))
         sub.setToolTip('Packet types this device sends live (norlog pub, firmware >= 0.4.32)' if hwid
                        else 'Hardware ID not known yet (Refresh)')
         sub.clicked.connect(lambda checked=False, h=hwid: self.open_device_subscriptions(h))
@@ -1870,15 +2254,39 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         return [dlg for dlg in self.settings_dialogs.values() if dlg.is_serial()]
 
     def devices_context_menu(self, point):
-        """Right click in the device table: copy the GNSS position or the cell."""
+        """Right click in the device list: serial port (connect, role), copy the GNSS position or the cell."""
         item = self.devices_table.itemAt(point)
         if item is None:
             return
-        row = item.row()
-        device = self.current_devices[row] if row < len(self.current_devices) else {}
+        col = self.devices_table.columnAt(point.x())
+        device = self._item_device(item)
         info = device.get('info') or {}
         menu = QtWidgets.QMenu(self)
         clipboard = QtWidgets.QApplication.clipboard()
+        if device.get('connection') == device_list.CONNECTION_SERIAL and device.get('port'):
+            name = device['port']
+            pc = self.port_config(name)
+            connected = pc is not None and pc.connect
+            if connected:
+                act = menu.addAction(f'Disconnect {name}')
+                act.triggered.connect(lambda: self.port_connect(name, False))
+            else:
+                act = menu.addAction(f'Connect {name}')
+                act.setToolTip('Open the port now and whenever it is found')
+                act.triggered.connect(lambda: self.port_connect(name, True))
+            role_menu = menu.addMenu('Role')
+            texts = {'auto': 'auto: may become the gateway of its network',
+                     'gateway': 'gateway: preferred gateway',
+                     'node': 'node: only this device, never the way into the network'}
+            for role in device_list.PORT_ROLES:
+                act = role_menu.addAction(texts[role])
+                act.setCheckable(True)
+                act.setChecked((pc.role if pc is not None else 'auto') == role)
+                act.triggered.connect(lambda _c=False, r=role: self.port_set_role(name, r))
+            act = menu.addAction(f'Remove {name} from the configuration')
+            act.setEnabled(pc is not None)
+            act.triggered.connect(lambda: self.port_forget(name))
+            menu.addSeparator()
         pos = self.gnss_position(info, altitude=False)
         pos_alt = self.gnss_position(info)
         act = menu.addAction(f'Copy GNSS position ({pos})' if pos else 'Copy GNSS position (no fix)')
@@ -1888,21 +2296,20 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         act.setEnabled(bool(pos_alt))
         act.triggered.connect(lambda: clipboard.setText(pos_alt))
         menu.addSeparator()
-        text = item.text()
+        text = item.text(col) if col >= 0 else ''
         act = menu.addAction('Copy cell')
         act.triggered.connect(lambda: clipboard.setText(text))
-        tip = item.toolTip()
+        tip = item.toolTip(col) if col >= 0 else ''
         act = menu.addAction('Copy tooltip')
         act.setEnabled(bool(tip))
         act.triggered.connect(lambda: clipboard.setText(tip))
         menu.exec(self.devices_table.viewport().mapToGlobal(point))
 
     def selected_devices(self):
-        rows = sorted({i.row() for i in self.devices_table.selectedIndexes()})
-        return [self.current_devices[r] for r in rows if r < len(self.current_devices)]
+        return [d for d in (self._item_device(i) for i in self.devices_table.selectedItems()) if d]
 
     def read_info_selected(self):
-        keys = [self._device_key(d) for d in self.selected_devices()]
+        keys = [self._device_key(d) for d in self.selected_devices() if self.is_reachable(d)]
         keys = [k for k in keys if k]
         if keys:
             self.device.thread_command('read_device_info', {'targets': keys})
@@ -1974,19 +2381,46 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def _clock_has_ms_info(info):
         return '.' in ((info or {}).get('time') or '')
 
+    def _fmt_port(self, d):
+        """(text, tooltip) of the Port column: serial port and its state, or the gateway port of a member."""
+        if d.get('connection') == device_list.CONNECTION_THREAD:
+            return (f"via {d['via']}" if d.get('via') else ''), ''
+        state = d.get('port_state', '')
+        text = d.get('port', '')
+        if state and state != device_list.PORT_OPEN:
+            text += f' ({state})'
+        tip = d.get('port_description', '')
+        if d.get('port_error'):
+            tip += ('\n' if tip else '') + f"Error: {d['port_error']}"
+        tl = d.get('thread_link')
+        if tl:
+            tip += ('\n' if tip else '') + (f"Also member of the Thread network via {tl.get('via')} "
+                                             f"(RLOC16 {tl.get('rloc16')}, {tl.get('quality')})")
+        return text, tip
+
     def show_devices(self, devices):
-        selected_ids = {d.get('id') for d in self.selected_devices()}
+        selected = {d.get('key') for d in self.selected_devices()}
         self.current_devices = devices
-        self.devices_table.blockSignals(True)
-        self.devices_table.clearSelection()
-        self.devices_table.setRowCount(len(devices))
-        for row, d in enumerate(devices):
-            name = d.get('extaddr') or d.get('mac') or d.get('id', '')
-            if d.get('connection') == device_list.CONNECTION_SERIAL and d.get('port'):
-                name = f"{name} ({d['port']})" if d.get('extaddr') else d['port']
+        tree = self.devices_table
+        tree.blockSignals(True)
+        tree.clear()
+        cols = self.DEVICE_COLUMNS
+        stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'GNSS', 'Clock',
+                                              'Info age [s]')]
+        items = {}
+        for index, d in enumerate(devices):
+            serial_entry = d.get('connection') == device_list.CONNECTION_SERIAL
+            if serial_entry:
+                name = d.get('port') or d.get('id', '')
+            else:
+                name = d.get('extaddr') or d.get('mac') or d.get('id', '')
             seen = d.get('age_s')
             if seen is None:
                 seen = d.get('last_data_s')
+            port_text, port_tip = self._fmt_port(d)
+            role = d.get('role', '')
+            if serial_entry and d.get('port_role') and d['port_role'] != device_list.PORT_ROLE_AUTO:
+                role += f" ({d['port_role']})"
             values = {
                 '': '',
                 'HW ID': d.get('hwid', ''),
@@ -1994,9 +2428,10 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 'SN': d.get('sn', ''),
                 'Description': self._short(d.get('desc', '')),
                 'Location': self._short(d.get('loc', '')),
+                'Port': port_text,
                 'RLOC16': d.get('rloc16', ''),
                 'Connection': d.get('connection', ''),
-                'Role': d.get('role', ''),
+                'Role': role,
                 'Thread role': d.get('thread_role', ''),
                 'Link': d.get('link', ''),
                 'Quality': d.get('quality', ''),
@@ -2014,60 +2449,109 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 'Clock': self._fmt_clock(d)[0],
                 'Info age [s]': '' if d.get('info_age_s') is None else f"{d['info_age_s']:.0f}",
             }
-            cols = self.DEVICE_COLUMNS
-            stale_cols = [cols.index(c) for c in ('Firmware', 'Battery', 'Board temp [C]', 'nRF temp [C]', 'GNSS', 'Clock',
-                                                  'Info age [s]')]
-            self.devices_table.setCellWidget(row, 0, self._row_buttons(d))
-            full_text = {cols.index('Description'): d.get('desc', ''), cols.index('Location'): d.get('loc', '')}
+            parent = items.get(d.get('parent')) if d.get('parent') else None
+            item = QtWidgets.QTreeWidgetItem(parent if parent is not None else tree)
+            item.setData(0, QtCore.Qt.ItemDataRole.UserRole, index)
+            item.setData(0, QtCore.Qt.ItemDataRole.UserRole + 1, d.get('key', ''))
+            items[d.get('key')] = item
+            closed = serial_entry and d.get('port_state') not in (None, device_list.PORT_OPEN)
+            full_text = {cols.index('Description'): d.get('desc', ''), cols.index('Location'): d.get('loc', ''),
+                         cols.index('Port'): port_tip}
             for col, text in enumerate(values[c] for c in cols):
-                item = QtWidgets.QTableWidgetItem(str(text))
+                item.setText(col, str(text))
                 if full_text.get(col) and full_text[col] != text:
-                    item.setToolTip(full_text[col])
+                    item.setToolTip(col, full_text[col])
+                if closed:
+                    item.setForeground(col, QtGui.QColor('gray'))
+                    continue
                 if cols[col] == 'Quality' and d.get('quality') in self.QUALITY_COLORS:
-                    item.setBackground(QtGui.QColor(self.QUALITY_COLORS[d['quality']]))
+                    item.setBackground(col, QtGui.QColor(self.QUALITY_COLORS[d['quality']]))
                 if cols[col] == 'GNSS':
                     _text, quality, tip = self.fmt_gnss(d.get('info'))
                     if quality in self.QUALITY_COLORS:
-                        item.setBackground(QtGui.QColor(self.QUALITY_COLORS[quality]))
-                    item.setToolTip(tip)
+                        item.setBackground(col, QtGui.QColor(self.QUALITY_COLORS[quality]))
+                    item.setToolTip(col, tip)
                 if cols[col] == 'Clock':
                     _text, quality, tip = self._fmt_clock(d)
                     if quality in self.QUALITY_COLORS:
-                        item.setBackground(QtGui.QColor(self.QUALITY_COLORS[quality]))
-                    item.setToolTip(tip)
+                        item.setBackground(col, QtGui.QColor(self.QUALITY_COLORS[quality]))
+                    item.setToolTip(col, tip)
                 radio = (d.get('info') or {}).get('radio')
                 if cols[col] == 'Quality' and self.fem_stuck(radio):
-                    item.setText(f"{text} / PA stuck?")
-                    item.setBackground(QtGui.QColor(self.QUALITY_COLORS[device_list.QUALITY_NONE]))
-                    item.setToolTip(f"Front end: TX_EN {radio['fem']['tx']} % HIGH - the PA seems to hang in "
-                                    f"transmit mode (reception only by leakage). Restart the device; "
-                                    f"details in its settings (TX power).")
+                    item.setText(col, f"{text} / PA stuck?")
+                    item.setBackground(col, QtGui.QColor(self.QUALITY_COLORS[device_list.QUALITY_NONE]))
+                    item.setToolTip(col, f"Front end: TX_EN {radio['fem']['tx']} % HIGH - the PA seems to hang in "
+                                         f"transmit mode (reception only by leakage). Restart the device; "
+                                         f"details in its settings (TX power).")
                 if cols[col] == 'Board temp [C]':
                     warn = self.board_temp_warning(d.get('info'))
                     if warn:
-                        item.setBackground(QtGui.QColor(self.QUALITY_COLORS[device_list.QUALITY_FAIR]))
-                        item.setToolTip(warn)
+                        item.setBackground(col, QtGui.QColor(self.QUALITY_COLORS[device_list.QUALITY_FAIR]))
+                        item.setToolTip(col, warn)
                 if col in stale_cols and d.get('info_error'):
                     # Last read failed: older values in gray, error as tooltip
-                    item.setForeground(QtGui.QColor('gray'))
-                    item.setToolTip(f"Last read failed: {d['info_error']}")
-                self.devices_table.setItem(row, col, item)
-        for row, d in enumerate(devices):
-            if d.get('id') in selected_ids:
-                self.devices_table.selectRow(row)
-        self.devices_table.blockSignals(False)
-        self.devices_table.resizeColumnsToContents()
-        for key, dlg in self.settings_dialogs.items():
+                    item.setForeground(col, QtGui.QColor('gray'))
+                    item.setToolTip(col, f"Last read failed: {d['info_error']}")
+            if d.get('port_state') == device_list.PORT_ERROR:
+                item.setBackground(cols.index('Port'), QtGui.QColor(self.QUALITY_COLORS[device_list.QUALITY_POOR]))
+            tree.setItemWidget(item, cols.index(''), self._row_buttons(d))
+        for key, item in items.items():
+            if item.childCount():
+                item.setExpanded(key not in self.collapsed)
+            if key in selected:
+                item.setSelected(True)
+        tree.blockSignals(False)
+        for col in range(len(cols)):
+            tree.resizeColumnToContents(col)
+        # Settings dialogs: the key of a serial device changes from 'port:<port>' to its hardware ID
+        for key, dlg in list(self.settings_dialogs.items()):
             entry = next((d for d in devices if self.device_key(d) == key), None)
+            if entry is None and key.startswith('port:'):
+                entry = next((d for d in devices if d.get('connection') == device_list.CONNECTION_SERIAL
+                              and d.get('port') == key[5:] and d.get('hwid')), None)
+                if entry is not None:
+                    self.settings_dialogs[entry['key']] = self.settings_dialogs.pop(key)
+                    dlg.key = entry['key']
             if entry is not None:
                 dlg.update_entry(entry)
-        members = len(devices) - 1
-        self.devices_info.setText(f'{members} member(s), updated {time.strftime("%H:%M:%S")}')
+        n_open = sum(1 for d in devices if d.get('port_state') == device_list.PORT_OPEN)
+        members = sum(1 for d in devices if d.get('connection') == device_list.CONNECTION_THREAD)
+        self.devices_info.setText(f'{n_open} port(s) open, {members} member(s), updated {time.strftime("%H:%M:%S")}')
+        self.update_port_combos(devices)
         # Datafiles: reachable devices appear in its tree (only when the devices changed)
-        known = sorted((d['hwid'], d.get('sn') or '', d.get('desc') or '') for d in devices if d.get('hwid'))
+        known = sorted((d['hwid'], d.get('sn') or '', d.get('desc') or '') for d in devices
+                       if d.get('hwid') and self.is_reachable(d))
         if known != getattr(self, '_datafiles_known', None) and hasattr(self, 'datafiles_tab'):
             self._datafiles_known = known
             self.datafiles_tab.rebuild_tree()
+
+    def update_port_combos(self, devices):
+        """Port choice of the console and the Thread network tab: the open serial ports."""
+        names = [d['port'] for d in devices if d.get('connection') == device_list.CONNECTION_SERIAL
+                 and d.get('port_state') == device_list.PORT_OPEN]
+        labels = {}
+        for d in devices:
+            if d.get('port') in names and d.get('connection') == device_list.CONNECTION_SERIAL:
+                extra = ', '.join(x for x in (d.get('sn') and f"SN {d['sn']}", d.get('role')) if x)
+                labels[d['port']] = f"{d['port']} ({extra})" if extra else d['port']
+        for combo in (getattr(self, 'console_port', None), getattr(self, 'thread_port', None)):
+            if combo is None:
+                continue
+            current = combo.currentData()
+            if [combo.itemData(i) for i in range(combo.count())] == names and \
+                    [combo.itemText(i) for i in range(combo.count())] == [labels[n] for n in names]:
+                continue
+            combo.blockSignals(True)
+            combo.clear()
+            for n in names:
+                combo.addItem(labels[n], n)
+            idx = combo.findData(current)
+            if idx < 0 and self.gateways:
+                idx = combo.findData(next(iter(self.gateways.values())))
+            combo.setCurrentIndex(max(idx, 0))
+            combo.blockSignals(False)
+            if combo is getattr(self, 'thread_port', None):
+                self.show_port_status()
 
     # --- console ---
 
@@ -2081,6 +2565,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         font.setFamily('Consolas')
         self.console_text.setFont(font)
         row = QtWidgets.QHBoxLayout()
+        self.console_port = QtWidgets.QComboBox()
+        self.console_port.setToolTip('Serial port the command is sent to')
+        self.console_port.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.console_input = QtWidgets.QLineEdit()
         self.console_input.setPlaceholderText('Shell command, e.g. "ot state" or "norlog fw status"')
         self.console_input.returnPressed.connect(self.send_console)
@@ -2088,19 +2575,21 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         send.clicked.connect(self.send_console)
         clear = QtWidgets.QPushButton('Clear')
         clear.clicked.connect(self.console_text.clear)
+        row.addWidget(self.console_port)
         row.addWidget(self.console_input, 1)
         row.addWidget(send)
         row.addWidget(clear)
         lay.addWidget(self.console_text)
         lay.addLayout(row)
-        self.run_widgets.extend([self.console_input, send])
+        self.run_widgets.extend([self.console_port, self.console_input, send])
         return w
 
     def send_console(self):
         text = self.console_input.text()
         if text:
-            self.console_text.appendPlainText(f'> {text}')
-            self.device.thread_command('send', {'text': text})
+            port = self.console_port.currentData()
+            self.console_text.appendPlainText(f'{port or ""}> {text}')
+            self.device.thread_command('send', {'text': text, 'port': port})
             self.console_input.clear()
 
     # --- Thread network ---
@@ -2145,17 +2634,28 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         import_row.addStretch(1)
         form.addRow('', import_row)
 
+        port_row = QtWidgets.QHBoxLayout()
+        self.thread_port = QtWidgets.QComboBox()
+        self.thread_port.setToolTip('Serial port (norlog) that "Form network", "Make leader", "Read dataset" '
+                                    'and the status below are about; default: the gateway')
+        self.thread_port.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.thread_port.currentIndexChanged.connect(lambda _i: self.show_port_status())
+        port_row.addWidget(QtWidgets.QLabel('Device at port'))
+        port_row.addWidget(self.thread_port)
+        port_row.addStretch(1)
+        self.run_widgets.append(self.thread_port)
+
         btn_row = QtWidgets.QHBoxLayout()
         form_btn = QtWidgets.QPushButton('Form network')
         form_btn.clicked.connect(self.form_network)
         status_btn = QtWidgets.QPushButton('Read status')
         status_btn.clicked.connect(lambda: self.device.thread_command('ot_status', {}))
-        leader_btn = QtWidgets.QPushButton('Make gateway leader')
-        leader_btn.setToolTip('The gateway becomes the leader of the Thread network (leader weight '
+        leader_btn = QtWidgets.QPushButton('Make leader')
+        leader_btn.setToolTip('The norlog at the chosen port becomes the leader of the Thread network (leader weight '
                               f'{ot_cli.LEADER_WEIGHT_PREFERRED}, the nodes have 64). The network is '
                               'interrupted shortly, RLOC16 addresses may change.')
         leader_btn.clicked.connect(self.make_leader)
-        self.prefer_leader = QtWidgets.QCheckBox('Gateway prefers leader role')
+        self.prefer_leader = QtWidgets.QCheckBox('Gateways prefer leader role')
         self.prefer_leader.setToolTip('While redvypr is connected: leader weight '
                                       f'{ot_cli.LEADER_WEIGHT_PREFERRED} also after a restart of the '
                                       'gateway, and the gateway becomes leader again if it is not '
@@ -2175,8 +2675,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         prov_box = QtWidgets.QGroupBox('Provision nodes (the dataset contains the network key)')
         prov = QtWidgets.QGridLayout(prov_box)
         self.dataset_label = QtWidgets.QLabel()
-        read_ds = QtWidgets.QPushButton('Read dataset from gateway')
-        read_ds.clicked.connect(lambda: self.device.thread_command('dataset', {}))
+        read_ds = QtWidgets.QPushButton('Read dataset')
+        read_ds.setToolTip('Read the active dataset of the norlog at the chosen port (above)')
+        read_ds.clicked.connect(lambda: self.device.thread_command('dataset', {'port': self.thread_port.currentData()}))
         copy_ds = QtWidgets.QPushButton('Copy')
         copy_ds.clicked.connect(lambda: QtWidgets.QApplication.clipboard().setText(self.cfg.dataset_tlvs))
         self.node_port = QtWidgets.QComboBox()
@@ -2197,8 +2698,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         prov.addWidget(node_refresh, 1, 2)
         prov.addWidget(prov_btn, 1, 3)
         prov.addWidget(export_btn, 2, 2, 1, 2)
-        prov.addWidget(QtWidgets.QLabel('Node port = gateway port provisions the device on this port '
-                                        '(e.g. after reconnecting the cable to a node).'), 3, 0, 1, 4)
+        prov.addWidget(QtWidgets.QLabel('A port that is open here (device list) is provisioned through its '
+                                        'connection, another port is opened for this only.'), 3, 0, 1, 4)
         self.prov_btn = prov_btn
         self.provision_worker = None
         # Provisioning works also without a running gateway (directly on the node port)
@@ -2206,6 +2707,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         self.refresh_node_ports()
         self.update_dataset_label()
 
+        lay.addLayout(port_row)
         lay.addWidget(form_box)
         lay.addLayout(btn_row)
         lay.addWidget(prov_box)
@@ -2246,9 +2748,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             QtWidgets.QMessageBox.warning(self, 'Provision node', 'No dataset: read it from the gateway or '
                                                                   'import an autoexec.txt first.')
             return
-        port = self.cfg.node_comport or self.cfg.comport
+        port = self.cfg.node_comport
         running = self.device.get_thread_status()['thread_running']
-        target = 'the device on the gateway port' if running and port == self.cfg.comport else port
+        target = f'the device at {port} (open here)' if running and port in self.port_status else port
         if not port:
             QtWidgets.QMessageBox.warning(self, 'Provision node', 'Choose the node port first.')
             return
@@ -2337,27 +2839,36 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def form_network(self):
         answer = QtWidgets.QMessageBox.question(
             self, 'Form Thread network',
-            'The connected norlog leaves its current Thread network and creates a new one '
+            f'The norlog at {self.thread_port.currentData() or "?"} leaves its current Thread network and '
+            'creates a new one '
             f'("{self.cfg.network_name}", channel {self.cfg.channel}). Continue?')
         if answer != QtWidgets.QMessageBox.StandardButton.Yes:
             return
         self.device.thread_command('form_network', {
+            'port': self.thread_port.currentData(),
             'network_name': self.cfg.network_name, 'channel': self.cfg.channel,
             'panid': self.cfg.panid, 'extpanid': self.cfg.extpanid, 'networkkey': self.cfg.networkkey})
 
     def make_leader(self):
         answer = QtWidgets.QMessageBox.question(
-            self, 'Make gateway leader',
-            'The gateway becomes the leader of the Thread network. It starts a new partition that the '
+            self, 'Make leader',
+            f'The norlog at {self.thread_port.currentData() or "?"} becomes the leader of the Thread network. '
+            'It starts a new partition that the '
             'other devices join; the network is interrupted shortly (seconds up to about a minute), '
             'RLOC16 addresses may change and running transfers can fail. Continue?')
         if answer == QtWidgets.QMessageBox.StandardButton.Yes:
-            self.device.thread_command('make_leader', {})
+            self.device.thread_command('make_leader', {'port': self.thread_port.currentData()})
 
     def prefer_leader_changed(self, checked):
         self.cfg.prefer_leader = bool(checked)
         if self.device.get_thread_status()['thread_running']:
             self.device.thread_command('config', {'config': self.cfg.model_dump()})
+
+    def show_port_status(self):
+        """Thread status of the port chosen in the tab Thread network."""
+        port = self.thread_port.currentData() if hasattr(self, 'thread_port') else None
+        status = self.port_status.get(port) if port else None
+        self.show_status(status if status is not None else {})
 
     def show_status(self, status):
         self.status_tree.clear()
@@ -2522,9 +3033,16 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             if packetid == 'console':
                 self.console_text.appendPlainText(data.get('line', ''))
             elif packetid == 'thread_status':
-                self.show_status(data.get('thread_status', {}))
+                self.port_status = data.get('port_status') or {}
+                self.gateways = data.get('gateways') or {}
                 if 'devices' in data:
                     self.show_devices(data['devices'])
+                self.show_port_status()
+            elif packetid == 'port_config':
+                # The norlog at a port told its hardware ID: stored with the port
+                pc = self.port_config(data.get('port', ''))
+                if pc is not None and data.get('hwid'):
+                    pc.hwid = data['hwid']
             elif packetid == 'flash_status':
                 # Thread update: dialog of that member; serial flash: dialog of the serial device
                 dialogs = ([self.settings_dialogs[data['target']]] if data.get('target') in self.settings_dialogs
@@ -2625,6 +3143,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         elif data.get('command') == 'flash' and not data.get('ok'):
             for dlg in self.serial_dialogs():
                 dlg.fw_log.appendPlainText(text)
+        elif data.get('command') in ('connect', 'serial'):
+            self.show_port_status()
 
     def update_run_state(self):
         running = self.device.get_thread_status()['thread_running']
@@ -2932,11 +3452,11 @@ class LiveSubscriptionsDialog(QtWidgets.QDialog):
                 self._set_row(row, hwid, self.actual[hwid])
             else:
                 self._color_row(row, hwid)
-        if data.get('ok') and data.get('target') == 'gateway':
+        if data.get('ok') and data.get('gateway'):
             sink = status.get('sink') or {}
             others = [k for k in sink.get('known') or []]
             self.sink_status.setText(
-                f"Gateway: {'sink for the live data of the network' if sink.get('on') else 'NOT a sink'}, "
+                f"Gateway {data.get('target')}: {'sink for the live data of the network' if sink.get('on') else 'NOT a sink'}, "
                 f"received {sink.get('received', 0)} packets, dropped {sink.get('rx_dropped', 0)}"
                 + (f"; other sinks: {', '.join(k.get('addr', '') for k in others)}" if others else ''))
 
@@ -4817,7 +5337,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.bat_progress.setValue(0)
         self.bat_progress.setVisible(True)
         self.bat_note.setText(f'Loading {pathlib.Path(path).name} ...')
-        self.device.thread_command('battery_upload', {'path': path})
+        self.device.thread_command('battery_upload', {'path': path, 'target': self.key})
 
     def on_battery_upload(self, data):
         if 'progress' in data:
@@ -4852,9 +5372,13 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         grid.addWidget(self.usb_note, 1, 0, 1, 4)
         return box
 
+    def send_shell(self, text):
+        """Shell command to the serial port of this device."""
+        self.device.thread_command('send', {'text': text, 'port': self.entry.get('port') or self.key})
+
     def usb_command(self, text):
         # USB settings work over the serial shell only (Thread: no CoAP command yet)
-        self.device.thread_command('send', {'text': text})
+        self.send_shell(text)
         self.device.thread_command('read_device_info', {'targets': [self.key]})
 
     def set_usb_mode(self, index):
@@ -5029,7 +5553,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             w.setEnabled(running and self.is_serial())
         self.fw_flash.setEnabled(running)
         # gateway (serial) or Thread member; other serial devices are not reachable by key
-        self.loader_install.setEnabled(running and (self.key == 'gateway' or not self.is_serial()))
+        self.loader_install.setEnabled(running)
         self.fw_cancel.setEnabled(running and self.is_serial())
         self.fw_auto.setEnabled(running and self.is_serial())
         for w in self.files_run_widgets:
@@ -5954,7 +6478,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
                                            '(or /fw/zephyr.signed.bin) from the SD card')
         self.fw_auto.setToolTip('Stored on the device (norlog fw auto on|off); serial only for now')
         self.fw_auto.toggled.connect(
-            lambda on: self.device.thread_command('send', {'text': f'norlog fw auto {"on" if on else "off"}'}))
+            lambda on: self.send_shell(f'norlog fw auto {"on" if on else "off"}'))
         self.fw_force = QtWidgets.QCheckBox('Flash even if this image is already installed')
         self.fw_force.setChecked(self.cfg.firmware_force)
         self.fw_force.toggled.connect(lambda v: setattr(self.cfg, 'firmware_force', v))
@@ -6055,7 +6579,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.fw_progress.setValue(0)
         self.fw_log.clear()
         if self.is_serial():
-            self.device.thread_command('flash', {'image': self.cfg.firmware_image,
+            self.device.thread_command('flash', {'image': self.cfg.firmware_image, 'target': self.key,
                                                  'force': self.cfg.firmware_force})
         else:
             self.device.thread_command('fw_update_node', {'target': self.key, 'image': self.cfg.firmware_image,

@@ -106,17 +106,22 @@ def test_device_list_assigns_live_data_to_gateway_and_members():
     from redvypr.devices.norlog import device_list
     status = {"extaddr": "aaaa", "rloc16": "0x4000", "state": "leader",
               "children": [{"Extended MAC": "bbbb", "RLOC16": "0x4001"}]}
-    infos = {"gateway": {"hwid": "GW"}, "0x4001": {"hwid": "N1"}}
+    infos = {"GW": {"hwid": "GW"}, "N1": {"hwid": "N1"}}
     now = 1000.0
     sources = {"0x4000": {"last_seen": now, "packets": 5, "mac": "GW"},       # gateway itself (sink)
                "0x6c00": {"last_seen": now, "packets": 2, "mac": "N1"},       # member, RLOC16 changed
                "0x8000": {"last_seen": now, "packets": 1, "mac": "XX"}}       # unknown: data only
-    devices = device_list.build_device_list(status, data_sources=sources, infos=infos, now=now)
+    devices = device_list.build_device_list(status, gateway_port="COM5", data_sources=sources, infos=infos,
+                                            now=now, gateway_key="GW", member_keys={"0x4001": "N1"})
     assert devices[0]["role"] == device_list.ROLE_GATEWAY and devices[0]["packets"] == 5
+    assert devices[0]["key"] == "GW" and devices[0]["hwid"] == "GW"
     member = next(d for d in devices if d.get("rloc16") == "0x4001")
-    assert member["packets"] == 2
+    assert member["packets"] == 2 and member["key"] == "N1" and member["parent"] == "GW"
+    assert member["via"] == "COM5" and member["hwid"] == "N1"
     links = [d.get("link") for d in devices]
     assert links.count("data only") == 1
+    data_only = next(d for d in devices if d.get("link") == "data only")
+    assert data_only["key"] == "XX"                         # hwid from the packets
 
 
 def test_live_parse_and_text():
