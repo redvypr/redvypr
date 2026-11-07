@@ -5681,8 +5681,13 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         self.adc_setup.setToolTip('Setup profile stored with the sequence (setup=, firmware >= 0.4.51); redvypr '
                                   'recognises the setup of the device by it')
         self.adc_setup.currentIndexChanged.connect(lambda _i: self.adc_changed())
+        # chosen by the user (not set from the device): load the profile at once, otherwise only the
+        # name would be written
+        self.adc_setup.activated.connect(lambda _i: adc_setups.get(self.adc_setup.currentData())
+                                         and self.adc_load_setup())
         setup_btn = QtWidgets.QPushButton('Load profile')
-        setup_btn.setToolTip('Fill the table with the sequence of the chosen profile (then "Write to device")')
+        setup_btn.setToolTip('Fill the table again with the sequence of the chosen profile (then "Write to device"); '
+                             'choosing a profile loads it as well')
         setup_btn.clicked.connect(self.adc_load_setup)
         self.adc_setup_state = QtWidgets.QLabel('')
         self.adc_setup_state.setWordWrap(True)
@@ -6005,6 +6010,10 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         if seq.setup and device is not None and 'setup' not in device:
             self.adc_status.setStyleSheet('color: #d64545;')
             self.adc_status.setText('setup profiles need firmware >= 0.4.51 (choose "- none -" or update)')
+            return
+        if seq.setup and not seq.steps:
+            self.adc_status.setStyleSheet('color: #d64545;')
+            self.adc_status.setText(f'setup {seq.setup} without steps: press "Load profile" first')
             return
         self.adc_command('set', text)
 

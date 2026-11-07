@@ -164,6 +164,26 @@ def test_adc_tab_profile(widget):
     dlg.close()
 
 
+def test_adc_tab_choosing_loads_profile(widget):
+    w = widget
+    show_device(w)
+    w.open_settings("GW")
+    dlg = w.settings_dialogs["GW"]
+    adc_answer(dlg, "on=0,sps=20,filter=sinc3,interval=10000", cals={})
+    # the user chooses the profile: it is loaded at once (not only the name)
+    i = dlg.adc_setup.findData("hf_ntc_v01")
+    dlg.adc_setup.setCurrentIndex(i)
+    dlg.adc_setup.activated.emit(i)
+    assert dlg.adc_text.text() == PROFILE
+    # only the name without steps is not written
+    dlg.adc_table.setRowCount(0)
+    dlg.adc_on.setChecked(False)
+    n = len(w.device.commands)
+    dlg.adc_write()
+    assert len(w.device.commands) == n and "Load profile" in dlg.adc_status.text()
+    dlg.close()
+
+
 def test_adc_tab_old_firmware(widget):
     w = widget
     show_device(w)
