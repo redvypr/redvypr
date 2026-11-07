@@ -107,6 +107,7 @@ from redvypr.redvypr_datadict import check_for_command, create_redvypr_dict
 from redvypr.widgets.standard_device_widgets import RedvyprdevicewidgetSimple
 
 from . import adc_sequence
+from . import adc_setups
 from . import device_list
 from . import links
 from . import mag_calibration
@@ -1337,6 +1338,8 @@ class _Gateway:
                 ot_cli.adc_set(cli, sensor, text, address, timeout=timeout)
                 st = ot_cli.adc_get(cli, sensor, address, timeout=timeout)
                 result['message'] = f"{sensor}: configuration {st.get('cfg_id')} stored"
+                # the setup profile is part of extinfo: read it again with the next info
+                self.ext_infos.pop(self.resolve_key(target), None)
             elif op == 'read':
                 st = ot_cli.adc_measure(cli, sensor, address, timeout=timeout)
                 result['message'] = f"{sensor}: measured"
@@ -2025,7 +2028,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     # Link details and firmware at the right end: useful, but not needed at first glance.
     # 'Connection' is the tree column: the way to the device. Serial ports at the top level, the
     # members of a gateway below it ('thread'; later other kinds of links the same way).
-    DEVICE_COLUMNS = ['Connection', '', 'HW ID', 'SN', 'Description', 'Location', 'Port', 'RLOC16', 'Ext. MAC', 'Role',
+    DEVICE_COLUMNS = ['Connection', '', 'HW ID', 'SN', 'Description', 'Location', 'Setup', 'Port', 'RLOC16',
+                      'Ext. MAC', 'Role',
                       'Thread role', 'Link', 'Quality',
                       'Battery', 'Board temp [C]', 'nRF temp [C]', 'GNSS', 'Clock', 'Info age [s]',
                       'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets', 'Firmware']
@@ -2424,6 +2428,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             if seen is None:
                 seen = d.get('last_data_s')
             port_text, port_tip = self._fmt_port(d)
+            setup_text, setup_tip = adc_setups.device_setups_text((d.get('info') or {}).get('setup'))
             role = d.get('role', '')
             if serial_entry and d.get('port_role') and d['port_role'] != device_list.PORT_ROLE_AUTO:
                 role += f" ({d['port_role']})"
@@ -2434,6 +2439,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
                 'SN': d.get('sn', ''),
                 'Description': self._short(d.get('desc', '')),
                 'Location': self._short(d.get('loc', '')),
+                'Setup': setup_text,
                 'Port': port_text,
                 'RLOC16': d.get('rloc16', ''),
                 'Ext. MAC': d.get('extaddr', ''),
@@ -2462,7 +2468,8 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             items[d.get('key')] = item
             closed = serial_entry and d.get('port_state') not in (None, device_list.PORT_OPEN)
             full_text = {cols.index('Description'): d.get('desc', ''), cols.index('Location'): d.get('loc', ''),
-                         cols.index('Port'): port_tip, cols.index('Connection'): name_tip}
+                         cols.index('Port'): port_tip, cols.index('Connection'): name_tip,
+                         cols.index('Setup'): setup_tip}
             for col, text in enumerate(values[c] for c in cols):
                 item.setText(col, str(text))
                 if full_text.get(col) and full_text[col] != text:
@@ -4750,9 +4757,11 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
     SCALES = {'V': 1.0, 'mV': 1e-3, 'µV': 1e-6}
     KIND_LABELS = {'poly': 'Polynomial', 'ntc': 'NTC (Steinhart-Hart / Hoge, as redvypr CalibrationNTC)'}
 
-    def __init__(self, parent, name, x_unit, cal=None, x_value=None):
+    def __init__(self, parent, name, x_unit, cal=None, x_value=None, preset=None):
+        """preset: adc_setups.ChannelCal of the setup profile, used for a new calibration (cal None)."""
         super().__init__(parent)
         self.setWindowTitle(f'Calibration {name}')
+        preset = preset if cal is None else None
         self.name = name
         self.x_unit = x_unit
         self.x_value = x_value
@@ -4765,6 +4774,10 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
                                 + (f', last measured x = {x_value:.7g}' if x_value is not None else ''))
         head.setWordWrap(True)
         lay.addWidget(head)
+        if preset is not None and preset.hint:
+            hint = QtWidgets.QLabel(f'Setup profile: {preset.hint}')
+            hint.setStyleSheet('color: gray;')
+            lay.addWidget(hint)
 
         form = QtWidgets.QGridLayout()
         self.kind = QtWidgets.QComboBox()
@@ -4773,14 +4786,15 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         self.kind.currentIndexChanged.connect(self.kind_changed)
         self.formula = QtWidgets.QLabel('')
         self.formula.setStyleSheet('color: gray;')
-        self.unit = QtWidgets.QLineEdit(cal.unit if cal else '')
+        self.unit = QtWidgets.QLineEdit(cal.unit if cal else (preset.unit if preset else ''))
         self.unit.setPlaceholderText('e.g. W/m2, degC, Pa')
         self.unit.setMaxLength(poly_calibration.UNIT_MAX)
         self.unit.textChanged.connect(self.update_preview)
         self.ident = QtWidgets.QLineEdit(cal.id if cal else '')
         self.ident.setPlaceholderText('optional, e.g. serial number of the sensor')
         self.ident.setMaxLength(poly_calibration.ID_MAX)
-        self.scale = QtWidgets.QLineEdit(f'{cal.scale:.12g}' if cal and cal.kind == 'ntc' else '10000')
+        self.scale = QtWidgets.QLineEdit(f'{cal.scale:.12g}' if cal and cal.kind == 'ntc' else
+                                         (f'{preset.scale:.12g}' if preset and preset.kind == 'ntc' else '10000'))
         self.scale.setToolTip('R = x * R_ref: the reference resistor of a ratiometric measurement (x = R/R_ref); '
                               '1 if x is already the resistance in Ohm')
         self.scale.textChanged.connect(self.update_preview)
@@ -4881,7 +4895,8 @@ class AdcCalibrationDialog(QtWidgets.QDialog):
         buttons.addButton(QtWidgets.QDialogButtonBox.StandardButton.Cancel)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
-        self.kind.setCurrentIndex(list(self.KIND_LABELS).index(cal.kind) if cal else 0)
+        kind = cal.kind if cal else (preset.kind if preset else 'poly')
+        self.kind.setCurrentIndex(list(self.KIND_LABELS).index(kind) if kind in self.KIND_LABELS else 0)
         self.kind_changed()
 
     def current_kind(self):
@@ -5661,6 +5676,23 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             self.adc_table.horizontalHeaderItem(i).setToolTip(tip)
         grid.addWidget(self.adc_table, 1, 0, 1, 9)
 
+        # Setup profile (firmware >= 0.4.51): known hardware setup, stored with the sequence
+        self.adc_setup = QtWidgets.QComboBox()
+        self.adc_setup.setToolTip('Setup profile stored with the sequence (setup=, firmware >= 0.4.51); redvypr '
+                                  'recognises the setup of the device by it')
+        self.adc_setup.currentIndexChanged.connect(lambda _i: self.adc_changed())
+        setup_btn = QtWidgets.QPushButton('Load profile')
+        setup_btn.setToolTip('Fill the table with the sequence of the chosen profile (then "Write to device")')
+        setup_btn.clicked.connect(self.adc_load_setup)
+        self.adc_setup_state = QtWidgets.QLabel('')
+        self.adc_setup_state.setWordWrap(True)
+        setup_row = QtWidgets.QHBoxLayout()
+        setup_row.addWidget(QtWidgets.QLabel('Setup'))
+        setup_row.addWidget(self.adc_setup)
+        setup_row.addWidget(setup_btn)
+        setup_row.addWidget(self.adc_setup_state, 1)
+        grid.addLayout(setup_row, 4, 0, 1, 9)
+
         btns = QtWidgets.QHBoxLayout()
         add_btn = QtWidgets.QPushButton('Add step')
         add_btn.clicked.connect(self.adc_add_step)
@@ -5716,6 +5748,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         lay.addWidget(self.adc_hint)
         lay.addStretch(1)
         self.adc_run_widgets = [read_btn, write_btn, measure_btn, cal_btn]
+        self.adc_fill_setups(self.adc_sensor.currentText())
         self.adc_sensor_changed(self.adc_sensor.currentText())
         return w
 
@@ -5770,7 +5803,53 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         return adc_sequence.AdcSequence(on=self.adc_on.isChecked(), sps=self.adc_sps.currentText(),
                                         filter=self.adc_filter.currentText(),
                                         interval_ms=int(round(self.adc_interval.value() * 1000)),
-                                        steps=[self._adc_row_step(r) for r in range(self.adc_table.rowCount())])
+                                        steps=[self._adc_row_step(r) for r in range(self.adc_table.rowCount())],
+                                        setup=self.adc_setup.currentData() or '')
+
+    def adc_fill_setups(self, sensor, current=''):
+        """Profiles of the sensor in the setup combo box; an unknown name of the device is added."""
+        loading, self.adc_loading = self.adc_loading, True
+        self.adc_setup.clear()
+        self.adc_setup.addItem('- none -', '')
+        for setup in adc_setups.for_sensor(sensor):
+            self.adc_setup.addItem(setup.name, setup.name)
+            self.adc_setup.setItemData(self.adc_setup.count() - 1, f'{setup.title}\n{setup.description}',
+                                       QtCore.Qt.ItemDataRole.ToolTipRole)
+        if current and self.adc_setup.findData(current) < 0:
+            self.adc_setup.addItem(f'{current} (unknown)', current)
+        self.adc_setup.setCurrentIndex(max(0, self.adc_setup.findData(current)))
+        self.adc_loading = loading
+
+    def adc_load_setup(self):
+        setup = adc_setups.get(self.adc_setup.currentData())
+        if setup is None:
+            self.adc_status.setStyleSheet('color: #d64545;')
+            self.adc_status.setText('choose a known profile first')
+            return
+        self.adc_show_sequence(setup.sequence(), self._adc_table_values())
+        self.adc_status.setStyleSheet('color: #c08000;')
+        self.adc_status.setText(f'profile {setup.name} loaded - not yet written to the device. {setup.description}')
+
+    def adc_show_setup_state(self):
+        """Setup of the device compared with its profile and the calibrations on the device."""
+        sensor = self.adc_sensor.currentText()
+        st = self.adc_state.get(sensor)
+        if st is None:
+            self.adc_setup_state.setText('')
+            return
+        try:
+            seq = adc_sequence.parse(st.get('cfg', ''))
+        except adc_sequence.SequenceError:
+            self.adc_setup_state.setText('')
+            return
+        if 'setup' not in st and not seq.setup:
+            self.adc_setup_state.setStyleSheet('color: gray;')
+            self.adc_setup_state.setText('device: setup profiles need firmware >= 0.4.51')
+            return
+        cals = self.adc_cals.get(sensor) if sensor in self.adc_cals else None
+        text, ok = adc_setups.status_text(seq, seq.setup, cals)
+        self.adc_setup_state.setStyleSheet('' if ok else 'color: #c08000;')
+        self.adc_setup_state.setText(f'device: {text}' if text else 'device: no setup profile')
 
     def adc_show_sequence(self, seq, values=None):
         """Fill the table; values: {name: (value text, calibrated text, raw text)}."""
@@ -5781,6 +5860,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             self.adc_sps.setCurrentText(seq.sps)
             self.adc_filter.setCurrentText(seq.filter)
             self.adc_interval.setValue(seq.interval_ms / 1000.0)
+            self.adc_fill_setups(self.adc_sensor.currentText(), seq.setup)
             self.adc_table.setRowCount(len(seq.steps))
             for r, st in enumerate(seq.steps):
                 self._adc_set_row(r, st, *values.get(st.name, ('', '', '')))
@@ -5898,6 +5978,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             self.adc_info.setText('- (Read from device)')
             self.adc_show_sequence(adc_sequence.AdcSequence())
             self.adc_status.setText('')
+        self.adc_show_setup_state()
 
     def adc_command(self, op, text='', channel=''):
         self.adc_busy = True
@@ -5919,6 +6000,11 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         if not seq.steps and seq.on:
             self.adc_status.setStyleSheet('color: #d64545;')
             self.adc_status.setText('add at least one step')
+            return
+        device = self.adc_state.get(self.adc_sensor.currentText())
+        if seq.setup and device is not None and 'setup' not in device:
+            self.adc_status.setStyleSheet('color: #d64545;')
+            self.adc_status.setText('setup profiles need firmware >= 0.4.51 (choose "- none -" or update)')
             return
         self.adc_command('set', text)
 
@@ -5945,8 +6031,10 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
         step = self._adc_row_step(row)
         sensor = self.adc_sensor.currentText()
         x, x_unit = self._adc_last_value(step.name)
+        setup = adc_setups.get(self.adc_setup.currentData())
+        preset = setup.channels.get(step.name) if setup is not None else None
         dlg = AdcCalibrationDialog(self, poly_calibration.cal_name(sensor, step.name), x_unit or step.unit(),
-                                   self.adc_cals.get(sensor, {}).get(step.name), x)
+                                   self.adc_cals.get(sensor, {}).get(step.name), x, preset=preset)
         if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
         if dlg.delete_requested:
@@ -6045,6 +6133,7 @@ class DeviceSettingsDialog(QtWidgets.QDialog):
             elif message:
                 self.adc_status.setStyleSheet('')
                 self.adc_status.setText(message)
+            self.adc_show_setup_state()
 
     # --- NMEA sensor at UART1, e.g. a wind meter (status firmware >= 0.4.13, settings >= 0.4.21) ---
 

@@ -4,8 +4,10 @@ Measurement sequence of a norlog ADC (firmware >= 0.4.15, src/adc_seq.h).
 The configuration is one line of text, the same for the shell, CoAP and the
 configuration packets:
 
-    on=1,sps=20,filter=sinc3,interval=10000;<step>;<step>;...
+    on=1,sps=20,filter=sinc3,interval=10000[,setup=<name>];<step>;<step>;...
     <step> = name,p,n[,gain[,ref[,idac_ua[,i1[,i2[,delay_ms[,bias]]]]]]]   (bias: firmware >= 0.4.16)
+
+setup is the name of the setup profile (firmware >= 0.4.51, see adc_setups), "-" clears it.
 
 parse() and AdcSequence.to_text() follow the firmware (same checks, same
 canonical text), so a sequence can be checked before it is sent.
@@ -16,7 +18,9 @@ import re
 
 MAX_STEPS = 16
 NAME_MAX = 11
+SETUP_MAX = 23
 TEXT_MAX = 440
+SETUP_FIRMWARE = (0, 4, 51)     # firmware that knows the field setup=
 
 SENSORS = ["adc_brd", "adc_hfm"]
 SENSOR_INFO = {
@@ -91,9 +95,12 @@ class AdcSequence:
     filter: str = "sinc3"
     interval_ms: int = 10000
     steps: list = dataclasses.field(default_factory=list)
+    setup: str = ""         # name of the setup profile, '' = none
 
     def to_text(self):
         head = f"on={int(self.on)},sps={self.sps},filter={self.filter},interval={self.interval_ms}"
+        if self.setup:
+            head += f",setup={self.setup}"
         return ";".join([head] + [s.to_text() for s in self.steps])
 
     def conv_ms(self):
@@ -244,6 +251,15 @@ def parse(text, base=None):
             if not 100 <= ms <= 86400000:
                 raise SequenceError("interval: 100..86400000 ms")
             seq.interval_ms = ms
+        elif k == "setup":
+            if v == "-":
+                seq.setup = ""
+            elif not 1 <= len(v) <= SETUP_MAX:
+                raise SequenceError(f"setup: 1-{SETUP_MAX} characters or -")
+            elif not re.fullmatch(r"[A-Za-z0-9_]+", v):
+                raise SequenceError("setup: only a-z A-Z 0-9 _")
+            else:
+                seq.setup = v
         else:
             raise SequenceError(f"unknown: {k}")
     for i, seg in enumerate(segs[1:]):
