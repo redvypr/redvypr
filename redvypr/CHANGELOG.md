@@ -7,6 +7,14 @@ redvypr changelog
 ## [unreleased] -
 
 ### Added
+- norlog gateway: setup profiles of the ADC sequence (firmware >= 0.4.51, design note
+  doc/design_aufbau_profile.md of the firmware). New module `adc_setups` with the profiles as
+  templates (sequence and kind of calibration per channel), first `hf_ntc_v01` for the breakout v01
+  with two heat flux sensors and two NTCs. The sequence text knows `setup=<name>`. ADC tab: "Setup"
+  with "Load profile" (fills the table, then "Write to device"); after reading it shows the setup of
+  the device, whether the sequence differs from its profile and which channels lack a (matching)
+  calibration; the calibration dialog of a new calibration is preset from the profile (kind, unit,
+  R_ref). Device list: column "Setup" from `extinfo.setup`, read again after writing a sequence.
 - norlog gateway: several serial ports in one gateway device (design note doc/design_verbindungen.md of
   the firmware). The device list is a tree: the serial ports at the top (also while the device is
   stopped: the ports found, "All serial ports" also those that do not look like a norlog), the members
