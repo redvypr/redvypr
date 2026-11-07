@@ -2023,8 +2023,9 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     # --- devices ---
 
     # Link details and firmware at the right end: useful, but not needed at first glance.
-    # 'Device' is the tree column: serial ports, the members of a gateway below it.
-    DEVICE_COLUMNS = ['Device', '', 'HW ID', 'SN', 'Description', 'Location', 'Port', 'RLOC16', 'Connection', 'Role',
+    # 'Connection' is the tree column: the way to the device. Serial ports at the top level, the
+    # members of a gateway below it ('thread'; later other kinds of links the same way).
+    DEVICE_COLUMNS = ['Connection', '', 'HW ID', 'SN', 'Description', 'Location', 'Port', 'RLOC16', 'Ext. MAC', 'Role',
                       'Thread role', 'Link', 'Quality',
                       'Battery', 'Board temp [C]', 'nRF temp [C]', 'GNSS', 'Clock', 'Info age [s]',
                       'RSSI avg/last [dBm]', 'LQ in/out', 'Path cost', 'Seen [s]', 'Packets', 'Firmware']
@@ -2150,7 +2151,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
     def apply_hidden_columns(self):
         hidden = set(self.cfg.devices_hidden_columns)
         for col, name in enumerate(self.DEVICE_COLUMNS):
-            if name and name != 'Device':       # the tree column stays
+            if name and name != 'Connection':   # the tree column stays
                 self.devices_table.setColumnHidden(col, name in hidden)
 
     def devices_header_menu(self, point):
@@ -2158,7 +2159,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         menu = QtWidgets.QMenu(self)
         hidden = set(self.cfg.devices_hidden_columns)
         for name in self.DEVICE_COLUMNS:
-            if not name or name == 'Device':
+            if not name or name == 'Connection':
                 continue
             act = menu.addAction(name)
             act.setCheckable(True)
@@ -2410,10 +2411,15 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
         items = {}
         for index, d in enumerate(devices):
             serial_entry = d.get('connection') == device_list.CONNECTION_SERIAL
+            # The way to the device: its serial port, or the kind of link through the gateway above
             if serial_entry:
                 name = d.get('port') or d.get('id', '')
+                name_tip = d.get('port_description', '')
             else:
-                name = d.get('extaddr') or d.get('mac') or d.get('id', '')
+                name = d.get('connection') or d.get('link') or ''
+                name_tip = (f"{name} via {d.get('via') or '?'}"
+                            + (f", {d['link']}" if d.get('link') else '')
+                            + (f", Extended MAC {d['extaddr']}" if d.get('extaddr') else ''))
             seen = d.get('age_s')
             if seen is None:
                 seen = d.get('last_data_s')
@@ -2424,13 +2430,13 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             values = {
                 '': '',
                 'HW ID': d.get('hwid', ''),
-                'Device': name,
+                'Connection': name,
                 'SN': d.get('sn', ''),
                 'Description': self._short(d.get('desc', '')),
                 'Location': self._short(d.get('loc', '')),
                 'Port': port_text,
                 'RLOC16': d.get('rloc16', ''),
-                'Connection': d.get('connection', ''),
+                'Ext. MAC': d.get('extaddr', ''),
                 'Role': role,
                 'Thread role': d.get('thread_role', ''),
                 'Link': d.get('link', ''),
@@ -2456,7 +2462,7 @@ class RedvyprDeviceWidget(RedvyprdevicewidgetSimple):
             items[d.get('key')] = item
             closed = serial_entry and d.get('port_state') not in (None, device_list.PORT_OPEN)
             full_text = {cols.index('Description'): d.get('desc', ''), cols.index('Location'): d.get('loc', ''),
-                         cols.index('Port'): port_tip}
+                         cols.index('Port'): port_tip, cols.index('Connection'): name_tip}
             for col, text in enumerate(values[c] for c in cols):
                 item.setText(col, str(text))
                 if full_text.get(col) and full_text[col] != text:

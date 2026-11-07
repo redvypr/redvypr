@@ -99,7 +99,9 @@ def test_running_tree_dialog_and_port_choice(widget):
     devices = device_list.build_devices(rows)
     w.on_new_data([{"_redvypr": {"packetid": "thread_status"}, "devices": devices,
                     "gateways": {"net": "COM5"}, "port_status": {"COM5": status}}])
-    assert tree_rows(w) == [(0, "COM5"), (1, "2222"), (0, "COM7")]
+    assert tree_rows(w) == [(0, "COM5"), (1, "thread"), (0, "COM7")]
+    member = w.devices_table.topLevelItem(0).child(0)
+    assert "via COM5" in member.toolTip(0) and "Extended MAC 2222" in member.toolTip(0)
     assert w.console_port.currentData() == "COM5" and w.thread_port.currentData() == "COM5"
     assert w.status_tree.topLevelItem(0).text(1) == "leader"
     # settings dialog of the serial device: its key changes to the hardware ID
