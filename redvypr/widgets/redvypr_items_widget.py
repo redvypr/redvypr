@@ -109,19 +109,28 @@ class NewItemDialog(QtWidgets.QDialog):
         return self.itemtype.currentText().strip(), self.item_id.text().strip(), _pydt(self.valid_from.dateTime())
 
 
+def item_label(item: ritems.Item) -> str:
+    """Reference of an item with its serial number and name, e.g. 'norlog_v02/6BD5... (sn 003)'."""
+    extra = [f'sn {item.sn}'] if getattr(item, 'sn', None) and item.sn != item.id else []
+    if item.name:
+        extra.append(item.name)
+    return f"{item.ref} ({', '.join(extra)})" if extra else item.ref
+
+
 class MoveItemDialog(QtWidgets.QDialog):
     """New parent and slot of an item from a time on."""
 
-    def __init__(self, parent, item: ritems.Item, candidates: typing.List[str]):
+    def __init__(self, parent, item: ritems.Item, candidates: typing.List[typing.Union[str, ritems.Item]]):
         super().__init__(parent)
         self.setWindowTitle(f'Move {item.ref}')
         lay = QtWidgets.QFormLayout(self)
         self.parent_ref = QtWidgets.QComboBox()
         self.parent_ref.setEditable(True)
         self.parent_ref.addItem('(none)', '')
-        for ref in candidates:
+        for cand in candidates:
+            ref = cand if isinstance(cand, str) else cand.ref
             if ref != item.ref:
-                self.parent_ref.addItem(ref, ref)
+                self.parent_ref.addItem(ref if isinstance(cand, str) else item_label(cand), ref)
         i = self.parent_ref.findData(item.parent or '')
         self.parent_ref.setCurrentIndex(max(i, 0))
         self.slot = QtWidgets.QLineEdit(item.slot or '')
@@ -139,8 +148,11 @@ class MoveItemDialog(QtWidgets.QDialog):
         lay.addRow(buttons)
 
     def values(self):
-        ref = self.parent_ref.currentText().strip()
-        ref = None if ref in ('', '(none)') else ref
+        text = self.parent_ref.currentText().strip()
+        i = self.parent_ref.currentIndex()
+        # a chosen entry gives its reference (the text shows sn and name), else the typed reference
+        ref = self.parent_ref.itemData(i) if i >= 0 and text == self.parent_ref.itemText(i) else text
+        ref = None if ref in ('', '(none)', None) else ref
         slot = self.slot.text().strip() or None
         return ref, slot, _pydt(self.valid_from.dateTime())
 
@@ -179,7 +191,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         top.addWidget(self.use_now)
 
         self.tree = QtWidgets.QTreeWidget()
-        self.tree.setHeaderLabels(['Item', 'Name', 'Slot', 'Status'])
+        self.tree.setHeaderLabels(['Item', 'SN', 'Name', 'Slot', 'Status'])
         self.tree.itemSelectionChanged.connect(self.selection_changed)
 
         self.btn_new = QtWidgets.QPushButton('New')
@@ -305,7 +317,8 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         def node(item):
             if item.ref in nodes:
                 return nodes[item.ref]
-            w = QtWidgets.QTreeWidgetItem([item.ref, item.name or '', item.slot or '', item.status or ''])
+            sn = getattr(item, 'sn', None) or ''
+            w = QtWidgets.QTreeWidgetItem([item.ref, str(sn), item.name or '', item.slot or '', item.status or ''])
             w.setData(0, ROLE_REF, item.ref)
             nodes[item.ref] = w
             return w
@@ -326,7 +339,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
                 if item.itemtype == itemtype:
                     self.tree.addTopLevelItem(node(item))
         self.tree.expandAll()
-        for c in range(4):
+        for c in range(self.tree.columnCount()):
             self.tree.resizeColumnToContents(c)
         if self.current_ref in nodes:
             self.tree.setCurrentItem(nodes[self.current_ref])
@@ -517,8 +530,7 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         item = self.redvypr.get_item(self.current_ref, at_time=self.time()) if self.current_ref else None
         if item is None:
             return False
-        refs = [i.ref for i in self.redvypr.list_items(at_time=self.time())]
-        dlg = MoveItemDialog(self, item, refs)
+        dlg = MoveItemDialog(self, item, self.redvypr.list_items(at_time=self.time()))
         if not dlg.exec():
             return False
         parent_ref, slot, valid_from = dlg.values()

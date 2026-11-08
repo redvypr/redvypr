@@ -146,3 +146,30 @@ def test_delete_item(widget, tmp_path):
     from redvypr import metadata_sources as ms
     assert items.item_address('norlog_v02', 'WRONG') not in ms.load_item_library(path)
     assert len(ms.load_item_library(path)) == 3
+
+
+def test_sn_column_and_move_dialog_labels(widget):
+    w = widget
+    w.redvypr.add_item(items.Item(itemtype='norlog_v02', id='6BD51FFD60A7F08E', sn='003',
+                                  deviceid='6BD51FFD60A7F08E'), valid_from=T0)
+    w.refresh()
+    assert w.tree.headerItem().text(1) == 'SN'
+    rows = {}
+
+    def walk(node):
+        rows[node.text(0)] = node.text(1)
+        for i in range(node.childCount()):
+            walk(node.child(i))
+    for i in range(w.tree.topLevelItemCount()):
+        walk(w.tree.topLevelItem(i))
+    assert rows['norlog_v02/6BD51FFD60A7F08E'] == '003'
+    bo = w.redvypr.get_item('breakout_v01/BO-003')
+    dlg = iw.MoveItemDialog(w, bo, w.redvypr.list_items())
+    labels = [dlg.parent_ref.itemText(i) for i in range(dlg.parent_ref.count())]
+    assert 'norlog_v02/6BD51FFD60A7F08E (sn 003)' in labels
+    dlg.parent_ref.setCurrentIndex(labels.index('norlog_v02/6BD51FFD60A7F08E (sn 003)'))
+    assert dlg.values()[0] == 'norlog_v02/6BD51FFD60A7F08E'
+    dlg.parent_ref.setEditText('norlog_v02/N-012')        # typed reference
+    assert dlg.values()[0] == 'norlog_v02/N-012'
+    dlg.parent_ref.setCurrentIndex(0)
+    assert dlg.values()[0] is None
