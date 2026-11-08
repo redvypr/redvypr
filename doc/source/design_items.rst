@@ -58,6 +58,14 @@ item reference used elsewhere is the short form ``<itemtype>/<id>``
 (``breakout_v01/BO-003``). The id is the serial number of a physical item or
 the name of a template (see setup profiles).
 
+Ids are **unique per item type** (``d`` together with ``si``):
+``ntc_sensor/0042`` and ``fp07/0042`` are different items. This fits the
+serial numbers of manufacturers, which are mostly unique per product only.
+In addition every item may have an optional globally unique ``uuid`` (field
+of ``Item``, created on request in the GUI, e.g. for a label or QR code).
+References use ``<itemtype>/<id>``; a lookup by ``uuid`` is possible as
+well.
+
 One key per field
 ~~~~~~~~~~~~~~~~~
 
@@ -76,7 +84,7 @@ Item types
 
 An item type is a pydantic model with ``model_config = ConfigDict(extra='allow')``:
 
-* ``Item`` (generic): ``itemtype``, ``id``, ``name``, ``description``,
+* ``Item`` (generic): ``itemtype``, ``id``, ``uuid`` (optional), ``name``, ``description``,
   ``manufacturer``, ``mpn``, ``batch``, ``order`` (supplier, number, date),
   ``parent``, ``slot``, ``status``, ``attachments``, ``comment``. Works for
   any device without code; unknown fields are kept.
@@ -100,7 +108,15 @@ Every item says itself where it sits:
 Children are not stored in the parent; they are found with the query "all
 items with ``parent`` = X". A rebuild is one new ``parent``/``slot`` entry at
 the moved item; the old entry ends, so the history shows where the item was
-when. Example::
+when.
+
+The tree is kept **in redvypr only**: a rebuild is entered in the Items
+window (or another redvypr GUI), with the time of the rebuild. The devices do
+not store or detect their add-on boards. Later extensions, if boards are often
+swapped without a PC: the device stores the id of its board like ``setup``
+(e.g. ``board=BO-003``, reported in ``extinfo`` and the configuration
+packet, so redvypr can check or create the ``parent`` entry), or detects it
+with an id chip on the board. Example::
 
     norlog_v02/N-012          hwid: 0xA1B2...
      +- breakout_v01/BO-003   parent: norlog_v02/N-012   R1: 10002.7 Ohm
@@ -245,11 +261,8 @@ Steps
 Open points
 -----------
 
-* Ids: unique per item type (``si`` together with ``d``), or globally
-  unique (e.g. inventory numbers)?
-* Should the device store the id of its add-on board (norlog: next to
-  ``setup``), so that the tree is known without a PC, or detect it (hardware
-  id divider of the next breakout)?
+* Decided 2026-11-08: ids unique per item type with optional ``uuid``; the
+  tree is kept in redvypr only (devices do not store their boards).
 * Several redvypr instances changing the same item: the merge rules keep both
   values with their times; the later ``valid_from`` wins.
 * Slot names: free strings; conventions per device type (channel names or
