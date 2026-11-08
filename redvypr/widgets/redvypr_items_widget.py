@@ -185,6 +185,9 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.btn_new = QtWidgets.QPushButton('New')
         self.btn_copy = QtWidgets.QPushButton('Copy')
         self.btn_move = QtWidgets.QPushButton('Move to ...')
+        self.btn_delete = QtWidgets.QPushButton('Delete ...')
+        self.btn_delete.setToolTip('Remove the selected item with its whole history (for mistakes; an item '
+                                   'that is no longer used gets status "retired" instead)')
         self.btn_load = QtWidgets.QPushButton('Load library ...')
         self.btn_save_lib = QtWidgets.QPushButton('Save libraries')
         self.btn_save_lib.setToolTip('Save every loaded library file: each item and calibration into the file '
@@ -194,13 +197,14 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.btn_new.clicked.connect(lambda: self.new_item())
         self.btn_copy.clicked.connect(lambda: self.new_item(copy=True))
         self.btn_move.clicked.connect(self.move_item)
+        self.btn_delete.clicked.connect(lambda: self.delete_item())
         self.btn_load.clicked.connect(self.load_library)
         self.btn_save_lib.clicked.connect(lambda: self.save_libraries())
         self.btn_save_as.clicked.connect(lambda: self.save_library())
         self.btn_refresh.clicked.connect(self.refresh)
         buttons = QtWidgets.QGridLayout()
-        for i, b in enumerate((self.btn_new, self.btn_copy, self.btn_move, self.btn_refresh,
-                               self.btn_load, self.btn_save_lib, self.btn_save_as)):
+        for i, b in enumerate((self.btn_new, self.btn_copy, self.btn_move, self.btn_delete,
+                               self.btn_load, self.btn_save_lib, self.btn_save_as, self.btn_refresh)):
             buttons.addWidget(b, i // 4, i % 4)
 
         left = QtWidgets.QWidget()
@@ -458,6 +462,56 @@ class RedvyprItemsWidget(QtWidgets.QWidget):
         self.refresh()
         self.set_item(self.redvypr.get_item(ref, at_time=self.time()) or item)
         return True
+
+    def delete_item(self, ref=None, confirm=None):
+        """
+        Removes an item (default the selected one) with its whole history after a question.
+        confirm: callable(text) -> bool instead of the dialog (tests).
+        """
+        ref = ref or self.current_ref
+        if not ref:
+            return False
+        children = sorted({it.ref for t in self._history_times(ref)
+                           for it in self.redvypr.list_items(at_time=t) if it.parent == ref})
+        text = (f'Delete {ref} with its whole history?\n\n'
+                'It is removed from this redvypr instance; a library file it came from loses it '
+                'at the next "Save libraries". Data files keep the metadata they were written with.\n'
+                'An item that is no longer used should rather get status "retired".')
+        if children:
+            text += '\n\nThese items have it as parent (they stay, their parent then points nowhere):\n' + \
+                    '\n'.join(children)
+        if confirm is None:
+            answer = QtWidgets.QMessageBox.question(
+                self, 'Delete item', text,
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.No)
+            ok = answer == QtWidgets.QMessageBox.StandardButton.Yes
+        else:
+            ok = confirm(text)
+        if not ok:
+            return False
+        try:
+            n = self.redvypr.remove_item(ref)
+        except Exception as e:
+            self.set_status(f'{ref} not deleted: {e}', error=True)
+            return False
+        self.current_ref = None
+        self.set_item(None)
+        self.set_status(f'{ref} deleted ({n} address{"es" if n != 1 else ""})' if n else f'{ref} not found',
+                        error=not n)
+        self.refresh()
+        return bool(n)
+
+    def _history_times(self, ref):
+        """Times at which items could have this one as parent: now and the starts of all parent entries."""
+        times = [self.time()]
+        for addr, entries in self.redvypr._copy_metadata().items():
+            for e in entries or []:
+                if isinstance(e, dict) and e.get('key') == 'parent' and e.get('value') == ref:
+                    vf = (e.get('constraints') or {}).get('valid_from')
+                    if vf is not None:
+                        times.append(vf)
+        return times
 
     def move_item(self):
         item = self.redvypr.get_item(self.current_ref, at_time=self.time()) if self.current_ref else None

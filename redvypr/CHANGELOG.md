@@ -29,10 +29,12 @@ redvypr changelog
   the file it was loaded from, new ones into the first file holding their kind
   (`assign_library_entries()`, `Redvypr.save_item_libraries()`, Items window "Save libraries"
   and "Save library as ...").
-- Items window (step 3, button "Items" in the main window): tree of the items by parent at a
-  chosen time, type filter, form of the selected item saved as new values from a time on,
-  additional fields, history with validity and source, new item or copy (optional uuid), move to
-  another parent/slot, load and save item library files.
+- Items window (step 3, button "Items" in the main window and Tools menu "Items (inventory)"):
+  tree of the items by parent at a chosen time, type filter, form of the selected item saved as
+  new values from a time on, additional fields, history with validity and source, new item or copy
+  (optional uuid), move to another parent/slot, delete an item with its history after a question
+  (for mistakes; `Redvypr.remove_item()`, the library loses it at the next save), load and save
+  item library files.
 - norlog items (step 4): item types `norlog_v02`, `norlog_v021`, `breakout_v01` (with the measured
   reference resistor `R1`), `ntc_sensor`, `hf_sensor`. The ADC tab shows the sensor and board of
   every channel from the items and warns if the R_ref of an NTC calibration on the device differs

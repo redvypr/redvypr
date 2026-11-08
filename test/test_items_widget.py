@@ -125,3 +125,24 @@ def test_save_libraries_button(widget, tmp_path):
     assert w.redvypr.item_libraries == [path]
     w.save_libraries()
     assert 'inventory_norlog.yaml (3)' in w.status.text()
+
+
+def test_delete_item(widget, tmp_path):
+    w = widget
+    path = str(tmp_path / 'inventory_norlog.yaml')
+    w.save_library(path)
+    asked = []
+    # breakout has a child: the question names it; answered no: nothing happens
+    assert not w.delete_item('breakout_v01/BO-003', confirm=lambda t: asked.append(t) or False)
+    assert 'ntc_sensor/0042' in asked[0]
+    assert w.redvypr.get_item('breakout_v01/BO-003') is not None
+    # a wrong item deleted, also from the library at the next save
+    w.redvypr.add_item(items.Item(itemtype='norlog_v02', id='WRONG'), valid_from=T0)
+    w.refresh()
+    assert w.delete_item('norlog_v02/WRONG', confirm=lambda t: True)
+    assert w.redvypr.get_item('norlog_v02/WRONG') is None
+    assert 'norlog_v02/WRONG' not in [ref for _d, ref in tree_refs(w)]
+    w.save_libraries()
+    from redvypr import metadata_sources as ms
+    assert items.item_address('norlog_v02', 'WRONG') not in ms.load_item_library(path)
+    assert len(ms.load_item_library(path)) == 3

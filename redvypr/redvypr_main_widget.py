@@ -1334,6 +1334,9 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         metadataAction.setStatusTip(
             'Show/Edit the metadata of the devices')
         metadataAction.triggered.connect(self.show_metadata)
+        itemsAction = QtGui.QAction("&Items (inventory)", self)
+        itemsAction.setStatusTip('Items: devices, boards, sensors and their parameters, item libraries')
+        itemsAction.triggered.connect(self.redvypr_widget.open_items_widget)
         consoleAction = QtGui.QAction("&Open console", self)
         consoleAction.triggered.connect(self.open_console)
         consoleAction.setShortcut("Ctrl+N")
@@ -1344,6 +1347,7 @@ class redvyprMainWidget(QtWidgets.QMainWindow):
         toolMenu.addAction(datastreamAction)
         toolMenu.addAction(deviceinfoAction)
         toolMenu.addAction(metadataAction)
+        toolMenu.addAction(itemsAction)
         toolMenu.addAction(consoleAction)
 
         # Help and About menu

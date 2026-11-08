@@ -1513,6 +1513,23 @@ class Redvypr(QtCore.QObject):
         self.redvyprreplyqueue.get()
         return True
 
+    def remove_item(self, ref: str) -> int:
+        """
+        Removes an item ('<itemtype>/<id>') with its whole history from the metadata of
+        this instance (all its addresses, also of the older form). A library file it
+        came from loses it at the next save. Normally an item gets 'status: retired'
+        instead; removing is meant for mistakes. Returns the number of removed addresses.
+        """
+        itemtype, item_id = redvypr_items.parse_ref(ref)
+        addresses = redvypr_items.item_keys(self._copy_metadata()).get((itemtype, item_id), [])
+        if not addresses:
+            return 0
+        datapacket = redvypr.data_packets.commandpacket(command='reply')
+        datapacket['_metadata_remove'] = {a: {'keys': [], 'mode': 'exact'} for a in addresses}
+        self.redvyprqueue.put(datapacket)
+        self.redvyprreplyqueue.get()
+        return len(addresses)
+
     def get_item(self, ref: str, at_time=None, builtin: bool = True):
         """An item ('<itemtype>/<id>') at a time (default now), None if unknown (builtin: also built-in items)."""
         return redvypr_items.get_item(self._copy_metadata(), ref, at_time=at_time, builtin=builtin)
